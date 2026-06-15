@@ -1,0 +1,23 @@
+<Project>
+  <!--
+    Shared MSBuild settings for every test project under tests/.
+    Kept separate from src/Directory.Build.props because tests don't share
+    the BepInExCore/GameInterop paths and DO want NuGet runtime deps copied.
+  -->
+  <PropertyGroup>
+    <!--
+      Tests target net8.0 (the runtime installed on dev machines for `dotnet test`).
+      Framework code under src/ targets net6.0 because of the BepInEx 6 IL2CPP
+      constraint — but tests don't run inside BepInEx, so they can use a newer
+      runtime as long as the referenced framework DLLs stay net6.0-compatible.
+    -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>CS8632;CS8765</NoWarn>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stellar.Abstractions</RootNamespace>
+    <AssemblyName>Stellar.Abstractions</AssemblyName>
+    <Description>Plugin-facing contracts. References nothing outside the BCL.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
+  </PropertyGroup>
+  <!-- Intentionally no references: this layer is the dependency-rule sink. -->
+  <!-- Test seam: PerfProbe/PerfControls expose internal override hooks so the
+       env gate can be forced on/off in unit tests without a real env var. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Stellar.Application.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

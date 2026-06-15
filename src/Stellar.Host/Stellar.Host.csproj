@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stellar.Host</RootNamespace>
+    <AssemblyName>Stellar.Host</AssemblyName>
+    <Description>Composition root. The BepInEx BasePlugin entry point lives here. No business logic.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Stellar.Abstractions/Stellar.Abstractions.csproj" />
+    <ProjectReference Include="../Stellar.Application/Stellar.Application.csproj" />
+    <ProjectReference Include="../Stellar.Infrastructure/Stellar.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(BepInExCore)/BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepInExCore)/BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepInExCore)/Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <!-- Needed to call UnityEngine.Time.unscaledDeltaTime in the OnGUI perf probe. -->
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameInterop)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

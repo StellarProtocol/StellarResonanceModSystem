@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stellar.Wire</RootNamespace>
+    <AssemblyName>Stellar.Wire</AssemblyName>
+    <Description>Internal wire-protocol parsing and routing. BCL-only; references only Stellar.Abstractions for domain types.</Description>
+  </PropertyGroup>
+  <!-- References only Stellar.Abstractions (itself BCL-only). No BepInEx/Unity/Harmony/Il2Cpp. -->
+  <ItemGroup>
+    <ProjectReference Include="../Stellar.Abstractions/Stellar.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stellar.Application</RootNamespace>
+    <AssemblyName>Stellar.Application</AssemblyName>
+    <Description>Use cases and services. Defines outbound interfaces it depends on. No BepInEx / Unity / HarmonyX.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Stellar.Abstractions/Stellar.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!--
+    Outbound abstractions and service implementations are intentionally internal:
+    they are part of the framework's *contract* with its adapters and composition root,
+    not part of the plugin-facing API. Expose them only to the layers that need them.
+  -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Stellar.Infrastructure</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Stellar.Host</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Stellar.Application.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

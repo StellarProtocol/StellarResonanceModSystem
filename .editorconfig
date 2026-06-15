@@ -1,0 +1,17 @@
+root = true
+
+[*.cs]
+# Stellar size/shape analyzer (Stellar.Analyzers). All five rules ship at
+# `error` — the codebase was conformed to zero violations before this ratchet
+# (conformance plan 2026-05-28, Task 17). Any new STELLAR violation now fails
+# the local build (via the pre-commit hook) and CI.
+#
+# Exemptions (documented in docs/coding-standards.md):
+#   - IPluginServices interface is exempt from STELLAR0005 (aggregator façade).
+#   - PluginServices aggregator constructor is exempt from STELLAR0004.
+#   Both exemptions are handled in SizeAndShapeAnalyzer.cs, not here.
+dotnet_diagnostic.STELLAR0001.severity = error
+dotnet_diagnostic.STELLAR0002.severity = error
+dotnet_diagnostic.STELLAR0003.severity = error
+dotnet_diagnostic.STELLAR0004.severity = error
+dotnet_diagnostic.STELLAR0005.severity = error

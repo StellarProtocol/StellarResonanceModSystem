@@ -1,0 +1,242 @@
+using Stellar.Abstractions.Domain;
+using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
+using Xunit;
+
+namespace Stellar.Application.Tests.Combat;
+
+/// <summary>
+/// TDD guard for <see cref="CombatEntityTracker"/> (Task D1, C-11).
+/// These run GREEN against the CURRENT CombatService code first (baseline
+/// verification), and must still pass after the extraction.
+/// </summary>
+public sealed class CombatEntityTrackerTests
+{
+    // ── Vitals ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetVitals_UnknownEntity_ReturnsUnknown()
+    {
+        var tracker = new CombatEntityTracker();
+        Assert.Equal(EntityVitals.Unknown, tracker.GetVitals(new EntityId(1)));
+    }
+
+    [Fact]
+    public void UpdateEntityVitals_ThenGetVitals_ReturnsStoredValues()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        tracker.UpdateEntityVitals(id, hp: 8000, maxHp: 10000);
+
+        var v = tracker.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.Equal(8000L, v.Hp);
+        Assert.Equal(10000L, v.MaxHp);
+    }
+
+    [Fact]
+    public void UpdateEntityVitals_SentinelMinus1_KeepsExistingValue()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        // -1 sentinel = "no change for this side this tick"
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: -1);
+
+        var v = tracker.GetVitals(id);
+        Assert.Equal(5000L, v.Hp);
+        Assert.Equal(10000L, v.MaxHp);
+    }
+
+    // ── DPS ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetLiveDps_UnknownSource_ReturnsZero()
+    {
+        var tracker = new CombatEntityTracker();
+        Assert.Equal(0L, tracker.GetLiveDps(new EntityId(1)));
+    }
+
+    [Fact]
+    public void AccumulateDps_ThenGetLiveDps_ReturnsPositive()
+    {
+        var tracker = new CombatEntityTracker();
+        var src = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.AccumulateDps(src, timestampMs: 1000, amount: 5000);
+
+        Assert.True(tracker.GetLiveDps(src) > 0);
+    }
+
+    [Fact]
+    public void AccumulateDps_MultipleHits_AccumulatesTotal()
+    {
+        var tracker = new CombatEntityTracker();
+        var src = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.AccumulateDps(src, timestampMs: 1000,  amount: 1000);
+        tracker.AccumulateDps(src, timestampMs: 11000, amount: 1000);
+
+        // encounter: total=2000 / span=10s → 200 dps
+        Assert.Equal(200L, tracker.GetLiveDps(src));
+    }
+
+    // ── HPS ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetLiveHps_UnknownSource_ReturnsZero()
+    {
+        var tracker = new CombatEntityTracker();
+        Assert.Equal(0L, tracker.GetLiveHps(new EntityId(1)));
+    }
+
+    [Fact]
+    public void AccumulateHps_ThenGetLiveHps_ReturnsPositive()
+    {
+        var tracker = new CombatEntityTracker();
+        var src = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.AccumulateHps(src, timestampMs: 1000, amount: 3000);
+
+        Assert.True(tracker.GetLiveHps(src) > 0);
+    }
+
+    // ── TeamId ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetTeamId_UnknownEntity_ReturnsZero()
+    {
+        var tracker = new CombatEntityTracker();
+        Assert.Equal(0L, tracker.GetTeamId(new EntityId(1)));
+    }
+
+    [Fact]
+    public void UpdateEntityTeamId_ThenGetTeamId_ReturnsStoredId()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        tracker.UpdateEntityTeamId(id, teamId: 99L);
+
+        Assert.Equal(99L, tracker.GetTeamId(id));
+    }
+
+    // ── EntityName ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GetEntityName_UnknownEntity_ReturnsNull()
+    {
+        var tracker = new CombatEntityTracker();
+        Assert.Null(tracker.GetEntityName(new EntityId(1)));
+    }
+
+    [Fact]
+    public void UpdateEntityName_ThenGetEntityName_ReturnsName()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_5188L);
+
+        tracker.UpdateEntityName(id, "Doraemon");
+
+        Assert.Equal("Doraemon", tracker.GetEntityName(id));
+    }
+
+    // ── OnEntityDisappeared ──────────────────────────────────────────────────
+
+    [Fact]
+    public void OnEntityDisappeared_ClearsAllEntityState()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.AccumulateDps(id, timestampMs: 1000, amount: 5000);
+        tracker.AccumulateHps(id, timestampMs: 1000, amount: 2000);
+        tracker.UpdateEntityTeamId(id, teamId: 5L);
+        tracker.UpdateEntityName(id, "Player1");
+
+        tracker.OnEntityDisappeared(id);
+
+        Assert.Equal(EntityVitals.Unknown, tracker.GetVitals(id));
+        Assert.Equal(0L, tracker.GetLiveDps(id));
+        Assert.Equal(0L, tracker.GetLiveHps(id));
+        Assert.Equal(0L, tracker.GetTeamId(id));
+        Assert.Null(tracker.GetEntityName(id));
+    }
+
+    // ── CombatService integration (delegation path) ──────────────────────────
+
+    [Fact]
+    public void CombatService_GetVitals_DelegatesToTracker()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        svc.UpdateEntityVitals(id, hp: 3000, maxHp: 8000);
+
+        var v = svc.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.Equal(3000L, v.Hp);
+        Assert.Equal(8000L, v.MaxHp);
+    }
+
+    [Fact]
+    public void CombatService_GetLiveDps_AccumulatesAfterDrain()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var src = new EntityId(0x0000_0001_0000_0040L);
+        var tgt = new EntityId(0x0000_0001_0000_0080L);
+
+        // DPS accumulation is driven by CombatEvent.DamageDealt flowing through Drain
+        var msg = new SyncDamageInfoMsg(
+            DamageSource: 0, Type: 0, TypeFlag: 0,
+            Value: 0, ActualValue: 0, LuckyValue: 0,
+            HpLessenValue: 5000, ShieldLessenValue: 0,
+            AttackerUuid: src.Value, TopSummonerId: 0,
+            OwnerId: 1, IsMiss: false, IsCrit: false, IsDead: false, Property: 0);
+        svc.IngestDamage(msg, tgt, timestampMs: 1000);
+        svc.Drain();
+
+        Assert.True(svc.GetLiveDps(src) > 0);
+    }
+
+    [Fact]
+    public void CombatService_GetTeamId_DelegatesToTracker()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        svc.UpdateEntityTeamId(id, teamId: 42L);
+
+        Assert.Equal(42L, svc.GetTeamId(id));
+    }
+
+    [Fact]
+    public void CombatService_GetEntityName_DelegatesToTracker()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var id = new EntityId(0x0000_0001_0000_5188L);
+
+        svc.UpdateEntityName(id, "TestPlayer");
+
+        Assert.Equal("TestPlayer", svc.GetEntityName(id));
+    }
+
+    [Fact]
+    public void CombatService_OnEntityDisappeared_ClearsTrackerState()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        svc.UpdateEntityTeamId(id, teamId: 5L);
+        svc.UpdateEntityName(id, "Hero");
+        svc.OnEntityDisappeared(id);
+
+        Assert.Equal(EntityVitals.Unknown, svc.GetVitals(id));
+        Assert.Equal(0L, svc.GetTeamId(id));
+        Assert.Null(svc.GetEntityName(id));
+    }
+}

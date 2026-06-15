@@ -1,0 +1,41 @@
+<Project>
+  <!--
+    Shared MSBuild properties for every project under src/.
+    Auto-imported by .csproj files in this directory tree.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>CS8632;CS8765</NoWarn>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <Product>Stellar</Product>
+    <Company>Stellar</Company>
+  </PropertyGroup>
+
+  <!-- External reference roots. These point at YOUR local install and MUST be
+       overridden on the command line (or here) to build Infrastructure/Host:
+         dotnet build src/Stellar.sln -c Release \
+           -p:GameInterop=/path/to/<game_mini>/BepInEx/interop \
+           -p:BepInExCore=/path/to/<game_mini>/BepInEx/core
+       The defaults below are placeholders so the inner BCL-only projects
+       (Abstractions / Wire / Application / Analyzers) still build out of the box. -->
+  <PropertyGroup>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">$(MSBuildThisFileDirectory)../.local/bepinex/core</BepInExCore>
+    <GameInterop Condition="'$(GameInterop)' == ''">$(MSBuildThisFileDirectory)../.local/interop</GameInterop>
+  </PropertyGroup>
+
+  <!-- Inject the Stellar.Analyzers Roslyn analyzer into every src/ project.
+       Excluded from the analyzer project itself (no self-analysis loop). -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Stellar.Analyzers'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Stellar.Analyzers/Stellar.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

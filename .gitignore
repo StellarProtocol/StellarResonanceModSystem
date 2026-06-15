@@ -1,0 +1,39 @@
+# Build outputs
+**/bin/
+**/obj/
+*.user
+
+# Tooling downloads (re-acquirable)
+tools/BepInEx-IL2CPP.zip
+tools/BepInEx-stage/
+tools/Cpp2IL
+tools/.venv/
+
+# Recon artifacts — derivative of the game's binaries; not for public redistribution.
+# Re-generate locally via Cpp2IL when you need them.
+recon/cpp2il-out/
+recon/Plugins/
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+# Added by code-review-graph
+.code-review-graph/
+
+# Backup files (e.g. .claude/settings.json.bak created during plugin install)
+*.bak
+
+docs/recon/
+
+# brainstorming visual companion mockups
+.superpowers/
+
+# BepInEx staging symlink (local, per-worktree)
+tools/BepInEx-stage
