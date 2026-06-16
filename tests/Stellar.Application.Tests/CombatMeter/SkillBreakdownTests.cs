@@ -61,4 +61,34 @@ public sealed class SkillBreakdownTests
         var rows = Plugin.BuildIncomingRows(new SourceStats());
         Assert.Empty(rows);
     }
+
+    [Fact]
+    public void TakenMaxHit_returns_largest_incoming_TopHit()
+    {
+        var src = new SourceStats();
+        src.IncomingBySkill[1] = new IncomingSkillStats { Total = 100, Hits = 1, TopHit = 100 };
+        src.IncomingBySkill[2] = new IncomingSkillStats { Total = 900, Hits = 3, TopHit = 500 };
+        src.IncomingBySkill[3] = new IncomingSkillStats { Total = 400, Hits = 2, TopHit = 250 };
+
+        Assert.Equal(500, Plugin.TakenMaxHit(src));
+    }
+
+    [Fact]
+    public void TakenHitCount_sums_incoming_hits_across_skills()
+    {
+        var src = new SourceStats();
+        src.IncomingBySkill[1] = new IncomingSkillStats { Total = 100, Hits = 1, TopHit = 100 };
+        src.IncomingBySkill[2] = new IncomingSkillStats { Total = 900, Hits = 3, TopHit = 500 };
+        src.IncomingBySkill[3] = new IncomingSkillStats { Total = 400, Hits = 2, TopHit = 250 };
+
+        Assert.Equal(6, Plugin.TakenHitCount(src));
+    }
+
+    [Fact]
+    public void TakenMaxHit_and_TakenHitCount_are_zero_with_no_incoming_data()
+    {
+        var src = new SourceStats();
+        Assert.Equal(0, Plugin.TakenMaxHit(src));
+        Assert.Equal(0, Plugin.TakenHitCount(src));
+    }
 }
