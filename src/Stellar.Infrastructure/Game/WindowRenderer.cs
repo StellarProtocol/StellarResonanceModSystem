@@ -33,6 +33,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     private WindowBuilder? _builder;
     private WindowInteractionTicker? _ticker;
     private bool _tickerRegistered;
+    private bool _chartRegistered;   // ChartGraphic (injected MaskableGraphic) registered with Il2CppInterop?
     private bool _fontRebuildHooked;
     private Action<Font>? _onFontRebuilt;   // cached delegate so subscribe/unsubscribe match (IL2CPP event)
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
@@ -147,6 +148,23 @@ internal sealed partial class WindowRenderer : IWindowRenderer
 
     /// <summary>Lazily create the Stellar window canvas + its GraphicRaycaster. Re-creates if a scene
     /// change destroyed it (WindowService self-heal then re-mounts each window).</summary>
+    // Register the injected managed UnityEngine.Object subclasses with Il2CppInterop, once each, before any
+    // AddComponent of them runs. ChartGraphic overrides OnPopulateMesh (vtable virtual) — the spike confirmed
+    // native→managed dispatch works under Il2CppInterop 1.5.1; WindowInteractionTicker is a plain MonoBehaviour.
+    private void RegisterInjectedTypes()
+    {
+        if (!_tickerRegistered)
+        {
+            try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
+            _tickerRegistered = true;
+        }
+        if (!_chartRegistered)
+        {
+            try { ClassInjector.RegisterTypeInIl2Cpp<ChartGraphic>(); } catch { /* already registered */ }
+            _chartRegistered = true;
+        }
+    }
+
     private bool EnsureCanvas()
     {
         if (_canvas != null) return true;
@@ -161,11 +179,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             canvas.sortingOrder = WindowSortingOrder;
             // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
             go.AddComponent<GraphicRaycaster>();
-            if (!_tickerRegistered)
-            {
-                try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
-                _tickerRegistered = true;
-            }
+            RegisterInjectedTypes();
             _ticker = go.AddComponent<WindowInteractionTicker>();
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;

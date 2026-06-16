@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Infrastructure.Unity;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -42,6 +43,75 @@ internal sealed partial class WindowBuilder
         BuildXTicks(plot.transform, lc, inner, token);
         BuildAxisTitles(plot.transform, lc, inner, token);
         BuildLegend(root.transform, lc, token);
+        BuildChartGraphic(plot.transform, lc, inner, token);
+    }
+
+    // Line thickness (px) for ordinary vs emphasised (team-total) series, and the axis/grid line widths.
+    private const float ChartLineWidth = 1.25f;
+    private const float ChartEmphasisWidth = 2.25f;
+    private const float ChartAxisWidth = 1f;
+    private const float ChartGridWidth = 0.5f;
+
+    // Add the injected mesh graphic over the plot panel (full plot size; geometry is in plot-bottom-left
+    // space, matching inner's coordinates) and bind a re-mesh that fires only when series/range change.
+    private void BuildChartGraphic(Transform plot, LineChartElement lc, Rect inner, WindowToken token)
+    {
+        var go = UGuiPrimitives.NewChild("Lines", plot);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);
+        rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(lc.Width, lc.Height);
+        var graphic = go.AddComponent<ChartGraphic>();
+        graphic.raycastTarget = false;   // the plot bg keeps the raycast for the later scroll/drag zoom
+        token.Charts.Add(new ChartBinding
+        {
+            Series = lc.Series,
+            Range = lc.VisibleRange,
+            Remesh = series => graphic.SetData(BuildAxisSegments(inner), MapSeries(series, lc, inner)),
+        });
+    }
+
+    // Axes (left + bottom, MenuMuted) + the horizontal Y gridlines (MenuBorder), in plot-bottom-left px.
+    private List<ChartGraphic.Segment> BuildAxisSegments(Rect inner)
+    {
+        var axis = (Color32)_assets.MenuMuted;
+        var grid = (Color32)_assets.MenuBorder;
+        var segs = new List<ChartGraphic.Segment>
+        {
+            new(new Vector2(inner.x, inner.y), new Vector2(inner.x, inner.yMax), axis, ChartAxisWidth),
+            new(new Vector2(inner.x, inner.y), new Vector2(inner.xMax, inner.y), axis, ChartAxisWidth),
+        };
+        for (var i = 1; i <= 4; i++)   // four interior Y gridlines aligned to the nice-max tick rows
+        {
+            var y = inner.y + i / 4f * inner.height;
+            segs.Add(new ChartGraphic.Segment(new Vector2(inner.x, y), new Vector2(inner.xMax, y), grid, ChartGridWidth));
+        }
+        return segs;
+    }
+
+    // Map each series' visible buckets to plot-pixel polylines via ChartGeometry (bucket→X, value→Y).
+    private List<ChartGraphic.Polyline> MapSeries(IReadOnlyList<ChartSeries> series, LineChartElement lc, Rect inner)
+    {
+        var (min, max) = lc.VisibleRange();
+        var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
+        var minBucket = Mathf.FloorToInt(min / bucket);
+        var maxBucket = Mathf.CeilToInt(max / bucket);
+        var yMax = ChartYMax(lc);
+        var lines = new List<ChartGraphic.Polyline>(series.Count);
+        foreach (var s in series)
+        {
+            var pts = new List<Vector2>();
+            for (var b = minBucket; b <= maxBucket && b < s.Values.Count; b++)
+            {
+                if (b < 0) continue;
+                var x = ChartGeometry.BucketToX(b, minBucket, maxBucket, inner.x, inner.xMax);
+                var y = ChartGeometry.ValueToY(s.Values[b], yMax, inner.y, inner.yMax);
+                pts.Add(new Vector2(x, y));
+            }
+            var c = new Color32((byte)(s.Color.R * 255), (byte)(s.Color.G * 255), (byte)(s.Color.B * 255), (byte)(s.Color.A * 255));
+            lines.Add(new ChartGraphic.Polyline(pts, c, s.Emphasis ? ChartEmphasisWidth : ChartLineWidth));
+        }
+        return lines;
     }
 
     // The dark plot panel, anchored top-left within the chart root at full chart size (legend sits below it).

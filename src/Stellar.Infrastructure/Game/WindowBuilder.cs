@@ -121,6 +121,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<MeterRowBinding> MeterRows = new();      // per-apply poll for bespoke CombatMeter rows
         internal readonly List<AccentRowBinding> AccentRows = new();    // per-apply poll for role-stripe/share-backdrop rows
         internal readonly List<CooldownTileBinding> CooldownTiles = new(); // per-apply poll for CooldownBar tiles (icon+fill+seconds+★)
+        internal readonly List<ChartBinding> Charts = new();            // per-apply poll: re-mesh LineChart only on series/range change
         internal readonly List<Texture2D> IconTextures = new();        // PNG icons (HideAndDontSave) — reclaimed on destroy
         // Atlas dedup: SpriteElement cells that share one atlas byte[] reuse a single uploaded texture (keyed by
         // array reference). The texture is owned by IconTextures (added once on first load), so disposal stays
@@ -190,6 +191,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
             for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
             for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();
+            for (var i = 0; i < Charts.Count; i++) Charts[i].Apply();
             for (var i = 0; i < FieldSyncs.Count; i++) FieldSyncs[i].Apply();
         }
 
