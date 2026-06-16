@@ -1,3 +1,4 @@
+using Stellar.Abstractions.Domain;
 using Stellar.CombatMeter;
 using Xunit;
 
@@ -27,4 +28,21 @@ public sealed class HistoryChartProjectionTests
         Assert.Equal("TAKEN", Plugin.MetricColumnLabel(Metric.Taken));
     }
 
+    [Fact]
+    public void TeamTotal_sums_channel_across_sources_per_bucket()
+    {
+        var entry = new Plugin.EncounterHistoryEntry();
+        entry.Series[new EntityId(1)] = new SourceSeries
+        {
+            BucketMs = 1000, Dealt = new long[] { 10, 20 }, Healing = new long[0], Taken = new long[0],
+        };
+        entry.Series[new EntityId(2)] = new SourceSeries
+        {
+            BucketMs = 1000, Dealt = new long[] { 5, 5, 5 }, Healing = new long[0], Taken = new long[0],
+        };
+
+        var total = Plugin.TeamTotalSeries(entry, Metric.Dps);
+
+        Assert.Equal(new long[] { 15, 25, 5 }, total);
+    }
 }
