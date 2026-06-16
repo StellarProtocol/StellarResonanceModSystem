@@ -25,8 +25,17 @@ public sealed partial class WindowInteractionTicker
         public Action<(float Min, float Max)> Set;       // push a new clamped window
         public Func<float> Total;                        // total chart seconds (pan/zoom upper bound)
         public Func<float> MinSpan;                      // minimum visible span (≥ 2 buckets)
+        // Cached at build time (GetComponentInParent is too costly per-tick): true when the plot lives inside a
+        // ScrollRect viewport. The wheel is read here via legacy Input.mouseScrollDelta, but ScrollRect consumes
+        // it via the EventSystem OnScroll — two independent pipelines. If the chart is nested in a scroll, one
+        // wheel tick would BOTH zoom the chart and scroll the list, so we suppress the chart-zoom and yield the
+        // wheel to the scroll. The drag-pan path is unaffected (left-drag never conflicts with the wheel).
+        public bool InsideScrollRect;
     }
     private int _activeChartPan = -1;                    // index into ChartPans of the dragged plot, or -1
+    // Scroll-zoom factors. Reciprocal so scroll-in then scroll-out returns to the starting span (0.83 ≈ 1/1.2).
+    private const float ScrollZoomInFactor = 0.83f;      // scroll up = zoom in  (shrink span)
+    private const float ScrollZoomOutFactor = 1.2f;      // scroll down = zoom out (grow span)
 
     private void PruneChartPans()
     {
@@ -44,14 +53,19 @@ public sealed partial class WindowInteractionTicker
         {
             var cp = ChartPans[i];
             if (cp.Plot == null || !cp.Plot.gameObject.activeInHierarchy) continue;
+            // Chart nested in a scrolling container: yield the wheel to the ScrollRect (EventSystem OnScroll) so a
+            // single tick doesn't both zoom the chart and scroll the list. Cached at build time (no per-tick walk).
+            if (cp.InsideScrollRect) continue;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(cp.Plot, mp, null, out var lp)) continue;
+            // Reuse the same `lp` (plot-local point) for both the bounds check and the anchor-time math below, so
+            // this manual contains-check is intentional, not a duplicate of RectangleContainsScreenPoint.
             var r = cp.Plot.rect;
             if (lp.x < r.xMin || lp.x > r.xMax || lp.y < r.yMin || lp.y > r.yMax) continue;
             try
             {
                 var w = cp.Get();
                 var anchor = w.Min + Mathf.Clamp01((lp.x - r.xMin) / r.width) * (w.Max - w.Min);
-                var factor = scroll > 0f ? 0.83f : 1.2f;
+                var factor = scroll > 0f ? ScrollZoomInFactor : ScrollZoomOutFactor;
                 cp.Set(ChartWindow.ZoomAround(w, anchor, factor, cp.Total(), cp.MinSpan()));
             }
             catch { }

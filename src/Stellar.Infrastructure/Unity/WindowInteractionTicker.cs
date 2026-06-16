@@ -247,7 +247,9 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         _activeRenderHost = HitRenderHost(Input.mousePosition);
         if (_activeRenderHost >= 0) { _lastMouse = Input.mousePosition; return; }
         // Chart plot drag pans its visible window — claim before slot/window drags so dragging the plot
-        // never also moves the window beneath it.
+        // never also moves the window beneath it. No EditDragArbiter.WindowDragActive is set for chart-pan: it
+        // moves no transform (only the plugin-owned visible range), so there's nothing for the layout editor to
+        // arbitrate against — hence the asymmetry with the slot/resize/window-drag paths below.
         _activeChartPan = HitChartPan(Input.mousePosition);
         if (_activeChartPan >= 0) { _lastMouse = Input.mousePosition; return; }
         _activeSlotDrag = HitSlot(Input.mousePosition);

@@ -205,11 +205,21 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
                 new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
             _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
-            _builder.RegisterChartPan = (plot, get, set, total, minSpan) => _ticker!.ChartPans.Add(
-                new WindowInteractionTicker.ChartPan { Plot = plot, Get = get, Set = set, Total = total, MinSpan = minSpan });
+            _builder.RegisterChartPan = (plot, get, set, total, minSpan)
+                => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
             _log.Info("[Window] Stellar window canvas created");
             return true;
         }
         catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }
     }
+
+    // Build a ChartPan entry, computing the scroll-pipeline guard ONCE (plot is live in the hierarchy here):
+    // a chart nested in a ScrollRect yields the wheel to the scroll instead of zooming (see ChartPan.cs).
+    private static WindowInteractionTicker.ChartPan MakeChartPan(
+        RectTransform plot, Func<(float, float)> get, Action<(float, float)> set, Func<float> total, Func<float> minSpan)
+        => new()
+        {
+            Plot = plot, Get = get, Set = set, Total = total, MinSpan = minSpan,
+            InsideScrollRect = plot.GetComponentInParent<UnityEngine.UI.ScrollRect>() != null,
+        };
 }
