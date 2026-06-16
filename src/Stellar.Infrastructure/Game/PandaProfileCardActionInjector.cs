@@ -57,6 +57,10 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
     private const string ChunkName = "stellar.idcard";
     private const string CardIdGlobal = "__stellar_idcard_charid";
     private const string CardRootPath = "zuiroot/UILayerFunc/idcard_popup_pc(Clone)";
+    // Relative path under the cached zuiroot — see _zuiroot / FindCardRoot. Splitting the global
+    // CardRootPath here lets us replace the per-frame global GameObject.Find with a cheap relative walk.
+    private const string ZuiRootName     = "zuiroot";
+    private const string CardRootRelPath = "UILayerFunc/idcard_popup_pc(Clone)";
     private const string ActionBarSubPath =
         "anim/node_press/img_personal/scrollview_interactive/viewport/layout_interactive";
     private const string ButtonNamePrefix = "stellar_action_";
@@ -98,6 +102,14 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
     private MethodInfo? _luaPop;
     private bool _wasMouseDown;
 
+    // Cached persistent UI root. The naive form called GameObject.Find(CardRootPath) — a full by-name scan
+    // of the WHOLE scene hierarchy — EVERY frame, even though the idcard popup is closed ~all the time in
+    // combat. That scan's cost grows with the scene's object population, so across dungeon re-entries it
+    // crept from ~0.4ms to ~17ms/tick and dominated update CPU (FPS decay; restart-only recovery). Same
+    // bug class PandaMenuStateProbe already fixed: resolve zuiroot ONCE (re-resolve only if it dies on a
+    // scene change), then locate the card via a cheap relative Transform.Find under it.
+    private Transform? _zuiroot;
+
     public PandaProfileCardActionInjector(IGameTypeRegistry types, IProfileCardActionSource actions, IPluginLog log)
     {
         _types = types ?? throw new ArgumentNullException(nameof(types));
@@ -109,7 +121,7 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
     /// registered action buttons once per open; cheap no-op when no card is open or already injected.</summary>
     public void Tick()
     {
-        var cardRoot = GameObject.Find(CardRootPath);
+        var cardRoot = FindCardRoot();
         if (cardRoot == null)
         {
             _injectedThisOpen = false;   // card closed (or never open) — arm for the next open
@@ -130,6 +142,23 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
         for (var i = 0; i < _injected.Count; i++) _injected[i].Rt.SetAsLastSibling();
 
         DetectManualClick();
+    }
+
+    // Locate the open idcard popup via the cached zuiroot + a cheap relative walk, instead of a per-frame
+    // global GameObject.Find over the whole scene. Re-resolves zuiroot only if it died on a scene change.
+    // The popup is a transient clone destroyed on close, so "present" ≈ "open"; the activeInHierarchy guard
+    // preserves the old GameObject.Find (active-only) semantics. Click detection stays per-frame (cheap:
+    // it no-ops unless buttons are injected), so this only removes the expensive scan, not click latency.
+    private GameObject? FindCardRoot()
+    {
+        if (_zuiroot == null)
+        {
+            var root = GameObject.Find(ZuiRootName);
+            _zuiroot = root != null ? root.transform : null;
+            if (_zuiroot == null) return null;
+        }
+        var card = _zuiroot.Find(CardRootRelPath);
+        return card != null && card.gameObject.activeInHierarchy ? card.gameObject : null;
     }
 
     // Inject the full registered action set under the action row. Returns false (retry next tick) until a

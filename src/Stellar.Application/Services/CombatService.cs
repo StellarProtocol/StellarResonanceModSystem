@@ -309,6 +309,8 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         _entities.OnEntityDisappeared(entityId);
     }
 
+    public void ResetEntities() => _entities.Reset();
+
     public void ClearAllBuffs()
     {
         lock (_buffsByEntityLock)
