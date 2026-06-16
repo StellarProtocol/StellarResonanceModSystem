@@ -76,7 +76,8 @@ internal sealed class ChartGraphic : MaskableGraphic
 #endif
     {
         vh.Clear();
-        var origin = new Vector2(GetPixelAdjustedRect().xMin, GetPixelAdjustedRect().yMin);
+        var r = GetPixelAdjustedRect();
+        var origin = new Vector2(r.xMin, r.yMin);
         for (var i = 0; i < _segments.Count; i++)
         {
             var s = _segments[i];

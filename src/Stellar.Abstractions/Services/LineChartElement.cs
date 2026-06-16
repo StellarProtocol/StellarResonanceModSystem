@@ -17,7 +17,10 @@ public readonly record struct ChartSeries(string Name, ColorRgba Color, IReadOnl
 /// the framework draws axes, grid, ticks, and lines, auto-scaling Y to the visible window's peak
 /// (unless <paramref name="YMaxOverride"/> returns a value). BCL-only: no Unity types in the contract.
 /// </summary>
-/// <param name="Series">Provider for the current series set; re-pulled on refresh.</param>
+/// <param name="Series">Provider for the current series set; re-pulled on refresh. Return a <b>stable
+/// list reference</b> while the underlying data is unchanged (and a new instance when it changes): the
+/// renderer diffs this by reference to skip re-meshing, so a provider that allocates a fresh list every
+/// call (e.g. a per-call <c>.ToList()</c>) defeats that and re-triangulates on every refresh tick.</param>
 /// <param name="BucketSeconds">Seconds represented by one bucket index (X spacing).</param>
 /// <param name="FormatY">Formats a Y value for a tick label (e.g. 18000 → "18k").</param>
 /// <param name="FormatX">Formats an X value in seconds for a tick label (e.g. 64 → "1:04").</param>
