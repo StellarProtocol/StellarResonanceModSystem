@@ -25,6 +25,9 @@ public sealed class ChartGeometryTests
     [InlineData(10f, 10f)]
     [InlineData(6f, 10f)]     // above 5 → next decade
     [InlineData(640f, 1000f)]
+    [InlineData(9.9f, 10f)]   // just under a decade → that decade
+    [InlineData(50f, 50f)]    // exact 5×10^1 ladder rung → no-op
+    [InlineData(500f, 500f)]  // exact 5×10^2 ladder rung → no-op
     public void NiceYMax_handles_edges(float peak, float expected)
         => Assert.Equal(expected, ChartGeometry.NiceYMax(peak));
 
@@ -52,6 +55,16 @@ public sealed class ChartGeometryTests
     [Fact]
     public void BucketToX_degenerate_window_pins_to_x0()
         => Assert.Equal(50f, ChartGeometry.BucketToX(3, 3, 3, 50f, 400f));
+
+    [Fact]
+    public void BucketToX_non_zero_min_window_maps_by_fraction()
+    {
+        // window [4,8]: bucket 5 is (5-4)/(8-4) = 0.25 of the way across.
+        Assert.Equal(100f, ChartGeometry.BucketToX(5, 4, 8, 0f, 400f));
+        // endpoints still pin to x0/x1 even when minBucket != 0.
+        Assert.Equal(0f, ChartGeometry.BucketToX(4, 4, 8, 0f, 400f));
+        Assert.Equal(400f, ChartGeometry.BucketToX(8, 4, 8, 0f, 400f));
+    }
 
     [Fact]
     public void VisiblePeak_takes_max_across_series_within_window()

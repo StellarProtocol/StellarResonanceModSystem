@@ -145,6 +145,8 @@ internal sealed partial class WindowBuilder
         img.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A); img.raycastTarget = false;
         var name = s.Name;
         var lbl = ChartLabel(entry.transform, TextAnchor.MiddleLeft, "Name", token, bold: s.Emphasis);
+        // Bare LayoutElement (no preferredWidth) under the Row's childControlWidth=true: the Text's own
+        // preferred width drives its natural width; flexibleWidth=0 stops it stretching past the name.
         lbl.GetComponent<LayoutElement>().flexibleWidth = 0f;
         token.Texts.Add(new TextBinding { C = lbl, TextFn = () => name });
     }
@@ -155,6 +157,11 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild(name, parent);
         var txt = go.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(txt, Scaled(ChartLabelSize), anchor, bold: bold);
+        // Centre on glyph GEOMETRY, not the font line-box: under a Middle anchor the OS dynamic font sits the
+        // ink ~2-3px low (see BuildText / MeterRow / imgui-root-causes.md item 6). Every chart label is
+        // vertically centred on a reference line — Y ticks (MiddleRight) on their gridline row, legend names
+        // (MiddleLeft) beside the 12px swatch — so all of them must geometry-centre to land on-line.
+        txt.alignByGeometry = true;
         ApplyMenuFont(txt);
         txt.color = _assets.MenuMuted;
         go.AddComponent<LayoutElement>();
