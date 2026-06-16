@@ -259,6 +259,7 @@ internal sealed partial class WindowBuilder
             case DragSlotElement ds: BuildDragSlot(ds, parent, token); break;      // .DragSlot.cs
             case RenderTextureHostElement rh: BuildRenderHost(rh, parent); break;  // .DragSlot.cs
             case GameTextureElement gt: BuildGameTexture(gt, parent); break;       // .DragSlot.cs
+            case LineChartElement lc: BuildLineChart(lc, parent, token); break;     // .LineChart.cs
         }
     }
 
