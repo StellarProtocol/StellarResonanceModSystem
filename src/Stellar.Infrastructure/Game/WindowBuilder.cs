@@ -66,6 +66,11 @@ internal sealed partial class WindowBuilder
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
 
+    // Line-chart pan/zoom hook: (plot rect, getWindow, setWindow, total seconds, min span) → the ticker
+    // zooms the visible window on scroll-over-plot (around the cursor's time) and pans it on left-drag, all
+    // clamped via ChartWindow. Null in the sandbox → the plot renders statically (gestures verified in-game).
+    internal Action<RectTransform, Func<(float, float)>, Action<(float, float)>, Func<float>, Func<float>>? RegisterChartPan { get; set; }
+
     public WindowBuilder(WindowThemeAssets assets,
         Action<UGuiTextInput>? registerField = null,
         Action<RectTransform, Action<float, float>>? registerDrag = null,

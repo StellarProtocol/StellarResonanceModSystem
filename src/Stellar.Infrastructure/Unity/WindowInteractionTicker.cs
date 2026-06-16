@@ -17,7 +17,7 @@ namespace Stellar.Infrastructure.Unity;
 /// Builder stays sandbox-pure: it registers fields/areas via callbacks; this IL2CPP MonoBehaviour is never
 /// symlinked into the sandbox (mirrors <c>HudBarAnimator</c>).
 /// </summary>
-public sealed class WindowInteractionTicker : MonoBehaviour
+public sealed partial class WindowInteractionTicker : MonoBehaviour
 {
     // Required by Il2CppInterop for managed MonoBehaviour subclasses.
     public WindowInteractionTicker(IntPtr ptr) : base(ptr) { }
@@ -80,6 +80,7 @@ public sealed class WindowInteractionTicker : MonoBehaviour
         for (var i = RenderHosts.Count - 1; i >= 0; i--) if (RenderHosts[i].Img == null) RenderHosts.RemoveAt(i);
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
+        PruneChartPans();
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -124,6 +125,7 @@ public sealed class WindowInteractionTicker : MonoBehaviour
 
         if (Input.GetMouseButtonDown(1)) TickRightClick();
         TickRenderHostZoom();
+        TickChartZoom();   // .ChartPan.cs
     }
 
     // Scroll over a render-host box → zoom callback (e.g. the portrait camera). Scoped to the box rect so it
@@ -244,6 +246,10 @@ public sealed class WindowInteractionTicker : MonoBehaviour
         // Render-host (3D portrait) drag claims the pointer first so dragging the box orbits its camera.
         _activeRenderHost = HitRenderHost(Input.mousePosition);
         if (_activeRenderHost >= 0) { _lastMouse = Input.mousePosition; return; }
+        // Chart plot drag pans its visible window — claim before slot/window drags so dragging the plot
+        // never also moves the window beneath it.
+        _activeChartPan = HitChartPan(Input.mousePosition);
+        if (_activeChartPan >= 0) { _lastMouse = Input.mousePosition; return; }
         _activeSlotDrag = HitSlot(Input.mousePosition);
         if (_activeSlotDrag >= 0) BeginSlotDrag(_activeSlotDrag);
         _activeDrag = _activeSlotDrag < 0 ? HitTest(Input.mousePosition) : -1;
@@ -261,6 +267,7 @@ public sealed class WindowInteractionTicker : MonoBehaviour
     private void TickActivePointer()
     {
         if (_activeRenderHost >= 0) { TickRenderHostDrag(); return; }
+        if (_activeChartPan >= 0) { TickChartPanDrag(); return; }
         if (_activeSlotDrag >= 0) { TickSlotDrag(); return; }
         if (_activeResize >= 0 && _activeResize < DragResizers.Count) { TickResize(); return; }
         if (_activeDrag >= 0 && _activeDrag < DragAreas.Count) { TickPickArea(); return; }
@@ -291,7 +298,7 @@ public sealed class WindowInteractionTicker : MonoBehaviour
     private void ReleasePointer()
     {
         if (_activeSlotDrag >= 0) EndSlotDrag(commit: true);
-        _activeDrag = -1; _activeWinDrag = null; _activeResize = -1; _activeRenderHost = -1;
+        _activeDrag = -1; _activeWinDrag = null; _activeResize = -1; _activeRenderHost = -1; _activeChartPan = -1;
         EditDragArbiter.WindowDragActive = false;
     }
 

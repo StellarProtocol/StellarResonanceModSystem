@@ -205,6 +205,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
                 new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
             _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+            _builder.RegisterChartPan = (plot, get, set, total, minSpan) => _ticker!.ChartPans.Add(
+                new WindowInteractionTicker.ChartPan { Plot = plot, Get = get, Set = set, Total = total, MinSpan = minSpan });
             _log.Info("[Window] Stellar window canvas created");
             return true;
         }

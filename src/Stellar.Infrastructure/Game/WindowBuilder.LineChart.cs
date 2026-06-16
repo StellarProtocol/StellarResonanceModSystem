@@ -22,6 +22,7 @@ internal sealed partial class WindowBuilder
     private const float ChartMarginTop = 8f;
     private const float ChartMarginRight = 12f;
     private const float ChartLegendHeight = 22f;
+    private const float ChartControlHeight = 26f;   // the −/+/Reset bar + range scrollbar strip below the legend
     private const int ChartLabelSize = 11;
 
     // Builds the fixed-size chart: a plot panel (dark background) with axis tick labels, axis titles, and a
@@ -31,7 +32,7 @@ internal sealed partial class WindowBuilder
     {
         var root = UGuiPrimitives.NewChild("LineChart", parent);
         var rle = root.AddComponent<LayoutElement>();
-        rle.preferredWidth = lc.Width; rle.preferredHeight = lc.Height + ChartLegendHeight;
+        rle.preferredWidth = lc.Width; rle.preferredHeight = lc.Height + ChartLegendHeight + ChartControlHeight;
         rle.flexibleWidth = 0f; rle.flexibleHeight = 0f;
 
         var plot = AddChartPanel(root.transform, lc.Width, lc.Height);
@@ -44,6 +45,7 @@ internal sealed partial class WindowBuilder
         BuildAxisTitles(plot.transform, lc, inner, token);
         BuildLegend(root.transform, lc, token);
         BuildChartGraphic(plot.transform, lc, inner, token);
+        BuildChartControls(root.transform, plot, lc, inner, token);   // .LineChart.Zoom.cs
     }
 
     // Line thickness (px) for ordinary vs emphasised (team-total) series, and the axis/grid line widths.
