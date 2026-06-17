@@ -46,6 +46,11 @@ public readonly record struct ChartSeries(string Name, ColorRgba Color, IReadOnl
 /// <paramref name="VisibleRange"/> (drag middle = pan, drag an edge handle = zoom that edge, double-click =
 /// reset to full). The navigator replaces the legacy −/+/Reset button bar + range scrollbar; scroll-wheel
 /// zoom and drag-pan on the main plot remain. When false (default) the legacy control strip is drawn.</param>
+/// <param name="FillWidth">When true the chart stretches to fill its parent cell's width instead of fixing
+/// to <paramref name="Width"/> (which then acts only as the minimum/initial width). The renderer reads the
+/// plot's laid-out width each refresh and re-meshes when it changes, so the plot, axes, legend, and navigator
+/// reflow to the available width — including live as a resizable window's grip is dragged (at the refresh
+/// rate). Height stays fixed to <paramref name="Height"/>. Defaults false (fixed-width).</param>
 public sealed record LineChartElement(
     Func<IReadOnlyList<ChartSeries>> Series,
     Func<float> BucketSeconds,
@@ -60,4 +65,5 @@ public sealed record LineChartElement(
     int YTicks = 4,
     int XTicks = 4,
     Func<float?>? YMaxOverride = null,
-    bool ShowNavigator = false) : HudElement;
+    bool ShowNavigator = false,
+    bool FillWidth = false) : HudElement;

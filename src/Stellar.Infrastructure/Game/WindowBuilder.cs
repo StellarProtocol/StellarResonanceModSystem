@@ -193,7 +193,11 @@ internal sealed partial class WindowBuilder
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
             for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
             for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
-            if (structuralChange && Rect != null)
+            // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
+            // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
+            // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
+            // unsized until the next render frame. Later per-tick structural changes stay deferred (marked).
+            if ((structuralChange || !_laidOut) && Rect != null)
             {
                 // The FIRST structural layout (mount) is forced immediate so the window opens correctly sized.
                 // Every later per-tick structural change (a Conditional flip / List-count change) only MARKS the

@@ -151,26 +151,6 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    // LineChart re-mesh poll: re-pulls the series set + visible range each Apply, but only re-runs the
-    // (closure-supplied) geometry → mesh push when the series LIST REFERENCE or the range actually changed.
-    // Archived chart data is static, so steady-state polls are a reference compare + a tuple compare and
-    // do NO mesh work. Remesh() maps points via ChartGeometry and calls ChartGraphic.SetData (→ dirties mesh).
-    internal sealed class ChartBinding
-    {
-        public Func<IReadOnlyList<ChartSeries>> Series = null!;
-        public Func<(float Min, float Max)> Range = null!;
-        public Action<IReadOnlyList<ChartSeries>> Remesh = null!;
-        private object? _lastSeries; private bool _init; private (float, float) _lastRange;
-        public void Apply()
-        {
-            var series = Series();
-            var range = Range();
-            if (_init && ReferenceEquals(series, _lastSeries) && range.Equals(_lastRange)) return;
-            _lastSeries = series; _lastRange = range; _init = true;
-            Remesh(series);
-        }
-    }
-
     internal sealed class CondBinding
     {
         public Func<bool> When = null!;

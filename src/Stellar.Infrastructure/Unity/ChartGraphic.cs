@@ -135,11 +135,12 @@ internal sealed class ChartGraphic : MaskableGraphic
         }
     }
 
-    // Anti-aliased stroke for segment a→b: a full-opacity core band (±halfWidth) flanked by a ~1px feather
-    // on each side whose outer rail has alpha 0, so the UI shader blends a soft edge (no aliased "pixel"
-    // look). Width of the feather; outside this the standard mesh-AA fringe technique. The data points are
-    // never interpolated — only the stroke rendering is softened.
-    private const float Feather = 1f;
+    // Anti-aliased stroke for segment a→b: a thin full-opacity core band (±halfWidth) flanked by a wide
+    // (Feather px) feather on each side whose outer rail has alpha 0, so the UI shader blends a soft
+    // multi-pixel alpha ramp on each edge (no aliased 1px "pixel" step). A wider feather than the core is
+    // deliberate — it dominates the visible stroke, giving a thin-but-smooth line. The data points are never
+    // interpolated — only the stroke rendering is softened.
+    private const float Feather = 1.75f;
 
     // Emit a feathered (alpha-ramped) stroke for the segment a→b, offsetting by the unit normal.
     private static void AddLine(VertexHelper vh, Vector2 a, Vector2 b, float halfWidth, Color32 c)

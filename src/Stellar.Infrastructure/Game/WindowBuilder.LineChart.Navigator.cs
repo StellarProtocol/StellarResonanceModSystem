@@ -44,19 +44,33 @@ internal sealed partial class WindowBuilder
         var strip = UGuiPrimitives.NewChild("ChartNavigator", root);
         strip.AddComponent<LayoutElement>().ignoreLayout = true;
         var srt = strip.GetComponent<RectTransform>();
-        srt.anchorMin = srt.anchorMax = srt.pivot = new Vector2(0f, 1f);
-        srt.anchoredPosition = new Vector2(ChartMarginLeft, -lc.Height - ChartLegendHeight - ChartNavGapTop);
-        var navW = lc.Width - ChartMarginLeft - ChartMarginRight;
-        srt.sizeDelta = new Vector2(navW, ChartNavHeight);
+        var navW = NavWidth(lc, lc.Width);
+        if (lc.FillWidth)
+        {
+            // Span [ChartMarginLeft, width-ChartMarginRight]: left+right inset via offsets, top-anchored band.
+            srt.anchorMin = new Vector2(0f, 1f); srt.anchorMax = new Vector2(1f, 1f); srt.pivot = new Vector2(0f, 1f);
+            srt.anchoredPosition = new Vector2(ChartMarginLeft, -lc.Height - ChartLegendHeight - ChartNavGapTop);
+            srt.sizeDelta = new Vector2(-(ChartMarginLeft + ChartMarginRight), ChartNavHeight);
+        }
+        else
+        {
+            srt.anchorMin = srt.anchorMax = srt.pivot = new Vector2(0f, 1f);
+            srt.anchoredPosition = new Vector2(ChartMarginLeft, -lc.Height - ChartLegendHeight - ChartNavGapTop);
+            srt.sizeDelta = new Vector2(navW, ChartNavHeight);
+        }
 
         var bg = strip.AddComponent<Image>();
-        bg.color = PlotBg(); bg.raycastTarget = true;   // recessed (theme-derived) plot bg + double-click catcher
+        bg.color = NavStripBg(); bg.raycastTarget = true;   // faint lane backdrop (delimits the strip) + double-click catcher
 
-        var navInner = new Rect(0f, 4f, navW, ChartNavHeight - 8f);   // small top/bottom padding inside the strip
+        var navInner = NavInner(lc, lc.Width);   // small top/bottom padding inside the strip
         BuildNavigatorGraphic(strip.transform, lc, navInner, token);
-        var brush = BuildBrushRects(strip.GetComponent<RectTransform>(), navInner);
+        var brush = BuildBrushRects(strip.GetComponent<RectTransform>(), navInner, lc.FillWidth);
         WireBrush(brush, lc, token);
     }
+
+    // The navigator strip width / inner rect for a given chart width (chart width minus the L/R axis margins).
+    private static float NavWidth(LineChartElement lc, float width) => width - ChartMarginLeft - ChartMarginRight;
+    private static Rect NavInner(LineChartElement lc, float width) => new(0f, 4f, NavWidth(lc, width), ChartNavHeight - 8f);
 
     // The transparent inner hit-rect for the MAIN plot's scroll-zoom + drag-pan (unchanged from the legacy
     // control path — the navigator only replaces the button bar/scrollbar, not the in-plot gestures).
@@ -65,9 +79,19 @@ internal sealed partial class WindowBuilder
         var hit = UGuiPrimitives.NewChild("PlotHit", plot.transform);
         hit.AddComponent<LayoutElement>().ignoreLayout = true;
         var hrt = hit.GetComponent<RectTransform>();
-        hrt.anchorMin = hrt.anchorMax = hrt.pivot = new Vector2(0f, 0f);
-        hrt.sizeDelta = new Vector2(inner.width, inner.height);
-        hrt.anchoredPosition = new Vector2(inner.x, inner.y);
+        if (lc.FillWidth)
+        {
+            // Stretch horizontally with the plot, inset by the L/R axis margins; fixed bottom band height.
+            hrt.anchorMin = new Vector2(0f, 0f); hrt.anchorMax = new Vector2(1f, 0f); hrt.pivot = new Vector2(0f, 0f);
+            hrt.sizeDelta = new Vector2(-(ChartMarginLeft + ChartMarginRight), inner.height);
+            hrt.anchoredPosition = new Vector2(inner.x, inner.y);
+        }
+        else
+        {
+            hrt.anchorMin = hrt.anchorMax = hrt.pivot = new Vector2(0f, 0f);
+            hrt.sizeDelta = new Vector2(inner.width, inner.height);
+            hrt.anchoredPosition = new Vector2(inner.x, inner.y);
+        }
         var img = hit.AddComponent<Image>();
         img.color = new Color(0f, 0f, 0f, 0f); img.raycastTarget = true;
         RegisterChartPan?.Invoke(hrt, lc.VisibleRange, lc.SetVisibleRange, () => ChartTotal(lc), () => ChartMinSpan(lc));
@@ -80,16 +104,30 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("NavLines", parent);
         go.AddComponent<LayoutElement>().ignoreLayout = true;
         var rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);
-        rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(navInner.width, ChartNavHeight);
+        if (lc.FillWidth)
+        {
+            rt.anchorMin = new Vector2(0f, 0f); rt.anchorMax = new Vector2(1f, 0f); rt.pivot = new Vector2(0f, 0f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(0f, ChartNavHeight);
+        }
+        else
+        {
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(navInner.width, ChartNavHeight);
+        }
         var graphic = go.AddComponent<ChartGraphic>();
         graphic.raycastTarget = false;
+        var plotRect = lc.FillWidth ? _fillPlotRect : null;   // capture locally (the field is cleared post-build)
         token.Charts.Add(new ChartBinding
         {
             Series = lc.Series,
             Range = () => (0f, 0f),   // overview is range-independent: re-mesh only on series change, not pan
-            Remesh = series => graphic.SetData(
-                Array.Empty<ChartGraphic.Segment>(), MapNavLines(series, navInner), MapNavFill(series, navInner)),
+            // Under FillWidth the overview also re-meshes on width change (live nav strip width).
+            Width = plotRect != null ? () => ChartWidth(lc, plotRect) : (Func<float>?)null,
+            Remesh = series =>
+            {
+                var ni = plotRect != null ? NavInner(lc, ChartWidth(lc, plotRect)) : navInner;
+                graphic.SetData(Array.Empty<ChartGraphic.Segment>(), MapNavLines(series, ni), MapNavFill(series, ni));
+            },
         });
     }
 
@@ -104,7 +142,7 @@ internal sealed partial class WindowBuilder
             var pts = NavPoints(s, len, yMax, navInner);
             var a = s.Emphasis ? (byte)255 : (byte)110;   // non-emphasis lines drawn faint
             var c = new Color32((byte)(s.Color.R * 255), (byte)(s.Color.G * 255), (byte)(s.Color.B * 255), a);
-            lines.Add(new ChartGraphic.Polyline(pts, c, s.Emphasis ? 1.5f : ChartGridWidth));
+            lines.Add(new ChartGraphic.Polyline(pts, c, s.Emphasis ? ChartEmphasisWidth : ChartGridWidth));
         }
         return lines;
     }
@@ -150,11 +188,21 @@ internal sealed partial class WindowBuilder
     // Lay out the brush overlay: a transparent nav hit-rect (cursor→time, bottom-left so its local rect spans
     // [0,width]×[0,height] matching navInner), a translucent fill rect spanning the current window, and two
     // edge handles. The fill/handles are repositioned each refresh by ReflectBrush; here they get initial geom.
-    private BrushRects BuildBrushRects(Transform parent, Rect navInner)
+    private BrushRects BuildBrushRects(Transform parent, Rect navInner, bool fillWidth)
     {
         var nav = NewBrushPart("NavHit", parent, new Color(0f, 0f, 0f, 0f), navInner.height);
-        nav.sizeDelta = new Vector2(navInner.width, navInner.height);
-        nav.anchoredPosition = new Vector2(navInner.x, navInner.y);
+        if (fillWidth)
+        {
+            // The cursor→time hit-rect stretches with the strip (its local rect then spans [0, liveWidth]).
+            nav.anchorMin = new Vector2(0f, 0f); nav.anchorMax = new Vector2(1f, 0f);
+            nav.sizeDelta = new Vector2(0f, navInner.height);
+            nav.anchoredPosition = new Vector2(navInner.x, navInner.y);
+        }
+        else
+        {
+            nav.sizeDelta = new Vector2(navInner.width, navInner.height);
+            nav.anchoredPosition = new Vector2(navInner.x, navInner.y);
+        }
         var fill = NewBrushPart("BrushFill", parent, ChartNavBrushFill, navInner.height);
         var left = NewBrushPart("BrushLeft", parent, ChartNavBrushEdge, navInner.height);
         var right = NewBrushPart("BrushRight", parent, ChartNavBrushEdge, navInner.height);
@@ -180,8 +228,12 @@ internal sealed partial class WindowBuilder
     // no onValueChanged feedback to guard against — the drag handlers read the cursor, not the rects.
     private void WireBrush(BrushRects brush, LineChartElement lc, WindowToken token)
     {
-        ReflectBrush(brush, lc);   // seed initial geometry
-        token.Hovers.Add(new HoverBinding { Poll = () => ReflectBrush(brush, lc) });
+        // Under FillWidth the navigator inner rect tracks the live strip width; otherwise it's the fixed build
+        // rect. The brush fill/handles are bottom-left anchored, so ReflectBrush re-places them within ni.
+        var plotRect = lc.FillWidth ? _fillPlotRect : null;
+        Rect LiveInner() => plotRect != null ? NavInner(lc, ChartWidth(lc, plotRect)) : brush.Inner;
+        ReflectBrush(brush, lc, LiveInner());   // seed initial geometry
+        token.Hovers.Add(new HoverBinding { Poll = () => ReflectBrush(brush, lc, LiveInner()) });
         RegisterChartNav?.Invoke(new ChartNavReg
         {
             Nav = brush.Nav, Left = brush.Left, Right = brush.Right, Body = brush.Fill,
@@ -192,12 +244,12 @@ internal sealed partial class WindowBuilder
 
     // Reposition the brush fill + handles to the current window, mapped through the navigator's full extent.
     // No-op-cheap when total is 0. Called both at build and per-apply (under the ticker's syncing guard owner
-    // — here it only WRITES geometry, never reads back, so it can't feed the drag handlers).
-    private static void ReflectBrush(BrushRects brush, LineChartElement lc)
+    // — here it only WRITES geometry, never reads back, so it can't feed the drag handlers). ni is the live
+    // navigator inner rect (tracks the strip width under FillWidth).
+    private static void ReflectBrush(BrushRects brush, LineChartElement lc, Rect ni)
     {
         if (brush.Fill == null || brush.Left == null || brush.Right == null) return;
         var total = ChartTotal(lc);
-        var ni = brush.Inner;
         var (min, max) = lc.VisibleRange();
         var xL = ChartGeometry.TimeToNavX(min, total, ni.x, ni.xMax);
         var xR = ChartGeometry.TimeToNavX(max, total, ni.x, ni.xMax);
