@@ -55,7 +55,49 @@ public sealed class HistoryStoreTests
             Healing = System.Array.Empty<long>(),
             Taken   = new long[] { 1 },
         };
+
+        // v2 per-player entity snapshot (issue #5). Only the player id (a) carries one — the monster (b) does not,
+        // mirroring SnapshotEntities() which skips non-player sources.
+        e.Entities[a] = new EntitySnapshot
+        {
+            Name       = "Momoko \"の\"",   // exercises quote + non-ASCII escaping in the name
+            FightPoint = 248_000,
+            Hp         = 150_000,
+            MaxHp      = 181_411,
+            TeamId     = 42,
+            AttrIds    = new[] { 11330, 11710, 220 },
+            AttrValues = new long[] { 48_500, 4196, 3 },
+            GearSlots  = new[] { 200, 201, 202 },
+            GearItemIds = new[] { 90001, 90002, 90003 },
+            SkillIds   = new[] { 101, 102 },
+            SkillLevels = new[] { 6, 4 },
+            SkillTiers = new[] { 2, 1 },
+            FashionSlots = new[] { 1, 2 },
+            FashionIds = new[] { 7001, 7002 },
+            FashionDyeCounts = new[] { 2, 0 },
+            FashionDyes = new[] { 0.5f, 0.25f, 0.125f, 1f, 0.9f, 0.8f, 0.7f, 1f },   // 2 colours for entry 0
+        };
         return e;
+    }
+
+    private static void AssertSnapshotEqual(EntitySnapshot want, EntitySnapshot got)
+    {
+        Assert.Equal(want.Name, got.Name);
+        Assert.Equal(want.FightPoint, got.FightPoint);
+        Assert.Equal(want.Hp, got.Hp);
+        Assert.Equal(want.MaxHp, got.MaxHp);
+        Assert.Equal(want.TeamId, got.TeamId);
+        Assert.Equal(want.AttrIds, got.AttrIds);
+        Assert.Equal(want.AttrValues, got.AttrValues);
+        Assert.Equal(want.GearSlots, got.GearSlots);
+        Assert.Equal(want.GearItemIds, got.GearItemIds);
+        Assert.Equal(want.SkillIds, got.SkillIds);
+        Assert.Equal(want.SkillLevels, got.SkillLevels);
+        Assert.Equal(want.SkillTiers, got.SkillTiers);
+        Assert.Equal(want.FashionSlots, got.FashionSlots);
+        Assert.Equal(want.FashionIds, got.FashionIds);
+        Assert.Equal(want.FashionDyeCounts, got.FashionDyeCounts);
+        Assert.Equal(want.FashionDyes, got.FashionDyes);
     }
 
     [Fact]
@@ -117,6 +159,76 @@ public sealed class HistoryStoreTests
             Assert.Equal(sr.Healing, dsr.Healing);
             Assert.Equal(sr.Taken, dsr.Taken);
         }
+
+        Assert.Equal(src.Entities.Count, got.Entities.Count);
+        foreach (var (id, snap) in src.Entities)
+        {
+            Assert.True(got.Entities.TryGetValue(id, out var dsnap));
+            AssertSnapshotEqual(snap, dsnap!);
+        }
+    }
+
+    // v2 entity snapshot survives a full serialize→deserialize cycle, every scalar + parallel array intact
+    // (the mandatory v2-round-trip reader test, spec §3.3).
+    [Fact]
+    public void V2_entity_snapshot_round_trips_all_parallel_arrays()
+    {
+        var src = BuildRichEntry();
+        var json = HistoryStore.SerializeEntry(src);
+
+        Assert.True(HistoryStore.TryDeserializeEntry(json, out var got));
+        Assert.NotNull(got);
+        Assert.Single(got!.Entities);   // only the player id carries a snapshot
+
+        var wantSnap = System.Linq.Enumerable.First(src.Entities.Values);
+        var gotSnap  = System.Linq.Enumerable.First(got.Entities.Values);
+        AssertSnapshotEqual(wantSnap, gotSnap);
+    }
+
+    // A v1 entry (no "entities" key) STILL LOADS under the v2 reader — backward compatible (the version-bump
+    // trap, spec §3.3). Entities loads empty; everything else intact.
+    [Fact]
+    public void V1_entry_without_entities_still_loads_with_empty_snapshot_map()
+    {
+        // A hand-rolled v1 string: version 1, no "entities" key (exactly what the v1 writer produced).
+        const string v1 = "{\"v\":1,\"scene\":\"Old Keep\",\"enter\":100,\"arch\":200,\"dur\":50,"
+                        + "\"party\":0,\"members\":3,"
+                        + "\"stats\":[{\"id\":4294967936,\"td\":500,\"th\":0,\"tk\":0,\"top\":120,"
+                        + "\"h\":10,\"c\":2,\"k\":1,\"fh\":100,\"lh\":150,\"sk\":[],\"in\":[]}],"
+                        + "\"series\":[]}";
+
+        Assert.True(HistoryStore.TryDeserializeEntry(v1, out var got));
+        Assert.NotNull(got);
+        Assert.Equal("Old Keep", got!.SceneName);
+        Assert.Equal(3, got.MemberCount);
+        Assert.Single(got.Stats);
+        Assert.Empty(got.Entities);   // v1 carried no entities → empty map, no throw
+    }
+
+    // A truncated / mismatched entities payload degrades — the reader clamps the parallel arrays to their
+    // shortest member rather than throwing or mis-indexing (spec §3.3 truncated-degrades).
+    [Fact]
+    public void V2_entity_with_mismatched_parallel_arrays_clamps_to_shortest_without_throwing()
+    {
+        // 3 attr ids but only 2 values; 2 skill ids but 1 level + 0 tiers; 1 fashion entry but truncated dyes.
+        const string json = "{\"v\":2,\"scene\":\"x\",\"enter\":0,\"arch\":0,\"dur\":0,\"party\":0,\"members\":1,"
+                        + "\"stats\":[],\"series\":[],"
+                        + "\"entities\":[{\"id\":640,\"nm\":\"Frag\",\"fp\":1,\"hp\":2,\"mhp\":3,\"tm\":4,"
+                        + "\"ai\":[11330,11710,220],\"av\":[48500,4196],"   // 3 ids, 2 values
+                        + "\"gs\":[200,201],\"gi\":[90001],"                // 2 slots, 1 item
+                        + "\"si\":[101,102],\"sl\":[6],\"st\":[],"          // 2 ids, 1 level, 0 tiers
+                        + "\"fs\":[1],\"fi\":[7001],\"fc\":[2],\"fd\":[0.5,0.25,0.125]}]}";   // dyes truncated (3, not a multiple of 4)
+
+        Assert.True(HistoryStore.TryDeserializeEntry(json, out var got));   // must not throw, must load
+        Assert.NotNull(got);
+        var s = System.Linq.Enumerable.First(got!.Entities.Values);
+
+        Assert.Equal(2, s.AttrIds.Length);     Assert.Equal(2, s.AttrValues.Length);   // clamped to 2
+        Assert.Single(s.GearSlots);            Assert.Single(s.GearItemIds);           // clamped to 1
+        Assert.Empty(s.SkillIds);              Assert.Empty(s.SkillLevels);            // clamped to 0 (tiers empty)
+        Assert.Empty(s.SkillTiers);
+        Assert.Single(s.FashionSlots);
+        Assert.Empty(s.FashionDyes);           // 3 floats → not a multiple of 4 → trimmed to 0 (no partial colour)
     }
 
     [Fact]
@@ -141,7 +253,7 @@ public sealed class HistoryStoreTests
     [InlineData("[]")]                                 // array, not the expected object
     [InlineData("{\"v\":1,\"bogus\":5}")]             // unknown key
     [InlineData("{\"scene\":\"x\"}")]                 // missing version marker
-    [InlineData("{\"v\":2,\"scene\":\"x\"}")]         // wrong/future version
+    [InlineData("{\"v\":3,\"scene\":\"x\"}")]         // unsupported FUTURE version (>FormatVersion)
     public void Malformed_or_legacy_input_is_skipped_without_throwing(string garbage)
     {
         // Must never throw, and must report failure (entry skipped) for unsupported shapes.
