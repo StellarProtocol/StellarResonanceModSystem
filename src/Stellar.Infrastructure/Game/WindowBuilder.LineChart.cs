@@ -36,7 +36,14 @@ internal sealed partial class WindowBuilder
         var belowLegend = lc.ShowNavigator ? ChartNavHeight + ChartNavGapTop : ChartControlHeight;
         var root = UGuiPrimitives.NewChild("LineChart", parent);
         var rle = root.AddComponent<LayoutElement>();
-        rle.preferredHeight = lc.Height + ChartLegendHeight + belowLegend;
+        // The plot panel, legend and navigator are all ignoreLayout=true, absolutely positioned from the chart
+        // root's TOP at fixed offsets (e.g. the navigator at -Height-Legend-Gap). So the root MUST reserve their
+        // full stacked height as a HARD floor: pin minHeight == preferredHeight (flexibleHeight 0) so a short /
+        // resized-down parent column can never squish the root below the navigator's offset. Without the minHeight
+        // floor, a tight VerticalLayoutGroup shrinks a flex=0 child toward its (default 0) minHeight, the root
+        // collapses, and the top-anchored navigator protrudes below it and OVERLAPS the row(s) drawn beneath
+        // (the Combat History table). The neighbouring scroll (flexibleHeight 1) absorbs the deficit instead.
+        rle.minHeight = rle.preferredHeight = lc.Height + ChartLegendHeight + belowLegend;
         rle.flexibleHeight = 0f;
         // FillWidth: the root grows to fill its parent cell (Width is the floor); fixed otherwise. The plot
         // panel stretches with the root, and the chart's live width is read from the plot rect each refresh.
