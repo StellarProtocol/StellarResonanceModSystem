@@ -256,9 +256,15 @@ internal sealed partial class WindowBuilder
         if (xR < xL + 2f) xR = xL + 2f;
         brush.Fill.anchoredPosition = new Vector2(xL, ni.y);
         brush.Fill.sizeDelta = new Vector2(xR - xL, ni.height);
-        brush.Left.anchoredPosition = new Vector2(xL - ChartNavHandleW * 0.5f, ni.y);
+        // Handles sit ON the brush window edges, clamped inside the strip so they never protrude past the
+        // navigator extent: at full range the left edge would otherwise sit at xL-3px over empty background,
+        // reading as a stray vertical line detached from the overview fill. Clamp xL up to ni.x and xR down
+        // to ni.xMax so each handle reads as part of the brush window, flush with the overview fill edges.
+        var leftX = Mathf.Max(xL - ChartNavHandleW * 0.5f, ni.x);
+        var rightX = Mathf.Min(xR - ChartNavHandleW * 0.5f, ni.xMax - ChartNavHandleW);
+        brush.Left.anchoredPosition = new Vector2(leftX, ni.y);
         brush.Left.sizeDelta = new Vector2(ChartNavHandleW, ni.height);
-        brush.Right.anchoredPosition = new Vector2(xR - ChartNavHandleW * 0.5f, ni.y);
+        brush.Right.anchoredPosition = new Vector2(rightX, ni.y);
         brush.Right.sizeDelta = new Vector2(ChartNavHandleW, ni.height);
     }
 
