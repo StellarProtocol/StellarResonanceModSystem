@@ -1,0 +1,124 @@
+name: release
+# Cut a framework release fully on CI: build the bundle against interop stubs
+# (no game install), then publish bundle + version.json to the public `stellar`
+# MinIO bucket and create the GitHub release.
+#
+# Trigger: push a tag v* (e.g. v1.1.0), or run manually with a version input.
+#
+# The `build` job runs on every trigger (validation). The `publish` job is gated
+# on the Production environment — configure REQUIRED REVIEWERS so a human signs
+# off the real-interop / in-game smoke before a stub-built release ships. See
+# docs/release-process.md § Real-interop gate.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version to release, e.g. 1.1.0"
+        required: true
+
+env:
+  ENDPOINT: https://minio.revette.io
+  BUCKET: stellar
+  MIN_LAUNCHER: "1.0.0"
+  CHANNEL: stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          V="${{ github.event.inputs.version }}"
+          [ -n "$V" ] || V="${GITHUB_REF_NAME#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      # The BepInEx IL2CPP stage (winhttp + doorstop + BepInEx/ + dotnet/, ~73 MB)
+      # lives at the root of the PRIVATE stellar-release-assets repo (also
+      # submoduled by the devkit at tools/BepInEx-stage). Pull it with the
+      # read-only deploy key (secret RELEASE_ASSETS_SSH_KEY = private half of the
+      # deploy key registered on StarResonance-Experiment/stellar-release-assets).
+      - name: Fetch BepInEx stage from private release-assets repo
+        uses: actions/checkout@v4
+        with:
+          repository: StarResonance-Experiment/stellar-release-assets
+          ref: main
+          ssh-key: ${{ secrets.RELEASE_ASSETS_SSH_KEY }}
+          path: stage
+
+      - name: Build bundle + version.json (against stubs)
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          export STELLAR_BEPINEX_STAGE="$PWD/stage"
+          bash tools/release/build-bundle.sh "$V" dist
+          curl -fsS "$ENDPOINT/$BUCKET/version.json" -o dist/prev-version.json 2>/dev/null || rm -f dist/prev-version.json
+          python tools/release/make_version_json.py \
+            --changelog CHANGELOG.md \
+            --bundle "dist/Stellar-$V.zip" \
+            --bundle-url "$ENDPOINT/$BUCKET/Stellar-$V.zip" \
+            --min-launcher "$MIN_LAUNCHER" \
+            --version "$V" --channel "$CHANNEL" \
+            $([ -f dist/prev-version.json ] && echo "--existing dist/prev-version.json") \
+            --out dist/version.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: framework-bundle
+          path: |
+            dist/Stellar-*.zip
+            dist/version.json
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: Production    # required reviewers here = the real-interop / in-game gate
+    permissions:
+      contents: write          # create the GitHub release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: framework-bundle
+          path: dist
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          V="${{ github.event.inputs.version }}"
+          [ -n "$V" ] || V="${GITHUB_REF_NAME#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bundle + version.json to MinIO
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+          AWS_DEFAULT_REGION: sa-east-1
+          # MinIO rejects AWS CLI v2 default multipart checksums — opt out.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$ENDPOINT"
+          aws s3 cp dist/version.json     "s3://$BUCKET/version.json"   --endpoint-url "$ENDPOINT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          gh release create "v$V" -R "$GITHUB_REPOSITORY" \
+            "dist/Stellar-$V.zip" dist/version.json \
+            --title "StellarResonance $V" \
+            --notes "StellarResonance mod framework $V. Install via the launcher, or drop Stellar-$V.zip into your game's game_mini folder. AGPL-3.0; quality-of-life only, ships no game code or assets." \
+            || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" dist/version.json --clobber

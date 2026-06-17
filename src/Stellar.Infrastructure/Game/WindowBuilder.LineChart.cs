@@ -1,0 +1,388 @@
+using System;
+using System.Collections.Generic;
+using Stellar.Abstractions.Domain;
+using Stellar.Abstractions.Services;
+using Stellar.Infrastructure.Unity;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace Stellar.Infrastructure.Game;
+
+/// <summary>
+/// WindowBuilder line-chart element. Builds a fixed-size plot container (dark background) with reserved
+/// left/bottom margins for labelled X/Y axes, axis titles, and a legend row beneath. The plotted lines
+/// themselves are added by the (deferred) renderer task — this partial produces the container + axes
+/// chrome only. All math goes through the Unity-free <see cref="ChartGeometry"/> helper.
+/// </summary>
+internal sealed partial class WindowBuilder
+{
+    // Reserved chrome margins (px) around the plot rect: room for the Y title + Y tick labels on the left,
+    // the X tick labels + X title under the bottom, and a small breathing gap top/right.
+    private const float ChartMarginLeft = 56f;
+    private const float ChartMarginBottom = 40f;
+    private const float ChartMarginTop = 8f;
+    private const float ChartMarginRight = 12f;
+    private const float ChartLegendHeight = 22f;
+    private const float ChartControlHeight = 26f;   // the −/+/Reset bar + range scrollbar strip below the legend
+    private const int ChartLabelSize = 11;
+
+    // Builds the fixed-size chart: a plot panel (dark background) with axis tick labels, axis titles, and a
+    // legend row beneath. The line geometry is added by the deferred renderer task; raycastTarget on the
+    // plot panel is left on so the later scroll/drag zoom can poll it.
+    private void BuildLineChart(LineChartElement lc, Transform parent, WindowToken token)
+    {
+        // The strip below the legend is either the legacy −/+/Reset + scrollbar (ChartControlHeight) or the
+        // taller navigator overview (ChartNavHeight + its top gap). Pick the reserved height to match.
+        var belowLegend = lc.ShowNavigator ? ChartNavHeight + ChartNavGapTop : ChartControlHeight;
+        var root = UGuiPrimitives.NewChild("LineChart", parent);
+        var rle = root.AddComponent<LayoutElement>();
+        // The plot panel, legend and navigator are all ignoreLayout=true, absolutely positioned from the chart
+        // root's TOP at fixed offsets (e.g. the navigator at -Height-Legend-Gap). So the root MUST reserve their
+        // full stacked height as a HARD floor: pin minHeight == preferredHeight (flexibleHeight 0) so a short /
+        // resized-down parent column can never squish the root below the navigator's offset. Without the minHeight
+        // floor, a tight VerticalLayoutGroup shrinks a flex=0 child toward its (default 0) minHeight, the root
+        // collapses, and the top-anchored navigator protrudes below it and OVERLAPS the row(s) drawn beneath
+        // (the Combat History table). The neighbouring scroll (flexibleHeight 1) absorbs the deficit instead.
+        rle.minHeight = rle.preferredHeight = lc.Height + ChartLegendHeight + belowLegend;
+        rle.flexibleHeight = 0f;
+        // FillWidth: the root grows to fill its parent cell (Width is the floor); fixed otherwise. The plot
+        // panel stretches with the root, and the chart's live width is read from the plot rect each refresh.
+        if (lc.FillWidth) { rle.minWidth = rle.preferredWidth = lc.Width; rle.flexibleWidth = 1f; }
+        else              { rle.preferredWidth = lc.Width; rle.flexibleWidth = 0f; }
+
+        if (lc.FillWidth) _chartReflow = new List<Action<float>>();   // open the reflow-closure collection
+        var plot = AddChartPanel(root.transform, lc.Width, lc.Height, lc.FillWidth);
+        var plotRect = plot.GetComponent<RectTransform>();
+        if (lc.FillWidth) _fillPlotRect = plotRect;
+        // Live plot width: the laid-out plot rect when filling (re-read each refresh), else the fixed param.
+        // At build time the layout hasn't run yet, so seed the static geometry from lc.Width — the first
+        // post-layout refresh re-meshes/repositions to the real width (ChartWidth) via the reflow bindings.
+        var inner = ChartInner(lc, lc.Width);
+
+        BuildYTicks(plot.transform, lc, inner, token);
+        BuildXTicks(plot.transform, lc, inner, token);
+        BuildAxisTitles(plot.transform, lc, inner, token);
+        BuildLegend(root.transform, lc, token);
+        BuildChartGraphic(plot.transform, lc, plotRect, inner, token);
+        if (lc.ShowNavigator) BuildNavigator(root.transform, plot, lc, inner, token);   // .LineChart.Navigator.cs
+        else BuildChartControls(root.transform, plot, lc, inner, token);                // .LineChart.Zoom.cs
+        if (lc.FillWidth) RegisterFillWidthReflow(lc, plotRect, token);                  // .LineChart.Fill.cs
+    }
+
+    // The plot inner rect (axes/lines region) for a given chart width: reserved margins carved off all sides.
+    private static Rect ChartInner(LineChartElement lc, float width) => new(ChartMarginLeft, ChartMarginBottom,
+        width - ChartMarginLeft - ChartMarginRight, lc.Height - ChartMarginBottom - ChartMarginTop);
+
+    // The chart's live width: the laid-out plot rect width when FillWidth (clamped to the lc.Width floor so a
+    // pre-layout 0-width rect doesn't collapse the geometry), else the fixed lc.Width param.
+    private static float ChartWidth(LineChartElement lc, RectTransform plotRect)
+        => lc.FillWidth ? Mathf.Max(plotRect.rect.width, lc.Width) : lc.Width;
+
+    // Series "weight" half-widths (px) for ordinary vs emphasised (team-total) series, plus the axis/grid line
+    // widths. The plotted polylines are MESHED by ChartGraphic as a round-joined feathered stroke (the texture
+    // raster path was reverted — its child RawImage AddComponent<T> threw under IL2CPP). These values are passed
+    // as Polyline.Thickness and used directly as the stroke core half-width: ordinary → ~0.5 thin core, emphasis
+    // → ~0.8 (a touch heavier), each flanked by ChartGraphic's ~0.9px feather so the line reads thin AND smooth.
+    private const float ChartLineWidth = 0.5f;
+    private const float ChartEmphasisWidth = 0.8f;
+    private const float ChartAxisWidth = 1f;
+    private const float ChartGridWidth = 0.5f;
+
+    // Add the injected mesh graphic over the plot panel (full plot size; geometry is in plot-bottom-left
+    // space, matching inner's coordinates) and bind a re-mesh that fires only when series/range/width change.
+    private void BuildChartGraphic(Transform plot, LineChartElement lc, RectTransform plotRect, Rect inner, WindowToken token)
+    {
+        var go = UGuiPrimitives.NewChild("Lines", plot);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rt = go.GetComponent<RectTransform>();
+        if (lc.FillWidth)
+        {
+            // Stretch the graphic with the plot panel so its local origin/extent track the live width.
+            rt.anchorMin = new Vector2(0f, 0f); rt.anchorMax = new Vector2(1f, 0f); rt.pivot = new Vector2(0f, 0f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(0f, lc.Height);
+        }
+        else
+        {
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(lc.Width, lc.Height);
+        }
+        var graphic = go.AddComponent<ChartGraphic>();
+        graphic.raycastTarget = false;   // the plot bg keeps the raycast for the later scroll/drag zoom
+        token.Charts.Add(new ChartBinding
+        {
+            Series = lc.Series,
+            Range = lc.VisibleRange,
+            // Recompute inner from the live width each remesh so the lines/axes/grid reflow on resize.
+            Width = () => ChartWidth(lc, plotRect),
+            Remesh = series =>
+            {
+                var live = ChartInner(lc, ChartWidth(lc, plotRect));
+                graphic.SetData(BuildAxisSegments(live), MapSeries(series, lc, live));
+            },
+        });
+    }
+
+    // Axes (left + bottom, MenuMuted) + the horizontal Y gridlines (MenuBorder), in plot-bottom-left px.
+    private List<ChartGraphic.Segment> BuildAxisSegments(Rect inner)
+    {
+        var axis = (Color32)_assets.MenuMuted;
+        var grid = (Color32)_assets.MenuBorder;
+        // Connect the two axes cleanly at the origin: each axis is a feathered stroke centred on its midline, so
+        // they would otherwise stop half a stroke-width short of the corner, leaving a visible gap at (0, 0s).
+        // Extend each axis past the origin by the other's half-width so their cores overlap and share the corner
+        // pixel (a mitre join for the right-angle), closing the L without thickening the rest of either run.
+        var corner = ChartAxisWidth;
+        var segs = new List<ChartGraphic.Segment>
+        {
+            // Y axis: from the corner (extended down by the X-axis half-width) up to the top.
+            new(new Vector2(inner.x, inner.y - corner), new Vector2(inner.x, inner.yMax), axis, ChartAxisWidth),
+            // X axis: from the corner (extended left by the Y-axis half-width) out to the right.
+            new(new Vector2(inner.x - corner, inner.y), new Vector2(inner.xMax, inner.y), axis, ChartAxisWidth),
+        };
+        for (var i = 1; i <= 4; i++)   // four interior Y gridlines aligned to the nice-max tick rows
+        {
+            var y = inner.y + i / 4f * inner.height;
+            segs.Add(new ChartGraphic.Segment(new Vector2(inner.x, y), new Vector2(inner.xMax, y), grid, ChartGridWidth));
+        }
+        return segs;
+    }
+
+    // Map each series' visible buckets to plot-pixel polylines via ChartGeometry (bucket→X, value→Y).
+    private List<ChartGraphic.Polyline> MapSeries(IReadOnlyList<ChartSeries> series, LineChartElement lc, Rect inner)
+    {
+        var (min, max) = lc.VisibleRange();
+        var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
+        var seriesLen = MaxSeriesLength(series);
+        var (minBucket, maxBucket) = ChartGeometry.ClampBucketWindow(
+            Mathf.FloorToInt(min / bucket), Mathf.CeilToInt(max / bucket), seriesLen);
+        var yMax = ChartYMax(lc);
+        var lines = new List<ChartGraphic.Polyline>(series.Count);
+        foreach (var s in series)
+        {
+            var pts = new List<Vector2>();
+            for (var b = minBucket; b <= maxBucket && b < s.Values.Count; b++)
+            {
+                if (b < 0) continue;
+                var x = ChartGeometry.BucketToX(b, minBucket, maxBucket, inner.x, inner.xMax);
+                var y = ChartGeometry.ValueToY(s.Values[b], yMax, inner.y, inner.yMax);
+                pts.Add(new Vector2(x, y));
+            }
+            var c = new Color32((byte)(s.Color.R * 255), (byte)(s.Color.G * 255), (byte)(s.Color.B * 255), (byte)(s.Color.A * 255));
+            lines.Add(new ChartGraphic.Polyline(pts, c, s.Emphasis ? ChartEmphasisWidth : ChartLineWidth));
+        }
+        return lines;
+    }
+
+    // The main plot panel, anchored top-left within the chart root at full chart size (legend sits below it).
+    // The bg is fully TRANSPARENT (alpha 0) so the chart blends into the window body — the axes + gridlines
+    // alone delineate the plot, not a separate dark box. The Image is kept (alpha 0) as the raycast target the
+    // later scroll/drag-zoom polls; a transparent Image still hit-tests.
+    private GameObject AddChartPanel(Transform parent, float width, float height, bool fill = false)
+    {
+        var go = UGuiPrimitives.NewChild("Plot", parent);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rt = go.GetComponent<RectTransform>();
+        if (fill)
+        {
+            // Stretch across the chart root's width (top-anchored, fixed height); the live width is read from
+            // this rect's resolved size each refresh. sizeDelta.x = 0 → width = root width; pivot top-left.
+            rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(1f, 1f); rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(0f, height);
+        }
+        else
+        {
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(width, height);
+        }
+        var bg = go.AddComponent<Image>();
+        bg.color = new Color(0f, 0f, 0f, 0f);   // transparent — chart blends into the window body
+        bg.raycastTarget = true;                // alpha-0 Image still hit-tests for scroll/drag zoom
+        return go;
+    }
+
+    // Very faint theme-derived backdrop used ONLY to delimit the navigator strip from the window body (the
+    // main plot stays transparent). MenuBackground nudged darker (RGB ·0.7) at a low alpha so the strip reads
+    // as a distinct lane without becoming a hard dark box. Read at build, so it follows the active theme.
+    private Color NavStripBg()
+    {
+        var bgc = _assets.MenuBackground;
+        return new Color(bgc.r * 0.7f, bgc.g * 0.7f, bgc.b * 0.7f, 0.18f);
+    }
+
+    // Auto-scaled (or overridden) Y max for the current visible bucket window.
+    private static float ChartYMax(LineChartElement lc)
+    {
+        if (lc.YMaxOverride?.Invoke() is { } fixedMax && fixedMax > 0f) return fixedMax;
+        return ChartGeometry.NiceYMax(ChartVisiblePeak(lc));
+    }
+
+    // The raw (un-"nice"d) peak across the live visible bucket window — the single source the Y axis labels and
+    // the line mesh both scale from. Computed live (never baked) so a chart built before its Series() is
+    // populated rescales as soon as data arrives. Window mapping mirrors MapSeries: Floor(min/bucket)/Ceil(max/
+    // bucket), clamped into the populated series so a 2+-bucket / fractional-duration window is never empty.
+    private static float ChartVisiblePeak(LineChartElement lc)
+    {
+        var (min, max) = lc.VisibleRange();
+        var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
+        var series = lc.Series();
+        var (minBucket, maxBucket) = ChartGeometry.ClampBucketWindow(
+            Mathf.FloorToInt(min / bucket), Mathf.CeilToInt(max / bucket), MaxSeriesLength(series));
+        return ChartGeometry.VisiblePeak(series, minBucket, maxBucket);
+    }
+
+    // Longest bucket array across the series set (used to clamp the visible bucket window in bounds).
+    private static int MaxSeriesLength(IReadOnlyList<ChartSeries> series)
+    {
+        var len = 0;
+        foreach (var s in series) if (s.Values.Count > len) len = s.Values.Count;
+        return len;
+    }
+
+    // YTicks+1 right-aligned labels stepping 0..yMax down the left margin, each centred on its gridline row.
+    //
+    // Each label's VALUE is computed LIVE per refresh from ChartYMax(lc) — never baked at build. The chart
+    // element (incl. the History window's) is built ONCE while its Series() provider may still be empty (e.g.
+    // the History window builds both Conditional arms at registration, before any session is selected), so a
+    // build-time yMax would freeze at NiceYMax(0)=1 and the axis would read the degenerate "1/0/0/0" ladder
+    // forever — while the line mesh, which re-derives yMax live in MapSeries, draws against the real data.
+    // Pulling the same ChartYMax(lc) the mesh uses keeps the axis and the line on ONE scale for any series
+    // length / fractional duration / deferred population. The gridline ROWS are fixed (evenly spaced), only
+    // the label text rescales. NiceYMax still returns a sane floor for a genuinely tiny/zero peak.
+    private void BuildYTicks(Transform parent, LineChartElement lc, Rect inner, WindowToken token)
+    {
+        for (var i = 0; i <= lc.YTicks; i++)
+        {
+            var t = i / (float)lc.YTicks;
+            var y = inner.y + t * inner.height;   // from bottom up (independent of yMax)
+            var lbl = ChartLabel(parent, TextAnchor.MiddleRight, "YTick", token);
+            PlaceLabel(lbl, new Rect(0f, y - 8f, ChartMarginLeft - 6f, 16f));
+            // A genuinely empty/zero visible window labels every row 0 (not the NiceYMax(0)=1 ladder) so the
+            // axis reads honestly until data arrives, then rescales live; a real peak uses the nice max.
+            token.Texts.Add(new TextBinding
+            {
+                C = lbl,
+                TextFn = () => lc.FormatY(ChartVisiblePeak(lc) <= 0f ? 0f : ChartYMax(lc) * t),
+            });
+        }
+    }
+
+    // XTicks+1 centred labels across the bottom margin, stepping over the visible time range. Under FillWidth
+    // each label's X is re-placed from the live inner width via a reflow closure (it depends on inner.width).
+    private void BuildXTicks(Transform parent, LineChartElement lc, Rect inner, WindowToken token)
+    {
+        for (var i = 0; i <= lc.XTicks; i++)
+        {
+            var t = i / (float)lc.XTicks;
+            var x = inner.x + t * inner.width;
+            var lbl = ChartLabel(parent, TextAnchor.MiddleCenter, "XTick", token);
+            PlaceLabel(lbl, new Rect(x - 24f, ChartMarginBottom - 22f, 48f, 16f));
+            token.Texts.Add(new TextBinding
+            {
+                C = lbl,
+                TextFn = () => { var (min, max) = lc.VisibleRange(); return lc.FormatX(min + t * (max - min)); },
+            });
+            var rt = lbl.rectTransform;
+            AddChartReflow(w =>
+            {
+                var li = ChartInner(lc, w);
+                rt.anchoredPosition = new Vector2(li.x + t * li.width - 24f, ChartMarginBottom - 22f);
+            });
+        }
+    }
+
+    // Rotated Y title down the far-left edge; centred X title under the X tick labels.
+    private void BuildAxisTitles(Transform parent, LineChartElement lc, Rect inner, WindowToken token)
+    {
+        var yTitle = ChartLabel(parent, TextAnchor.MiddleCenter, "YTitle", token);
+        // Rotated +90° (CCW) about the bottom-left pivot: a (width=plotHeight × height=14) rect then occupies
+        // x ∈ [pivotX-14, pivotX], y ∈ [pivotY, pivotY+plotHeight] — a vertical band reading bottom-to-top in
+        // the far-left margin alongside the Y ticks. Pivot at (14, inner.y) keeps it inside the left margin.
+        (yTitle.GetComponent<LayoutElement>() ?? yTitle.gameObject.AddComponent<LayoutElement>()).ignoreLayout = true;
+        var yrt = yTitle.rectTransform;
+        yrt.anchorMin = yrt.anchorMax = yrt.pivot = new Vector2(0f, 0f);
+        yrt.sizeDelta = new Vector2(inner.height, 14f);
+        yrt.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        yrt.anchoredPosition = new Vector2(14f, inner.y);
+        token.Texts.Add(new TextBinding { C = yTitle, TextFn = lc.TitleY });
+
+        var xTitle = ChartLabel(parent, TextAnchor.MiddleCenter, "XTitle", token);
+        PlaceLabel(xTitle, new Rect(inner.x, 2f, inner.width, 14f));
+        token.Texts.Add(new TextBinding { C = xTitle, TextFn = lc.TitleX });
+        var xrt = xTitle.rectTransform;
+        AddChartReflow(w => xrt.sizeDelta = new Vector2(ChartInner(lc, w).width, 14f));   // re-centre across the live width
+    }
+
+    // Max legend entries the dynamic pool pre-allocates. The chart's series set is the team-total line plus one
+    // per toggled source; CombatMeter caps toggled sources at 8, so 12 entry slots leaves headroom for any
+    // plugin while keeping the pool small. Surplus slots stay SetActive(false) and collapse in the row layout.
+    private const int ChartLegendSlots = 12;
+
+    // A swatch + name per series, laid out left-to-right beneath the plot panel. The entry set is DYNAMIC: a
+    // pool of pre-built slots is repopulated (swatch colour, label text, active state) whenever the series-list
+    // reference changes, so toggling a source onto the chart adds/removes its legend entry without a rebuild.
+    private void BuildLegend(Transform parent, LineChartElement lc, WindowToken token)
+    {
+        var row = UGuiPrimitives.NewChild("Legend", parent);
+        row.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rt = row.GetComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(ChartMarginLeft, -lc.Height - 2f);
+        rt.sizeDelta = new Vector2(lc.Width - ChartMarginLeft, ChartLegendHeight);
+        UGuiPrimitives.AddLayout(row, gap: 14f, columns: UGuiPrimitives.RowMode);
+
+        var slots = new LegendSlot[ChartLegendSlots];
+        for (var i = 0; i < ChartLegendSlots; i++) slots[i] = BuildLegendEntry(row.transform, token);
+        var binding = new LegendBinding { SeriesFn = lc.Series, Slots = slots };
+        binding.Apply();                 // initial paint (also the sandbox static-render path)
+        token.Hovers.Add(new HoverBinding { Poll = binding.Apply });
+    }
+
+    // One reusable legend slot: a coloured swatch + a name label, hidden by default until a series fills it.
+    // The label is theme-reskinned; its text is set directly by LegendBinding (not a per-frame TextBinding).
+    private LegendSlot BuildLegendEntry(Transform parent, WindowToken token)
+    {
+        var entry = UGuiPrimitives.NewChild("Entry", parent);
+        UGuiPrimitives.AddLayout(entry, gap: 5f, columns: UGuiPrimitives.RowMode);
+        var sw = UGuiPrimitives.NewChild("Swatch", entry.transform);
+        var sle = sw.AddComponent<LayoutElement>();
+        sle.preferredWidth = sle.preferredHeight = 12f; sle.flexibleWidth = 0f;
+        var img = sw.AddComponent<Image>();
+        img.raycastTarget = false;
+        var lbl = ChartLabel(entry.transform, TextAnchor.MiddleLeft, "Name", token);
+        // Bare LayoutElement (no preferredWidth) under the Row's childControlWidth=true: the Text's own
+        // preferred width drives its natural width; flexibleWidth=0 stops it stretching past the name.
+        lbl.GetComponent<LayoutElement>().flexibleWidth = 0f;
+        entry.SetActive(false);
+        return new LegendSlot(entry, img, lbl);
+    }
+
+    // A themed muted-colour chart label Text, registered for re-skin like the window's other text.
+    private Text ChartLabel(Transform parent, TextAnchor anchor, string name, WindowToken token, bool bold = false)
+    {
+        var go = UGuiPrimitives.NewChild(name, parent);
+        var txt = go.AddComponent<Text>();
+        UGuiPrimitives.ConfigureText(txt, Scaled(ChartLabelSize), anchor, bold: bold);
+        // Centre on glyph GEOMETRY, not the font line-box: under a Middle anchor the OS dynamic font sits the
+        // ink ~2-3px low (see BuildText / MeterRow / imgui-root-causes.md item 6). Every chart label is
+        // vertically centred on a reference line — Y ticks (MiddleRight) on their gridline row, legend names
+        // (MiddleLeft) beside the 12px swatch — so all of them must geometry-centre to land on-line.
+        txt.alignByGeometry = true;
+        ApplyMenuFont(txt);
+        txt.color = _assets.MenuMuted;
+        go.AddComponent<LayoutElement>();
+        RegisterTextReskin(token, txt, ChartLabelSize, muted: true);
+        return txt;
+    }
+
+    // Position a manually-laid-out label by bottom-left within the plot panel (rect.x = left, rect.y =
+    // distance from the panel bottom, rect.width/height = label box). Pivot/anchor are bottom-left.
+    private static void PlaceLabel(Text txt, Rect box)
+    {
+        var le = txt.GetComponent<LayoutElement>() ?? txt.gameObject.AddComponent<LayoutElement>();
+        le.ignoreLayout = true;
+        var rt = txt.rectTransform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);
+        rt.sizeDelta = new Vector2(box.width, box.height);
+        rt.anchoredPosition = new Vector2(box.x, box.y);
+    }
+}

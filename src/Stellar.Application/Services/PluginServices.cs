@@ -38,6 +38,7 @@ internal sealed class PluginServices : IPluginServices
     public IEntityContextMenu EntityContextMenu { get; }
     public IEntityPortrait EntityPortrait { get; }
     public IProfileCardActions ProfileCardActions { get; }
+    public IPluginExchange Exchange { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -72,7 +73,8 @@ internal sealed class PluginServices : IPluginServices
         IEntityDetail entityDetail,
         IEntityContextMenu entityContextMenu,
         IEntityPortrait entityPortrait,
-        IProfileCardActions profileCardActions)
+        IProfileCardActions profileCardActions,
+        IPluginExchange exchange)
     {
         Log = log;
         Framework = framework;
@@ -107,5 +109,6 @@ internal sealed class PluginServices : IPluginServices
         EntityContextMenu = entityContextMenu;
         EntityPortrait = entityPortrait;
         ProfileCardActions = profileCardActions;
+        Exchange = exchange;
     }
 }

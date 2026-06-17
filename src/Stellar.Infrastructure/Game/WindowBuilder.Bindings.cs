@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
@@ -110,17 +111,18 @@ internal sealed partial class WindowBuilder
 
     internal sealed class BarBinding
     {
-        public Image Fill = null!;
+        // Width via the clip rect's right anchor, NOT fillAmount (spriteless Image ignores it) — see BuildBarTrack.
+        public RectTransform FillRect = null!;
         public Func<float> Fraction = null!;
         public Text? Label; public Func<string>? LabelFn;
         private float _lastFrac = -1f; private string? _lastLabel;
         public void Apply()
         {
-            if (Fill != null && !Fill.gameObject.activeInHierarchy) return;
-            if (Fill != null)
+            if (FillRect != null && !FillRect.gameObject.activeInHierarchy) return;
+            if (FillRect != null)
             {
                 var f = Mathf.Clamp01(Fraction());
-                if (!Mathf.Approximately(f, _lastFrac)) { Fill.fillAmount = f; _lastFrac = f; }
+                if (!Mathf.Approximately(f, _lastFrac)) { FillRect.anchorMax = new Vector2(f, 1f); _lastFrac = f; }
             }
             if (Label != null && LabelFn != null)
             {

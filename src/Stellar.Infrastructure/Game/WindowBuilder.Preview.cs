@@ -86,21 +86,7 @@ internal sealed partial class WindowBuilder
             RegisterTextReskin(token, ptxt, 12);
         }
 
-        // Gently-rounded (3 px) dark track (matches the PlayerHUD BarBg) + a sprite-less flat Filled fill
-        // (a rounded sprite under Type.Filled stretched its corners → the grey "left bar" sliver).
-        var track = UGuiPrimitives.NewChild("Track", row.transform);
-        var tle = track.AddComponent<LayoutElement>();
-        tle.preferredWidth = 150f; tle.preferredHeight = 14f; tle.flexibleWidth = 0f;
-        var trackImg = track.AddComponent<Image>();
-        trackImg.sprite = _assets.SwatchBg; trackImg.type = Image.Type.Sliced;
-        trackImg.color = new Color(0f, 0f, 0f, 0.38f); trackImg.raycastTarget = false;
-
-        var fillGo = UGuiPrimitives.NewChild("Fill", track.transform);
-        UGuiPrimitives.Stretch(fillGo);
-        var fill = fillGo.AddComponent<Image>();
-        fill.type = Image.Type.Filled; fill.fillMethod = Image.FillMethod.Horizontal; fill.fillOrigin = 0;
-        fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
-        fill.fillAmount = Mathf.Clamp01(b.Fraction01()); fill.raycastTarget = false;
+        var clipRt = BuildBarTrack(row.transform, b);
 
         Text? label = null;
         if (b.Label != null)
@@ -113,6 +99,35 @@ internal sealed partial class WindowBuilder
             RegisterTextReskin(token, txt, 12, muted: true);
             label = txt;
         }
-        token.Bars.Add(new BarBinding { Fill = fill, Fraction = b.Fraction01, Label = label, LabelFn = b.Label });
+        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label });
+    }
+
+    // Gently-rounded (3 px) dark track (matches the PlayerHUD BarBg) + a left-anchored width-clipped fill, and
+    // returns the clip RectTransform so the binding can drive its right anchor. The fill width tracks Fraction01
+    // via the clip container's anchorMax.x (NOT Image.Type.Filled + fillAmount): a uGUI Image with no sprite
+    // ignores fillAmount and draws a FULL quad, so the migrated Filled fill stayed full regardless of the
+    // fraction. Anchor-resize needs no sprite (so no rounded-corner stretch artifact) and mirrors how the
+    // MeterRow/AccentRow clip their fill width.
+    private RectTransform BuildBarTrack(Transform row, BarElement b)
+    {
+        var track = UGuiPrimitives.NewChild("Track", row);
+        var tle = track.AddComponent<LayoutElement>();
+        tle.preferredWidth = 150f; tle.preferredHeight = 14f; tle.flexibleWidth = 0f;
+        var trackImg = track.AddComponent<Image>();
+        trackImg.sprite = _assets.SwatchBg; trackImg.type = Image.Type.Sliced;
+        trackImg.color = new Color(0f, 0f, 0f, 0.38f); trackImg.raycastTarget = false;
+
+        var clipGo = UGuiPrimitives.NewChild("FillClip", track.transform);
+        var clipRt = clipGo.GetComponent<RectTransform>();
+        clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
+        clipRt.anchorMax = new Vector2(Mathf.Clamp01(b.Fraction01()), 1f);
+        clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
+
+        var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
+        UGuiPrimitives.Stretch(fillGo);
+        var fill = fillGo.AddComponent<Image>();
+        fill.type = Image.Type.Simple; fill.raycastTarget = false;
+        fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
+        return clipRt;
     }
 }

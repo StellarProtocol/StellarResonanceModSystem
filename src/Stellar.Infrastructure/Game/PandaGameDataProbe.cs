@@ -99,6 +99,7 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe
         // an empty dictionary). One bad table does not block the others.
         var professions       = LoadProfessions();
         var skills            = LoadSkills();
+        var skillLevelToBase  = LoadSkillLevelToBase();
         var buffs             = LoadBuffs();
         _attrIconByBase       = LoadFightAttrIcons();   // before LoadAttributes (icon join)
         var attributes        = LoadAttributes();
@@ -108,6 +109,7 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe
         snapshot = new GameDataEagerSnapshot
         {
             Skills            = skills,
+            SkillLevelToBase  = skillLevelToBase,
             Buffs             = buffs,
             Professions       = professions,
             Attributes        = attributes,

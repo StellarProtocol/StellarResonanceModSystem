@@ -45,6 +45,9 @@ FRAMEWORK_DLLS=(
     "$SRC/Stellar.Infrastructure/bin/Release/Stellar.Infrastructure.dll"
     "$SRC/Stellar.Application/bin/Release/Stellar.Application.dll"
     "$SRC/Stellar.Abstractions/bin/Release/Stellar.Abstractions.dll"
+    # Shared inter-plugin contracts (IFrozenEntityViewer). Deployed to the framework dir so cooperating plugins
+    # resolve ONE copy (correct type identity for IPluginExchange). Built transitively by the sample plugins.
+    "$SRC/Stellar.PluginContracts/bin/Release/Stellar.PluginContracts.dll"
     "$SRC/Stellar.Wire/bin/Release/Stellar.Wire.dll"
     "$SRC/Stellar.Infrastructure/bin/Release/ZstdSharp.dll"
 )

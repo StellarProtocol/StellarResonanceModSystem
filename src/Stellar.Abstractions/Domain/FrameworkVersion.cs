@@ -17,9 +17,10 @@ namespace Stellar.Abstractions.Domain;
 public static class FrameworkVersion
 {
     /// <summary>
-    /// Current framework version. Phase 9a (Settings + native UI editor)
-    /// lands as 0.9.0; plain SemVer (no pre-release suffix) keeps the BepInEx
-    /// chainloader happy and reads as the first user-facing release-quality cut.
+    /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
+    /// BepInEx chainloader happy. 1.1.0 ships HUD text enhancements, the
+    /// LineChartElement, and the generic IPluginExchange / Stellar.PluginContracts
+    /// inter-plugin standard on top of the 1.0.x line.
     /// </summary>
-    public const string Value = "0.9.0";
+    public const string Value = "1.1.0";
 }

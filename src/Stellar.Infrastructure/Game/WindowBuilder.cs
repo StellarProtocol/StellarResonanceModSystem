@@ -70,6 +70,37 @@ internal sealed partial class WindowBuilder
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
 
+    // Line-chart pan/zoom hook: (plot rect, getWindow, setWindow, total seconds, min span) → the ticker
+    // zooms the visible window on scroll-over-plot (around the cursor's time) and pans it on left-drag, all
+    // clamped via ChartWindow. Null in the sandbox → the plot renders statically (gestures verified in-game).
+    internal Action<RectTransform, Func<(float, float)>, Action<(float, float)>, Func<float>, Func<float>>? RegisterChartPan { get; set; }
+
+    // Line-chart navigator-brush hook: the ticker drives the brush window on drag. Args: the navigator plot
+    // rect (cursor X → time over [0,total]), the left/right resize-handle rects + the body rect (hit-test
+    // priority: handle = resize that edge, body = pan), then getWindow/setWindow/total/min-span. All window
+    // math is ChartWindow. Null in the sandbox → the brush renders statically (no live drag; verified
+    // in-game), so the navigator strip still shows the current range. Mirrors RegisterChartPan.
+    internal ChartNavRegistrar? RegisterChartNav { get; set; }
+
+    // Bundles the navigator-brush registration so the call site stays under the 5-param analyzer gate.
+    internal sealed record ChartNavRegistrar(Action<ChartNavReg> Add)
+    {
+        internal void Invoke(ChartNavReg reg) => Add(reg);
+    }
+
+    // The navigator-brush registration payload (the ticker copies it into its ChartNav list).
+    internal sealed class ChartNavReg
+    {
+        public RectTransform Nav = null!;          // navigator inner plot rect (full-range; cursor X → time)
+        public RectTransform Left = null!;         // left resize handle
+        public RectTransform Right = null!;        // right resize handle
+        public RectTransform Body = null!;         // draggable middle (pan)
+        public Func<(float, float)> Get = null!;
+        public Action<(float, float)> Set = null!;
+        public Func<float> Total = null!;
+        public Func<float> MinSpan = null!;
+    }
+
     public WindowBuilder(WindowThemeAssets assets,
         Action<UGuiTextInput>? registerField = null,
         Action<RectTransform, Action<float, float>>? registerDrag = null,
@@ -129,6 +160,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<MeterRowBinding> MeterRows = new();      // per-apply poll for bespoke CombatMeter rows
         internal readonly List<AccentRowBinding> AccentRows = new();    // per-apply poll for role-stripe/share-backdrop rows
         internal readonly List<CooldownTileBinding> CooldownTiles = new(); // per-apply poll for CooldownBar tiles (icon+fill+seconds+★)
+        internal readonly List<ChartBinding> Charts = new();            // per-apply poll: re-mesh LineChart only on series/range change
         internal readonly List<Texture2D> IconTextures = new();        // PNG icons (HideAndDontSave) — reclaimed on destroy
         // Atlas dedup: SpriteElement cells that share one atlas byte[] reuse a single uploaded texture (keyed by
         // array reference). The texture is owned by IconTextures (added once on first load), so disposal stays
@@ -169,7 +201,11 @@ internal sealed partial class WindowBuilder
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
             for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
             for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
-            if (structuralChange && Rect != null)
+            // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
+            // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
+            // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
+            // unsized until the next render frame. Later per-tick structural changes stay deferred (marked).
+            if ((structuralChange || !_laidOut) && Rect != null)
             {
                 // The FIRST structural layout (mount) is forced immediate so the window opens correctly sized.
                 // Every later per-tick structural change (a Conditional flip / List-count change) only MARKS the
@@ -198,6 +234,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
             for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
             for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();
+            for (var i = 0; i < Charts.Count; i++) Charts[i].Apply();
             for (var i = 0; i < FieldSyncs.Count; i++) FieldSyncs[i].Apply();
         }
 
@@ -267,6 +304,7 @@ internal sealed partial class WindowBuilder
             case DragSlotElement ds: BuildDragSlot(ds, parent, token); break;      // .DragSlot.cs
             case RenderTextureHostElement rh: BuildRenderHost(rh, parent); break;  // .DragSlot.cs
             case GameTextureElement gt: BuildGameTexture(gt, parent); break;       // .DragSlot.cs
+            case LineChartElement lc: BuildLineChart(lc, parent, token); break;     // .LineChart.cs
         }
     }
 
@@ -299,8 +337,10 @@ internal sealed partial class WindowBuilder
         txt.alignByGeometry = true;
         ApplyMenuFont(txt);
         // Window text WRAPS within its width (HUD default is Overflow for short transparent-overlay text;
-        // window panels have long labels/descriptions that must wrap, not spill past the frame).
-        txt.horizontalOverflow = HorizontalWrapMode.Wrap;
+        // window panels have long labels/descriptions that must wrap, not spill past the frame). NoWrap keeps
+        // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
+        // the cell edge rather than wrapping into a multi-line block.
+        txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
         txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —

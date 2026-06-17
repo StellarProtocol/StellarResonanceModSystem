@@ -33,6 +33,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     private WindowBuilder? _builder;
     private WindowInteractionTicker? _ticker;
     private bool _tickerRegistered;
+    private bool _chartRegistered;   // ChartGraphic (injected MaskableGraphic) registered with Il2CppInterop?
     private bool _fontRebuildHooked;
     private Action<Font>? _onFontRebuilt;   // cached delegate so subscribe/unsubscribe match (IL2CPP event)
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
@@ -112,9 +113,27 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     public void SetRect(object? token, WindowRect rect)
     {
         if (token is not WindowToken t || t.Rect == null) return;
-        t.Rect.anchoredPosition = new Vector2(rect.X, -rect.Y);   // top-left anchor, y-down screen space
+        // Clamp programmatic placement on-screen the SAME way drags do (WindowInteractionTicker →
+        // LayoutStorage.ClampVisible): without this, a default/saved/plugin-supplied position (e.g. CombatMeter's
+        // off-screen party-focus x) could drop a window fully off-canvas and unreachable, since drags clamp but
+        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor.
+        var clamped = ClampToScreen(t, rect);
+        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
         if (t.Resizable && rect.Width > 0f && rect.Height > 0f)
             t.Rect.sizeDelta = new Vector2(rect.Width, rect.Height);
+    }
+
+    // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
+    // Width/Height; substitute the live RectTransform size so we never clamp against size 0 (which would treat the
+    // window as 0px wide and let its left edge pin anywhere). Returns the clamped top-left in WindowRect space.
+    private static WindowRect ClampToScreen(WindowToken t, WindowRect rect)
+    {
+        var size = t.Rect!.rect.size;
+        var w = rect.Width  > 0f ? rect.Width  : size.x;
+        var h = rect.Height > 0f ? rect.Height : size.y;
+        return Stellar.Application.Services.LayoutStorage.ClampVisible(
+            new WindowRect(rect.X, rect.Y, w, h),
+            new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
     }
 
     public WindowRect GetRect(object? token)
@@ -147,6 +166,23 @@ internal sealed partial class WindowRenderer : IWindowRenderer
 
     /// <summary>Lazily create the Stellar window canvas + its GraphicRaycaster. Re-creates if a scene
     /// change destroyed it (WindowService self-heal then re-mounts each window).</summary>
+    // Register the injected managed UnityEngine.Object subclasses with Il2CppInterop, once each, before any
+    // AddComponent of them runs. ChartGraphic overrides OnPopulateMesh (vtable virtual) — the spike confirmed
+    // native→managed dispatch works under Il2CppInterop 1.5.1; WindowInteractionTicker is a plain MonoBehaviour.
+    private void RegisterInjectedTypes()
+    {
+        if (!_tickerRegistered)
+        {
+            try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
+            _tickerRegistered = true;
+        }
+        if (!_chartRegistered)
+        {
+            try { ClassInjector.RegisterTypeInIl2Cpp<ChartGraphic>(); } catch { /* already registered */ }
+            _chartRegistered = true;
+        }
+    }
+
     private bool EnsureCanvas()
     {
         if (_canvas != null) return true;
@@ -161,11 +197,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             canvas.sortingOrder = WindowSortingOrder;
             // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
             go.AddComponent<GraphicRaycaster>();
-            if (!_tickerRegistered)
-            {
-                try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
-                _tickerRegistered = true;
-            }
+            RegisterInjectedTypes();
             _ticker = go.AddComponent<WindowInteractionTicker>();
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
@@ -182,18 +214,43 @@ internal sealed partial class WindowRenderer : IWindowRenderer
                 registerWindowDrag: (handle, target, editOnly) => _ticker!.DragWindows.Add((handle, target, editOnly)),
                 registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
                 registerPulse: p => _ticker!.Pulses.Add(p));
-            _builder.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
-            _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
-            _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
-            _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
-            _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
-            _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
-            _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
-                new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
-            _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+            WireBuilderHooks();
             _log.Info("[Window] Stellar window canvas created");
             return true;
         }
         catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }
     }
+
+    // Wire the builder's sandbox-pure registration callbacks onto the live ticker. Split out of EnsureCanvas
+    // to keep it under the 50-LoC gate; runs once per canvas create (the ticker is non-null here).
+    private void WireBuilderHooks()
+    {
+        _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
+        _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
+        _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
+        _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
+        _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
+        _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
+            new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
+        _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+        _builder.RegisterChartPan = (plot, get, set, total, minSpan)
+            => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
+        _builder.RegisterChartNav = new WindowBuilder.ChartNavRegistrar(reg => _ticker!.ChartNavs.Add(
+            new WindowInteractionTicker.ChartNav
+            {
+                Nav = reg.Nav, Left = reg.Left, Right = reg.Right, Body = reg.Body,
+                Get = reg.Get, Set = reg.Set, Total = reg.Total, MinSpan = reg.MinSpan,
+            }));
+    }
+
+    // Build a ChartPan entry, computing the scroll-pipeline guard ONCE (plot is live in the hierarchy here):
+    // a chart nested in a ScrollRect yields the wheel to the scroll instead of zooming (see ChartPan.cs).
+    private static WindowInteractionTicker.ChartPan MakeChartPan(
+        RectTransform plot, Func<(float, float)> get, Action<(float, float)> set, Func<float> total, Func<float> minSpan)
+        => new()
+        {
+            Plot = plot, Get = get, Set = set, Total = total, MinSpan = minSpan,
+            InsideScrollRect = plot.GetComponentInParent<UnityEngine.UI.ScrollRect>() != null,
+        };
 }

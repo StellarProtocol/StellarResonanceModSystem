@@ -60,18 +60,18 @@ internal sealed partial class WindowBuilder
         img.type = Image.Type.Sliced; img.raycastTarget = true;
         var btn = go.AddComponent<Button>(); btn.targetGraphic = img;
 
-        var lg = go.AddComponent<HorizontalLayoutGroup>();
-        // Compact + consistent (the chat composer's "Say" feel) with SYMMETRIC vertical padding so the label
-        // centres on glyph geometry (alignByGeometry). All ButtonElements share this — meter == chat == menus.
-        lg.padding = new RectOffset(b.Icon != null ? 7 : 9, 9, 3, 3);
-        lg.spacing = 5f;
-        lg.childAlignment = TextAnchor.MiddleCenter;
-        lg.childControlWidth = true; lg.childControlHeight = true;
-        lg.childForceExpandWidth = false; lg.childForceExpandHeight = false;
+        // Icon-only button (icon + empty label, e.g. the meter row's inspect magnifier): the icon must be the
+        // SOLE centred child — so symmetric horizontal padding + no inter-child spacing (otherwise the trailing
+        // empty-label cell + asymmetric padding push the icon left-of-centre), and a larger glyph.
+        bool iconOnly = b.Icon != null && string.IsNullOrEmpty(b.Label());
+        ConfigureButtonLayout(go, b, iconOnly);
 
         // Optional leading icon INSIDE the button → co-centred with the label by this HLG (MiddleCenter), so the
         // icon↔label vertical alignment can't drift with the OS font line-box (the iconed-tab alignment bug).
-        if (b.Icon != null) BuildButtonIcon(b.Icon(), go.transform, token);
+        // Icon-only buttons size the icon to Scaled(14): kept strictly UNDER the minHeight floor (Scaled(11)+12)
+        // at any UI scale, so an icon-only button and a glyph button (whose label also sits under that floor) end
+        // up the SAME height — a matched pair (e.g. the meter row's inspect magnifier next to the drill ►).
+        if (b.Icon != null) BuildButtonIcon(b.Icon(), go.transform, token, iconOnly ? Scaled(14) : 16f);
 
         // minHeight floor so a parent VerticalLayoutGroup can't SQUISH the button when a fixed-height
         // (Resizable) window is over-budget — e.g. the CombatMeter header buttons compressing when the inline
@@ -101,6 +101,19 @@ internal sealed partial class WindowBuilder
         RegisterButtonReskin(token, binding, b.Style);
     }
 
+    // HLG for a ButtonElement: compact, MiddleCenter, SYMMETRIC vertical padding so the label centres on glyph
+    // geometry (alignByGeometry). Shared by every ButtonElement (meter == chat == menus). Icon-only buttons use
+    // symmetric horizontal padding + zero spacing so the lone icon truly centres.
+    private static void ConfigureButtonLayout(GameObject go, ButtonElement b, bool iconOnly)
+    {
+        var lg = go.AddComponent<HorizontalLayoutGroup>();
+        lg.padding = iconOnly ? new RectOffset(5, 5, 3, 3) : new RectOffset(b.Icon != null ? 7 : 9, 9, 3, 3);
+        lg.spacing = iconOnly ? 0f : 5f;
+        lg.childAlignment = TextAnchor.MiddleCenter;
+        lg.childControlWidth = true; lg.childControlHeight = true;
+        lg.childForceExpandWidth = false; lg.childForceExpandHeight = false;
+    }
+
     // Button label cell — centred on glyph GEOMETRY (not the OS font line box, which sits the ink high; without
     // this a single-glyph button like the −/+ stepper renders its label near the top, looking off-centre + tall).
     private Text BuildButtonLabel(Transform parent, bool fixedWidth)
@@ -117,11 +130,11 @@ internal sealed partial class WindowBuilder
 
     // Leading button icon (16px, theme-tinted, smooth via LoadIcon's mipmaps). Sits before the label in the
     // button's HLG → centred with it. (LoadIcon lives in WindowBuilder.Tiles.cs — same partial class.)
-    private void BuildButtonIcon(byte[]? png, Transform parent, WindowToken token)
+    private void BuildButtonIcon(byte[]? png, Transform parent, WindowToken token, float size = 16f)
     {
         var go = UGuiPrimitives.NewChild("BtnIcon", parent);
         var le = go.AddComponent<LayoutElement>();
-        le.preferredWidth = le.minWidth = 16f; le.preferredHeight = le.minHeight = 16f;
+        le.preferredWidth = le.minWidth = size; le.preferredHeight = le.minHeight = size;
         // The button content box is shifted UP 1 px (padding top 2 / bottom 4, to optically centre the OS-font
         // text ink). A geometrically-centred icon then sits ~1 px high. Nudge the icon DOWN to sit on the text
         // ink line (the image is a stretched child so the HLG still lays out the 16×16 slot).

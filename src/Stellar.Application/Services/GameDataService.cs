@@ -63,6 +63,7 @@ internal sealed class GameDataService : IGameData
         }
 
         _combat.LoadSkills(snapshot.Skills);
+        _combat.LoadSkillLevelToBase(snapshot.SkillLevelToBase);
         _combat.LoadBuffs(snapshot.Buffs);
         _combat.LoadProfessions(snapshot.Professions);
         _combat.LoadAttributes(snapshot.Attributes);

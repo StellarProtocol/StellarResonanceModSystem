@@ -34,6 +34,17 @@ internal interface IGameDataProbe
 internal readonly struct GameDataEagerSnapshot
 {
     public IReadOnlyDictionary<int, SkillInfo>             Skills            { get; init; }
+
+    /// <summary>
+    /// Leveled-skill-id → base-skill-id map, built from
+    /// <c>Bokura.SkillFightLevelTableBase</c> (row key → its <c>SkillId</c> column).
+    /// Damage events sometimes carry a leveled <c>skill_level_id</c>
+    /// (<c>baseSkillId*100 + level</c>, e.g. 2031104) that is not a key in
+    /// <see cref="Skills"/>; this map resolves it to the base skill the SkillTable
+    /// keys on. May be empty if the table type was not found.
+    /// </summary>
+    public IReadOnlyDictionary<int, int>                   SkillLevelToBase  { get; init; }
+
     public IReadOnlyDictionary<int, BuffInfo>              Buffs             { get; init; }
     public IReadOnlyDictionary<int, ProfessionInfo>        Professions       { get; init; }
     public IReadOnlyDictionary<int, AttributeInfo>         Attributes        { get; init; }

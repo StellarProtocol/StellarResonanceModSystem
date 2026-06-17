@@ -12,6 +12,26 @@
     <ProjectReference Include="../../src/Stellar.Infrastructure/Stellar.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!--
+    CombatMeter plugin lives in the sibling `plugins/` submodule. We reference it so the
+    CombatMeter internals (SourceTimeline, SourceStats, Plugin.EncounterHistoryEntry,
+    Plugin.ComputeUptime) can be unit-tested directly — the plugin grants this assembly
+    InternalsVisibleTo. The plugin builds against the game's IL2CPP interop assemblies;
+    forward the StellarFrameworkSrc / BepInExCore / GameInterop paths the plugin's own
+    Directory.Build.props expects. Unity/Il2Cpp refs are HintPath + Private=false, so
+    nothing Unity is copied into the test output and the tests stay Unity-free at runtime.
+  -->
+  <PropertyGroup>
+    <StellarFrameworkSrc Condition="'$(StellarFrameworkSrc)' == ''">$(MSBuildThisFileDirectory)../../src</StellarFrameworkSrc>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">/opt/game/BlueProtocol2/drive_c/Star/StarLauncher/game/release_2.11/game_mini/BepInEx/core</BepInExCore>
+    <GameInterop Condition="'$(GameInterop)' == ''">/opt/game/BlueProtocol2/drive_c/Star/StarLauncher/game/release_2.11/game_mini/BepInEx/interop</GameInterop>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../plugins/samples/Stellar.CombatMeter/Stellar.CombatMeter.csproj"
+                      Properties="StellarFrameworkSrc=$(StellarFrameworkSrc);BepInExCore=$(BepInExCore);GameInterop=$(GameInterop)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.6.6" />

@@ -65,6 +65,75 @@ public sealed class GameDataCombatServiceTests
     }
 
     [Fact]
+    public void GetSkill_ResolvesLeveledId_ToBaseSkillInfo()
+    {
+        // Damage events carry a leveled skill_level_id (baseSkillId*100+level,
+        // e.g. 2031104) that is NOT a key in SkillTable. The probe-built
+        // leveled->base map (from SkillFightLevelTableBase) maps it to its base
+        // (20311); GetSkill resolves it to the base skill's info.
+        var svc = new GameDataCombatService();
+        svc.LoadSkills(new Dictionary<int, SkillInfo>
+        {
+            [20311] = new SkillInfo(20311, "Flame Lance", "", "", SkillKind.Active, 0, false),
+        });
+        svc.LoadSkillLevelToBase(new Dictionary<int, int>
+        {
+            [2031104] = 20311,
+        });
+
+        var result = svc.GetSkill(2031104);
+
+        Assert.NotNull(result);
+        Assert.Equal("Flame Lance", result!.Value.Name);
+        Assert.Equal(20311, result.Value.Id);
+    }
+
+    [Fact]
+    public void GetSkill_PrefersDirectHit_OverLeveledMap()
+    {
+        // A direct base-id lookup must never be diverted through the map.
+        var svc = new GameDataCombatService();
+        svc.LoadSkills(new Dictionary<int, SkillInfo>
+        {
+            [20311] = new SkillInfo(20311, "Base", "", "", SkillKind.Active, 0, false),
+        });
+        svc.LoadSkillLevelToBase(new Dictionary<int, int>
+        {
+            // Pathological map entry for the base id itself — must be ignored.
+            [20311] = 99999,
+        });
+
+        Assert.Equal("Base", svc.GetSkill(20311)!.Value.Name);
+    }
+
+    [Fact]
+    public void GetSkill_ReturnsNull_WhenLeveledMapMisses()
+    {
+        var svc = new GameDataCombatService();
+        svc.LoadSkills(new Dictionary<int, SkillInfo>
+        {
+            [20311] = new SkillInfo(20311, "Flame Lance", "", "", SkillKind.Active, 0, false),
+        });
+        svc.LoadSkillLevelToBase(new Dictionary<int, int>());
+
+        Assert.Null(svc.GetSkill(2031104));
+    }
+
+    [Fact]
+    public void GetSkill_ReturnsNull_WhenLeveledMapResolvesToUnknownBase()
+    {
+        // Map has the leveled id, but the base it points at was never loaded.
+        var svc = new GameDataCombatService();
+        svc.LoadSkills(new Dictionary<int, SkillInfo>());
+        svc.LoadSkillLevelToBase(new Dictionary<int, int>
+        {
+            [2031104] = 20311,
+        });
+
+        Assert.Null(svc.GetSkill(2031104));
+    }
+
+    [Fact]
     public void GetBuff_ReturnsRow_WhenKnown()
     {
         var svc = new GameDataCombatService();
