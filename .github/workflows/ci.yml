@@ -17,15 +17,20 @@ jobs:
       - name: Coding standards
         run: bash tools/check-standards.sh
 
-      # L2/L3: build the ENTIRE solution — including Infrastructure/Host — against
-      # the committed interop REFERENCE STUBS (refs/, see tools/gen-refs.sh). The
-      # stubs carry the Unity/Il2Cpp/BepInEx public surface only (no method bodies,
+      # L2/L3: build the framework RUNTIME projects — including Infrastructure/Host —
+      # against the committed interop REFERENCE STUBS (refs/, see tools/gen-refs.sh).
+      # The stubs carry the Unity/Il2Cpp/BepInEx public surface only (no method bodies,
       # no game IL/metadata, no Panda.* game logic), so this needs no game install.
-      # The analyzer runs at error severity across every project here.
+      # Building Host pulls in Infrastructure/Application/Wire/Abstractions; the analyzer
+      # runs at error severity across all of them. PluginContracts builds separately.
+      # NOT the whole sln: Stellar.Application.Tests references the CombatMeter plugin
+      # sample (via the local src/samples symlink), which isn't present on CI.
       # NOTE: a stub build validates the API surface, not runtime — the release-of-
       # record is gated on a real-interop / in-game smoke. See docs/release-process.md.
-      - name: Build full solution against interop stubs (analyzer runs here)
-        run: dotnet build src/Stellar.sln -c Release -p:GameInterop=$PWD/refs -p:BepInExCore=$PWD/refs
+      - name: Build framework against interop stubs (analyzer runs here)
+        run: |
+          dotnet build src/Stellar.Host/Stellar.Host.csproj -c Release -p:GameInterop=$PWD/refs -p:BepInExCore=$PWD/refs
+          dotnet build src/Stellar.PluginContracts/Stellar.PluginContracts.csproj -c Release
 
       # Analyzer unit tests are self-contained (no game refs) and validate the
       # enforcement rules themselves.

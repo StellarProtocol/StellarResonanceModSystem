@@ -24,9 +24,13 @@ BEPINEX_CORE="${BepInExCore:-$ROOT/refs}"
 
 [ -d "$STAGE_SRC" ] || { echo "BepInEx stage not found: $STAGE_SRC"; exit 1; }
 
-echo "building src/ (Release) against ${GAME_INTEROP}…"
-"$DOTNET" build "$SRC/Stellar.sln" -c Release --nologo -v quiet \
+echo "building framework (Release) against ${GAME_INTEROP}…"
+# Build the runtime projects only — Host pulls in Infrastructure/Application/Wire/
+# Abstractions; PluginContracts builds separately. NOT the whole sln: its test
+# projects reference plugin samples (src/samples symlink) absent on CI.
+"$DOTNET" build "$SRC/Stellar.Host/Stellar.Host.csproj" -c Release --nologo -v quiet \
   -p:GameInterop="$GAME_INTEROP" -p:BepInExCore="$BEPINEX_CORE"
+"$DOTNET" build "$SRC/Stellar.PluginContracts/Stellar.PluginContracts.csproj" -c Release --nologo -v quiet
 
 BUNDLE="$OUT_DIR/bundle"
 rm -rf "$BUNDLE"; mkdir -p "$BUNDLE"
