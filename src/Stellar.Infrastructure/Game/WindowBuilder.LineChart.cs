@@ -305,7 +305,14 @@ internal sealed partial class WindowBuilder
         AddChartReflow(w => xrt.sizeDelta = new Vector2(ChartInner(lc, w).width, 14f));   // re-centre across the live width
     }
 
-    // A swatch + name per series, laid out left-to-right in a row beneath the plot panel.
+    // Max legend entries the dynamic pool pre-allocates. The chart's series set is the team-total line plus one
+    // per toggled source; CombatMeter caps toggled sources at 8, so 12 entry slots leaves headroom for any
+    // plugin while keeping the pool small. Surplus slots stay SetActive(false) and collapse in the row layout.
+    private const int ChartLegendSlots = 12;
+
+    // A swatch + name per series, laid out left-to-right beneath the plot panel. The entry set is DYNAMIC: a
+    // pool of pre-built slots is repopulated (swatch colour, label text, active state) whenever the series-list
+    // reference changes, so toggling a source onto the chart adds/removes its legend entry without a rebuild.
     private void BuildLegend(Transform parent, LineChartElement lc, WindowToken token)
     {
         var row = UGuiPrimitives.NewChild("Legend", parent);
@@ -315,11 +322,17 @@ internal sealed partial class WindowBuilder
         rt.anchoredPosition = new Vector2(ChartMarginLeft, -lc.Height - 2f);
         rt.sizeDelta = new Vector2(lc.Width - ChartMarginLeft, ChartLegendHeight);
         UGuiPrimitives.AddLayout(row, gap: 14f, columns: UGuiPrimitives.RowMode);
-        foreach (var s in lc.Series()) BuildLegendEntry(row.transform, s, token);
+
+        var slots = new LegendSlot[ChartLegendSlots];
+        for (var i = 0; i < ChartLegendSlots; i++) slots[i] = BuildLegendEntry(row.transform, token);
+        var binding = new LegendBinding { SeriesFn = lc.Series, Slots = slots };
+        binding.Apply();                 // initial paint (also the sandbox static-render path)
+        token.Hovers.Add(new HoverBinding { Poll = binding.Apply });
     }
 
-    // One legend entry: a coloured swatch followed by the series name. (token threads label re-skin.)
-    private void BuildLegendEntry(Transform parent, ChartSeries s, WindowToken token)
+    // One reusable legend slot: a coloured swatch + a name label, hidden by default until a series fills it.
+    // The label is theme-reskinned; its text is set directly by LegendBinding (not a per-frame TextBinding).
+    private LegendSlot BuildLegendEntry(Transform parent, WindowToken token)
     {
         var entry = UGuiPrimitives.NewChild("Entry", parent);
         UGuiPrimitives.AddLayout(entry, gap: 5f, columns: UGuiPrimitives.RowMode);
@@ -327,13 +340,13 @@ internal sealed partial class WindowBuilder
         var sle = sw.AddComponent<LayoutElement>();
         sle.preferredWidth = sle.preferredHeight = 12f; sle.flexibleWidth = 0f;
         var img = sw.AddComponent<Image>();
-        img.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A); img.raycastTarget = false;
-        var name = s.Name;
-        var lbl = ChartLabel(entry.transform, TextAnchor.MiddleLeft, "Name", token, bold: s.Emphasis);
+        img.raycastTarget = false;
+        var lbl = ChartLabel(entry.transform, TextAnchor.MiddleLeft, "Name", token);
         // Bare LayoutElement (no preferredWidth) under the Row's childControlWidth=true: the Text's own
         // preferred width drives its natural width; flexibleWidth=0 stops it stretching past the name.
         lbl.GetComponent<LayoutElement>().flexibleWidth = 0f;
-        token.Texts.Add(new TextBinding { C = lbl, TextFn = () => name });
+        entry.SetActive(false);
+        return new LegendSlot(entry, img, lbl);
     }
 
     // A themed muted-colour chart label Text, registered for re-skin like the window's other text.

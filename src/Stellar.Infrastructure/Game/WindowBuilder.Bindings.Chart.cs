@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Services;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -32,6 +33,46 @@ internal sealed partial class WindowBuilder
                 && Mathf.Approximately(width, _lastWidth)) return;
             _lastSeries = series; _lastRange = range; _lastWidth = width; _init = true;
             Remesh(series);
+        }
+    }
+
+    // One reusable legend entry slot: the entry GameObject (toggled active per series presence), its swatch
+    // Image, and its name Text. LegendBinding repopulates these from the series set on a reference change.
+    internal readonly struct LegendSlot
+    {
+        public LegendSlot(GameObject root, Image swatch, Text label) { Root = root; Swatch = swatch; Label = label; }
+        public GameObject Root { get; }
+        public Image Swatch { get; }
+        public Text Label { get; }
+    }
+
+    // Dynamic legend poll: ref-diffs the series LIST instance each Apply and, only when it changed, repaints the
+    // pre-built slot pool — swatch colour + label text + active state per series, surplus slots hidden. Mirrors
+    // the ChartBinding ref-diff so a toggled source's legend entry appears/disappears in lockstep with its line,
+    // with no per-frame work (steady state is one reference compare) and no GameObject churn on a toggle.
+    internal sealed class LegendBinding
+    {
+        public Func<IReadOnlyList<ChartSeries>> SeriesFn = null!;
+        public LegendSlot[] Slots = Array.Empty<LegendSlot>();
+        private object? _lastSeries; private bool _init;
+        public void Apply()
+        {
+            var series = SeriesFn();
+            if (_init && ReferenceEquals(series, _lastSeries)) return;
+            _lastSeries = series; _init = true;
+            for (var i = 0; i < Slots.Length; i++)
+            {
+                var slot = Slots[i];
+                if (slot.Root == null) continue;
+                if (i < series.Count)
+                {
+                    var s = series[i];
+                    if (slot.Swatch != null) slot.Swatch.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
+                    if (slot.Label != null) { slot.Label.text = s.Name; slot.Label.fontStyle = s.Emphasis ? FontStyle.Bold : FontStyle.Normal; }
+                    slot.Root.SetActive(true);
+                }
+                else slot.Root.SetActive(false);
+            }
         }
     }
 }

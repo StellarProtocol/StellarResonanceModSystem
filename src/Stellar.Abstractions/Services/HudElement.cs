@@ -36,8 +36,11 @@ public enum TextAlign
 /// width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version
 /// after it starts at a consistent x). <paramref name="Align"/> sets horizontal alignment (Right for numeric
 /// columns). <paramref name="Shadow"/> draws a dark outline behind the glyphs — for chrome-less overlays (a
-/// borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.</summary>
-public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = null, bool Emphasis = false, float Width = 0f, TextAlign Align = TextAlign.Left, bool Shadow = false) : HudElement;
+/// borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.
+/// <paramref name="NoWrap"/> keeps the text on a single line (any overflow spills/clips at the cell edge
+/// rather than wrapping to multiple lines) — use in a fixed-width pane where a long label (e.g. a map name)
+/// must read as one row, not a 5-line block.</summary>
+public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = null, bool Emphasis = false, float Width = 0f, TextAlign Align = TextAlign.Left, bool Shadow = false, bool NoWrap = false) : HudElement;
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
 /// semantic colour (from its colour slot). Optional right-aligned numeric <paramref name="Label"/> and

@@ -329,8 +329,10 @@ internal sealed partial class WindowBuilder
         txt.alignByGeometry = true;
         ApplyMenuFont(txt);
         // Window text WRAPS within its width (HUD default is Overflow for short transparent-overlay text;
-        // window panels have long labels/descriptions that must wrap, not spill past the frame).
-        txt.horizontalOverflow = HorizontalWrapMode.Wrap;
+        // window panels have long labels/descriptions that must wrap, not spill past the frame). NoWrap keeps
+        // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
+        // the cell edge rather than wrapping into a multi-line block.
+        txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
         txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
