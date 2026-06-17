@@ -214,21 +214,34 @@ internal sealed partial class WindowRenderer : IWindowRenderer
                 registerWindowDrag: (handle, target, editOnly) => _ticker!.DragWindows.Add((handle, target, editOnly)),
                 registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
                 registerPulse: p => _ticker!.Pulses.Add(p));
-            _builder.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
-            _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
-            _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
-            _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
-            _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
-            _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
-            _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
-                new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
-            _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
-            _builder.RegisterChartPan = (plot, get, set, total, minSpan)
-                => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
+            WireBuilderHooks();
             _log.Info("[Window] Stellar window canvas created");
             return true;
         }
         catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }
+    }
+
+    // Wire the builder's sandbox-pure registration callbacks onto the live ticker. Split out of EnsureCanvas
+    // to keep it under the 50-LoC gate; runs once per canvas create (the ticker is non-null here).
+    private void WireBuilderHooks()
+    {
+        _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
+        _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
+        _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
+        _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
+        _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
+        _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
+            new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
+        _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+        _builder.RegisterChartPan = (plot, get, set, total, minSpan)
+            => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
+        _builder.RegisterChartNav = new WindowBuilder.ChartNavRegistrar(reg => _ticker!.ChartNavs.Add(
+            new WindowInteractionTicker.ChartNav
+            {
+                Nav = reg.Nav, Left = reg.Left, Right = reg.Right, Body = reg.Body,
+                Get = reg.Get, Set = reg.Set, Total = reg.Total, MinSpan = reg.MinSpan,
+            }));
     }
 
     // Build a ChartPan entry, computing the scroll-pipeline guard ONCE (plot is live in the hierarchy here):

@@ -30,9 +30,12 @@ internal sealed partial class WindowBuilder
     // plot panel is left on so the later scroll/drag zoom can poll it.
     private void BuildLineChart(LineChartElement lc, Transform parent, WindowToken token)
     {
+        // The strip below the legend is either the legacy −/+/Reset + scrollbar (ChartControlHeight) or the
+        // taller navigator overview (ChartNavHeight + its top gap). Pick the reserved height to match.
+        var belowLegend = lc.ShowNavigator ? ChartNavHeight + ChartNavGapTop : ChartControlHeight;
         var root = UGuiPrimitives.NewChild("LineChart", parent);
         var rle = root.AddComponent<LayoutElement>();
-        rle.preferredWidth = lc.Width; rle.preferredHeight = lc.Height + ChartLegendHeight + ChartControlHeight;
+        rle.preferredWidth = lc.Width; rle.preferredHeight = lc.Height + ChartLegendHeight + belowLegend;
         rle.flexibleWidth = 0f; rle.flexibleHeight = 0f;
 
         var plot = AddChartPanel(root.transform, lc.Width, lc.Height);
@@ -45,7 +48,8 @@ internal sealed partial class WindowBuilder
         BuildAxisTitles(plot.transform, lc, inner, token);
         BuildLegend(root.transform, lc, token);
         BuildChartGraphic(plot.transform, lc, inner, token);
-        BuildChartControls(root.transform, plot, lc, inner, token);   // .LineChart.Zoom.cs
+        if (lc.ShowNavigator) BuildNavigator(root.transform, plot, lc, inner, token);   // .LineChart.Navigator.cs
+        else BuildChartControls(root.transform, plot, lc, inner, token);                // .LineChart.Zoom.cs
     }
 
     // Line thickness (px) for ordinary vs emphasised (team-total) series, and the axis/grid line widths.

@@ -71,6 +71,32 @@ internal sealed partial class WindowBuilder
     // clamped via ChartWindow. Null in the sandbox → the plot renders statically (gestures verified in-game).
     internal Action<RectTransform, Func<(float, float)>, Action<(float, float)>, Func<float>, Func<float>>? RegisterChartPan { get; set; }
 
+    // Line-chart navigator-brush hook: the ticker drives the brush window on drag. Args: the navigator plot
+    // rect (cursor X → time over [0,total]), the left/right resize-handle rects + the body rect (hit-test
+    // priority: handle = resize that edge, body = pan), then getWindow/setWindow/total/min-span. All window
+    // math is ChartWindow. Null in the sandbox → the brush renders statically (no live drag; verified
+    // in-game), so the navigator strip still shows the current range. Mirrors RegisterChartPan.
+    internal ChartNavRegistrar? RegisterChartNav { get; set; }
+
+    // Bundles the navigator-brush registration so the call site stays under the 5-param analyzer gate.
+    internal sealed record ChartNavRegistrar(Action<ChartNavReg> Add)
+    {
+        internal void Invoke(ChartNavReg reg) => Add(reg);
+    }
+
+    // The navigator-brush registration payload (the ticker copies it into its ChartNav list).
+    internal sealed class ChartNavReg
+    {
+        public RectTransform Nav = null!;          // navigator inner plot rect (full-range; cursor X → time)
+        public RectTransform Left = null!;         // left resize handle
+        public RectTransform Right = null!;        // right resize handle
+        public RectTransform Body = null!;         // draggable middle (pan)
+        public Func<(float, float)> Get = null!;
+        public Action<(float, float)> Set = null!;
+        public Func<float> Total = null!;
+        public Func<float> MinSpan = null!;
+    }
+
     public WindowBuilder(WindowThemeAssets assets,
         Action<UGuiTextInput>? registerField = null,
         Action<RectTransform, Action<float, float>>? registerDrag = null,

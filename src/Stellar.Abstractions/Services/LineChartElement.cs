@@ -40,6 +40,12 @@ public readonly record struct ChartSeries(string Name, ColorRgba Color, IReadOnl
 /// <param name="YTicks">Number of Y gridlines/ticks.</param>
 /// <param name="XTicks">Number of X ticks.</param>
 /// <param name="YMaxOverride">Optional fixed Y max; null/returns-null = auto-scale to visible peak.</param>
+/// <param name="ShowNavigator">When true, the framework draws a Highcharts-style navigator strip beneath
+/// the plot + legend: a mini full-range (area-filled) overview of the same <paramref name="Series"/> data
+/// (ignoring <paramref name="VisibleRange"/>) with a draggable/resizable brush window that controls
+/// <paramref name="VisibleRange"/> (drag middle = pan, drag an edge handle = zoom that edge, double-click =
+/// reset to full). The navigator replaces the legacy −/+/Reset button bar + range scrollbar; scroll-wheel
+/// zoom and drag-pan on the main plot remain. When false (default) the legacy control strip is drawn.</param>
 public sealed record LineChartElement(
     Func<IReadOnlyList<ChartSeries>> Series,
     Func<float> BucketSeconds,
@@ -53,4 +59,5 @@ public sealed record LineChartElement(
     float Height,
     int YTicks = 4,
     int XTicks = 4,
-    Func<float?>? YMaxOverride = null) : HudElement;
+    Func<float?>? YMaxOverride = null,
+    bool ShowNavigator = false) : HudElement;

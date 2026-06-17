@@ -55,4 +55,14 @@ internal static class ChartGeometry
     // Map a Y value to a Y pixel within [y0,y1] (y0 = bottom/zero, y1 = top/yMax).
     internal static float ValueToY(float value, float yMax, float y0, float y1)
         => yMax <= 0f ? y0 : y0 + Math.Clamp(value / yMax, 0f, 1f) * (y1 - y0);
+
+    // Navigator brush math: map a time `t` in [0,total] to an X pixel within [x0,x1]. The navigator plots
+    // the FULL chart extent, so time 0 → x0 and time total → x1 (linear). total<=0 collapses to x0.
+    internal static float TimeToNavX(float t, float total, float x0, float x1)
+        => total <= 0f ? x0 : x0 + Math.Clamp(t / total, 0f, 1f) * (x1 - x0);
+
+    // Inverse of TimeToNavX: a local X pixel within [x0,x1] back to a time in [0,total]. Used by the brush
+    // drag handlers to convert cursor travel into a window edge. Degenerate rect (x1<=x0) returns 0.
+    internal static float NavXToTime(float x, float total, float x0, float x1)
+        => x1 <= x0 ? 0f : Math.Clamp((x - x0) / (x1 - x0), 0f, 1f) * total;
 }

@@ -80,7 +80,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = RenderHosts.Count - 1; i >= 0; i--) if (RenderHosts[i].Img == null) RenderHosts.RemoveAt(i);
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
-        PruneChartPans();
+        PruneChartPans(); PruneChartNavs();
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -252,6 +252,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         // arbitrate against — hence the asymmetry with the slot/resize/window-drag paths below.
         _activeChartPan = HitChartPan(Input.mousePosition);
         if (_activeChartPan >= 0) { _lastMouse = Input.mousePosition; return; }
+        _activeChartNav = HitChartNav(Input.mousePosition);   // brush handle=resize / body=pan / 2-click=reset (see .ChartNav.cs)
+        if (_activeChartNav >= 0) { _lastMouse = Input.mousePosition; return; }
         _activeSlotDrag = HitSlot(Input.mousePosition);
         if (_activeSlotDrag >= 0) BeginSlotDrag(_activeSlotDrag);
         _activeDrag = _activeSlotDrag < 0 ? HitTest(Input.mousePosition) : -1;
@@ -270,6 +272,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         if (_activeRenderHost >= 0) { TickRenderHostDrag(); return; }
         if (_activeChartPan >= 0) { TickChartPanDrag(); return; }
+        if (_activeChartNav >= 0) { TickChartNavDrag(); return; }
         if (_activeSlotDrag >= 0) { TickSlotDrag(); return; }
         if (_activeResize >= 0 && _activeResize < DragResizers.Count) { TickResize(); return; }
         if (_activeDrag >= 0 && _activeDrag < DragAreas.Count) { TickPickArea(); return; }
@@ -301,6 +304,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         if (_activeSlotDrag >= 0) EndSlotDrag(commit: true);
         _activeDrag = -1; _activeWinDrag = null; _activeResize = -1; _activeRenderHost = -1; _activeChartPan = -1;
+        _activeChartNav = -1; _navGrab = NavGrab.None;
         EditDragArbiter.WindowDragActive = false;
     }
 
