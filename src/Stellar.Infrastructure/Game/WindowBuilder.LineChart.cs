@@ -71,11 +71,12 @@ internal sealed partial class WindowBuilder
     private static float ChartWidth(LineChartElement lc, RectTransform plotRect)
         => lc.FillWidth ? Mathf.Max(plotRect.rect.width, lc.Width) : lc.Width;
 
-    // Core (full-opacity) half-widths (px) for ordinary vs emphasised (team-total) series, and the axis/grid
-    // line widths. Kept genuinely THIN: the bright core is a thin ~2px solid centre; ChartGraphic flanks it
-    // with a wider SOFT halo (Feather=1.75px per side) that anti-aliases the diagonal edges without thickening
-    // the solid part — measured cross-section bg→~1.5px partial→~2px core→~1.5px partial→bg reads thin + smooth.
-    // The polyline is a single round-joined stroke, so these widths apply continuously through every joint.
+    // Series "weight" half-widths (px) for ordinary vs emphasised (team-total) series, plus the axis/grid line
+    // widths. The plotted polylines are no longer meshed — ChartGraphic rasterises them into a SUPERSAMPLED
+    // texture (coverage AA), so these values are passed as Polyline.Thickness and scale the rasteriser's thin
+    // StrokeHalf relative to its WeightBaseline (0.45): ordinary → ~1px crisp line, emphasis → ~1.5× heavier.
+    // The result is thin AND smooth (true sub-pixel coverage AA, no feather band). The axis/grid lines are
+    // still meshed (straight pixel-aligned runs render fine as feathered quads).
     private const float ChartLineWidth = 0.45f;
     private const float ChartEmphasisWidth = 0.7f;
     private const float ChartAxisWidth = 1f;
@@ -120,10 +121,17 @@ internal sealed partial class WindowBuilder
     {
         var axis = (Color32)_assets.MenuMuted;
         var grid = (Color32)_assets.MenuBorder;
+        // Connect the two axes cleanly at the origin: each axis is a feathered stroke centred on its midline, so
+        // they would otherwise stop half a stroke-width short of the corner, leaving a visible gap at (0, 0s).
+        // Extend each axis past the origin by the other's half-width so their cores overlap and share the corner
+        // pixel (a mitre join for the right-angle), closing the L without thickening the rest of either run.
+        var corner = ChartAxisWidth;
         var segs = new List<ChartGraphic.Segment>
         {
-            new(new Vector2(inner.x, inner.y), new Vector2(inner.x, inner.yMax), axis, ChartAxisWidth),
-            new(new Vector2(inner.x, inner.y), new Vector2(inner.xMax, inner.y), axis, ChartAxisWidth),
+            // Y axis: from the corner (extended down by the X-axis half-width) up to the top.
+            new(new Vector2(inner.x, inner.y - corner), new Vector2(inner.x, inner.yMax), axis, ChartAxisWidth),
+            // X axis: from the corner (extended left by the Y-axis half-width) out to the right.
+            new(new Vector2(inner.x - corner, inner.y), new Vector2(inner.xMax, inner.y), axis, ChartAxisWidth),
         };
         for (var i = 1; i <= 4; i++)   // four interior Y gridlines aligned to the nice-max tick rows
         {

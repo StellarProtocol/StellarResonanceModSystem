@@ -6,16 +6,31 @@ using UnityEngine.UI;
 namespace Stellar.Infrastructure.Unity;
 
 /// <summary>
-/// uGUI mesh renderer for the line chart's plotted lines, axes, and gridlines. A
-/// <see cref="MaskableGraphic"/> whose <see cref="OnPopulateMesh"/> emits one thin quad (two triangles)
-/// per line segment. The spike (2026-06-16) confirmed native→managed <c>OnPopulateMesh</c> dispatch works
-/// for a <c>ClassInjector</c>-injected graphic under Il2CppInterop 1.5.1; <c>WindowRenderer.EnsureCanvas</c>
-/// registers the type once before any <c>AddComponent&lt;ChartGraphic&gt;</c> runs. Contains NO
-/// <c>ClassInjector</c> reference itself, so it also compiles + renders natively in the Mono UI sandbox.
+/// uGUI renderer for the line chart. Splits into two layers by what each does best:
+///
+/// <list type="bullet">
+/// <item><b>Mesh layer</b> (<see cref="OnPopulateMesh"/>): the AXES + GRIDLINES (straight runs) and the
+/// navigator area-FILLS. A <see cref="MaskableGraphic"/> whose <c>OnPopulateMesh</c> emits one thin quad per
+/// straight segment / one quad-strip per fill. Straight axis/grid lines are pixel-aligned, so the simple
+/// feathered quad is fine and cheap.</item>
+/// <item><b>Raster layer</b> (<see cref="RebakeLines"/>): the plotted-series POLYLINES (main chart + navigator
+/// overview lines). Meshed feathered quads could not be thin AND smooth at once (0.5px feather → jagged,
+/// 1.75px → too thick). So the polylines are now baked into a <b>supersampled</b> <see cref="Texture2D"/>
+/// (RGBA32, rendered at <see cref="Supersample"/>× then box-downsampled) → true sub-pixel coverage AA: a thin
+/// (~1px) crisp smooth line, no feather band. The texture is shown via a child <see cref="RawImage"/> stretched
+/// over the plot rect — the <c>WindowBuilder.ColorPicker.cs</c> <c>Texture2D</c>+<c>RawImage</c> pattern, which
+/// is IL2CPP-safe (no <c>ClassInjector</c> needed for a stock uGUI component).</item>
+/// </list>
+///
+/// The spike (2026-06-16) confirmed native→managed <c>OnPopulateMesh</c> dispatch works for a
+/// <c>ClassInjector</c>-injected graphic under Il2CppInterop 1.5.1; <c>WindowRenderer.EnsureCanvas</c> registers
+/// the type once before any <c>AddComponent&lt;ChartGraphic&gt;</c> runs. Contains NO <c>ClassInjector</c>
+/// reference itself, so it also compiles + renders natively in the Mono UI sandbox.
 ///
 /// Data is pushed in via <see cref="SetData"/> (already mapped to local pixel space by the builder); the
-/// graphic only triangulates. uGUI calls <c>OnPopulateMesh</c> on mount and on <c>SetVerticesDirty()</c> —
-/// the builder dirties only when the series/visible-range changed, so static archived data is cheap.
+/// graphic triangulates the mesh layer and re-bakes the raster layer. Both happen ONLY on <see cref="SetData"/>
+/// — the builder dirties only when series/visible-range/plot-size/theme changed, so static archived data pays
+/// the bake cost on session-select / zoom / resize / theme switch, never per-frame.
 /// </summary>
 internal sealed class ChartGraphic : MaskableGraphic
 {
@@ -71,7 +86,12 @@ internal sealed class ChartGraphic : MaskableGraphic
     private IReadOnlyList<Segment> _segments = Array.Empty<Segment>();
     private IReadOnlyList<Fill> _fills = Array.Empty<Fill>();
 
-    // Push freshly-mapped geometry, then flag the mesh dirty so uGUI re-runs OnPopulateMesh next render.
+    // The raster layer: a child RawImage showing the supersampled-AA polyline texture, lazily created on the
+    // first bake so a chart with no plotted series never spawns one. Stretched to cover the graphic rect.
+    private RawImage? _lineRaw;
+    private Texture2D? _lineTex;
+
+    // Push freshly-mapped geometry, then dirty the mesh (axes/grid/fill) AND re-bake the polyline raster.
     internal void SetData(IReadOnlyList<Segment> segments, IReadOnlyList<Polyline> polylines)
         => SetData(segments, polylines, Array.Empty<Fill>());
 
@@ -81,14 +101,16 @@ internal sealed class ChartGraphic : MaskableGraphic
         _segments = segments ?? Array.Empty<Segment>();
         _polylines = polylines ?? Array.Empty<Polyline>();
         _fills = fills ?? Array.Empty<Fill>();
-        SetVerticesDirty();
+        SetVerticesDirty();   // mesh layer: axes + gridlines + nav fills
+        RebakeLines();        // raster layer: supersampled-AA plotted polylines
     }
 
     // Access-modifier divergence: the IL2CPP UnityEngine.UI.Graphic declares OnPopulateMesh PUBLIC (so the
     // game build needs `public override` → CS0507 if protected), but stock Mono uGUI (the UI sandbox player)
     // declares it PROTECTED (→ CS0507 if public). UNITY_5_3_OR_NEWER is defined by every Unity compiler and
     // never by the plain-dotnet game DLL build, so it cleanly selects the sandbox's `protected` variant.
-    // Origin is bottom-left of the pixel-adjusted rect; the builder maps points into that same space.
+    // Origin is bottom-left of the pixel-adjusted rect; the builder maps points into that same space. The
+    // plotted polylines are NOT meshed here — they are baked into the raster layer (see RebakeLines).
 #if UNITY_5_3_OR_NEWER
     protected override void OnPopulateMesh(VertexHelper vh)
 #else
@@ -108,12 +130,206 @@ internal sealed class ChartGraphic : MaskableGraphic
             var s = _segments[i];
             AddLine(vh, origin + s.A, origin + s.B, s.Thickness, s.Color);
         }
+    }
+
+    // -------------------------------------------------------------------------------------------------------
+    // Raster (supersampled-AA) polyline layer.
+    // -------------------------------------------------------------------------------------------------------
+
+    // Supersample factor: the line texture is rasterised at this multiple of the plot pixel size, then box-
+    // downsampled to 1×. A pixel's final alpha is the fraction of its SS×SS sub-samples covered by the stroke,
+    // i.e. true sub-pixel coverage AA. 3× (9 sub-samples) gives a smooth gradient on diagonals at a modest
+    // memory cost; the texture is rebaked only on data/range/size/theme change, never per-frame.
+    private const int Supersample = 3;
+
+    // Stroke half-width (px, in FINAL plot space) for the supersampled rasteriser. Tuned so the rendered line
+    // reads as a thin ~1px solid core: at 0.6px half-width the fully-covered band is ~1.2px wide, flanked by
+    // coverage-graded partial pixels from the SS downsample (≈2px overall, NOT a 5-6px feather band). The
+    // builder's per-series Polyline.Thickness scales this so the emphasis (team-total) line reads a touch
+    // heavier than the rest, preserving the existing visual hierarchy.
+    private const float StrokeHalf = 0.6f;
+
+    // Hard cap on the baked texture's FINAL dimension (px). A FillWidth chart in a wide window could ask for a
+    // very large plot; the SS buffer is width·height·SS² floats, so cap the long edge to keep the bake bounded
+    // (the RawImage stretches the capped texture over the real rect — a 1px-wide line tolerates the tiny
+    // horizontal stretch without visible thickening because the AA gradient stretches with it).
+    private const int MaxTexDim = 2048;
+
+    // Re-bake the plotted polylines into the supersampled-AA texture and (re)assign it to the child RawImage.
+    // No-op (and the RawImage is hidden) when there are no polylines or the rect hasn't been laid out yet.
+    private void RebakeLines()
+    {
+        var r = GetPixelAdjustedRect();
+        var w = Mathf.RoundToInt(r.width);
+        var h = Mathf.RoundToInt(r.height);
+        if (_polylines.Count == 0 || w < 2 || h < 2)
+        {
+            if (_lineRaw != null) _lineRaw.enabled = false;
+            return;
+        }
+
+        // Final-resolution dimensions, capped; the scale maps plot-px → final-texel for the bake.
+        var fw = Mathf.Min(w, MaxTexDim);
+        var fh = Mathf.Min(h, MaxTexDim);
+        var sx = fw / (float)w;
+        var sy = fh / (float)h;
+
+        var pixels = RasterizeSupersampled(fw, fh, sx, sy);
+        EnsureLineTexture(fw, fh);
+        _lineTex!.SetPixels32(pixels);
+        _lineTex.Apply(updateMipmaps: false);
+        EnsureLineRaw();
+        _lineRaw!.enabled = true;
+        _lineRaw.texture = _lineTex;
+        _lineRaw.color = Color.white;   // texture carries per-pixel colour+alpha; tint must be neutral
+    }
+
+    // Box-downsampled coverage AA: for each FINAL texel, average its Supersample×Supersample sub-samples. Each
+    // sub-sample is "inside" a polyline if its distance to any of that polyline's segments is ≤ the stroke
+    // half-width (in SS space). Inside sub-samples contribute the polyline colour; the texel's alpha is the
+    // covered fraction (anti-aliased edge), its RGB the coverage-weighted colour blend. Later polylines drawn
+    // over earlier ones (painter's order, matching the old mesh emit order).
+    private Color32[] RasterizeSupersampled(int fw, int fh, float sx, float sy)
+    {
+        var ss = Supersample;
+        var samples = ss * ss;
+        var pixels = new Color32[fw * fh];
+        for (var y = 0; y < fh; y++)
+        {
+            for (var x = 0; x < fw; x++)
+            {
+                var acc = default(SampleAccum);   // coverage-weighted colour accumulators for this texel
+                for (var syi = 0; syi < ss; syi++)
+                {
+                    for (var sxi = 0; sxi < ss; sxi++)
+                    {
+                        // Sub-sample centre in FINAL-texel space, then to PLOT-pixel space (the polyline coords).
+                        var px = (x + (sxi + 0.5f) / ss) / sx;
+                        var py = (y + (syi + 0.5f) / ss) / sy;
+                        AccumulateSample(px, py, ref acc);
+                    }
+                }
+                pixels[y * fw + x] = acc.Resolve(samples);
+            }
+        }
+        return pixels;
+    }
+
+    // Coverage-weighted colour accumulator for one downsampled texel: A is the summed alpha-coverage across the
+    // SS×SS sub-samples; R/G/B are the coverage-weighted colour sums. Resolve normalises to a premultiplied-free
+    // Color32 (RGB = mean colour, alpha = mean coverage).
+    private struct SampleAccum
+    {
+        public float A, R, G, B;
+
+        public readonly Color32 Resolve(int samples)
+        {
+            if (A <= 0f) return default;
+            var inv = 1f / A;
+            return new Color32(
+                (byte)Mathf.Clamp(Mathf.RoundToInt(R * inv), 0, 255),
+                (byte)Mathf.Clamp(Mathf.RoundToInt(G * inv), 0, 255),
+                (byte)Mathf.Clamp(Mathf.RoundToInt(B * inv), 0, 255),
+                (byte)Mathf.Clamp(Mathf.RoundToInt(A / samples * 255f), 0, 255));
+        }
+    }
+
+    // The series-weight baseline: WindowBuilder's ChartLineWidth (ordinary series). A polyline's stroke
+    // half-width scales linearly with its Thickness relative to this baseline, so the emphasis (team-total)
+    // line stays proportionally heavier than the rest, exactly as the old mesh path did.
+    private const float WeightBaseline = 0.45f;
+
+    // Mark a single sub-sample at PLOT-pixel (px, py) covered if it lies within the stroke half-width of any
+    // segment of any polyline, accumulating the polyline's alpha-weighted colour + coverage into acc.
+    private void AccumulateSample(float px, float py, ref SampleAccum acc)
+    {
         for (var i = 0; i < _polylines.Count; i++)
         {
             var pl = _polylines[i];
-            AddPolyline(vh, origin, pl.Points, pl.Thickness, pl.Color);
+            var pts = pl.Points;
+            if (pts.Count < 1) continue;
+            // Scale the thin StrokeHalf by the series weight: ordinary (0.45)→1×, emphasis (0.7)→~1.55×.
+            var half = StrokeHalf * Mathf.Max(pl.Thickness / WeightBaseline, 1f);
+            if (CoveredByPolyline(px, py, pts, half))
+            {
+                // Weight coverage by the polyline's own alpha so faint navigator lines (alpha 110) stay faint;
+                // the colour is accumulated at full intensity and normalised by the alpha-weighted coverage.
+                var w = pl.Color.a / 255f;
+                acc.A += w; acc.R += pl.Color.r * w; acc.G += pl.Color.g * w; acc.B += pl.Color.b * w;
+            }
         }
     }
+
+    // True if (px, py) is within half of any segment of the polyline (or its single point, as a dot).
+    private static bool CoveredByPolyline(float px, float py, IReadOnlyList<Vector2> pts, float half)
+    {
+        var h2 = half * half;
+        if (pts.Count == 1)
+        {
+            var dx0 = px - pts[0].x; var dy0 = py - pts[0].y;
+            return dx0 * dx0 + dy0 * dy0 <= h2;
+        }
+        for (var j = 1; j < pts.Count; j++)
+        {
+            if (DistSqToSegment(px, py, pts[j - 1], pts[j]) <= h2) return true;
+        }
+        return false;
+    }
+
+    // Squared distance from point (px, py) to the segment [a, b].
+    private static float DistSqToSegment(float px, float py, Vector2 a, Vector2 b)
+    {
+        var abx = b.x - a.x; var aby = b.y - a.y;
+        var apx = px - a.x; var apy = py - a.y;
+        var len2 = abx * abx + aby * aby;
+        var t = len2 > 0.0001f ? Mathf.Clamp01((apx * abx + apy * aby) / len2) : 0f;
+        var dx = apx - t * abx; var dy = apy - t * aby;
+        return dx * dx + dy * dy;
+    }
+
+    private void EnsureLineTexture(int w, int h)
+    {
+        if (_lineTex != null && _lineTex.width == w && _lineTex.height == h) return;
+        if (_lineTex != null) UnityEngine.Object.Destroy(_lineTex);
+        _lineTex = new Texture2D(w, h, TextureFormat.RGBA32, mipChain: false)
+        {
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+    }
+
+    // Lazily spawn the child RawImage that displays the baked line texture, stretched over the graphic rect.
+    private void EnsureLineRaw()
+    {
+        if (_lineRaw != null) return;
+        var go = new GameObject("LineRaster");
+        go.transform.SetParent(transform, worldPositionStays: false);
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+        _lineRaw = go.AddComponent<RawImage>();
+        _lineRaw.raycastTarget = false;
+    }
+
+    // The baked line texture uses HideFlags.HideAndDontSave, so GameObject destruction won't reclaim it (same
+    // as the ColorPicker bakes). Destroy it explicitly when the graphic is torn down with its window. Graphic
+    // declares OnDestroy PUBLIC in the IL2CPP build but PROTECTED in stock Mono uGUI — the same access-modifier
+    // divergence as OnPopulateMesh, so reuse UNITY_5_3_OR_NEWER to pick the right modifier per build.
+#if UNITY_5_3_OR_NEWER
+    protected override void OnDestroy()
+#else
+    public override void OnDestroy()
+#endif
+    {
+        if (_lineTex != null) { UnityEngine.Object.Destroy(_lineTex); _lineTex = null; }
+        base.OnDestroy();
+    }
+
+    // -------------------------------------------------------------------------------------------------------
+    // Mesh layer (axes + gridlines + navigator fills).
+    // -------------------------------------------------------------------------------------------------------
 
     // Emit a filled area between the polyline and a flat baseline Y: one quad per point-pair, each spanning
     // [pt[j-1], pt[j]] across the top and the baseline across the bottom. Points are already origin-relative;
@@ -134,77 +350,10 @@ internal sealed class ChartGraphic : MaskableGraphic
         }
     }
 
-    // Anti-aliased stroke geometry. Each rib is a 4-rail cross-section (top→bottom: -edge α0, -core full,
-    // +core full, +edge α0); the UI shader blends a soft alpha ramp from core→edge. SMOOTHNESS is governed by
-    // Feather (the AA ramp width), NOT by core width. The bright core stays thin (~0.45/0.7px half-width set
-    // at the call site, so the solid centre reads ~2px), and Feather is widened to a real multi-pixel ramp so
-    // diagonals get a soft ~1.5px halo on each side instead of stair-stepping. Measured cross-section through a
-    // 45° limb: bg → ~1.5px partial-alpha ramp → ~2px full-bright core → ~1.5px partial → bg (~6px total). A
-    // narrower 1.25px feather only materialised ~1px of partial on each side (the rasteriser caught one graded
-    // pixel) and still stair-stepped; 1.75 produces the genuine soft halo while staying thin. Going wider
-    // (≥2.5px) reads glowy/thick. (The earlier "too thick" came from core+feather BOTH wide ≈5px SOLID; here
-    // only the transparent fringe widens, so the solid centre stays thin.) Feather is per side, in px. The data
-    // points are never interpolated — only the stroke rendering is softened.
-    private const float Feather = 1.75f;
-
-    // Extra round-cap radius (px) added to the core half-width so peaks/valleys at sharp angles round visibly
-    // instead of staying pointy. Only the join/cap disc uses this bump; straight runs keep the thin core.
-    private const float CapBump = 0.5f;
-
-    // Round-join disc resolution: each interior vertex gets a feathered disc of this many fan wedges. A
-    // ROUND join (SVG stroke-linejoin:round) — the disc both closes the per-segment quad gap at the joint
-    // AND rounds the corner to radius = core half-width + CapBump, so peaks/valleys read smoothly curved.
-    private const int RoundJoinSegments = 12;
-
-    // Emit a ROUND-joined stroke for a polyline. Each segment is its own feathered quad (segment normals, no
-    // miter spike — so no sharp apex); every interior vertex then gets a feathered disc of radius = core
-    // half-width, which both fills the per-segment joint gap and rounds the corner. Because the disc radius
-    // equals the line's half-width, straight runs gain no extra width (no beading); only true corners round.
-    // Endpoints get the same disc so the stroke terminates with a small round cap rather than a blunt chop.
-    private static void AddPolyline(VertexHelper vh, Vector2 origin, IReadOnlyList<Vector2> pts, float halfWidth, Color32 c)
-    {
-        var n = pts.Count;
-        if (n < 2) return;
-        var hc = Mathf.Max(halfWidth, 0.25f);                 // full-opacity core half-width
-        for (var i = 1; i < n; i++)
-            AddLine(vh, origin + pts[i - 1], origin + pts[i], hc, c);   // per-segment feathered quad
-        for (var i = 0; i < n; i++)
-            RoundCap(vh, origin + pts[i], hc, c);             // round every joint + both endpoints
-    }
-
-    // A feathered disc centred at p with full-opacity core radius (hc + CapBump), fading to α0 over Feather px.
-    // Drawn at every polyline vertex: at interior joints it bridges the two adjacent segment quads with a
-    // rounded corner; at endpoints it forms a round cap. The small CapBump rounds sharp peaks/valleys visibly
-    // while straight runs stay thin — the bump is tiny relative to segment length so the line doesn't bead.
-    private static void RoundCap(VertexHelper vh, Vector2 p, float halfWidth, Color32 c)
-    {
-        var clear = new Color32(c.r, c.g, c.b, 0);
-        var hc = halfWidth + CapBump;                          // round-cap core radius (bumped for peaks)
-        var feathered = hc + Feather;
-        var start = new Vector2(0f, 1f);                      // arbitrary first spoke; the disc is symmetric
-        var step = (2f * Mathf.PI) / RoundJoinSegments;
-        for (var k = 0; k < RoundJoinSegments; k++)
-        {
-            var r0 = Rotate(start, step * k);
-            var r1 = Rotate(start, step * (k + 1));
-            var i0 = vh.currentVertCount;
-            vh.AddVert(new Vector3(p.x, p.y), c, Vector2.zero);                                            // hub (full)
-            vh.AddVert(new Vector3(p.x + r0.x * hc, p.y + r0.y * hc), c, Vector2.zero);                    // core edge
-            vh.AddVert(new Vector3(p.x + r1.x * hc, p.y + r1.y * hc), c, Vector2.zero);
-            vh.AddVert(new Vector3(p.x + r0.x * feathered, p.y + r0.y * feathered), clear, Vector2.zero);  // outer feather α0
-            vh.AddVert(new Vector3(p.x + r1.x * feathered, p.y + r1.y * feathered), clear, Vector2.zero);
-            vh.AddTriangle(i0, i0 + 1, i0 + 2);               // core wedge
-            AddBand(vh, i0 + 1, i0 + 3, i0 + 2, i0 + 4);      // feather ring: full → α0
-        }
-    }
-
-    // Rotate a 2-D vector by the given angle (radians) about the origin.
-    private static Vector2 Rotate(Vector2 v, float a)
-    {
-        var cos = Mathf.Cos(a);
-        var sin = Mathf.Sin(a);
-        return new Vector2(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
-    }
+    // AA ramp width (per side, px) for the straight axis/grid segments. These are pixel-aligned straight runs,
+    // so a thin feather is plenty — the smoothness problem was only ever the DIAGONAL plotted lines (now
+    // baked). Kept small so axes/grid stay crisp.
+    private const float Feather = 0.6f;
 
     // Emit a feathered (alpha-ramped) stroke for the straight segment a→b (axes + gridlines, no joins).
     private static void AddLine(VertexHelper vh, Vector2 a, Vector2 b, float halfWidth, Color32 c)
