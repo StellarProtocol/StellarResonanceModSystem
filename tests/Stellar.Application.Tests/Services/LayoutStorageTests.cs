@@ -168,6 +168,66 @@ public sealed class LayoutStorageTests
         Assert.False(result.Visible);
     }
 
+    // --- ClampVisible: the shared on-screen clamp used by the live drag (WindowInteractionTicker) AND
+    // programmatic placement (WindowRenderer.SetRect). Asserts its ACTUAL contract: it keeps a grabbable band
+    // (MinVisiblePx) on-screen rather than fully pinning the window inside the viewport. ---
+
+    [Fact]
+    public void ClampVisible_FullyOnScreen_Unchanged()
+    {
+        var res = new Resolution(1920, 1080);
+        var rect = new WindowRect(100, 100, 300, 200);
+
+        Assert.Equal(rect, LayoutStorage.ClampVisible(rect, res));
+    }
+
+    [Fact]
+    public void ClampVisible_PastRightEdge_PulledLeftSoBandStaysVisible()
+    {
+        var res = new Resolution(1920, 1080);
+        // x=2072 is the CombatMeter party-focus position that vanished on a <2072px display.
+        var result = LayoutStorage.ClampVisible(new WindowRect(2072, 100, 300, 200), res);
+
+        // Right-edge band: x clamps to res.Width - MinVisiblePx so ≥MinVisiblePx px stay reachable.
+        Assert.Equal(res.Width - LayoutStorage.MinVisiblePx, result.X);
+        Assert.Equal(100, result.Y);
+        Assert.Equal(300, result.Width);   // size untouched
+        Assert.Equal(200, result.Height);
+    }
+
+    [Fact]
+    public void ClampVisible_PastBottomEdge_PulledUpSoBandStaysVisible()
+    {
+        var res = new Resolution(1920, 1080);
+        var result = LayoutStorage.ClampVisible(new WindowRect(100, 5000, 300, 200), res);
+
+        Assert.Equal(100, result.X);
+        Assert.Equal(res.Height - LayoutStorage.MinVisiblePx, result.Y);
+    }
+
+    [Fact]
+    public void ClampVisible_WiderThanScreen_KeepsBandReachable()
+    {
+        var res = new Resolution(1280, 720);
+        // A window wider than the screen, pushed far right.
+        var result = LayoutStorage.ClampVisible(new WindowRect(5000, 0, 3000, 100), res);
+
+        // Upper bound is Max(vis - w, res.Width - vis); with w ≫ res.Width that is res.Width - vis.
+        Assert.Equal(res.Width - LayoutStorage.MinVisiblePx, result.X);
+        Assert.Equal(0, result.Y);
+    }
+
+    [Fact]
+    public void ClampVisible_PastLeftEdge_KeepsBandReachable()
+    {
+        var res = new Resolution(1920, 1080);
+        // Pushed far past the left edge: lower bound is vis - w (band hangs off the left, top-band still grabbable).
+        var result = LayoutStorage.ClampVisible(new WindowRect(-5000, 100, 300, 200), res);
+
+        Assert.Equal(LayoutStorage.MinVisiblePx - 300, result.X);   // vis(=80) - w(=300)
+        Assert.Equal(100, result.Y);
+    }
+
     // Test doubles
     private static LayoutStorage MakeStorage(out InMemoryConfig config, IPluginLog? log = null)
     {

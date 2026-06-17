@@ -113,9 +113,27 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     public void SetRect(object? token, WindowRect rect)
     {
         if (token is not WindowToken t || t.Rect == null) return;
-        t.Rect.anchoredPosition = new Vector2(rect.X, -rect.Y);   // top-left anchor, y-down screen space
+        // Clamp programmatic placement on-screen the SAME way drags do (WindowInteractionTicker →
+        // LayoutStorage.ClampVisible): without this, a default/saved/plugin-supplied position (e.g. CombatMeter's
+        // off-screen party-focus x) could drop a window fully off-canvas and unreachable, since drags clamp but
+        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor.
+        var clamped = ClampToScreen(t, rect);
+        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
         if (t.Resizable && rect.Width > 0f && rect.Height > 0f)
             t.Rect.sizeDelta = new Vector2(rect.Width, rect.Height);
+    }
+
+    // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
+    // Width/Height; substitute the live RectTransform size so we never clamp against size 0 (which would treat the
+    // window as 0px wide and let its left edge pin anywhere). Returns the clamped top-left in WindowRect space.
+    private static WindowRect ClampToScreen(WindowToken t, WindowRect rect)
+    {
+        var size = t.Rect!.rect.size;
+        var w = rect.Width  > 0f ? rect.Width  : size.x;
+        var h = rect.Height > 0f ? rect.Height : size.y;
+        return Stellar.Application.Services.LayoutStorage.ClampVisible(
+            new WindowRect(rect.X, rect.Y, w, h),
+            new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
     }
 
     public WindowRect GetRect(object? token)
