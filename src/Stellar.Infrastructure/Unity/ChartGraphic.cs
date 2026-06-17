@@ -135,15 +135,25 @@ internal sealed class ChartGraphic : MaskableGraphic
     }
 
     // Anti-aliased stroke geometry. Each rib is a 4-rail cross-section (top→bottom: -edge α0, -core full,
-    // +core full, +edge α0); the UI shader blends a soft alpha ramp from core→edge so the line reads crisp
-    // with just enough AA. A THIN line (the prior 1.75px-per-side feather dominated and read as a ~5px blurry
-    // band; here Feather is a hairline so total visual width ≈ 2·core + 2·Feather ≈ 1.5–2px). Feather is per
-    // side, in px. The data points are never interpolated — only the stroke rendering is softened.
-    private const float Feather = 0.5f;
+    // +core full, +edge α0); the UI shader blends a soft alpha ramp from core→edge. SMOOTHNESS is governed by
+    // Feather (the AA ramp width), NOT by core width. The bright core stays thin (~0.45/0.7px half-width set
+    // at the call site, so the solid centre reads ~2px), and Feather is widened to a real multi-pixel ramp so
+    // diagonals get a soft ~1.5px halo on each side instead of stair-stepping. Measured cross-section through a
+    // 45° limb: bg → ~1.5px partial-alpha ramp → ~2px full-bright core → ~1.5px partial → bg (~6px total). A
+    // narrower 1.25px feather only materialised ~1px of partial on each side (the rasteriser caught one graded
+    // pixel) and still stair-stepped; 1.75 produces the genuine soft halo while staying thin. Going wider
+    // (≥2.5px) reads glowy/thick. (The earlier "too thick" came from core+feather BOTH wide ≈5px SOLID; here
+    // only the transparent fringe widens, so the solid centre stays thin.) Feather is per side, in px. The data
+    // points are never interpolated — only the stroke rendering is softened.
+    private const float Feather = 1.75f;
+
+    // Extra round-cap radius (px) added to the core half-width so peaks/valleys at sharp angles round visibly
+    // instead of staying pointy. Only the join/cap disc uses this bump; straight runs keep the thin core.
+    private const float CapBump = 0.5f;
 
     // Round-join disc resolution: each interior vertex gets a feathered disc of this many fan wedges. A
     // ROUND join (SVG stroke-linejoin:round) — the disc both closes the per-segment quad gap at the joint
-    // AND rounds the corner to radius = core half-width, so peaks/valleys read smoothly curved, not pointed.
+    // AND rounds the corner to radius = core half-width + CapBump, so peaks/valleys read smoothly curved.
     private const int RoundJoinSegments = 12;
 
     // Emit a ROUND-joined stroke for a polyline. Each segment is its own feathered quad (segment normals, no
@@ -162,13 +172,14 @@ internal sealed class ChartGraphic : MaskableGraphic
             RoundCap(vh, origin + pts[i], hc, c);             // round every joint + both endpoints
     }
 
-    // A feathered disc centred at p with full-opacity core radius hc, fading to α0 over Feather px. Drawn at
-    // every polyline vertex: at interior joints it bridges the two adjacent segment quads with a rounded
-    // corner; at endpoints it forms a round cap. Radius equals the line half-width, so on a straight run the
-    // disc stays inside the stroke's edges and adds no visible width — corners round without the line beading.
-    private static void RoundCap(VertexHelper vh, Vector2 p, float hc, Color32 c)
+    // A feathered disc centred at p with full-opacity core radius (hc + CapBump), fading to α0 over Feather px.
+    // Drawn at every polyline vertex: at interior joints it bridges the two adjacent segment quads with a
+    // rounded corner; at endpoints it forms a round cap. The small CapBump rounds sharp peaks/valleys visibly
+    // while straight runs stay thin — the bump is tiny relative to segment length so the line doesn't bead.
+    private static void RoundCap(VertexHelper vh, Vector2 p, float halfWidth, Color32 c)
     {
         var clear = new Color32(c.r, c.g, c.b, 0);
+        var hc = halfWidth + CapBump;                          // round-cap core radius (bumped for peaks)
         var feathered = hc + Feather;
         var start = new Vector2(0f, 1f);                      // arbitrary first spoke; the disc is symmetric
         var step = (2f * Mathf.PI) / RoundJoinSegments;
