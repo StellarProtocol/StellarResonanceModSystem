@@ -135,19 +135,42 @@ internal sealed class ChartGraphic : MaskableGraphic
         }
     }
 
-    // Emit a thickness-wide quad (two triangles) for the segment a→b, offsetting by the unit normal × half.
+    // Anti-aliased stroke for segment a→b: a full-opacity core band (±halfWidth) flanked by a ~1px feather
+    // on each side whose outer rail has alpha 0, so the UI shader blends a soft edge (no aliased "pixel"
+    // look). Width of the feather; outside this the standard mesh-AA fringe technique. The data points are
+    // never interpolated — only the stroke rendering is softened.
+    private const float Feather = 1f;
+
+    // Emit a feathered (alpha-ramped) stroke for the segment a→b, offsetting by the unit normal.
     private static void AddLine(VertexHelper vh, Vector2 a, Vector2 b, float halfWidth, Color32 c)
     {
         var dir = b - a;
         var len = dir.magnitude;
         if (len < 0.0001f) return;
-        var n = new Vector2(-dir.y, dir.x) / len * Mathf.Max(halfWidth, 0.5f);
+        var unit = new Vector2(-dir.y, dir.x) / len;            // unit normal
+        var hc = Mathf.Max(halfWidth, 0.25f);                   // full-opacity core half-width
+        var core = unit * hc;
+        var edge = unit * (hc + Feather);                       // outer (alpha-0) feather rail
+        var clear = new Color32(c.r, c.g, c.b, 0);              // transparent fringe colour
         var i0 = vh.currentVertCount;
-        vh.AddVert(new Vector3(a.x - n.x, a.y - n.y), c, Vector2.zero);
-        vh.AddVert(new Vector3(a.x + n.x, a.y + n.y), c, Vector2.zero);
-        vh.AddVert(new Vector3(b.x + n.x, b.y + n.y), c, Vector2.zero);
-        vh.AddVert(new Vector3(b.x - n.x, b.y - n.y), c, Vector2.zero);
-        vh.AddTriangle(i0, i0 + 1, i0 + 2);
-        vh.AddTriangle(i0 + 2, i0 + 3, i0);
+        // Four rails per endpoint, top→bottom: -edge(α0), -core(full), +core(full), +edge(α0).
+        vh.AddVert(new Vector3(a.x - edge.x, a.y - edge.y), clear, Vector2.zero);   // 0
+        vh.AddVert(new Vector3(a.x - core.x, a.y - core.y), c, Vector2.zero);       // 1
+        vh.AddVert(new Vector3(a.x + core.x, a.y + core.y), c, Vector2.zero);       // 2
+        vh.AddVert(new Vector3(a.x + edge.x, a.y + edge.y), clear, Vector2.zero);   // 3
+        vh.AddVert(new Vector3(b.x - edge.x, b.y - edge.y), clear, Vector2.zero);   // 4
+        vh.AddVert(new Vector3(b.x - core.x, b.y - core.y), c, Vector2.zero);       // 5
+        vh.AddVert(new Vector3(b.x + core.x, b.y + core.y), c, Vector2.zero);       // 6
+        vh.AddVert(new Vector3(b.x + edge.x, b.y + edge.y), clear, Vector2.zero);   // 7
+        AddBand(vh, i0 + 0, i0 + 1, i0 + 4, i0 + 5);   // lower feather: α0 → full
+        AddBand(vh, i0 + 1, i0 + 2, i0 + 5, i0 + 6);   // core: full → full
+        AddBand(vh, i0 + 2, i0 + 3, i0 + 6, i0 + 7);   // upper feather: full → α0
+    }
+
+    // Triangulate one longitudinal band as the quad (aTop, aBot, bBot, bTop) using the four vertex indices.
+    private static void AddBand(VertexHelper vh, int aTop, int aBot, int bTop, int bBot)
+    {
+        vh.AddTriangle(aTop, aBot, bBot);
+        vh.AddTriangle(bBot, bTop, aTop);
     }
 }

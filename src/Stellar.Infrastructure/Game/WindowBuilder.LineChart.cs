@@ -53,8 +53,8 @@ internal sealed partial class WindowBuilder
     }
 
     // Line thickness (px) for ordinary vs emphasised (team-total) series, and the axis/grid line widths.
-    private const float ChartLineWidth = 1.25f;
-    private const float ChartEmphasisWidth = 2.25f;
+    private const float ChartLineWidth = 0.9f;
+    private const float ChartEmphasisWidth = 1.4f;
     private const float ChartAxisWidth = 1f;
     private const float ChartGridWidth = 0.5f;
 
