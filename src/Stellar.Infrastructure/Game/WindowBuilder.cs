@@ -17,6 +17,10 @@ namespace Stellar.Infrastructure.Game;
 /// </summary>
 internal sealed partial class WindowBuilder
 {
+    // Well-known id of the layout-editor toolbar window — the one window whose controls stay clickable while
+    // layout-edit mode is active (every other window's controls are suppressed; see SuppressClickInEditMode).
+    internal const string LayoutToolbarWindowId = "framework.layout-toolbar";
+
     private readonly WindowThemeAssets _assets;
     // Per-frame field-tick hook (cursor/Esc/debounce). Injected by the renderer (which owns a
     // MonoBehaviour ticker); null in the sandbox (static render needs no tick). Mirrors HudElementBuilder's
@@ -86,6 +90,9 @@ internal sealed partial class WindowBuilder
     {
         var token = new WindowToken();
         token.Resizable = reg.Spec.Resizable;
+        // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
+        // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
+        token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
         var (root, content) = BuildChrome(reg, parent, token);
         token.Root = root.gameObject;
         token.Rect = root;
@@ -101,6 +108,7 @@ internal sealed partial class WindowBuilder
         public GameObject Root = null!;
         public RectTransform Rect = null!;
         public bool Resizable;   // window's root is fixed-size (grip-resizable) rather than content-height-fit
+        internal bool EditModeInteractive;   // window's controls stay clickable during layout-edit mode (toolbar only)
         private bool _laidOut;   // first structural layout done? (mount = immediate; later per-tick = deferred)
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<ButtonBinding> Buttons = new();

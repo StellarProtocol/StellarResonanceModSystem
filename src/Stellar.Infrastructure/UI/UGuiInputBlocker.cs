@@ -19,6 +19,13 @@ internal sealed class UGuiInputBlocker
 {
     private const int TopSortingOrder = 32760; // just under short.MaxValue; above game canvases
 
+    // Sorting order of the blocker canvas. Defaults above all game + Stellar canvases (the original
+    // IMGUI-era use). Edit-mode passes a value just ABOVE the game but BELOW Stellar's interactive window
+    // layer, so it absorbs clicks bound for native game UI without stealing them from the toolbar / mod windows.
+    private readonly int _sortingOrder;
+
+    public UGuiInputBlocker(int sortingOrder = TopSortingOrder) => _sortingOrder = sortingOrder;
+
     private GameObject? _root;
     private bool _failed;
 
@@ -36,7 +43,7 @@ internal sealed class UGuiInputBlocker
             Object.DontDestroyOnLoad(go);
             var canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = TopSortingOrder;
+            canvas.sortingOrder = _sortingOrder;
             go.AddComponent<GraphicRaycaster>();
 
             var fill = new GameObject("Fill");

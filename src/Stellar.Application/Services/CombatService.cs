@@ -19,7 +19,7 @@ namespace Stellar.Application.Services;
 /// <para>Per-entity state (vitals, DPS/HPS, teamId, names) is delegated to
 /// <see cref="CombatEntityTracker"/> (C-11 SRP split).</para>
 /// </summary>
-internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, ICombatEvents, ICombatEventSink, IEntityDetail
+internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, ICombatEvents, ICombatSpec, ICombatEventSink, IEntityDetail
 {
     private const int RingCapacity = 500;
 
@@ -245,6 +245,10 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     public long GetFightPoint(EntityId entityId) => _entities.GetFightPoint(entityId);
 
     public IReadOnlyList<SkillLevel> GetSkillLevels(EntityId entityId) => _entities.GetSkillLevels(entityId);
+
+    // --- ICombatSpec ---
+
+    public int GetSubProfession(EntityId entityId) => _entities.GetSubProfession(entityId);
 
     // --- IEntityDetail ---
 

@@ -34,6 +34,8 @@ public interface IPluginServices
     ICombatLookup CombatLookup { get; }
     /// <summary>Real-time combat event stream (damage, buffs, skill casts).</summary>
     ICombatEvents CombatEvents { get; }
+    /// <summary>Per-entity active sub-profession (spec), resolved from observed combat casts.</summary>
+    ICombatSpec CombatSpec { get; }
     /// <summary>Snapshot of the current party roster and member vitals.</summary>
     IPartySnapshot PartySnapshot { get; }
     /// <summary>Party roster — member list and group/slot information.</summary>

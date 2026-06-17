@@ -36,9 +36,6 @@ internal sealed partial class HotkeysPanel
     private HudElement FilterChip(string label, Filter f)
         => new ButtonElement(() => label, () => { _filter = f; }, null, null, Active: () => _filter == f);
 
-    private bool FilterMatches(bool isFramework)
-        => _filter == Filter.All || (_filter == Filter.Plugins && !isFramework) || (_filter == Filter.Framework && isFramework);
-
     public HotkeysPanel(IHotkeyDirectory directory, ITheme theme)
     {
         _directory = directory;
@@ -55,43 +52,119 @@ internal sealed partial class HotkeysPanel
 
     public bool IsCapturing => _capturingActionId is not null;
 
-    /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration). One row per
-    /// action (id + binding-cell button) with a Framework divider + Reset-all. Click a cell to capture;
-    /// <see cref="PollCaptureUgui"/> (Host-ticked) commits the next key. Filter chips are a follow-up
-    /// (rows are built once; refiltering needs a rebuild). Built once on open.</summary>
+    private const int MaxRows = 64;
+    // Flattened display list rebuilt once per apply (in the list's outer Conditional When, which runs before the
+    // slot Funcs): one HEADER row per plugin group + an action row per binding (omitted when the group is
+    // collapsed). Lets the list track hotkeys DECLARED AFTER the hub is built (plugins load post-wiring) AND
+    // group them by plugin with collapsible headers instead of a flat "combatmeter.xxx · combatmeter.yyy" list.
+    private readonly List<HkRow> _display = new();
+    private readonly HashSet<string> _collapsed = new();   // groups the user collapsed (empty = all expanded)
+
+    private readonly struct HkRow
+    {
+        public readonly bool IsHeader;
+        public readonly string Group;
+        public readonly IHotkeyAction? Action;
+        public readonly int Count;   // header only: number of actions in the group
+        public HkRow(bool isHeader, string group, IHotkeyAction? action, int count) { IsHeader = isHeader; Group = group; Action = action; Count = count; }
+    }
+
+    private readonly Dictionary<string, int> _groupCounts = new();
+
+    /// <summary>Settings → Hotkeys, GROUPED by plugin with collapsible headers (a LIVE list — the hub is built
+    /// before plugins load, so it can't be a build-time snapshot): <see cref="MaxRows"/> slots over a flattened
+    /// header/row list rebuilt each apply. A header toggles its group's collapse; an action row shows the short
+    /// name (plugin prefix stripped) + binding cell. Click a cell to capture; Del clears / Esc cancels
+    /// (<see cref="PollCaptureUgui"/>). Filter chips drive <see cref="_filter"/>.</summary>
     public HudElement Describe()
     {
-        var saved = _filter; _filter = Filter.All;
-        var all = new System.Collections.Generic.List<IHotkeyAction>(OrderedActions());   // all, sorted
-        _filter = saved;
-
-        var rows = new System.Collections.Generic.List<HudElement>
-        {
-            new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),
-        };
-        var lastFw = false;
-        foreach (var action in all)
-        {
-            var a = action;
-            var isFw = a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
-            if (isFw && !lastFw)
-                rows.Add(new ConditionalElement(() => _filter != Filter.Plugins, new TextElement(() => "--- Framework ---", () => _theme.Colors.TextMuted)));
-            lastFw = isFw;
-            var row = new RowElement(new HudElement[]
-            {
-                new TextElement(() => a.Id),
-                new SpacerElement(),
-                new ButtonElement(
-                    () => _capturingActionId == a.Id ? "[ press a key… ]" : GetOrBuildBindingLabel(a),
-                    () => ToggleCapture(a.Id), Width: 210f),   // fixed-width cell — never overflows the row (clip fix)
-            });
-            rows.Add(new ConditionalElement(() => FilterMatches(isFw), row));   // live refilter without rebuild
-        }
+        var slots = new HudElement[MaxRows];
+        for (var i = 0; i < MaxRows; i++) slots[i] = BuildHotkeySlot(i);
+        var list = new ListElement(() => _display.Count, slots);
         return new ColumnElement(new HudElement[]
         {
-            new ScrollElement(new ColumnElement(rows.ToArray()), 260f),
+            new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),
+            new ConditionalElement(
+                () => { RebuildDisplay(); return _display.Count > 0; },
+                new ScrollElement(list, Height: 260f),
+                new TextElement(() => "No hotkeys.", () => _theme.Colors.TextMuted)),
             new ButtonElement(() => "Reset all to defaults", () => ResetAllToDefaults()),
         });
+    }
+
+    // Rebuild the flattened header/row list from the live (sorted + filtered) actions. Same-prefix actions are
+    // adjacent in the sorted order, so a new header starts whenever the group prefix changes.
+    private int _lastActionCount = -1;
+    private Filter _lastBuiltFilter;
+    private int _collapseVersion;       // bumped on every expand/collapse
+    private int _builtCollapseVersion = -1;
+
+    private void RebuildDisplay()
+    {
+        // Only rebuild when the structure can actually have changed (action set / filter / collapse state).
+        // Previously this allocated a list + dict EVERY apply while Settings was open — needless GC churn /
+        // frame cost. Binding changes (rebind) don't alter structure (labels are read live), so they don't
+        // trip a rebuild.
+        var count = _directory.Actions.Count;
+        if (_display.Count > 0 && count == _lastActionCount && _filter == _lastBuiltFilter && _collapseVersion == _builtCollapseVersion) return;
+        _lastActionCount = count; _lastBuiltFilter = _filter; _builtCollapseVersion = _collapseVersion;
+
+        _display.Clear();
+        var actions = OrderedActions();
+        _groupCounts.Clear();
+        foreach (var a in actions) { var g = GroupOf(a.Id); _groupCounts[g] = _groupCounts.TryGetValue(g, out var c) ? c + 1 : 1; }
+        string? cur = null;
+        foreach (var a in actions)
+        {
+            var group = GroupOf(a.Id);
+            if (group != cur) { cur = group; _display.Add(new HkRow(true, group, null, _groupCounts[group])); }
+            if (!_collapsed.Contains(group)) _display.Add(new HkRow(false, group, a, 0));
+        }
+    }
+
+    private HudElement BuildHotkeySlot(int idx)
+    {
+        HkRow Row() => idx < _display.Count ? _display[idx] : default;
+        return new ColumnElement(new HudElement[]
+        {
+            // Plugin header — a clickable row (arrow + bold name + count), NOT a button chip, matching the
+            // StatInspector category style. Click anywhere on the row to expand/collapse the group.
+            new ConditionalElement(() => idx < _display.Count && _display[idx].IsHeader,
+                new SelectableElement(
+                    new RowElement(new HudElement[]
+                    {
+                        new TextElement(() => _collapsed.Contains(Row().Group) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
+                        new TextElement(() => Row().Group, Emphasis: true),
+                        new SpacerElement(),
+                        new TextElement(() => $"({Row().Count})", () => _theme.Colors.TextMuted, Align: TextAlign.Right),
+                    }),
+                    OnClick: () => ToggleGroup(Row().Group))),
+            // Action row — indented short name + binding cell.
+            new ConditionalElement(() => idx < _display.Count && !_display[idx].IsHeader,
+                new RowElement(new HudElement[]
+                {
+                    new SpacerElement(Width: 18f),
+                    new TextElement(() => ShortName(Row().Action?.Id)),
+                    new SpacerElement(),
+                    new ButtonElement(
+                        // While capturing, the cell hints the keys: Del clears the binding (unbind), Esc cancels.
+                        () => { var a = Row().Action; return a is null ? "" : (_capturingActionId == a.Id ? "[ press a key · Del clears ]" : GetOrBuildBindingLabel(a)); },
+                        () => { var a = Row().Action; if (a is not null) ToggleCapture(a.Id); },
+                        Width: 210f),   // fixed-width cell — never overflows the row (clip fix)
+                })),
+        });
+    }
+
+    private static string GroupOf(string id) { var i = id.IndexOf('.'); return i < 0 ? id : id.Substring(0, i); }
+    private static string ShortName(string? id) { if (id is null) return ""; var i = id.IndexOf('.'); return i < 0 ? id : id.Substring(i + 1); }
+    private void ToggleGroup(string group) { if (string.IsNullOrEmpty(group)) return; if (!_collapsed.Remove(group)) _collapsed.Add(group); _collapseVersion++; }
+
+    // Unbind an action (no hotkey). Rebind(null) persists the explicit-unbound state and fires BindingChanged,
+    // which drops the cached "[ key ]" label so the cell re-renders as "unbound".
+    private void Unbind(string actionId)
+    {
+        if (_capturingActionId == actionId) CancelCapture();   // clearing the cell we're capturing → stop capture
+        _directory.Rebind(actionId, null);
     }
 
     private List<IHotkeyAction> OrderedActions()

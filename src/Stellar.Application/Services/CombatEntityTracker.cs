@@ -58,6 +58,12 @@ internal sealed class CombatEntityTracker
     private readonly Dictionary<EntityId, IReadOnlyList<FashionEntry>> _fashionByEntity = new();
     private readonly object _fashionByEntityLock = new();
 
+    // Per-entity active sub-profession (spec) id, resolved from observed combat casts
+    // (ProfessionSpecs.SubProfessionFromSkill on each damage/heal). 0 = not yet seen casting
+    // a spec-defining skill. Last-seen-wins, so a mid-fight spec change is followed.
+    private readonly Dictionary<EntityId, int> _subProfessionByEntity = new();
+    private readonly object _subProfessionByEntityLock = new();
+
     // Display-name cache (AttrName, EAttrType=1).
     private readonly EntityNameRegistry _names = new();
 
@@ -108,6 +114,14 @@ internal sealed class CombatEntityTracker
         lock (_skillsByEntityLock)
         {
             return _skillsByEntity.TryGetValue(entityId, out var v) ? v : System.Array.Empty<SkillLevel>();
+        }
+    }
+
+    public int GetSubProfession(EntityId entityId)
+    {
+        lock (_subProfessionByEntityLock)
+        {
+            return _subProfessionByEntity.TryGetValue(entityId, out var sub) ? sub : 0;
         }
     }
 
@@ -196,6 +210,16 @@ internal sealed class CombatEntityTracker
         }
     }
 
+    /// <summary>Record an entity's active spec, resolved from a cast skill id. Last-seen-wins.</summary>
+    public void SetSubProfession(EntityId entityId, int subProfessionId)
+    {
+        if (subProfessionId == 0) return;
+        lock (_subProfessionByEntityLock)
+        {
+            _subProfessionByEntity[entityId] = subProfessionId;
+        }
+    }
+
     public void UpdateEntityName(EntityId entityId, string name) => _names.Set(entityId, name);
 
     public void SetEntityAttribute(EntityId entityId, int attrId, long value)
@@ -264,6 +288,7 @@ internal sealed class CombatEntityTracker
         lock (_teamIdByEntityLock)     _teamIdByEntity.Clear();
         lock (_fightPointByEntityLock) _fightPointByEntity.Clear();
         lock (_skillsByEntityLock)     _skillsByEntity.Clear();
+        lock (_subProfessionByEntityLock) _subProfessionByEntity.Clear();
         lock (_attrsByEntityLock)      _attrsByEntity.Clear();
         lock (_equipByEntityLock)      _equipByEntity.Clear();
         lock (_fashionByEntityLock)    _fashionByEntity.Clear();

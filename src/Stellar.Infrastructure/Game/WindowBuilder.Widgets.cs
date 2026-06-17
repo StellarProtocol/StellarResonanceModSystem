@@ -38,6 +38,16 @@ internal sealed partial class WindowBuilder
             binding.Resprite();
         });
 
+    // True when a window control click should be ignored: layout-edit mode is active (the press is a
+    // drag-to-reposition) and this window isn't the edit toolbar. Releases the EventSystem selection so the
+    // suppressed click doesn't leave a control selected. Fixes clicks leaking into plugin windows in edit mode.
+    private bool SuppressClickInEditMode(WindowToken token)
+    {
+        if (!Stellar.Infrastructure.Unity.LayoutEditGate.IsEditing || token.EditModeInteractive) return false;
+        ClearSelectionAfterClick();
+        return true;
+    }
+
     // Button: sliced rounded chip (radius baked into the sprite) + centred label. Sized to label+padding
     // via its own HorizontalLayoutGroup; the parent Row reads its preferred size (childControlWidth).
     private void BuildButton(ButtonElement b, Transform parent, WindowToken token)
@@ -80,7 +90,7 @@ internal sealed partial class WindowBuilder
         var label = BuildButtonLabel(go.transform, b.Width > 0f);
 
         var onClick = b.OnClick;
-        btn.onClick.AddListener((UnityAction)(() => { onClick(); ClearSelectionAfterClick(); }));
+        btn.onClick.AddListener((UnityAction)(() => { if (SuppressClickInEditMode(token)) return; onClick(); ClearSelectionAfterClick(); }));
         var binding = new ButtonBinding
         {
             B = btn, Label = label, LabelFn = b.Label, EnabledFn = b.Enabled,
@@ -145,7 +155,7 @@ internal sealed partial class WindowBuilder
 
         var get = t.Get; var set = t.Set;
         // Same selection release as buttons — a clicked toggle left selected mis-routes keyboard to chat.
-        btn.onClick.AddListener((UnityAction)(() => { set(!get()); ClearSelectionAfterClick(); }));
+        btn.onClick.AddListener((UnityAction)(() => { if (SuppressClickInEditMode(token)) return; set(!get()); ClearSelectionAfterClick(); }));
         token.Toggles.Add(new ToggleBinding
         {
             Track = track, Knob = krt, Get = t.Get,
