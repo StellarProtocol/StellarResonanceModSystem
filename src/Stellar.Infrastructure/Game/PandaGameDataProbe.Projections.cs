@@ -252,6 +252,44 @@ internal sealed partial class PandaGameDataProbe
         return (name, desc, iconPath, skillTypeInt, cooldown, isAoe);
     }
 
+    // ===== Skill leveled-id -> base-id map =================================
+
+    private readonly record struct BaseSkillRef(int BaseSkillId);   // LoadEagerTable needs a struct TInfo
+
+    /// <summary>
+    /// Build the leveled-skill-id → base-skill-id map from
+    /// <c>Bokura.SkillFightLevelTableBase</c>. Each row's key (<c>Id</c>, a
+    /// <c>baseSkillId*100+level</c> value such as 2031104) maps to its
+    /// <c>SkillId</c> column (the base skill the SkillTable keys on, e.g. 20311).
+    /// This is the game's own authoritative mapping — the same column
+    /// <c>GameDataResonance.ResolveBaseSkillId</c> reads. Damage events carry the
+    /// leveled id, so <see cref="GameDataCombatService.GetSkill"/> uses this map to
+    /// resolve a leveled id to its base skill's name on a direct-lookup miss.
+    /// On any failure logs once and returns an empty map — never throws.
+    /// </summary>
+    private IReadOnlyDictionary<int, int> LoadSkillLevelToBase()
+    {
+        var rows = LoadEagerTable<BaseSkillRef>(
+            label: "SkillFightLevel",
+            typeName: "Bokura.SkillFightLevelTableBase",
+            capacityHint: 4096,
+            projector: (row, rowType) =>
+            {
+                var leveledId = ReadInt(row, rowType, "Id");
+                if (leveledId == 0) return (0, default);
+                var baseId = ReadInt(row, rowType, "SkillId");
+                if (baseId == 0) return (0, default);
+                return (leveledId, new BaseSkillRef(baseId));
+            });
+
+        var map = new Dictionary<int, int>(capacity: rows.Count);
+        foreach (var kvp in rows)
+        {
+            map[kvp.Key] = kvp.Value.BaseSkillId;
+        }
+        return map;
+    }
+
     // ===== Buff ===========================================================
 
     /// <summary>

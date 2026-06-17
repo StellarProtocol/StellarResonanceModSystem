@@ -11,6 +11,10 @@ internal sealed class GameDataCombatService : IGameDataCombat
     // and replaced atomically via Volatile.Write. Build happens on the game
     // thread; reads happen on any thread.
     private IReadOnlyDictionary<int, SkillInfo>?            _skills;
+    // Leveled-skill-id (baseSkillId*100+level) -> base-skill-id. Built from
+    // SkillFightLevelTableBase by the probe; used to resolve damage-event skill
+    // ids that are not direct keys in _skills (e.g. 2031104 -> 20311).
+    private IReadOnlyDictionary<int, int>?                 _skillLevelToBase;
     private IReadOnlyDictionary<int, BuffInfo>?             _buffs;
     private IReadOnlyDictionary<int, ProfessionInfo>?       _professions;
     private IReadOnlyDictionary<int, TalentInfo>?           _talents;
@@ -18,7 +22,22 @@ internal sealed class GameDataCombatService : IGameDataCombat
     private IReadOnlyDictionary<int, AttributeProfileInfo>? _attributeProfiles;
     private IReadOnlyDictionary<int, DamageAttrInfo>?       _damageAttrs;
 
-    public SkillInfo?            GetSkill(int id)            => TryGet(Volatile.Read(ref _skills), id);
+    // Direct hit wins (base ids resolve unchanged). On a miss, resolve a leveled
+    // id (baseSkillId*100+level) to its base via the SkillFightLevelTableBase map
+    // and return the base skill's info — so skill names resolve for damage events
+    // that carry a leveled skill_level_id rather than a base id.
+    public SkillInfo? GetSkill(int id)
+    {
+        var skills = Volatile.Read(ref _skills);
+        if (TryGet(skills, id) is { } direct) return direct;
+
+        var levelToBase = Volatile.Read(ref _skillLevelToBase);
+        if (levelToBase is not null && levelToBase.TryGetValue(id, out var baseId) && baseId != 0 && baseId != id)
+        {
+            return TryGet(skills, baseId);
+        }
+        return null;
+    }
     public BuffInfo?             GetBuff(int id)             => TryGet(Volatile.Read(ref _buffs), id);
     public ProfessionInfo?       GetProfession(int id)       => TryGet(Volatile.Read(ref _professions), id);
     public TalentInfo?           GetTalent(int id)           => TryGet(Volatile.Read(ref _talents), id);
@@ -61,6 +80,8 @@ internal sealed class GameDataCombatService : IGameDataCombat
 
     internal void LoadSkills(IReadOnlyDictionary<int, SkillInfo> cache)
         => Volatile.Write(ref _skills, cache);
+    internal void LoadSkillLevelToBase(IReadOnlyDictionary<int, int> cache)
+        => Volatile.Write(ref _skillLevelToBase, cache);
     internal void LoadBuffs(IReadOnlyDictionary<int, BuffInfo> cache)
         => Volatile.Write(ref _buffs, cache);
     internal void LoadProfessions(IReadOnlyDictionary<int, ProfessionInfo> cache)
