@@ -31,11 +31,11 @@ public sealed class HistoryStoreTests
         var sa = new SourceStats
         {
             TotalDamage = 999_999, TotalHealing = 4242, TotalTaken = 7777,
-            TopHit = 54321, Hits = 480, Crits = 91, Kills = 3,
+            TopHit = 54321, Hits = 480, Crits = 91, Luckys = 64, Kills = 3,
             FirstHitMs = 1000, LastHitMs = 120000,
         };
-        sa.BySkill[101] = new SkillStats { Total = 500000, HealTotal = 0, Hits = 200, Crits = 40, TopHit = 30000 };
-        sa.BySkill[102] = new SkillStats { Total = 0, HealTotal = 4242, Hits = 12, Crits = 1, TopHit = 800 };
+        sa.BySkill[101] = new SkillStats { Total = 500000, HealTotal = 0, Hits = 200, Crits = 40, Luckys = 25, TopHit = 30000 };
+        sa.BySkill[102] = new SkillStats { Total = 0, HealTotal = 4242, Hits = 12, Crits = 1, Luckys = 0, TopHit = 800 };
         sa.IncomingBySkill[900] = new IncomingSkillStats { Total = 7777, Hits = 30, TopHit = 1200 };
         e.Stats[a] = sa;
 
@@ -126,6 +126,7 @@ public sealed class HistoryStoreTests
             Assert.Equal(s.TopHit, d.TopHit);
             Assert.Equal(s.Hits, d.Hits);
             Assert.Equal(s.Crits, d.Crits);
+            Assert.Equal(s.Luckys, d.Luckys);
             Assert.Equal(s.Kills, d.Kills);
             Assert.Equal(s.FirstHitMs, d.FirstHitMs);
             Assert.Equal(s.LastHitMs, d.LastHitMs);
@@ -138,6 +139,7 @@ public sealed class HistoryStoreTests
                 Assert.Equal(sk.HealTotal, dk.HealTotal);
                 Assert.Equal(sk.Hits, dk.Hits);
                 Assert.Equal(sk.Crits, dk.Crits);
+                Assert.Equal(sk.Luckys, dk.Luckys);
                 Assert.Equal(sk.TopHit, dk.TopHit);
             }
             Assert.Equal(s.IncomingBySkill.Count, d.IncomingBySkill.Count);

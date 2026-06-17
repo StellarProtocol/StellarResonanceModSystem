@@ -228,6 +228,14 @@ internal sealed partial class PandaGameDataProbe
         ReadSkillRowFields(object row, Type rowType)
     {
         var name = ReadStringOrMlString(row, rowType, "Name");
+        // Internal/system skills (field markers, dodge/attack variants) carry an EMPTY localized `Name` in this
+        // client — only `NameDesign` (the design label) is populated. Fall back to it so such a skill resolves to
+        // a real label instead of a raw "Skill <id>", matching the buff-name fallback. Flows to every consumer
+        // (CombatMeter skill breakdown, Entity Inspector skills list) via GetSkill().Name.
+        if (string.IsNullOrEmpty(name))
+        {
+            name = ReadStringOrMlString(row, rowType, "NameDesign");
+        }
         var desc = ReadStringOrMlString(row, rowType, "Desc");
         if (string.IsNullOrEmpty(desc))
         {
@@ -301,56 +309,65 @@ internal sealed partial class PandaGameDataProbe
     /// negative-effect classification likely lives in a categorized flag-group
     /// elsewhere (<c>Tags</c> Int32Array is a candidate but unverified).
     /// </summary>
-    private IReadOnlyDictionary<int, BuffInfo> LoadBuffs()
-    {
-        var firstLogged = false;
+    private bool _firstBuffLogged;
 
-        return LoadEagerTable<BuffInfo>(
+    private IReadOnlyDictionary<int, BuffInfo> LoadBuffs()
+        => LoadEagerTable<BuffInfo>(
             label: "Buff",
             typeName: "Bokura.BuffTableBase",
             capacityHint: 1024,
-            projector: (row, rowType) =>
-            {
-                var id = ReadInt(row, rowType, "Id");
-                if (id == 0) return (0, default);
+            projector: ProjectBuffRow);
 
-                var name = ReadStringOrMlString(row, rowType, "Name");
-                // BuffTableBase column is `Desc` (no `Description`).
-                var desc = ReadStringOrMlString(row, rowType, "Desc");
-                if (string.IsNullOrEmpty(desc))
-                {
-                    desc = ReadStringOrMlString(row, rowType, "Description");
-                }
-                // BuffTableBase column is `Icon` (not `IconPath`).
-                var iconPath = ReadString(row, rowType, "Icon");
-                if (string.IsNullOrEmpty(iconPath))
-                {
-                    iconPath = ReadString(row, rowType, "IconPath");
-                }
-                var buffTypeInt = ReadInt(row, rowType, "BuffType");
-                // BPSR-ZDPS reference: EBuffType { Debuff=0, Gain=1, GainRecovery=2, Item=3 }.
-                // The old `IsNegative` column does not exist on this build (it read false for
-                // every row), so derive the debuff flag from BuffType instead.
-                var isDebuff = buffTypeInt == 0;
-                // BuffTable.SkillId — the skill that applies this buff. Lets the CooldownBar
-                // attribute an Imagine-lockout debuff to its source Imagine. 0 when absent.
-                var skillId = ReadInt(row, rowType, "SkillId");
+    // Project one BuffTableBase row into (id, BuffInfo). Shared by the eager whole-table load and the
+    // single-row live fetch (LoadBuffLive) so both produce identical BuffInfo (Name/Desc/Icon/Category).
+    private (int id, BuffInfo info) ProjectBuffRow(object row, Type rowType)
+    {
+        var id = ReadInt(row, rowType, "Id");
+        if (id == 0) return (0, default);
 
-                if (!firstLogged)
-                {
-                    firstLogged = true;
-                    LogFirstBuffRow(new BuffRowDiagInfo(id, name, desc, iconPath, buffTypeInt, isDebuff));
-                }
+        var name = ReadStringOrMlString(row, rowType, "Name");
+        // Many internal/proc buffs (e.g. 2031104 "Lance - Luck", a lance lucky-counter that ticks damage) carry an
+        // EMPTY localized `Name` in this client — only `NameDesign` (the design label, often the source language)
+        // is populated. Fall back to it so damage attributed to such a buff resolves to a real name instead of a
+        // raw id. Plugins may still apply their own display override on top (e.g. CombatMeter's English map).
+        if (string.IsNullOrEmpty(name))
+        {
+            name = ReadStringOrMlString(row, rowType, "NameDesign");
+        }
+        // BuffTableBase column is `Desc` (no `Description`).
+        var desc = ReadStringOrMlString(row, rowType, "Desc");
+        if (string.IsNullOrEmpty(desc))
+        {
+            desc = ReadStringOrMlString(row, rowType, "Description");
+        }
+        // BuffTableBase column is `Icon` (not `IconPath`).
+        var iconPath = ReadString(row, rowType, "Icon");
+        if (string.IsNullOrEmpty(iconPath))
+        {
+            iconPath = ReadString(row, rowType, "IconPath");
+        }
+        var buffTypeInt = ReadInt(row, rowType, "BuffType");
+        // BPSR-ZDPS reference: EBuffType { Debuff=0, Gain=1, GainRecovery=2, Item=3 }.
+        // The old `IsNegative` column does not exist on this build (it read false for
+        // every row), so derive the debuff flag from BuffType instead.
+        var isDebuff = buffTypeInt == 0;
+        // BuffTable.SkillId — the skill that applies this buff. Lets the CooldownBar
+        // attribute an Imagine-lockout debuff to its source Imagine. 0 when absent.
+        var skillId = ReadInt(row, rowType, "SkillId");
 
-                return (id, new BuffInfo(
-                    Id: id,
-                    Name: name ?? string.Empty,
-                    Description: desc ?? string.Empty,
-                    IconPath: iconPath ?? string.Empty,
-                    Category: MapBuffCategory(buffTypeInt),
-                    IsDebuff: isDebuff,
-                    SkillId: skillId));
-            });
+        if (!_firstBuffLogged)
+        {
+            _firstBuffLogged = true;
+            LogFirstBuffRow(new BuffRowDiagInfo(id, name, desc, iconPath, buffTypeInt, isDebuff));
+        }
+
+        return (id, new BuffInfo(
+            Id: id,
+            Name: name ?? string.Empty,
+            Description: desc ?? string.Empty,
+            IconPath: iconPath ?? string.Empty,
+            Category: MapBuffCategory(buffTypeInt),
+            IsDebuff: isDebuff,
+            SkillId: skillId));
     }
-
 }
