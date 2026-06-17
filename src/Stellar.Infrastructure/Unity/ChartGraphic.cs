@@ -188,22 +188,27 @@ internal sealed class ChartGraphic : MaskableGraphic
         var n = pts.Count;
         var dIn = i > 0 ? UnitDir(pts[i - 1], pts[i]) : Vector2.zero;
         var dOut = i < n - 1 ? UnitDir(pts[i], pts[i + 1]) : Vector2.zero;
-        if (i == 0)   return RibFor(Normal(dOut), hc, -dOut * hc * 0.5f);   // start cap: out along -dOut
-        if (i == n-1) return RibFor(Normal(dIn), hc, dIn * hc * 0.5f);      // end cap:   out along +dIn
+        if (i == 0)   return RibFor(Normal(dOut), hc, Feather, -dOut * hc * 0.5f);   // start cap: out along -dOut
+        if (i == n-1) return RibFor(Normal(dIn), hc, Feather, dIn * hc * 0.5f);      // end cap:   out along +dIn
         var nIn = Normal(dIn);
         var nOut = Normal(dOut);
         var mit = nIn + nOut;
         var mlen = mit.magnitude;
-        if (mlen < 0.0001f) return RibFor(nIn, hc, Vector2.zero);           // 180° doubling-back → straight
+        if (mlen < 0.0001f) return RibFor(nIn, hc, Feather, Vector2.zero);  // 180° doubling-back → straight
         var m = mit / mlen;
         var scale = 1f / Mathf.Max(Vector2.Dot(m, nOut), 0.0001f);         // 1/cos(θ/2)
-        if (scale > MiterLimit) return RibFor(nIn, hc, Vector2.zero);       // sharp → bevel-ish fallback
-        return RibFor(m, hc * scale, Vector2.zero);                        // miter join (no cap, shared rib)
+        if (scale > MiterLimit) return RibFor(nIn, hc, Feather, Vector2.zero);  // sharp → bevel-ish fallback
+        // Miter join: scale BOTH the core and the feather by 1/cos(θ/2) so the rib's PERPENDICULAR projection
+        // back onto each segment is exactly (hc, hc+Feather) — i.e. the line keeps a constant width and a
+        // constant AA-fringe width THROUGH the joint. (Scaling only the core, as before, let the fringe
+        // collapse at sharp angles and reopened a faint notch.) No cap; both segments share this one rib.
+        return RibFor(m, hc * scale, Feather * scale, Vector2.zero);
     }
 
-    // Build the (core, edge, cap) triple for a unit rib direction scaled to a given core half-width.
-    private static (Vector2 core, Vector2 edge, Vector2 cap) RibFor(Vector2 unitRib, float coreLen, Vector2 cap)
-        => (unitRib * coreLen, unitRib * (coreLen + Feather), cap);
+    // Build the (core, edge, cap) triple for a unit rib direction: core half-width + outer feather length
+    // (both measured along the rib direction) and an optional along-line end-cap.
+    private static (Vector2 core, Vector2 edge, Vector2 cap) RibFor(Vector2 unitRib, float coreLen, float featherLen, Vector2 cap)
+        => (unitRib * coreLen, unitRib * (coreLen + featherLen), cap);
 
     private static Vector2 UnitDir(Vector2 from, Vector2 to)
     {
