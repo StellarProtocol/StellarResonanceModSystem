@@ -36,8 +36,25 @@ public enum TextAlign
 /// width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version
 /// after it starts at a consistent x). <paramref name="Align"/> sets horizontal alignment (Right for numeric
 /// columns). <paramref name="Shadow"/> draws a dark outline behind the glyphs — for chrome-less overlays (a
-/// borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.</summary>
-public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = null, bool Emphasis = false, float Width = 0f, TextAlign Align = TextAlign.Left, bool Shadow = false) : HudElement;
+/// borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.
+/// <paramref name="ShadowDistance"/> controls the pixel offset of the shadow (default 1). Increase for large
+/// font sizes where a 1-pixel shadow is invisible.</summary>
+public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = null, bool Emphasis = false, float Width = 0f, TextAlign Align = TextAlign.Left, bool Shadow = false, int FontSize = 0, int ShadowDistance = 1) : HudElement
+{
+    /// <summary>Backwards-compatible overload for plugins compiled against the pre-FontSize signature.</summary>
+    public TextElement(Func<string> text, Func<ColorRgba?>? color, bool emphasis, float width, TextAlign align, bool shadow)
+        : this(text, color, emphasis, width, align, shadow, 0, 1) { }
+#pragma warning disable STELLAR0004   // 7-param compat overload — not a real dependency; exempt as record secondary ctor
+    /// <summary>Backwards-compatible overload for plugins compiled against the pre-ShadowDistance signature.</summary>
+    public TextElement(Func<string> text, Func<ColorRgba?>? color, bool emphasis, float width, TextAlign align, bool shadow, int fontSize)
+        : this(text, color, emphasis, width, align, shadow, fontSize, 1) { }
+#pragma warning restore STELLAR0004
+
+    /// <summary>When non-null, overrides <see cref="FontSize"/> and is re-evaluated each HUD refresh.
+    /// Use with <see cref="Stellar.Abstractions.Services.IFramework.ScreenHeight"/> to scale text with
+    /// screen resolution: <c>DynamicFontSize = () => services.Framework.ScreenHeight / 19</c>.</summary>
+    public Func<int>? DynamicFontSize { get; init; }
+}
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
 /// semantic colour (from its colour slot). Optional right-aligned numeric <paramref name="Label"/> and

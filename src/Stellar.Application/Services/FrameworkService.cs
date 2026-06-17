@@ -8,6 +8,10 @@ internal sealed class FrameworkService : IFramework
 {
     public event Action<float>? Update;
     public long FrameCount { get; private set; }
+    public int ScreenWidth { get; private set; }
+    public int ScreenHeight { get; private set; }
+
+    internal void SetScreen(int width, int height) { ScreenWidth = width; ScreenHeight = height; }
 
     internal void Tick(float deltaTime)
     {

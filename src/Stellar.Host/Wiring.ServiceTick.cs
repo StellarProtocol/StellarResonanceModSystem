@@ -47,6 +47,7 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
         try
         {
+            _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
             Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:plugins");
             _framework!.Tick(deltaTime);
             Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:plugins");

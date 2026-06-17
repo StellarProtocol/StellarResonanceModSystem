@@ -61,7 +61,9 @@ internal sealed class HudRenderer : IHudRenderer
         _builder = null;
     }
 
-    public bool IsAnchorAvailable(HudAnchor anchor) => anchor == HudAnchor.FreeOverlay && EnsureCanvas();
+    public bool IsAnchorAvailable(HudAnchor anchor) =>
+        anchor is HudAnchor.FreeOverlay or HudAnchor.ScreenCenterX or HudAnchor.ScreenCenterY or HudAnchor.ScreenCenter
+        && EnsureCanvas();
 
     public object? Mount(HudSpec spec)
     {
@@ -94,7 +96,9 @@ internal sealed class HudRenderer : IHudRenderer
     public void SetRect(object? token, WindowRect rect)
     {
         if (token is not HudToken t || t.Rect == null) return;
-        t.Rect.anchoredPosition = new Vector2(rect.X, -rect.Y);   // top-left anchor, y-down screen space
+        var x = t.Anchor is HudAnchor.ScreenCenterX or HudAnchor.ScreenCenter ? 0f : rect.X;
+        var y = t.Anchor is HudAnchor.ScreenCenterY or HudAnchor.ScreenCenter ? 0f : -rect.Y;
+        t.Rect.anchoredPosition = new Vector2(x, y);
     }
 
     public WindowRect GetRect(object? token)
