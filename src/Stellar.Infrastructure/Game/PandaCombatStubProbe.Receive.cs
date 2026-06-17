@@ -96,6 +96,12 @@ internal sealed partial class PandaCombatStubProbe
         // linger on the bar after a zone transition.
         _sink.ClearAllBuffs();
 
+        // Entity caches are scene-scoped too. Dungeon mobs are frequently touched only via damage packets
+        // (never a SyncNearEntities disappear), so their dps/hps/vitals/attr rows would otherwise survive
+        // every dungeon re-entry and accumulate for the whole session — the FPS-decays-only-after-re-entry
+        // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
+        _sink.ResetEntities();
+
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;
         var eid = new EntityId(self.Uuid);

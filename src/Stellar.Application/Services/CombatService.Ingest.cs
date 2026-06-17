@@ -80,6 +80,7 @@ internal sealed partial class CombatService
             }
             AccumulateDps(evt);
             AccumulateHps(evt);
+            AccumulateSpec(evt);
             FireEvent(evt);
         }
 
@@ -111,6 +112,18 @@ internal sealed partial class CombatService
         if (d.Amount <= 0) return;
         if (d.SourceId.IsNone) return;
         _entities.AccumulateHps(d.SourceId, d.TimestampMs, d.Amount);
+    }
+
+    // Resolve the caster's active spec from the CAST skill id (last-seen-wins). There is no authoritative
+    // spec field on the wire and the equipped-skill loadout carries both specs' signature skills, so casts
+    // are the only reliable signal (ZDPS-parity). Only player sources can have a spec; SubProfessionFromSkill
+    // already returns null for non-spec / non-player skills, so the IsPlayer gate just avoids spurious work.
+    private void AccumulateSpec(CombatEvent evt)
+    {
+        if (evt is not CombatEvent.DamageDealt d) return;
+        if (d.SourceId.IsNone || !d.SourceId.IsPlayer) return;
+        if (Stellar.Abstractions.Domain.GameData.ProfessionSpecs.SubProfessionFromSkill(d.SkillId) is { } sub)
+            _entities.SetSubProfession(d.SourceId, sub);
     }
 
     private void FireEvent(CombatEvent evt)

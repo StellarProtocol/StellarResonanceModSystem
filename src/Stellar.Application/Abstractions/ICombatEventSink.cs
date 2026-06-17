@@ -68,6 +68,14 @@ internal interface ICombatEntityCache
     void OnEntityDisappeared(EntityId entityId);
 
     /// <summary>
+    /// Drop ALL per-entity cache rows (vitals/dps/hps/team/fight-point/skills/attrs/equip/fashion/names).
+    /// Called on scene change alongside <see cref="ICombatBuffSink.ClearAllBuffs"/>: combat mobs are often
+    /// touched only via damage packets and never get a matching SyncNearEntities disappear, so without a
+    /// scene-boundary reset their accumulators pile up across dungeon re-entries (GC pressure → FPS decay).
+    /// </summary>
+    void ResetEntities();
+
+    /// <summary>
     /// Update the resolved display name for an entity. Idempotent — only the
     /// first non-empty value sticks per (entity, value) pair; identical
     /// subsequent calls are no-ops, and empty/null names are ignored so a

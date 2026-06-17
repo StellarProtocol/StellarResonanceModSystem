@@ -67,7 +67,7 @@ public sealed partial class BootstrapPlugin
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _pluginConfigService!,
             _gameEvents!, playerState, _chatService!,
-            combatSnapshot, _combatService!, _combatService!,
+            combatSnapshot, _combatService!, _combatService!, _combatService!,
             _partyService!, _partyService!, _partyService!, _partyControlService!,
             _themeRenderer!, _hotkeyService!,
             _namedTheme!, _uguiInjection!, _hudService!, _windowService!, _launcher!,

@@ -58,6 +58,12 @@ internal sealed class CombatEntityTracker
     private readonly Dictionary<EntityId, IReadOnlyList<FashionEntry>> _fashionByEntity = new();
     private readonly object _fashionByEntityLock = new();
 
+    // Per-entity active sub-profession (spec) id, resolved from observed combat casts
+    // (ProfessionSpecs.SubProfessionFromSkill on each damage/heal). 0 = not yet seen casting
+    // a spec-defining skill. Last-seen-wins, so a mid-fight spec change is followed.
+    private readonly Dictionary<EntityId, int> _subProfessionByEntity = new();
+    private readonly object _subProfessionByEntityLock = new();
+
     // Display-name cache (AttrName, EAttrType=1).
     private readonly EntityNameRegistry _names = new();
 
@@ -108,6 +114,14 @@ internal sealed class CombatEntityTracker
         lock (_skillsByEntityLock)
         {
             return _skillsByEntity.TryGetValue(entityId, out var v) ? v : System.Array.Empty<SkillLevel>();
+        }
+    }
+
+    public int GetSubProfession(EntityId entityId)
+    {
+        lock (_subProfessionByEntityLock)
+        {
+            return _subProfessionByEntity.TryGetValue(entityId, out var sub) ? sub : 0;
         }
     }
 
@@ -196,6 +210,16 @@ internal sealed class CombatEntityTracker
         }
     }
 
+    /// <summary>Record an entity's active spec, resolved from a cast skill id. Last-seen-wins.</summary>
+    public void SetSubProfession(EntityId entityId, int subProfessionId)
+    {
+        if (subProfessionId == 0) return;
+        lock (_subProfessionByEntityLock)
+        {
+            _subProfessionByEntity[entityId] = subProfessionId;
+        }
+    }
+
     public void UpdateEntityName(EntityId entityId, string name) => _names.Set(entityId, name);
 
     public void SetEntityAttribute(EntityId entityId, int attrId, long value)
@@ -230,6 +254,9 @@ internal sealed class CombatEntityTracker
         lock (_dpsBySourceLock)     _dpsBySource.Remove(entityId);
         lock (_hpsBySourceLock)     _hpsBySource.Remove(entityId);
         lock (_teamIdByEntityLock)  _teamIdByEntity.Remove(entityId);
+        // Fight-point rides the same per-entity AOI lifecycle as vitals/team-id (re-broadcast on
+        // re-appear), so evict it too — it was omitted here, leaking one entry per entity ever seen.
+        lock (_fightPointByEntityLock) _fightPointByEntity.Remove(entityId);
         // Evict the inspector caches on disappear — every mob/NPC/player that ever entered AOI flows through
         // here, so retaining these would grow unbounded for the process lifetime. Gear re-broadcasts on
         // re-appear (like vitals), so dropping it is safe and the inspector shows "no data" once out of AOI.
@@ -240,5 +267,31 @@ internal sealed class CombatEntityTracker
         // NOTE: equipped skill loadout (_skillsByEntity) is NOT evicted on AOI-disappear. It is static
         // loadout data, not transient AOI state — a player walking out of range shouldn't blank their
         // Imagines. It's only overwritten when fresh AttrSkillLevelIdList data arrives for that entity.
+    }
+
+    /// <summary>
+    /// Drop ALL per-entity state — the scene-change reset. AOI-disappear (<see cref="OnEntityDisappeared"/>)
+    /// is the per-entity eviction hook, but it only fires for entities the server enumerates in a
+    /// SyncNearEntities disappear list. Dungeon/combat mobs are frequently touched only via damage packets
+    /// (which create _dpsBySource/_hpsBySource/vitals rows) and never get a matching disappear, so their
+    /// accumulators would otherwise survive for the whole process — piling up across every dungeon re-entry
+    /// and driving steadily rising GC cost / falling FPS. A scene transition is a hard session boundary: the
+    /// new scene re-broadcasts self (EnterScene) and everyone else (SyncNearEntities appears), so clearing
+    /// everything here — including the otherwise-retained skill loadouts — is safe and bounds the tracker to
+    /// a single scene's lifetime.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_vitalsByEntityLock)     _vitalsByEntity.Clear();
+        lock (_dpsBySourceLock)        _dpsBySource.Clear();
+        lock (_hpsBySourceLock)        _hpsBySource.Clear();
+        lock (_teamIdByEntityLock)     _teamIdByEntity.Clear();
+        lock (_fightPointByEntityLock) _fightPointByEntity.Clear();
+        lock (_skillsByEntityLock)     _skillsByEntity.Clear();
+        lock (_subProfessionByEntityLock) _subProfessionByEntity.Clear();
+        lock (_attrsByEntityLock)      _attrsByEntity.Clear();
+        lock (_equipByEntityLock)      _equipByEntity.Clear();
+        lock (_fashionByEntityLock)    _fashionByEntity.Clear();
+        _names.Clear();
     }
 }

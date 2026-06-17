@@ -29,6 +29,9 @@ public struct MeterRowData
     public ColorRgba RoleColor;
     /// <summary>HP spine fill colour (green/yellow/red by health fraction).</summary>
     public ColorRgba HpColor;
+    /// <summary>Self-row highlight colour (background tint + a brighter border), used only when <see cref="IsSelf"/>.
+    /// Supplied by the meter so the highlight is a configurable colour slot rather than a fixed framework teal.</summary>
+    public ColorRgba SelfAccent;
     /// <summary>HP fraction in [0..1] used for the vertical HP spine height.</summary>
     public float HpFraction;
     /// <summary>Metric bar fill fraction in [0..1] normalised to the top-row value.</summary>

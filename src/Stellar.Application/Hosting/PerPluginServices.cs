@@ -34,6 +34,7 @@ internal sealed class PerPluginServices : IPluginServices
     public ICombatSnapshot CombatSnapshot => _shared.CombatSnapshot;
     public ICombatLookup CombatLookup => _shared.CombatLookup;
     public ICombatEvents CombatEvents => _shared.CombatEvents;
+    public ICombatSpec CombatSpec => _shared.CombatSpec;
     public IPartySnapshot PartySnapshot => _shared.PartySnapshot;
     public IPartyRoster PartyRoster => _shared.PartyRoster;
     public IPartyEvents PartyEvents => _shared.PartyEvents;

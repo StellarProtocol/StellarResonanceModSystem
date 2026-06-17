@@ -40,7 +40,7 @@ internal sealed partial class LayoutEditorOverlay
             // the content within the panel.
             const float w = 1180f;
             var res = _input.CurrentResolution;
-            var spec = new WindowSpec("framework.layout-toolbar", "",
+            var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect((res.Width - w) / 2f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
             { StartVisible = false, ShowTitleBar = false, Draggable = true };

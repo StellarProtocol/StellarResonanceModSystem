@@ -54,4 +54,13 @@ internal sealed class EntityNameRegistry
             _names.Remove(entityId);
         }
     }
+
+    /// <summary>Drop every cached name (scene-change reset).</summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _names.Clear();
+        }
+    }
 }
