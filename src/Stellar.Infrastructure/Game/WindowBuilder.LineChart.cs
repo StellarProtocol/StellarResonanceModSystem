@@ -130,9 +130,19 @@ internal sealed partial class WindowBuilder
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = Vector2.zero; rt.sizeDelta = new Vector2(width, height);
         var bg = go.AddComponent<Image>();
-        bg.color = new Color(0.05f, 0.07f, 0.09f, 1f);
+        bg.color = PlotBg();
         bg.raycastTarget = true;   // needed later for scroll/drag zoom
         return go;
+    }
+
+    // Theme-derived recessed plot background: the window's MenuBackground nudged darker (RGB ·0.7, full alpha)
+    // so it reads as an inset plot on every theme — distinctly darker than the surrounding chrome on Default/
+    // Dark, and still light (not near-black) on the Light theme. Read at build, so it follows the active/custom
+    // theme; a full theme switch re-skins via the framework's rebuild path (no live-recolor plumbing in v1).
+    private Color PlotBg()
+    {
+        var bgc = _assets.MenuBackground;
+        return new Color(bgc.r * 0.7f, bgc.g * 0.7f, bgc.b * 0.7f, 1f);
     }
 
     // Auto-scaled (or overridden) Y max for the current visible bucket window.

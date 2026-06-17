@@ -62,6 +62,7 @@ internal sealed class WindowThemeAssets
     public Color MenuMuted { get; private set; } = new(0.6f, 0.6f, 0.6f, 1f);
     public Color MenuAccent { get; private set; } = Color.cyan;
     public Color MenuBorder { get; private set; } = new(1f, 1f, 1f, 0.12f);
+    public Color MenuBackground { get; private set; } = new(0.05f, 0.07f, 0.09f, 1f);
 
     // Window text font. The builtin "Arial.ttf" resolves in the Unity *editor* (sandbox) but is ABSENT
     // from IL2CPP *player* builds — there the Text falls back to a different font whose wider metrics make
@@ -154,6 +155,7 @@ internal sealed class WindowThemeAssets
         MenuMuted = ToColor(c.MenuMuted);
         MenuAccent = ToColor(c.MenuAccent);
         MenuBorder = ToColor(c.MenuBorder);
+        MenuBackground = ToColor(c.MenuBackground);
     }
 
     // Theme-INDEPENDENT neutral sprites (white, tinted per use) — baked ONCE and kept across re-bakes, so the

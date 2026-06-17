@@ -23,11 +23,16 @@ internal sealed partial class WindowBuilder
     private const float ChartNavHeight = 48f;        // navigator strip height (mini chart + brush)
     private const float ChartNavHandleW = 6f;        // resize-handle hit/draw width (px) per edge
     private const float ChartNavGapTop = 6f;         // gap between the legend row and the navigator strip
+    private const float ChartNavBrushFillAlpha = 0x22 / 255f;   // brush fill alpha (mockup #5fb0ff22 → ~0.13)
 
-    // Brush palette (mockup): #5fb0ff22 fill, #5fb0ff border. Held as Color so the navigator stays themed-
-    // neutral (the brush colour is fixed accent-blue in the reference, independent of the window theme).
-    private static readonly Color ChartNavBrushFill = new(0x5f / 255f, 0xb0 / 255f, 0xff / 255f, 0x22 / 255f);
-    private static readonly Color ChartNavBrushEdge = new(0x5f / 255f, 0xb0 / 255f, 0xff / 255f, 1f);
+    // Brush palette: the theme accent (tinted) for the fill, full-opacity accent for the edge handles, read
+    // from _assets at build so the navigator follows the active/custom theme (mirrors the scrollbar thumb in
+    // WindowBuilder.LineChart.Zoom.cs). Computed where the brush parts are built, not as static consts.
+    private Color ChartNavBrushFill =>
+        new(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, ChartNavBrushFillAlpha);
+
+    private Color ChartNavBrushEdge =>
+        new(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 1f);
 
     // Build the navigator strip in place of BuildChartControls. Registers the main plot for scroll/drag-pan
     // (kept), meshes the full-range overview, lays out the brush rects, wires the reflect-sync, and registers
@@ -45,7 +50,7 @@ internal sealed partial class WindowBuilder
         srt.sizeDelta = new Vector2(navW, ChartNavHeight);
 
         var bg = strip.AddComponent<Image>();
-        bg.color = new Color(0.05f, 0.07f, 0.09f, 1f); bg.raycastTarget = true;   // dark plot bg + double-click catcher
+        bg.color = PlotBg(); bg.raycastTarget = true;   // recessed (theme-derived) plot bg + double-click catcher
 
         var navInner = new Rect(0f, 4f, navW, ChartNavHeight - 8f);   // small top/bottom padding inside the strip
         BuildNavigatorGraphic(strip.transform, lc, navInner, token);
