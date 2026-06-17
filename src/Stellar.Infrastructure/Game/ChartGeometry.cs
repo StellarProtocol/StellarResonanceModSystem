@@ -21,6 +21,19 @@ internal static class ChartGeometry
         return step * mag;
     }
 
+    // Clamp a raw [minBucket, maxBucket] bucket window so it always spans at least one full bucket and stays
+    // inside the populated series. A sub-bucket visible range (floor==ceil) would otherwise scan an empty
+    // window and report peak 0, collapsing the Y axis to the degenerate 1/0/0/0 ladder. We widen to at least
+    // [minBucket, minBucket+1] then cap at seriesLen-1 so bucket 0's value is always visited.
+    internal static (int Min, int Max) ClampBucketWindow(int minBucket, int maxBucket, int seriesLen)
+    {
+        if (minBucket < 0) minBucket = 0;
+        if (maxBucket < minBucket + 1) maxBucket = minBucket + 1;
+        if (seriesLen > 0 && maxBucket > seriesLen - 1) maxBucket = seriesLen - 1;
+        if (maxBucket < minBucket) maxBucket = minBucket;
+        return (minBucket, maxBucket);
+    }
+
     // Peak Y across all series within [minBucket, maxBucket] inclusive.
     internal static float VisiblePeak(IReadOnlyList<ChartSeries> series, int minBucket, int maxBucket)
     {

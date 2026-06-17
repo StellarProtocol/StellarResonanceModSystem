@@ -87,4 +87,30 @@ public sealed class ChartGeometryTests
         // maxBucket past the end and minBucket negative are tolerated.
         Assert.Equal(9f, ChartGeometry.VisiblePeak(series, -2, 99));
     }
+
+    [Fact]
+    public void NiceYMax_rounds_small_peak_up_to_a_visible_max()
+    {
+        // The sub-bucket fallback plots a single bucket-0 point carrying the source total (e.g. 4400),
+        // which must round to a sane axis max (5000) instead of collapsing to the 1/0/0/0 ladder.
+        Assert.Equal(5000f, ChartGeometry.NiceYMax(4400f));
+        Assert.Equal(50f, ChartGeometry.NiceYMax(42f));
+    }
+
+    [Fact]
+    public void ClampBucketWindow_widens_subbucket_range_to_visit_bucket_zero()
+    {
+        // floor==ceil==0 (a sub-bucket visible range) → widen to [0,1] so bucket 0 is scanned, capped at len-1.
+        Assert.Equal((0, 0), ChartGeometry.ClampBucketWindow(0, 0, 1));   // only one bucket → stays at 0
+        Assert.Equal((0, 1), ChartGeometry.ClampBucketWindow(0, 0, 3));   // widened to [0,1]
+    }
+
+    [Fact]
+    public void ClampBucketWindow_clamps_negative_min_and_overflow_max()
+    {
+        Assert.Equal((0, 2), ChartGeometry.ClampBucketWindow(-5, 99, 3));   // negative min → 0, max → len-1
+        // Unknown series length (0): no upper bound to clamp against, so the widened window passes through
+        // (VisiblePeak tolerates over-range windows); only the min is floored to 0.
+        Assert.Equal((0, 5), ChartGeometry.ClampBucketWindow(-2, 5, 0));
+    }
 }

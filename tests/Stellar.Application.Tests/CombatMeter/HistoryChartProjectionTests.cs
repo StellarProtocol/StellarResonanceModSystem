@@ -45,4 +45,21 @@ public sealed class HistoryChartProjectionTests
 
         Assert.Equal(new long[] { 15, 25, 5 }, total);
     }
+
+    [Fact]
+    public void SeriesOrBucketZero_passes_non_empty_channel_through()
+    {
+        var channel = new long[] { 10, 20, 30 };
+        // Non-empty channels are returned unchanged (same instance) — no allocation, no fallback.
+        Assert.Same(channel, Plugin.SeriesOrBucketZero(channel, 999));
+    }
+
+    [Fact]
+    public void SeriesOrBucketZero_falls_back_to_single_bucket_total_when_empty()
+    {
+        // Sub-bucket encounter: empty per-bucket channel → a single bucket-0 point carrying the metric total,
+        // so the chart's peak is the real total (4400) rather than 0 (which would collapse the Y axis).
+        var s = Plugin.SeriesOrBucketZero(new long[0], 4400);
+        Assert.Equal(new long[] { 4400 }, s);
+    }
 }

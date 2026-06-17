@@ -96,8 +96,9 @@ internal sealed partial class WindowBuilder
     {
         var (min, max) = lc.VisibleRange();
         var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
-        var minBucket = Mathf.FloorToInt(min / bucket);
-        var maxBucket = Mathf.CeilToInt(max / bucket);
+        var seriesLen = MaxSeriesLength(series);
+        var (minBucket, maxBucket) = ChartGeometry.ClampBucketWindow(
+            Mathf.FloorToInt(min / bucket), Mathf.CeilToInt(max / bucket), seriesLen);
         var yMax = ChartYMax(lc);
         var lines = new List<ChartGraphic.Polyline>(series.Count);
         foreach (var s in series)
@@ -136,14 +137,32 @@ internal sealed partial class WindowBuilder
         if (lc.YMaxOverride?.Invoke() is { } fixedMax && fixedMax > 0f) return fixedMax;
         var (min, max) = lc.VisibleRange();
         var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
-        var minBucket = Mathf.FloorToInt(min / bucket);
-        var maxBucket = Mathf.CeilToInt(max / bucket);
-        return ChartGeometry.NiceYMax(ChartGeometry.VisiblePeak(lc.Series(), minBucket, maxBucket));
+        var series = lc.Series();
+        var (minBucket, maxBucket) = ChartGeometry.ClampBucketWindow(
+            Mathf.FloorToInt(min / bucket), Mathf.CeilToInt(max / bucket), MaxSeriesLength(series));
+        return ChartGeometry.NiceYMax(ChartGeometry.VisiblePeak(series, minBucket, maxBucket));
+    }
+
+    // Longest bucket array across the series set (used to clamp the visible bucket window in bounds).
+    private static int MaxSeriesLength(IReadOnlyList<ChartSeries> series)
+    {
+        var len = 0;
+        foreach (var s in series) if (s.Values.Count > len) len = s.Values.Count;
+        return len;
     }
 
     // YTicks+1 right-aligned labels stepping 0..yMax down the left margin, each centred on its gridline row.
     private void BuildYTicks(Transform parent, LineChartElement lc, Rect inner, float yMax, WindowToken token)
     {
+        // Degenerate window (no data in range): a "nice" max of 0 would render the 1/0/0/0 ladder. Draw only
+        // the 0 baseline label on the axis bottom instead, leaving the plot empty rather than mislabelled.
+        if (yMax <= 0f)
+        {
+            var baseLbl = ChartLabel(parent, TextAnchor.MiddleRight, "YTick", token);
+            PlaceLabel(baseLbl, new Rect(0f, inner.y - 8f, ChartMarginLeft - 6f, 16f));
+            token.Texts.Add(new TextBinding { C = baseLbl, TextFn = () => lc.FormatY(0f) });
+            return;
+        }
         for (var i = 0; i <= lc.YTicks; i++)
         {
             var t = i / (float)lc.YTicks;
