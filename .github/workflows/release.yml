@@ -43,15 +43,15 @@ jobs:
 
       # The BepInEx IL2CPP stage (winhttp + doorstop + BepInEx/ + dotnet/, ~73 MB)
       # lives at the root of the PRIVATE stellar-release-assets repo (also
-      # submoduled by the devkit at tools/BepInEx-stage). Pull it with a read token
-      # (secret RELEASE_ASSETS_TOKEN = a fine-grained token with read access to
-      # StarResonance-Experiment/stellar-release-assets). No S3 upload needed.
+      # submoduled by the devkit at tools/BepInEx-stage). Pull it with the
+      # read-only deploy key (secret RELEASE_ASSETS_SSH_KEY = private half of the
+      # deploy key registered on StarResonance-Experiment/stellar-release-assets).
       - name: Fetch BepInEx stage from private release-assets repo
         uses: actions/checkout@v4
         with:
           repository: StarResonance-Experiment/stellar-release-assets
           ref: main
-          token: ${{ secrets.RELEASE_ASSETS_TOKEN }}
+          ssh-key: ${{ secrets.RELEASE_ASSETS_SSH_KEY }}
           path: stage
 
       - name: Build bundle + version.json (against stubs)
