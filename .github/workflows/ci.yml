@@ -17,15 +17,15 @@ jobs:
       - name: Coding standards
         run: bash tools/check-standards.sh
 
-      # L2/L3: the only projects that build without the game's IL2CPP interop
-      # assemblies (Infrastructure/Host/samples/tests reference $(GameInterop),
-      # which is proprietary and absent on CI — do NOT commit game DLLs here
-      # to "fix" this; the constraint is intentional).
-      - name: Build pure layers (analyzer runs here)
-        run: |
-          dotnet build src/Stellar.Abstractions/Stellar.Abstractions.csproj -c Release
-          dotnet build src/Stellar.Wire/Stellar.Wire.csproj -c Release
-          dotnet build src/Stellar.Application/Stellar.Application.csproj -c Release
+      # L2/L3: build the ENTIRE solution — including Infrastructure/Host — against
+      # the committed interop REFERENCE STUBS (refs/, see tools/gen-refs.sh). The
+      # stubs carry the Unity/Il2Cpp/BepInEx public surface only (no method bodies,
+      # no game IL/metadata, no Panda.* game logic), so this needs no game install.
+      # The analyzer runs at error severity across every project here.
+      # NOTE: a stub build validates the API surface, not runtime — the release-of-
+      # record is gated on a real-interop / in-game smoke. See docs/release-process.md.
+      - name: Build full solution against interop stubs (analyzer runs here)
+        run: dotnet build src/Stellar.sln -c Release -p:GameInterop=$PWD/refs -p:BepInExCore=$PWD/refs
 
       # Analyzer unit tests are self-contained (no game refs) and validate the
       # enforcement rules themselves.
