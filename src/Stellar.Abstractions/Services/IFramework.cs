@@ -12,4 +12,10 @@ public interface IFramework
 
     /// <summary>Monotonic frame counter incremented before each <see cref="Update"/> dispatch.</summary>
     long FrameCount { get; }
+
+    /// <summary>Current display width in pixels. Updated once per frame before <see cref="Update"/> fires.</summary>
+    int ScreenWidth { get; }
+
+    /// <summary>Current display height in pixels. Updated once per frame before <see cref="Update"/> fires.</summary>
+    int ScreenHeight { get; }
 }

@@ -37,6 +37,28 @@ internal sealed class HudElementBuilder
     {
         var token = new HudToken();
         var root = UGuiPrimitives.NewRect(spec.Id, parent);
+        token.Anchor = spec.Anchor;
+        switch (spec.Anchor)
+        {
+            case HudAnchor.ScreenCenterX:
+                // Anchor at canvas center-top; pivot at panel center-top → x=0 always centres horizontally.
+                root.anchorMin = new Vector2(0.5f, 1f);
+                root.anchorMax = new Vector2(0.5f, 1f);
+                root.pivot     = new Vector2(0.5f, 1f);
+                break;
+            case HudAnchor.ScreenCenterY:
+                // Anchor at canvas left-middle; pivot at panel left-middle → y=0 always centres vertically.
+                root.anchorMin = new Vector2(0f, 0.5f);
+                root.anchorMax = new Vector2(0f, 0.5f);
+                root.pivot     = new Vector2(0f, 0.5f);
+                break;
+            case HudAnchor.ScreenCenter:
+                // Anchor at canvas center; pivot at panel center → both axes centred at any resolution.
+                root.anchorMin = new Vector2(0.5f, 0.5f);
+                root.anchorMax = new Vector2(0.5f, 0.5f);
+                root.pivot     = new Vector2(0.5f, 0.5f);
+                break;
+        }
         UGuiPrimitives.AddLayout(root.gameObject, gap: 0f, columns: UGuiPrimitives.ColumnMode);
         var fitter = root.gameObject.AddComponent<ContentSizeFitter>();
         fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -54,6 +76,7 @@ internal sealed class HudElementBuilder
     {
         public GameObject Root = null!;
         public RectTransform Rect = null!;
+        internal HudAnchor Anchor;
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<BarBinding> Bars = new();
         internal readonly List<CondBinding> Conds = new();
@@ -74,19 +97,39 @@ internal sealed class HudElementBuilder
         public Text? Shadow;          // two-pass drop-shadow twin (UnityEngine.UI.Shadow is stripped from interop)
         public Func<string> TextFn = null!;
         public Func<ColorRgba?>? ColorFn;
+        public Func<int>? DynamicFontSizeFn;
         private string? _lastText;
         private bool _colorInit;
         private ColorRgba? _lastColor;
+        private int _lastFontSize;
         public void Apply()
         {
             if (C == null) return;
+            if (DynamicFontSizeFn != null)
+            {
+                var fs = Math.Max(1, DynamicFontSizeFn());
+                if (fs != _lastFontSize)
+                {
+                    C.fontSize = fs;
+                    if (Shadow != null) Shadow.fontSize = fs;
+                    _lastFontSize = fs;
+                }
+            }
             var s = TextFn();
             if (s != _lastText) { C.text = s; if (Shadow != null) Shadow.text = s; _lastText = s; }
             if (ColorFn != null)
             {
                 var c = ColorFn();
                 if (!_colorInit || !NullableColorEquals(c, _lastColor))
-                { C.color = c is { } v ? new Color(v.R, v.G, v.B, v.A) : Color.white; _lastColor = c; _colorInit = true; }
+                {
+                    if (c is { } v)
+                    {
+                        C.color = new Color(v.R, v.G, v.B, v.A);
+                        if (Shadow != null) { var sc = Shadow.color; Shadow.color = new Color(sc.r, sc.g, sc.b, v.A); }
+                    }
+                    else C.color = Color.white;
+                    _lastColor = c; _colorInit = true;
+                }
             }
         }
     }
@@ -165,8 +208,23 @@ internal sealed class HudElementBuilder
 
     private void BuildText(TextElement t, Transform parent, HudToken token)
     {
-        var (_, fg, shadow) = MakeShadowedText(parent, t.Emphasis ? 20 : 16, TextAnchor.MiddleLeft, bold: t.Emphasis);
-        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color });
+        int size = t.DynamicFontSize != null ? Math.Max(1, t.DynamicFontSize())
+                 : t.FontSize > 0            ? t.FontSize
+                 :                             (t.Emphasis ? 20 : 16);
+        var anchor = t.Align switch
+        {
+            TextAlign.Center => TextAnchor.MiddleCenter,
+            TextAlign.Right  => TextAnchor.MiddleRight,
+            _                => TextAnchor.MiddleLeft,
+        };
+        var (slot, fg, shadow) = MakeShadowedText(parent, size, anchor, bold: t.Emphasis, shadowOffset: t.ShadowDistance);
+        if (t.Width > 0f)
+        {
+            var le = slot.AddComponent<LayoutElement>();
+            le.preferredWidth = t.Width;
+            le.flexibleWidth = 0f;
+        }
+        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color, DynamicFontSizeFn = t.DynamicFontSize });
     }
 
     // Level-pill chip: rounded 9-slice sprite (HudPillBg + accent border) sized to
@@ -314,7 +372,7 @@ internal sealed class HudElementBuilder
     // Keeping the foreground on the layout's own position (rather than offsetting it)
     // means centred text — e.g. the pill chip — stays truly centred; the shadow moves
     // instead. Returns (slot GO, foreground, shadow).
-    private (GameObject Slot, Text Fg, Text Shadow) MakeShadowedText(Transform parent, int fontSize, TextAnchor anchor, bool bold)
+    private (GameObject Slot, Text Fg, Text Shadow) MakeShadowedText(Transform parent, int fontSize, TextAnchor anchor, bool bold, int shadowOffset = 1)
     {
         var slot = UGuiPrimitives.NewChild("Text", parent);
         var lg = slot.AddComponent<HorizontalLayoutGroup>();
@@ -326,7 +384,8 @@ internal sealed class HudElementBuilder
         shGo.AddComponent<LayoutElement>().ignoreLayout = true;
         var shrt = shGo.GetComponent<RectTransform>();
         shrt.anchorMin = Vector2.zero; shrt.anchorMax = Vector2.one;
-        shrt.offsetMin = new Vector2(1f, -1f); shrt.offsetMax = new Vector2(1f, -1f);
+        float sd = shadowOffset;
+        shrt.offsetMin = new Vector2(sd, -sd); shrt.offsetMax = new Vector2(sd, -sd);
         var shadow = shGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(shadow, fontSize, anchor, bold);
         shadow.color = _assets.HudTextShadow;

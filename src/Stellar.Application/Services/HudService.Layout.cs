@@ -53,7 +53,8 @@ internal sealed partial class HudService
 
     private WindowRect RectForPersist(Entry e)
         => e.Token != null ? _renderer.GetRect(e.Token)
-         : e.LastShownRect.Width > 0 ? e.LastShownRect : (e.Spec.DefaultRect ?? default);
+         : e.LastShownRect.Width > 0 ? e.LastShownRect
+         : e.Spec.DynamicDefaultRect?.Invoke() ?? e.Spec.DefaultRect ?? default;
 
     /// <summary>Layout-editor "Reset" for a mod HUD: drop its saved override and re-place it at the
     /// (on-screen-clamped) DefaultRect / renderer-initial position. No-ops if the id isn't a mounted HUD.</summary>
@@ -71,7 +72,7 @@ internal sealed partial class HudService
     {
         if (_storage is null || _resolution is null || e.Token is null || _dragging.Contains(e.Spec.Id)) return;
         // Fall back to the spec's DefaultRect (spawn position) when set, else the renderer's initial placement.
-        var fallback = e.Spec.DefaultRect ?? _renderer.GetRect(e.Token);
+        var fallback = e.Spec.DynamicDefaultRect?.Invoke() ?? e.Spec.DefaultRect ?? _renderer.GetRect(e.Token);
         var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Spec.Id, _resolution(), fallback);
         _renderer.SetRect(e.Token, rect);
         if (!visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
