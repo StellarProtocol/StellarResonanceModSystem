@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Stellar.PluginContracts</RootNamespace>
+    <AssemblyName>Stellar.PluginContracts</AssemblyName>
+    <Description>Shared inter-plugin contracts brokered via IPluginExchange. Referenced by cooperating plugins (in addition to Stellar.Abstractions); the framework NEVER references this — it brokers purely by Type. New cross-plugin contracts go here, not in Stellar.Abstractions.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <!-- References only Abstractions (for the reused domain types: EntityId, EquippedItem, SkillLevel, FashionEntry). -->
+  <ItemGroup>
+    <ProjectReference Include="../Stellar.Abstractions/Stellar.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

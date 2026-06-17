@@ -70,4 +70,8 @@ public interface IPluginServices
     IEntityPortrait EntityPortrait { get; }
     /// <summary>Contribute buttons to the game's native profile card action bar (the framework injects + styles them).</summary>
     IProfileCardActions ProfileCardActions { get; }
+    /// <summary>The inter-plugin communication channel — a plugin offers a contract via <c>Provide&lt;T&gt;</c> and
+    /// another consumes it via <c>Consume&lt;T&gt;</c>, without referencing each other. The ONE generic extension
+    /// point for plugin-to-plugin cooperation; specific contracts live in a shared contracts assembly.</summary>
+    IPluginExchange Exchange { get; }
 }

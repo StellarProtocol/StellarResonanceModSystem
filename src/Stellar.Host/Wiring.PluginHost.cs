@@ -75,7 +75,8 @@ public sealed partial class BootstrapPlugin
             _combatService!,
             new Stellar.Application.Services.EntityContextMenuService(),
             new Stellar.Infrastructure.Game.EntityPortraitService(portraitModelProbe, portraitModelHost),
-            _profileCardActions!);
+            _profileCardActions!,
+            new Stellar.Application.Services.PluginExchange());
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 
