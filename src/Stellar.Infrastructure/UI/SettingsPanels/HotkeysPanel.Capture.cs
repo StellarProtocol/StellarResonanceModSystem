@@ -13,27 +13,69 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 internal sealed partial class HotkeysPanel
 {
     /// <summary>uGUI capture poll (SP1 Settings migration) — there is no <see cref="Event.current"/> outside
-    /// OnGUI, so poll legacy <see cref="Input"/> each frame while a cell is capturing. Host calls this per
-    /// frame; cheap no-op unless capturing. Esc cancels; first non-modifier <c>GetKeyDown</c> commits.</summary>
+    /// OnGUI, so poll legacy <see cref="Input"/> while a cell is capturing. Host-ticked at the THROTTLED
+    /// framework rate (InvokeRepeating @ UpdateRateHz, not per-frame), so it detects a new binding by diffing
+    /// held-key state across ticks rather than the per-frame-only <c>GetKeyDown</c> (which was sampled too
+    /// coarsely — most presses missed, the "spam the key to bind it" bug). Cheap no-op unless capturing. Esc
+    /// cancels; the first freshly-held non-modifier key commits with the modifiers held at that moment.</summary>
     public void PollCaptureUgui()
     {
-        if (_capturingActionId is not { } actionId) return;
-        if (!Input.anyKeyDown) return;
-        if (Input.GetKeyDown(KeyCode.Escape)) { CancelCapture(); return; }
-        foreach (KeyCode k in System.Enum.GetValues(typeof(KeyCode)))
+        // Draining a just-committed bind: keep dispatch suppressed (the directory stays in capture) until the
+        // bound key is RELEASED, so the same keypress that set the binding doesn't also fire the freshly-bound
+        // action the instant capture ends. Independent of tick ordering (HotkeyService.Tick gates on capture).
+        if (_drainReleaseKey != KeyCode.None)
         {
-            if (k == KeyCode.None || IsModifierKey(k) || !Input.GetKeyDown(k)) continue;
-            var mods = ModifierKeys.None;
-            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) mods |= ModifierKeys.Shift;
-            if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) mods |= ModifierKeys.Ctrl;
-            if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) mods |= ModifierKeys.Alt;
-            var newBinding = new KeyBinding((StellarKeyCode)(int)k, mods);
-            if (TryFindConflict(actionId, newBinding, out var conflictId)) _directory.Rebind(conflictId, null);
-            _directory.Rebind(actionId, newBinding);
-            CancelCapture();
+            if (!Input.GetKey(_drainReleaseKey)) { _drainReleaseKey = KeyCode.None; _directory.EndCapture(); }
             return;
         }
+        if (_capturingActionId is not { } actionId) { if (_capturePrimed) ResetCapturePoll(); return; }
+        if (Input.GetKey(KeyCode.Escape)) { ResetCapturePoll(); CancelCapture(); return; }
+        // Del / Backspace clears the binding (unbind) instead of assigning a key — the cell hints this.
+        if (Input.GetKey(KeyCode.Delete) || Input.GetKey(KeyCode.Backspace)) { ResetCapturePoll(); Unbind(actionId); return; }
+
+        // First poll of a capture: record what's already held so a key down BEFORE capture began doesn't
+        // instantly bind. Subsequent polls diff against this baseline.
+        if (!_capturePrimed)
+        {
+            foreach (var k in _capturableKeys) if (Input.GetKey(k)) _prevHeldKeys.Add(k);
+            _capturePrimed = true;
+            return;
+        }
+
+        KeyCode pressed = KeyCode.None;
+        foreach (var k in _capturableKeys)
+        {
+            if (!Input.GetKey(k)) { _prevHeldKeys.Remove(k); continue; }
+            if (pressed == KeyCode.None && _prevHeldKeys.Add(k)) pressed = k;   // held now, wasn't before → fresh press
+        }
+        if (pressed == KeyCode.None) return;
+
+        var mods = ModifierKeys.None;
+        if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) mods |= ModifierKeys.Shift;
+        if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) mods |= ModifierKeys.Ctrl;
+        if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) mods |= ModifierKeys.Alt;
+        var newBinding = new KeyBinding((StellarKeyCode)(int)pressed, mods);
+        if (TryFindConflict(actionId, newBinding, out var conflictId)) _directory.Rebind(conflictId, null);
+        _directory.Rebind(actionId, newBinding);
+        ResetCapturePoll();
+        _capturingActionId = null;        // stop the UI capture — the cell now shows the new binding
+        _drainReleaseKey = pressed;       // but keep dispatch gated (no EndCapture yet) until the key is released
     }
+
+    // Non-modifier capturable keys, computed once (Enum.GetValues allocates — don't do it per poll).
+    private static readonly KeyCode[] _capturableKeys = BuildCapturableKeys();
+    private static KeyCode[] BuildCapturableKeys()
+    {
+        var list = new System.Collections.Generic.List<KeyCode>();
+        foreach (KeyCode k in System.Enum.GetValues(typeof(KeyCode)))
+            if (k != KeyCode.None && !IsModifierKey(k)) list.Add(k);
+        return list.ToArray();
+    }
+
+    private readonly System.Collections.Generic.HashSet<KeyCode> _prevHeldKeys = new();
+    private bool _capturePrimed;
+    private KeyCode _drainReleaseKey = KeyCode.None;   // just-bound key being drained until released (see PollCaptureUgui)
+    private void ResetCapturePoll() { _prevHeldKeys.Clear(); _capturePrimed = false; }
 
     private void TryCaptureKey(string actionId)
     {

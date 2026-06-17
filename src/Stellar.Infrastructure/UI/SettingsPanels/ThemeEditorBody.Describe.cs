@@ -28,7 +28,10 @@ internal sealed partial class ThemeEditorBody
         var nameEntry = new RowElement(new HudElement[]
         {
             new TextElement(() => _nameMode == NameMode.New ? "New theme:" : "Rename:"),
-            new InputElement(() => _nameBuffer, s => _nameBuffer = s ?? "", 160f),
+            // OnChange syncs the buffer per-keystroke so clicking OK (mouse, no Enter) validates the typed
+            // text — without it, Submit only fired on Enter and a mouse-OK saw an empty buffer ("must be
+            // non-empty" on a clearly-typed name).
+            new InputElement(() => _nameBuffer, s => _nameBuffer = s ?? "", 160f, OnChange: s => _nameBuffer = s ?? ""),
             new ButtonElement(() => "OK", TryCommitName),
             new ButtonElement(() => "Cancel", CancelNameMode),
         });

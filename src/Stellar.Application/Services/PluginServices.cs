@@ -19,6 +19,7 @@ internal sealed class PluginServices : IPluginServices
     public ICombatSnapshot CombatSnapshot { get; }
     public ICombatLookup   CombatLookup   { get; }
     public ICombatEvents   CombatEvents   { get; }
+    public ICombatSpec     CombatSpec     { get; }
     public IPartySnapshot PartySnapshot { get; }
     public IPartyRoster   PartyRoster   { get; }
     public IPartyEvents   PartyEvents   { get; }
@@ -53,6 +54,7 @@ internal sealed class PluginServices : IPluginServices
         ICombatSnapshot combatSnapshot,
         ICombatLookup   combatLookup,
         ICombatEvents   combatEvents,
+        ICombatSpec     combatSpec,
         IPartySnapshot partySnapshot,
         IPartyRoster   partyRoster,
         IPartyEvents   partyEvents,
@@ -86,6 +88,7 @@ internal sealed class PluginServices : IPluginServices
         CombatSnapshot = combatSnapshot;
         CombatLookup   = combatLookup;
         CombatEvents   = combatEvents;
+        CombatSpec     = combatSpec;
         PartySnapshot  = partySnapshot;
         PartyRoster    = partyRoster;
         PartyEvents    = partyEvents;

@@ -245,6 +245,7 @@ internal sealed partial class WindowBuilder
         // Poll-diff caches — an idle row (unchanged values) writes nothing, avoiding redundant Text mesh
         // rebuilds / Image vertex-dirty rebatches every poll.
         private bool _selfInit, _lastSelf;
+        private ColorRgba _lastSelfAccent;
         private int _lastLeader = -1;
         private float _lastHp = -1f, _lastBar = -1f;
         private ColorRgba _lastHpCol, _lastRoleCol;
@@ -261,12 +262,7 @@ internal sealed partial class WindowBuilder
             if (Bg == null || !Bg.gameObject.activeInHierarchy) return;
             var d = Data();
 
-            if (!_selfInit || d.IsSelf != _lastSelf)
-            {
-                Bg.color = d.IsSelf ? MeterSelfBg : MeterRowBg;
-                if (SelfBorder != null) SelfBorder.SetActive(d.IsSelf);
-                _lastSelf = d.IsSelf; _selfInit = true;
-            }
+            ApplySelfHighlight(d);
 
             if (SpineFill != null)
             {
@@ -371,7 +367,32 @@ internal sealed partial class WindowBuilder
             BindImagineCell(Imagine1Cell, d.Imagine1, opts, ref _img1);
         }
 
+        // Self-row highlight: configurable colour from the meter (d.SelfAccent) rather than a fixed teal. Re-applied
+        // when IsSelf flips OR the accent colour changes (live colour edit). Bg uses the colour as-is; the border
+        // uses a brightened variant. A transparent (unset) accent falls back to the original framework teal so
+        // rows that don't supply one (party-focus / empty slots) are unchanged.
+        private void ApplySelfHighlight(in MeterRowData d)
+        {
+            if (_selfInit && d.IsSelf == _lastSelf && (!d.IsSelf || d.SelfAccent.Equals(_lastSelfAccent))) return;
+            var hasAccent = d.SelfAccent.A > 0f;
+            Bg.color = d.IsSelf ? (hasAccent ? ToColor(d.SelfAccent) : MeterSelfBg) : MeterRowBg;
+            if (SelfBorder != null)
+            {
+                SelfBorder.SetActive(d.IsSelf);
+                if (d.IsSelf)
+                {
+                    var edge = hasAccent ? ToColor(BrightenAccent(d.SelfAccent)) : MeterSelfBdr;
+                    foreach (var img in SelfBorder.GetComponentsInChildren<Image>(true)) img.color = edge;
+                }
+            }
+            _lastSelf = d.IsSelf; _lastSelfAccent = d.SelfAccent; _selfInit = true;
+        }
+
         private static Color ToColor(ColorRgba c) => new(c.R, c.G, c.B, c.A);
+
+        // Brighter variant of the self-accent for the row border, so the edge reads above the dim bg backing.
+        private static ColorRgba BrightenAccent(ColorRgba c)
+            => new(Mathf.Clamp01(c.R * 1.7f + 0.1f), Mathf.Clamp01(c.G * 1.7f + 0.1f), Mathf.Clamp01(c.B * 1.7f + 0.1f), 0.9f);
 
         // Fit a (srcW×srcH) source into a square box, preserving aspect (centre-letterboxed). Mirrors
         // MeterRowView.AspectFit — the crest image is centre-anchored so the returned size centres in the box.

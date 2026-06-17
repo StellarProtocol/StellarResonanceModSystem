@@ -52,6 +52,16 @@ internal sealed partial class LayoutEditorOverlay
     private readonly List<Stellar.Infrastructure.Game.EditChromeItem> _chromeItems = new(16);
     private bool _wasEditing;
 
+    // Edit-mode input blocker. Sits just ABOVE the game's UI canvases but BELOW Stellar's interactive
+    // window/toolbar layer, so while editing it absorbs clicks bound for native game UI (chat, profile, …) —
+    // stopping the press from leaking through and opening chat / a profile while you drag an element — without
+    // stealing clicks from the toolbar or draggable mod windows. The editor drives its own select/drag from
+    // raw input polling (IInputGateway) + rect hit-tests, so absorbing the EventSystem click doesn't disable it.
+    // Layering: game UI (<32750) < blocker (32749) < HUD (32750) < Window/toolbar (32755) < chrome (32758).
+    private const int EditBlockerSortingOrder = 32749;
+    private const int InteractiveLayerMinOrder = 32755;
+    private readonly UGuiInputBlocker _editInputBlocker = new(EditBlockerSortingOrder);
+
     public LayoutEditorOverlay(LayoutEditorService editor, IInputGateway input,
                                 LayoutStorage storage, ITheme theme, IPluginLog log)
     {
@@ -84,7 +94,7 @@ internal sealed partial class LayoutEditorOverlay
         Stellar.Infrastructure.Unity.LayoutEditGate.IsEditing = _editor.IsEditing;
         if (_editor.IsEditing)
         {
-            if (!_wasEditing) { ShowToolbar(); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
+            if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
             ProcessInput();
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
@@ -92,6 +102,7 @@ internal sealed partial class LayoutEditorOverlay
         {
             _chrome.Teardown();   // destroy the overlay canvas on edit-mode exit
             HideToolbar();
+            _editInputBlocker.SetActive(false);   // stop absorbing game-UI clicks once out of edit mode
             Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = false;
         }
         _wasEditing = _editor.IsEditing;
@@ -141,13 +152,23 @@ internal sealed partial class LayoutEditorOverlay
         else if (!_input.LeftMouseDown && _editor.IsDragging) HandleDragRelease();
     }
 
-    // True when the pointer is over a uGUI raycast target (the toolbar window, a draggable plugin window).
-    // The edit-overlay chrome is raycastTarget=false; HUDs + IMGUI windows aren't raycast targets either, so
-    // they stay grabbable. Replaces the old IMGUI toolbar-rect exclusion.
-    private static bool IsPointerOverUgui()
+    // True when the pointer is over Stellar's INTERACTIVE uGUI layer (toolbar / draggable mod windows at
+    // sortingOrder >= InteractiveLayerMinOrder). It deliberately IGNORES the edit-mode input blocker (32749)
+    // and the game's own UI (<32750), so native/HUD elements stay grabbable while the blocker absorbs their
+    // click from the game. RaycastAll + a sorting-order filter (not IsPointerOverGameObject, which the
+    // full-screen blocker would make true everywhere); called once per press, so the alloc is negligible.
+    private readonly Il2CppSystem.Collections.Generic.List<UnityEngine.EventSystems.RaycastResult> _uiRaycastScratch = new();
+    private bool IsPointerOverUgui()
     {
         var es = UnityEngine.EventSystems.EventSystem.current;
-        return es != null && es.IsPointerOverGameObject();
+        if (es == null) return false;
+        var (px, py) = _input.PointerPosition;
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, py) };
+        _uiRaycastScratch.Clear();
+        es.RaycastAll(ped, _uiRaycastScratch);
+        for (var i = 0; i < _uiRaycastScratch.Count; i++)
+            if (_uiRaycastScratch[i].sortingOrder >= InteractiveLayerMinOrder) return true;
+        return false;
     }
 
     private void HandlePressed()
