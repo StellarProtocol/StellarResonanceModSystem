@@ -113,4 +113,36 @@ public sealed class ChartGeometryTests
         // (VisiblePeak tolerates over-range windows); only the min is floored to 0.
         Assert.Equal((0, 5), ChartGeometry.ClampBucketWindow(-2, 5, 0));
     }
+
+    // Regression: the real in-game "1/0/0/0" Combat-History bug (entry 0). The team-total series for the
+    // user's session was [4588, 8856] (bucketMs 1000 → BucketSeconds 1), shown over the full visible range
+    // (0, 1.212) for a 1212 ms encounter. The axis read 1/0/0/0 because yMax was baked from an empty series.
+    // This locks in that the geometry pipeline the axis (ChartYMax) and the line (MapSeries) share — clamp the
+    // bucket window, peak it, NiceYMax it — yields 10000 for this 2-bucket / fractional-duration case, so the
+    // Y axis renders 10K/7.5K/5K/2.5K/0. Mirrors WindowBuilder.ChartYMax's Floor(min/bucket)/Ceil(max/bucket).
+    [Fact]
+    public void Entry0_two_bucket_fractional_window_scales_axis_to_real_peak()
+    {
+        var series = new List<ChartSeries> { new("Team total", default, new float[] { 4588f, 8856f }, Emphasis: true) };
+        const float min = 0f, max = 1.212f, bucket = 1f;
+        var minBucket = (int)System.Math.Floor(min / bucket);   // 0
+        var maxBucket = (int)System.Math.Ceiling(max / bucket);  // 2
+        var (lo, hi) = ChartGeometry.ClampBucketWindow(minBucket, maxBucket, /*seriesLen*/ 2);
+        Assert.Equal((0, 1), (lo, hi));   // capped at len-1 so both buckets are visited (not collapsed)
+        var peak = ChartGeometry.VisiblePeak(series, lo, hi);
+        Assert.Equal(8856f, peak);
+        Assert.Equal(10000f, ChartGeometry.NiceYMax(peak));   // NOT 1 → axis reads 10K/7.5K/5K/2.5K/0
+    }
+
+    // The line and the axis must scale identically: ValueToY of the peak against NiceYMax(peak) lands at the
+    // top tick row, never clipped or floored. (Pre-fix the axis used yMax 1 while the line used the live peak,
+    // so the line shot past the labelled rows — the visible "rising line over a 1/0/0/0 axis" symptom.)
+    [Fact]
+    public void Entry0_peak_value_maps_to_top_of_plot_under_nice_max()
+    {
+        const float peak = 8856f;
+        var yMax = ChartGeometry.NiceYMax(peak);   // 10000
+        // peak is 88.56% up a 0..200px plot → ~177.1px, comfortably inside [0,200], not clamped to the top.
+        Assert.Equal(177.12f, ChartGeometry.ValueToY(peak, yMax, 0f, 200f), 2);
+    }
 }

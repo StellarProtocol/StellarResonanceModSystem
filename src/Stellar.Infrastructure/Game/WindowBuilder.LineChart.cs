@@ -52,8 +52,7 @@ internal sealed partial class WindowBuilder
         // post-layout refresh re-meshes/repositions to the real width (ChartWidth) via the reflow bindings.
         var inner = ChartInner(lc, lc.Width);
 
-        var yMax = ChartYMax(lc);
-        BuildYTicks(plot.transform, lc, inner, yMax, token);
+        BuildYTicks(plot.transform, lc, inner, token);
         BuildXTicks(plot.transform, lc, inner, token);
         BuildAxisTitles(plot.transform, lc, inner, token);
         BuildLegend(root.transform, lc, token);
@@ -199,12 +198,21 @@ internal sealed partial class WindowBuilder
     private static float ChartYMax(LineChartElement lc)
     {
         if (lc.YMaxOverride?.Invoke() is { } fixedMax && fixedMax > 0f) return fixedMax;
+        return ChartGeometry.NiceYMax(ChartVisiblePeak(lc));
+    }
+
+    // The raw (un-"nice"d) peak across the live visible bucket window — the single source the Y axis labels and
+    // the line mesh both scale from. Computed live (never baked) so a chart built before its Series() is
+    // populated rescales as soon as data arrives. Window mapping mirrors MapSeries: Floor(min/bucket)/Ceil(max/
+    // bucket), clamped into the populated series so a 2+-bucket / fractional-duration window is never empty.
+    private static float ChartVisiblePeak(LineChartElement lc)
+    {
         var (min, max) = lc.VisibleRange();
         var bucket = Mathf.Max(lc.BucketSeconds(), 0.0001f);
         var series = lc.Series();
         var (minBucket, maxBucket) = ChartGeometry.ClampBucketWindow(
             Mathf.FloorToInt(min / bucket), Mathf.CeilToInt(max / bucket), MaxSeriesLength(series));
-        return ChartGeometry.NiceYMax(ChartGeometry.VisiblePeak(series, minBucket, maxBucket));
+        return ChartGeometry.VisiblePeak(series, minBucket, maxBucket);
     }
 
     // Longest bucket array across the series set (used to clamp the visible bucket window in bounds).
@@ -216,25 +224,30 @@ internal sealed partial class WindowBuilder
     }
 
     // YTicks+1 right-aligned labels stepping 0..yMax down the left margin, each centred on its gridline row.
-    private void BuildYTicks(Transform parent, LineChartElement lc, Rect inner, float yMax, WindowToken token)
+    //
+    // Each label's VALUE is computed LIVE per refresh from ChartYMax(lc) — never baked at build. The chart
+    // element (incl. the History window's) is built ONCE while its Series() provider may still be empty (e.g.
+    // the History window builds both Conditional arms at registration, before any session is selected), so a
+    // build-time yMax would freeze at NiceYMax(0)=1 and the axis would read the degenerate "1/0/0/0" ladder
+    // forever — while the line mesh, which re-derives yMax live in MapSeries, draws against the real data.
+    // Pulling the same ChartYMax(lc) the mesh uses keeps the axis and the line on ONE scale for any series
+    // length / fractional duration / deferred population. The gridline ROWS are fixed (evenly spaced), only
+    // the label text rescales. NiceYMax still returns a sane floor for a genuinely tiny/zero peak.
+    private void BuildYTicks(Transform parent, LineChartElement lc, Rect inner, WindowToken token)
     {
-        // Degenerate window (no data in range): a "nice" max of 0 would render the 1/0/0/0 ladder. Draw only
-        // the 0 baseline label on the axis bottom instead, leaving the plot empty rather than mislabelled.
-        if (yMax <= 0f)
-        {
-            var baseLbl = ChartLabel(parent, TextAnchor.MiddleRight, "YTick", token);
-            PlaceLabel(baseLbl, new Rect(0f, inner.y - 8f, ChartMarginLeft - 6f, 16f));
-            token.Texts.Add(new TextBinding { C = baseLbl, TextFn = () => lc.FormatY(0f) });
-            return;
-        }
         for (var i = 0; i <= lc.YTicks; i++)
         {
             var t = i / (float)lc.YTicks;
-            var value = yMax * t;
-            var y = inner.y + t * inner.height;   // from bottom up
+            var y = inner.y + t * inner.height;   // from bottom up (independent of yMax)
             var lbl = ChartLabel(parent, TextAnchor.MiddleRight, "YTick", token);
             PlaceLabel(lbl, new Rect(0f, y - 8f, ChartMarginLeft - 6f, 16f));
-            token.Texts.Add(new TextBinding { C = lbl, TextFn = () => lc.FormatY(value) });
+            // A genuinely empty/zero visible window labels every row 0 (not the NiceYMax(0)=1 ladder) so the
+            // axis reads honestly until data arrives, then rescales live; a real peak uses the nice max.
+            token.Texts.Add(new TextBinding
+            {
+                C = lbl,
+                TextFn = () => lc.FormatY(ChartVisiblePeak(lc) <= 0f ? 0f : ChartYMax(lc) * t),
+            });
         }
     }
 
