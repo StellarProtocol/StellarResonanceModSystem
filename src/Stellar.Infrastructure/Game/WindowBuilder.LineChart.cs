@@ -72,13 +72,12 @@ internal sealed partial class WindowBuilder
         => lc.FillWidth ? Mathf.Max(plotRect.rect.width, lc.Width) : lc.Width;
 
     // Series "weight" half-widths (px) for ordinary vs emphasised (team-total) series, plus the axis/grid line
-    // widths. The plotted polylines are no longer meshed — ChartGraphic rasterises them into a SUPERSAMPLED
-    // texture (coverage AA), so these values are passed as Polyline.Thickness and scale the rasteriser's thin
-    // StrokeHalf relative to its WeightBaseline (0.45): ordinary → ~1px crisp line, emphasis → ~1.5× heavier.
-    // The result is thin AND smooth (true sub-pixel coverage AA, no feather band). The axis/grid lines are
-    // still meshed (straight pixel-aligned runs render fine as feathered quads).
-    private const float ChartLineWidth = 0.45f;
-    private const float ChartEmphasisWidth = 0.7f;
+    // widths. The plotted polylines are MESHED by ChartGraphic as a round-joined feathered stroke (the texture
+    // raster path was reverted — its child RawImage AddComponent<T> threw under IL2CPP). These values are passed
+    // as Polyline.Thickness and used directly as the stroke core half-width: ordinary → ~0.5 thin core, emphasis
+    // → ~0.8 (a touch heavier), each flanked by ChartGraphic's ~0.9px feather so the line reads thin AND smooth.
+    private const float ChartLineWidth = 0.5f;
+    private const float ChartEmphasisWidth = 0.8f;
     private const float ChartAxisWidth = 1f;
     private const float ChartGridWidth = 0.5f;
 
