@@ -72,11 +72,12 @@ internal sealed partial class WindowBuilder
         => lc.FillWidth ? Mathf.Max(plotRect.rect.width, lc.Width) : lc.Width;
 
     // Core (full-opacity) half-widths (px) for ordinary vs emphasised (team-total) series, and the axis/grid
-    // line widths. Kept thin: ChartGraphic flanks each core with a wide (Feather px) alpha-0 fringe on both
-    // sides, so the visible stroke is core + a soft multi-pixel ramp — a thinner core than the feather still
-    // reads clearly. Earlier 0.9/1.4 cores with a 1px feather still looked thick + hard-edged.
-    private const float ChartLineWidth = 0.6f;
-    private const float ChartEmphasisWidth = 1.0f;
+    // line widths. Kept genuinely THIN: ChartGraphic now flanks each core with only a HAIRLINE (Feather=0.5px)
+    // alpha-0 fringe per side, so the total visible stroke ≈ 2·core + 2·Feather ≈ 1.5–2px (the old 1.75px-per-
+    // side feather dominated and read as a ~5px blurry band even with a thin core). The polyline is also a
+    // single miter-joined stroke now, so these widths apply continuously through every joint with no gap.
+    private const float ChartLineWidth = 0.5f;
+    private const float ChartEmphasisWidth = 0.8f;
     private const float ChartAxisWidth = 1f;
     private const float ChartGridWidth = 0.5f;
 

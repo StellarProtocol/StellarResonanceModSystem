@@ -111,8 +111,7 @@ internal sealed class ChartGraphic : MaskableGraphic
         for (var i = 0; i < _polylines.Count; i++)
         {
             var pl = _polylines[i];
-            for (var j = 1; j < pl.Points.Count; j++)
-                AddLine(vh, origin + pl.Points[j - 1], origin + pl.Points[j], pl.Thickness, pl.Color);
+            AddPolyline(vh, origin, pl.Points, pl.Thickness, pl.Color);
         }
     }
 
@@ -135,14 +134,86 @@ internal sealed class ChartGraphic : MaskableGraphic
         }
     }
 
-    // Anti-aliased stroke for segment a→b: a thin full-opacity core band (±halfWidth) flanked by a wide
-    // (Feather px) feather on each side whose outer rail has alpha 0, so the UI shader blends a soft
-    // multi-pixel alpha ramp on each edge (no aliased 1px "pixel" step). A wider feather than the core is
-    // deliberate — it dominates the visible stroke, giving a thin-but-smooth line. The data points are never
-    // interpolated — only the stroke rendering is softened.
-    private const float Feather = 1.75f;
+    // Anti-aliased stroke geometry. Each rib is a 4-rail cross-section (top→bottom: -edge α0, -core full,
+    // +core full, +edge α0); the UI shader blends a soft alpha ramp from core→edge so the line reads crisp
+    // with just enough AA. A THIN line (the prior 1.75px-per-side feather dominated and read as a ~5px blurry
+    // band; here Feather is a hairline so total visual width ≈ 2·core + 2·Feather ≈ 1.5–2px). Feather is per
+    // side, in px. The data points are never interpolated — only the stroke rendering is softened.
+    private const float Feather = 0.5f;
 
-    // Emit a feathered (alpha-ramped) stroke for the segment a→b, offsetting by the unit normal.
+    // Miter-join limit: when 1/cos(θ/2) at a vertex exceeds this (a sharp angle), the spike would shoot far
+    // past the joint, so fall back to that vertex's adjacent SEGMENT normals (a bevel-ish join). Either way the
+    // rib at a shared vertex is reused by both incident segments, so consecutive quads meet edge-to-edge with
+    // NO gap/notch — the per-segment-independent-quad gaps the old AddLine left at every joint are gone.
+    private const float MiterLimit = 4f;
+
+    // Emit a continuous miter-joined stroke for a polyline. Consecutive segments SHARE each interior vertex's
+    // ribs, so there is no gap at any joint. Endpoints get a tiny along-line cap (half the core) so segment
+    // ends don't look chopped. Straight axis/grid segments still go through AddLine (no joins needed).
+    private static void AddPolyline(VertexHelper vh, Vector2 origin, IReadOnlyList<Vector2> pts, float halfWidth, Color32 c)
+    {
+        var n = pts.Count;
+        if (n < 2) return;
+        var hc = Mathf.Max(halfWidth, 0.25f);                 // full-opacity core half-width
+        var clear = new Color32(c.r, c.g, c.b, 0);            // transparent fringe colour
+        var first = vh.currentVertCount;
+        for (var i = 0; i < n; i++)
+        {
+            var p = origin + pts[i];
+            var (offCore, offEdge, cap) = RibOffset(pts, i, hc);
+            // Tiny end-cap: nudge the endpoint along its segment direction by half the core so the stroke end
+            // isn't blunt-chopped (interior vertices get cap=0). Ribs cross the line at the (capped) point.
+            var pc = p + cap;
+            vh.AddVert(new Vector3(pc.x - offEdge.x, pc.y - offEdge.y), clear, Vector2.zero);   // -edge (α0)
+            vh.AddVert(new Vector3(pc.x - offCore.x, pc.y - offCore.y), c, Vector2.zero);       // -core (full)
+            vh.AddVert(new Vector3(pc.x + offCore.x, pc.y + offCore.y), c, Vector2.zero);       // +core (full)
+            vh.AddVert(new Vector3(pc.x + offEdge.x, pc.y + offEdge.y), clear, Vector2.zero);   // +edge (α0)
+        }
+        for (var i = 1; i < n; i++)
+        {
+            var a = first + (i - 1) * 4;
+            var b = first + i * 4;
+            AddBand(vh, a + 0, a + 1, b + 0, b + 1);   // lower feather: α0 → full
+            AddBand(vh, a + 1, a + 2, b + 1, b + 2);   // core: full → full
+            AddBand(vh, a + 2, a + 3, b + 2, b + 3);   // upper feather: full → α0
+        }
+    }
+
+    // The rib offset vectors (core + edge) and along-line end-cap for vertex i. Interior vertices use the
+    // miter vector (normalized sum of the two adjacent unit normals, scaled by 1/cos(θ/2)); too-sharp angles
+    // past MiterLimit fall back to one segment normal. Endpoints use the single adjacent segment normal and a
+    // half-core cap along the line. Reusing one rib per vertex is what closes the joint with no gap.
+    private static (Vector2 core, Vector2 edge, Vector2 cap) RibOffset(IReadOnlyList<Vector2> pts, int i, float hc)
+    {
+        var n = pts.Count;
+        var dIn = i > 0 ? UnitDir(pts[i - 1], pts[i]) : Vector2.zero;
+        var dOut = i < n - 1 ? UnitDir(pts[i], pts[i + 1]) : Vector2.zero;
+        if (i == 0)   return RibFor(Normal(dOut), hc, -dOut * hc * 0.5f);   // start cap: out along -dOut
+        if (i == n-1) return RibFor(Normal(dIn), hc, dIn * hc * 0.5f);      // end cap:   out along +dIn
+        var nIn = Normal(dIn);
+        var nOut = Normal(dOut);
+        var mit = nIn + nOut;
+        var mlen = mit.magnitude;
+        if (mlen < 0.0001f) return RibFor(nIn, hc, Vector2.zero);           // 180° doubling-back → straight
+        var m = mit / mlen;
+        var scale = 1f / Mathf.Max(Vector2.Dot(m, nOut), 0.0001f);         // 1/cos(θ/2)
+        if (scale > MiterLimit) return RibFor(nIn, hc, Vector2.zero);       // sharp → bevel-ish fallback
+        return RibFor(m, hc * scale, Vector2.zero);                        // miter join (no cap, shared rib)
+    }
+
+    // Build the (core, edge, cap) triple for a unit rib direction scaled to a given core half-width.
+    private static (Vector2 core, Vector2 edge, Vector2 cap) RibFor(Vector2 unitRib, float coreLen, Vector2 cap)
+        => (unitRib * coreLen, unitRib * (coreLen + Feather), cap);
+
+    private static Vector2 UnitDir(Vector2 from, Vector2 to)
+    {
+        var d = to - from; var len = d.magnitude;
+        return len < 0.0001f ? Vector2.zero : d / len;
+    }
+
+    private static Vector2 Normal(Vector2 unitDir) => new(-unitDir.y, unitDir.x);
+
+    // Emit a feathered (alpha-ramped) stroke for the straight segment a→b (axes + gridlines, no joins).
     private static void AddLine(VertexHelper vh, Vector2 a, Vector2 b, float halfWidth, Color32 c)
     {
         var dir = b - a;
