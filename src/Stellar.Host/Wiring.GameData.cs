@@ -24,7 +24,10 @@ public sealed partial class BootstrapPlugin
         // returns null until Panda.TableInitUtility.Init has populated the static
         // table handles, which happens inside Panda.Core.Game.Init.
         ConstructResonanceData(log, typeRegistry);   // idempotent — shares _mlStrings / _gameDataResonance
-        _gameDataProbe = new PandaGameDataProbe(log, typeRegistry, _mlStrings!);
+        // Cached client UI language — locale-gates the empty-Name → NameDesign fallback so an English client
+        // never surfaces the Chinese design label. Cheap: reads LocalizationMgr.CurrentLanguageTypeIndex once.
+        _clientLanguage ??= new PandaClientLanguage(log, typeRegistry);
+        _gameDataProbe = new PandaGameDataProbe(log, typeRegistry, _mlStrings!, _clientLanguage);
         _gameDataLog = log;
     }
 }

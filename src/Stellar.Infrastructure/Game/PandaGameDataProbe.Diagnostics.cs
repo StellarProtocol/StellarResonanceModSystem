@@ -47,7 +47,7 @@ internal sealed partial class PandaGameDataProbe
             $"SkillType={info.SkillType} Cooldown={info.Cooldown} IsAoe={info.IsAoe}");
     }
 
-    private readonly record struct BuffRowDiagInfo(int Id, string? Name, string? Desc, string? IconPath, int BuffType, bool IsNegative);
+    private readonly record struct BuffRowDiagInfo(int Id, string? Name, string? NameDesign, string? Desc, string? IconPath, int BuffType, bool IsNegative);
 
     private void LogFirstBuffRow(BuffRowDiagInfo info)
     {
@@ -58,8 +58,8 @@ internal sealed partial class PandaGameDataProbe
 
         _log.Info(
             $"[Stellar][GameData][diag] first Buff row: " +
-            $"Id={info.Id} Name='{info.Name}' Desc='{Truncate(info.Desc, 60)}' IconPath='{info.IconPath}' " +
-            $"BuffType={info.BuffType} IsNegative={info.IsNegative}");
+            $"Id={info.Id} Name='{info.Name}' NameDesign='{info.NameDesign}' Desc='{Truncate(info.Desc, 60)}' IconPath='{info.IconPath}' " +
+            $"BuffType={info.BuffType} IsNegative={info.IsNegative} langIndex={_clientLanguage.CurrentLanguageIndex}");
     }
 
     private void LogFirstAttributeRow(int id, string? name, string? shortName, string? iconPath, int category)

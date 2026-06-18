@@ -81,6 +81,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaGameDataProbe? _gameDataProbe;
     private GameDataResonance? _gameDataResonance;  // Battle Imagine (Resonance Skill) lookup
     private PandaMLStringResolver? _mlStrings;       // shared MLString resolver (probe + resonance)
+    private PandaClientLanguage? _clientLanguage;    // cached client UI language (locale-gates NameDesign fallback)
     private BepInExPluginLog? _gameDataLog;       // captured so the deferred eager-load can log via the same sink
     private bool _gameDataEagerLoaded;
     private bool _gameDataAllLoaded;             // one-shot guard for "all tables loaded" log

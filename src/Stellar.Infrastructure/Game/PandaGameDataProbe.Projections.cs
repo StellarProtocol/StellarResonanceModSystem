@@ -229,12 +229,14 @@ internal sealed partial class PandaGameDataProbe
     {
         var name = ReadStringOrMlString(row, rowType, "Name");
         // Internal/system skills (field markers, dodge/attack variants) carry an EMPTY localized `Name` in this
-        // client — only `NameDesign` (the design label) is populated. Fall back to it so such a skill resolves to
-        // a real label instead of a raw "Skill <id>", matching the buff-name fallback. Flows to every consumer
-        // (CombatMeter skill breakdown, Entity Inspector skills list) via GetSkill().Name.
+        // client — only `NameDesign` (the Chinese design label) is populated. Locale-gate the fallback: use
+        // NameDesign only on a Chinese client; on English resolve a curated override or an id-based label, never
+        // Chinese. Flows to every consumer (CombatMeter skill breakdown, Entity Inspector) via GetSkill().Name.
         if (string.IsNullOrEmpty(name))
         {
-            name = ReadStringOrMlString(row, rowType, "NameDesign");
+            var id = ReadInt(row, rowType, "Id");
+            var nameDesign = ReadStringOrMlString(row, rowType, "NameDesign");
+            name = ResolveEmptyName("Skill", id, nameDesign);
         }
         var desc = ReadStringOrMlString(row, rowType, "Desc");
         if (string.IsNullOrEmpty(desc))
@@ -325,15 +327,7 @@ internal sealed partial class PandaGameDataProbe
         var id = ReadInt(row, rowType, "Id");
         if (id == 0) return (0, default);
 
-        var name = ReadStringOrMlString(row, rowType, "Name");
-        // Many internal/proc buffs (e.g. 2031104 "Lance - Luck", a lance lucky-counter that ticks damage) carry an
-        // EMPTY localized `Name` in this client — only `NameDesign` (the design label, often the source language)
-        // is populated. Fall back to it so damage attributed to such a buff resolves to a real name instead of a
-        // raw id. Plugins may still apply their own display override on top (e.g. CombatMeter's English map).
-        if (string.IsNullOrEmpty(name))
-        {
-            name = ReadStringOrMlString(row, rowType, "NameDesign");
-        }
+        var (name, nameDesign) = ReadBuffName(row, rowType, id);
         // BuffTableBase column is `Desc` (no `Description`).
         var desc = ReadStringOrMlString(row, rowType, "Desc");
         if (string.IsNullOrEmpty(desc))
@@ -358,7 +352,7 @@ internal sealed partial class PandaGameDataProbe
         if (!_firstBuffLogged)
         {
             _firstBuffLogged = true;
-            LogFirstBuffRow(new BuffRowDiagInfo(id, name, desc, iconPath, buffTypeInt, isDebuff));
+            LogFirstBuffRow(new BuffRowDiagInfo(id, name, nameDesign, desc, iconPath, buffTypeInt, isDebuff));
         }
 
         return (id, new BuffInfo(
@@ -369,5 +363,26 @@ internal sealed partial class PandaGameDataProbe
             Category: MapBuffCategory(buffTypeInt),
             IsDebuff: isDebuff,
             SkillId: skillId));
+    }
+
+    /// <summary>
+    /// Resolve a buff row's display name plus its raw <c>NameDesign</c> (returned
+    /// for the diagnostics dump). The localized <c>Name</c> is primary; when it is
+    /// empty the locale-gated <see cref="ResolveEmptyName"/> decides between the
+    /// Chinese design label (Chinese client), a curated English override, or an
+    /// id-based label (non-Chinese client) — never raw Chinese on an English client.
+    /// Many internal/proc buffs (e.g. lance lucky-counter "法杖-幸运") have an empty
+    /// localized <c>Name</c> in this client. Flows to CombatMeter / CooldownBar via
+    /// <c>GetBuff().Name</c>.
+    /// </summary>
+    private (string name, string nameDesign) ReadBuffName(object row, Type rowType, int id)
+    {
+        var name = ReadStringOrMlString(row, rowType, "Name");
+        var nameDesign = ReadStringOrMlString(row, rowType, "NameDesign");
+        if (string.IsNullOrEmpty(name))
+        {
+            name = ResolveEmptyName("Buff", id, nameDesign);
+        }
+        return (name, nameDesign);
     }
 }
