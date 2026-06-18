@@ -18,9 +18,10 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.1.0 ships HUD text enhancements, the
-    /// LineChartElement, and the generic IPluginExchange / Stellar.PluginContracts
-    /// inter-plugin standard on top of the 1.0.x line.
+    /// BepInEx chainloader happy. 1.1.1 publishes the plugin SDK to NuGet.org
+    /// (Stellar.Abstractions / PluginContracts / Plugin.InteropRefs) so plugins
+    /// build without the framework source or a game install; framework runtime
+    /// unchanged from 1.1.0.
     /// </summary>
-    public const string Value = "1.1.0";
+    public const string Value = "1.1.1";
 }

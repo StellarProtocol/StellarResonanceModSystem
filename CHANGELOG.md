@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-18
+### Added
+- **Plugin SDK on NuGet.org** — `Stellar.Abstractions`, `Stellar.PluginContracts`, and
+  `Stellar.Plugin.InteropRefs` (the Unity/Il2Cpp/BepInEx compile-time reference stubs) are published
+  via Trusted Publishing, so plugins build with just `<PackageReference>`s — no framework checkout and
+  no game install. First step toward per-plugin repos (see the DevKit's DIP17 migration plan).
+### Changed
+- Framework runtime is unchanged from 1.1.0 (this release adds the SDK + contributor docs only).
+
 ## [1.1.0] - 2026-06-18
 ### Added
 - `LineChartElement` — multi-series time-series line chart with labelled X/Y axes, axis titles, a
