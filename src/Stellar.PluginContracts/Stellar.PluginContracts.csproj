@@ -6,7 +6,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- NuGet package metadata (published as part of the plugin SDK). -->
     <Authors>StellarProtocol</Authors>
-    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/StellarProtocol/StellarResonanceModSystem</PackageProjectUrl>
     <RepositoryUrl>https://github.com/StellarProtocol/StellarResonanceModSystem.git</RepositoryUrl>
   </PropertyGroup>
