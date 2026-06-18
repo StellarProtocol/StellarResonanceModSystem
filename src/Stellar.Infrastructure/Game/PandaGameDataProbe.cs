@@ -54,12 +54,14 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
     private readonly PandaMLStringResolver _mlStrings;
+    private readonly PandaClientLanguage _clientLanguage;
 
-    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings)
+    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings, PandaClientLanguage clientLanguage)
     {
         _log = log;
         _typeRegistry = typeRegistry;
         _mlStrings = mlStrings;
+        _clientLanguage = clientLanguage;
     }
 
     /// <summary>
