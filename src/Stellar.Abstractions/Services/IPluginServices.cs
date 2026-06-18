@@ -20,6 +20,8 @@ public interface IPluginServices
     IInventory Inventory { get; }
     /// <summary>Module equip actions (install / uninstall equipment modules).</summary>
     IModuleEquip ModuleEquip { get; }
+    /// <summary>Read and apply the player's saved in-game loadouts (class + gear + spec + modules).</summary>
+    ILoadout Loadout { get; }
     /// <summary>Plugin-scoped persistent configuration (JSON-backed key-value store).</summary>
     IPluginConfig Config { get; }
     /// <summary>Game lifecycle events (scene load / unload, hot-update ready).</summary>
