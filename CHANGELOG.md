@@ -6,6 +6,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-06-18
+### Fixed
+- Launcher tile icons are now live-bound: a plugin icon that loads *after* the launcher is built
+  (plugins register asynchronously, and the Full / Minimal layouts materialise their tiles at
+  different times) no longer stays baked to the generic puzzle-piece fallback — it now appears in
+  every launcher mode. Fixes a plugin icon showing in expanded mode but the puzzle-piece in minimal
+  mode. (#11)
+- Game-data name resolution: locale-gate the empty-`Name` → `NameDesign` fallback so the design-name
+  fallback only kicks in where it should, instead of leaking into clients that do have a localized
+  name. (#12)
+
 ## [1.1.1] - 2026-06-18
 ### Added
 - **Plugin SDK on NuGet.org** — `Stellar.Abstractions`, `Stellar.PluginContracts`, and
