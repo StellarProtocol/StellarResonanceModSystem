@@ -183,6 +183,13 @@ jobs:
             aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
           fi
 
+      # GitHub Releases lifecycle:
+      #   - A release candidate (testing) is a SEPARATE --prerelease release (tag v<ver>, e.g.
+      #     v1.2.0-rc1). It never replaces a stable release — they coexist.
+      #   - A stable release is a full release (its own tag), and ALL prior stable releases are
+      #     KEPT (full history on the releases page).
+      #   - Cutting a stable release DELETES every release-candidate prerelease (and its tag):
+      #     the RC is gone once a real release ships.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -200,6 +207,18 @@ jobs:
             --title "StellarResonance $V$SUFFIX" \
             --notes "StellarResonance mod framework $V. Install via the launcher, or drop Stellar-$V.zip into your game's game_mini folder. AGPL-3.0; quality-of-life only, ships no game code or assets." \
             || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" "$MANIFEST" --clobber
+
+          if [ "$CH" != "testing" ]; then
+            # A real release just shipped — remove every superseded release-candidate prerelease
+            # (and its tag). Stable releases are left alone, so the releases page keeps full history.
+            gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName,isPrerelease \
+              -q '.[] | select(.isPrerelease) | .tagName' \
+            | while read -r rc; do
+                [ -n "$rc" ] || continue
+                echo "removing superseded RC prerelease $rc"
+                gh release delete "$rc" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+              done
+          fi
 
       # Plugin SDK → NuGet.org via Trusted Publishing (keyless OIDC). The Trusted Publisher
       # policy on nuget.org is scoped to this repo + release.yml + the Production environment;
