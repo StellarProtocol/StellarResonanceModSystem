@@ -115,8 +115,7 @@ public sealed partial class BootstrapPlugin
             catch (Exception ex) { Log.LogWarning($"[boot] resonance refresh threw: {ex.Message}"); }
         }
 
-        try { _moduleEquipProbe!.DrainPendingCompletions(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
+        DrainEquipAndLoadout();
 
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:chat");
         _chatService!.Drain();
@@ -131,6 +130,19 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:party");
 
         TickOverlayServices(deltaTime);
+    }
+
+    // Drains the deferred Lua dispatches + polls completion for the module-equip and
+    // loadout (profession-project) probes, and ticks the loadout service's
+    // change-detection. Both probes touch the game's main-thread-only Lua VM, so this
+    // runs on the Update tick. Extracted from RefreshPerTickServices for the 50-LoC gate.
+    private void DrainEquipAndLoadout()
+    {
+        try { _moduleEquipProbe!.DrainPendingCompletions(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
+
+        try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
     }
 
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the
