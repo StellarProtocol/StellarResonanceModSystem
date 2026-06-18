@@ -17,8 +17,7 @@ A Dalamud-style plugin framework for **Blue Protocol: Star Resonance** (Tencent 
 This framework exists for **client-side quality-of-life modifications** — the same niche FFXIV's Dalamud occupies: chat enhancements, UI overlays, performance and player HUDs, log viewers, accessibility helpers, debug tooling.
 
 The architecture enforces this by design: plugins reference only `Stellar.Abstractions`, which contains zero APIs for memory or raw-network access. They physically cannot reach lower-level capabilities — the build fails.
-
-If you want to write a plugin that does any of the above, **do not use this framework.** Pull requests adding cheat-shaped capabilities will be rejected.
+Pull requests adding cheat-shaped capabilities will be rejected.
 
 ---
 
