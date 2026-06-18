@@ -70,12 +70,26 @@ jobs:
             $([ -f dist/prev-version.json ] && echo "--existing dist/prev-version.json") \
             --out dist/version.json
 
+      # Plugin SDK NuGets — Abstractions + PluginContracts (BCL-only) + the interop
+      # reference stubs. Versioned to the framework release. Packed here (no secrets);
+      # pushed to NuGet.org from the gated publish job via Trusted Publishing.
+      - name: Pack plugin SDK packages
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          for p in src/Stellar.Abstractions/Stellar.Abstractions.csproj \
+                   src/Stellar.PluginContracts/Stellar.PluginContracts.csproj \
+                   sdk/Stellar.Plugin.InteropRefs/Stellar.Plugin.InteropRefs.csproj; do
+            dotnet pack "$p" -c Release -p:Version="$V" -o dist/sdk --nologo
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: framework-bundle
           path: |
             dist/Stellar-*.zip
             dist/version.json
+            dist/sdk/*.nupkg
 
   publish:
     needs: build
@@ -83,11 +97,15 @@ jobs:
     environment: Production    # required reviewers here = the real-interop / in-game gate
     permissions:
       contents: write          # create the GitHub release
+      id-token: write          # OIDC for NuGet.org Trusted Publishing (keyless)
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: framework-bundle
           path: dist
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
 
       - name: Resolve version
         id: ver
@@ -122,3 +140,20 @@ jobs:
             --title "StellarResonance $V" \
             --notes "StellarResonance mod framework $V. Install via the launcher, or drop Stellar-$V.zip into your game's game_mini folder. AGPL-3.0; quality-of-life only, ships no game code or assets." \
             || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" dist/version.json --clobber
+
+      # Plugin SDK → NuGet.org via Trusted Publishing (keyless OIDC). The Trusted Publisher
+      # policy on nuget.org is scoped to this repo + release.yml + the Production environment;
+      # NuGet/login exchanges the job's OIDC token for a 1-hour key. No stored API key.
+      - name: NuGet login (OIDC → short-lived key)
+        uses: NuGet/login@v1
+        id: nuget_login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Push plugin SDK to NuGet.org
+        shell: bash
+        run: |
+          for pkg in dist/sdk/*.nupkg; do
+            dotnet nuget push "$pkg" \
+              --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
+              --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done

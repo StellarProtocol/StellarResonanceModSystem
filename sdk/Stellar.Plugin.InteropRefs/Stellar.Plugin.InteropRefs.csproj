@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Build-assets NuGet: the compile-time reference stubs for the Unity / Il2Cpp / BepInEx
+    surface Stellar plugins build against. Carries the API-only stubs from ../../refs/ (no
+    method bodies, no game IL/metadata, no Panda.* game logic) + a .targets that wires each
+    as a Private=false reference — the game provides the real assemblies at runtime, so they
+    never land in the plugin's output. Regenerate via framework/tools/gen-refs.sh after a
+    game/engine patch (it rewrites both refs/ and this package's .targets).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageId>Stellar.Plugin.InteropRefs</PackageId>
+    <Description>Compile-time reference stubs (Unity/Il2Cpp/BepInEx) for building StellarResonance plugins without the game install. API-only; the game provides the real assemblies at runtime.</Description>
+    <Authors>StellarProtocol</Authors>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/StellarProtocol/StellarResonanceModSystem</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/StellarProtocol/StellarResonanceModSystem.git</RepositoryUrl>
+    <NoWarn>NU5128;NU5100</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../refs/*.dll" Pack="true" PackagePath="build/interop/" />
+    <None Include="Stellar.Plugin.InteropRefs.targets" Pack="true" PackagePath="build/Stellar.Plugin.InteropRefs.targets" />
+  </ItemGroup>
+</Project>
