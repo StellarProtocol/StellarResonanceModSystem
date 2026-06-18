@@ -37,3 +37,7 @@ docs/recon/
 
 # BepInEx staging symlink (local, per-worktree)
 tools/BepInEx-stage
+
+# Python bytecode (tools/release/*.py run locally)
+__pycache__/
+*.pyc
