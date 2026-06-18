@@ -1,0 +1,33 @@
+name: mirror-testing-manifest
+# Publish version-testing.json as a copy of the live stable version.json (with channel="testing").
+#
+# The framework has no separate testing build yet, so the *testing* channel should track stable —
+# a launcher on the testing channel still needs a framework, and that's the proven stable one.
+# release.yml keeps the two manifests in sync on every release; this workflow lets you (re)create
+# version-testing.json on demand WITHOUT cutting a release (no bundle rebuild). Same S3 secrets.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    environment: Production    # writes to the public bucket with the prod S3 secrets
+    env:
+      ENDPOINT: https://minio.revette.io
+      BUCKET: stellar
+    steps:
+      - name: Copy live version.json -> version-testing.json (channel=testing)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+          AWS_DEFAULT_REGION: sa-east-1
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          curl -fsS "$ENDPOINT/$BUCKET/version.json" -o version.json
+          python3 -c "import json; d=json.load(open('version.json')); d['channel']='testing'; json.dump(d, open('version-testing.json','w'), indent=2)"
+          cat version-testing.json
+          aws s3 cp version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"

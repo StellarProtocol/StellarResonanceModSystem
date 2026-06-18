@@ -128,6 +128,12 @@ jobs:
           V="${{ steps.ver.outputs.version }}"
           aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$ENDPOINT"
           aws s3 cp dist/version.json     "s3://$BUCKET/version.json"   --endpoint-url "$ENDPOINT"
+          # Testing channel currently mirrors stable (no separate framework beta): publish a
+          # version-testing.json copy (channel=testing) so a launcher on the testing channel
+          # finds a framework manifest. When a real framework beta exists, build a dedicated
+          # testing history instead of mirroring. See mirror-testing-manifest.yml.
+          python3 -c "import json; d=json.load(open('dist/version.json')); d['channel']='testing'; json.dump(d, open('dist/version-testing.json','w'), indent=2)"
+          aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
 
       - name: Create GitHub release
         env:
