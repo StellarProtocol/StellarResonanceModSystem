@@ -183,42 +183,45 @@ jobs:
             aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
           fi
 
-      # GitHub Releases lifecycle:
-      #   - A release candidate (testing) is a SEPARATE --prerelease release (tag v<ver>, e.g.
-      #     v1.2.0-rc1). It never replaces a stable release — they coexist.
-      #   - A stable release is a full release (its own tag), and ALL prior stable releases are
-      #     KEPT (full history on the releases page).
-      #   - Cutting a stable release DELETES every release-candidate prerelease (and its tag):
-      #     the RC is gone once a real release ships.
+      # GitHub Releases lifecycle — the releases page shows ONLY the current stable release, plus
+      # the current release-candidate prerelease while one is in flight ("keep both"):
+      #   - stable publish  -> create this release, then delete EVERY other release (the old stable
+      #     AND any RC prereleases) so only the current stable remains. Version history / rollback
+      #     lives in version.json + the version-named bundles on MinIO, NOT the releases page.
+      #   - testing publish -> create this RC as a --prerelease, delete only OTHER prereleases
+      #     (older RCs), and leave the current stable release untouched — so the two coexist.
+      # Net: a new stable release replaces the old stable AND removes the RC; an RC never touches
+      # the stable release.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          V="${{ steps.ver.outputs.version }}"
+          V="${{ steps.ver.outputs.version }}"; TAG="v$V"
           CH="${{ steps.ver.outputs.channel }}"
           if [ "$CH" = "testing" ]; then
             MANIFEST=dist/version-testing.json; PRE=--prerelease; SUFFIX=" (testing)"
           else
             MANIFEST=dist/version.json; PRE=""; SUFFIX=""
           fi
-          gh release create "v$V" -R "$GITHUB_REPOSITORY" $PRE \
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" $PRE \
             "dist/Stellar-$V.zip" "$MANIFEST" \
             --title "StellarResonance $V$SUFFIX" \
             --notes "StellarResonance mod framework $V. Install via the launcher, or drop Stellar-$V.zip into your game's game_mini folder. AGPL-3.0; quality-of-life only, ships no game code or assets." \
-            || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" "$MANIFEST" --clobber
+            || gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" "$MANIFEST" --clobber
 
-          if [ "$CH" != "testing" ]; then
-            # A real release just shipped — remove every superseded release-candidate prerelease
-            # (and its tag). Stable releases are left alone, so the releases page keeps full history.
-            gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName,isPrerelease \
-              -q '.[] | select(.isPrerelease) | .tagName' \
-            | while read -r rc; do
-                [ -n "$rc" ] || continue
-                echo "removing superseded RC prerelease $rc"
-                gh release delete "$rc" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-              done
+          # Prune so the releases page stays current-only (stable) + at most one live RC.
+          if [ "$CH" = "testing" ]; then
+            LIST=$(gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName,isPrerelease -q '.[] | select(.isPrerelease) | .tagName')
+          else
+            LIST=$(gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName -q '.[].tagName')
           fi
+          echo "$LIST" | while read -r t; do
+            if [ -n "$t" ] && [ "$t" != "$TAG" ]; then
+              echo "removing release $t"
+              gh release delete "$t" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+            fi
+          done
 
       # Plugin SDK → NuGet.org via Trusted Publishing (keyless OIDC). The Trusted Publisher
       # policy on nuget.org is scoped to this repo + release.yml + the Production environment;
