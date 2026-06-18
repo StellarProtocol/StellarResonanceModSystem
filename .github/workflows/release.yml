@@ -1,9 +1,16 @@
 name: release
 # Cut a framework release fully on CI: build the bundle against interop stubs
-# (no game install), then publish bundle + version.json to the public `stellar`
-# MinIO bucket and create the GitHub release.
+# (no game install), then publish bundle + the channel's version manifest to the
+# public `stellar` MinIO bucket and create the GitHub release.
 #
-# Trigger: push a tag v* (e.g. v1.1.0), or run manually with a version input.
+# Channels:
+#   stable  -> publishes version.json AND refreshes version-testing.json as a
+#              SUPERSET (this release merged onto the testing history).
+#   testing -> publishes version-testing.json ONLY (a release candidate for opt-in
+#              testers); version.json (stable) is left untouched.
+#
+# Trigger: push a tag v* (stable; a prerelease tag like v1.2.0-rc1 auto-routes to
+# testing), or run manually with version + channel inputs (explicit input wins).
 #
 # The `build` job runs on every trigger (validation). The `publish` job is gated
 # on the Production environment — configure REQUIRED REVIEWERS so a human signs
@@ -15,14 +22,18 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "version to release, e.g. 1.1.0"
+        description: "version to release, e.g. 1.1.0 (or 1.2.0-rc1 for a testing RC)"
         required: true
+      channel:
+        description: "Release channel (testing publishes version-testing.json only)"
+        type: choice
+        options: [stable, testing]
+        default: stable
 
 env:
   ENDPOINT: https://minio.revette.io
   BUCKET: stellar
   MIN_LAUNCHER: "1.0.0"
-  CHANNEL: stable
 
 jobs:
   build:
@@ -33,13 +44,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Resolve version
+      - name: Resolve version + channel
         id: ver
         shell: bash
         run: |
           V="${{ github.event.inputs.version }}"
           [ -n "$V" ] || V="${GITHUB_REF_NAME#v}"
+          CH="${{ github.event.inputs.channel }}"
+          # Tag pushes carry no channel input: a prerelease version (e.g. 1.2.0-rc1) routes to
+          # testing, a plain version to stable. An explicit workflow_dispatch input always wins.
+          if [ -z "$CH" ]; then case "$V" in *-*) CH=testing;; *) CH=stable;; esac; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "channel=$CH" >> "$GITHUB_OUTPUT"
+          echo "resolved: version=$V channel=$CH"
 
       # The BepInEx IL2CPP stage (winhttp + doorstop + BepInEx/ + dotnet/, ~73 MB)
       # lives at the root of the PRIVATE stellar-release-assets repo (also
@@ -54,21 +71,41 @@ jobs:
           ssh-key: ${{ secrets.RELEASE_ASSETS_SSH_KEY }}
           path: stage
 
-      - name: Build bundle + version.json (against stubs)
+      - name: Build bundle + version manifest(s) (against stubs)
         shell: bash
         run: |
           V="${{ steps.ver.outputs.version }}"
+          CH="${{ steps.ver.outputs.channel }}"
           export STELLAR_BEPINEX_STAGE="$PWD/stage"
           bash tools/release/build-bundle.sh "$V" dist
-          curl -fsS "$ENDPOINT/$BUCKET/version.json" -o dist/prev-version.json 2>/dev/null || rm -f dist/prev-version.json
-          python tools/release/make_version_json.py \
-            --changelog CHANGELOG.md \
-            --bundle "dist/Stellar-$V.zip" \
-            --bundle-url "$ENDPOINT/$BUCKET/Stellar-$V.zip" \
-            --min-launcher "$MIN_LAUNCHER" \
-            --version "$V" --channel "$CHANNEL" \
-            $([ -f dist/prev-version.json ] && echo "--existing dist/prev-version.json") \
-            --out dist/version.json
+
+          # Pull the current published histories so each release is APPENDED (rollback preserved).
+          curl -fsS "$ENDPOINT/$BUCKET/version.json"         -o dist/prev-version.json         2>/dev/null || rm -f dist/prev-version.json
+          curl -fsS "$ENDPOINT/$BUCKET/version-testing.json" -o dist/prev-version-testing.json 2>/dev/null || rm -f dist/prev-version-testing.json
+
+          # gen <channel> <existing-history-or-""> <out>
+          gen() {
+            python tools/release/make_version_json.py \
+              --changelog CHANGELOG.md \
+              --bundle "dist/Stellar-$V.zip" \
+              --bundle-url "$ENDPOINT/$BUCKET/Stellar-$V.zip" \
+              --min-launcher "$MIN_LAUNCHER" \
+              --version "$V" --channel "$1" \
+              $([ -n "$2" ] && [ -f "$2" ] && echo "--existing $2") \
+              --out "$3"
+          }
+
+          if [ "$CH" = "testing" ]; then
+            # Release candidate: testing manifest ONLY (merged onto the testing history).
+            # version.json (stable) is intentionally NOT produced, so publish leaves it alone.
+            gen testing dist/prev-version-testing.json dist/version-testing.json
+          else
+            # Stable: publish version.json, and refresh version-testing.json as a SUPERSET
+            # (this stable release merged onto the existing testing history — testing always
+            # carries everything stable has, plus any in-flight RCs newer than latest stable).
+            gen stable  dist/prev-version.json         dist/version.json
+            gen testing dist/prev-version-testing.json dist/version-testing.json
+          fi
 
       # Plugin SDK NuGets — Abstractions + PluginContracts (BCL-only) + the interop
       # reference stubs. Versioned to the framework release. Packed here (no secrets);
@@ -89,7 +126,9 @@ jobs:
           path: |
             dist/Stellar-*.zip
             dist/version.json
+            dist/version-testing.json
             dist/sdk/*.nupkg
+          if-no-files-found: ignore
 
   publish:
     needs: build
@@ -107,15 +146,21 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Resolve version
+      - name: Resolve version + channel
         id: ver
         shell: bash
         run: |
           V="${{ github.event.inputs.version }}"
           [ -n "$V" ] || V="${GITHUB_REF_NAME#v}"
+          CH="${{ github.event.inputs.channel }}"
+          # Tag pushes carry no channel input: a prerelease version (e.g. 1.2.0-rc1) routes to
+          # testing, a plain version to stable. An explicit workflow_dispatch input always wins.
+          if [ -z "$CH" ]; then case "$V" in *-*) CH=testing;; *) CH=stable;; esac; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "channel=$CH" >> "$GITHUB_OUTPUT"
+          echo "resolved: version=$V channel=$CH"
 
-      - name: Upload bundle + version.json to MinIO
+      - name: Upload bundle + version manifest(s) to MinIO
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
@@ -126,14 +171,17 @@ jobs:
         shell: bash
         run: |
           V="${{ steps.ver.outputs.version }}"
+          # Bundle uses a version-specific object name, so stable + RC bundles coexist downloadable.
           aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$ENDPOINT"
-          aws s3 cp dist/version.json     "s3://$BUCKET/version.json"   --endpoint-url "$ENDPOINT"
-          # Testing channel currently mirrors stable (no separate framework beta): publish a
-          # version-testing.json copy (channel=testing) so a launcher on the testing channel
-          # finds a framework manifest. When a real framework beta exists, build a dedicated
-          # testing history instead of mirroring. See mirror-testing-manifest.yml.
-          python3 -c "import json; d=json.load(open('dist/version.json')); d['channel']='testing'; json.dump(d, open('dist/version-testing.json','w'), indent=2)"
-          aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
+          # Publish only the manifests the build produced for this channel:
+          #   stable  -> version.json + version-testing.json (superset)
+          #   testing -> version-testing.json only (stable version.json left untouched)
+          if [ -f dist/version.json ]; then
+            aws s3 cp dist/version.json "s3://$BUCKET/version.json" --endpoint-url "$ENDPOINT"
+          fi
+          if [ -f dist/version-testing.json ]; then
+            aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
+          fi
 
       - name: Create GitHub release
         env:
@@ -141,11 +189,17 @@ jobs:
         shell: bash
         run: |
           V="${{ steps.ver.outputs.version }}"
-          gh release create "v$V" -R "$GITHUB_REPOSITORY" \
-            "dist/Stellar-$V.zip" dist/version.json \
-            --title "StellarResonance $V" \
+          CH="${{ steps.ver.outputs.channel }}"
+          if [ "$CH" = "testing" ]; then
+            MANIFEST=dist/version-testing.json; PRE=--prerelease; SUFFIX=" (testing)"
+          else
+            MANIFEST=dist/version.json; PRE=""; SUFFIX=""
+          fi
+          gh release create "v$V" -R "$GITHUB_REPOSITORY" $PRE \
+            "dist/Stellar-$V.zip" "$MANIFEST" \
+            --title "StellarResonance $V$SUFFIX" \
             --notes "StellarResonance mod framework $V. Install via the launcher, or drop Stellar-$V.zip into your game's game_mini folder. AGPL-3.0; quality-of-life only, ships no game code or assets." \
-            || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" dist/version.json --clobber
+            || gh release upload "v$V" -R "$GITHUB_REPOSITORY" "dist/Stellar-$V.zip" "$MANIFEST" --clobber
 
       # Plugin SDK → NuGet.org via Trusted Publishing (keyless OIDC). The Trusted Publisher
       # policy on nuget.org is scoped to this repo + release.yml + the Production environment;

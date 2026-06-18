@@ -1,10 +1,14 @@
 name: mirror-testing-manifest
-# Publish version-testing.json as a copy of the live stable version.json (with channel="testing").
+# Reset version-testing.json to a copy of the live stable version.json (with channel="testing").
 #
-# The framework has no separate testing build yet, so the *testing* channel should track stable —
-# a launcher on the testing channel still needs a framework, and that's the proven stable one.
-# release.yml keeps the two manifests in sync on every release; this workflow lets you (re)create
-# version-testing.json on demand WITHOUT cutting a release (no bundle rebuild). Same S3 secrets.
+# Normally release.yml maintains version-testing.json on every release (stable refreshes it as a
+# superset; a testing release publishes an RC into it). This workflow is a manual escape hatch:
+# (re)create version-testing.json from stable WITHOUT cutting a release — e.g. to bootstrap the
+# testing channel, or to reset it after a botched RC.
+#
+# ⚠️ DESTRUCTIVE: this OVERWRITES version-testing.json with a pure copy of stable, so it DROPS any
+# in-flight release candidate currently published on the testing channel. Don't run it while an RC
+# is live unless you mean to discard that RC. Same S3 secrets as release.yml.
 on:
   workflow_dispatch:
 
