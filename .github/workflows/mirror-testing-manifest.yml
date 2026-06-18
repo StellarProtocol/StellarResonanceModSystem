@@ -20,18 +20,19 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production    # writes to the public bucket with the prod S3 secrets
     env:
-      ENDPOINT: https://minio.revette.io
-      BUCKET: stellar
+      S3_ENDPOINT: https://757f61fd2bda67f9a3bc7c3b9b8d62e1.r2.cloudflarestorage.com
+      BUCKET: cdn
+      PUBLIC_BASE: https://cdn.revette.io
     steps:
       - name: Copy live version.json -> version-testing.json (channel=testing)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-          AWS_DEFAULT_REGION: sa-east-1
+          AWS_DEFAULT_REGION: auto
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
-          curl -fsS "$ENDPOINT/$BUCKET/version.json" -o version.json
+          curl -fsS "$PUBLIC_BASE/version.json" -o version.json
           python3 -c "import json; d=json.load(open('version.json')); d['channel']='testing'; json.dump(d, open('version-testing.json','w'), indent=2)"
           cat version-testing.json
-          aws s3 cp version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
+          aws s3 cp version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$S3_ENDPOINT"

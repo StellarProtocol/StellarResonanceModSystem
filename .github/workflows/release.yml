@@ -31,8 +31,11 @@ on:
         default: stable
 
 env:
-  ENDPOINT: https://minio.revette.io
-  BUCKET: stellar
+  # Cloudflare R2: writes go to s3://$BUCKET via $S3_ENDPOINT; public reads come from the custom
+  # domain bound to the bucket root, so baked URLs use $PUBLIC_BASE (no bucket segment in the path).
+  S3_ENDPOINT: https://757f61fd2bda67f9a3bc7c3b9b8d62e1.r2.cloudflarestorage.com
+  BUCKET: cdn
+  PUBLIC_BASE: https://cdn.revette.io
   MIN_LAUNCHER: "1.0.0"
 
 jobs:
@@ -80,15 +83,15 @@ jobs:
           bash tools/release/build-bundle.sh "$V" dist
 
           # Pull the current published histories so each release is APPENDED (rollback preserved).
-          curl -fsS "$ENDPOINT/$BUCKET/version.json"         -o dist/prev-version.json         2>/dev/null || rm -f dist/prev-version.json
-          curl -fsS "$ENDPOINT/$BUCKET/version-testing.json" -o dist/prev-version-testing.json 2>/dev/null || rm -f dist/prev-version-testing.json
+          curl -fsS "$PUBLIC_BASE/version.json"         -o dist/prev-version.json         2>/dev/null || rm -f dist/prev-version.json
+          curl -fsS "$PUBLIC_BASE/version-testing.json" -o dist/prev-version-testing.json 2>/dev/null || rm -f dist/prev-version-testing.json
 
           # gen <channel> <existing-history-or-""> <out>
           gen() {
             python tools/release/make_version_json.py \
               --changelog CHANGELOG.md \
               --bundle "dist/Stellar-$V.zip" \
-              --bundle-url "$ENDPOINT/$BUCKET/Stellar-$V.zip" \
+              --bundle-url "$PUBLIC_BASE/Stellar-$V.zip" \
               --min-launcher "$MIN_LAUNCHER" \
               --version "$V" --channel "$1" \
               $([ -n "$2" ] && [ -f "$2" ] && echo "--existing $2") \
@@ -164,7 +167,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-          AWS_DEFAULT_REGION: sa-east-1
+          AWS_DEFAULT_REGION: auto
           # MinIO rejects AWS CLI v2 default multipart checksums — opt out.
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
@@ -172,15 +175,15 @@ jobs:
         run: |
           V="${{ steps.ver.outputs.version }}"
           # Bundle uses a version-specific object name, so stable + RC bundles coexist downloadable.
-          aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$ENDPOINT"
+          aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$S3_ENDPOINT"
           # Publish only the manifests the build produced for this channel:
           #   stable  -> version.json + version-testing.json (superset)
           #   testing -> version-testing.json only (stable version.json left untouched)
           if [ -f dist/version.json ]; then
-            aws s3 cp dist/version.json "s3://$BUCKET/version.json" --endpoint-url "$ENDPOINT"
+            aws s3 cp dist/version.json "s3://$BUCKET/version.json" --endpoint-url "$S3_ENDPOINT"
           fi
           if [ -f dist/version-testing.json ]; then
-            aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$ENDPOINT"
+            aws s3 cp dist/version-testing.json "s3://$BUCKET/version-testing.json" --endpoint-url "$S3_ENDPOINT"
           fi
 
       # GitHub Releases lifecycle — the releases page shows ONLY the current stable release, plus
