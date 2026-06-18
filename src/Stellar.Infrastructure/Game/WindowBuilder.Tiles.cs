@@ -126,7 +126,13 @@ internal sealed partial class WindowBuilder
         var le = go.AddComponent<LayoutElement>();
         le.preferredWidth = le.minWidth = tile.IconSize; le.preferredHeight = le.minHeight = tile.IconSize;
         var raw = go.AddComponent<RawImage>(); raw.raycastTarget = false; raw.color = TileRest();
-        var tex = LoadIcon(tile.Icon(), token); if (tex != null) raw.texture = tex;
+        // Live icon: re-pull tile.Icon() each apply and swap the texture when the resolved bytes change. A
+        // plugin icon that arrives AFTER this tile was built (plugins register async; the three launcher mode
+        // layouts materialise at different times) then replaces the Icon("plugins") fallback instead of being
+        // baked to it forever. byte[]-ref cache (shared with the atlas dedup) avoids re-decoding the same PNG.
+        var binding = new IconBinding { Raw = raw, Bytes = tile.Icon, Load = png => LoadIcon(png, token), Cache = token.AtlasCache };
+        binding.Apply();   // seed the initial texture now (and populate the cache)
+        token.Icons.Add(binding);
         return raw;
     }
 

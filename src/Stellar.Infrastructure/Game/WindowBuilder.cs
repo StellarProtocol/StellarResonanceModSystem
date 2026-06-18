@@ -151,6 +151,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<ListBinding> Lists = new();
         internal readonly List<VirtualListBinding> VirtualLists = new();
         internal readonly List<SpriteBinding> Sprites = new();   // dynamic atlas sub-rect (SpriteElement.UvFunc)
+        internal readonly List<IconBinding> Icons = new();       // live tile icon: re-pull bytes, swap texture on change
         internal readonly List<SwatchBinding> Swatches = new();
         internal readonly List<BarBinding> Bars = new();
         internal readonly List<ColorPickerBinding> Pickers = new();
@@ -222,6 +223,7 @@ internal sealed partial class WindowBuilder
             }
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
             for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
+            for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
             for (var i = 0; i < Buttons.Count; i++) Buttons[i].Apply();
             for (var i = 0; i < Toggles.Count; i++) Toggles[i].Apply();
             for (var i = 0; i < Sliders.Count; i++) Sliders[i].Apply();
