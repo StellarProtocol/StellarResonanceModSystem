@@ -16,12 +16,6 @@ A Dalamud-style plugin framework for **Blue Protocol: Star Resonance** (Tencent 
 
 This framework exists for **client-side quality-of-life modifications** — the same niche FFXIV's Dalamud occupies: chat enhancements, UI overlays, performance and player HUDs, log viewers, accessibility helpers, debug tooling.
 
-**The framework deliberately does not, and will not, support cheating.** Specifically:
-
-- **No packet construction or modification.** The game-event surface is *read-only* — subscribers observe events and state the game already produces. There is no public API to forge, intercept, drop, or rewrite outbound packets, and there is no roadmap for one. Game actions (e.g. sending chat, installing a module) are only ever performed through the game's *own* dispatcher methods, which apply the game's own validation — the framework never builds a request by hand.
-- **No memory editing helpers.** No exposed read/write primitives, no pointer chains, no "set player HP" / "set position" APIs.
-- **No anti-cheat evasion.** This framework runs openly via BepInEx; it makes no attempt to hide itself or defeat detection. The current game build ships *no* anti-cheat; if a future patch adds one, **stop using this framework** — the threat model changes completely.
-
 The architecture enforces this by design: plugins reference only `Stellar.Abstractions`, which contains zero APIs for memory or raw-network access. They physically cannot reach lower-level capabilities — the build fails.
 
 If you want to write a plugin that does any of the above, **do not use this framework.** Pull requests adding cheat-shaped capabilities will be rejected.
