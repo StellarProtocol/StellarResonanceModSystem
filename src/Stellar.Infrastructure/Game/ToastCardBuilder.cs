@@ -43,7 +43,11 @@ internal sealed class ToastCardBuilder
     public ToastCardBuilder(ToastThemeAssets assets) => _assets = assets;
 
     /// <summary>Build a card for <paramref name="message"/>/<paramref name="kind"/> under
-    /// <paramref name="parent"/>. The returned handle exposes the components the animator drives.</summary>
+    /// <paramref name="parent"/>. The returned handle exposes the components the animator drives.
+    /// The card is measured once (full nested layout pass) then FROZEN to a fixed size — the
+    /// <see cref="ContentSizeFitter"/> and the size-controlling <see cref="VerticalLayoutGroup"/> are
+    /// disabled so the animator can tween localScale/alpha/anchoredPosition on a static rect with no
+    /// per-frame layout churn (the size-flicker fix).</summary>
     public ToastCard Build(Transform parent, string message, NotificationKind kind)
     {
         var kindColor = ToColor(ToastThemeAssets.KindColor(kind));
@@ -56,29 +60,52 @@ internal sealed class ToastCardBuilder
 
         // Card lays out its single content child and grows its OWN height to fit (the bg / accent /
         // countdown are ignore-layout children anchored to the card, so they don't affect the measure).
-        // This makes rect.rect.height the real card height the renderer reads for stack-Y.
+        // This drives the initial measure; we read the result and then freeze the size (see below).
         var cardLayout = card.AddComponent<VerticalLayoutGroup>();
         cardLayout.childControlWidth = true; cardLayout.childControlHeight = true;
         cardLayout.childForceExpandWidth = true; cardLayout.childForceExpandHeight = false;
         var cardFit = card.AddComponent<ContentSizeFitter>();
         cardFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        BuildBg(card.transform);
-        BuildAccent(card.transform, kindColor);
+        // Bg owns a rounded Mask; Accent is a CHILD of Bg so its square left corners are clipped to the
+        // card's rounded silhouette (the square-left-corner fix). Content/Countdown stay card children.
+        var bg = BuildBg(card.transform);
+        BuildAccent(bg.transform, kindColor);
         var content = BuildContent(card.transform);
         BuildHeader(content.transform, message, kind, kindColor);
         var countdown = BuildCountdown(card.transform, kindColor);
 
+        FreezeSize(card, rect, cardLayout, cardFit);
+
         return new ToastCard { Root = card, Rect = rect, Group = group, Content = content, Countdown = countdown };
     }
 
-    private void BuildBg(Transform parent)
+    // Measure the multi-line card once (nested rebuild measures the wrapped Message height), capture the
+    // resulting width/height as a fixed sizeDelta, then DISABLE the fitter + size-controlling layout group
+    // so subsequent frames don't recompute layout. After this the card is a static-size unit: the animator
+    // tweens scale/alpha/Y only, and the renderer reads this frozen height for stack-Y.
+    private static void FreezeSize(GameObject card, RectTransform rect, VerticalLayoutGroup cardLayout, ContentSizeFitter cardFit)
+    {
+        LayoutRebuilder.ForceRebuildLayoutImmediate(rect);
+        float w = rect.rect.width;
+        float h = rect.rect.height;
+        cardFit.enabled = false;
+        cardLayout.enabled = false;
+        rect.sizeDelta = new Vector2(w, h);
+    }
+
+    private GameObject BuildBg(Transform parent)
     {
         var bg = UGuiPrimitives.NewChild("Bg", parent);
         bg.AddComponent<LayoutElement>().ignoreLayout = true;
         UGuiPrimitives.Stretch(bg);
         var img = bg.AddComponent<Image>();
         img.sprite = _assets.CardBgSprite; img.type = Image.Type.Sliced; img.raycastTarget = false;
+        // Rounded stencil mask: children (the Accent) are clipped to this sprite's alpha → the accent's
+        // left corners follow the card's 8px radius. showMaskGraphic keeps the bg itself visible.
+        var mask = bg.AddComponent<Mask>();
+        mask.showMaskGraphic = true;
+        return bg;
     }
 
     private void BuildAccent(Transform parent, Color kindColor)
@@ -91,6 +118,7 @@ internal sealed class ToastCardBuilder
         rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(AccentWidth, 0f);
         var img = accent.AddComponent<Image>();
         img.sprite = _assets.WhiteSprite; img.type = Image.Type.Simple; img.color = kindColor; img.raycastTarget = false;
+        img.maskable = true;   // clipped to Bg's rounded mask → rounded left corners
     }
 
     private GameObject BuildContent(Transform parent)
