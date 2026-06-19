@@ -191,6 +191,11 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name));
         }
 
+        // Sort by planId so hotkey N → a deterministic loadout. PlanDataDict is a Lua
+        // map (pairs order is unspecified, and planIds go sparse after delete/recreate),
+        // so without this the hotkey→loadout mapping is unstable across sessions.
+        entries.Sort(static (a, b) => a.Index.CompareTo(b.Index));
+
         _currentId = current;
         _loadouts = entries;
     }
