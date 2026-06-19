@@ -156,15 +156,16 @@ internal sealed partial class PandaLoadoutProbe
         " local function dump(p,t,d) if d>4 then return end for k,v in pairs(t) do local tv=type(v)" +
         "  if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
         "  elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
-        " L(\"=== begin ===\") L(\"step1 pre-coro\") flush();" +
-        " (Z.CoroUtil.create_coro_xpcall(function()" +
-        "  L(\"step2 in-coro\") flush()" +
-        "  local vm=Z.VMMgr.GetVM(\"weapon\")" +
-        "  local pid=Z.VMMgr.GetVM(\"profession\").GetCurProfession()" +
-        "  L(\"step3 vm=\"..type(vm)..\" pid=\"..tostring(pid)) flush()" +
-        "  local data=vm.AsyncGetRolePlanData(pid)" +
-        "  L(\"step4 returned type=\"..type(data)) flush()" +
-        "  if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
-        "  L(\"=== end ===\") flush()" +
-        " end))()";
+        " L(\"=== begin ===\")" +
+        " local wd=(Z.DataMgr.Get)(\"weapon_data\")" +
+        " local d=wd and wd.rolePlanServerData_" +
+        " if not d then L(\"no rolePlanServerData_ wd=\"..tostring(wd)) else" +
+        "  L(\"CurPlanId=\"..tostring(d.CurPlanId))" +
+        "  local dict=d.PlanDataDict" +
+        "  if dict then local n=0 for pid,pd in pairs(dict) do n=n+1" +
+        "    L(\"plan id=\"..tostring(pid)..\" name=\"..tostring(pd and pd.projectName)..\" prof=\"..tostring(pd and pd.professionId)) end" +
+        "   L(\"count=\"..n) else L(\"no PlanDataDict\") end" +
+        " end" +
+        " L(\"=== end ===\")" +
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
