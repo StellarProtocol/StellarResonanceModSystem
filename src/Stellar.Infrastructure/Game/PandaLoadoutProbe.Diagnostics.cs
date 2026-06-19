@@ -62,44 +62,48 @@ internal sealed partial class PandaLoadoutProbe
         _log.Info($"[Stellar][Loadout] switch(id={projectId}) result: {result} after {elapsedMs}ms");
     }
 
-    // ── Live current-loadout monitor (diagnostic) ─────────────────────────────
-    private int _monitorTickCounter;
-    private const int MonitorEveryTicks = 30;   // ~0.5s
-    private string _lastCurDiag = string.Empty;
+    // ── One-shot Z-namespace function search (diagnostic) ──────────────────────
+    private bool _scanDone;
+    private int _scanTickCounter;
+    private int _scanAttempts;
+    private const int ScanEveryTicks = 120;   // ~2s between attempts
+    private const int MaxScanAttempts = 8;
 
     /// <summary>
-    /// While diagnostics are enabled and the bridge is resolved, polls the
-    /// profession VM's GetCurProfession()/GetContainerProfession() every ~0.5s and
-    /// logs the value whenever it CHANGES, under <c>[StellarLI][cur]</c>. Used to
-    /// correlate the returned number against in-game loadout switches — i.e. to
-    /// decide whether AsyncChangeProfession/GetCurProfession key on the loadout
-    /// (profession project) or merely the class. The chunk is tiny (one VM call +
-    /// a global write), so the per-poll cost is negligible. Silent when diagnostics
-    /// are off.
+    /// While diagnostics are enabled and the bridge is resolved, runs a bounded
+    /// recursive scan of the <c>Z</c> Lua namespace (depth ≤3, ≤800 tables) for any
+    /// function whose name contains project/plan/loadout/scheme/preset — to locate
+    /// the loadout ("profession project") switch wherever it lives, now that the
+    /// profession VM is confirmed to be the class system. One-shot: stops once a
+    /// dump carrying the begin marker is captured (or after MaxScanAttempts).
     /// </summary>
     private void RunIntrospectionIfDue()
     {
-        if (!StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
-        if (_monitorTickCounter++ % MonitorEveryTicks != 0) return;
+        if (_scanDone || !StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
+        if (_scanTickCounter++ % ScanEveryTicks != 0) return;
+        if (_scanAttempts++ >= MaxScanAttempts) { _scanDone = true; return; }
 
         var state = GetMainLuaState();
         if (state is null || _doString is null) return;
 
         try
         {
-            _doString.Invoke(state, new object[] { CurMonitorChunk, ChunkName + ".CurMon" });
-            var text = ReadLuaGlobalString(state, "_StellarLI_cur");
-            if (!string.IsNullOrEmpty(text) && !string.Equals(text, _lastCurDiag, StringComparison.Ordinal))
+            _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Scan" });
+            var text = ReadLuaGlobalString(state, "_StellarLI");
+            if (!string.IsNullOrEmpty(text) && text!.Contains("=== begin ===", StringComparison.Ordinal))
             {
-                _lastCurDiag = text!;
-                _log.Info("[StellarLI][cur] " + text);
+                foreach (var line in text.Split('\n'))
+                {
+                    _log.Info(line.StartsWith("[StellarLI]", StringComparison.Ordinal) ? line : "[StellarLI] " + line);
+                }
+                _scanDone = true;
             }
         }
         catch (Exception ex)
         {
             var inner = ex;
             while (inner.InnerException is not null) inner = inner.InnerException;
-            _log.Warning($"[Stellar][Loadout][LI] monitor threw: {inner.GetType().Name}: {inner.Message}");
+            _log.Warning($"[Stellar][Loadout][LI] scan threw: {inner.GetType().Name}: {inner.Message}");
         }
     }
 
@@ -133,13 +137,22 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Tiny per-poll monitor chunk: read the profession VM's current value + container
-    // + dropId and stash a one-line summary into the _StellarLI_cur global.
-    private const string CurMonitorChunk =
-        "local vm=Z.VMMgr.GetVM(\"profession\")" +
-        " local function c(fn) if not vm then return \"novm\" end" +
-        "  local ok,r=pcall(function() return vm[fn]() end)" +
-        "  if not ok then ok,r=pcall(function() return vm[fn](vm) end) end" +
-        "  return ok and tostring(r) or \"ERR\" end" +
-        " rawset(_G,\"_StellarLI_cur\", \"cur=\"..c(\"GetCurProfession\")..\" cont=\"..c(\"GetContainerProfession\")..\" drop=\"..c(\"GetProfessionDropId\"))";
+    // Bounded recursive scan of the Z namespace for functions whose name contains a
+    // loadout keyword. Depth ≤3, ≤800 tables visited, ≤150 hits — cannot freeze the
+    // game. Logs the table-path:function for each hit into the _StellarLI global.
+    private const string ScanChunk =
+        "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local seen={} local hits=0 local visited=0" +
+        " local kw={\"project\",\"plan\",\"loadout\",\"scheme\",\"preset\"}" +
+        " local function match(n) n=tostring(n):lower() for _,k in ipairs(kw) do if n:find(k) then return true end end return false end" +
+        " local function scan(t,path,depth)" +
+        "  if depth>3 or hits>150 or visited>800 then return end" +
+        "  if type(t)~=\"table\" or seen[t] then return end" +
+        "  seen[t]=true visited=visited+1" +
+        "  pcall(function() for k,v in pairs(t) do local kn=tostring(k) local tv=type(v)" +
+        "   if tv==\"function\" then if match(kn) then hits=hits+1 if hits<=150 then L(\"FN \"..path..\":\"..kn) end end" +
+        "   elseif tv==\"table\" then scan(v,path..\".\"..kn,depth+1) end end end)" +
+        " end" +
+        " L(\"=== begin ===\") scan(Z,\"Z\",0) L(\"hits=\"..hits..\" visited=\"..visited) L(\"=== end ===\")" +
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
