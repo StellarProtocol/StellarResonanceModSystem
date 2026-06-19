@@ -77,6 +77,7 @@ internal sealed partial class PandaLoadoutProbe
     /// profession VM is confirmed to be the class system. One-shot: stops once a
     /// dump carrying the begin marker is captured (or after MaxScanAttempts).
     /// </summary>
+    private bool _fetchKicked;
     private void RunIntrospectionIfDue()
     {
         if (_scanDone || !StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
@@ -88,7 +89,14 @@ internal sealed partial class PandaLoadoutProbe
 
         try
         {
-            _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Scan" });
+            // AsyncGetRolePlanData yields on a server RPC, so kick it once, then poll
+            // the global it writes on completion (a frame or two later).
+            if (!_fetchKicked)
+            {
+                _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Fetch" });
+                _fetchKicked = true;
+                return;
+            }
             var text = ReadLuaGlobalString(state, "_StellarLI");
             if (!string.IsNullOrEmpty(text) && text!.Contains("=== begin ===", StringComparison.Ordinal))
             {
@@ -103,7 +111,7 @@ internal sealed partial class PandaLoadoutProbe
         {
             var inner = ex;
             while (inner.InnerException is not null) inner = inner.InnerException;
-            _log.Warning($"[Stellar][Loadout][LI] scan threw: {inner.GetType().Name}: {inner.Message}");
+            _log.Warning($"[Stellar][Loadout][LI] fetch threw: {inner.GetType().Name}: {inner.Message}");
         }
     }
 
@@ -137,23 +145,25 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Dump the relevant functions of the candidate loadout VMs (the 138-key registry
-    // dump named these). The loadout/profession-project switch should appear as a
-    // Change/Use/Apply/Switch/Select function on one of them.
+    // Kicks weapon VM AsyncGetRolePlanData() inside a coroutine (it yields on a
+    // server RPC) and, on completion, dumps the role-plan list (ids + names =
+    // Ici-LF/Tank/Beam/Icicle) recursively into the _StellarLI global. Also records
+    // CheckRolePlanIsChange's shape. C# reads the global on a later poll.
     private const string ScanChunk =
-        "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
-        " local kw={\"project\",\"plan\",\"profession\",\"change\",\"switch\",\"use\",\"apply\"," +
-        "\"select\",\"save\",\"cur\",\"active\",\"container\",\"list\",\"get\",\"loadout\",\"scheme\"}" +
-        " local function match(n) n=tostring(n):lower() for _,k in ipairs(kw) do if n:find(k) then return true end end return false end" +
-        " local function dumpvm(key)" +
-        "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(key) end)" +
-        "  if not ok or type(vm)~=\"table\" then L(\"VM '\"..key..\"' MISSING\") return end" +
-        "  L(\"VM '\"..key..\"':\") local n=0" +
-        "  for k,v in pairs(vm) do if type(v)==\"function\" and match(k) then n=n+1 L(\"  \"..tostring(k)) end end" +
-        "  L(\"  (#match=\"..n..\")\") end" +
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local function dump(p,t,d) if d>4 then return end" +
+        "  for k,v in pairs(t) do local tv=type(v)" +
+        "   if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
+        "   elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
+        " local vm=Z.VMMgr.GetVM(\"weapon\")" +
         " L(\"=== begin ===\")" +
-        " for _,key in ipairs({\"equip_system\",\"characterinfo_gather\",\"rolelevel_main\"," +
-        "\"weapon\",\"talent_skill\",\"season_talent\",\"skill\",\"profession\",\"weapon_skill\"}) do dumpvm(key) end" +
+        " local ok,data=pcall(function() return vm.AsyncGetRolePlanData() end)" +
+        " L(\"AsyncGetRolePlanData ok=\"..tostring(ok)..\" type=\"..type(data))" +
+        " if ok and type(data)==\"table\" then dump(\"  \",data,0) end" +
+        " local ok2,chg=pcall(function() return vm.CheckRolePlanIsChange() end)" +
+        " L(\"CheckRolePlanIsChange ok=\"..tostring(ok2)..\" -> \"..tostring(chg))" +
         " L(\"=== end ===\")" +
-        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))" +
+        " end))()";
 }
