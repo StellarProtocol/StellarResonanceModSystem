@@ -179,25 +179,30 @@ internal sealed partial class PandaLoadoutProbe
     private const string IntrospectionChunk =
         "local lines={}" +
         " local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
-        " local vm=Z.VMMgr.GetVM(\"profession\")" +
+        " local function dumpfns(p,t) if type(t)~=\"table\" then return end local n=0" +
+        "  for k,v in pairs(t) do if type(v)==\"function\" then n=n+1 if n<=90 then L(p..tostring(k)) end end end" +
+        "  L(p..\"(#fns=\"..n..\")\") end" +
         " L(\"=== begin ===\")" +
-        " if not vm then L(\"profession VM nil\") else" +
-        "  local function call0(fn)" +
-        "   local ok,r=pcall(function() return vm[fn]() end)" +
-        "   if not ok then ok,r=pcall(function() return vm[fn](vm) end) end" +
-        "   return ok,r end" +
-        "  local function dumpval(p,v)" +
-        "   local t=type(v) L(p..\" type=\"..t)" +
-        "   if t==\"table\" then local n=0 for k,vv in pairs(v) do n=n+1 if n<=60 then" +
-        "     local sv=(type(vv)==\"table\") and \"<table>\" or tostring(vv)" +
-        "     L(p..\"  [\"..tostring(k)..\"]=\"..type(vv)..\" \"..sv) end end L(p..\"  #keys=\"..n)" +
-        "   else L(p..\"  val=\"..tostring(v)) end end" +
-        "  for _,fn in ipairs({\"GetCurProfession\",\"GetContainerProfession\",\"GetProfessionDropId\"}) do" +
-        "   local ok,r=call0(fn)" +
-        "   L(fn..\" ok=\"..tostring(ok))" +
-        "   if ok then dumpval(fn, r) end" +
-        "  end" +
-        " end" +
+        " for _,n in ipairs({\"profession\",\"equip\"}) do" +
+        "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(n) end)" +
+        "  if ok and vm then L(\"VM '\"..n..\"' direct:\") dumpfns(\"  \", vm)" +
+        "   local mt=getmetatable(vm)" +
+        "   if mt and type(mt.__index)==\"table\" then L(\"VM '\"..n..\"' __index:\") dumpfns(\"  mt:\", mt.__index) end" +
+        "  end end" +
+        " local keys={\"professionproject\",\"equipplan\",\"plan\",\"preset\",\"scheme\",\"talent\"," +
+        "\"attr\",\"attribute\",\"adventurer\",\"character\",\"role\",\"build\",\"loadout\",\"gearplan\"," +
+        "\"gear\",\"equipgroup\",\"equipscheme\",\"professionplan\",\"professionscheme\",\"professionconfig\"," +
+        "\"equipsave\",\"specplan\",\"spec\",\"attrplan\",\"talentplan\",\"planmain\",\"professionprojectmain\"}" +
+        " for _,n in ipairs(keys) do" +
+        "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(n) end)" +
+        "  if ok and vm and type(vm)==\"table\" then L(\"FOUND VM '\"..n..\"':\") dumpfns(\"  \", vm) end end" +
+        " local pvm=Z.VMMgr.GetVM(\"profession\")" +
+        " if pvm then for _,fn in ipairs({\"GetCurProfessionProjectId\",\"GetProfessionProjectId\"," +
+        "\"GetCurProject\",\"GetProjectId\",\"GetCurLoadout\",\"GetProfessionProjectList\"," +
+        "\"GetProfessionProjectInfoList\",\"GetAllProfessionProject\",\"GetProjectInfoList\"}) do" +
+        "  local ok,r=pcall(function() return pvm[fn]() end)" +
+        "  if not ok then ok,r=pcall(function() return pvm[fn](pvm) end) end" +
+        "  if ok then L(\"call \"..fn..\" -> \"..type(r)..\" \"..tostring(r)) end end end" +
         " L(\"=== end ===\")" +
         " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
