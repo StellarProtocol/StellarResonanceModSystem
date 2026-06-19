@@ -137,22 +137,24 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Bounded recursive scan of the Z namespace for functions whose name contains a
-    // loadout keyword. Depth ≤3, ≤800 tables visited, ≤150 hits — cannot freeze the
-    // game. Logs the table-path:function for each hit into the _StellarLI global.
+    // VMs live in Z.VMMgr.GetVM's closure (an upvalue table), NOT as reachable Z
+    // subtables — so Z-traversal can't see them. Use debug.getupvalue to read the
+    // VM-registry/cache table off GetVM/Init and enumerate EVERY registered VM key.
     private const string ScanChunk =
         "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
-        " local seen={} local hits=0 local visited=0" +
-        " local kw={\"project\",\"plan\",\"loadout\",\"scheme\",\"preset\"}" +
-        " local function match(n) n=tostring(n):lower() for _,k in ipairs(kw) do if n:find(k) then return true end end return false end" +
-        " local function scan(t,path,depth)" +
-        "  if depth>3 or hits>150 or visited>800 then return end" +
-        "  if type(t)~=\"table\" or seen[t] then return end" +
-        "  seen[t]=true visited=visited+1" +
-        "  pcall(function() for k,v in pairs(t) do local kn=tostring(k) local tv=type(v)" +
-        "   if tv==\"function\" then if match(kn) then hits=hits+1 if hits<=150 then L(\"FN \"..path..\":\"..kn) end end" +
-        "   elseif tv==\"table\" then scan(v,path..\".\"..kn,depth+1) end end end)" +
+        " L(\"=== begin ===\")" +
+        " if not debug or not debug.getupvalue then L(\"no debug lib\") else" +
+        "  local function dumpups(label, fn)" +
+        "   if type(fn)~=\"function\" then L(label..\" not a function\") return end" +
+        "   local i=1 while true do local n,v=debug.getupvalue(fn,i) if not n then break end" +
+        "    L(label..\" up[\"..i..\"] \"..tostring(n)..\"=\"..type(v))" +
+        "    if type(v)==\"table\" then local cnt=0" +
+        "     for k,vv in pairs(v) do cnt=cnt+1 if cnt<=120 then L(\"    key \"..tostring(k)..\"=\"..type(vv)) end end" +
+        "     L(\"    (#keys=\"..cnt..\")\") end" +
+        "    i=i+1 end end" +
+        "  dumpups(\"GetVM\", Z.VMMgr.GetVM)" +
+        "  dumpups(\"Init\", Z.VMMgr.Init)" +
         " end" +
-        " L(\"=== begin ===\") scan(Z,\"Z\",0) L(\"hits=\"..hits..\" visited=\"..visited) L(\"=== end ===\")" +
+        " L(\"=== end ===\")" +
         " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
