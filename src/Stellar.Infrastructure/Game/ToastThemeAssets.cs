@@ -34,6 +34,9 @@ internal sealed class ToastThemeAssets
     // Card bg bake: 24px rounded with corner radius 8 (matches CardCornerRadius), 9-slice border 8.
     private const int CardTexSize = 24;
     private const int CardRadius = 8;
+    // The accent strip rounds with its OWN smaller radius (not the card's) so the coloured
+    // left bar reads thin; ToastCardBuilder sizes the strip to AccentWidth + AccentRadius.
+    internal const int AccentRadius = 4;
 
     private const int IconTexSize = 32;   // baked at 2× the 16px on-screen IconSize for crisp downscale
 
@@ -90,8 +93,8 @@ internal sealed class ToastThemeAssets
         WhiteSprite = MakeSimpleSprite(_whiteTex);
         // White left-rounded strip (builder tints per-kind). 9-slice border rounds only the
         // left corners (left=radius, right=0, top/bottom=radius) so it stretches to card height.
-        _accentTex = RoundedTextureBaker.RoundedLeft(CardTexSize, CardRadius, new ColorRgba(1f, 1f, 1f, 1f));
-        AccentSprite = MakeSlicedSprite(_accentTex, new Vector4(CardRadius, CardRadius, 0f, CardRadius));
+        _accentTex = RoundedTextureBaker.RoundedLeft(CardTexSize, AccentRadius, new ColorRgba(1f, 1f, 1f, 1f));
+        AccentSprite = MakeSlicedSprite(_accentTex, new Vector4(AccentRadius, AccentRadius, 0f, AccentRadius));
         BakeIcons();
         HudText = ToColor(colors.HudText);
         HudTextShadow = ToColor(colors.HudTextShadow);

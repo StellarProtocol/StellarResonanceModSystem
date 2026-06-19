@@ -45,7 +45,7 @@ internal sealed class ToastCardBuilder
     // that the rounded arc reads (the visible coloured stripe is AccentWidth; the extra radius px is
     // the rounded-corner zone that mirrors the card silhouette).
     internal const int CardCornerRadius = 8;
-    internal const float AccentSpriteWidth = AccentWidth + CardCornerRadius;
+    internal const float AccentSpriteWidth = AccentWidth + ToastThemeAssets.AccentRadius;
 
     private readonly ToastThemeAssets _assets;
 
