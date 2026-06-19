@@ -160,8 +160,9 @@ internal sealed partial class PandaLoadoutProbe
         " (Z.CoroUtil.create_coro_xpcall(function()" +
         "  L(\"step2 in-coro\") flush()" +
         "  local vm=Z.VMMgr.GetVM(\"weapon\")" +
-        "  L(\"step3 vm=\"..type(vm)) flush()" +
-        "  local data=vm.AsyncGetRolePlanData()" +
+        "  local pid=Z.VMMgr.GetVM(\"profession\").GetCurProfession()" +
+        "  L(\"step3 vm=\"..type(vm)..\" pid=\"..tostring(pid)) flush()" +
+        "  local data=vm.AsyncGetRolePlanData(pid)" +
         "  L(\"step4 returned type=\"..type(data)) flush()" +
         "  if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
         "  L(\"=== end ===\") flush()" +
