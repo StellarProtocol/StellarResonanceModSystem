@@ -161,7 +161,7 @@ internal sealed partial class PandaLoadoutProbe
         "  L(\"step2 in-coro\") flush()" +
         "  local vm=Z.VMMgr.GetVM(\"weapon\")" +
         "  L(\"step3 vm=\"..type(vm)) flush()" +
-        "  local data=vm:AsyncGetRolePlanData()" +
+        "  local data=vm.AsyncGetRolePlanData()" +
         "  L(\"step4 returned type=\"..type(data)) flush()" +
         "  if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
         "  L(\"=== end ===\") flush()" +
