@@ -228,6 +228,9 @@ internal sealed partial class PandaLoadoutProbe
     private FieldInfo? _currentIdField;
     private Func<object?>? _archiveProvider;
     private int _currentIdResolveTickCounter;
+    private int _currentIdScanAttempts;
+    private bool _currentIdScanGaveUp;
+    private const int MaxCurrentIdScanAttempts = 8;
 
     /// <summary>
     /// Reads <c>CurrentProfessionProjectId</c> off the live
@@ -258,13 +261,22 @@ internal sealed partial class PandaLoadoutProbe
     {
         // Already resolved — never scan again.
         if (_archiveProvider is not null) return;
+        // Gave up after MaxCurrentIdScanAttempts — stop scanning so we don't stutter
+        // forever when the container has no static holder (the authoritative current-id
+        // read then comes from the VM once the apply/list names are pinned).
+        if (_currentIdScanGaveUp) return;
 
         // CRITICAL perf gate: the archive only becomes reachable post-login/sync, so
-        // we must keep retrying — but ResolveArchiveInstanceProvider / FindTypeByShortName
-        // walk every loaded IL2CPP assembly via GetTypes(). Running that every Update
-        // frame collapses FPS (~0.2). Throttle the scan to once every
-        // ResolveAttemptEveryTicks calls, mirroring TryResolveBridgeIfDue.
+        // we retry — but ResolveArchiveInstanceProvider / FindTypeByShortName walk every
+        // loaded IL2CPP assembly via GetTypes(). Running that every Update frame collapses
+        // FPS (~0.2); running it every second still stutters. Throttle to once every
+        // ResolveAttemptEveryTicks calls AND cap the total attempts.
         if (_currentIdResolveTickCounter++ % ResolveAttemptEveryTicks != 0) return;
+        if (_currentIdScanAttempts++ >= MaxCurrentIdScanAttempts)
+        {
+            _currentIdScanGaveUp = true;
+            return;
+        }
 
         var archiveType = _typeRegistry.FindType(CurrentIdArchiveTypeName)
             ?? FindTypeByShortName("CurrentProfessionProjectIdInfoContainerArchive");

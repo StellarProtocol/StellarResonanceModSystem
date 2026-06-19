@@ -60,27 +60,32 @@ internal sealed partial class PandaLoadoutProbe
         _log.Info($"[Stellar][Loadout] switch(id={projectId}) result: {result} after {elapsedMs}ms");
     }
 
-    // ── One-shot in-world introspection ────────────────────────────────────────
+    // ── In-world introspection (retried until cap) ─────────────────────────────
     private bool _introspectionDone;
+    private int _introspectionTickCounter;
+    private int _introspectionAttempts;
+    private const int IntrospectionEveryTicks = 120;   // ~2s between dumps
+    private const int MaxIntrospectionAttempts = 12;   // ~24s window to open the panel
 
     /// <summary>
-    /// Once the bridge is resolved and (best-effort) we are in-world, runs the Lua
-    /// introspection chunk ONCE to discover the loadout/profession VM + its members.
-    /// Gated on <see cref="StellarDiagnostics.IsEnabled"/> — silent no-op otherwise.
+    /// While diagnostics are enabled and the bridge is resolved, runs the Lua
+    /// introspection chunk every ~2s (up to <see cref="MaxIntrospectionAttempts"/>)
+    /// to discover the loadout/profession VM + its members — repeated so whichever
+    /// fire lands after the player opens the Adventurer/Loadout panel captures it.
+    /// NOT gated on the current-id read (that path is unreliable until the VM is
+    /// pinned, and its tick counter freezes once the bridge resolves). Silent no-op
+    /// when diagnostics are off.
     /// </summary>
     private void RunIntrospectionIfDue()
     {
         if (_introspectionDone || !StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
-
-        // Only meaningful in-world: the profession VM + saved projects are populated
-        // after login. Gate on the current-id container being readable (which only
-        // resolves post-login/sync) so we don't spam pre-login no-ops.
-        if (ReadCurrentProfessionProjectId() is null && _resolveTickCounter < ResolveAttemptEveryTicks * 4)
+        if (_introspectionTickCounter++ % IntrospectionEveryTicks != 0) return;
+        if (_introspectionAttempts++ >= MaxIntrospectionAttempts)
         {
+            _introspectionDone = true;
             return;
         }
 
-        _introspectionDone = true;
         var state = GetMainLuaState();
         if (state is null || _doString is null)
         {
