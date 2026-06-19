@@ -99,12 +99,11 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             return Task.FromResult(LoadoutResult.GameApiUnavailable);
         }
 
-        // Already on the requested loadout → immediate success (no-op switch).
-        if (_currentId == index)
-        {
-            return Task.FromResult(LoadoutResult.Success);
-        }
-
+        // NOTE: deliberately NO "_currentId == index → no-op" fast-path here. _currentId
+        // can be stale (it only refreshes after a plugin switch, never after an in-game
+        // dropdown switch), and a stale match silently swallowed the dispatch — making the
+        // login-current loadout permanently un-switchable. Always dispatch; the game itself
+        // cheaply no-ops a switch to the already-active loadout.
         var tcs = new TaskCompletionSource<LoadoutResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var pending = new PendingSwitch(index, tcs, Stopwatch.StartNew());
 
@@ -240,16 +239,27 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     {
         if (pending.IsCompleted) return null;
 
-        if (_currentId == pending.TargetId)
+        // The wrapper bool is the AUTHORITATIVE completion signal — it's written when
+        // AsyncSwitchRolePlan returns. Check it FIRST: relying on _currentId flipping
+        // would deadlock (it only refreshes AFTER a success → it could never become the
+        // target). "true" → success + refresh the cache so _currentId catches up.
+        var ok = ReadLuaGlobalString(SwitchGlobal);
+        if (string.Equals(ok, "true", StringComparison.OrdinalIgnoreCase))
         {
             TriggerRefreshAfterSwitch();
             return LoadoutResult.Success;
         }
-
-        var ok = ReadLuaGlobalString(SwitchGlobal);
         if (string.Equals(ok, "false", StringComparison.OrdinalIgnoreCase))
         {
             return LoadoutResult.Rejected;
+        }
+
+        // Fallback: the server-synced current id already matches (e.g. switch landed
+        // before we read the bool).
+        if (_currentId == pending.TargetId)
+        {
+            TriggerRefreshAfterSwitch();
+            return LoadoutResult.Success;
         }
 
         if (pending.Elapsed >= CompletionTimeout)
