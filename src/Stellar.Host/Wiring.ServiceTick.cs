@@ -151,6 +151,7 @@ public sealed partial class BootstrapPlugin
     // keyboard while a window text field is focused (stops the wasd leak); guarded to defer to the spike.
     private void TickOverlayServices(float deltaTime)
     {
+        TickNotifications();   // refresh the toast snapshot BEFORE the HUD applies it this tick
         _hudService?.Tick(deltaTime);
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         _windowService?.Tick(deltaTime);

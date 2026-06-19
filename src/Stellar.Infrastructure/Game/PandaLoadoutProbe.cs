@@ -20,17 +20,23 @@ namespace Stellar.Infrastructure.Game;
 ///
 /// <para><b>Mechanism (CONFIRMED — <c>recon/loadout-switch-findings.md</c> § CONFIRMED
 /// MECHANISM):</b> the plan list + current id come from a <c>SyncProjectList</c> RPC
-/// cached in the <c>weapon_data</c> model; the switch is
-/// <c>require("zproxy.world_proxy").SwitchProject({oldProjectId,newProjectId}, token)</c>,
-/// returning <c>ret.errCode</c> (<c>EErrorCode</c>; 0 = success). The server runs every
-/// validation (combat-lock 5018, no-such-plan 5022, profession-change 5026, …) — we
-/// never bypass it.</para>
+/// cached in the <c>weapon_data</c> model; the switch goes through the game's OWN VM
+/// wrapper <c>Z.VMMgr.GetVM("weapon").AsyncSwitchRolePlan(planId, token)</c> — exactly
+/// what clicking the in-game dropdown does. The wrapper internally calls
+/// <c>WorldProxy.SwitchProject</c>, then runs the client-side post-switch handling
+/// (current-project sync cache, event dispatch) and shows the game's own success/error
+/// toast (calling the raw RPC directly skipped that and corrupted local player state).
+/// The wrapper returns a bool (true = success); the server runs every validation
+/// (combat-lock 5018, no-such-plan 5022, profession-change 5026, …) and toasts the
+/// reason itself — we never bypass it.</para>
 ///
-/// <para><b>Read path:</b> a throttled refresh chunk (every ~5s, plus once on resolve
-/// and after a switch) fires the RPC and serializes <c>CurPlanId</c> + each plan's
-/// id/name into the <c>_StellarLoadoutData</c> Lua global; each tick C# reads + parses
-/// it into the cache that <see cref="ReadLoadouts"/> / <see cref="ReadCurrentIndex"/>
-/// return. The async RPC writes the global a frame+ after firing, so reading the
+/// <para><b>Read path:</b> the refresh chunk fires <c>SyncProjectList</c> ON DEMAND —
+/// once the first time the bridge resolves in-world, and again immediately after a
+/// successful switch — and serializes <c>CurPlanId</c> + each plan's id/name into the
+/// <c>_StellarLoadoutData</c> Lua global (NOT on a recurring timer — an unprompted
+/// recurring RPC is a policy violation). Each tick C# reads + parses the global into the
+/// cache that <see cref="ReadLoadouts"/> / <see cref="ReadCurrentIndex"/> return (a cheap
+/// read, no RPC). The async RPC writes the global a frame+ after firing, so reading the
 /// previous result each tick is correct.</para>
 ///
 /// <para>SOLID partial layout — Lua-bridge reflection + chunk builders + Lua-global
@@ -39,14 +45,10 @@ namespace Stellar.Infrastructure.Game;
 /// </summary>
 internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 {
-    // Loadout switch is a server RPC; allow headroom (profession/spec/gear apply is
-    // heavier than module-equip). Poll the current id + the errCode global until the
-    // switch resolves or this elapses.
+    // Loadout switch goes through the game's weapon-VM wrapper (AsyncSwitchRolePlan).
+    // Poll CurPlanId == target (authoritative success) + the wrapper's bool result
+    // global until the switch resolves or this elapses.
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(8);
-
-    // Refresh cadence — fire SyncProjectList at most this often (plus once on first
-    // resolve and immediately after a successful switch). 60 ticks/s ⇒ ~5s.
-    private const int RefreshEveryTicks = 300;
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
@@ -57,8 +59,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private int? _currentId;
     private string? _lastDataRaw;
 
-    private int _refreshTickCounter;
+    // SyncProjectList is fired ON DEMAND only: once when the bridge first resolves
+    // in-world, and again after a successful switch. No recurring timer (an unprompted
+    // recurring RPC is a policy violation). _refreshPending is set on first resolve +
+    // post-switch and cleared after the chunk fires.
     private bool _refreshedOnce;
+    private bool _refreshPending;
 
     // Single in-flight switch. The whole loadout is one server-side id, so only one
     // switch can be outstanding at a time; a new dispatch supersedes the old.
@@ -147,18 +153,21 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         }
     }
 
-    // Fire the SyncProjectList refresh chunk on first resolve, then every
-    // RefreshEveryTicks. (Also fired immediately after a successful switch, below.)
+    // Fire the SyncProjectList refresh chunk ON DEMAND only: once the first time the
+    // bridge is resolved in-world (so weapon_data.rolePlanServerData_ populates), and
+    // again whenever a switch flags a refresh (post-success). No recurring timer.
     private void RefreshIfDue()
     {
         if (!_refreshedOnce)
         {
             _refreshedOnce = true;
+            _refreshPending = false;
             InvokeChunk(RefreshChunk);
             return;
         }
-        if (_refreshTickCounter++ % RefreshEveryTicks == 0)
+        if (_refreshPending)
         {
+            _refreshPending = false;
             InvokeChunk(RefreshChunk);
         }
     }
@@ -207,7 +216,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             if (pending.IsCompleted) continue;
 
             // Clear the stale result before dispatching so the poll only sees this
-            // switch's errCode.
+            // switch's wrapper bool result.
             InvokeChunk(ClearSwitchGlobalChunk);
             if (InvokeChunk(BuildSwitchChunk(pending.TargetId)))
             {
@@ -220,9 +229,13 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         }
     }
 
-    // Decide an in-flight switch's outcome, or null to keep waiting. Positive
-    // completion: the current id flips to the target (authoritative). Otherwise map
-    // the cached errCode; on timeout return Timeout.
+    // Decide an in-flight switch's outcome, or null to keep waiting. The weapon-VM
+    // wrapper (AsyncSwitchRolePlan) returns a bool (true = success), not an errCode —
+    // the game itself toasts the refusal reason (combat lock etc.), so we just need a
+    // coarse success/rejected/timeout outcome:
+    //   • CurPlanId flips to the target → Success (authoritative — the game applied it).
+    //   • else the wrapper-result global is "false" → Rejected (the game showed why).
+    //   • else after the timeout → Timeout.
     private LoadoutResult? Evaluate(PendingSwitch pending)
     {
         if (pending.IsCompleted) return null;
@@ -233,12 +246,10 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             return LoadoutResult.Success;
         }
 
-        var err = ReadLuaGlobalString(SwitchGlobal);
-        if (!string.IsNullOrEmpty(err))
+        var ok = ReadLuaGlobalString(SwitchGlobal);
+        if (string.Equals(ok, "false", StringComparison.OrdinalIgnoreCase))
         {
-            var mapped = MapErrCode(err!);
-            if (mapped == LoadoutResult.Success) TriggerRefreshAfterSwitch();
-            return mapped;
+            return LoadoutResult.Rejected;
         }
 
         if (pending.Elapsed >= CompletionTimeout)
@@ -249,36 +260,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         return null;
     }
 
-    // Maps the WorldProxy.SwitchProject errCode (EErrorCode) string to a LoadoutResult.
-    // EErrorCode success == 0 ("Success"); treat 0 / "Success" / "nil" (no error set on
-    // ok) as Success. Codes: 5018 in-combat, 5022 no-such-plan, 5026 profession-change
-    // rejected; any other non-zero numeric → Rejected.
-    private static LoadoutResult MapErrCode(string err)
-    {
-        if (string.Equals(err, "nil", StringComparison.Ordinal) ||
-            string.Equals(err, "Success", StringComparison.OrdinalIgnoreCase))
-        {
-            return LoadoutResult.Success;
-        }
-        if (!int.TryParse(err, NumberStyles.Integer, CultureInfo.InvariantCulture, out var code))
-        {
-            // Non-numeric, non-"Success" enum name → treat as a refusal.
-            return LoadoutResult.Rejected;
-        }
-        return code switch
-        {
-            0 => LoadoutResult.Success,
-            5018 => LoadoutResult.InCombat,
-            5019 => LoadoutResult.InCombat,
-            5022 => LoadoutResult.NoSuchLoadout,
-            5026 => LoadoutResult.Rejected,
-            _ => LoadoutResult.Rejected,
-        };
-    }
-
-    // Force the next tick to re-fire SyncProjectList so the list + current id reflect
-    // the switch promptly (rather than waiting up to RefreshEveryTicks).
-    private void TriggerRefreshAfterSwitch() => _refreshTickCounter = 0;
+    // Flag the next tick to re-fire SyncProjectList so the list + current id reflect
+    // the switch promptly. This is the only re-fetch besides the first-resolve one.
+    private void TriggerRefreshAfterSwitch() => _refreshPending = true;
 
     private void RemovePending(PendingSwitch pending)
     {

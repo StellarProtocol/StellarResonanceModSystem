@@ -16,10 +16,12 @@ namespace Stellar.Infrastructure.Game;
 /// <c>ZLuaFramework.LuaState.mainState</c> + <c>void DoString(string,string)</c>),
 /// then drives the loadout ("Role Plan") system through the <c>weapon</c> Lua VM and
 /// <c>WorldProxy</c> RPCs — the CONFIRMED mechanism from
-/// <c>recon/loadout-switch-findings.md</c> (§ CONFIRMED MECHANISM): the switch is
-/// <c>require("zproxy.world_proxy").SwitchProject({oldProjectId,newProjectId}, token)</c>
-/// and the list/current id come from <c>SyncProjectList</c> cached in the
-/// <c>weapon_data</c> model. All async calls run inside the canonical
+/// <c>recon/loadout-switch-findings.md</c> (§ CONFIRMED MECHANISM): the switch goes
+/// through the game's own VM wrapper
+/// <c>Z.VMMgr.GetVM("weapon").AsyncSwitchRolePlan(planId, token)</c> (which internally
+/// calls <c>WorldProxy.SwitchProject</c> and runs the client-side post-switch handling +
+/// the game's own success/error toast), and the list/current id come from
+/// <c>SyncProjectList</c> cached in the <c>weapon_data</c> model. All async calls run inside the canonical
 /// <c>Z.CoroUtil.create_coro_xpcall(fn)()</c> wrapper with the
 /// <c>ZUtil.ZCancelSource.NeverCancelToken</c> cancel token (REQUIRED — the RPC
 /// yields, and a nil token never resumes).</para>
@@ -213,21 +215,25 @@ internal sealed partial class PandaLoadoutProbe
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 
-    // Switch chunk: WorldProxy.SwitchProject({oldProjectId=cur, newProjectId=planId},
-    // token) inside the coroutine wrapper; cache the returned errCode in the switch
-    // global. planId is a numeric int interpolated via InvariantCulture — no
-    // injection surface. The server runs every validation (combat-lock etc.).
+    // Switch chunk: drive the game's OWN weapon-VM wrapper AsyncSwitchRolePlan(planId,
+    // token) inside the coroutine wrapper — i.e. EXACTLY what clicking the in-game
+    // loadout dropdown does. The wrapper reads oldProjectId from
+    // weaponData.rolePlanServerData_.CurPlanId, calls WorldProxy.SwitchProject, then runs
+    // the client-side post-switch handling (SaveRolePlanId, current-project sync cache,
+    // OnRolePlanChange event dispatch) AND shows the game's own success/error toast — none
+    // of which the raw RPC does (skipping it corrupted local player state after a
+    // class-changing switch). The wrapper returns a bool (true=success); cache its
+    // tostring() in the switch global. planId is a numeric int interpolated via
+    // InvariantCulture — no injection surface. The server runs every validation
+    // (combat-lock etc.) and the game toasts the reason itself.
     private static string BuildSwitchChunk(int planId)
         => string.Format(
             CultureInfo.InvariantCulture,
             "(Z.CoroUtil.create_coro_xpcall(function()" +
-            " local token=({0}) local worldProxy=require(\"zproxy.world_proxy\")" +
-            " local wd=Z.DataMgr.Get(\"weapon_data\")" +
-            " local cur=(wd.rolePlanServerData_ and wd.rolePlanServerData_.CurPlanId) or 0" +
-            " local ret=worldProxy.SwitchProject({{oldProjectId=cur, newProjectId={1}}}, token)" +
-            " rawset(_G,\"{2}\", tostring(ret and ret.errCode))" +
+            " local ok=Z.VMMgr.GetVM(\"weapon\").AsyncSwitchRolePlan({0}, {1})" +
+            " rawset(_G,\"{2}\", tostring(ok))" +
             " end))()",
-            NeverCancelToken, planId, SwitchGlobal);
+            planId, NeverCancelToken, SwitchGlobal);
 
     // Clears the switch result global before a dispatch so a stale value isn't read.
     private const string ClearSwitchGlobalChunk = "rawset(_G,\"" + SwitchGlobal + "\", nil)";

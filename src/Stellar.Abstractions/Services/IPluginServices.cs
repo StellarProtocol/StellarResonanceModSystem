@@ -22,6 +22,8 @@ public interface IPluginServices
     IModuleEquip ModuleEquip { get; }
     /// <summary>Read and apply the player's saved in-game loadouts (class + gear + spec + modules).</summary>
     ILoadout Loadout { get; }
+    /// <summary>Show short transient on-screen toasts (plugin-side feedback the game does not surface itself).</summary>
+    INotifications Notifications { get; }
     /// <summary>Plugin-scoped persistent configuration (JSON-backed key-value store).</summary>
     IPluginConfig Config { get; }
     /// <summary>Game lifecycle events (scene load / unload, hot-update ready).</summary>

@@ -19,7 +19,7 @@ internal sealed partial class PandaLoadoutProbe
     {
         _log.Info(
             "[Stellar][Loadout] resolved switch bridge: tolua# LuaState.mainState + DoString" +
-            "; apply WorldProxy.SwitchProject via weapon VM (Role Plan)");
+            "; apply via weapon VM wrapper AsyncSwitchRolePlan (Role Plan)");
     }
 
     private void OnResolutionFailure(string reason)
@@ -40,7 +40,7 @@ internal sealed partial class PandaLoadoutProbe
     private void DiagDispatched(int planId)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[Stellar][Loadout] SwitchProject(newProjectId={planId}) dispatched");
+        _log.Info($"[Stellar][Loadout] AsyncSwitchRolePlan(planId={planId}) dispatched");
     }
 
     private void DiagResult(int planId, LoadoutResult result, long elapsedMs)
