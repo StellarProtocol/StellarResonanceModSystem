@@ -230,7 +230,7 @@ internal sealed partial class PandaLoadoutProbe
     private int _currentIdResolveTickCounter;
     private int _currentIdScanAttempts;
     private bool _currentIdScanGaveUp;
-    private const int MaxCurrentIdScanAttempts = 8;
+    private const int MaxCurrentIdScanAttempts = 3;
 
     /// <summary>
     /// Reads <c>CurrentProfessionProjectId</c> off the live

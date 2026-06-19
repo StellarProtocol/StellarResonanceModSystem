@@ -1,4 +1,6 @@
 using System;
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain.Loadout;
 
@@ -130,19 +132,43 @@ internal sealed partial class PandaLoadoutProbe
                 return false;
             }
             var val = idx.Invoke(state, new object[] { globalName });
-            var text = val?.ToString();
-            if (string.IsNullOrEmpty(text)) return false;
+            var text = CoerceLuaString(val);
+            if (string.IsNullOrEmpty(text) || string.Equals(text, "Il2CppSystem.Object", StringComparison.Ordinal))
+            {
+                return false;
+            }
             foreach (var line in text.Split('\n'))
             {
                 _log.Info(line.StartsWith("[StellarLI]", StringComparison.Ordinal) ? line : "[StellarLI] " + line);
             }
-            return true;
+            // Only a dump carrying the begin marker counts as a real capture (so a
+            // garbled/partial read doesn't prematurely stop the retries).
+            return text.Contains("=== begin ===", StringComparison.Ordinal);
         }
         catch (Exception ex)
         {
             _log.Warning($"[Stellar][Loadout][LI] global read failed: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
+    }
+
+    // The tolua# LuaState string indexer returns the Lua string boxed as an
+    // Il2CppSystem.Object whose managed ToString() yields the wrapper type name, not
+    // the content. Decode the underlying IL2CPP string via the interop runtime.
+    private static string? CoerceLuaString(object? val)
+    {
+        if (val is null) return null;
+        if (val is string s) return s;
+        if (val is Il2CppObjectBase ob)
+        {
+            try
+            {
+                var ptr = ob.Pointer;
+                if (ptr != IntPtr.Zero) return IL2CPP.Il2CppStringToManaged(ptr);
+            }
+            catch { /* not an IL2CPP string — fall through */ }
+        }
+        return val.ToString();
     }
 
     // Lua chunk: enumerate candidate VM keys, dump each resolved VM's members, then
