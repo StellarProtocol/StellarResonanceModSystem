@@ -34,7 +34,7 @@ internal sealed class ToastCardBuilder
     // Card geometry tokens (px) — verbatim from the design spec.
     internal const float CardWidth = 340f;
     internal const int PadT = 10, PadR = 12, PadB = 10, PadL = 12;
-    internal const float AccentWidth = 2f;
+    internal const float AccentWidth = 4f;
     internal const int IconSize = 16;
     internal const int IconTitleGap = 6;
     internal const int TitleSize = 12;
@@ -45,7 +45,7 @@ internal sealed class ToastCardBuilder
     // that the rounded arc reads (the visible coloured stripe is AccentWidth; the extra radius px is
     // the rounded-corner zone that mirrors the card silhouette).
     internal const int CardCornerRadius = 8;
-    internal const float AccentSpriteWidth = AccentWidth + ToastThemeAssets.AccentRadius;
+    internal const float AccentSpriteWidth = AccentWidth + CardCornerRadius;
 
     private readonly ToastThemeAssets _assets;
 
