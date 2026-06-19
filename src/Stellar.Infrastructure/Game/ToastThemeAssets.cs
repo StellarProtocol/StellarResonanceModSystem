@@ -39,15 +39,22 @@ internal sealed class ToastThemeAssets
 
     private Texture2D? _cardTex;
     private Texture2D? _whiteTex;
+    private Texture2D? _accentTex;
     private readonly Sprite?[] _iconSprites = new Sprite?[4];
     private readonly Texture2D?[] _iconTex = new Texture2D?[4];
 
     /// <summary>Rounded dark card background (9-slice).</summary>
     public Sprite? CardBgSprite { get; private set; }
 
-    /// <summary>Flat 1×1 white sprite — tinted per-kind by the builder for the accent strip
-    /// and the countdown fill.</summary>
+    /// <summary>Flat 1×1 white sprite — tinted per-kind by the builder for the
+    /// countdown fill.</summary>
     public Sprite? WhiteSprite { get; private set; }
+
+    /// <summary>White left-rounded strip sprite (TL+BL corners radius 8, right edge
+    /// square), 9-sliced so it stretches to full card height with fixed corners. The
+    /// builder tints it per-kind and draws it at the card's left edge — the rounded
+    /// left corners follow the card silhouette WITHOUT a stencil mask.</summary>
+    public Sprite? AccentSprite { get; private set; }
 
     /// <summary>Primary HUD text colour (themed — message body reads as HUD text).</summary>
     public Color HudText { get; private set; } = Color.white;
@@ -55,7 +62,7 @@ internal sealed class ToastThemeAssets
     /// <summary>Drop-shadow under HUD text.</summary>
     public Color HudTextShadow { get; private set; } = new Color(0f, 0f, 0f, 0.85f);
 
-    public bool IsBaked => CardBgSprite != null && WhiteSprite != null;
+    public bool IsBaked => CardBgSprite != null && WhiteSprite != null && AccentSprite != null;
 
     /// <summary>The fixed semantic colour for a notification kind (theme-invariant).</summary>
     public static ColorRgba KindColor(NotificationKind kind) => kind switch
@@ -81,6 +88,10 @@ internal sealed class ToastThemeAssets
         CardBgSprite = MakeSlicedSprite(_cardTex, CardRadius);
         _whiteTex = MakeWhiteTex();
         WhiteSprite = MakeSimpleSprite(_whiteTex);
+        // White left-rounded strip (builder tints per-kind). 9-slice border rounds only the
+        // left corners (left=radius, right=0, top/bottom=radius) so it stretches to card height.
+        _accentTex = RoundedTextureBaker.RoundedLeft(CardTexSize, CardRadius, new ColorRgba(1f, 1f, 1f, 1f));
+        AccentSprite = MakeSlicedSprite(_accentTex, new Vector4(CardRadius, CardRadius, 0f, CardRadius));
         BakeIcons();
         HudText = ToColor(colors.HudText);
         HudTextShadow = ToColor(colors.HudTextShadow);
@@ -97,6 +108,11 @@ internal sealed class ToastThemeAssets
         WhiteSprite = null;
         if (_whiteTex != null) Object.Destroy(_whiteTex);
         _whiteTex = null;
+
+        if (AccentSprite != null) Object.Destroy(AccentSprite);
+        AccentSprite = null;
+        if (_accentTex != null) Object.Destroy(_accentTex);
+        _accentTex = null;
 
         for (var i = 0; i < _iconSprites.Length; i++)
         {
@@ -139,6 +155,12 @@ internal sealed class ToastThemeAssets
     }
 
     private static Sprite MakeSlicedSprite(Texture2D tex, int border)
+        => MakeSlicedSprite(tex, new Vector4(border, border, border, border));
+
+    // border = (left, bottom, right, top) px — Unity's Sprite border convention. Asymmetric
+    // borders let the left-rounded accent stretch its straight right band while the rounded
+    // left corners stay fixed (right border = 0).
+    private static Sprite MakeSlicedSprite(Texture2D tex, Vector4 border)
     {
         var sprite = Sprite.Create(
             tex,
@@ -147,7 +169,7 @@ internal sealed class ToastThemeAssets
             pixelsPerUnit: 100f,
             extrude: 0,
             meshType: SpriteMeshType.FullRect,
-            border: new Vector4(border, border, border, border));
+            border: border);
         sprite.hideFlags = HideFlags.HideAndDontSave;
         return sprite;
     }

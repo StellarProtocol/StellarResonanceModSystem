@@ -17,12 +17,16 @@ namespace Stellar.Infrastructure.Game;
 /// <code>
 /// Card[CanvasGroup, pivot(0.5,1), w=CardWidth]
 ///   Bg        (sliced rounded dark, stretched, ignore-layout)
-///   Accent    (left strip, kind-colour, full-height, ignore-layout)
+///   Accent    (left strip — baked LEFT-rounded sprite, kind-tinted, full-height, ignore-layout)
 ///   Content   (VerticalLayoutGroup + ContentSizeFitter, inset right of accent)
 ///     Header  (Icon + Title)
 ///     Message
 ///   Countdown (Image Filled Horizontal-Left, bottom edge, kind-colour)
 /// </code>
+/// <para>The accent's rounded left corners come from a <b>baked left-rounded sprite</b>
+/// (<see cref="ToastThemeAssets.AccentSprite"/>), NOT a stencil <c>Mask</c> — a uGUI Mask
+/// combined with a fading <see cref="CanvasGroup"/> is a known IL2CPP stencil/alpha/batching
+/// flicker combo. The sprite renders identically in the Mono sandbox and in-game IL2CPP.</para>
 /// Shadowed text uses the manual sibling-twin trick (<c>UnityEngine.UI.Shadow</c> is interop-stripped).
 /// </remarks>
 internal sealed class ToastCardBuilder
@@ -37,6 +41,11 @@ internal sealed class ToastCardBuilder
     internal const int MsgSize = 15;
     internal const int TitleGap = 2;
     internal const float CountdownH = 3f;
+    // The accent strip's rounded left corners use the card radius; the strip is drawn wide enough
+    // that the rounded arc reads (the visible coloured stripe is AccentWidth; the extra radius px is
+    // the rounded-corner zone that mirrors the card silhouette).
+    internal const int CardCornerRadius = 8;
+    internal const float AccentSpriteWidth = AccentWidth + CardCornerRadius;
 
     private readonly ToastThemeAssets _assets;
 
@@ -44,10 +53,11 @@ internal sealed class ToastCardBuilder
 
     /// <summary>Build a card for <paramref name="message"/>/<paramref name="kind"/> under
     /// <paramref name="parent"/>. The returned handle exposes the components the animator drives.
-    /// The card is measured once (full nested layout pass) then FROZEN to a fixed size — the
-    /// <see cref="ContentSizeFitter"/> and the size-controlling <see cref="VerticalLayoutGroup"/> are
-    /// disabled so the animator can tween localScale/alpha/anchoredPosition on a static rect with no
-    /// per-frame layout churn (the size-flicker fix).</summary>
+    /// The card is measured once (full nested layout pass) then FROZEN — <b>every</b>
+    /// <see cref="ContentSizeFitter"/> and layout group in the card sub-hierarchy (card, inner
+    /// Content column, Header row, and each text slot) is disabled after the single measure pass,
+    /// so the animator can tween localScale/alpha/anchoredPosition on a fully static hierarchy with
+    /// no per-frame layout churn anywhere (the size/text-flicker fix).</summary>
     public ToastCard Build(Transform parent, string message, NotificationKind kind)
     {
         var kindColor = ToColor(ToastThemeAssets.KindColor(kind));
@@ -67,10 +77,11 @@ internal sealed class ToastCardBuilder
         var cardFit = card.AddComponent<ContentSizeFitter>();
         cardFit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        // Bg owns a rounded Mask; Accent is a CHILD of Bg so its square left corners are clipped to the
-        // card's rounded silhouette (the square-left-corner fix). Content/Countdown stay card children.
-        var bg = BuildBg(card.transform);
-        BuildAccent(bg.transform, kindColor);
+        // NO stencil mask. The Accent is a baked LEFT-rounded sprite drawn at the card's left edge —
+        // its rounded left corners mirror the card silhouette by construction. Bg / Accent / Countdown
+        // are ignore-layout card children; only Content drives the measured height.
+        BuildBg(card.transform);
+        BuildAccent(card.transform, kindColor);
         var content = BuildContent(card.transform);
         BuildHeader(content.transform, message, kind, kindColor);
         var countdown = BuildCountdown(card.transform, kindColor);
@@ -81,17 +92,34 @@ internal sealed class ToastCardBuilder
     }
 
     // Measure the multi-line card once (nested rebuild measures the wrapped Message height), capture the
-    // resulting width/height as a fixed sizeDelta, then DISABLE the fitter + size-controlling layout group
-    // so subsequent frames don't recompute layout. After this the card is a static-size unit: the animator
-    // tweens scale/alpha/Y only, and the renderer reads this frozen height for stack-Y.
+    // resulting width/height as a fixed sizeDelta, then DISABLE every layout-driving component in the whole
+    // card sub-hierarchy — not just the card-level fitter/VLG, but the inner Content VerticalLayoutGroup,
+    // the Header HorizontalLayoutGroup, and each text-slot layout group. After this the card is a fully
+    // static unit: positions and sizes are baked, so the scale/alpha tween cannot trigger any re-layout
+    // (the text-flicker fix). The animator tweens scale/alpha/Y only; the renderer reads this frozen height.
     private static void FreezeSize(GameObject card, RectTransform rect, VerticalLayoutGroup cardLayout, ContentSizeFitter cardFit)
     {
+        // One settling pass with the card-level fitter still live so the wrapped Message height resolves.
         LayoutRebuilder.ForceRebuildLayoutImmediate(rect);
         float w = rect.rect.width;
         float h = rect.rect.height;
         cardFit.enabled = false;
         cardLayout.enabled = false;
         rect.sizeDelta = new Vector2(w, h);
+
+        // Freeze EVERYTHING below the card too, so no descendant can re-lay-out while the card tweens.
+        FreezeDescendantLayout(card.transform);
+    }
+
+    // Disable every ContentSizeFitter and layout group at/under <paramref name="root"/> so the measured
+    // child positions/sizes become static. Runs after the single measure pass; the GetComponentsInChildren
+    // walk is one-shot at build time (not on the per-frame path), so its cost is irrelevant to the tween.
+    private static void FreezeDescendantLayout(Transform root)
+    {
+        foreach (var lg in root.GetComponentsInChildren<LayoutGroup>(includeInactive: true))
+            lg.enabled = false;
+        foreach (var fit in root.GetComponentsInChildren<ContentSizeFitter>(includeInactive: true))
+            fit.enabled = false;
     }
 
     private GameObject BuildBg(Transform parent)
@@ -101,10 +129,7 @@ internal sealed class ToastCardBuilder
         UGuiPrimitives.Stretch(bg);
         var img = bg.AddComponent<Image>();
         img.sprite = _assets.CardBgSprite; img.type = Image.Type.Sliced; img.raycastTarget = false;
-        // Rounded stencil mask: children (the Accent) are clipped to this sprite's alpha → the accent's
-        // left corners follow the card's 8px radius. showMaskGraphic keeps the bg itself visible.
-        var mask = bg.AddComponent<Mask>();
-        mask.showMaskGraphic = true;
+        // No Mask — the accent rounds its own left corners via a baked sprite (see BuildAccent).
         return bg;
     }
 
@@ -115,10 +140,12 @@ internal sealed class ToastCardBuilder
         var rt = accent.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 0f); rt.anchorMax = new Vector2(0f, 1f);   // left edge, full height
         rt.pivot = new Vector2(0f, 0.5f);
-        rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(AccentWidth, 0f);
+        // Width = AccentWidth + corner radius so the rounded left corner zone reads. The straight right
+        // band of the sliced sprite stretches; the rounded TL/BL corners stay fixed at the card radius.
+        rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(AccentSpriteWidth, 0f);
         var img = accent.AddComponent<Image>();
-        img.sprite = _assets.WhiteSprite; img.type = Image.Type.Simple; img.color = kindColor; img.raycastTarget = false;
-        img.maskable = true;   // clipped to Bg's rounded mask → rounded left corners
+        // Baked LEFT-rounded white strip, 9-sliced, tinted per-kind. NO stencil mask anywhere.
+        img.sprite = _assets.AccentSprite; img.type = Image.Type.Sliced; img.color = kindColor; img.raycastTarget = false;
     }
 
     private GameObject BuildContent(Transform parent)
