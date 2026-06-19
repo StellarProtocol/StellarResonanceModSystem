@@ -178,28 +178,26 @@ internal sealed partial class PandaLoadoutProbe
     // own handler rather than crashing the chunk. No external text interpolated.
     private const string IntrospectionChunk =
         "local lines={}" +
-        " local function L(s) s=\"[StellarLI] \"..tostring(s); lines[#lines+1]=s;" +
-        " pcall(function() UnityEngine.Debug.Log(s) end) end" +
+        " local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local vm=Z.VMMgr.GetVM(\"profession\")" +
         " L(\"=== begin ===\")" +
-        " local keys={\"profession\",\"professionproject\",\"profession_project\",\"equip\"," +
-        "\"loadout\",\"role\",\"adventurer\",\"build\",\"professionview\",\"professionmain\"," +
-        "\"spec\",\"professionProject\",\"ProfessionProject\",\"Profession\"}" +
-        " for _,n in ipairs(keys) do" +
-        "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(n) end)" +
-        "  if ok and vm then" +
-        "   L(\"VM '\"..n..\"' type=\"..type(vm))" +
-        "   local ok2,err=pcall(function()" +
-        "    for k,v in pairs(vm) do L(\"  \"..tostring(k)..\"=\"..type(v)) end" +
-        "   end)" +
-        "   if not ok2 then L(\"  (pairs failed: \"..tostring(err)..\")\") end" +
-        "  else" +
-        "   L(\"VM '\"..n..\"' MISSING (ok=\"..tostring(ok)..\")\")" +
+        " if not vm then L(\"profession VM nil\") else" +
+        "  local function call0(fn)" +
+        "   local ok,r=pcall(function() return vm[fn]() end)" +
+        "   if not ok then ok,r=pcall(function() return vm[fn](vm) end) end" +
+        "   return ok,r end" +
+        "  local function dumpval(p,v)" +
+        "   local t=type(v) L(p..\" type=\"..t)" +
+        "   if t==\"table\" then local n=0 for k,vv in pairs(v) do n=n+1 if n<=60 then" +
+        "     local sv=(type(vv)==\"table\") and \"<table>\" or tostring(vv)" +
+        "     L(p..\"  [\"..tostring(k)..\"]=\"..type(vv)..\" \"..sv) end end L(p..\"  #keys=\"..n)" +
+        "   else L(p..\"  val=\"..tostring(v)) end end" +
+        "  for _,fn in ipairs({\"GetCurProfession\",\"GetContainerProfession\",\"GetProfessionDropId\"}) do" +
+        "   local ok,r=call0(fn)" +
+        "   L(fn..\" ok=\"..tostring(ok))" +
+        "   if ok then dumpval(fn, r) end" +
         "  end" +
         " end" +
-        " local mok,mgr=pcall(function() return Z.VMMgr end)" +
-        " L(\"Z.VMMgr ok=\"..tostring(mok)..\" type=\"..type(mgr))" +
-        " local rok,rerr=pcall(function() for k,v in pairs(mgr) do L(\"  reg \"..tostring(k)..\"=\"..type(v)) end end)" +
-        " if not rok then L(\"  (VMMgr pairs failed: \"..tostring(rerr)..\")\") end" +
         " L(\"=== end ===\")" +
         " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
