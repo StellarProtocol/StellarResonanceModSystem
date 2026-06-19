@@ -156,15 +156,14 @@ internal sealed partial class PandaLoadoutProbe
         " local function dump(p,t,d) if d>4 then return end for k,v in pairs(t) do local tv=type(v)" +
         "  if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
         "  elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
-        " L(\"=== begin ===\") L(\"step1 pre-coro\") flush()" +
-        " local co=Z.CoroUtil.create_coro_xpcall(function()" +
-        "  L(\"step2 in-coro running=\"..tostring(coroutine.running()~=nil)) flush()" +
+        " L(\"=== begin ===\") L(\"step1 pre-coro\") flush();" +
+        " (Z.CoroUtil.create_coro_xpcall(function()" +
+        "  L(\"step2 in-coro\") flush()" +
         "  local vm=Z.VMMgr.GetVM(\"weapon\")" +
         "  L(\"step3 vm=\"..type(vm)) flush()" +
         "  local data=vm:AsyncGetRolePlanData()" +
         "  L(\"step4 returned type=\"..type(data)) flush()" +
         "  if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
         "  L(\"=== end ===\") flush()" +
-        " end)" +
-        " co()";
+        " end))()";
 }
