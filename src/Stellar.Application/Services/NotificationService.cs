@@ -5,11 +5,20 @@ using Stellar.Abstractions.Services;
 
 namespace Stellar.Application.Services;
 
-/// <summary>One active toast: its text, kind, and the monotonic-clock time (seconds) at which it expires.</summary>
+/// <summary>One active toast: a stable identity plus its text, kind, and lifetime window
+/// (monotonic-clock seconds). The renderer diffs the live set by <paramref name="Id"/> so it
+/// can animate spawn/exit/reflow, and uses <paramref name="CreatedAt"/>/<paramref name="Duration"/>
+/// for the linear countdown bar.</summary>
+/// <param name="Id">Monotonic, process-unique identity assigned at enqueue. The renderer keys
+/// its per-card state off this so re-draining the same toast doesn't respawn it.</param>
 /// <param name="Message">The text to display.</param>
 /// <param name="Kind">Severity / intent, used by the renderer to pick a colour.</param>
+/// <param name="CreatedAt">Monotonic-clock time (seconds) at which the toast was enqueued.</param>
 /// <param name="ExpiresAt">Monotonic-clock time (seconds) past which the toast should disappear.</param>
-public readonly record struct ActiveToast(string Message, NotificationKind Kind, double ExpiresAt);
+/// <param name="Duration">Configured lifetime in seconds (<c>ExpiresAt - CreatedAt</c>), kept
+/// explicitly so the countdown bar doesn't have to recompute it from the two clocks.</param>
+public readonly record struct ActiveToast(
+    long Id, string Message, NotificationKind Kind, double CreatedAt, double ExpiresAt, float Duration);
 
 /// <summary>
 /// <see cref="INotifications"/> implementation — a thread-safe queue of transient toasts.
@@ -29,6 +38,7 @@ internal sealed class NotificationService : INotifications
     private readonly Func<double> _now;
     private readonly object _gate = new();
     private readonly List<ActiveToast> _toasts = new();
+    private long _nextId;   // monotonic toast identity; assigned under _gate in Notify
 
     /// <summary>Production ctor — uses a process-monotonic stopwatch clock.</summary>
     public NotificationService() : this(MakeStopwatchClock()) { }
@@ -46,9 +56,10 @@ internal sealed class NotificationService : INotifications
         var life = seconds ?? DefaultSeconds;
         if (life <= 0f) return;
 
-        var toast = new ActiveToast(message, kind, _now() + life);
+        var createdAt = _now();
         lock (_gate)
         {
+            var toast = new ActiveToast(++_nextId, message, kind, createdAt, createdAt + life, life);
             _toasts.Add(toast);
             if (_toasts.Count > MaxToasts) _toasts.RemoveAt(0);
         }

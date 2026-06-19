@@ -33,6 +33,28 @@ public sealed class NotificationServiceTests
     }
 
     [Fact]
+    public void Notify_stamps_id_created_at_and_duration()
+    {
+        var (svc, clock) = Build();
+        clock.Now = 5.0;
+        svc.Notify("a", NotificationKind.Info, 3f);
+        svc.Notify("b", NotificationKind.Info, 4f);
+
+        var active = svc.Drain(clock.Now);
+
+        // Monotonic, distinct, ascending ids assigned at enqueue.
+        Assert.True(active[0].Id > 0);
+        Assert.True(active[1].Id > active[0].Id);
+
+        // CreatedAt = the clock at Notify; Duration = configured life; ExpiresAt = sum.
+        Assert.Equal(5.0, active[0].CreatedAt);
+        Assert.Equal(3f, active[0].Duration);
+        Assert.Equal(8.0, active[0].ExpiresAt);
+        Assert.Equal(4f, active[1].Duration);
+        Assert.Equal(9.0, active[1].ExpiresAt);
+    }
+
+    [Fact]
     public void Drain_drops_expired_toasts()
     {
         var (svc, clock) = Build();

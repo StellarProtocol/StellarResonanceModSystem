@@ -164,7 +164,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildInputAndLayoutServices(log);
         BuildNativeUiServices(log);
         BuildHudServices(log);
-        BuildNotificationServices(log);   // toast surface — renders through the HUD toolkit built above
+        BuildNotificationServices(log);   // toast surface — self-owned animated ToastRenderer canvas
         BuildWindowServices(log);
         BuildLauncherServices();
         BuildInventoryServices(log, typeRegistry);
