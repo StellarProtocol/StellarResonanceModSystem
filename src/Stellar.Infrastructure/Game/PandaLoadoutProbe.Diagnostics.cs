@@ -96,7 +96,16 @@ internal sealed partial class PandaLoadoutProbe
         try
         {
             _doString.Invoke(state, new object[] { IntrospectionChunk, ChunkName + ".Introspect" });
-            _log.Info("[Stellar][Loadout][LI] introspection chunk dispatched — grep BepInEx log for [StellarLI]");
+            // Primary channel: read the dump the chunk stashed in the _StellarLI global
+            // (independent of whether UnityEngine.Debug.Log routes to the BepInEx log).
+            if (DumpLuaGlobalString(state, "_StellarLI"))
+            {
+                _introspectionDone = true;   // captured — stop repeating
+            }
+            else
+            {
+                _log.Info("[Stellar][Loadout][LI] chunk dispatched but _StellarLI global was nil/empty this pass");
+            }
         }
         catch (Exception ex)
         {
@@ -106,38 +115,65 @@ internal sealed partial class PandaLoadoutProbe
         }
     }
 
+    // Reads a Lua string global (the introspection dump) via the tolua# LuaState
+    // string indexer (object this[string]) and logs each line. Returns true if a
+    // non-empty value was read.
+    private bool DumpLuaGlobalString(object state, string globalName)
+    {
+        try
+        {
+            var idx = state.GetType().GetMethod("get_Item", AnyInstance, binder: null,
+                types: new[] { typeof(string) }, modifiers: null);
+            if (idx is null)
+            {
+                _log.Warning("[Stellar][Loadout][LI] LuaState string indexer not found — cannot read dump global");
+                return false;
+            }
+            var val = idx.Invoke(state, new object[] { globalName });
+            var text = val?.ToString();
+            if (string.IsNullOrEmpty(text)) return false;
+            foreach (var line in text.Split('\n'))
+            {
+                _log.Info(line.StartsWith("[StellarLI]", StringComparison.Ordinal) ? line : "[StellarLI] " + line);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Stellar][Loadout][LI] global read failed: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
     // Lua chunk: enumerate candidate VM keys, dump each resolved VM's members, then
     // for the strongest candidates probe known-shape getters (project list) and log
     // the entry fields. Logs to the BepInEx log via CS.UnityEngine.Debug.Log under
     // [StellarLI]. Wrapped in create_coro_xpcall so any error is logged by the game's
     // own handler rather than crashing the chunk. No external text interpolated.
     private const string IntrospectionChunk =
-        "(Z.CoroUtil.create_coro_xpcall(function()" +
-        " local L=function(s) CS.UnityEngine.Debug.Log(\"[StellarLI] \"..tostring(s)) end" +
-        " L(\"=== loadout VM introspection begin ===\")" +
+        "local lines={}" +
+        " local function L(s) s=\"[StellarLI] \"..tostring(s); lines[#lines+1]=s;" +
+        " pcall(function() UnityEngine.Debug.Log(s) end) end" +
+        " L(\"=== begin ===\")" +
         " local keys={\"profession\",\"professionproject\",\"profession_project\",\"equip\"," +
-        "\"loadout\",\"role\",\"adventurer\",\"build\",\"professionview\",\"professionmain\",\"spec\"}" +
+        "\"loadout\",\"role\",\"adventurer\",\"build\",\"professionview\",\"professionmain\"," +
+        "\"spec\",\"professionProject\",\"ProfessionProject\",\"Profession\"}" +
         " for _,n in ipairs(keys) do" +
         "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(n) end)" +
         "  if ok and vm then" +
-        "   L(\"VM '\"..n..\"' resolved; members:\")" +
-        "   for k,v in pairs(vm) do" +
-        "    if type(v)==\"function\" then" +
-        "     local lk=tostring(k):lower()" +
-        "     if lk:find(\"project\") or lk:find(\"profession\") or lk:find(\"change\")" +
-        " or lk:find(\"switch\") or lk:find(\"use\") or lk:find(\"apply\") or lk:find(\"list\")" +
-        " or lk:find(\"get\") or lk:find(\"current\") then" +
-        "      L(\"  fn \"..tostring(k))" +
-        "     end" +
-        "    else" +
-        "     L(\"  \"..tostring(k)..\"=\"..type(v))" +
-        "    end" +
-        "   end" +
+        "   L(\"VM '\"..n..\"' type=\"..type(vm))" +
+        "   local ok2,err=pcall(function()" +
+        "    for k,v in pairs(vm) do L(\"  \"..tostring(k)..\"=\"..type(v)) end" +
+        "   end)" +
+        "   if not ok2 then L(\"  (pairs failed: \"..tostring(err)..\")\") end" +
+        "  else" +
+        "   L(\"VM '\"..n..\"' MISSING (ok=\"..tostring(ok)..\")\")" +
         "  end" +
         " end" +
-        " L(\"=== VMMgr registry keys (fallback) ===\")" +
         " local mok,mgr=pcall(function() return Z.VMMgr end)" +
-        " if mok and mgr then for k,v in pairs(mgr) do L(\"  reg \"..tostring(k)..\"=\"..type(v)) end end" +
-        " L(\"=== loadout VM introspection end ===\")" +
-        " end))()";
+        " L(\"Z.VMMgr ok=\"..tostring(mok)..\" type=\"..type(mgr))" +
+        " local rok,rerr=pcall(function() for k,v in pairs(mgr) do L(\"  reg \"..tostring(k)..\"=\"..type(v)) end end)" +
+        " if not rok then L(\"  (VMMgr pairs failed: \"..tostring(rerr)..\")\") end" +
+        " L(\"=== end ===\")" +
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
