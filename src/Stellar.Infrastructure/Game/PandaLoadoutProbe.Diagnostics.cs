@@ -137,24 +137,23 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // VMs live in Z.VMMgr.GetVM's closure (an upvalue table), NOT as reachable Z
-    // subtables — so Z-traversal can't see them. Use debug.getupvalue to read the
-    // VM-registry/cache table off GetVM/Init and enumerate EVERY registered VM key.
+    // Dump the relevant functions of the candidate loadout VMs (the 138-key registry
+    // dump named these). The loadout/profession-project switch should appear as a
+    // Change/Use/Apply/Switch/Select function on one of them.
     private const string ScanChunk =
         "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local kw={\"project\",\"plan\",\"profession\",\"change\",\"switch\",\"use\",\"apply\"," +
+        "\"select\",\"save\",\"cur\",\"active\",\"container\",\"list\",\"get\",\"loadout\",\"scheme\"}" +
+        " local function match(n) n=tostring(n):lower() for _,k in ipairs(kw) do if n:find(k) then return true end end return false end" +
+        " local function dumpvm(key)" +
+        "  local ok,vm=pcall(function() return Z.VMMgr.GetVM(key) end)" +
+        "  if not ok or type(vm)~=\"table\" then L(\"VM '\"..key..\"' MISSING\") return end" +
+        "  L(\"VM '\"..key..\"':\") local n=0" +
+        "  for k,v in pairs(vm) do if type(v)==\"function\" and match(k) then n=n+1 L(\"  \"..tostring(k)) end end" +
+        "  L(\"  (#match=\"..n..\")\") end" +
         " L(\"=== begin ===\")" +
-        " if not debug or not debug.getupvalue then L(\"no debug lib\") else" +
-        "  local function dumpups(label, fn)" +
-        "   if type(fn)~=\"function\" then L(label..\" not a function\") return end" +
-        "   local i=1 while true do local n,v=debug.getupvalue(fn,i) if not n then break end" +
-        "    L(label..\" up[\"..i..\"] \"..tostring(n)..\"=\"..type(v))" +
-        "    if type(v)==\"table\" then local cnt=0" +
-        "     for k,vv in pairs(v) do cnt=cnt+1 if cnt<=120 then L(\"    key \"..tostring(k)..\"=\"..type(vv)) end end" +
-        "     L(\"    (#keys=\"..cnt..\")\") end" +
-        "    i=i+1 end end" +
-        "  dumpups(\"GetVM\", Z.VMMgr.GetVM)" +
-        "  dumpups(\"Init\", Z.VMMgr.Init)" +
-        " end" +
+        " for _,key in ipairs({\"equip_system\",\"characterinfo_gather\",\"rolelevel_main\"," +
+        "\"weapon\",\"talent_skill\",\"season_talent\",\"skill\",\"profession\",\"weapon_skill\"}) do dumpvm(key) end" +
         " L(\"=== end ===\")" +
         " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
