@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Stellar.Abstractions.Diagnostics;
@@ -12,47 +13,55 @@ using Stellar.Application.Abstractions;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Reflection-based <see cref="ILoadoutProbe"/>. Switches the player's active
-/// loadout — internally the game's <b>Profession Project</b> system — through the
-/// game's own Lua VM rather than constructing packets (mirror of
-/// <see cref="PandaModuleEquipProbe"/>).
+/// Reflection-based <see cref="ILoadoutProbe"/>. Reads + switches the player's active
+/// loadout — internally the game's <b>Role Plan</b> system on the <c>weapon</c> Lua VM —
+/// through the game's own Lua bridge + <c>WorldProxy</c> RPCs rather than constructing
+/// packets (mirror of <see cref="PandaModuleEquipProbe"/>).
 ///
-/// <para><b>Why the Lua bridge:</b> recon (<c>recon/loadout-switch-findings.md</c>
-/// F1) established that the switch is a single server-governed RPC keyed on one int
-/// (<c>CurrentProfessionProjectId</c>), invoked from Lua via
-/// <c>Z.VMMgr.GetVM("&lt;vm&gt;").&lt;ApplyFn&gt;(id, token)</c> — there is no C#
-/// method/RPC to reflect against (the proxy dispatches it by numeric methodId on the
-/// <c>ForLua</c> path). Driving the game's own VM runs every server-side check
-/// (combat-lock 5018/5019, dungeon-lock 5020, profession/name-group match 7061/7054,
-/// unlock-condition 5025) instead of replicating them.</para>
+/// <para><b>Mechanism (CONFIRMED — <c>recon/loadout-switch-findings.md</c> § CONFIRMED
+/// MECHANISM):</b> the plan list + current id come from a <c>SyncProjectList</c> RPC
+/// cached in the <c>weapon_data</c> model; the switch is
+/// <c>require("zproxy.world_proxy").SwitchProject({oldProjectId,newProjectId}, token)</c>,
+/// returning <c>ret.errCode</c> (<c>EErrorCode</c>; 0 = success). The server runs every
+/// validation (combat-lock 5018, no-such-plan 5022, profession-change 5026, …) — we
+/// never bypass it.</para>
 ///
-/// <para><b>Discovery-first:</b> the C# dumps do NOT carry the Lua VM key, apply
-/// function name, or saved-project list getter (they live in compiled Lua bytecode).
-/// <see cref="PandaLoadoutProbe"/> ships with a one-shot in-world INTROSPECTION
-/// diagnostic (<c>PandaLoadoutProbe.Diagnostics.cs</c>) that dumps the candidate VMs +
-/// their members to the BepInEx log so the apply/list calls can be pinned, then
-/// filled into the constants below. Until pinned, <see cref="ReadLoadouts"/> returns
-/// empty and <see cref="CallApplyAsync"/> returns
-/// <see cref="LoadoutResult.GameApiUnavailable"/>; the current-id read
-/// (<see cref="ReadCurrentIndex"/>) is C#-reflectable and works independently.</para>
+/// <para><b>Read path:</b> a throttled refresh chunk (every ~5s, plus once on resolve
+/// and after a switch) fires the RPC and serializes <c>CurPlanId</c> + each plan's
+/// id/name into the <c>_StellarLoadoutData</c> Lua global; each tick C# reads + parses
+/// it into the cache that <see cref="ReadLoadouts"/> / <see cref="ReadCurrentIndex"/>
+/// return. The async RPC writes the global a frame+ after firing, so reading the
+/// previous result each tick is correct.</para>
 ///
-/// <para>SOLID partial layout — Lua-bridge reflection + chunk builders + current-id
-/// container read live in <c>PandaLoadoutProbe.Resolution.cs</c>; the introspection
-/// one-shot + gated per-event logging in <c>PandaLoadoutProbe.Diagnostics.cs</c>,
-/// gated on <see cref="StellarDiagnostics.IsEnabled"/>.</para>
+/// <para>SOLID partial layout — Lua-bridge reflection + chunk builders + Lua-global
+/// reads live in <c>PandaLoadoutProbe.Resolution.cs</c>; gated per-event logging in
+/// <c>PandaLoadoutProbe.Diagnostics.cs</c>.</para>
 /// </summary>
 internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 {
-    // Loadout switch is a server RPC; allow more headroom than module-equip's 6s
-    // (profession/spec/gear apply is heavier). Poll CurrentProfessionProjectId
-    // until it equals the requested id (Success) or this elapses (Timeout).
+    // Loadout switch is a server RPC; allow headroom (profession/spec/gear apply is
+    // heavier than module-equip). Poll the current id + the errCode global until the
+    // switch resolves or this elapses.
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(8);
+
+    // Refresh cadence — fire SyncProjectList at most this often (plus once on first
+    // resolve and immediately after a successful switch). 60 ticks/s ⇒ ~5s.
+    private const int RefreshEveryTicks = 300;
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
 
-    // Single in-flight switch. The whole loadout is one server-side int, so only
-    // one switch can be outstanding at a time; a new dispatch supersedes the old.
+    // Parsed read cache (written on the Update tick, read by the Application layer
+    // tick — both on the main thread, so plain fields are fine).
+    private IReadOnlyList<LoadoutEntry> _loadouts = Array.Empty<LoadoutEntry>();
+    private int? _currentId;
+    private string? _lastDataRaw;
+
+    private int _refreshTickCounter;
+    private bool _refreshedOnce;
+
+    // Single in-flight switch. The whole loadout is one server-side id, so only one
+    // switch can be outstanding at a time; a new dispatch supersedes the old.
     private readonly object _pendingLock = new();
     private PendingSwitch? _pending;
 
@@ -68,18 +77,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
     public bool IsResolved => _bridgeResolved;
 
-    public IReadOnlyList<LoadoutEntry> ReadLoadouts()
-    {
-        // Until the VM list getter is pinned by introspection, return empty.
-        // LoadoutService treats this as "no loadouts known" without error.
-        if (!_listGetterResolved)
-        {
-            return Array.Empty<LoadoutEntry>();
-        }
-        return ReadLoadoutsViaVm();
-    }
+    public IReadOnlyList<LoadoutEntry> ReadLoadouts() => _loadouts;
 
-    public int? ReadCurrentIndex() => ReadCurrentProfessionProjectId();
+    public int? ReadCurrentIndex() => _currentId;
 
     public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
     {
@@ -88,14 +88,13 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             return Task.FromResult(LoadoutResult.Cancelled);
         }
 
-        // Apply requires both the Lua bridge AND a pinned apply-function name.
-        if (!EnsureBridgeResolved() || !_applyFnResolved)
+        if (!EnsureBridgeResolved())
         {
             return Task.FromResult(LoadoutResult.GameApiUnavailable);
         }
 
         // Already on the requested loadout → immediate success (no-op switch).
-        if (ReadCurrentProfessionProjectId() == index)
+        if (_currentId == index)
         {
             return Task.FromResult(LoadoutResult.Success);
         }
@@ -124,19 +123,17 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
     /// <summary>
     /// Called per Update tick from the Host service tick (the Unity main thread).
-    /// Runs the one-shot introspection (once the bridge resolves), fires any
-    /// deferred Lua dispatch, then polls the current-id for completion of the
-    /// in-flight switch.
+    /// Resolves the bridge (throttled), fires the throttled refresh, reads back the
+    /// cached loadout data, fires any deferred switch dispatch, then polls the switch
+    /// result global + current id for completion of the in-flight switch.
     /// </summary>
     public void DrainPendingCompletions()
     {
-        // Proactively resolve the bridge (throttled) so IsAvailable can flip true
-        // without first needing a dispatch.
         TryResolveBridgeIfDue();
+        if (!_bridgeResolved) return;
 
-        // One-shot in-world introspection — discovers the VM/apply/list names.
-        RunIntrospectionIfDue();
-
+        RefreshIfDue();
+        ParseLoadoutData();
         DrainPendingDispatches();
 
         PendingSwitch? pending;
@@ -150,13 +147,64 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         }
     }
 
+    // Fire the SyncProjectList refresh chunk on first resolve, then every
+    // RefreshEveryTicks. (Also fired immediately after a successful switch, below.)
+    private void RefreshIfDue()
+    {
+        if (!_refreshedOnce)
+        {
+            _refreshedOnce = true;
+            InvokeChunk(RefreshChunk);
+            return;
+        }
+        if (_refreshTickCounter++ % RefreshEveryTicks == 0)
+        {
+            InvokeChunk(RefreshChunk);
+        }
+    }
+
+    // Read + parse the data global written by the refresh chunk. Skips reparse when
+    // the raw string is unchanged. First line is "CUR=<int>"; each subsequent
+    // "<planId>\t<name>" line is a LoadoutEntry.
+    private void ParseLoadoutData()
+    {
+        var raw = ReadLuaGlobalString(DataGlobal);
+        if (string.IsNullOrEmpty(raw) || raw == _lastDataRaw) return;
+        _lastDataRaw = raw;
+
+        int? current = null;
+        var entries = new List<LoadoutEntry>();
+        foreach (var line in raw!.Split('\n'))
+        {
+            if (line.StartsWith("CUR=", StringComparison.Ordinal))
+            {
+                if (int.TryParse(line.AsSpan(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c))
+                {
+                    current = c;
+                }
+                continue;
+            }
+            var tab = line.IndexOf('\t');
+            if (tab <= 0) continue;
+            if (!int.TryParse(line.AsSpan(0, tab), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) continue;
+            var name = line.Substring(tab + 1);
+            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name));
+        }
+
+        _currentId = current;
+        _loadouts = entries;
+    }
+
     private void DrainPendingDispatches()
     {
         while (_toDispatch.TryDequeue(out var pending))
         {
             if (pending.IsCompleted) continue;
 
-            if (InvokeLuaDispatch(pending.TargetId))
+            // Clear the stale result before dispatching so the poll only sees this
+            // switch's errCode.
+            InvokeChunk(ClearSwitchGlobalChunk);
+            if (InvokeChunk(BuildSwitchChunk(pending.TargetId)))
             {
                 DiagDispatched(pending.TargetId);
             }
@@ -167,17 +215,25 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         }
     }
 
-    // Decide an in-flight switch's outcome from the current id, or null to keep
-    // waiting. The id flipping to the target is the only positive completion
-    // signal; refusals (in-combat etc.) leave the id unchanged and resolve as
-    // Timeout (the game's own xpcall logs the EErrorCode under ChunkName).
+    // Decide an in-flight switch's outcome, or null to keep waiting. Positive
+    // completion: the current id flips to the target (authoritative). Otherwise map
+    // the cached errCode; on timeout return Timeout.
     private LoadoutResult? Evaluate(PendingSwitch pending)
     {
         if (pending.IsCompleted) return null;
 
-        if (ReadCurrentProfessionProjectId() == pending.TargetId)
+        if (_currentId == pending.TargetId)
         {
+            TriggerRefreshAfterSwitch();
             return LoadoutResult.Success;
+        }
+
+        var err = ReadLuaGlobalString(SwitchGlobal);
+        if (!string.IsNullOrEmpty(err))
+        {
+            var mapped = MapErrCode(err!);
+            if (mapped == LoadoutResult.Success) TriggerRefreshAfterSwitch();
+            return mapped;
         }
 
         if (pending.Elapsed >= CompletionTimeout)
@@ -187,6 +243,37 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
         return null;
     }
+
+    // Maps the WorldProxy.SwitchProject errCode (EErrorCode) string to a LoadoutResult.
+    // EErrorCode success == 0 ("Success"); treat 0 / "Success" / "nil" (no error set on
+    // ok) as Success. Codes: 5018 in-combat, 5022 no-such-plan, 5026 profession-change
+    // rejected; any other non-zero numeric → Rejected.
+    private static LoadoutResult MapErrCode(string err)
+    {
+        if (string.Equals(err, "nil", StringComparison.Ordinal) ||
+            string.Equals(err, "Success", StringComparison.OrdinalIgnoreCase))
+        {
+            return LoadoutResult.Success;
+        }
+        if (!int.TryParse(err, NumberStyles.Integer, CultureInfo.InvariantCulture, out var code))
+        {
+            // Non-numeric, non-"Success" enum name → treat as a refusal.
+            return LoadoutResult.Rejected;
+        }
+        return code switch
+        {
+            0 => LoadoutResult.Success,
+            5018 => LoadoutResult.InCombat,
+            5019 => LoadoutResult.InCombat,
+            5022 => LoadoutResult.NoSuchLoadout,
+            5026 => LoadoutResult.Rejected,
+            _ => LoadoutResult.Rejected,
+        };
+    }
+
+    // Force the next tick to re-fire SyncProjectList so the list + current id reflect
+    // the switch promptly (rather than waiting up to RefreshEveryTicks).
+    private void TriggerRefreshAfterSwitch() => _refreshTickCounter = 0;
 
     private void RemovePending(PendingSwitch pending)
     {

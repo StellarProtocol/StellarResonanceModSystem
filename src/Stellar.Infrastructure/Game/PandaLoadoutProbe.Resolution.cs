@@ -1,29 +1,32 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
-using Stellar.Application.Abstractions;
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
+using Stellar.Abstractions.Domain.Loadout;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Lua-bridge reflection-resolution + read path for <see cref="PandaLoadoutProbe"/>.
+/// Lua-bridge reflection-resolution + chunk builders + Lua-global reads for
+/// <see cref="PandaLoadoutProbe"/>.
 ///
 /// <para>Resolves the game's <b>tolua#</b> <c>LuaState</c> + <c>DoString</c> entry
 /// point identically to <see cref="PandaModuleEquipProbe"/> (static property
 /// <c>ZLuaFramework.LuaState.mainState</c> + <c>void DoString(string,string)</c>),
-/// then runs the switch chunk
-/// <c>Z.VMMgr.GetVM("&lt;vm&gt;").&lt;ApplyFn&gt;(projectId, token)</c> inside the
-/// canonical <c>Z.CoroUtil.create_coro_xpcall(fn)()</c> wrapper (REQUIRED for any
-/// async VM call that yields on an RPC reply — see
-/// <see cref="PandaModuleEquipProbe.BuildEquipChunk"/>).</para>
+/// then drives the loadout ("Role Plan") system through the <c>weapon</c> Lua VM and
+/// <c>WorldProxy</c> RPCs — the CONFIRMED mechanism from
+/// <c>recon/loadout-switch-findings.md</c> (§ CONFIRMED MECHANISM): the switch is
+/// <c>require("zproxy.world_proxy").SwitchProject({oldProjectId,newProjectId}, token)</c>
+/// and the list/current id come from <c>SyncProjectList</c> cached in the
+/// <c>weapon_data</c> model. All async calls run inside the canonical
+/// <c>Z.CoroUtil.create_coro_xpcall(fn)()</c> wrapper with the
+/// <c>ZUtil.ZCancelSource.NeverCancelToken</c> cancel token (REQUIRED — the RPC
+/// yields, and a nil token never resumes).</para>
 ///
-/// <para>The current-id read (<see cref="ReadCurrentProfessionProjectId"/>) reaches a
-/// live <c>Zproto.CurrentProfessionProjectIdInfoContainerArchive</c>
-/// (<c>ZContainer&lt;CurrentProfessionProjectIdInfo&gt;</c>) by reflection — the same
-/// archive shape <see cref="PandaInventoryPullReader"/> reads
-/// (<c>Data__Original</c> / <c>GetDataRef()</c> expose the proto) — and returns the
-/// <c>CurrentProfessionProjectId</c> int.</para>
+/// <para>Results are read back from Lua globals via the <c>LuaState</c> string
+/// indexer, decoding the IL2CPP-wrapped string with
+/// <c>IL2CPP.Il2CppStringToManaged</c>.</para>
 /// </summary>
 internal sealed partial class PandaLoadoutProbe
 {
@@ -31,41 +34,23 @@ internal sealed partial class PandaLoadoutProbe
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
     // chunkName passed to DoString — surfaces as the source label in any Lua
-    // traceback the game logs, so a switch-chunk error is greppable.
+    // traceback the game logs, so a switch/refresh-chunk error is greppable.
     private const string ChunkName = "Stellar.LoadoutSwitch";
 
-    // ── DISCOVERED-AT-RUNTIME identifiers ──────────────────────────────────────
-    // recon/loadout-switch-findings.md F1/F3: the VM key, apply-function name, and
-    // saved-project list getter live in compiled Lua and are pinned by the in-world
-    // introspection diagnostic (PandaLoadoutProbe.Diagnostics.cs). Until pinned the
-    // resolved flags stay false: CallApplyAsync → GameApiUnavailable, ReadLoadouts →
-    // empty. The current-id read is independent and always available.
-    //
-    // UNCONFIRMED placeholders — these are the leading candidates from findings F1
-    // (naming convention) and are filled with the CONFIRMED values once the in-world
-    // introspection (RunIntrospectionIfDue) logs them. Do NOT enable apply until the
-    // VM/function are observed in the BepInEx log.
-    private const string ProfessionVmName = "profession";
-    private const string ApplyFnName = "ChangeProfessionProject";
+    // Lua globals the chunks write their results into; C# reads them back each tick.
+    private const string DataGlobal = "_StellarLoadoutData";
+    private const string SwitchGlobal = "_StellarLoadoutSwitch";
 
-    // Flip true once the corresponding identifier is pinned + verified in-world.
-    // static readonly (not const) so a not-yet-pinned (false) value does not make the
-    // gated apply/list paths compile-time-unreachable (CS0162).
-    private static readonly bool _applyFnResolved = false;
-    private static readonly bool _listGetterResolved = false;
-
-    // The mandatory cancelToken arg the game passes to async VM RPCs (mirror of
-    // module-equip). NeverCancelToken is the game's own fire-and-forget token.
+    // The mandatory cancelToken arg the game passes to async VM/proxy RPCs. NeverCancelToken
+    // is the game's own fire-and-forget token; a nil token leaves the await suspended forever.
     private const string NeverCancelToken = "ZUtil.ZCancelSource.NeverCancelToken";
-
-    private const string CurrentIdArchiveTypeName = "Zproto.CurrentProfessionProjectIdInfoContainerArchive";
-    private const string CurrentIdFieldName = "CurrentProfessionProjectId";
 
     private volatile bool _bridgeResolved;
     private bool _resolutionFailureLogged;
 
     private MethodInfo? _mainStateGetter;   // static LuaState mainState { get; }
     private MethodInfo? _doString;          // void DoString(string chunk, string chunkName)
+    private MethodInfo? _getItem;           // object get_Item(string global) — Lua string indexer
 
     private int _resolveTickCounter;
     private const int ResolveAttemptEveryTicks = 60;
@@ -118,6 +103,9 @@ internal sealed partial class PandaLoadoutProbe
             return false;
         }
 
+        _getItem = luaStateType.GetMethod("get_Item", AnyInstance, binder: null,
+            types: new[] { typeof(string) }, modifiers: null);
+
         _bridgeResolved = true;
         OnResolutionSucceeded();
         return true;
@@ -145,11 +133,11 @@ internal sealed partial class PandaLoadoutProbe
         catch { return null; }
     }
 
-    // Runs the switch chunk via DoString. Returns false on any marshalling failure
-    // so the caller maps it to GameApiUnavailable; a Lua-side error (failed
-    // pre-flight / refusal EErrorCode) is reported by the game's own xpcall handler
-    // under ChunkName, not as a C# exception.
-    private bool InvokeLuaDispatch(int projectId)
+    // Runs a chunk via DoString. Returns false on any marshalling failure so the
+    // caller maps it to GameApiUnavailable; a Lua-side error (failed pre-flight /
+    // refusal EErrorCode) is reported by the game's own xpcall handler under
+    // ChunkName + cached in the result global, not thrown as a C# exception.
+    private bool InvokeChunk(string chunk)
     {
         var state = GetMainLuaState();
         if (state is null)
@@ -159,7 +147,6 @@ internal sealed partial class PandaLoadoutProbe
         }
         if (_doString is null) return false;
 
-        var chunk = BuildSwitchChunk(ProfessionVmName, ApplyFnName, projectId);
         try
         {
             _doString.Invoke(state, new object[] { chunk, ChunkName });
@@ -174,207 +161,76 @@ internal sealed partial class PandaLoadoutProbe
         }
     }
 
-    // Builds the switch chunk mirroring the game's own loadout-dropdown row click:
-    // (Z.VMMgr.GetVM("profession")).ChangeProfessionProject(projectId, token),
-    // launched inside a child coroutine via Z.CoroUtil.create_coro_xpcall(fn)().
-    // The coroutine is REQUIRED: the switch is an async server RPC that yields on
-    // reply, and DoString runs on the bare main thread where yield throws. vmName/
-    // func are internal constants and projectId is numeric — no external text is
-    // interpolated, so there is no Lua-injection surface.
-    internal static string BuildSwitchChunk(string vmName, string func, int projectId)
-        => string.Format(
-            CultureInfo.InvariantCulture,
-            "(Z.CoroUtil.create_coro_xpcall(function() local vm=Z.VMMgr.GetVM(\"{0}\"); vm.{1}({2}, {3}) end))()",
-            vmName, func, projectId, NeverCancelToken);
-
-    // ── Saved-project list read (via the VM table) ─────────────────────────────
-    // Reads Z.VMMgr.GetVM("profession").GetProjectInfoList() by resolving the VM
-    // object + list getter through the Lua bridge's C# reflection surface. The VM
-    // is a Lua table, so the only robust C# read is the current-id container
-    // (below); the list itself is read from the cached C# model the VM exposes when
-    // available, else falls back to the current id as a single entry. See
-    // PandaLoadoutProbe.Diagnostics.cs RunIntrospectionIfDue for how the getter +
-    // entry fields were pinned.
-    private IReadOnlyList<LoadoutEntry> ReadLoadoutsViaVm()
+    // Reads one Lua string global via the tolua# LuaState string indexer, decoding
+    // the IL2CPP-wrapped result. Returns null if the bridge / indexer is unresolved
+    // or the global is unset.
+    private string? ReadLuaGlobalString(string globalName)
     {
-        var entries = ReadProjectListFromModel();
-        if (entries is not null) return entries;
-
-        // Fallback: surface at least the active loadout so the overlay/hotkeys have
-        // a valid id to round-trip while the full list read is being finalised.
-        var current = ReadCurrentProfessionProjectId();
-        return current is { } id
-            ? new[] { new LoadoutEntry(id, $"Loadout {id}") }
-            : Array.Empty<LoadoutEntry>();
-    }
-
-    // Best-effort C# read of the saved-project list off the profession model
-    // container, mirroring the current-id container hop. The list lives in a
-    // ZContainer<...> whose proto carries a repeated project field; we reflect the
-    // entries' Id/Name. Returns null if the container/shape isn't reachable (the
-    // VM-table read is the authoritative source — see findings F3).
-    private IReadOnlyList<LoadoutEntry>? ReadProjectListFromModel()
-    {
-        // The introspection diagnostic enumerates the VM members + any C# model
-        // container holding the list. When pinned to a reflectable container this
-        // method reads it; until then it returns null and the caller falls back to
-        // the current-id single entry. Left intentionally model-agnostic: the
-        // authoritative list comes from the VM's Lua table, surfaced for the plugin
-        // layer in a later task. See findings F3.
-        return null;
-    }
-
-    // ── Current-id read (CONFIRMED C#-reflectable, findings F3) ────────────────
-    private FieldInfo? _currentIdField;
-    private Func<object?>? _archiveProvider;
-    private int _currentIdResolveTickCounter;
-    private int _currentIdScanAttempts;
-    private bool _currentIdScanGaveUp;
-    private const int MaxCurrentIdScanAttempts = 3;
-
-    /// <summary>
-    /// Reads <c>CurrentProfessionProjectId</c> off the live
-    /// <c>CurrentProfessionProjectIdInfoContainerArchive</c>. Returns null until the
-    /// archive instance + field are reflectable (pre-login / pre-sync).
-    /// </summary>
-    internal int? ReadCurrentProfessionProjectId()
-    {
+        var state = GetMainLuaState();
+        if (state is null || _getItem is null) return null;
         try
         {
-            ResolveCurrentIdAccessorsIfDue();
-            var archive = _archiveProvider?.Invoke();
-            if (archive is null) return null;
-
-            var proto = ReadArchiveProto(archive);
-            if (proto is null) return null;
-
-            EnsureCurrentIdField(proto.GetType());
-            if (_currentIdField is null) return null;
-
-            var value = _currentIdField.GetValue(proto);
-            return value is int i ? i : null;
+            var text = CoerceLuaString(_getItem.Invoke(state, new object[] { globalName }));
+            return string.Equals(text, "Il2CppSystem.Object", StringComparison.Ordinal) ? null : text;
         }
         catch { return null; }
     }
 
-    private void ResolveCurrentIdAccessorsIfDue()
+    // The tolua# LuaState string indexer returns the Lua string boxed as an
+    // Il2CppSystem.Object whose managed ToString() yields the wrapper type name, not
+    // the content. Decode the underlying IL2CPP string via the interop runtime.
+    private static string? CoerceLuaString(object? val)
     {
-        // Already resolved — never scan again.
-        if (_archiveProvider is not null) return;
-        // Gave up after MaxCurrentIdScanAttempts — stop scanning so we don't stutter
-        // forever when the container has no static holder (the authoritative current-id
-        // read then comes from the VM once the apply/list names are pinned).
-        if (_currentIdScanGaveUp) return;
-
-        // CRITICAL perf gate: the archive only becomes reachable post-login/sync, so
-        // we retry — but ResolveArchiveInstanceProvider / FindTypeByShortName walk every
-        // loaded IL2CPP assembly via GetTypes(). Running that every Update frame collapses
-        // FPS (~0.2); running it every second still stutters. Throttle to once every
-        // ResolveAttemptEveryTicks calls AND cap the total attempts.
-        if (_currentIdResolveTickCounter++ % ResolveAttemptEveryTicks != 0) return;
-        if (_currentIdScanAttempts++ >= MaxCurrentIdScanAttempts)
+        if (val is null) return null;
+        if (val is string s) return s;
+        if (val is Il2CppObjectBase ob)
         {
-            _currentIdScanGaveUp = true;
-            return;
-        }
-
-        var archiveType = _typeRegistry.FindType(CurrentIdArchiveTypeName)
-            ?? FindTypeByShortName("CurrentProfessionProjectIdInfoContainerArchive");
-        if (archiveType is null) return;
-
-        // The archive is a synced ZContainer held in the game's model tree. Reach a
-        // live instance via the same static-holder / ZSingleton strategies the
-        // inventory reader uses (Strategy A/B). Re-resolve each call until found.
-        var provider = ResolveArchiveInstanceProvider(archiveType);
-        if (provider is not null) _archiveProvider = provider;
-    }
-
-    // Walks loaded assemblies for any static field/property whose value type IS the
-    // archive type (the model tree caches the container in a static-reachable slot
-    // on this build). Mirrors PandaInventoryPullReader.ResolveStaticHolderOfType.
-    private Func<object?>? ResolveArchiveInstanceProvider(Type archiveType)
-    {
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            string asmName;
-            try { asmName = asm.GetName().Name ?? string.Empty; }
-            catch { continue; }
-            if (ShouldSkipAssemblyForScan(asmName)) continue;
-
-            Type?[] types;
-            try { types = asm.GetTypes(); }
-            catch (ReflectionTypeLoadException ex) { types = ex.Types!; }
-            catch { continue; }
-
-            foreach (var t in types)
+            try
             {
-                if (t is null) continue;
-                var provider = FindArchiveHolderOn(t, archiveType);
-                if (provider is not null) return provider;
+                var ptr = ob.Pointer;
+                if (ptr != IntPtr.Zero) return IL2CPP.Il2CppStringToManaged(ptr);
             }
+            catch { /* not an IL2CPP string — fall through */ }
         }
-        return null;
+        return val.ToString();
     }
 
-    private static Func<object?>? FindArchiveHolderOn(Type t, Type archiveType)
-    {
-        PropertyInfo[] props;
-        try { props = t.GetProperties(AnyStatic); } catch { props = Array.Empty<PropertyInfo>(); }
-        foreach (var p in props)
-        {
-            Type ptype;
-            try { ptype = p.PropertyType; } catch { continue; }
-            if (!archiveType.IsAssignableFrom(ptype)) continue;
-            var captured = p;
-            return () => { try { return captured.GetValue(null); } catch { return null; } };
-        }
+    // ── Chunk builders ─────────────────────────────────────────────────────────
 
-        FieldInfo[] fields;
-        try { fields = t.GetFields(AnyStatic); } catch { fields = Array.Empty<FieldInfo>(); }
-        foreach (var f in fields)
-        {
-            Type ftype;
-            try { ftype = f.FieldType; } catch { continue; }
-            if (!archiveType.IsAssignableFrom(ftype)) continue;
-            var captured = f;
-            return () => { try { return captured.GetValue(null); } catch { return null; } };
-        }
-        return null;
-    }
+    // Refresh chunk: fire SyncProjectList (AsyncGetRolePlanData) to populate
+    // weapon_data, then serialize CurPlanId + each plan's id/name into the data
+    // global. Run inside the canonical coroutine wrapper (the RPC yields). No
+    // external text is interpolated — no Lua-injection surface.
+    private const string RefreshChunk =
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local token=(ZUtil.ZCancelSource).NeverCancelToken" +
+        " Z.VMMgr.GetVM(\"weapon\").AsyncGetRolePlanData(token)" +
+        " local wd=Z.DataMgr.Get(\"weapon_data\") local d=wd.rolePlanServerData_" +
+        " local out=\"CUR=\"..tostring(d.CurPlanId)" +
+        " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
+        "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
+        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm end end" +
+        " rawset(_G,\"" + DataGlobal + "\", out)" +
+        " end))()";
 
-    // Pulls the CurrentProfessionProjectIdInfo proto out of the archive, mirroring
-    // the inventory reader's archive access: prefer the Data__Original field, then a
-    // GetDataRef()/Data getter.
-    private static object? ReadArchiveProto(object archive)
-    {
-        var type = archive.GetType();
+    // Switch chunk: WorldProxy.SwitchProject({oldProjectId=cur, newProjectId=planId},
+    // token) inside the coroutine wrapper; cache the returned errCode in the switch
+    // global. planId is a numeric int interpolated via InvariantCulture — no
+    // injection surface. The server runs every validation (combat-lock etc.).
+    private static string BuildSwitchChunk(int planId)
+        => string.Format(
+            CultureInfo.InvariantCulture,
+            "(Z.CoroUtil.create_coro_xpcall(function()" +
+            " local token=({0}) local worldProxy=require(\"zproxy.world_proxy\")" +
+            " local wd=Z.DataMgr.Get(\"weapon_data\")" +
+            " local cur=(wd.rolePlanServerData_ and wd.rolePlanServerData_.CurPlanId) or 0" +
+            " local ret=worldProxy.SwitchProject({{oldProjectId=cur, newProjectId={1}}}, token)" +
+            " rawset(_G,\"{2}\", tostring(ret and ret.errCode))" +
+            " end))()",
+            NeverCancelToken, planId, SwitchGlobal);
 
-        var dataField = type.GetField("Data__Original", AnyInstance);
-        if (dataField is not null)
-        {
-            try { var v = dataField.GetValue(archive); if (v is not null) return v; } catch { /* fall through */ }
-        }
-
-        var getDataRef = type.GetMethod("GetDataRef", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null);
-        if (getDataRef is not null)
-        {
-            try { var v = getDataRef.Invoke(archive, Array.Empty<object>()); if (v is not null) return v; } catch { /* fall through */ }
-        }
-
-        var dataProp = type.GetProperty("Data", AnyInstance);
-        if (dataProp is not null)
-        {
-            try { return dataProp.GetValue(archive); } catch { /* fall through */ }
-        }
-        return null;
-    }
-
-    private void EnsureCurrentIdField(Type protoType)
-    {
-        if (_currentIdField is not null) return;
-        _currentIdField = protoType.GetField(CurrentIdFieldName, AnyInstance)
-            ?? protoType.GetField($"{CurrentIdFieldName}__Original", AnyInstance);
-    }
+    // Clears the switch result global before a dispatch so a stale value isn't read.
+    private const string ClearSwitchGlobalChunk = "rawset(_G,\"" + SwitchGlobal + "\", nil)";
 
     private static Type? FindTypeByShortName(string shortName)
     {
