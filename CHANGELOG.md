@@ -6,6 +6,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-19
+### Added
+- **Loadout API (`ILoadout` on `IPluginServices`)** — read the player's saved in-game loadouts
+  (the game's "Role Plan" system: class + gear + spec + modules) and switch to one. Drives the
+  game's own `AsyncSwitchRolePlan` (the path the in-game dropdown uses), so all server-side
+  validation (combat lock, etc.) is respected, never bypassed. Backed by `PandaLoadoutProbe` over
+  the tolua# Lua bridge + `WorldProxy`.
+- **Notification toasts (`INotifications` on `IPluginServices`)** — transient on-screen toasts any
+  plugin can raise (`Notify(message, kind, seconds)`), rendered top-centre with a Pop+Scale
+  animation, per-kind colour, and a countdown bar. First consumer: the LoadoutSwitcher plugin.
+
 ## [1.1.2] - 2026-06-18
 ### Fixed
 - Launcher tile icons are now live-bound: a plugin icon that loads *after* the launcher is built

@@ -18,10 +18,9 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.1.1 publishes the plugin SDK to NuGet.org
-    /// (Stellar.Abstractions / PluginContracts / Plugin.InteropRefs) so plugins
-    /// build without the framework source or a game install; framework runtime
-    /// unchanged from 1.1.0.
+    /// BepInEx chainloader happy. 1.2.0 adds the loadout API (<c>ILoadout</c> — switch
+    /// saved in-game loadouts) and a transient toast service (<c>INotifications</c>),
+    /// both on <c>IPluginServices</c>; minor bump = additive plugin-surface API.
     /// </summary>
-    public const string Value = "1.1.1";
+    public const string Value = "1.2.0";
 }
