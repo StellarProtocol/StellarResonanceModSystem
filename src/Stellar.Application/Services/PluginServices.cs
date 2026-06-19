@@ -12,6 +12,8 @@ internal sealed class PluginServices : IPluginServices
     public IPlayerStats PlayerStats { get; }
     public IInventory Inventory { get; }
     public IModuleEquip ModuleEquip { get; }
+    public ILoadout Loadout { get; }
+    public INotifications Notifications { get; }
     public IPluginConfig Config { get; }
     public IGameEvents GameEvents { get; }
     public IPlayerState PlayerState { get; }
@@ -48,6 +50,8 @@ internal sealed class PluginServices : IPluginServices
         IPlayerStats playerStats,
         IInventory inventory,
         IModuleEquip moduleEquip,
+        ILoadout loadout,
+        INotifications notifications,
         IPluginConfig config,
         IGameEvents gameEvents,
         IPlayerState playerState,
@@ -83,6 +87,8 @@ internal sealed class PluginServices : IPluginServices
         PlayerStats = playerStats;
         Inventory = inventory;
         ModuleEquip = moduleEquip;
+        Loadout = loadout;
+        Notifications = notifications;
         Config = config;
         GameEvents = gameEvents;
         PlayerState = playerState;

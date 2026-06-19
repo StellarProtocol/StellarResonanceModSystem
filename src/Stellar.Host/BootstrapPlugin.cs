@@ -164,9 +164,11 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildInputAndLayoutServices(log);
         BuildNativeUiServices(log);
         BuildHudServices(log);
+        BuildNotificationServices(log);   // toast surface — self-owned animated ToastRenderer canvas
         BuildWindowServices(log);
         BuildLauncherServices();
         BuildInventoryServices(log, typeRegistry);
+        BuildLoadoutServices(log, typeRegistry);
         // Resonance lookup must exist before the plugin-services aggregator —
         // GameAssetsService takes IGameDataResonance via its constructor. Cheap +
         // idempotent; the post-hot-update ConstructGameDataProbe shares the result.

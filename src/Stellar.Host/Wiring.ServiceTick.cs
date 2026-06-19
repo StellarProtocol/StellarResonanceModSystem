@@ -115,8 +115,7 @@ public sealed partial class BootstrapPlugin
             catch (Exception ex) { Log.LogWarning($"[boot] resonance refresh threw: {ex.Message}"); }
         }
 
-        try { _moduleEquipProbe!.DrainPendingCompletions(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
+        DrainEquipAndLoadout();
 
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:chat");
         _chatService!.Drain();
@@ -133,12 +132,26 @@ public sealed partial class BootstrapPlugin
         TickOverlayServices(deltaTime);
     }
 
+    // Drains the deferred Lua dispatches + polls completion for the module-equip and
+    // loadout (profession-project) probes, and ticks the loadout service's
+    // change-detection. Both probes touch the game's main-thread-only Lua VM, so this
+    // runs on the Update tick. Extracted from RefreshPerTickServices for the 50-LoC gate.
+    private void DrainEquipAndLoadout()
+    {
+        try { _moduleEquipProbe!.DrainPendingCompletions(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
+
+        try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
+    }
+
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the
     // real seconds since the previous tick (≈1/UpdateRateHz) — pass it (NOT Time.deltaTime, the render-frame
     // delta) so HUD bar animation converges at the right speed at any tick rate. The gate suppresses the game
     // keyboard while a window text field is focused (stops the wasd leak); guarded to defer to the spike.
     private void TickOverlayServices(float deltaTime)
     {
+        TickNotifications(deltaTime);   // animate the toast stack on the framework tick delta
         _hudService?.Tick(deltaTime);
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         _windowService?.Tick(deltaTime);

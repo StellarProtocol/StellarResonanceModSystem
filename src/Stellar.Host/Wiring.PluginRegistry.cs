@@ -29,6 +29,9 @@ public sealed partial class BootstrapPlugin
         _windowService?.DisposeAll();
         if (_windowRenderer != null && _namedTheme != null) _namedTheme.ActiveChanged -= _windowRenderer.InvalidateTheme;
         _windowRenderer?.Shutdown();
+        // Animated toast renderer: unhook the theme-switch rebake, then destroy its canvas + assets.
+        if (_toastRenderer != null && _namedTheme != null) _namedTheme.ActiveChanged -= _toastRenderer.InvalidateTheme;
+        _toastRenderer?.Shutdown();
         if (_keyboardGate != null) { _keyboardGate.Dispose(); _keyboardGate = null; }
     }
 }

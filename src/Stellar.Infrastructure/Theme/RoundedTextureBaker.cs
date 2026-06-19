@@ -53,6 +53,47 @@ internal static class RoundedTextureBaker
     }
 
     /// <summary>
+    /// Bakes a strip whose LEFT corners are rounded (top-left + bottom-left,
+    /// <paramref name="radius"/> px) while the right edge is square. Used for the
+    /// toast accent: the coloured strip sits at the card's left edge, full height,
+    /// and its rounded left corners follow the card's rounded silhouette WITHOUT a
+    /// stencil mask (a mask + fading CanvasGroup is a known IL2CPP flicker combo).
+    /// Anti-aliased via 4× super-sampling; 9-sliceable with border
+    /// (left=<paramref name="radius"/>, right=0, top/bottom=<paramref name="radius"/>)
+    /// so the straight middle band stretches while the rounded corners hold.
+    /// </summary>
+    internal static Texture2D RoundedLeft(int size, int radius, ColorRgba colour)
+    {
+        const int SS = 4;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+        {
+            hideFlags  = HideFlags.HideAndDontSave,
+            filterMode = FilterMode.Bilinear,
+            wrapMode   = TextureWrapMode.Clamp,
+        };
+        var c = new Color(colour.R, colour.G, colour.B, colour.A);
+        var pixels = new Color[size * size];
+
+        for (int py = 0; py < size; py++)
+        for (int px = 0; px < size; px++)
+        {
+            int covered = 0;
+            for (int sy = 0; sy < SS; sy++)
+            for (int sx = 0; sx < SS; sx++)
+            {
+                float fx = px + (sx + 0.5f) / SS;
+                float fy = py + (sy + 0.5f) / SS;
+                if (InsideLeftRoundedRect(fx, fy, new RoundedRectBounds(0f, 0f, size, size, radius))) covered++;
+            }
+            float alpha = covered / (float)(SS * SS);
+            pixels[py * size + px] = new Color(c.r, c.g, c.b, c.a * alpha);
+        }
+        tex.SetPixels(pixels);
+        tex.Apply(updateMipmaps: false);
+        return tex;
+    }
+
+    /// <summary>
     /// Rounded chip with a corner-following border baked in. Outer rounded-rect
     /// coverage = fill silhouette; an inset concentric rounded-rect (inset by
     /// borderPx, radius - borderPx) is the interior; the ring between them is the
@@ -129,6 +170,26 @@ internal static class RoundedTextureBaker
         bool inCornerY = fy < b.Y0 + b.Radius || fy >= b.Y1 - b.Radius;
         if (!inCornerX || !inCornerY) return true;
         float cx = (fx < b.X0 + b.Radius) ? b.X0 + b.Radius : b.X1 - b.Radius;
+        float cy = (fy < b.Y0 + b.Radius) ? b.Y0 + b.Radius : b.Y1 - b.Radius;
+        float dx = fx - cx, dy = fy - cy;
+        return dx * dx + dy * dy <= b.Radius * b.Radius;
+    }
+
+    /// <summary>
+    /// True when (<paramref name="fx"/>,<paramref name="fy"/>) lies inside the
+    /// rectangle <paramref name="b"/> with ONLY its left corners (top-left +
+    /// bottom-left) rounded; the right edge is square. The arc test applies only
+    /// when the sample is within <see cref="RoundedRectBounds.Radius"/> of the
+    /// left edge; everything to the right of that column is a plain rectangle.
+    /// </summary>
+    private static bool InsideLeftRoundedRect(float fx, float fy, in RoundedRectBounds b)
+    {
+        if (fx < b.X0 || fx >= b.X1 || fy < b.Y0 || fy >= b.Y1) return false;
+        if (b.Radius <= 0f) return true;
+        if (fx >= b.X0 + b.Radius) return true;                 // right of the left corner column → square
+        bool inCornerY = fy < b.Y0 + b.Radius || fy >= b.Y1 - b.Radius;
+        if (!inCornerY) return true;                            // left band, vertical middle → straight edge
+        float cx = b.X0 + b.Radius;
         float cy = (fy < b.Y0 + b.Radius) ? b.Y0 + b.Radius : b.Y1 - b.Radius;
         float dx = fx - cx, dy = fy - cy;
         return dx * dx + dy * dy <= b.Radius * b.Radius;
