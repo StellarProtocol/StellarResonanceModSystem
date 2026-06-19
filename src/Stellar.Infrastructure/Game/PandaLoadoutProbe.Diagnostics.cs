@@ -77,7 +77,6 @@ internal sealed partial class PandaLoadoutProbe
     /// profession VM is confirmed to be the class system. One-shot: stops once a
     /// dump carrying the begin marker is captured (or after MaxScanAttempts).
     /// </summary>
-    private bool _fetchKicked;
     private void RunIntrospectionIfDue()
     {
         if (_scanDone || !StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
@@ -89,14 +88,7 @@ internal sealed partial class PandaLoadoutProbe
 
         try
         {
-            // AsyncGetRolePlanData yields on a server RPC, so kick it once, then poll
-            // the global it writes on completion (a frame or two later).
-            if (!_fetchKicked)
-            {
-                _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Fetch" });
-                _fetchKicked = true;
-                return;
-            }
+            _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Scan" });
             var text = ReadLuaGlobalString(state, "_StellarLI");
             if (!string.IsNullOrEmpty(text) && text!.Contains("=== begin ===", StringComparison.Ordinal))
             {
@@ -111,7 +103,7 @@ internal sealed partial class PandaLoadoutProbe
         {
             var inner = ex;
             while (inner.InnerException is not null) inner = inner.InnerException;
-            _log.Warning($"[Stellar][Loadout][LI] fetch threw: {inner.GetType().Name}: {inner.Message}");
+            _log.Warning($"[Stellar][Loadout][LI] scan threw: {inner.GetType().Name}: {inner.Message}");
         }
     }
 
@@ -145,25 +137,22 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Kicks weapon VM AsyncGetRolePlanData() inside a coroutine (it yields on a
-    // server RPC) and, on completion, dumps the role-plan list (ids + names =
-    // Ici-LF/Tank/Beam/Icicle) recursively into the _StellarLI global. Also records
-    // CheckRolePlanIsChange's shape. C# reads the global on a later poll.
+    // Dump ALL weapon-VM function names (find a synchronous role-plan getter), capture
+    // the AsyncGetRolePlanData error string, and probe candidate sync getters. No
+    // coroutine: the dump + sync getters don't yield; the async call is pcall'd only
+    // to capture its error message.
     private const string ScanChunk =
-        "(Z.CoroUtil.create_coro_xpcall(function()" +
-        " local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
-        " local function dump(p,t,d) if d>4 then return end" +
-        "  for k,v in pairs(t) do local tv=type(v)" +
-        "   if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
-        "   elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
+        "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
         " local vm=Z.VMMgr.GetVM(\"weapon\")" +
         " L(\"=== begin ===\")" +
-        " local ok,data=pcall(function() return vm.AsyncGetRolePlanData() end)" +
-        " L(\"AsyncGetRolePlanData ok=\"..tostring(ok)..\" type=\"..type(data))" +
-        " if ok and type(data)==\"table\" then dump(\"  \",data,0) end" +
-        " local ok2,chg=pcall(function() return vm.CheckRolePlanIsChange() end)" +
-        " L(\"CheckRolePlanIsChange ok=\"..tostring(ok2)..\" -> \"..tostring(chg))" +
+        " local fns={} for k,v in pairs(vm) do if type(v)==\"function\" then fns[#fns+1]=tostring(k) end end" +
+        " table.sort(fns) for _,f in ipairs(fns) do L(\"fn \"..f) end" +
+        " local ok,err=pcall(function() return vm.AsyncGetRolePlanData() end)" +
+        " L(\"AsyncGetRolePlanData ok=\"..tostring(ok)..\" val=\"..tostring(err))" +
+        " for _,fn in ipairs({\"GetRolePlanData\",\"GetRolePlanList\",\"GetCurRolePlan\"," +
+        "\"GetCurRolePlanId\",\"GetRolePlans\",\"GetAllRolePlan\",\"GetRolePlanInfo\",\"GetRolePlanInfos\"}) do" +
+        "  local o,r=pcall(function() return vm[fn]() end)" +
+        "  if o then L(\"call \"..fn..\" -> \"..type(r)..\" \"..tostring(r)) end end" +
         " L(\"=== end ===\")" +
-        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))" +
-        " end))()";
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
 }
