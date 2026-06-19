@@ -194,7 +194,11 @@ internal sealed class ToastCardBuilder
         cd.AddComponent<LayoutElement>().ignoreLayout = true;
         var rt = cd.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 0f); rt.anchorMax = new Vector2(1f, 0f); rt.pivot = new Vector2(0f, 0f);
-        rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(0f, CountdownH);
+        // Inset horizontally so the bar's square ends stay INSIDE the card's rounded bottom
+        // corners (left clears the accent strip, right clears the corner radius). A full-width
+        // bar pokes past the rounded corners and squares off the bottom-left/right.
+        rt.offsetMin = new Vector2(AccentSpriteWidth, 0f);
+        rt.offsetMax = new Vector2(-CardCornerRadius, CountdownH);
         var img = cd.AddComponent<Image>();
         img.sprite = _assets.WhiteSprite; img.color = kindColor; img.raycastTarget = false;
         img.type = Image.Type.Filled; img.fillMethod = Image.FillMethod.Horizontal; img.fillOrigin = 0; img.fillAmount = 1f;
