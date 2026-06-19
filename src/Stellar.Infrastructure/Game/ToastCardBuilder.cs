@@ -34,7 +34,7 @@ internal sealed class ToastCardBuilder
     // Card geometry tokens (px) — verbatim from the design spec.
     internal const float CardWidth = 340f;
     internal const int PadT = 10, PadR = 12, PadB = 10, PadL = 12;
-    internal const float AccentWidth = 4f;
+    internal const float AccentWidth = 2f;
     internal const int IconSize = 16;
     internal const int IconTitleGap = 6;
     internal const int TitleSize = 12;
