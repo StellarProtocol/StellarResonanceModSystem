@@ -227,7 +227,7 @@ internal sealed partial class PandaLoadoutProbe
     // ── Current-id read (CONFIRMED C#-reflectable, findings F3) ────────────────
     private FieldInfo? _currentIdField;
     private Func<object?>? _archiveProvider;
-    private bool _currentIdResolveTried;
+    private int _currentIdResolveTickCounter;
 
     /// <summary>
     /// Reads <c>CurrentProfessionProjectId</c> off the live
@@ -256,9 +256,15 @@ internal sealed partial class PandaLoadoutProbe
 
     private void ResolveCurrentIdAccessorsIfDue()
     {
-        if (_currentIdResolveTried && _archiveProvider is not null) return;
+        // Already resolved — never scan again.
         if (_archiveProvider is not null) return;
-        _currentIdResolveTried = true;
+
+        // CRITICAL perf gate: the archive only becomes reachable post-login/sync, so
+        // we must keep retrying — but ResolveArchiveInstanceProvider / FindTypeByShortName
+        // walk every loaded IL2CPP assembly via GetTypes(). Running that every Update
+        // frame collapses FPS (~0.2). Throttle the scan to once every
+        // ResolveAttemptEveryTicks calls, mirroring TryResolveBridgeIfDue.
+        if (_currentIdResolveTickCounter++ % ResolveAttemptEveryTicks != 0) return;
 
         var archiveType = _typeRegistry.FindType(CurrentIdArchiveTypeName)
             ?? FindTypeByShortName("CurrentProfessionProjectIdInfoContainerArchive");
