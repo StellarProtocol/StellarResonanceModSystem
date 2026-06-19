@@ -137,22 +137,23 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Dump ALL weapon-VM function names (find a synchronous role-plan getter), capture
-    // the AsyncGetRolePlanData error string, and probe candidate sync getters. No
-    // coroutine: the dump + sync getters don't yield; the async call is pcall'd only
-    // to capture its error message.
+    // Run inside create_coro_xpcall so AsyncGetRolePlanData can yield (pcall can't
+    // yield in this LuaJIT runtime — that was the prior failure). Call it DIRECTLY
+    // (no inner pcall), await the result, then dump the role-plan list (ids + names)
+    // recursively into _StellarLI. C# polls the global; it's written when the async
+    // completes (a frame or two after each kick).
     private const string ScanChunk =
-        "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local function dump(p,t,d) if d>4 then return end for k,v in pairs(t) do local tv=type(v)" +
+        "  if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
+        "  elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
         " local vm=Z.VMMgr.GetVM(\"weapon\")" +
+        " local data=vm.AsyncGetRolePlanData()" +
         " L(\"=== begin ===\")" +
-        " local fns={} for k,v in pairs(vm) do if type(v)==\"function\" then fns[#fns+1]=tostring(k) end end" +
-        " table.sort(fns) for _,f in ipairs(fns) do L(\"fn \"..f) end" +
-        " local ok,err=pcall(function() return vm.AsyncGetRolePlanData() end)" +
-        " L(\"AsyncGetRolePlanData ok=\"..tostring(ok)..\" val=\"..tostring(err))" +
-        " for _,fn in ipairs({\"GetRolePlanData\",\"GetRolePlanList\",\"GetCurRolePlan\"," +
-        "\"GetCurRolePlanId\",\"GetRolePlans\",\"GetAllRolePlan\",\"GetRolePlanInfo\",\"GetRolePlanInfos\"}) do" +
-        "  local o,r=pcall(function() return vm[fn]() end)" +
-        "  if o then L(\"call \"..fn..\" -> \"..type(r)..\" \"..tostring(r)) end end" +
+        " L(\"data type=\"..type(data))" +
+        " if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
         " L(\"=== end ===\")" +
-        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))";
+        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))" +
+        " end))()";
 }
