@@ -81,21 +81,30 @@ internal sealed partial class PandaLoadoutProbe
     {
         if (_scanDone || !StellarDiagnostics.IsEnabled || !_bridgeResolved) return;
         if (_scanTickCounter++ % ScanEveryTicks != 0) return;
-        if (_scanAttempts++ >= MaxScanAttempts) { _scanDone = true; return; }
 
         var state = GetMainLuaState();
         if (state is null || _doString is null) return;
 
+        var giveUp = _scanAttempts++ >= MaxScanAttempts;
         try
         {
-            _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Scan" });
-            var text = ReadLuaGlobalString(state, "_StellarLI");
-            if (!string.IsNullOrEmpty(text) && text!.Contains("=== begin ===", StringComparison.Ordinal))
+            if (!giveUp)
             {
-                foreach (var line in text.Split('\n'))
+                _doString.Invoke(state, new object[] { ScanChunk, ChunkName + ".Scan" });
+            }
+            var text = ReadLuaGlobalString(state, "_StellarLI");
+            var complete = !string.IsNullOrEmpty(text) && text!.Contains("=== end ===", StringComparison.Ordinal);
+            if (complete || (giveUp && !string.IsNullOrEmpty(text)))
+            {
+                foreach (var line in text!.Split('\n'))
                 {
                     _log.Info(line.StartsWith("[StellarLI]", StringComparison.Ordinal) ? line : "[StellarLI] " + line);
                 }
+                _scanDone = true;
+            }
+            else if (giveUp)
+            {
+                _log.Info("[StellarLI] gave up: no data captured");
                 _scanDone = true;
             }
         }
@@ -137,23 +146,24 @@ internal sealed partial class PandaLoadoutProbe
         return val.ToString();
     }
 
-    // Run inside create_coro_xpcall so AsyncGetRolePlanData can yield (pcall can't
-    // yield in this LuaJIT runtime — that was the prior failure). Call it DIRECTLY
-    // (no inner pcall), await the result, then dump the role-plan list (ids + names)
-    // recursively into _StellarLI. C# polls the global; it's written when the async
-    // completes (a frame or two after each kick).
+    // Progress-marker version: flush the _StellarLI global at each step so whichever
+    // step the (yielding) call dies on is the last captured marker. Tries a COLON call
+    // (vm:AsyncGetRolePlanData() — passes self). Awaits directly (pcall can't yield in
+    // this LuaJIT runtime). C# polls until it sees the end marker.
     private const string ScanChunk =
-        "(Z.CoroUtil.create_coro_xpcall(function()" +
-        " local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        "local lines={} local function L(s) lines[#lines+1]=\"[StellarLI] \"..tostring(s) end" +
+        " local function flush() rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\")) end" +
         " local function dump(p,t,d) if d>4 then return end for k,v in pairs(t) do local tv=type(v)" +
         "  if tv==\"table\" then L(p..tostring(k)..\":\") dump(p..\"  \",v,d+1)" +
         "  elseif tv~=\"function\" then L(p..tostring(k)..\"=\"..tostring(v)) end end end" +
-        " local vm=Z.VMMgr.GetVM(\"weapon\")" +
-        " local data=vm.AsyncGetRolePlanData()" +
-        " L(\"=== begin ===\")" +
-        " L(\"data type=\"..type(data))" +
-        " if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
-        " L(\"=== end ===\")" +
-        " rawset(_G,\"_StellarLI\", table.concat(lines,\"\\n\"))" +
+        " L(\"=== begin ===\") L(\"step1 pre-coro\") flush()" +
+        " (Z.CoroUtil.create_coro_xpcall(function()" +
+        "  L(\"step2 in-coro running=\"..tostring(coroutine.running()~=nil)) flush()" +
+        "  local vm=Z.VMMgr.GetVM(\"weapon\")" +
+        "  L(\"step3 vm=\"..type(vm)) flush()" +
+        "  local data=vm:AsyncGetRolePlanData()" +
+        "  L(\"step4 returned type=\"..type(data)) flush()" +
+        "  if type(data)==\"table\" then dump(\"  \",data,0) else L(\"data=\"..tostring(data)) end" +
+        "  L(\"=== end ===\") flush()" +
         " end))()";
 }
