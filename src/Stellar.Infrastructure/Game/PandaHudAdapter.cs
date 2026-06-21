@@ -39,6 +39,13 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             return true;
         }
 
+        // Carry the last real-size outline across a re-resolve (the game destroys + rebuilds these nodes on a
+        // scene change, so we get a fresh entry). Without this, LastVisibleRect resets to null and — when the
+        // rebuild happens during a loading/cutscene collapse — the edit-mode grab-box drops to the corner because
+        // there's no good rect to hold and OriginalScreenRect is itself collapsed. The user's saved position is
+        // the same across scenes, so the carried rect is the right thing to show until the element expands again.
+        WindowRect? carriedVisible = _cache.TryGetValue(allowlistPath, out var prev) ? prev.LastVisibleRect : null;
+
         var go = GameObject.Find(allowlistPath);
         if (go == null) go = SearchByPath(allowlistPath);
         if (go == null) { handle = default; return false; }
@@ -51,6 +58,18 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             return false;
         }
 
+        var entry = BuildEntry(allowlistPath, go, rt, rectChildPath, carriedVisible);
+        _cache[allowlistPath] = entry;
+        LogCurateResolve(rt, entry.Camera, allowlistPath, rectChildPath, entry.OriginalScreenRect);   // diagnostics (gated)
+        handle = entry.ToHandle();
+        return true;
+    }
+
+    // Capture a freshly-resolved node's original pose + outline. Split out of TryResolve to keep it under the
+    // method-size cap (STELLAR0002). carriedVisible holds the prior entry's last real-size outline across a
+    // re-resolve so the edit box keeps the user's spot through a loading/cutscene rebuild.
+    private ResolvedEntry BuildEntry(string allowlistPath, GameObject go, RectTransform rt, string? rectChildPath, WindowRect? carriedVisible)
+    {
         var cam = GetCanvasCamera(rt);
         var entry = new ResolvedEntry
         {
@@ -67,10 +86,11 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             RectChildPath = rectChildPath,
             OriginalScreenRect = ComputeOutlineRect(rt, cam, rectChildPath),
         };
-        _cache[allowlistPath] = entry;
-        LogCurateResolve(rt, cam, allowlistPath, rectChildPath, entry.OriginalScreenRect);   // diagnostics (gated)
-        handle = entry.ToHandle();
-        return true;
+        // Prefer the carried last-good outline; else seed from OriginalScreenRect only if it isn't itself a
+        // collapsed stub (resolved mid-loading).
+        if (carriedVisible.HasValue) entry.LastVisibleRect = carriedVisible;
+        else if (!IsCollapsedStub(entry.OriginalScreenRect)) entry.LastVisibleRect = entry.OriginalScreenRect;
+        return entry;
     }
 
     // The edit-outline / grab-box rect. When the allowlist supplies a spec, it's a ';'-separated list of
@@ -135,7 +155,13 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         if (!e.RectTransform.gameObject.activeInHierarchy)
             return e.LastVisibleRect ?? e.OriginalScreenRect;
         var r = ComputeOutlineRect(e.RectTransform, e.Camera, e.RectChildPath);
-        e.LastVisibleRect = r;   // cache for the inactive (hidden) case
+        // While the game collapses its HUD (loading / cutscene), elements are active but shrink to a ~1px stub at
+        // the screen edge, so the live rect is degenerate. Don't let the edit-mode grab-box follow it down to the
+        // corner, and NEVER cache a stub — hold the last rect seen at real size (carried across re-resolves, see
+        // TryResolve) so the box stays at the user's spot through the transition. A real widget is never tiny in
+        // BOTH axes when shown (a thin bar is still wide), so this only catches the collapsed/transient case.
+        if (IsCollapsedStub(r)) return e.LastVisibleRect ?? e.OriginalScreenRect;
+        e.LastVisibleRect = r;   // cache only real-size rects, for the inactive/collapsed fallback
         return r;
     }
 
@@ -158,13 +184,25 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     public void SetRect(NativeUiHandle handle, WindowRect rect)
     {
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return;
-        // Cheap idempotent guard keyed on the requested top-left: the game's
-        // per-frame layout passes drift rarely, so most 1Hz re-asserts are
-        // no-ops and we skip the RectTransformUtility math + the write.
-        var target = new Vector2(rect.X, rect.Y);
-        if (e.LastAppliedTarget.HasValue && e.LastAppliedTarget.Value == target) return;
-
         var rt = e.RectTransform;
+        // Never reposition a HIDDEN element. The game deactivates its HUD during cutscenes / scene transitions,
+        // and an inactive RectTransform reports garbage world-corners (GetWorldCorners on a culled subtree
+        // collapses to ~0 / jumps) — see GetCurrentRect. Translating by the resulting bogus delta flings the
+        // element thousands of px off-screen, and it STAYS there when the game re-shows it after the cutscene
+        // (the reported "in-game UI disappears after a cutscene"). Skip while hidden; ReassertAll re-applies the
+        // saved pose once the element is live again.
+        if (!rt.gameObject.activeInHierarchy) return;
+        // Idempotent guard: skip ONLY when the request is unchanged AND the element is still where we last left
+        // it. Keying on the request alone is wrong — after a cutscene / scene transition the game resets the
+        // element back to its default pose while we still request the SAME saved spot, so a request-only guard
+        // short-circuits and the element stays at the game default (the "bars revert to bottom-left" report).
+        // Comparing the live anchoredPosition to the value we left it at re-applies the saved spot once the game
+        // has moved it. (The inactive-guard above means this only ever runs on a live element, never on the
+        // inactive/garbage-corner case that caused the off-screen fling.)
+        var target = new Vector2(rect.X, rect.Y);
+        if (e.LastAppliedTarget.HasValue && e.LastAppliedTarget.Value == target
+            && e.LastAppliedAnchoredPos.HasValue && rt.anchoredPosition == e.LastAppliedAnchoredPos.Value) return;
+
         var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
         if (parent == null) return; // need a RectTransform parent to translate in its local space
 
@@ -180,8 +218,14 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         var newTopLeft = new Vector2(clamped.X, Screen.height - clamped.Y);
         RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, curTopLeft, e.Camera, out var localCur);
         RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, newTopLeft, e.Camera, out var localNew);
-        rt.anchoredPosition += localNew - localCur;
+        var delta = localNew - localCur;
+        // Sanity cap: a parent-local delta larger than this means the live geometry was bogus (a transient /
+        // mid-animation frame gave garbage corners). Never translate by it — that's what flung elements
+        // thousands of px off-screen. Leave LastAppliedAnchoredPos unset so a sane frame re-applies cleanly.
+        if (Mathf.Abs(delta.x) > MaxSaneDeltaPx || Mathf.Abs(delta.y) > MaxSaneDeltaPx) return;
+        rt.anchoredPosition += delta;
         e.LastAppliedTarget = target;
+        e.LastAppliedAnchoredPos = rt.anchoredPosition;
     }
 
     public void RestoreOriginal(NativeUiHandle handle)
@@ -200,6 +244,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // Clear last-applied cache so the next SetRect call re-writes the
         // pose instead of short-circuiting on the stale comparison.
         e.LastAppliedTarget = null;
+        e.LastAppliedAnchoredPos = null;
     }
 
     private static GameObject? SearchByPath(string path)
@@ -251,6 +296,11 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     private const int ContentMaxDepth = 6;
     private const int ContentNodeBudget = 1500;
 
+    // Largest parent-local translate SetRect will ever apply. A legit cross-screen move is bounded by the
+    // parent's local size (~ canvas size); anything past this is bogus geometry from a transient frame, so we
+    // refuse it rather than fling the element off-screen.
+    private const float MaxSaneDeltaPx = 6000f;
+
     private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
     {
         // Prefer the node's OWN rect when it's a real widget bound. Many HUD groups whose own rect is useful
@@ -280,6 +330,12 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         if (r.Width < 1f || r.Height < 1f) return false;
         return !(r.Width >= Screen.width * 0.9f && r.Height >= Screen.height * 0.9f);
     }
+
+    // A collapsed/auto-hidden stub: tiny in BOTH axes (the game shrinks HUD nodes to ~1px during loading /
+    // cutscenes; the idle chat icon is ~18x10). Requiring both axes means a wide-but-thin bar (HP / stamina /
+    // class-gauge, hundreds of px × ~10-15) — a real shown widget — is never mistaken for a stub.
+    private const float StubMaxPx = 24f;
+    private static bool IsCollapsedStub(WindowRect r) => r.Width < StubMaxPx && r.Height < StubMaxPx;
 
     private static void AccumulateContentBounds(Transform t, Camera? cam, int depth, BoundsAcc acc)
     {
@@ -370,6 +426,10 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // Cached last-requested top-left; used by SetRect to skip the
         // translation math + write when the target hasn't drifted (Mn8).
         public Vector2? LastAppliedTarget;
+        // The anchoredPosition we LEFT the element at after the last SetRect. Lets the guard tell "still where we
+        // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
+        // leaving the element at the game default.
+        public Vector2? LastAppliedAnchoredPos;
 
         public NativeUiHandle ToHandle() => new()
         {

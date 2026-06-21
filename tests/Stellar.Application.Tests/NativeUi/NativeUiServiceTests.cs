@@ -53,6 +53,31 @@ public sealed class NativeUiServiceTests
         Assert.True(adapter.SetRectCount > afterMove, "modified entry should be re-asserted");
     }
 
+    [Fact] // Re-assert must NOT force a moved-but-visible element on: the game owns show/hide and hides the HUD
+           // during cutscenes — a 1 Hz SetVisible(true) fought that. Only POSITION is re-asserted here.
+    public void AfterUserMove_Reassert_DoesNotForceVisible()
+    {
+        var (svc, adapter, _, _) = New();
+        svc.Tick(5f, Res);                                   // resolve (no saved override → no SetVisible)
+        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));   // user move; stays visible
+        Assert.Equal(0, adapter.SetVisibleCount);
+
+        svc.Tick(1f, Res);                                   // reassert pass
+        Assert.Equal(0, adapter.SetVisibleCount);            // never force-shown
+    }
+
+    [Fact] // A USER-requested hide is still enforced every re-assert (the game rebuilds the element shown).
+    public void UserHidden_Reassert_EnforcesHide()
+    {
+        var (svc, adapter, _, _) = New();
+        svc.Tick(5f, Res);
+        svc.SetVisible("gameui.test", false);                // SafeToHide default true → hides
+        var afterHide = adapter.SetVisibleCount;
+
+        svc.Tick(1f, Res);                                   // reassert pass
+        Assert.True(adapter.SetVisibleCount > afterHide, "user hide must be re-enforced on reassert");
+    }
+
     [Fact]
     public void SavedOverride_IsAppliedOnResolve_AndReasserted()
     {

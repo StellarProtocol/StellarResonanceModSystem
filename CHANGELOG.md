@@ -6,6 +6,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-22
+### Added
+- **`IWindowControl.SetVisiblePersist(bool)`** — show/hide a window AND persist the choice to the
+  active layout slot (per resolution), so it survives relaunch. This is the single source of truth
+  the framework reapplies on launch (the layout-editor eye-toggle writes the same slot). Plugins
+  should use it for user-driven visibility toggles (hotkeys, close buttons) instead of `SetVisible`
+  plus a private config key, which desyncs from the slot and loses to it on relaunch. `SetVisible`
+  is now documented as session-only (non-persisting).
+### Fixed
+- **Native-UI edit-mode grab-boxes dropped to the bottom-left corner during loading / cutscenes.**
+  The game collapses its HUD to ~1px stubs during those transitions and the edit outline followed
+  them down. It now holds each element's last real-size rect (carried across the scene-change
+  re-resolve) and never caches a collapsed stub.
+- **Repositioned game-UI elements flung off-screen / left at the game default after a cutscene.**
+  `SetRect` no longer runs on an inactive element (its world-corners are garbage mid-cutscene), caps
+  any bogus translate, and re-applies the saved position once the game resets the element; the 1 Hz
+  re-assert no longer force-shows elements the game is hiding for a cutscene.
+
 ## [1.3.0] - 2026-06-21
 ### Added
 - **Native notice banners (`INoticeTips` on `IPluginServices`)** — trigger the game's own notice

@@ -144,6 +144,9 @@ internal sealed partial class WindowService : IWindowHost
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
         public void SetVisible(bool visible) => Visible = visible;
+        // Persist via the owner's slot-aware path (same one the layout-editor eye-toggle uses), so a plugin
+        // hotkey / close button records to the active layout slot and the choice survives relaunch.
+        public void SetVisiblePersist(bool visible) => Owner.SetVisiblePersist(Reg.Spec.Id, visible);
         public void Remove() => Removed = true;
 
         public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Reg.Spec.DefaultRect;
@@ -160,6 +163,6 @@ internal sealed partial class WindowService : IWindowHost
         }
     }
     private sealed class NoOpHandle : IWindowControl
-    { public bool IsShown => false; public void MarkDirty(){} public void SetVisible(bool v){} public void Remove(){}
+    { public bool IsShown => false; public void MarkDirty(){} public void SetVisible(bool v){} public void SetVisiblePersist(bool v){} public void Remove(){}
       public WindowRect Rect => default; public void SetRect(WindowRect rect){} }
 }
