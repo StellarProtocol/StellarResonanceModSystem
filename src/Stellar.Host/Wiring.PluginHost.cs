@@ -57,6 +57,7 @@ public sealed partial class BootstrapPlugin
             "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log);
 
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
+        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
         _partyControlService = new PartyControlService(_teamControlProbe);
@@ -77,7 +78,8 @@ public sealed partial class BootstrapPlugin
             new Stellar.Application.Services.EntityContextMenuService(),
             new Stellar.Infrastructure.Game.EntityPortraitService(portraitModelProbe, portraitModelHost),
             _profileCardActions!,
-            new Stellar.Application.Services.PluginExchange());
+            new Stellar.Application.Services.PluginExchange(),
+            _noticeTipService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 

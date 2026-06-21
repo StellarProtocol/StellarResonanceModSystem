@@ -16,6 +16,7 @@ internal sealed partial class HotkeysPanel
     private enum Filter { All, Plugins, Framework }
 
     private readonly IHotkeyDirectory _directory;
+    private readonly IHotkeyBlockDirectory _blockDirectory;
     private readonly ITheme _theme;
     private Filter _filter = Filter.All;
     private string? _capturingActionId;
@@ -36,9 +37,10 @@ internal sealed partial class HotkeysPanel
     private HudElement FilterChip(string label, Filter f)
         => new ButtonElement(() => label, () => { _filter = f; }, null, null, Active: () => _filter == f);
 
-    public HotkeysPanel(IHotkeyDirectory directory, ITheme theme)
+    public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, ITheme theme)
     {
         _directory = directory;
+        _blockDirectory = blockDirectory;
         _theme = theme;
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
@@ -83,6 +85,12 @@ internal sealed partial class HotkeysPanel
         var list = new ListElement(() => _display.Count, slots);
         return new ColumnElement(new HudElement[]
         {
+            new RowElement(new HudElement[]
+            {
+                new ToggleElement(() => "", Get: () => _blockDirectory.GetBlockAllFromGame(), Set: v => _blockDirectory.SetBlockAllFromGame(v)),
+                new TextElement(() => "Block hotkeys from game"),
+            }, Gap: 6f),
+            new SeparatorElement(),
             new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),
             new ConditionalElement(
                 () => { RebuildDisplay(); return _display.Count > 0; },

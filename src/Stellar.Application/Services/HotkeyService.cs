@@ -7,7 +7,7 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
-internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
+internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDirectory
 {
     private const string UnboundSentinel = "_unbound_";
     private static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(30);
@@ -15,6 +15,8 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
     private readonly IInputGateway _input;
     private readonly IPluginLog _log;
     private readonly IConfigSection? _config;
+    private readonly Action<IEnumerable<KeyBinding>>? _onBlockedKeysChanged;
+    private readonly Action<bool>? _onCaptureModeChanged;
     private readonly Dictionary<string, RegisteredAction> _actions = new();
     private readonly Dictionary<string, KeyBinding?> _suggestedDefaults = new();
     private readonly HashSet<string> _collisionsLogged = new();
@@ -23,24 +25,31 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
     // Tick. Previously allocated a fresh List per Tick — observed as the
     // dominant per-frame allocation under the Settings hub on a quiet idle.
     private readonly List<RegisteredAction> _matchedScratch = new();
+    private readonly List<KeyBinding> _blockedKeysScratch = new();
     // Set by BeginCapture / EndCapture (called from HotkeysPanel). While true,
     // Tick early-returns BEFORE dispatching matches so the key that the
     // capture cell consumes doesn't also fire its currently-bound action.
     private string? _capturingActionId;
+    private bool _blockAllFromGame;
 
-    public HotkeyService(IInputGateway input, IPluginLog log, IConfigSection? config = null)
+    public HotkeyService(IInputGateway input, IPluginLog log, IConfigSection? config = null,
+        Action<IEnumerable<KeyBinding>>? onBlockedKeysChanged = null,
+        Action<bool>? onCaptureModeChanged = null)
     {
         _input = input;
         _log = log;
         _config = config;
+        _onBlockedKeysChanged = onBlockedKeysChanged;
+        _onCaptureModeChanged = onCaptureModeChanged;
+        _blockAllFromGame = LoadStoredBlockAll();
     }
 
     public event Action<string>? BindingChanged;
 
     IReadOnlyList<IHotkeyAction> IHotkeyDirectory.Actions => CachedActionsList;
     bool IHotkeyDirectory.IsCapturing => _capturingActionId is not null;
-    void IHotkeyDirectory.BeginCapture(string actionId) => _capturingActionId = actionId;
-    void IHotkeyDirectory.EndCapture() => _capturingActionId = null;
+    void IHotkeyDirectory.BeginCapture(string actionId) { _capturingActionId = actionId; _onCaptureModeChanged?.Invoke(true); }
+    void IHotkeyDirectory.EndCapture() { _capturingActionId = null; _onCaptureModeChanged?.Invoke(false); }
 
     // Cached read-only view of _actions.Values; rebuilt only when DeclareAction
     // mutates the dictionary. HotkeysPanel.OrderedActions() reads this every
@@ -71,7 +80,17 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
         action.CurrentBinding = newBinding;
         PersistBinding(actionId, newBinding);
         BindingChanged?.Invoke(actionId);
+        SyncBlockedKeys();
     }
+
+    void IHotkeyBlockDirectory.SetBlockAllFromGame(bool block)
+    {
+        _blockAllFromGame = block;
+        PersistBlockAll(block);
+        SyncBlockedKeys();
+    }
+
+    bool IHotkeyBlockDirectory.GetBlockAllFromGame() => _blockAllFromGame;
 
     public IHotkeyAction DeclareAction(HotkeyAction action, Action callback)
     {
@@ -87,6 +106,7 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
         var registered = new RegisteredAction(action.Id, resolved, callback, _actions, InvalidateActionsCache);
         _actions[action.Id] = registered;
         _cachedActionsList = null;   // invalidate the snapshot served to IHotkeyDirectory consumers
+        SyncBlockedKeys();
         return registered;
     }
 
@@ -179,6 +199,30 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory
         // Existing action keeps the binding; new action is unbound.
         LogCollision(action.Id, suggested, winnerId);
         return null;
+    }
+
+    private void SyncBlockedKeys()
+    {
+        if (_onBlockedKeysChanged is null) return;
+        _blockedKeysScratch.Clear();
+        if (_blockAllFromGame)
+            foreach (var a in _actions.Values)
+                if (a.CurrentBinding is { } b) _blockedKeysScratch.Add(b);
+        _onBlockedKeysChanged(_blockedKeysScratch);
+    }
+
+    private void PersistBlockAll(bool block)
+    {
+        if (_config is null) return;
+        _config.Set("block_all_from_game", block ? "true" : "false");
+        _config.Save();
+    }
+
+    private bool LoadStoredBlockAll()
+    {
+        if (_config is null) return false;
+        var s = _config.Get("block_all_from_game", "false") ?? "false";
+        return string.Equals(s, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private void PersistBinding(string actionId, KeyBinding? binding)

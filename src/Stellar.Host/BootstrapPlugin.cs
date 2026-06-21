@@ -100,6 +100,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
 
     // ── Plugin host (Wiring.PluginHost.cs) ──────────────────────────────────
     private PluginHost? _pluginHost;
+    private Stellar.Application.Services.NoticeTipService? _noticeTipService;
 
     // ── Resolver probe + UI (Wiring.Resolver.cs / Wiring.PluginRegistry.cs) ─
     private bool _gameRootProbed;
