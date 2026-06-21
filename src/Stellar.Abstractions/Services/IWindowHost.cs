@@ -38,8 +38,15 @@ public interface IWindowControl
     bool IsShown { get; }
     /// <summary>Hints to the framework to re-poll and apply this window's element values immediately rather than waiting for the next scheduled refresh.</summary>
     void MarkDirty();
-    /// <summary>Show or hide the window; persists the user's visibility preference.</summary>
+    /// <summary>Show or hide the window for this session only. Does NOT persist — the choice is lost on relaunch.
+    /// For a user-facing toggle whose state should survive a restart, use <see cref="SetVisiblePersist"/>.</summary>
     void SetVisible(bool visible);
+    /// <summary>Show or hide the window AND persist the choice to the active layout slot (per resolution), so it
+    /// is restored on the next relaunch. This is the single source of truth the framework reapplies on launch —
+    /// the layout-editor eye-toggle writes the same slot. Use it for user-driven visibility toggles (hotkeys,
+    /// close buttons) instead of <see cref="SetVisible"/> plus a private config key, which desyncs from the slot
+    /// and loses to it on relaunch.</summary>
+    void SetVisiblePersist(bool visible);
     /// <summary>Permanently remove the window from the scene and the window registry.</summary>
     void Remove();
 

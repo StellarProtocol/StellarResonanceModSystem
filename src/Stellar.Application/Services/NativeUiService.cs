@@ -226,11 +226,13 @@ internal sealed class NativeUiService
             // an unmodified element's OriginalRect is not a guaranteed no-op for
             // deeply-nested HUD nodes and was displacing them on resolve.
             if (!e.IsResolved || !e.IsModified) continue;
-            // Cheap idempotent re-assert: PandaHudAdapter's SetRect/SetVisible
-            // are no-ops if values haven't drifted. Drift comes from the game's
-            // per-frame layout passes resetting our rects.
+            // Re-assert POSITION only (SetRect is a no-op when the value hasn't drifted, and self-skips while the
+            // element is game-hidden during a cutscene — see PandaHudAdapter.SetRect). Do NOT force visibility on:
+            // the game owns show/hide (it hides the HUD during cutscenes), and a 1 Hz SetVisible(true) fought that,
+            // flickering elements on mid-cutscene. We only ENFORCE a user-requested hide here; un-hiding is handled
+            // by the explicit SetVisible path + re-resolve reapply.
             _adapter.SetRect(e.Handle, e.Rect);
-            _adapter.SetVisible(e.Handle, e.Visible);
+            if (!e.Visible) _adapter.SetVisible(e.Handle, false);
         }
     }
 
