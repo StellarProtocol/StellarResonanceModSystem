@@ -80,6 +80,7 @@ public sealed partial class BootstrapPlugin
     {
         _inputGateway?.TickPoll();
         _hotkeyService?.Tick();
+        _noticeTipService?.Tick();
     }
 
     private void RefreshPerTickServices(float deltaTime)

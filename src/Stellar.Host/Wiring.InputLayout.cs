@@ -1,6 +1,7 @@
 using Stellar.Abstractions.Domain;
 using Stellar.Application.Services;
 using Stellar.Infrastructure.BepInExAdapters;
+using Stellar.Infrastructure.Game;
 using Stellar.Infrastructure.UI;
 
 namespace Stellar.Host;
@@ -9,6 +10,7 @@ public sealed partial class BootstrapPlugin
 {
     private UnityInputGateway? _inputGateway;
     private HotkeyService? _hotkeyService;
+    private HotkeyKeyBlockPatch? _keyBlockPatch;
     private LayoutStorage? _layoutStorage;
     private LayoutEditorService? _layoutEditor;
     private LayoutEditorOverlay? _layoutOverlay;
@@ -18,10 +20,13 @@ public sealed partial class BootstrapPlugin
         _inputGateway  = new UnityInputGateway();
         // _inputGateway.DiagnosticLog = log.Info;  // enable to log every captured keypress + modifier flags (off in production)
 
+        _keyBlockPatch = new HotkeyKeyBlockPatch();
+        _keyBlockPatch.Install(PluginGuid, log.Info);
+
         // HotkeyService now persists user-bound keys via the framework's
         // "hotkeys" config section; missing keys fall back to SuggestedDefault.
         var hotkeySection = _pluginConfigService!.GetSection("hotkeys");
-        _hotkeyService = new HotkeyService(_inputGateway, log, hotkeySection);
+        _hotkeyService = new HotkeyService(_inputGateway, log, hotkeySection, _keyBlockPatch.Update, _keyBlockPatch.SetCaptureMode);
         _layoutStorage = new LayoutStorage(_pluginConfigService!, log);
         _layoutEditor  = new LayoutEditorService(_layoutStorage, log);
 

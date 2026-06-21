@@ -80,4 +80,6 @@ public interface IPluginServices
     /// another consumes it via <c>Consume&lt;T&gt;</c>, without referencing each other. The ONE generic extension
     /// point for plugin-to-plugin cooperation; specific contracts live in a shared contracts assembly.</summary>
     IPluginExchange Exchange { get; }
+    /// <summary>Trigger the game's noticetip system (dungeon bars, win/fail banners, pop-up tips) with full control over content and audio.</summary>
+    INoticeTips NoticeTips { get; }
 }

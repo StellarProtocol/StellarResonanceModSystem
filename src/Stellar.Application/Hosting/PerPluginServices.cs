@@ -56,4 +56,5 @@ internal sealed class PerPluginServices : IPluginServices
     public IEntityPortrait EntityPortrait => _shared.EntityPortrait;
     public IProfileCardActions ProfileCardActions => _shared.ProfileCardActions;
     public IPluginExchange Exchange => _shared.Exchange;
+    public INoticeTips NoticeTips => _shared.NoticeTips;
 }
