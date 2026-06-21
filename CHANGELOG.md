@@ -6,6 +6,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-21
+### Added
+- **Native notice banners (`INoticeTips` on `IPluginServices`)** — trigger the game's own notice
+  system (dungeon bars, win/fail banners, pop tips) with full control over content and audio via a
+  fluent builder (`Create`/`WithContent`/`WithAudio`/`WithDuration`/`Show`). `NoticeTipService.Show()`
+  is thread-safe: it enqueues the pre-built Lua chunk to a `ConcurrentQueue` drained on the
+  main-thread tick, so plugins may call it from async continuations or any thread without
+  marshalling boilerplate. (#15)
+- **Consume hotkey keypresses (Settings → Hotkeys)** — a global toggle that blocks bound keys from
+  reaching the game via Rewired while the framework still receives them through `UnityEngine.Input`.
+  Blocking is modifier-aware (Ctrl+F1 bound does not also block bare F1), and all keys are suppressed
+  while a rebind cell is open. Backed by `IHotkeyBlockDirectory` + `HotkeyKeyBlockPatch`. (#15)
+
 ## [1.2.0] - 2026-06-19
 ### Added
 - **Loadout API (`ILoadout` on `IPluginServices`)** — read the player's saved in-game loadouts

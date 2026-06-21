@@ -18,9 +18,10 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.2.0 adds the loadout API (<c>ILoadout</c> — switch
-    /// saved in-game loadouts) and a transient toast service (<c>INotifications</c>),
-    /// both on <c>IPluginServices</c>; minor bump = additive plugin-surface API.
+    /// BepInEx chainloader happy. 1.3.0 adds the native notice-banner service
+    /// (<c>INoticeTips</c> — trigger the game's own notice banners / pop tips with
+    /// thread-safe <c>Show()</c>) on <c>IPluginServices</c>, plus a global
+    /// consume-hotkey-from-game toggle; minor bump = additive plugin-surface API.
     /// </summary>
-    public const string Value = "1.2.0";
+    public const string Value = "1.3.0";
 }
