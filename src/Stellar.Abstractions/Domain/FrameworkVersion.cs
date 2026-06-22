@@ -18,11 +18,11 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.4.1 is a hotfix: scope the rail-button template
-    /// lookup to the menu-panel subtree so it no longer scans the whole UI tree
-    /// every 200 ms (periodic in-game freeze). 1.4.0 added
+    /// BepInEx chainloader happy. 1.4.2 is a hotfix: fix non-ASCII (e.g. Thai) text
+    /// input being truncated in uGUI fields (onValidateInput → onValueChanged). 1.4.1
+    /// scoped the rail-button template lookup (periodic freeze); 1.4.0 added
     /// <c>IWindowControl.SetVisiblePersist</c> plus the native-UI grab-box /
     /// cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.4.1";
+    public const string Value = "1.4.2";
 }
