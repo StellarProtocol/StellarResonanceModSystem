@@ -12,6 +12,8 @@ namespace Stellar.Infrastructure.Game;
 /// game's Alt-to-free-cursor, which is suppressed during focus) and honours Esc to defocus. Pure
 /// UnityEngine.UI (no Il2CppInterop) so it builds identically in the headless UI sandbox and in-game.
 /// Keyboard SUPPRESSION stays in KeyboardInputGate, driven by <see cref="IsFocused"/>.
+/// NOTE: onValidateInput is intentionally NOT used — its char parameter is truncated to 8 bits across
+/// the IL2CPP delegate bridge, breaking non-ASCII input. Newline detection uses onValueChanged instead.
 /// </summary>
 internal sealed class UGuiTextInput
 {
@@ -23,7 +25,8 @@ internal sealed class UGuiTextInput
     private bool _wasFocused;
     private bool _savedCursorVisible;
     private CursorLockMode _savedCursorLock;
-    private bool _enterLatched;   // one-press-one-submit: blocks key-repeat from firing submit every frame
+    private bool _enterLatched;      // one-press-one-submit: blocks key-repeat from firing submit every frame
+    private bool _strippingNewline;  // re-entrancy guard for text reset inside onValueChanged
 
     public UGuiTextInput(Action<string>? onSubmit = null, Action<bool>? onFocusChanged = null, Action<string>? onChange = null)
     {
@@ -62,13 +65,13 @@ internal sealed class UGuiTextInput
         // MultiLineNewline is the ONLY mode uGUI does NOT deactivate on Enter. SingleLine returns
         // EditState.Finish on Enter -> DeactivateInputField() runs right after onEndEdit -> the field
         // loses focus for a frame -> the game (chat opens only when no field is focused) flashes chat
-        // open then closed. We keep focus by staying in MultiLineNewline and swallowing the newline in
-        // OnValidateInput, firing submit there — so the field never deactivates and chat never opens,
-        // while remaining visually + behaviourally single-line (no newline is ever insertable).
+        // open then closed. We stay in MultiLineNewline and strip the '\n' in onValueChanged (full
+        // UTF-16 string — no char-level IL2CPP truncation) and fire submit there, so the field never
+        // deactivates and chat never opens. onValidateInput is NOT used: its char parameter is truncated
+        // to 8 bits across the IL2CPP delegate bridge, breaking non-ASCII input (e.g. Thai).
         _field.lineType = InputField.LineType.MultiLineNewline;
         _field.text = string.Empty;
-        _field.onValidateInput = (InputField.OnValidateInput)OnValidateInput;
-        if (_onChange != null) _field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(s => _onChange(s)));
+        _field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(OnFieldValueChanged));
         return go;
     }
 
@@ -150,20 +153,23 @@ internal sealed class UGuiTextInput
         _field = null;
     }
 
-    // Per-character validation hook uGUI calls before committing a typed char. In MultiLineNewline mode,
-    // Enter routes a '\n' through here (it would otherwise be inserted as a newline). We fire submit on
-    // that Enter and return '\0' to swallow it — nothing is inserted, the field stays single-line, and
-    // because no submit/Finish occurs the field never deactivates (so the game never opens chat). All
-    // other characters pass through unchanged. Blur (click-away / Esc) still works via the deselect path.
-    private char OnValidateInput(string text, int charIndex, char addedChar)
+    // onValueChanged fires AFTER a char is committed to the field (full UTF-16 string — no IL2CPP char
+    // truncation). When Enter is pressed in MultiLineNewline mode, '\n' is appended before this fires.
+    // We strip the newline, reset the field text, and submit. The _strippingNewline guard prevents
+    // processing the re-entrant onValueChanged that fires when we assign _field.text = clean.
+    private void OnFieldValueChanged(string value)
     {
-        if (addedChar == '\n' || addedChar == '\r')
+        if (_strippingNewline) return;
+        if (value.Contains('\n') || value.Contains('\r'))
         {
-            // `text` is the pre-commit field contents (the '\n' isn't inserted yet) — the value to submit.
-            if (!_enterLatched) { _enterLatched = true; _onSubmit?.Invoke(text); }   // once per press; Tick releases on key-up
-            return '\0';
+            var clean = value.Replace("\r", "").Replace("\n", "");
+            _strippingNewline = true;
+            try { if (_field != null) _field.text = clean; }
+            finally { _strippingNewline = false; }
+            if (!_enterLatched) { _enterLatched = true; _onSubmit?.Invoke(clean); }
+            return;
         }
-        return addedChar;
+        _onChange?.Invoke(value);
     }
 
     // DeactivateInputField fires onEndEdit — no listener is registered (submit is handled in

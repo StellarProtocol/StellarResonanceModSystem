@@ -47,45 +47,31 @@ internal sealed class KeyboardInputGate
     private bool _hasLongParam;
     private bool _maskAvailable;          // ZIgnoreMgr gameplay-mask path resolved
 
-    // PRIMARY for complete coverage: the game's own "a UI text field is focused → ignore keyboard" flag
-    // (what its chat box uses) — covers movement + skills + UI hotkeys (inventory/wheel/modules) that the
-    // gameplay mask can't reach. Exposed by the interop as a field OR a property; resolve either.
     private object? _pcInstance;          // PlayerInputController.Instance
     private bool _pcAvailable;            // any PlayerInputController focus member resolved
     private FieldInfo? _ignoreKbField;    // PlayerInputController.IgnoreKeyboard (if a field)
     private PropertyInfo? _ignoreKbProp;  // PlayerInputController.IgnoreKeyboard (if a property)
-    // The game's own "a UI text field is focused" trackers — its OpenChat guard reads these (chat opens on
-    // Enter only when NO field is focused). Setting them makes Enter NOT open chat while our field is focused.
     private FieldInfo? _focusNameField;   // curFocusInputTextName (string)
     private FieldInfo? _focusUiField;     // isFocusUI_ (bool)
 
-    // PRIMARY for COMPLETE coverage: disable Rewired's keyboard controller (the input backend EVERY game
-    // layer reads through), so movement + skills + UI hotkeys all stop at once, while mouse-look/click and
-    // the uGUI field's own typing (Unity Input.inputString, not Rewired) keep working. ReInput.controllers
-    // (static) → .Keyboard → .enabled. Live objects are re-fetched per transition (cheap; not per-frame).
+    // Rewired keyboard controller: ReInput.controllers → .Keyboard → .enabled
     private bool _rewiredAvailable;
-    private PropertyInfo? _reinputControllersProp;  // static Rewired.ReInput.controllers
-    private PropertyInfo? _kbProp;                   // ControllerHelper.Keyboard
-    private PropertyInfo? _kbEnabledProp;            // Controller.enabled (settable bool)
+    private PropertyInfo? _reinputControllersProp;
+    private PropertyInfo? _kbProp;
+    private PropertyInfo? _kbEnabledProp;
 
-    public KeyboardInputGate(IGameTypeRegistry types, IPluginLog log) { _types = types; _log = log; }
+    public KeyboardInputGate(IGameTypeRegistry types, IPluginLog log)
+    { _types = types; _log = log; }
 
     /// <summary>Mask (on=true) / unmask (on=false) the gameplay keybind set while a Stellar field is focused.
-    /// Idempotent + safe to call every frame; no-op if the game API couldn't be resolved.</summary>
+    /// Idempotent + safe to call every frame.</summary>
     public void SetSuppressed(bool on)
     {
-        // Transition guard FIRST — before EnsureResolved. The window/HUD tick calls this every frame, so at
-        // the TITLE screen it fires SetSuppressed(false) constantly; if that triggered resolution, it would
-        // run before the game's input singletons (Rewired / PlayerInputController / ZIgnoreMgr) exist, fail,
-        // and the gate would cache itself dead → keyboard leaks in-world (the spike dodged this by only
-        // creating the gate in-world). With the guard first, resolution is attempted only on a real
-        // false→true transition — i.e. the first time a field is focused, which is in-world where the
-        // singletons are live.
         if (on == _suppressed) return;
-        if (!EnsureResolved()) return;   // not resolvable yet — leave _suppressed unflipped so we retry next focus
+        if (!EnsureResolved()) return;
         _suppressed = on;
-        if (_rewiredAvailable) SetRewiredKeyboardEnabled(!on);   // primary complete block
-        if (_pcAvailable) SetPlayerFocusState(on);                // IgnoreKeyboard + focus-text trackers (gates Enter→chat)
+        if (_rewiredAvailable) SetRewiredKeyboardEnabled(!on);
+        if (_pcAvailable) SetPlayerFocusState(on);
         if (_maskAvailable)
         {
             try
@@ -98,6 +84,21 @@ internal sealed class KeyboardInputGate
                 _log.Warning($"[KeyboardGate] SetInputIgnore threw, disabling mask path: {ex.GetType().Name}: {ex.Message}");
                 _maskAvailable = false;
             }
+        }
+    }
+
+    private void SetRewiredKeyboardEnabled(bool enabled)
+    {
+        try
+        {
+            var helper = _reinputControllersProp!.GetValue(null);
+            var kb = helper is null ? null : _kbProp!.GetValue(helper);
+            if (kb is not null) _kbEnabledProp!.SetValue(kb, enabled);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[KeyboardGate] Rewired keyboard set threw: {ex.GetType().Name}: {ex.Message}");
+            _rewiredAvailable = false;
         }
     }
 
@@ -114,22 +115,6 @@ internal sealed class KeyboardInputGate
         {
             _log.Warning($"[KeyboardGate] PlayerInputController focus set threw: {ex.GetType().Name}: {ex.Message}");
             _pcAvailable = false;
-        }
-    }
-
-    // Re-fetch the live controllers/Keyboard objects each transition, then set enabled.
-    private void SetRewiredKeyboardEnabled(bool enabled)
-    {
-        try
-        {
-            var helper = _reinputControllersProp!.GetValue(null);
-            var kb = helper is null ? null : _kbProp!.GetValue(helper);
-            if (kb is not null) _kbEnabledProp!.SetValue(kb, enabled);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"[KeyboardGate] Rewired keyboard set threw: {ex.GetType().Name}: {ex.Message}");
-            _rewiredAvailable = false;
         }
     }
 
@@ -180,25 +165,19 @@ internal sealed class KeyboardInputGate
 
     private bool EnsureResolved()
     {
-        if (_available) return true;   // resolved once → cached
+        if (_available) return true;
 
-        _rewiredAvailable = TryResolveRewired();      // primary — complete keyboard block
-        _pcAvailable = TryResolvePlayerFocus();        // IgnoreKeyboard + focus trackers (gates Enter->chat)
-        _maskAvailable = TryResolveMaskPath();         // gameplay-action mask (movement/skills)
+        _rewiredAvailable = TryResolveRewired();
+        _pcAvailable = TryResolvePlayerFocus();
+        _maskAvailable = TryResolveMaskPath();
 
         _available = _rewiredAvailable || _pcAvailable || _maskAvailable;
-        // Do NOT permanently disable on a miss — a focus transition can land a frame before a singleton is
-        // live (scene/login boundary); just report not-ready and retry on the next focus (SetSuppressed only
-        // reaches here on a real transition, so this isn't a per-frame retry).
         if (!_available) return false;
-        RegisterTeardownHooks();   // never leave the keyboard disabled on crash/exit
+        RegisterTeardownHooks();
         _log.Info($"[KeyboardGate] resolved: rewiredKeyboard={_rewiredAvailable} playerFocus={_pcAvailable} maskPath={_maskAvailable}");
         return true;
     }
 
-    // Rewired keyboard controller: ReInput.controllers (static) → .Keyboard → .enabled. Disabling it stops
-    // ALL keyboard-driven game actions (every layer reads through Rewired) while leaving mouse + the uGUI
-    // field's typing (Unity Input.inputString) intact. Caches the property chain; live objects re-fetched on use.
     private bool TryResolveRewired()
     {
         var reInput = _types.FindType("Rewired.ReInput") ?? FindByShortName("ReInput");
@@ -215,7 +194,6 @@ internal sealed class KeyboardInputGate
         return true;
     }
 
-    // The game's own chat-focus flag — covers movement + skills + UI hotkeys (the complete block).
     private bool TryResolvePlayerFocus()
     {
         var pcType = _types.FindType("Panda.ZInput.PlayerInputController") ?? FindByShortName("PlayerInputController");
