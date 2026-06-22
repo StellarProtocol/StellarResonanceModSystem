@@ -13,12 +13,12 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>Element construction for <see cref="PandaUGuiAdapter"/> (kept in a sibling partial).</summary>
 internal sealed partial class PandaUGuiAdapter
 {
-    // Memoised live-template lookups: FindLiveByName scans EVERY transform in the
-    // scene (Resources.FindObjectsOfTypeAll), so we cache the resolved Transform
+    // Memoised live-template lookups: FindLiveByName searches the menu panel subtree
+    // (GetComponentsInChildren scoped to the resolved parent), so we cache the result
     // per name. Unity's overloaded == nulls the entry once the game destroys it
     // (menu close) and the activeInHierarchy guard rejects pooled-inactive ghosts,
-    // so a hit only stands while the template is genuinely live — one scan per
-    // menu-open instead of one per injection tick.
+    // so a hit only stands while the template is genuinely live — one subtree scan
+    // per menu-open instead of one per injection tick.
     private readonly Dictionary<string, Transform> _liveCache = new();
 
     // Turns a plugin/framework IconPng into a Texture2D for the rail button's
@@ -73,7 +73,8 @@ internal sealed partial class PandaUGuiAdapter
         // earlier "any live *_btn*" fallback could grab a bottom-group button —
         // Support/Unstuck/Exit — and place Stellar overlapping them.) If the named
         // template is briefly pooled-inactive, build nothing this tick and retry.
-        var template = FindLiveByName(e.TemplateChildName);
+        var parent = ResolveParent(anchor);
+        var template = parent != null ? FindLiveByName(e.TemplateChildName, parent) : null;
         if (template == null || template.parent == null)
         {
             if (!_railTemplateMissLogged)
@@ -96,6 +97,13 @@ internal sealed partial class PandaUGuiAdapter
         }
         _pendingGlow = null; _pendingStar = null;
         var hasPng = AddRailButtonContent(go, spec, size, template);
+        AttachAndPlaceButton(go, spec, template, hasPng);
+        return go;
+    }
+
+    private void AttachAndPlaceButton(GameObject go, MenuButtonSpec spec, Transform template, bool hasPng)
+    {
+        var rt = go.GetComponent<RectTransform>();
         var btn = go.AddComponent<Button>();
         // Hover is handled manually in TickGlow (the InputSystem EventSystem
         // doesn't dispatch PointerEnter/Exit to our injected button, so uGUI's
@@ -104,9 +112,8 @@ internal sealed partial class PandaUGuiAdapter
         btn.onClick.AddListener((UnityAction)(() => { SafeInvoke(spec.OnClick); ClearRailSelection(); }));
         PlaceBelowRail(go, template.parent, template.name);
         _railVisuals.Add(new RailVisual { Glow = _pendingGlow, Star = _pendingStar, Surface = go.GetComponent<Image>(), Rect = rt, Canvas = rt.GetComponentInParent<Canvas>() });
-        _log.Info($"[uGUI] built rail button '{spec.Label}' under '{template.parent.name}' for {anchor}"
+        _log.Info($"[uGUI] built rail button '{spec.Label}' under '{template.parent.name}' for {spec.Anchor}"
                   + (hasPng ? " (png icon)" : ""));
-        return go;
     }
 
     // Native rail items are icon-on-top + label-below on a transparent cell (no
@@ -173,21 +180,19 @@ internal sealed partial class PandaUGuiAdapter
         crt.anchoredPosition = new Vector2(crt.anchoredPosition.x, lastTopY - step);
     }
 
-    // First active, scene-instantiated Transform with this name (excludes prefab
-    // assets via scene.IsValid + our own previous clones). The result is memoised
-    // in _liveCache; a cached hit is reused while it stays live (== null catches
-    // destroy, activeInHierarchy catches pooled-inactive), so the full-scene scan
-    // runs once per menu-open rather than every injection tick.
-    private Transform? FindLiveByName(string name)
+    // Finds the first active descendant of <paramref name="parent"/> with the given
+    // name, excluding our own injected buttons. Scoped to the menu panel subtree so
+    // it's far cheaper than the previous Resources.FindObjectsOfTypeAll scene-wide
+    // scan. Result memoised in _liveCache; cached hit reused while still live.
+    private Transform? FindLiveByName(string name, Transform parent)
     {
         if (_liveCache.TryGetValue(name, out var cached) && IsUsableTemplate(cached, name))
             return cached;
 
-        foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+        foreach (var t in parent.GetComponentsInChildren<Transform>(includeInactive: false))
         {
             if (t == null || t.name != name) continue;
-            var go = t.gameObject;
-            if (go.activeInHierarchy && go.scene.IsValid() && !t.name.StartsWith("StellarBtn_"))
+            if (!t.name.StartsWith("StellarBtn_"))
             {
                 _liveCache[name] = t;
                 return t;
