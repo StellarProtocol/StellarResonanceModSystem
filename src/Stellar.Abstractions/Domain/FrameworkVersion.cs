@@ -18,11 +18,11 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.4.0 adds <c>IWindowControl.SetVisiblePersist</c>
-    /// (persist a window's visibility to the active layout slot so it survives a
-    /// relaunch) to the plugin surface — minor bump = additive API — and fixes
-    /// native-UI edit-mode grab-boxes collapsing to the corner during loading /
-    /// cutscenes plus game-UI elements flinging off-screen after a cutscene.
+    /// BepInEx chainloader happy. 1.4.1 is a hotfix: scope the rail-button template
+    /// lookup to the menu-panel subtree so it no longer scans the whole UI tree
+    /// every 200 ms (periodic in-game freeze). 1.4.0 added
+    /// <c>IWindowControl.SetVisiblePersist</c> plus the native-UI grab-box /
+    /// cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.4.0";
+    public const string Value = "1.4.1";
 }
