@@ -6,6 +6,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-22
+### Fixed
+- **Periodic ~200 ms in-game freeze from the rail-button template lookup.** The lookup walked the
+  entire UI tree on a timer; it's now scoped to the menu-panel subtree. (#17)
+
 ## [1.4.0] - 2026-06-22
 ### Added
 - **`IWindowControl.SetVisiblePersist(bool)`** — show/hide a window AND persist the choice to the
