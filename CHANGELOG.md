@@ -6,6 +6,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-06-22
+### Fixed
+- **Non-ASCII text input (e.g. Thai) truncated in uGUI fields.** Switched from `onValidateInput`
+  (per-char ASCII gate) to `onValueChanged`, so multi-byte / IME input is preserved. (#19)
+
 ## [1.4.1] - 2026-06-22
 ### Fixed
 - **Periodic ~200 ms in-game freeze from the rail-button template lookup.** The lookup walked the
