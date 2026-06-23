@@ -25,4 +25,21 @@ public interface IPartyEvents
 
     /// <summary>Fires when the party disbands. After firing, the roster is empty.</summary>
     event Action PartyDissolved;
+
+    /// <summary>
+    /// Fires when a member responds to a dungeon ready-check
+    /// (<c>WorldNtf.NotifyCaptainReady</c>, method 71) — carries who responded and
+    /// whether they readied or declined. Every client in the party receives this,
+    /// including the leader. Use it to drive a live ready-check panel.
+    /// </summary>
+    event Action<ReadyCheckResponse> ReadyCheckResponded;
+
+    /// <summary>
+    /// Fires when the ready-check window opens (<c>true</c>) or closes (<c>false</c>)
+    /// via <c>WorldNtf.NotifyAllMemberReady</c> (method 70). NOTE: the party LEADER
+    /// who initiates the check does NOT receive this packet — only non-leader members
+    /// do. Leaders should track open/close from their own initiation + the prepare
+    /// window timer.
+    /// </summary>
+    event Action<bool> ReadyCheckPhaseChanged;
 }

@@ -21,6 +21,8 @@ internal sealed class MemberSlot
     public int        GroupId;
     public int        Slot = -1;   // 0-based position within the group (NotifyTeamGroupUpdate); -1 = unknown
     public int        TalentId;    // TeamMemData.talent_id — selected talent/spec
+    public MicrophoneStatus MicStatus = MicrophoneStatus.Opened; // base from TeamMemData.voice_is_open, refined by GrpcTeamNtf m25
+    public bool       Speaking;    // GrpcTeamNtf m26 (ESpeakStatus == Begin)
 
     public bool IsOnline => OnlineStatusRaw == 1;
 }

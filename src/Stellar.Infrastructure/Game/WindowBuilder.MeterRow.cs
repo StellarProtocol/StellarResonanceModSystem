@@ -18,9 +18,9 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class WindowBuilder
 {
     private const float MeterRowHeight = 48f;
-    private const float MeterSpineW    = 3f;
+    internal const float MeterSpineW    = 3f;
     private const float MeterCrestW    = 22f;
-    private const float MeterPad       = 6f;
+    internal const float MeterPad       = 6f;
     private const float MeterGap       = 7f;
     private const float MeterBarH      = 14f;
 
@@ -85,7 +85,7 @@ internal sealed partial class WindowBuilder
         var le = row.AddComponent<LayoutElement>();
         le.preferredHeight = le.minHeight = MeterRowHeight; le.flexibleWidth = 1f;
 
-        var (bg, border, spineFill, spine) = BuildMeterBackplate(row.transform);
+        var (bg, border, talkBorder, spineFill, spine) = BuildMeterBackplate(row.transform);
 
         // Content — inset past the spine; top line + bar stacked.
         var content = UGuiPrimitives.NewChild("Content", row.transform);
@@ -95,7 +95,7 @@ internal sealed partial class WindowBuilder
         vlg.spacing = 2f; vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.UpperLeft;
 
-        var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, topLine) = BuildMeterTopLine(content.transform, token);
+        var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
         var (fillRect, fillImg, primary, secondary, secondaryGo) = BuildMeterBar(content.transform, token);
 
         // Right-column host for the "RightColumn" imagine position — an ignore-layout cell on the row's right
@@ -124,30 +124,28 @@ internal sealed partial class WindowBuilder
             BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, Scrim = scrim,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
+            VoiceImg = voiceImg, TalkBorderGo = talkBorder,
         });
 
         if (el.OnRightClick is { } rc)
             RegisterRightClick?.Invoke(row.GetComponent<RectTransform>(), () => rc());
     }
 
-    // Bg (self-backing) + self-highlight border + HP spine — the ignore-layout backplate drawn behind content.
-    private (Image bg, GameObject border, Image spineFill, GameObject spine) BuildMeterBackplate(Transform row)
+    // Bg (self-backing) + self-highlight border + talk border + HP spine — the ignore-layout backplate.
+    private (Image bg, GameObject border, GameObject talkBorder, Image spineFill, GameObject spine) BuildMeterBackplate(Transform row)
     {
         var bg = AddStretchedImage(row, "Bg", MeterRowBg, ignoreLayout: true);
 
-        var border = UGuiPrimitives.NewChild("SelfBorder", row);
-        border.AddComponent<LayoutElement>().ignoreLayout = true;
-        UGuiPrimitives.Stretch(border);
-        AddEdge(border.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));   // top
-        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0f));   // bottom
-        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(1f, 0f), new Vector2(0f, 0f));   // left
-        AddEdge(border.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(0f, 0f));   // right
+        var border = BuildBorder(row, "SelfBorder");
+        // Parallel 4-edge border the plugin tints (e.g. green while talking); hidden until RowBorder alpha > 0.
+        var talkBorder = BuildBorder(row, "TalkBorder");
+        talkBorder.SetActive(false);
 
         var spine = UGuiPrimitives.NewChild("Spine", row);
         spine.AddComponent<LayoutElement>().ignoreLayout = true;
         var srt = spine.GetComponent<RectTransform>();
         srt.anchorMin = new Vector2(0f, 0f); srt.anchorMax = new Vector2(0f, 1f); srt.pivot = new Vector2(0f, 0.5f);
-        srt.sizeDelta = new Vector2(MeterSpineW, -4f); srt.anchoredPosition = Vector2.zero;
+        srt.sizeDelta = new Vector2(MeterSpineW, -4f); srt.anchoredPosition = new Vector2(2f, 0f); // inset past the left border
         var spineBg = spine.AddComponent<Image>(); spineBg.color = MeterSpineBg; spineBg.raycastTarget = false;
         // HP fill: a bottom-anchored solid rect whose HEIGHT is the HP fraction (the binding drives anchorMax.y).
         // NOT Image.Type.Filled — a uGUI Image with no sprite ignores fillAmount and draws a FULL quad, so the
@@ -159,7 +157,20 @@ internal sealed partial class WindowBuilder
         frt.anchorMin = new Vector2(0f, 0f); frt.anchorMax = new Vector2(1f, 1f); frt.pivot = new Vector2(0.5f, 0f);
         frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
         var spineFill = fillGo.AddComponent<Image>(); spineFill.color = Color.clear; spineFill.raycastTarget = false;
-        return (bg, border, spineFill, spine);
+        return (bg, border, talkBorder, spineFill, spine);
+    }
+
+    // A 4-edge (1-px) box border filling its parent. Edge colour is set at apply time by the binding.
+    private static GameObject BuildBorder(Transform row, string name)
+    {
+        var border = UGuiPrimitives.NewChild(name, row);
+        border.AddComponent<LayoutElement>().ignoreLayout = true;
+        UGuiPrimitives.Stretch(border);
+        AddEdge(border.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));   // top    (horizontal)
+        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 0f), new Vector2(0f, 1f));   // bottom (horizontal)
+        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(1f, 0f));   // left   (vertical)
+        AddEdge(border.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(1f, 0f));   // right  (vertical)
+        return border;
     }
 
     private static readonly Color MeterLeaderCol = new(0.96f, 0.78f, 0.20f, 1f);   // gold party-leader flag
@@ -198,7 +209,7 @@ internal sealed partial class WindowBuilder
         return t;
     }
 
-    private (RawImage crest, GameObject crestCell, GameObject deadMark, Text rank, Text name, GameObject nameStrike, Text className, Text spec, GameObject specGo, Text score, GameObject scoreGo, Text share, GameObject shareGo, GameObject leaderGo, ImagineCell[] imagine, GameObject imagineGroup, Transform topLine)
+    private (RawImage crest, GameObject crestCell, GameObject deadMark, Text rank, Text name, GameObject nameStrike, Text className, Text spec, GameObject specGo, Text score, GameObject scoreGo, Text share, GameObject shareGo, GameObject leaderGo, ImagineCell[] imagine, GameObject imagineGroup, RawImage voiceImg, Transform topLine)
         BuildMeterTopLine(Transform parent, WindowToken token)
     {
         var line = UGuiPrimitives.NewChild("Top", parent);
@@ -207,15 +218,7 @@ internal sealed partial class WindowBuilder
         hlg.childForceExpandWidth = false; hlg.childForceExpandHeight = false; hlg.childAlignment = TextAnchor.MiddleLeft;
         line.AddComponent<LayoutElement>().minHeight = MeterCrestW;
 
-        // 22×22 layout cell with a centre-anchored image child so the binding can letterbox a non-square
-        // atlas cell (AspectFit) inside the box instead of stretching it.
-        var crestGo = UGuiPrimitives.NewChild("Crest", line.transform);
-        UGuiPrimitives.SetPreferred(crestGo, MeterCrestW, MeterCrestW);
-        var crestImgGo = UGuiPrimitives.NewChild("Img", crestGo.transform);
-        var crt = crestImgGo.GetComponent<RectTransform>();
-        crt.anchorMin = crt.anchorMax = crt.pivot = new Vector2(0.5f, 0.5f);
-        crt.sizeDelta = new Vector2(MeterCrestW, MeterCrestW);
-        var crest = crestImgGo.AddComponent<RawImage>(); crest.raycastTarget = false; crest.enabled = false;
+        var (crest, crestGo) = BuildCrestCell(line.transform);
 
         // Order: crest · skull · rank ("2.") · leader flag · name. The flag sits between rank and name.
         var deadGo = AddDeadMark(line.transform);
@@ -230,6 +233,7 @@ internal sealed partial class WindowBuilder
 
         var name = AddMeterText(token, line.transform, ("Name", 12, true, MeterNameCol));
         var nameStrike = AddNameStrike(name);
+
         // Optional base-class line (between name and spec) — hidden until MeterRowData.ShowClassName.
         var className = AddMeterText(token, line.transform, ("Class", 10, false, MeterClassCol));
         className.gameObject.SetActive(false);
@@ -237,6 +241,7 @@ internal sealed partial class WindowBuilder
         // Ability-score pill (after spec) — hidden until MeterRowData.ShowAbilityScore (deferred: no wire yet).
         var (score, scoreGo) = BuildScorePill(token, line.transform);
         AddFlexSpacer(line.transform);
+        var voiceImg = BuildVoiceCell(line.transform);   // right side, by the share %
         var share = AddMeterText(token, line.transform, ("Share", 11, true, MeterShareCol));
         share.alignment = TextAnchor.MiddleRight;
 
@@ -248,7 +253,31 @@ internal sealed partial class WindowBuilder
         igHlg.childForceExpandWidth = false; igHlg.childForceExpandHeight = false; igHlg.childAlignment = TextAnchor.MiddleRight;
         var imagine = new[] { BuildImagineCell(token, imagineGroup.transform), BuildImagineCell(token, imagineGroup.transform) };
 
-        return (crest, crestGo, deadGo, rank, name, nameStrike, className, spec, spec.gameObject, score, scoreGo, share, share.gameObject, leaderGo, imagine, imagineGroup, line.transform);
+        return (crest, crestGo, deadGo, rank, name, nameStrike, className, spec, spec.gameObject, score, scoreGo, share, share.gameObject, leaderGo, imagine, imagineGroup, voiceImg, line.transform);
+    }
+
+    // Class-crest cell (22×22) with a centre-anchored image child so the binding can letterbox a non-square
+    // atlas cell (AspectFit) inside the box instead of stretching it.
+    private static (RawImage crest, GameObject crestGo) BuildCrestCell(Transform line)
+    {
+        var crestGo = UGuiPrimitives.NewChild("Crest", line);
+        UGuiPrimitives.SetPreferred(crestGo, MeterCrestW, MeterCrestW);
+        var crestImgGo = UGuiPrimitives.NewChild("Img", crestGo.transform);
+        var crt = crestImgGo.GetComponent<RectTransform>();
+        crt.anchorMin = crt.anchorMax = crt.pivot = new Vector2(0.5f, 0.5f);
+        crt.sizeDelta = new Vector2(MeterCrestW, MeterCrestW);
+        var crest = crestImgGo.AddComponent<RawImage>(); crest.raycastTarget = false; crest.enabled = false;
+        return (crest, crestGo);
+    }
+
+    // Name-line voice status icon (14×14). Built inactive; the binding fills the plugin-supplied texture.
+    private static RawImage BuildVoiceCell(Transform line)
+    {
+        var voiceGo = UGuiPrimitives.NewChild("Voice", line);
+        UGuiPrimitives.SetPreferred(voiceGo, 14f, 14f);
+        var voiceImg = voiceGo.AddComponent<RawImage>(); voiceImg.raycastTarget = false; voiceImg.enabled = false;
+        voiceGo.SetActive(false);
+        return voiceImg;
     }
 
     // Dead-state skull marker cell (12×12 RawImage, leads the row). Built inactive; toggled by Dead.

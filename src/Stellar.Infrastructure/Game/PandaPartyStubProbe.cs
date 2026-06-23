@@ -33,6 +33,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaPartyStubProbe
 {
     private readonly IPartyEventSink _sink;
+    private readonly IPartyLiveSink  _liveSink;
     private readonly IWireTap        _wireTap;
     private readonly IPluginLog      _log;
 
@@ -40,12 +41,14 @@ internal sealed partial class PandaPartyStubProbe
 
     public PandaPartyStubProbe(
         IPartyEventSink sink,
+        IPartyLiveSink  liveSink,
         IWireTap        wireTap,
         IPluginLog      log)
     {
-        _sink    = sink    ?? throw new ArgumentNullException(nameof(sink));
-        _wireTap = wireTap ?? throw new ArgumentNullException(nameof(wireTap));
-        _log     = log     ?? throw new ArgumentNullException(nameof(log));
+        _sink     = sink     ?? throw new ArgumentNullException(nameof(sink));
+        _liveSink = liveSink ?? throw new ArgumentNullException(nameof(liveSink));
+        _wireTap  = wireTap  ?? throw new ArgumentNullException(nameof(wireTap));
+        _log      = log      ?? throw new ArgumentNullException(nameof(log));
     }
 
     /// <summary>
@@ -60,6 +63,8 @@ internal sealed partial class PandaPartyStubProbe
         dispatcher.Register(GrpcTeamNtfMethodIds.NoticeUpdateTeamMemberInfo, Dispatch);
         dispatcher.Register(GrpcTeamNtfMethodIds.NotifyTeamGroupUpdate,      Dispatch);
         dispatcher.Register(GrpcTeamNtfMethodIds.NoticeTeamDissolve,         Dispatch);
+        dispatcher.Register(GrpcTeamNtfMethodIds.NotifyTeamMemMicrophoneStatusChange, Dispatch);
+        dispatcher.Register(GrpcTeamNtfMethodIds.NotifyTeamMemsSpeakStatusChange,     Dispatch);
     }
 
     /// <summary>
@@ -135,9 +140,13 @@ internal sealed partial class PandaPartyStubProbe
         _wireTap.Register(BPSRServiceIds.GrpcTeamNtf, GrpcTeamNtfMethodIds.NoticeUpdateTeamMemberInfo, OnWireNoticeUpdateTeamMemberInfo);
         _wireTap.Register(BPSRServiceIds.GrpcTeamNtf, GrpcTeamNtfMethodIds.NotifyTeamGroupUpdate,      OnWireNotifyTeamGroupUpdate);
         _wireTap.Register(BPSRServiceIds.GrpcTeamNtf, GrpcTeamNtfMethodIds.NoticeTeamDissolve,         OnWireNoticeTeamDissolve);
+        _wireTap.Register(BPSRServiceIds.GrpcTeamNtf, GrpcTeamNtfMethodIds.NotifyTeamMemMicrophoneStatusChange, OnWireMicStatus);
+        _wireTap.Register(BPSRServiceIds.GrpcTeamNtf, GrpcTeamNtfMethodIds.NotifyTeamMemsSpeakStatusChange,     OnWireSpeakStatus);
         _wireTapAttached = true;
     }
 
+    private void OnWireMicStatus(WireEnvelope env)                 => HandleMicStatus(env.Payload.Span);
+    private void OnWireSpeakStatus(WireEnvelope env)               => HandleSpeakStatus(env.Payload.Span);
     private void OnWireNotifyJoinTeam(WireEnvelope env)             => HandleNotifyJoinTeam(env.Payload.Span);
     private void OnWireNotifyLeaveTeam(WireEnvelope env)            => HandleNotifyLeaveTeam(env.Payload.Span);
     private void OnWireNoticeUpdateTeamInfo(WireEnvelope env)       => HandleNoticeUpdateTeamInfo(env.Payload.Span);
@@ -164,6 +173,8 @@ internal sealed partial class PandaPartyStubProbe
                 case GrpcTeamNtfMethodIds.NotifyLeaveTeam:            HandleNotifyLeaveTeam(span);            break;
                 case GrpcTeamNtfMethodIds.NotifyTeamGroupUpdate:      HandleNotifyTeamGroupUpdate(span);      break;
                 case GrpcTeamNtfMethodIds.NoticeTeamDissolve:         _sink.EnqueueDissolve();                break;
+                case GrpcTeamNtfMethodIds.NotifyTeamMemMicrophoneStatusChange: HandleMicStatus(span);        break;
+                case GrpcTeamNtfMethodIds.NotifyTeamMemsSpeakStatusChange:     HandleSpeakStatus(span);      break;
             }
         }
         catch (Exception ex)
@@ -236,5 +247,19 @@ internal sealed partial class PandaPartyStubProbe
         }
         DiagPartyMsg("NotifyLeaveTeam", payload.Length, 1);
         _sink.EnqueueMemberLeft(msg.CharId, msg.LeaveTypeRaw);
+    }
+
+    private void HandleMicStatus(ReadOnlySpan<byte> payload)
+    {
+        if (!WireProtocol.TryReadVRequest(payload, out var inner)
+            || !NotifyTeamMemMicrophoneStatusReader.TryRead(inner, out var charId, out var micRaw)) return;
+        _liveSink.EnqueueMicStatus(charId, micRaw);
+    }
+
+    private void HandleSpeakStatus(ReadOnlySpan<byte> payload)
+    {
+        if (!WireProtocol.TryReadVRequest(payload, out var inner)
+            || !NotifyTeamMemsSpeakStatusReader.TryRead(inner, out var entries)) return;
+        foreach (var (charId, raw) in entries) _liveSink.EnqueueSpeakStatus(charId, raw);
     }
 }

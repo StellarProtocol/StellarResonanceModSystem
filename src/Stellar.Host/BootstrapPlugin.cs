@@ -92,7 +92,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaCombatStubProbe? _combatStubProbe;
     private PandaPartyStubProbe? _partyStubProbe;
     private PandaSocialDataProbe? _socialDataProbe;
+    private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
+    private WorldNtfLuaStubDispatcher? _worldNtfLuaDispatcher;
     private GrpcTeamNtfStubDispatcher? _grpcTeamNtfDispatcher;
     // Injects the registered profile-card action buttons (IProfileCardActionSource) into the game's
     // native profile card. Ticked from the framework Update; lazy Lua-bridge resolve for the charId read.

@@ -35,7 +35,7 @@ public sealed partial class BootstrapPlugin
         // method IDs before Install() so the router is fully populated before
         // any packets arrive. Register-before-install ordering is required —
         // do NOT move Install() above RegisterWith().
-        _partyStubProbe = new PandaPartyStubProbe(_partyService!, _wireTap!, log);
+        _partyStubProbe = new PandaPartyStubProbe(_partyService!, _partyService!, _wireTap!, log);
         _grpcTeamNtfDispatcher = new GrpcTeamNtfStubDispatcher(log);
         _partyStubProbe.RegisterWith(_grpcTeamNtfDispatcher);
         _grpcTeamNtfDispatcher.Install(PluginGuid);
@@ -54,6 +54,19 @@ public sealed partial class BootstrapPlugin
         _combatStubProbe.RegisterWith(_worldNtfDispatcher);
         _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
         _worldNtfDispatcher.Install(PluginGuid);
+
+        InstallReadyCheckProbe(log);
+    }
+
+    // Ready-check (WorldNtf 70/71) is Lua-only — it flows through ZLuaStub, NOT the C#
+    // WorldNtfStub. Own a separate single-owner postfix on ZLuaStub.OnCallStub (filtered
+    // to uuid==WorldNtf). Register before Install.
+    private void InstallReadyCheckProbe(BepInExPluginLog log)
+    {
+        _readyCheckProbe = new PandaReadyCheckProbe(_partyService!, log);
+        _worldNtfLuaDispatcher = new WorldNtfLuaStubDispatcher(log);
+        _readyCheckProbe.RegisterWith(_worldNtfLuaDispatcher);
+        _worldNtfLuaDispatcher.Install(PluginGuid);
     }
 
     // Social.GetSocialData reply: like GetTeamInfo_Ret it arrives as a Return on the login

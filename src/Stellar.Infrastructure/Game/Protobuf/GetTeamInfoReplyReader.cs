@@ -54,43 +54,44 @@ internal static class GetTeamInfoReplyReader
     /// Parses bytes as a <c>GetTeamInfoReply</c>. Returns true only when
     /// <c>base_info</c> was present AND the roster contains at least one member.
     /// </summary>
+    // Mutable accumulator for the parse pass (keeps TryParseFields to a single param object).
+    private sealed class Acc
+    {
+        public TeamBaseInfoMsg BaseInfo;
+        public bool SawBaseInfo;
+        public readonly Dictionary<long, PartyMemberRoster> Roster = new();
+        public readonly Dictionary<long, PartyMemberFastSync> Fast = new();
+        public readonly Dictionary<long, (int Mic, int Speak)> Voice = new();
+    }
+
     private static bool TryParseReply(ReadOnlySpan<byte> payload, out PartyWireSnapshot snapshot)
     {
         snapshot = default!;
-        TeamBaseInfoMsg baseInfo = default;
-        bool sawBaseInfo = false;
-        var rosterByCharId = new Dictionary<long, PartyMemberRoster>();
-        var fastByCharId   = new Dictionary<long, PartyMemberFastSync>();
+        var acc = new Acc();
+        if (!TryParseFields(payload, acc)) return false;
+        if (!acc.SawBaseInfo || acc.Roster.Count == 0) return false;
 
-        if (!TryParseFields(payload, ref baseInfo, ref sawBaseInfo, rosterByCharId, fastByCharId))
-            return false;
-
-        if (!sawBaseInfo || rosterByCharId.Count == 0)
-            return false;
-
-        var rosterList = new List<PartyMemberRoster>(rosterByCharId.Count);
-        foreach (var r in rosterByCharId.Values)
+        var rosterList = new List<PartyMemberRoster>(acc.Roster.Count);
+        foreach (var r in acc.Roster.Values)
         {
-            var fs = fastByCharId.TryGetValue(r.CharId, out var f) ? f : null;
-            rosterList.Add(r with { FastSync = fs });
+            var fs = acc.Fast.TryGetValue(r.CharId, out var f) ? f : null;
+            var rr = r with { FastSync = fs };
+            if (acc.Voice.TryGetValue(r.CharId, out var v))
+                rr = rr with { MicStatusRaw = v.Mic, Speaking = v.Speak == 1 };
+            rosterList.Add(rr);
         }
 
         snapshot = new PartyWireSnapshot(
-            PartyId:      baseInfo.PartyId,
-            LeaderCharId: baseInfo.LeaderCharId,
-            PartyType:    baseInfo.PartyType,
-            IsMatching:   baseInfo.IsMatching,
+            PartyId:      acc.BaseInfo.PartyId,
+            LeaderCharId: acc.BaseInfo.LeaderCharId,
+            PartyType:    acc.BaseInfo.PartyType,
+            IsMatching:   acc.BaseInfo.IsMatching,
             Roster:       rosterList,
-            Groups:       baseInfo.Groups);
+            Groups:       acc.BaseInfo.Groups);
         return true;
     }
 
-    private static bool TryParseFields(
-        ReadOnlySpan<byte> payload,
-        ref TeamBaseInfoMsg baseInfo,
-        ref bool sawBaseInfo,
-        Dictionary<long, PartyMemberRoster> rosterByCharId,
-        Dictionary<long, PartyMemberFastSync> fastByCharId)
+    private static bool TryParseFields(ReadOnlySpan<byte> payload, Acc acc)
     {
         int p = 0;
         while (p < payload.Length)
@@ -100,24 +101,57 @@ internal static class GetTeamInfoReplyReader
             {
                 case (1, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var biBytes)) return false;
-                    if (!TeamBaseInfoReader.TryRead(biBytes, out baseInfo)) return false;
-                    sawBaseInfo = true;
+                    if (!TeamBaseInfoReader.TryRead(biBytes, out acc.BaseInfo)) return false;
+                    acc.SawBaseInfo = true;
                     break;
                 case (2, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var memBytes)) return false;
                     if (!TeamMemDataReader.TryRead(memBytes, out var roster)) return false;
-                    rosterByCharId[roster.CharId] = roster;
+                    acc.Roster[roster.CharId] = roster;
+                    break;
+                case (4, 2):
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var voiceBytes)) return false;
+                    if (!TryReadVoiceMapEntry(voiceBytes, out var vKey, out var vVal)) return false;
+                    acc.Voice[vKey] = vVal;
                     break;
                 case (7, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var entryBytes)) return false;
                     if (!TryReadFastSyncMapEntry(entryBytes, out var key, out var fast)) return false;
-                    fastByCharId[key] = fast;
+                    acc.Fast[key] = fast;
                     break;
                 default:
                     if (!WireProtocol.SkipField(payload, ref p, wire)) return false;
                     break;
             }
         }
+        return true;
+    }
+
+    // map<int64, TeamMemRealTimeVoiceInfo> entry: {key=1 int64, value=2 {microphone_status=1, speak_status=2}}
+    private static bool TryReadVoiceMapEntry(ReadOnlySpan<byte> payload, out long key, out (int Mic, int Speak) value)
+    {
+        key = 0; value = default;
+        int p = 0, mic = 0, speak = 0;
+        while (p < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref p, out var field, out var wire)) return false;
+            if (field == 1 && wire == 0)
+            { if (!WireProtocol.TryReadVarint(payload, ref p, out var k)) return false; key = (long)k; }
+            else if (field == 2 && wire == 2)
+            {
+                if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var inner)) return false;
+                int q = 0;
+                while (q < inner.Length)
+                {
+                    if (!WireProtocol.TryReadTag(inner, ref q, out var f, out var w)) return false;
+                    if (f == 1 && w == 0) { if (!WireProtocol.TryReadVarint(inner, ref q, out var mv)) return false; mic = (int)mv; }
+                    else if (f == 2 && w == 0) { if (!WireProtocol.TryReadVarint(inner, ref q, out var sv)) return false; speak = (int)sv; }
+                    else if (!WireProtocol.SkipField(inner, ref q, w)) return false;
+                }
+            }
+            else if (!WireProtocol.SkipField(payload, ref p, wire)) return false;
+        }
+        value = (mic, speak);
         return true;
     }
 

@@ -18,4 +18,8 @@ internal abstract record PartyDelta
     internal sealed record MemberLeft(long CharId, int LeaveTypeRaw) : PartyDelta;
     internal sealed record GroupLayout(IReadOnlyList<TeamGroupInfo> Groups) : PartyDelta;
     internal sealed record Dissolve : PartyDelta;
+    internal sealed record ReadyCheckResponse(long CharId, string? Name, bool IsReady) : PartyDelta;
+    internal sealed record ReadyCheckPhase(bool IsOpen) : PartyDelta;
+    internal sealed record MicStatus(long CharId, int Raw) : PartyDelta;
+    internal sealed record SpeakStatus(long CharId, int Raw) : PartyDelta;
 }
