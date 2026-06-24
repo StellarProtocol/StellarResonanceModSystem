@@ -144,6 +144,9 @@ public sealed partial class BootstrapPlugin
 
         try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
+
+        try { _exchangeProbe!.DrainPendingDispatches(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] exchange drain threw: {ex.Message}"); }
     }
 
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the

@@ -66,7 +66,7 @@ public sealed partial class BootstrapPlugin
         var portraitModelProbe = new PandaPortraitModelProbe(_gameTypeRegistry!, log);
         var portraitModelHost = new PortraitModelHost(_gameTypeRegistry!, log);
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
-            _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _notificationService!,
+            _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
             _gameEvents!, playerState, _chatService!,
             combatSnapshot, _combatService!, _combatService!, _combatService!,
