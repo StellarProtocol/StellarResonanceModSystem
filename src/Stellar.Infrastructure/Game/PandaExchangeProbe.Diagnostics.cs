@@ -5,7 +5,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaExchangeProbe
 {
     private void OnResolutionSucceeded()
-        => _log.Info("[Stellar][Exchange] resolved tolua# LuaState bridge; trade VM ready");
+        => _log.Info("[Stellar][Exchange] resolved tolua# LuaState bridge; WorldProxy exchange RPCs ready (Approach A)");
 
     private void OnResolutionFailure(string reason)
     {

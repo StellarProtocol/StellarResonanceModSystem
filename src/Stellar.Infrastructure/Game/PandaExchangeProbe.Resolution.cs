@@ -1,37 +1,40 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
+using Stellar.Abstractions.Domain.Exchange;
+using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Lua-bridge reflection-resolution + chunk builders + Lua-global reads for
+/// Lua-bridge reflection-resolution + <b>WorldProxy</b> exchange-RPC chunk builders + reply parsers for
 /// <see cref="PandaExchangeProbe"/>.
 ///
-/// <para>Resolves the game's <b>tolua#</b> <c>LuaState</c> + <c>DoString</c> entry
-/// point identically to <see cref="PandaLoadoutProbe"/> (static property
-/// <c>ZLuaFramework.LuaState.mainState</c> + <c>void DoString(string,string)</c>),
-/// then drives the <c>trade</c> Lua VM <b>colon-style</b> (<c>vm:AsyncExchangeBuyItem(...)</c>)
-/// through the game's own VM wrapper rather than constructing packets. All async calls run
-/// inside the canonical <c>Z.CoroUtil.create_coro_xpcall(fn)()</c> wrapper.</para>
-///
-/// <para>Results are read back from Lua globals via the <c>LuaState</c> string
-/// indexer, decoding the IL2CPP-wrapped string with
-/// <c>IL2CPP.Il2CppStringToManaged</c>.</para>
+/// <para>Resolves the game's <b>tolua#</b> <c>LuaState</c> + <c>DoString</c> entry point identically to
+/// <see cref="PandaLoadoutProbe"/> (static <c>ZLuaFramework.LuaState.mainState</c> + <c>void DoString(string,string)</c>),
+/// then drives <c>require("zproxy.world_proxy").&lt;Rpc&gt;(requestTable, NeverCancelToken)</c> inside
+/// <c>Z.CoroUtil.create_coro_xpcall</c>. Replies are written to a per-kind Lua global and read back via the
+/// <c>LuaState</c> string indexer (decoding the IL2CPP-wrapped string). Request + reply fields are
+/// <b>camelCase</b> (e.g. <c>configId</c>, <c>errCode</c>, <c>lowestPrice</c>); the buy returns a bare
+/// <c>EErrorCode</c> number. See <c>recon/exchange-vm-notes.md</c> Pass 5.</para>
 /// </summary>
 internal sealed partial class PandaExchangeProbe
 {
     private const BindingFlags AnyStatic = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
-    // chunkName passed to DoString — surfaces as the source label in any Lua
-    // traceback the game logs, so a chunk error is greppable.
     private const string ChunkName = "Stellar.Exchange";
 
-    // Lua global the chunks write their results into; C# reads it back each tick.
-    private const string ResultGlobal = "_StellarExchangeResult";
+    // Per-kind reply globals (distinct so concurrent kinds never collide).
+    private const string CareGlobal = "_StellarExchangeCare";
+    private const string ListingsGlobal = "_StellarExchangeListings";
+    private const string NoticeGlobal = "_StellarExchangeNotice";
+    private const string BuyGlobal = "_StellarExchangeBuy";
+
+    private const string Proxy = "local wp=require(\"zproxy.world_proxy\") local tok=ZUtil.ZCancelSource.NeverCancelToken";
 
     private volatile bool _bridgeResolved;
     private bool _resolutionFailureLogged;
@@ -43,11 +46,8 @@ internal sealed partial class PandaExchangeProbe
     private int _resolveTickCounter;
     private const int ResolveAttemptEveryTicks = 60;
 
-    /// <summary>
-    /// Proactively resolve the Lua bridge off the Update tick (throttled) so
-    /// <see cref="PandaExchangeProbe.IsResolved"/> / <c>IExchange.IsAvailable</c> flips
-    /// true WITHOUT requiring a dispatch. No-op once resolved.
-    /// </summary>
+    /// <summary>Proactively resolve the Lua bridge off the Update tick (throttled) so
+    /// <see cref="IsResolved"/> / <c>IExchange.IsAvailable</c> flips true without a dispatch. No-op once resolved.</summary>
     internal void TryResolveBridgeIfDue()
     {
         if (_bridgeResolved) return;
@@ -121,9 +121,8 @@ internal sealed partial class PandaExchangeProbe
         catch { return null; }
     }
 
-    // Runs a chunk via DoString. Returns false on any marshalling failure; a Lua-side
-    // error (failed pre-flight / refusal EErrorCode) is reported by the game's own xpcall
-    // handler under ChunkName + cached in the result global, not thrown as a C# exception.
+    // Runs a chunk via DoString. Returns false on a marshalling failure; a Lua-side error is reported by the
+    // game's own xpcall handler under ChunkName, not thrown as a C# exception.
     private bool InvokeChunk(string chunk)
     {
         var state = GetMainLuaState();
@@ -143,14 +142,13 @@ internal sealed partial class PandaExchangeProbe
         {
             var inner = ex;
             while (inner.InnerException is not null) inner = inner.InnerException;
-            _log.Warning($"[Stellar][Exchange] Lua dispatch threw: {inner.GetType().Name}: {inner.Message} | chunk={chunk}");
+            _log.Warning($"[Stellar][Exchange] Lua dispatch threw: {inner.GetType().Name}: {inner.Message}");
             return false;
         }
     }
 
-    // Reads one Lua string global via the tolua# LuaState string indexer, decoding
-    // the IL2CPP-wrapped result. Returns null if the bridge / indexer is unresolved
-    // or the global is unset.
+    // Reads one Lua string global via the tolua# LuaState string indexer, decoding the IL2CPP-wrapped result.
+    // Returns null if the bridge / indexer is unresolved or the global is unset.
     private string? ReadLuaGlobalString(string globalName)
     {
         var state = GetMainLuaState();
@@ -163,9 +161,8 @@ internal sealed partial class PandaExchangeProbe
         catch { return null; }
     }
 
-    // The tolua# LuaState string indexer returns the Lua string boxed as an
-    // Il2CppSystem.Object whose managed ToString() yields the wrapper type name, not
-    // the content. Decode the underlying IL2CPP string via the interop runtime.
+    // The tolua# indexer returns the Lua string boxed as an Il2CppSystem.Object whose managed ToString()
+    // yields the wrapper type name, not the content. Decode the underlying IL2CPP string.
     private static string? CoerceLuaString(object? val)
     {
         if (val is null) return null;
@@ -182,29 +179,121 @@ internal sealed partial class PandaExchangeProbe
         return val.ToString();
     }
 
-    // ── Chunk builders ─────────────────────────────────────────────────────────
+    // ── Chunk builders (Approach A — worldProxy.<Rpc>) ───────────────────────────
+    // Each runs inside create_coro_xpcall, writes a result string to the kind's global. CONFIRMED in-game
+    // (smoke 2026-06-24): the reply `items` is a 1-BASED Lua sequence table (NOT an IL2CPP List — `.Count`
+    // is nil, `[0]` is nil, `[1]` is the first element) → iterate with `ipairs`. Fields are camelCase
+    // (care: configId/num; listings: price/guid; notice: price/noticeTime). errCode 0 = success.
 
-    // Buy: vm:AsyncExchangeBuyItem(uuid, configId, num, price, seq) -> bool. Result bool -> result global.
-    // Colon-call passes self; uuid empty for a normal listing. seq=0 until Step 6 resolves it.
-    private static string BuildBuyChunk(int itemId, int qty, long price)
-        => string.Format(CultureInfo.InvariantCulture,
-            "(Z.CoroUtil.create_coro_xpcall(function()" +
-            " local vm=Z.VMMgr.GetVM(\"trade\") if vm==nil then return end" +
-            " local ok=vm:AsyncExchangeBuyItem(\"\", {0}, {1}, {2}, {3})" +
-            " rawset(_G,\"" + ResultGlobal + "\", \"BUY:\"..tostring(ok)) end))()",
-            itemId, qty, price, /*seq*/ 0);
+    private static string ClearGlobalChunk(string global) => "rawset(_G,\"" + global + "\", nil)";
 
-    // Care list: vm:AsyncExchangeCareList(type, seq) -> table. Serialize itemId+available pairs.
-    // seq=0 until Step 6 resolves it; field-name fallbacks resolved live in Step 6.
-    private static string BuildCareListChunk(int kind)
-        => string.Format(CultureInfo.InvariantCulture,
-            "(Z.CoroUtil.create_coro_xpcall(function()" +
-            " local vm=Z.VMMgr.GetVM(\"trade\") if vm==nil then return end" +
-            " local r=vm:AsyncExchangeCareList({0}, {1})" +
-            " local out=\"CARE\" if type(r)==\"table\" then for _,it in pairs(r) do" +
-            "  out=out..\"\\n\"..tostring(it.configId or it.ConfigId or it.id)..\"\\t\"..tostring(it.num or it.Num or it.count) end end" +
-            " rawset(_G,\"" + ResultGlobal + "\", out) end))()",
-            kind, /*seq*/ 0);
+    // ExchangeCareList({type}) -> { items:[ExchangeItemInfo{configId,num,minPrice,isCare}], errCode }.
+    private static string BuildCareChunk(int typeArg) =>
+        "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
+        " local r=wp.ExchangeCareList({type=" + Int(typeArg) + "}, tok)" +
+        " if r==nil then rawset(_G,\"" + CareGlobal + "\",\"ERR:nil\") return end" +
+        " local ec=r.errCode or 0 if ec~=0 then rawset(_G,\"" + CareGlobal + "\",\"ERR:\"..tostring(ec)) return end" +
+        " local t={\"OK\"} local items=r.items" +
+        " if items~=nil then for _,it in ipairs(items) do" +
+        "  t[#t+1]=string.format(\"%d\\t%d\", it.configId or 0, it.num or 0) end end" +
+        " rawset(_G,\"" + CareGlobal + "\", table.concat(t,\"\\n\")) end))()";
+
+    // GetExchangeItem({configId,page,filter}) -> { items:[ExchangePriceItemData{price,num,itemInfo,guid}], errCode }.
+    private static string BuildListingsChunk(int itemId) =>
+        "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
+        " local r=wp.GetExchangeItem({configId=" + Int(itemId) + ", page=0, filter={}}, tok)" +
+        " if r==nil then rawset(_G,\"" + ListingsGlobal + "\",\"ERR:nil\") return end" +
+        " local ec=r.errCode or 0 if ec~=0 then rawset(_G,\"" + ListingsGlobal + "\",\"ERR:\"..tostring(ec)) return end" +
+        " local t={\"OK\"} local items=r.items" +
+        " if items~=nil then for _,it in ipairs(items) do" +
+        "  t[#t+1]=string.format(\"%d\", it.price or 0)..\"\\t\"..tostring(it.guid or \"\") end end" +
+        " rawset(_G,\"" + ListingsGlobal + "\", table.concat(t,\"\\n\")) end))()";
+
+    // ExchangeNoticeDetail({configId,page,filter}) -> { items:[ExchangePriceItemData{price,noticeTime}], errCode }.
+    private static string BuildNoticeChunk(int itemId) =>
+        "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
+        " local r=wp.ExchangeNoticeDetail({configId=" + Int(itemId) + ", page=0, filter={}}, tok)" +
+        " if r==nil then rawset(_G,\"" + NoticeGlobal + "\",\"ERR:nil\") return end" +
+        " local ec=r.errCode or 0 if ec~=0 then rawset(_G,\"" + NoticeGlobal + "\",\"ERR:\"..tostring(ec)) return end" +
+        " local t={\"OK\"} local items=r.items" +
+        " if items~=nil then for _,it in ipairs(items) do" +
+        "  t[#t+1]=string.format(\"%d\", it.price or 0)..\"\\t\"..string.format(\"%d\", it.noticeTime or 0) end end" +
+        " rawset(_G,\"" + NoticeGlobal + "\", table.concat(t,\"\\n\")) end))()";
+
+    // ExchangeBuyItem({configId,num,price,uuid}) -> bare EErrorCode number (0 = success).
+    private static string BuildBuyChunk(int itemId, int qty, long price) =>
+        "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
+        " local ret=wp.ExchangeBuyItem({configId=" + Int(itemId) + ", num=" + Int(qty) +
+        ", price=" + price.ToString(CultureInfo.InvariantCulture) + ", uuid=\"\"}, tok)" +
+        " rawset(_G,\"" + BuyGlobal + "\", \"BUY:\"..tostring(ret)) end))()";
+
+    private static string Int(int v) => v.ToString(CultureInfo.InvariantCulture);
+
+    // ── Reply parsers ────────────────────────────────────────────────────────────
+    // Reply format: first line "OK" or "ERR:<code>"; subsequent lines are tab-separated records.
+
+    private IReadOnlyList<ExchangeCareItem> ParseCare(string reply)
+    {
+        if (!StartsOk(reply, out var lines)) return NoCare;
+        var list = new List<ExchangeCareItem>(lines.Length);
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var f = lines[i].Split('\t');
+            if (f.Length >= 2 && TryInt(f[0], out var id) && TryInt(f[1], out var num))
+                list.Add(new ExchangeCareItem(id, num));
+        }
+        return list;
+    }
+
+    private IReadOnlyList<ExchangeListing> ParseListings(string reply, int itemId)
+    {
+        if (!StartsOk(reply, out var lines)) return NoListings;
+        var list = new List<ExchangeListing>(lines.Length);
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var f = lines[i].Split('\t');
+            if (f.Length >= 1 && TryLong(f[0], out var price))
+                list.Add(new ExchangeListing(itemId, price, f.Length >= 2 ? f[1] : string.Empty));
+        }
+        list.Sort(static (a, b) => a.Price.CompareTo(b.Price));   // cheapest-first
+        return list;
+    }
+
+    private IReadOnlyList<ExchangeNoticeListing> ParseNotice(string reply, int itemId)
+    {
+        if (!StartsOk(reply, out var lines)) return NoNotice;
+        var list = new List<ExchangeNoticeListing>(lines.Length);
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var f = lines[i].Split('\t');
+            if (f.Length >= 2 && TryLong(f[0], out var price) && TryLong(f[1], out var unix))
+                list.Add(new ExchangeNoticeListing(itemId, price, DateTimeOffset.FromUnixTimeSeconds(unix)));
+        }
+        return list;
+    }
+
+    private ExchangeBuyRaw ParseBuy(string reply)
+    {
+        // "BUY:<code>" — bare EErrorCode (0 = success).
+        const string prefix = "BUY:";
+        if (reply.StartsWith(prefix, StringComparison.Ordinal) && TryInt(reply.AsSpan(prefix.Length), out var code))
+            return new ExchangeBuyRaw(code == 0, code, false);
+        return new ExchangeBuyRaw(false, null, false);   // unparseable → rejected, not a timeout
+    }
+
+    private static bool StartsOk(string reply, out string[] lines)
+    {
+        lines = reply.Split('\n');
+        return lines.Length > 0 && string.Equals(lines[0], "OK", StringComparison.Ordinal);
+    }
+
+    private static bool TryInt(ReadOnlySpan<char> s, out int v) =>
+        int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out v);
+
+    private static bool TryInt(string s, out int v) => TryInt(s.AsSpan(), out v);
+
+    private static bool TryLong(string s, out long v) =>
+        long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out v);
 
     private static Type? FindTypeByShortName(string shortName)
     {

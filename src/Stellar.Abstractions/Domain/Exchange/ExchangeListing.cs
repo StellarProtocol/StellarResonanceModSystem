@@ -39,6 +39,7 @@ public enum ExchangeBuyOutcome
     InsufficientFunds,
     /// <summary>The game rejected the buy for another reason (it toasts the cause).</summary>
     Rejected,
-    /// <summary>The request did not resolve in time.</summary>
+    /// <summary>The request did not resolve in time. <b>Indeterminate for a buy</b> — the purchase may
+    /// still have succeeded server-side; do not blind-retry, reconcile against inventory/currency first.</summary>
     Timeout,
 }
