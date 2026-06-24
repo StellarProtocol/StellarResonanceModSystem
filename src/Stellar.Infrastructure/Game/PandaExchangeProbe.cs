@@ -34,6 +34,7 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
     {
         TryResolveBridgeIfDue();
         if (!_bridgeResolved) return;
+        MaybeRunSelfTest();
         while (_toDispatch.TryDequeue(out var act))
         {
             try { act(); } catch (Exception ex) { _log.Warning($"[Stellar][Exchange] dispatch threw: {ex.Message}"); }
