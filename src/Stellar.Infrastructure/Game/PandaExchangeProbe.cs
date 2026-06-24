@@ -44,10 +44,11 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
 
     public Task<ExchangeBuyRaw> BuyAsync(int itemId, int quantity, long price, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource<ExchangeBuyRaw>();
+        if (ct.IsCancellationRequested) return Task.FromCanceled<ExchangeBuyRaw>(ct);
+        var tcs = new TaskCompletionSource<ExchangeBuyRaw>(TaskCreationOptions.RunContinuationsAsynchronously);
         _toDispatch.Enqueue(() =>
         {
-            rawsetClear();
+            RawsetClear();
             InvokeChunk(BuildBuyChunk(itemId, quantity, price));
             // The chunk writes ResultGlobal a frame+ later; poll it on subsequent ticks (Step 6 refines).
             _pendingBuy = new PendingBuy(tcs, DateTime.UtcNow);
@@ -57,10 +58,11 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
 
     public Task<IReadOnlyList<ExchangeCareItem>> QueryCareListAsync(ExchangeItemKind kind, CancellationToken ct)
     {
-        var tcs = new TaskCompletionSource<IReadOnlyList<ExchangeCareItem>>();
+        if (ct.IsCancellationRequested) return Task.FromCanceled<IReadOnlyList<ExchangeCareItem>>(ct);
+        var tcs = new TaskCompletionSource<IReadOnlyList<ExchangeCareItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
         _toDispatch.Enqueue(() =>
         {
-            rawsetClear();
+            RawsetClear();
             InvokeChunk(BuildCareListChunk(kind == ExchangeItemKind.NoticeShopItem ? 2 : 1));
             _pendingCare = new PendingCare(tcs, DateTime.UtcNow);
         });
@@ -74,7 +76,7 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
     public Task<IReadOnlyList<ExchangeNoticeListing>> QueryNoticeAsync(int itemId, CancellationToken ct)
         => Task.FromResult<IReadOnlyList<ExchangeNoticeListing>>(Array.Empty<ExchangeNoticeListing>());
 
-    private void rawsetClear() => InvokeChunk("rawset(_G,\"" + ResultGlobal + "\", nil)");
+    private void RawsetClear() => InvokeChunk("rawset(_G,\"" + ResultGlobal + "\", nil)");
 
     // INTERIM (pre-Step-6): the full result-poll — read ResultGlobal, parse "BUY:true" /
     // the "CARE\n…" lines — is added in Step 6 alongside the live discovery. Until then,
