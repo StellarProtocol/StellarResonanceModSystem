@@ -29,6 +29,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IInventory Inventory => _shared.Inventory;
     public IModuleEquip ModuleEquip => _shared.ModuleEquip;
     public ILoadout Loadout => _shared.Loadout;
+    public IExchange Market => _shared.Market;
     public INotifications Notifications => _shared.Notifications;
     public IGameEvents GameEvents => _shared.GameEvents;
     public IPlayerState PlayerState => _shared.PlayerState;
