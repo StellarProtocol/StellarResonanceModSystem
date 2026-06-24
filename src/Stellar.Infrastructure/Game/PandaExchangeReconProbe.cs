@@ -1,6 +1,7 @@
 using System;
 using Stellar.Application.Abstractions;
 using Stellar.Abstractions.Services;
+using Stellar.Abstractions.Diagnostics;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -19,6 +20,10 @@ internal sealed partial class PandaExchangeReconProbe
     private const int FireEveryTicks = 150;   // ~5s at 30 Hz tick — read-only, re-fires for fresh data
     private string? _lastDump;
 
+    private const int ReconItemId = 1052103;     // bot workflows.json target
+    private const long ReconBuyPrice = 185000;   // bot max_price ceiling
+    private bool _buyFired;
+
     public PandaExchangeReconProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
     {
         _log = log;
@@ -33,7 +38,12 @@ internal sealed partial class PandaExchangeReconProbe
 
         if (_fireTickCounter++ % FireEveryTicks == 0)
         {
-            InvokeChunk(ReconChunk);
+            InvokeChunk(BuildQueryChunk(ReconItemId));
+            if (!_buyFired && PerfControls.Flag("EXCHANGE_RECON_BUY"))
+            {
+                _buyFired = true;
+                InvokeChunk(BuildBuyChunk(ReconItemId, ReconBuyPrice));
+            }
         }
 
         var dump = ReadLuaGlobalString(ReconGlobal);
