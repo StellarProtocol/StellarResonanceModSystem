@@ -25,6 +25,16 @@ public interface IExchange
     /// <returns>The care-list items; empty when unavailable or none exist.</returns>
     Task<IReadOnlyList<ExchangeCareItem>> QueryCareListAsync(ExchangeItemKind kind, CancellationToken ct = default);
 
+    /// <summary>Fetch one Trading-Center catalog category page: the items currently listed in
+    /// <paramref name="category"/>, each with availability and cheapest price. This is the catalog browse
+    /// (by category), distinct from the per-item <see cref="QueryListingsAsync"/>. To assemble a full catalog,
+    /// query each category and union the results — there is no single "all items" page.</summary>
+    /// <param name="kind">The item kind (shop vs notice).</param>
+    /// <param name="category">The Trading-Center category id (a <c>StallCategory</c> leaf, e.g. Gear/Will/Imagine).</param>
+    /// <param name="ct">Cancels the request before dispatch.</param>
+    /// <returns>The category's items; empty when unavailable or none exist.</returns>
+    Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct = default);
+
     /// <summary>Fetch scheduled ("notice"/pre-order) listings for an item, carrying their listing times.</summary>
     /// <param name="itemId">The item's config id.</param>
     /// <param name="ct">Cancels the request before dispatch.</param>

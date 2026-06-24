@@ -13,6 +13,14 @@ public readonly record struct ExchangeListing(int ItemId, long Price, string Uui
 /// <param name="Available">How many are currently available.</param>
 public readonly record struct ExchangeCareItem(int ItemId, int Available);
 
+/// <summary>One entry in a Trading-Center catalog category page (from <c>ExchangeList</c>): the item, how many
+/// are currently available, and the cheapest listed price. Use this to populate a category-browse picker;
+/// resolve the display name via <c>IGameData.Inventory.GetItem(ItemId)</c>.</summary>
+/// <param name="ItemId">The item's config id.</param>
+/// <param name="Available">How many are currently available across all listings.</param>
+/// <param name="MinPrice">The cheapest current unit price, in Luno (0 when none listed).</param>
+public readonly record struct ExchangeCatalogItem(int ItemId, int Available, long MinPrice);
+
 /// <summary>A scheduled ("notice"/pre-order) listing not yet live: price and the time it lists.</summary>
 /// <param name="ItemId">The item's config id.</param>
 /// <param name="Price">Expected unit price.</param>

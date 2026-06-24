@@ -17,11 +17,15 @@ public sealed class ExchangeServiceTests
         public ExchangeBuyRaw BuyReturns = new(true, null, false);
         public int BoughtItem = -1, BoughtQty = -1; public long BoughtPrice = -1;
         public ExchangeItemKind CareKind;
+        public IReadOnlyList<ExchangeCatalogItem> Catalog = new List<ExchangeCatalogItem>();
+        public ExchangeItemKind CatalogKind; public int CatalogCategory = -1;
 
         public bool IsResolved => Resolved;
         public Task<IReadOnlyList<ExchangeListing>> QueryListingsAsync(int itemId, CancellationToken ct) => Task.FromResult(Listings);
         public Task<IReadOnlyList<ExchangeCareItem>> QueryCareListAsync(ExchangeItemKind kind, CancellationToken ct)
         { CareKind = kind; return Task.FromResult<IReadOnlyList<ExchangeCareItem>>(new List<ExchangeCareItem>()); }
+        public Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct)
+        { CatalogKind = kind; CatalogCategory = category; return Task.FromResult(Catalog); }
         public Task<IReadOnlyList<ExchangeNoticeListing>> QueryNoticeAsync(int itemId, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExchangeNoticeListing>>(new List<ExchangeNoticeListing>());
         public Task<ExchangeBuyRaw> BuyAsync(int itemId, int quantity, long price, CancellationToken ct)
         { BoughtItem = itemId; BoughtQty = quantity; BoughtPrice = price; return Task.FromResult(BuyReturns); }
@@ -81,5 +85,26 @@ public sealed class ExchangeServiceTests
     {
         var svc = new ExchangeService(new FakeProbe { Resolved = false });
         Assert.Empty(await svc.QueryListingsAsync(1));
+    }
+
+    [Fact]
+    public async Task QueryCatalogAsync_passes_kind_and_category_and_returns_items()
+    {
+        var probe = new FakeProbe { Catalog = new List<ExchangeCatalogItem> { new(101, 7, 120) } };
+        var svc = new ExchangeService(probe);
+        var r = await svc.QueryCatalogAsync(ExchangeItemKind.NoticeShopItem, 102);
+        Assert.Equal(ExchangeItemKind.NoticeShopItem, probe.CatalogKind);
+        Assert.Equal(102, probe.CatalogCategory);
+        Assert.Single(r);
+        Assert.Equal(101, r[0].ItemId);
+        Assert.Equal(7, r[0].Available);
+        Assert.Equal(120, r[0].MinPrice);
+    }
+
+    [Fact]
+    public async Task QueryCatalogAsync_returns_empty_when_unresolved()
+    {
+        var svc = new ExchangeService(new FakeProbe { Resolved = false });
+        Assert.Empty(await svc.QueryCatalogAsync(ExchangeItemKind.ShopItem, 102));
     }
 }

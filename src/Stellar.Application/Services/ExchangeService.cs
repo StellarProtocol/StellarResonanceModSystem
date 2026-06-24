@@ -16,6 +16,7 @@ internal sealed class ExchangeService : IExchange
     private static readonly IReadOnlyList<ExchangeListing> NoListings = Array.Empty<ExchangeListing>();
     private static readonly IReadOnlyList<ExchangeCareItem> NoCare = Array.Empty<ExchangeCareItem>();
     private static readonly IReadOnlyList<ExchangeNoticeListing> NoNotice = Array.Empty<ExchangeNoticeListing>();
+    private static readonly IReadOnlyList<ExchangeCatalogItem> NoCatalog = Array.Empty<ExchangeCatalogItem>();
 
     private readonly IExchangeProbe _probe;
 
@@ -31,6 +32,9 @@ internal sealed class ExchangeService : IExchange
 
     public Task<IReadOnlyList<ExchangeNoticeListing>> QueryNoticeAsync(int itemId, CancellationToken ct = default)
         => _probe.IsResolved ? _probe.QueryNoticeAsync(itemId, ct) : Task.FromResult(NoNotice);
+
+    public Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct = default)
+        => _probe.IsResolved ? _probe.QueryCatalogAsync(kind, category, ct) : Task.FromResult(NoCatalog);
 
     public async Task<ExchangeBuyOutcome> BuyAsync(int itemId, int quantity, long price, CancellationToken ct = default)
     {

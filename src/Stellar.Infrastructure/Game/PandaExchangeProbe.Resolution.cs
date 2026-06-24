@@ -33,6 +33,7 @@ internal sealed partial class PandaExchangeProbe
     private const string ListingsGlobal = "_StellarExchangeListings";
     private const string NoticeGlobal = "_StellarExchangeNotice";
     private const string BuyGlobal = "_StellarExchangeBuy";
+    private const string CatalogGlobal = "_StellarExchangeCatalog";
 
     private const string Proxy = "local wp=require(\"zproxy.world_proxy\") local tok=ZUtil.ZCancelSource.NeverCancelToken";
 
@@ -198,6 +199,19 @@ internal sealed partial class PandaExchangeProbe
         "  t[#t+1]=string.format(\"%d\\t%d\", it.configId or 0, it.num or 0) end end" +
         " rawset(_G,\"" + CareGlobal + "\", table.concat(t,\"\\n\")) end))()";
 
+    // ExchangeList({type,subType}) -> { items:[ExchangeItemInfo{configId,num,minPrice,isCare}], errCode }.
+    // The Trading-Center catalog browse, one category page per call (recon Pass 6). subType is the
+    // StallCategory id; type is the item kind (1 shop / 2 notice). Same reply struct as the care list + minPrice.
+    private static string BuildCatalogChunk(int typeArg, int category) =>
+        "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
+        " local r=wp.ExchangeList({type=" + Int(typeArg) + ", subType=" + Int(category) + "}, tok)" +
+        " if r==nil then rawset(_G,\"" + CatalogGlobal + "\",\"ERR:nil\") return end" +
+        " local ec=r.errCode or 0 if ec~=0 then rawset(_G,\"" + CatalogGlobal + "\",\"ERR:\"..tostring(ec)) return end" +
+        " local t={\"OK\"} local items=r.items" +
+        " if items~=nil then for _,it in ipairs(items) do" +
+        "  t[#t+1]=string.format(\"%d\\t%d\\t%d\", it.configId or 0, it.num or 0, it.minPrice or 0) end end" +
+        " rawset(_G,\"" + CatalogGlobal + "\", table.concat(t,\"\\n\")) end))()";
+
     // GetExchangeItem({configId,page,filter}) -> { items:[ExchangePriceItemData{price,num,itemInfo,guid}], errCode }.
     private static string BuildListingsChunk(int itemId) =>
         "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
@@ -241,6 +255,19 @@ internal sealed partial class PandaExchangeProbe
             var f = lines[i].Split('\t');
             if (f.Length >= 2 && TryInt(f[0], out var id) && TryInt(f[1], out var num))
                 list.Add(new ExchangeCareItem(id, num));
+        }
+        return list;
+    }
+
+    private IReadOnlyList<ExchangeCatalogItem> ParseCatalog(string reply)
+    {
+        if (!StartsOk(reply, out var lines)) return NoCatalog;
+        var list = new List<ExchangeCatalogItem>(lines.Length);
+        for (var i = 1; i < lines.Length; i++)
+        {
+            var f = lines[i].Split('\t');
+            if (f.Length >= 3 && TryInt(f[0], out var id) && TryInt(f[1], out var num) && TryLong(f[2], out var minPrice))
+                list.Add(new ExchangeCatalogItem(id, num, minPrice));
         }
         return list;
     }

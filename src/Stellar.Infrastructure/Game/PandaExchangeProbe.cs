@@ -30,6 +30,7 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
     private static readonly IReadOnlyList<ExchangeCareItem> NoCare = Array.Empty<ExchangeCareItem>();
     private static readonly IReadOnlyList<ExchangeListing> NoListings = Array.Empty<ExchangeListing>();
     private static readonly IReadOnlyList<ExchangeNoticeListing> NoNotice = Array.Empty<ExchangeNoticeListing>();
+    private static readonly IReadOnlyList<ExchangeCatalogItem> NoCatalog = Array.Empty<ExchangeCatalogItem>();
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
@@ -68,6 +69,19 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
         {
             OnResult = s => tcs.TrySetResult(ParseListings(s, itemId)),
             OnTimeout = () => tcs.TrySetResult(NoListings),
+        });
+        return tcs.Task;
+    }
+
+    public Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return Task.FromCanceled<IReadOnlyList<ExchangeCatalogItem>>(ct);
+        var tcs = new TaskCompletionSource<IReadOnlyList<ExchangeCatalogItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var typeArg = kind == ExchangeItemKind.NoticeShopItem ? 2 : 1;
+        Enqueue(new PendingRpc(KindCatalog, CatalogGlobal, BuildCatalogChunk(typeArg, category), allowRefire: true)
+        {
+            OnResult = s => tcs.TrySetResult(ParseCatalog(s)),
+            OnTimeout = () => tcs.TrySetResult(NoCatalog),
         });
         return tcs.Task;
     }
@@ -158,6 +172,7 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
     private const string KindListings = "listings";
     private const string KindNotice = "notice";
     private const string KindBuy = "buy";
+    private const string KindCatalog = "catalog";
 
     // One in-flight exchange RPC: which kind, the reply global, the chunk to (re)fire, and completion hooks.
     private sealed class PendingRpc
