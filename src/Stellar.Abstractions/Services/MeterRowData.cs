@@ -29,6 +29,10 @@ public struct MeterRowData
     public ColorRgba RoleColor;
     /// <summary>HP spine fill colour (green/yellow/red by health fraction).</summary>
     public ColorRgba HpColor;
+    /// <summary>Optional override for the name-text colour (e.g. a ready-check vote: blue=pending,
+    /// green=ready, red=declined). When alpha is 0 (the default) the row uses the framework's
+    /// standard name colour. The <see cref="Dead"/> treatment still takes precedence.</summary>
+    public ColorRgba NameColor;
     /// <summary>Self-row highlight colour (background tint + a brighter border), used only when <see cref="IsSelf"/>.
     /// Supplied by the meter so the highlight is a configurable colour slot rather than a fixed framework teal.</summary>
     public ColorRgba SelfAccent;
@@ -40,6 +44,10 @@ public struct MeterRowData
     public object? CrestTexture;
     /// <summary>Atlas sub-rect for the class crest icon (normalised UV, bottom-left origin).</summary>
     public UvRect CrestUv;
+    /// <summary>Tint multiplier for the class crest image. <c>default</c> (alpha 0) means no tint
+    /// (white). Used e.g. to colour the crest by team-voice mic status: red=muted, blue=speaker,
+    /// green=talking.</summary>
+    public ColorRgba CrestTint;
     /// <summary>True when this row represents the local player — draws the self-highlight tint.</summary>
     public bool IsSelf;
     /// <summary>True when this row represents the party leader — draws a small flag marker before the name.</summary>
@@ -64,6 +72,11 @@ public struct MeterRowData
     public bool ShowCrest;
     /// <summary>When false the HP spine is hidden.</summary>
     public bool ShowHpBar;
+    /// <summary>Width of the vertical spine bar in pixels. 0 = use the renderer default (3 px).</summary>
+    public float SpineWidth;
+    /// <summary>Obsolete: use <see cref="SpineWidth"/>.</summary>
+    [System.Obsolete("Use SpineWidth instead.")]
+    public float HpBarWidth { get => SpineWidth; set => SpineWidth = value; }
     /// <summary>When false the per-second (primary) value overlay is hidden.</summary>
     public bool ShowPrimary;
     /// <summary>When false the whole Battle-Imagine cluster is hidden.</summary>
@@ -80,6 +93,16 @@ public struct MeterRowData
     public bool ShowAbilityScore;
     /// <summary>True when this entity is dead (HP known and zero) — drives the dead treatment.</summary>
     public bool Dead;
+    /// <summary>Optional small status icon shown on the name line (e.g. team-voice mic/headphone/muted).
+    /// MUST be a UnityEngine.Texture2D; a non-Texture2D renders nothing. Hidden unless <see cref="ShowVoiceIcon"/>.</summary>
+    public object? VoiceIcon;
+    /// <summary>Tint for <see cref="VoiceIcon"/> (e.g. green while talking). <c>default</c> (alpha 0) = white.</summary>
+    public ColorRgba VoiceIconTint;
+    /// <summary>When true the <see cref="VoiceIcon"/> cell is shown (user toggle).</summary>
+    public bool ShowVoiceIcon;
+    /// <summary>Optional colored box border around the whole row (e.g. green while a member is talking).
+    /// <c>default</c> (alpha 0) = no border.</summary>
+    public ColorRgba RowBorder;
     /// <summary>Battle-Imagine icon size.</summary>
     public ImagineSize ImagineSize;
     /// <summary>Battle-Imagine cluster placement.</summary>

@@ -17,7 +17,7 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 ///     int32 talent_id     = 4;   // skipped
 ///     int32 online_status = 5;
 ///     int32 scene_id      = 6;
-///     bool  voice_is_open = 7;   // skipped
+///     bool  voice_is_open = 7;   // → PartyMemberRoster.VoiceOpen (mic base state)
 ///     int32 group_id      = 8;
 ///     TeamMemberSocialData social_data = 9;
 ///   }
@@ -29,6 +29,7 @@ internal static class TeamMemDataReader
     {
         long  charId = 0;
         int   enterTime = 0, onlineStatus = 0, sceneId = 0, groupId = 0, talentId = 0;
+        bool? voiceOpen = null;
         PartyMemberSocialSync? social = null;
         int   p = 0;
 
@@ -44,6 +45,7 @@ internal static class TeamMemDataReader
                 case (4, 0): if (!WireProtocol.TryReadVarint(payload, ref p, out var tv))     { roster = default!; return false; } talentId = (int)tv; break;
                 case (5, 0): if (!TryReadOnlineStatus(payload, ref p, out onlineStatus))     { roster = default!; return false; } break;
                 case (6, 0): if (!TryReadSceneId(payload, ref p, out sceneId))               { roster = default!; return false; } break;
+                case (7, 0): if (!WireProtocol.TryReadVarint(payload, ref p, out var vo))     { roster = default!; return false; } voiceOpen = vo != 0; break;
                 case (8, 0): if (!TryReadGroupId(payload, ref p, out groupId))               { roster = default!; return false; } break;
                 case (9, 2): if (!TryReadSocial(payload, ref p, groupId, out social))        { roster = default!; return false; } break;
                 default:
@@ -60,7 +62,8 @@ internal static class TeamMemDataReader
             GroupId:         groupId,
             FastSync:        null,
             Social:          social,
-            TalentId:        talentId);
+            TalentId:        talentId,
+            VoiceOpen:       voiceOpen);
         return true;
     }
 

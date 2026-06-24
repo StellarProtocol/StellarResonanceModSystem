@@ -17,7 +17,12 @@ namespace Stellar.Abstractions.Services;
 /// (so icon↔label alignment can't drift with font metrics — used by the Settings hub's iconed tabs).</summary>
 public sealed record ButtonElement(
     Func<string> Label, Action OnClick, Func<bool>? Enabled = null, MenuButtonStyle? Style = null,
-    Func<bool>? Active = null, float Width = 0f, Func<byte[]?>? Icon = null) : HudElement;
+    Func<bool>? Active = null, float Width = 0f, Func<byte[]?>? Icon = null) : HudElement
+{
+    /// <summary>When non-null, invoked on click with the button's screen rect (top-left origin, same coordinate
+    /// space as <see cref="IWindowControl.Rect"/>). Use to anchor a popup to the button's actual position.</summary>
+    public Action<Stellar.Abstractions.Domain.WindowRect>? OnClickWithRect { get; init; }
+}
 
 /// <summary>Two-way toggle. <paramref name="Get"/> reflects external state (poll-diffed); a click calls
 /// <paramref name="Set"/> with the new value.</summary>

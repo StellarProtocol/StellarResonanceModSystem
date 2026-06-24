@@ -88,6 +88,78 @@ internal sealed class PandaTeamControlProbe : IPartyControlProbe
         }
     }
 
+    /// <summary>Transfer party leadership to charId via the game's own AsyncTransferLeader.</summary>
+    public void CallTransferLeader(long charId)
+    {
+        if (!TryResolve()) return;
+        var state = _mainStateGetter!.Invoke(null, null);
+        if (state is null) { WarnOnce("LuaState.mainState was null"); return; }
+        try { _doString!.Invoke(state, new object[] { BuildTransferLeaderChunk(charId), ChunkName }); }
+        catch (Exception ex) { WarnOnce($"DoString threw: {ex.GetType().Name}: {ex.Message}"); }
+    }
+
+    /// <summary>Kick charId from the party via the game's own AsyncTickOut.</summary>
+    public void CallKickMember(long charId)
+    {
+        if (!TryResolve()) return;
+        var state = _mainStateGetter!.Invoke(null, null);
+        if (state is null) { WarnOnce("LuaState.mainState was null"); return; }
+        try { _doString!.Invoke(state, new object[] { BuildKickMemberChunk(charId), ChunkName }); }
+        catch (Exception ex) { WarnOnce($"DoString threw: {ex.GetType().Name}: {ex.Message}"); }
+    }
+
+    internal static string BuildTransferLeaderChunk(long charId) =>
+        "pcall(function()\n" +
+        "  (Z.CoroUtil).create_coro_xpcall(function()\n" +
+        "    local vm=(Z.VMMgr).GetVM('team')\n" +
+        "    if vm then local cs=(Z.CancelSource).Rent() vm.AsyncTransferLeader(" + charId + ",cs:CreateToken()) end\n" +
+        "  end,function() end)()\n" +
+        "end)";
+
+    internal static string BuildKickMemberChunk(long charId) =>
+        "pcall(function()\n" +
+        "  (Z.CoroUtil).create_coro_xpcall(function()\n" +
+        "    local vm=(Z.VMMgr).GetVM('team')\n" +
+        "    if vm then local cs=(Z.CancelSource).Rent() vm.AsyncTickOut(" + charId + ",cs:CreateToken()) end\n" +
+        "  end,function() end)()\n" +
+        "end)";
+
+    /// <summary>Invite charId to the party via the game's own AsyncInviteToTeam.</summary>
+    public void CallInviteToTeam(long charId)
+    {
+        if (!TryResolve()) return;
+        var state = _mainStateGetter!.Invoke(null, null);
+        if (state is null) { WarnOnce("LuaState.mainState was null"); return; }
+        try { _doString!.Invoke(state, new object[] { BuildInviteToTeamChunk(charId), ChunkName }); }
+        catch (Exception ex) { WarnOnce($"DoString threw: {ex.GetType().Name}: {ex.Message}"); }
+    }
+
+    internal static string BuildInviteToTeamChunk(long charId) =>
+        "pcall(function()\n" +
+        "  (Z.CoroUtil).create_coro_xpcall(function()\n" +
+        "    local vm=(Z.VMMgr).GetVM('team')\n" +
+        "    if vm then local cs=(Z.CancelSource).Rent() vm.AsyncInviteToTeam(" + charId + ",cs:CreateToken()) end\n" +
+        "  end,function() end)()\n" +
+        "end)";
+
+    /// <summary>Leave the current party via AsyncQuitTeam (cancelSource, not cancelToken — the VM calls CreateToken internally).</summary>
+    public void CallLeaveParty()
+    {
+        if (!TryResolve()) return;
+        var state = _mainStateGetter!.Invoke(null, null);
+        if (state is null) { WarnOnce("LuaState.mainState was null"); return; }
+        try { _doString!.Invoke(state, new object[] { BuildLeavePartyChunk(), ChunkName }); }
+        catch (Exception ex) { WarnOnce($"DoString threw: {ex.GetType().Name}: {ex.Message}"); }
+    }
+
+    internal static string BuildLeavePartyChunk() =>
+        "pcall(function()\n" +
+        "  (Z.CoroUtil).create_coro_xpcall(function()\n" +
+        "    local vm=(Z.VMMgr).GetVM('team')\n" +
+        "    if vm then local cs=(Z.CancelSource).Rent() vm.AsyncQuitTeam(cs) end\n" +
+        "  end,function() end)()\n" +
+        "end)";
+
     // The Lua chunk the in-game party-rearrange drag runs (team_mine_view onEndDrag).
     // group is 1-based; slot is 0-based — both already resolved by the caller. pcall-guarded
     // so a Lua-side error can't escape into the engine.

@@ -229,6 +229,10 @@ internal sealed partial class WindowBuilder
         public Text Share = null!;
         public GameObject ShareGo = null!;
         public GameObject LeaderGo = null!;
+        public RawImage VoiceImg = null!;           // name-line status icon (team-voice); plugin-supplied texture
+        private object? _lastVoiceTex; private Color _lastVoiceTint = new(-2f, -2f, -2f, -2f); private int _lastVoiceVis = -1;
+        public GameObject TalkBorderGo = null!;     // plugin-tinted box border (e.g. green while talking)
+        private ColorRgba _lastRowBorder = new(-2f, -2f, -2f, -2f);
         public RectTransform BarFillRect = null!;   // width-clipped fill container (anchorMax.x = fraction)
         public Image BarFillImg = null!;            // role-colour fill inside the clip
         public Text Primary = null!;
@@ -249,13 +253,15 @@ internal sealed partial class WindowBuilder
         private bool _selfInit, _lastSelf;
         private ColorRgba _lastSelfAccent;
         private int _lastLeader = -1;
-        private float _lastHp = -1f, _lastBar = -1f;
+        private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f;
         private ColorRgba _lastHpCol, _lastRoleCol;
         private string? _lastRank, _lastName, _lastSpec, _lastShare, _lastPrimary, _lastSecondary;
         private int _lastSpecVis = -1, _lastShareVis = -1, _lastSecondaryVis = -1, _lastOffline = -1;
         private int _lastRankVis = -1, _lastCrestVis = -1, _lastSpineVis = -1, _lastPrimaryVis = -1;
         private int _lastClassVis = -1, _lastScoreVis = -1, _lastDead = -1, _lastImgLayout = -1;
         private string? _lastClass, _lastScore;
+        private Color _lastNameCol = new(-1f, -1f, -1f, -1f);   // sentinel: forces first name-colour apply
+        private Color _lastCrestTint = new(-1f, -1f, -1f, -1f); // sentinel: forces first crest-tint apply
         private static readonly ColorRgba MeterDeadBarRgba = new(0.35f, 0.27f, 0.27f, 1f);  // greyed bar when dead
         private ImagineCellCache _img0, _img1;
 
@@ -313,9 +319,22 @@ internal sealed partial class WindowBuilder
             if (RankGo != null && _lastRankVis != (d.ShowRank ? 1 : 0)) { RankGo.SetActive(d.ShowRank); _lastRankVis = d.ShowRank ? 1 : 0; }
             if (CrestCellGo != null && _lastCrestVis != (d.ShowCrest ? 1 : 0)) { CrestCellGo.SetActive(d.ShowCrest); _lastCrestVis = d.ShowCrest ? 1 : 0; }
             if (SpineGo != null && _lastSpineVis != (d.ShowHpBar ? 1 : 0)) { SpineGo.SetActive(d.ShowHpBar); _lastSpineVis = d.ShowHpBar ? 1 : 0; }
+            if (SpineGo != null)
+            {
+                var spineW = d.SpineWidth > 0f ? d.SpineWidth : WindowBuilder.MeterSpineW;
+                if (!Mathf.Approximately(spineW, _lastSpineW))
+                {
+                    SpineGo.GetComponent<RectTransform>()!.sizeDelta = new Vector2(spineW, -4f);
+                    var pad = ContentVlg.padding;
+                    ContentVlg.padding = new RectOffset((int)(spineW + WindowBuilder.MeterPad), pad.right, pad.top, pad.bottom);
+                    _lastSpineW = spineW;
+                }
+            }
             if (PrimaryGo != null && _lastPrimaryVis != (d.ShowPrimary ? 1 : 0)) { PrimaryGo.SetActive(d.ShowPrimary); _lastPrimaryVis = d.ShowPrimary ? 1 : 0; }
             var showLeader = d.IsLeader && d.ShowLeaderFlag;
             if (LeaderGo != null && _lastLeader != (showLeader ? 1 : 0)) { LeaderGo.SetActive(showLeader); _lastLeader = showLeader ? 1 : 0; }
+            ApplyVoiceIcon(d);
+            ApplyRowBorder(d);
 
             var showClass = d.ShowClassName && !string.IsNullOrEmpty(d.ClassName);
             if (_lastClassVis != (showClass ? 1 : 0)) { ClassNameGo.SetActive(showClass); _lastClassVis = showClass ? 1 : 0; }
@@ -329,9 +348,13 @@ internal sealed partial class WindowBuilder
             {
                 if (DeadMarkGo != null) DeadMarkGo.SetActive(d.Dead);
                 if (NameStrikeGo != null) NameStrikeGo.SetActive(d.Dead);
-                Name.color = d.Dead ? MeterDeadName : MeterNameCol;
                 _lastDead = d.Dead ? 1 : 0;
             }
+
+            // Name colour: Dead wins, then an optional NameColor override (ready-check vote),
+            // else the default. Updated whenever the effective colour changes, not only on Dead.
+            var effName = d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
+            if (!effName.Equals(_lastNameCol)) { Name.color = effName; _lastNameCol = effName; }
 
         }
 
@@ -421,80 +444,41 @@ internal sealed partial class WindowBuilder
                 if (tex != null) Crest.rectTransform.sizeDelta = AspectFit(22f, d.CrestUv.W * tex.width, d.CrestUv.H * tex.height);
             }
             Crest.uvRect = new UnityEngine.Rect(d.CrestUv.X, d.CrestUv.Y, d.CrestUv.W, d.CrestUv.H);
-        }
-    }
 
-    // Poll-diffed backdrop for an AccentRowElement: a faint share-fraction wash (width via anchorMax.x) + a
-    // role-coloured left stripe. Idle rows (unchanged share/colour) write nothing.
-    internal sealed class AccentRowBinding
-    {
-        public RectTransform ShareRect = null!;
-        public Image ShareImg = null!;
-        public Image Stripe = null!;
-        public Func<ColorRgba> StripeFn = null!;
-        public Func<float> ShareFn = null!;
-        private float _lastShare = -1f;
-        private ColorRgba _lastCol;
-        private bool _init;
-        public void Apply()
+            // Optional crest tint (e.g. team-voice mic status). Alpha 0 = no tint (white).
+            var tint = d.CrestTint.A > 0f ? ToColor(d.CrestTint) : Color.white;
+            if (!tint.Equals(_lastCrestTint)) { Crest.color = tint; _lastCrestTint = tint; }
+        }
+
+        // Optional colored box border around the row (e.g. green while talking). Alpha 0 = hidden.
+        private void ApplyRowBorder(in MeterRowData d)
         {
-            if (ShareRect == null || !ShareRect.gameObject.activeInHierarchy) return;
-            var share = Mathf.Clamp01(ShareFn());
-            if (!Mathf.Approximately(share, _lastShare)) { ShareRect.anchorMax = new Vector2(share, 1f); _lastShare = share; }
-            var c = StripeFn();
-            if (!_init || !c.Equals(_lastCol))
+            if (TalkBorderGo == null || d.RowBorder.Equals(_lastRowBorder)) return;
+            _lastRowBorder = d.RowBorder;
+            var show = d.RowBorder.A > 0f;
+            TalkBorderGo.SetActive(show);
+            if (show)
             {
-                Stripe.color = new Color(c.R, c.G, c.B, 1f);
-                ShareImg.color = new Color(c.R, c.G, c.B, 0.12f);
-                _lastCol = c; _init = true;
+                var col = ToColor(d.RowBorder);
+                foreach (var img in TalkBorderGo.GetComponentsInChildren<Image>(true)) img.color = col;
             }
         }
-    }
 
-    // Per-apply poll for a tile's pin-star state (texture/colour). The hover VISUAL (icon grow + brighten) is
-    // driven separately by the renderer's interaction ticker; this only refreshes externally-changed state.
-    internal sealed class HoverBinding { public Action? Poll; }
-
-    // Re-syncs a text field from its Get() when the backing value changes EXTERNALLY (e.g. a chat composer
-    // cleared after send, or DataInspector's ID set by a recent-lookup restore). Diffs on Get() (not the
-    // field text), so it never fights live typing: while the user types, Get() either tracks the field (via
-    // OnChange) or stays unchanged (no OnChange) — both leave Get()==Last so no SetText fires. The field.Text
-    // guard also avoids a redundant SetText (cursor jump) when OnChange already updated the field.
-    internal sealed class FieldBinding
-    {
-        public UGuiTextInput Field = null!;
-        public Func<string> Get = null!;
-        public string Last = "";
-        public void Apply()
+        // Name-line voice icon: plugin-supplied texture, optional tint, toggled by ShowVoiceIcon.
+        private void ApplyVoiceIcon(in MeterRowData d)
         {
-            if (Field == null) return;
-            var v = Get();
-            if (v == Last) return;
-            Last = v;
-            if (Field.Text != v) Field.SetText(v);
+            if (VoiceImg == null) return;
+            var tex = d.VoiceIcon as Texture;
+            if (!ReferenceEquals(d.VoiceIcon, _lastVoiceTex))
+            {
+                VoiceImg.texture = tex;
+                VoiceImg.enabled = tex != null;
+                _lastVoiceTex = d.VoiceIcon;
+            }
+            var vtint = d.VoiceIconTint.A > 0f ? ToColor(d.VoiceIconTint) : Color.white;
+            if (!vtint.Equals(_lastVoiceTint)) { VoiceImg.color = vtint; _lastVoiceTint = vtint; }
+            var show = d.ShowVoiceIcon && tex != null;
+            if (_lastVoiceVis != (show ? 1 : 0)) { VoiceImg.gameObject.SetActive(show); _lastVoiceVis = show ? 1 : 0; }
         }
-    }
-
-    // Per-apply re-tint for a SelectableElement row. Diffs on a 0/1/2 state (rest/hover/selected) like the
-    // other bindings, so a no-change poll writes nothing — avoids marking the bg Image vertex-dirty (a
-    // redundant canvas rebatch) every Apply for every idle row. HoverState is pushed by the ticker hover hook;
-    // Selected() is polled. ForceRepaint() (resets the diff) is used by the hover hook, the initial paint, and
-    // the theme-reskin (which recomputes Rest/Hover/On).
-    internal sealed class SelectableBinding
-    {
-        public Image Bg = null!;
-        public Func<bool>? SelectedFn;
-        public Color Rest, Hover, On;
-        public bool HoverState;
-        private int _last = -1;
-        public void Apply()
-        {
-            if (Bg == null) return;
-            var state = (SelectedFn?.Invoke() ?? false) ? 2 : HoverState ? 1 : 0;
-            if (state == _last) return;
-            Bg.color = state == 2 ? On : state == 1 ? Hover : Rest;
-            _last = state;
-        }
-        public void ForceRepaint() { _last = -1; Apply(); }
     }
 }

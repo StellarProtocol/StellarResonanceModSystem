@@ -24,7 +24,10 @@ public sealed record PartyMemberRoster(
     int                     GroupId,
     PartyMemberFastSync?    FastSync,
     PartyMemberSocialSync?  Social,
-    int                     TalentId = 0);   // TeamMemData.talent_id — selected talent/spec
+    int                     TalentId = 0,    // TeamMemData.talent_id — selected talent/spec
+    bool?                   VoiceOpen = null,  // TeamMemData.voice_is_open (coarse open/closed)
+    int?                    MicStatusRaw = null, // TeamMemRealTimeVoiceInfo.microphone_status (full EMicrophoneStatus)
+    bool?                   Speaking = null);  // TeamMemRealTimeVoiceInfo.speak_status == Begin
 
 /// <summary>Per-member live data from <c>TeamMemberFastSyncData</c>.</summary>
 public sealed record PartyMemberFastSync(

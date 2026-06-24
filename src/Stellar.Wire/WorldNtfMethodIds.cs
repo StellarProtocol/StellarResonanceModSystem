@@ -15,6 +15,8 @@ public static class WorldNtfMethodIds
     public const uint SyncServerTime       = 43;
     public const uint SyncNearDeltaInfo    = 45;
     public const uint SyncToMeDeltaInfo    = 46;
+    public const uint NotifyAllMemberReady = 70; // ready-check open/close: NotifyAllMemberReady{ bool v_open_or_close=1 }
+    public const uint NotifyCaptainReady   = 71; // per-member response: NotifyCaptainReady{ string v_member_name=1; int64 v_char_id=2; DungeonReadyInfo v_ready_info=3 (is_ready=1) }
 }
 
 /// <summary>BPSR service UUIDs (low subset).</summary>

@@ -140,7 +140,17 @@ internal sealed partial class WindowBuilder
         public RectTransform Rect = null!;
         public bool Resizable;   // window's root is fixed-size (grip-resizable) rather than content-height-fit
         internal bool EditModeInteractive;   // window's controls stay clickable during layout-edit mode (toolbar only)
+        internal int ZOrder;     // plugin-set explicit draw order (higher = on top); primary stacking key
+        internal int ZCat;       // WindowCategory as int (HUD=0<Tools=1<Debug=2) — tiebreak when ZOrder ties
+        internal bool ZPopup;    // click-away popup → always stacked above every Category
+        internal string ZId = "";   // window id — final stable tiebreak
         private bool _laidOut;   // first structural layout done? (mount = immediate; later per-tick = deferred)
+
+        /// <summary>Re-arm the immediate first-layout path. Called when a window is re-shown after being hidden so
+        /// a content-sized popup (e.g. a cursor-positioned context menu whose item count changed while hidden)
+        /// gets a synchronous size rebuild the same frame it reappears, instead of showing one frame at the
+        /// previous open's size (the deferred MarkLayoutForRebuild path).</summary>
+        internal void ResetLayout() => _laidOut = false;
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<ButtonBinding> Buttons = new();
         internal readonly List<ToggleBinding> Toggles = new();
@@ -279,6 +289,7 @@ internal sealed partial class WindowBuilder
         {
             case RowElement r:    BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode); break;
             case ColumnElement c: BuildLayout(c.Children, parent, token, c.Gap == 0f ? SectionGap : c.Gap, UGuiPrimitives.ColumnMode); break;
+            case PanelElement pn: BuildPanel(pn, parent, token); break;
             case TextElement t:   BuildText(t, parent, token); break;
             case SeparatorElement sep: BuildSeparator(parent, token, sep.Vertical); break;
             case SpacerElement sp: BuildSpacer(parent, sp.Width, sp.Height); break;
@@ -325,6 +336,8 @@ internal sealed partial class WindowBuilder
             vlg.childForceExpandWidth = true;
         foreach (var child in children) BuildElement(child, go.transform, token);
     }
+
+    // BuildPanel + PanelBgColor/PanelBorderColor (PanelElement rendering) live in WindowBuilder.Panel.cs.
 
     private void BuildText(TextElement t, Transform parent, WindowToken token)
     {

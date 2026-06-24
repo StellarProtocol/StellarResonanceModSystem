@@ -15,7 +15,7 @@ namespace Stellar.Application.Services;
 /// <c>CombatService</c> threading model: enqueue from any thread, drain on
 /// Unity main.
 /// </summary>
-internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPartyEvents, IPartyEventSink, IDisposable
+internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPartyEvents, IPartyEventSink, IPartyLiveSink, IDisposable
 {
     private readonly ICombatSnapshot _combat;
     private readonly IClientState    _clientState;
@@ -97,10 +97,18 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         }
     }
 
+    public MicrophoneStatus GetMicStatus(long charId)
+        => _slots.TryGetValue(charId, out var s) ? s.MicStatus : MicrophoneStatus.Opened;
+
+    public bool IsSpeaking(long charId)
+        => _slots.TryGetValue(charId, out var s) && s.Speaking;
+
     public event Action<PartyMember>?                  MemberJoined;
     public event Action<PartyMember, PartyLeaveKind>?  MemberLeft;
     public event Action<PartyMember>?                  MemberUpdated;
     public event Action?                               PartyDissolved;
+    public event Action<ReadyCheckResponse>?           ReadyCheckResponded;
+    public event Action<bool>?                         ReadyCheckPhaseChanged;
 
     // === IPartyEventSink ===
 
@@ -110,6 +118,10 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
     public void EnqueueMemberLeft(long c, int t)                     => _pending.Enqueue(new PartyDelta.MemberLeft(c, t));
     public void EnqueueGroupLayout(IReadOnlyList<TeamGroupInfo> g)   => _pending.Enqueue(new PartyDelta.GroupLayout(g));
     public void EnqueueDissolve()                                    => _pending.Enqueue(new PartyDelta.Dissolve());
+    public void EnqueueReadyCheckResponse(long c, string? n, bool r) => _pending.Enqueue(new PartyDelta.ReadyCheckResponse(c, n, r));
+    public void EnqueueReadyCheckPhase(bool open)                    => _pending.Enqueue(new PartyDelta.ReadyCheckPhase(open));
+    public void EnqueueMicStatus(long c, int raw)                    => _pending.Enqueue(new PartyDelta.MicStatus(c, raw));
+    public void EnqueueSpeakStatus(long c, int raw)                  => _pending.Enqueue(new PartyDelta.SpeakStatus(c, raw));
 
     // === Drain (called from Host's OnGameUpdate postfix on the Unity main thread) ===
 
@@ -127,29 +139,7 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         _eventBuffer.Clear();
 
         while (_pending.TryDequeue(out var delta))
-        {
-            switch (delta)
-            {
-                case PartyDelta.FullSnapshot s:
-                    ApplyFullSnapshot(s.Data, s.Authoritative, _eventBuffer);
-                    break;
-                case PartyDelta.MemberFastSync ms:
-                    ApplyMemberFastSync(ms.CharId, ms.Data, _eventBuffer);
-                    break;
-                case PartyDelta.MemberSocialSync ss:
-                    ApplyMemberSocialSync(ss.CharId, ss.Data, _eventBuffer);
-                    break;
-                case PartyDelta.MemberLeft ml:
-                    ApplyMemberLeft(ml.CharId, ml.LeaveTypeRaw, _eventBuffer);
-                    break;
-                case PartyDelta.GroupLayout gl:
-                    ApplyGroupLayout(gl.Groups, _eventBuffer);
-                    break;
-                case PartyDelta.Dissolve:
-                    ApplyDissolve(_eventBuffer);
-                    break;
-            }
-        }
+            ApplyDelta(delta, _eventBuffer);
 
         if (_eventBuffer.Count > 0) _version++;
 
@@ -160,6 +150,34 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         }
 
         if (_eventBuffer.Count > 0) DiagRoster();
+    }
+
+    private void ApplyDelta(PartyDelta delta, List<Action> events)
+    {
+        switch (delta)
+        {
+            case PartyDelta.FullSnapshot s:     ApplyFullSnapshot(s.Data, s.Authoritative, events); break;
+            case PartyDelta.MemberFastSync ms:  ApplyMemberFastSync(ms.CharId, ms.Data, events);    break;
+            case PartyDelta.MemberSocialSync ss: ApplyMemberSocialSync(ss.CharId, ss.Data, events);  break;
+            case PartyDelta.MemberLeft ml:      ApplyMemberLeft(ml.CharId, ml.LeaveTypeRaw, events); break;
+            case PartyDelta.GroupLayout gl:     ApplyGroupLayout(gl.Groups, events);                 break;
+            case PartyDelta.Dissolve:           ApplyDissolve(events);                               break;
+            // Ready-check is fire-and-forget: plugin-owned state, no roster mutation.
+            case PartyDelta.ReadyCheckResponse rc:
+                events.Add(() => ReadyCheckResponded?.Invoke(new ReadyCheckResponse(rc.CharId, rc.Name, rc.IsReady)));
+                break;
+            case PartyDelta.ReadyCheckPhase rp:
+                events.Add(() => ReadyCheckPhaseChanged?.Invoke(rp.IsOpen));
+                break;
+            case PartyDelta.MicStatus mic:
+                // Voice state is queried via IPartyRoster.GetMicStatus, not carried on PartyMember,
+                // so updating the slot is enough — no MemberUpdated needed.
+                if (_slots.TryGetValue(mic.CharId, out var micSlot)) micSlot.MicStatus = (MicrophoneStatus)mic.Raw;
+                break;
+            case PartyDelta.SpeakStatus sp:
+                if (_slots.TryGetValue(sp.CharId, out var spkSlot)) spkSlot.Speaking = sp.Raw == 1; // ESpeakStatus.Begin(1)
+                break;
+        }
     }
 
     // === Apply methods ===
@@ -394,6 +412,17 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         slot.OnlineStatusRaw = r.OnlineStatusRaw;
         slot.SceneId         = r.SceneId;
         if (r.GroupId > 0) slot.GroupId = r.GroupId;   // never clobber a known group with a partial 0 (see ApplySocialFields)
+        // voice_is_open: false → Closed. true → Opened, but never downgrade a known OpenSpeaker
+        // (that distinction only comes from the GrpcTeamNtf m25 delta).
+        if (r.VoiceOpen is { } vo)
+        {
+            if (!vo) slot.MicStatus = MicrophoneStatus.Closed;
+            else if (slot.MicStatus == MicrophoneStatus.Closed) slot.MicStatus = MicrophoneStatus.Opened;
+        }
+        // Authoritative full voice state from TeamMemRealTimeVoiceInfo (e.g. GetTeamInfoReply on relogin) —
+        // carries the OpenSpeaker distinction voice_is_open can't, so it overrides the coarse base above.
+        if (r.MicStatusRaw is { } mr) slot.MicStatus = (MicrophoneStatus)mr;
+        if (r.Speaking is { } sp) slot.Speaking = sp;
         if (r.TalentId > 0)  slot.TalentId = r.TalentId;
         if (r.Social is { } soc)
         {
