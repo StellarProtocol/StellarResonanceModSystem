@@ -58,7 +58,8 @@ internal sealed class ToastCardBuilder
     /// Content column, Header row, and each text slot) is disabled after the single measure pass,
     /// so the animator can tween localScale/alpha/anchoredPosition on a fully static hierarchy with
     /// no per-frame layout churn anywhere (the size/text-flicker fix).</summary>
-    public ToastCard Build(Transform parent, string message, NotificationKind kind)
+    public ToastCard Build(Transform parent, string message, NotificationKind kind,
+        object? iconTexture = null, UvRect iconUv = default)
     {
         var kindColor = ToColor(ToastThemeAssets.KindColor(kind));
 
@@ -83,7 +84,7 @@ internal sealed class ToastCardBuilder
         BuildBg(card.transform);
         BuildAccent(card.transform, kindColor);
         var content = BuildContent(card.transform);
-        BuildHeader(content.transform, message, kind, kindColor);
+        BuildHeader(content.transform, message, kind, iconTexture, iconUv);
         var countdown = BuildCountdown(card.transform, kindColor);
 
         FreezeSize(card, rect, cardLayout, cardFit);
@@ -163,8 +164,10 @@ internal sealed class ToastCardBuilder
         return content;
     }
 
-    private void BuildHeader(Transform parent, string message, NotificationKind kind, Color kindColor)
+    private void BuildHeader(Transform parent, string message, NotificationKind kind,
+        object? iconTexture, UvRect iconUv)
     {
+        var kindColor = ToColor(ToastThemeAssets.KindColor(kind));
         var header = UGuiPrimitives.NewChild("Header", parent);
         var h = header.AddComponent<HorizontalLayoutGroup>();
         h.spacing = IconTitleGap;
@@ -172,10 +175,7 @@ internal sealed class ToastCardBuilder
         h.childForceExpandWidth = false; h.childForceExpandHeight = false;
         h.childAlignment = TextAnchor.MiddleLeft;
 
-        var icon = UGuiPrimitives.NewChild("Icon", header.transform);
-        UGuiPrimitives.SetPreferred(icon, IconSize, IconSize);
-        var iimg = icon.AddComponent<Image>();
-        iimg.sprite = _assets.IconFor(kind); iimg.type = Image.Type.Simple; iimg.preserveAspect = true; iimg.raycastTarget = false;
+        BuildIcon(header.transform, kind, iconTexture, iconUv);
 
         var (_, tfg, tsh) = MakeShadowedText(header.transform, TitleSize, TextAnchor.MiddleLeft, bold: true);
         var title = TitleFor(kind);
@@ -186,6 +186,26 @@ internal sealed class ToastCardBuilder
         mfg.text = message; msh.text = message;
         var le = mslot.AddComponent<LayoutElement>();
         le.flexibleWidth = 1f;   // message stretches to the content width so wrap measures correctly
+    }
+
+    // Icon slot (fixed IconSize×IconSize, MiddleLeft of the header). When the caller supplies a custom
+    // texture (a boxed UnityEngine.Texture handle, e.g. an item icon), bind it via a RawImage + atlas
+    // UV sub-rect — mirroring the GameTextureElement bind path. Otherwise use the baked kind glyph. The
+    // slot geometry is identical in both cases so the title offset never shifts.
+    private void BuildIcon(Transform parent, NotificationKind kind, object? iconTexture, UvRect iconUv)
+    {
+        var icon = UGuiPrimitives.NewChild("Icon", parent);
+        UGuiPrimitives.SetPreferred(icon, IconSize, IconSize);
+        if (iconTexture is Texture tex)
+        {
+            var raw = icon.AddComponent<RawImage>();
+            raw.texture = tex;
+            raw.uvRect = new Rect(iconUv.X, iconUv.Y, iconUv.W, iconUv.H);
+            raw.raycastTarget = false;
+            return;
+        }
+        var iimg = icon.AddComponent<Image>();
+        iimg.sprite = _assets.IconFor(kind); iimg.type = Image.Type.Simple; iimg.preserveAspect = true; iimg.raycastTarget = false;
     }
 
     private Image BuildCountdown(Transform parent, Color kindColor)

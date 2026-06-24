@@ -99,7 +99,7 @@ internal sealed class ToastRenderer
         {
             var t = active[i];
             if (HasEntry(t.Id)) continue;
-            var built = _builder!.Build(_canvasRoot!, t.Message, t.Kind);
+            var built = _builder!.Build(_canvasRoot!, t.Message, t.Kind, t.IconTexture, t.IconUv);
             double expiresAt = t.ExpiresAt;
             float duration = t.Duration;
             built.Group.alpha = 0f;   // ENTER fades in
