@@ -18,11 +18,13 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.4.2 is a hotfix: fix non-ASCII (e.g. Thai) text
-    /// input being truncated in uGUI fields (onValidateInput → onValueChanged). 1.4.1
-    /// scoped the rail-button template lookup (periodic freeze); 1.4.0 added
-    /// <c>IWindowControl.SetVisiblePersist</c> plus the native-UI grab-box /
-    /// cutscene-reposition fixes.
+    /// BepInEx chainloader happy. 1.5.0 adds team-voice mic status + dungeon
+    /// ready-check on the meter row (<c>IPartyEvents</c>/<c>IPartyRoster</c>) plus
+    /// the click-away popup / <c>PanelElement</c> / z-ordering UI primitives. 1.4.2
+    /// was a hotfix for non-ASCII (e.g. Thai) text input truncated in uGUI fields
+    /// (onValidateInput → onValueChanged); 1.4.1 scoped the rail-button template
+    /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
+    /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.4.2";
+    public const string Value = "1.5.0";
 }

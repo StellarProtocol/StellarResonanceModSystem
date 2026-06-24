@@ -6,6 +6,34 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-24
+### Added
+- **Team voice & dungeon ready-check, surfaced as typed party events.** The framework decodes the
+  game's voice and ready-check wire traffic and exposes it through `IPartyEvents` / `IPartyRoster`,
+  so plugins consume clean events instead of touching IL2CPP or Lua. (#21)
+  - **Ready-check:** `WorldNtfLuaStubDispatcher` (HarmonyX postfix on `ZLuaStub.OnCallStub`) catches
+    methods 70/71, which flow through the Lua stub rather than `WorldNtfStub`; `NotifyReadyCheckReader`
+    decodes `NotifyAllMemberReady` (70) / `NotifyCaptainReady` (71) into
+    `IPartyEvents.ReadyCheckResponded` / `ReadyCheckPhaseChanged`.
+  - **Team voice:** `GrpcTeamNtf` methods 25/26 (mic mode / speaking) decoded in
+    `NotifyTeamVoiceReaders`; `voice_is_open` (`TeamMemData` f7) + `mem_real_time_voice_infos`
+    (`GetTeamInfoReply` f4) parsed for correct state on join/relogin (incl. the `OpenSpeaker` edge
+    case the bool can't express). New `MicrophoneStatus` enum + `IPartyRoster.GetMicStatus` /
+    `IsSpeaking` — additive; `PartyMember` stays binary-compatible.
+  - **Meter row (`MeterRowData`):** `NameColor` (ready-check vote tint), `VoiceIcon` /
+    `VoiceIconTint` / `ShowVoiceIcon` (mic icon), `RowBorder` (green while talking), `CrestTint`.
+- **UI primitives for click-away popups.**
+  - `WindowSpec.DismissOnOutsideClick` — Escape or press-outside invokes `OnClose` and hides the
+    window; `IsShown` stays in sync.
+  - `PanelElement` — themed popup container (2 px border + lifted background + padded content host).
+  - Deterministic z-ordering (`ReorderWindows`): draw order follows `(ZOrder, Category, Id)`
+    regardless of plugin mount order, so click-away popups always render on top.
+### Fixed
+- **Meter row border now draws all four edges** (previously only the top edge was visible).
+- **`WindowRenderer.SetRect` clamps programmatic resizes to `MinWidth` / `MaxWidth`.** Previously
+  only drag-resize was clamped, so mode switches, `RefreshPartyFocusHeight`, and prefs restore could
+  silently push a window below its registered minimum.
+
 ## [1.4.2] - 2026-06-22
 ### Fixed
 - **Non-ASCII text input (e.g. Thai) truncated in uGUI fields.** Switched from `onValidateInput`
