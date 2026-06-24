@@ -94,6 +94,10 @@ internal sealed partial class WindowBuilder
         var fitter = root.gameObject.AddComponent<ContentSizeFitter>();
         fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        // Invisible raycast blocker so clicks/right-clicks over the window don't fall through to the game.
+        var blocker = root.gameObject.AddComponent<Image>();
+        blocker.color = new Color(0f, 0f, 0f, 0f);
+        blocker.raycastTarget = true;
         var vlg = root.gameObject.AddComponent<VerticalLayoutGroup>();
         vlg.padding = new RectOffset(12, 12, 12, 12);
         vlg.spacing = SectionGap;

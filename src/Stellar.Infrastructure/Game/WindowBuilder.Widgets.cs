@@ -73,24 +73,19 @@ internal sealed partial class WindowBuilder
         // up the SAME height — a matched pair (e.g. the meter row's inspect magnifier next to the drill ►).
         if (b.Icon != null) BuildButtonIcon(b.Icon(), go.transform, token, iconOnly ? Scaled(14) : 16f);
 
-        // minHeight floor so a parent VerticalLayoutGroup can't SQUISH the button when a fixed-height
-        // (Resizable) window is over-budget — e.g. the CombatMeter header buttons compressing when the inline
-        // menu expands. The scroll list (minHeight 0) absorbs the deficit instead, so buttons stay one size in
-        // both collapsed + expanded states.
-        var ble = go.AddComponent<LayoutElement>();
-        ble.minHeight = Scaled(11) + 12f;
-        // Fixed-width cell (e.g. hotkey binding): pin the width so the HLG can't grow/shrink it and the row
-        // can never be forced wider than the viewport (the in-world hotkeys-clip), and WRAP the label so a
-        // long binding stacks vertically inside the cell instead of spilling horizontally past the frame.
-        if (b.Width > 0f)
-        {
-            ble.preferredWidth = b.Width; ble.minWidth = b.Width; ble.flexibleWidth = 0f;
-        }
+        AddButtonSizing(go, b.Width);
 
         var label = BuildButtonLabel(go.transform, b.Width > 0f);
 
         var onClick = b.OnClick;
-        btn.onClick.AddListener((UnityAction)(() => { if (SuppressClickInEditMode(token)) return; onClick(); ClearSelectionAfterClick(); }));
+        var onClickWithRect = b.OnClickWithRect;
+        btn.onClick.AddListener((UnityAction)(() =>
+        {
+            if (SuppressClickInEditMode(token)) return;
+            onClick();
+            if (onClickWithRect != null) FireOnClickWithRect(go, onClickWithRect);
+            ClearSelectionAfterClick();
+        }));
         var binding = new ButtonBinding
         {
             B = btn, Label = label, LabelFn = b.Label, EnabledFn = b.Enabled,
@@ -99,6 +94,27 @@ internal sealed partial class WindowBuilder
         token.Buttons.Add(binding);
         RegisterTextReskin(token, label, 11);
         RegisterButtonReskin(token, binding, b.Style);
+    }
+
+    // Delivers the button's screen rect to OnClickWithRect. Overlay canvas: world space == screen space, Y up.
+    // Uses rt.position (pivot center in screen coords) + rt.rect (local extents) to avoid passing a managed
+    // Vector3[] to GetWorldCorners, which doesn't write through to managed arrays in IL2CPP.
+    private static void FireOnClickWithRect(GameObject go, System.Action<Abstractions.Domain.WindowRect> cb)
+    {
+        var rt = go.GetComponent<RectTransform>();
+        if (rt == null) return;
+        var pos = rt.position;
+        var r   = rt.rect;
+        cb(new Abstractions.Domain.WindowRect(
+            pos.x + r.xMin, Screen.height - pos.y - r.yMax, r.width, r.height));
+    }
+
+    // LayoutElement for minHeight floor + optional fixed-width pin.
+    private void AddButtonSizing(GameObject go, float width)
+    {
+        var ble = go.AddComponent<LayoutElement>();
+        ble.minHeight = Scaled(11) + 12f;
+        if (width > 0f) { ble.preferredWidth = width; ble.minWidth = width; ble.flexibleWidth = 0f; }
     }
 
     // HLG for a ButtonElement: compact, MiddleCenter, SYMMETRIC vertical padding so the label centres on glyph

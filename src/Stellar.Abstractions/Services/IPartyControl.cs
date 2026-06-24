@@ -36,4 +36,33 @@ public interface IPartyControl
     /// <param name="group">Destination raid group, 1-based (1–4).</param>
     /// <param name="slot">Destination slot within the group, 0-based (0–4).</param>
     void MoveMember(long charId, int group, int slot);
+
+    /// <summary>
+    /// Transfer party leadership to <paramref name="charId"/> via the game's own
+    /// <c>AsyncTransferLeader</c> dispatcher. Leader-only; validated game-side. No-op
+    /// when not leader or when the team bridge is unresolved.
+    /// </summary>
+    void TransferLeader(long charId);
+
+    /// <summary>
+    /// Kick <paramref name="charId"/> from the party via the game's own
+    /// <c>AsyncTickOut</c> dispatcher. Leader-only; validated game-side. No-op
+    /// when not leader or when the team bridge is unresolved.
+    /// </summary>
+    void KickMember(long charId);
+
+    /// <summary>
+    /// Invite <paramref name="charId"/> to the party via the game's own
+    /// <c>AsyncInviteToTeam</c> dispatcher. Any member may invite; the game
+    /// enforces party-full and cooldown constraints. No-op when the team bridge
+    /// is unresolved.
+    /// </summary>
+    void InviteToTeam(long charId);
+
+    /// <summary>
+    /// Leave the current party via the game's own <c>AsyncQuitTeam</c> dispatcher.
+    /// No-op when the team bridge is unresolved. The game handles server notification
+    /// and clears team state.
+    /// </summary>
+    void LeaveParty();
 }

@@ -19,4 +19,12 @@ internal sealed class PartyControlService : IPartyControl
     public void SetMemberType(PartyType size) => _probe.CallSetMemberType(size);
 
     public void MoveMember(long charId, int group, int slot) => _probe.CallMoveMember(charId, group, slot);
+
+    public void TransferLeader(long charId) => _probe.CallTransferLeader(charId);
+
+    public void KickMember(long charId) => _probe.CallKickMember(charId);
+
+    public void InviteToTeam(long charId) => _probe.CallInviteToTeam(charId);
+
+    public void LeaveParty() => _probe.CallLeaveParty();
 }

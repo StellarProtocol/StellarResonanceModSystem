@@ -90,10 +90,46 @@ internal sealed partial class WindowRenderer : IWindowRenderer
         {
             var token = _builder.Build(reg, _canvasRoot);
             _tokens.Add(token);   // track for in-place re-skin on theme change
+            // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
+            // The dismiss runs OnClose — the same path the ✕ uses — so IsShown stays in sync.
+            if (reg.Spec.DismissOnOutsideClick && reg.OnClose is { } onClose && _ticker != null && token.Rect != null)
+                _ticker.Dismissables.Add((token.Rect, onClose));
+            // Register every window root (popup or regular) so FrontWindowBlocks can check z-order overlap.
+            if (_ticker != null && token.Rect != null)
+                _ticker.WindowRoots.Add(token.Rect);
+            // Deterministic stacking so draw order doesn't depend on plugin load / mount order. The plugin sets
+            // ZOrder to control its own placement; Category is the default tiebreak (HUD behind Tools behind
+            // Debug); click-away popups always sit on top. Without this, whichever window mounted last drew on
+            // top — so e.g. the combat meter jumped above other plugins' panels after a redeploy shifted order.
+            token.ZOrder = reg.Spec.ZOrder;
+            token.ZCat = (int)reg.Spec.Category;
+            token.ZPopup = reg.Spec.DismissOnOutsideClick;
+            token.ZId = reg.Spec.Id;
+            ReorderWindows();
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
             return token;
         }
         catch (Exception ex) { _log.Warning($"[Window] mount '{reg.Spec.Id}' threw: {ex.Message}"); return null; }
+    }
+
+    private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
+    private readonly System.Collections.Generic.List<WindowToken> _zsort = new();
+
+    // Re-assign sibling indices so draw order follows (ZOrder, Category, Id) — deterministic, independent of mount
+    // order. Called after every mount (mounts are infrequent). Lower key = drawn first = behind; popups on top.
+    private void ReorderWindows()
+    {
+        _zsort.Clear();
+        for (var i = 0; i < _tokens.Count; i++) if (_tokens[i].Rect != null) _zsort.Add(_tokens[i]);
+        _zsort.Sort((a, b) =>
+        {
+            var pa = a.ZPopup ? PopupOrder : a.ZOrder;
+            var pb = b.ZPopup ? PopupOrder : b.ZOrder;
+            if (pa != pb) return pa - pb;
+            if (a.ZCat != b.ZCat) return a.ZCat - b.ZCat;
+            return string.CompareOrdinal(a.ZId, b.ZId);
+        });
+        for (var i = 0; i < _zsort.Count; i++) _zsort[i].Rect.SetSiblingIndex(i);
     }
 
     public bool IsAlive(object? token) => token is WindowToken t && t.Root != null;
@@ -106,7 +142,12 @@ internal sealed partial class WindowRenderer : IWindowRenderer
         // overlay + Settings are Tools on THIS canvas, so a whole-canvas kill would hide the toggle, a trap).
         // SetActive the root (no remount); skip Apply when hidden.
         var hideAll = hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD);
+        var wasHidden = !t.Root.activeSelf;
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
+        // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
+        // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
+        // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
+        if (!hideAll && wasHidden) t.ResetLayout();
         if (!hideAll) t.Apply();
     }
 
@@ -120,7 +161,13 @@ internal sealed partial class WindowRenderer : IWindowRenderer
         var clamped = ClampToScreen(t, rect);
         t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
         if (t.Resizable && rect.Width > 0f && rect.Height > 0f)
-            t.Rect.sizeDelta = new Vector2(rect.Width, rect.Height);
+        {
+            var min = Vector2.zero; var max = new Vector2(float.MaxValue, float.MaxValue);
+            if (_ticker != null)
+                for (var i = 0; i < _ticker.DragResizers.Count; i++)
+                    if (_ticker.DragResizers[i].Target == t.Rect) { min = _ticker.DragResizers[i].Min; max = _ticker.DragResizers[i].Max; break; }
+            t.Rect.sizeDelta = new Vector2(Mathf.Clamp(rect.Width, min.x, max.x), Mathf.Clamp(rect.Height, min.y, max.y));
+        }
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
@@ -159,6 +206,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
                 for (var i = 0; i < t.Pulses.Count; i++) _ticker.Pulses.Remove(t.Pulses[i]);
             }
             t.DisposeNativeTextures();   // ColorPicker SV/hue bakes (HideAndDontSave — not reclaimed by GO destroy)
+            if (_ticker != null && t.Rect != null) _ticker.WindowRoots.Remove(t.Rect);
             if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed

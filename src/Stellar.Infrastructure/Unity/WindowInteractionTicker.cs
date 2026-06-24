@@ -35,6 +35,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     internal Action<int, int>? DragSlotDrop;
     // Right-click cells (CombatMeter row context menu). Right-button-down over a cell fires its callback.
     internal readonly List<(RectTransform Cell, Action OnRightClick)> RightClicks = new();
+    // All mounted window roots (popup + regular), for z-order-aware hit blocking. Sibling index is the draw order:
+    // higher = in front. Populated by WindowRenderer.Mount/Destroy; pruned by Prune().
+    internal readonly List<RectTransform> WindowRoots = new();
+    // Dismissables list + TickDismissables/TickRightClick/PointerOverPopup live in WindowInteractionTicker.Dismiss.cs.
     // Live render-texture hosts (e.g. the inspector 3D portrait): each frame, pull the boxed Texture and bind it
     // onto the RawImage. Optional Drag (orbit) / Zoom (scroll) / Pan (shift+drag) callbacks make it interactive.
     internal readonly List<(RawImage Img, Func<object?> Texture, Action<float, float>? Drag, Action<float>? Zoom, Action<float, float>? Pan, Action<int, int>? Resize)> RenderHosts = new();
@@ -77,6 +81,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = Hovers.Count - 1; i >= 0; i--) if (Hovers[i].Cell == null) { Hovers.RemoveAt(i); if (i < _hoverState.Count) _hoverState.RemoveAt(i); }
         for (var i = DragSlots.Count - 1; i >= 0; i--) if (DragSlots[i].Cell == null) DragSlots.RemoveAt(i);
         for (var i = RightClicks.Count - 1; i >= 0; i--) if (RightClicks[i].Cell == null) RightClicks.RemoveAt(i);
+        for (var i = Dismissables.Count - 1; i >= 0; i--) if (Dismissables[i].Root == null) Dismissables.RemoveAt(i);
+        for (var i = WindowRoots.Count - 1; i >= 0; i--) if (WindowRoots[i] == null) WindowRoots.RemoveAt(i);
         for (var i = RenderHosts.Count - 1; i >= 0; i--) if (RenderHosts[i].Img == null) RenderHosts.RemoveAt(i);
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
@@ -123,7 +129,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (Input.GetMouseButton(0)) TickActivePointer();
         else ReleasePointer();
 
-        if (Input.GetMouseButtonDown(1)) TickRightClick();
+        var openedPopup = Input.GetMouseButtonDown(1) && TickRightClick();
+        TickDismissables(openedPopup);
         TickRenderHostZoom();
         TickChartZoom();   // .ChartPan.cs
     }
@@ -225,24 +232,12 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         h.Img.rectTransform.sizeDelta = new Vector2(w, ht);
     }
 
-    // Right-button-down over a registered cell fires its context-menu callback (topmost-registered wins).
-    private void TickRightClick()
-    {
-        var mp = Input.mousePosition;
-        for (var i = 0; i < RightClicks.Count; i++)
-        {
-            var (cell, cb) = RightClicks[i];
-            if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
-            try { cb(); } catch { if (_throwLogged++ == 0) Debug.LogWarning("[Window] right-click cb threw (rate-limited)"); }
-            return;
-        }
-    }
-
     // Mouse-down: pick what the press grabs, in priority order. A draggable card claims the pointer first, so
     // grabbing a card never also drags the window; then color-picker areas, resize grips, then window handles.
     private void BeginPointerDrag()
     {
+        // A press over an open popup belongs to the popup (its uGUI buttons) — never grab a window/slot beneath it.
+        if (PointerOverPopup(Input.mousePosition)) { _lastMouse = Input.mousePosition; return; }
         // Render-host (3D portrait) drag claims the pointer first so dragging the box orbits its camera.
         _activeRenderHost = HitRenderHost(Input.mousePosition);
         if (_activeRenderHost >= 0) { _lastMouse = Input.mousePosition; return; }
@@ -376,6 +371,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (cell == null || !cell.gameObject.activeInHierarchy) continue;
             if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
             try { if (canDrag != null && !canDrag()) continue; } catch { continue; }
+            if (FrontWindowBlocks(mp, FindWindowRoot(cell))) continue;
             return i;
         }
         return -1;
@@ -484,8 +480,11 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             // Edit-only windows (overlay/status chromes) drag only while layout edit-mode is active — so they
             // don't move accidentally during play. Popup dialogs (EditOnly=false) drag any time.
             if (DragWindows[i].EditOnly && !LayoutEditGate.IsEditing) continue;
-            if (DragWindows[i].Handle != null && RectTransformUtility.RectangleContainsScreenPoint(DragWindows[i].Handle, mp, null))
-                return DragWindows[i].Target;
+            if (DragWindows[i].Handle == null) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(DragWindows[i].Handle, mp, null)) continue;
+            // Don't start a window drag if a higher-Z window covers the pointer — the press belongs to that window.
+            if (FrontWindowBlocks(mp, DragWindows[i].Target)) continue;
+            return DragWindows[i].Target;
         }
         return null;
     }
@@ -496,5 +495,31 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (DragAreas[i].Area != null && RectTransformUtility.RectangleContainsScreenPoint(DragAreas[i].Area, mp, null))
                 return i;
         return -1;
+    }
+
+    // Returns true if any active window with a higher sibling index (= drawn in front) also covers the pointer.
+    // Sibling index is set by ReorderWindows() to match ZOrder, so this is a z-order-aware block check.
+    internal bool FrontWindowBlocks(Vector2 mp, RectTransform? cellWindowRoot)
+    {
+        if (cellWindowRoot == null) return false;
+        int selfSibling = cellWindowRoot.GetSiblingIndex();
+        for (var i = 0; i < WindowRoots.Count; i++)
+        {
+            var root = WindowRoots[i];
+            if (root == null || !root.gameObject.activeInHierarchy) continue;
+            if (root.GetSiblingIndex() <= selfSibling) continue;
+            if (RectTransformUtility.RectangleContainsScreenPoint(root, mp, null)) return true;
+        }
+        return false;
+    }
+
+    // Walk up a cell's hierarchy to find its direct-canvas-child RectTransform (the window root).
+    // All Stellar windows are direct children of the canvas root, so we stop one level below the canvas root.
+    internal static RectTransform? FindWindowRoot(RectTransform cell)
+    {
+        Transform t = cell;
+        while (t != null && t.parent != null && t.parent.parent != null)
+            t = t.parent;
+        return t as RectTransform;
     }
 }

@@ -14,4 +14,12 @@ internal interface IPartyControlProbe
     void CallSetMemberType(PartyType size);
 
     void CallMoveMember(long charId, int group, int slot);
+
+    void CallTransferLeader(long charId);
+
+    void CallKickMember(long charId);
+
+    void CallInviteToTeam(long charId);
+
+    void CallLeaveParty();
 }

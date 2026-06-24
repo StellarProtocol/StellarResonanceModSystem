@@ -19,6 +19,13 @@ public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 
 /// <param name="Gap">Spacing in pixels between each child.</param>
 public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap = 0f) : HudElement;
 
+/// <summary>A themed panel container: fills its area with the active theme's menu background + a 1px border and
+/// lays out a single <paramref name="Child"/> inside with uniform padding. Use it to give a borderless popup
+/// (e.g. a right-click context menu) a real panel look and to block click-through to whatever is behind.</summary>
+/// <param name="Child">The content laid out inside the panel.</param>
+/// <param name="Padding">Uniform inner padding in pixels.</param>
+public sealed record PanelElement(HudElement Child, float Padding = 8f) : HudElement;
+
 /// <summary>Horizontal text alignment within the text's cell. Default Left; Right is used for numeric table
 /// columns (so magnitudes line up against the right edge of a fixed-width <see cref="CellElement"/>).</summary>
 public enum TextAlign

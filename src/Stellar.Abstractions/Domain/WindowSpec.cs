@@ -67,6 +67,21 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// </summary>
     public bool EditModeDragOnly { get; init; }
 
+    /// <summary>When true the framework auto-hides this window on Escape or a mouse press outside its rect — the
+    /// click-away dismiss a cursor popup / context menu wants. The dismiss invokes the registration's
+    /// <c>OnClose</c> (wire it to <see cref="Stellar.Abstractions.Services.IWindowControl.SetVisible"/>(false));
+    /// with no OnClose the flag is inert. Handled on the per-render-frame interaction ticker, NOT the throttled
+    /// framework tick, so it never misses a one-frame click/key edge (a press lasting one rendered frame would be
+    /// missed by a plugin polling input from its throttled OnUpdate).</summary>
+    public bool DismissOnOutsideClick { get; init; }
+
+    /// <summary>Explicit draw-order among Stellar windows: HIGHER draws on top. Default 0. The framework stacks
+    /// windows by (ZOrder, then <see cref="Category"/> as a tiebreak — HUD&lt;Tools&lt;Debug — then Id), so a plugin
+    /// that sets this fully controls where its window sits relative to others regardless of load/mount order; one
+    /// that leaves it 0 falls back to the category default. Click-away (<see cref="DismissOnOutsideClick"/>)
+    /// popups always render above all of these.</summary>
+    public int ZOrder { get; init; }
+
     /// <summary>When true the chrome draws a resize grip; dragging it changes the window size (clamped to Min/Max bounds).</summary>
     public bool Resizable { get; init; }
     /// <summary>Minimum allowed window width in pixels when <see cref="Resizable"/> is true.</summary>
