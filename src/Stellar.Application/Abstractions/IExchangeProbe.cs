@@ -18,8 +18,9 @@ internal interface IExchangeProbe
     /// <summary>Query the care/watch list of the given kind.</summary>
     Task<IReadOnlyList<ExchangeCareItem>> QueryCareListAsync(ExchangeItemKind kind, CancellationToken ct);
 
-    /// <summary>Query one Trading-Center catalog category page (items + availability + min price).</summary>
-    Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct);
+    /// <summary>Query one Trading-Center catalog category page (items + availability + min price). The family
+    /// is derived from <paramref name="category"/>'s leading digit (1=Growth/2=Life Skills/3=Modules/4=Appearance).</summary>
+    Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(int category, CancellationToken ct);
 
     /// <summary>Query scheduled notice listings for an item.</summary>
     Task<IReadOnlyList<ExchangeNoticeListing>> QueryNoticeAsync(int itemId, CancellationToken ct);

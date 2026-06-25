@@ -200,11 +200,14 @@ internal sealed partial class PandaExchangeProbe
         " rawset(_G,\"" + CareGlobal + "\", table.concat(t,\"\\n\")) end))()";
 
     // ExchangeList({type,subType}) -> { items:[ExchangeItemInfo{configId,num,minPrice,isCare}], errCode }.
-    // The Trading-Center catalog browse, one category page per call (recon Pass 6). subType is the
-    // StallCategory id; type is the item kind (1 shop / 2 notice). Same reply struct as the care list + minPrice.
-    private static string BuildCatalogChunk(int typeArg, int category) =>
+    // The Trading-Center catalog browse, one category page per call. type is the L0 FAMILY (1=Growth,
+    // 2=Life Skills, 3=Modules, 4=Appearance) — NOT the shop/notice kind — and is derived from the category
+    // leaf id's leading digit (101→1, 201→2, 301→3, 401→4); subType is the leaf id. Confirmed in-game
+    // (recon Pass 7): only type==family filters; a mismatched type returns a 65-item default bucket.
+    // Same reply struct as the care list + minPrice.
+    private static string BuildCatalogChunk(int category) =>
         "(Z.CoroUtil.create_coro_xpcall(function() " + Proxy +
-        " local r=wp.ExchangeList({type=" + Int(typeArg) + ", subType=" + Int(category) + "}, tok)" +
+        " local r=wp.ExchangeList({type=" + Int(category / 100) + ", subType=" + Int(category) + "}, tok)" +
         " if r==nil then rawset(_G,\"" + CatalogGlobal + "\",\"ERR:nil\") return end" +
         " local ec=r.errCode or 0 if ec~=0 then rawset(_G,\"" + CatalogGlobal + "\",\"ERR:\"..tostring(ec)) return end" +
         " local t={\"OK\"} local items=r.items" +

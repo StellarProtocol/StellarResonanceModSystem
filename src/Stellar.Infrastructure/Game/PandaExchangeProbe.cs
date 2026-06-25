@@ -73,12 +73,11 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
         return tcs.Task;
     }
 
-    public Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(ExchangeItemKind kind, int category, CancellationToken ct)
+    public Task<IReadOnlyList<ExchangeCatalogItem>> QueryCatalogAsync(int category, CancellationToken ct)
     {
         if (ct.IsCancellationRequested) return Task.FromCanceled<IReadOnlyList<ExchangeCatalogItem>>(ct);
         var tcs = new TaskCompletionSource<IReadOnlyList<ExchangeCatalogItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var typeArg = kind == ExchangeItemKind.NoticeShopItem ? 2 : 1;
-        Enqueue(new PendingRpc(KindCatalog, CatalogGlobal, BuildCatalogChunk(typeArg, category), allowRefire: true)
+        Enqueue(new PendingRpc(KindCatalog, CatalogGlobal, BuildCatalogChunk(category), allowRefire: true)
         {
             OnResult = s => tcs.TrySetResult(ParseCatalog(s)),
             OnTimeout = () => tcs.TrySetResult(NoCatalog),
