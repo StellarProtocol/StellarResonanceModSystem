@@ -18,7 +18,10 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.5.0 adds team-voice mic status + dungeon
+    /// BepInEx chainloader happy. 1.6.0 adds <c>IExchange</c> (player Trading-Center
+    /// query + buy via the game's own trade flow, exposed as <c>IPluginServices.Market</c>)
+    /// and the extensible <c>INotifications.Create()</c> toast builder (custom-icon support).
+    /// 1.5.0 added team-voice mic status + dungeon
     /// ready-check on the meter row (<c>IPartyEvents</c>/<c>IPartyRoster</c>) plus
     /// the click-away popup / <c>PanelElement</c> / z-ordering UI primitives. 1.4.2
     /// was a hotfix for non-ASCII (e.g. Thai) text input truncated in uGUI fields
@@ -26,5 +29,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.5.0";
+    public const string Value = "1.6.0";
 }
