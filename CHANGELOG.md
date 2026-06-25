@@ -6,6 +6,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-25
+### Added
+- **`IExchange` — player Trading-Center market access**, exposed as `IPluginServices.Market`. Plugins can
+  query the live market and buy through the game's **own** trade flow — no packet construction; every
+  purchase is built and validated server-side. Driven via the game's WorldProxy exchange RPCs ("Approach A",
+  headless — the trade page never needs to be open).
+  - Reads: `QueryListingsAsync(itemId)` (live listings, cheapest-first), `QueryCatalogAsync(category)`
+    (category browse — the request's `type` is the `StallCategory` family, derived from the leaf id),
+    `QueryCareListAsync(kind)` (watch list + availability), `QueryNoticeAsync(itemId)` (scheduled/pre-order
+    listings).
+  - Buy: `BuyAsync(itemId, quantity, price)` → `ExchangeBuyOutcome`
+    (`Success` / `NoItemAvailable` / `InsufficientFunds` / `Rejected` / `Timeout`).
+  - DTOs: `ExchangeListing`, `ExchangeCatalogItem`, `ExchangeCareItem`, `ExchangeNoticeListing`,
+    `ExchangeItemKind`.
+- **Extensible toast notifications.** `INotifications.Create()` fluent builder
+  (`WithMessage` / `WithKind` / `WithDuration` / `WithIcon`) with custom-icon support — render a supplied
+  texture (e.g. a game item icon) in the toast's icon slot; `null` falls back to the baked per-kind glyph.
+  The existing `Notify(string, kind, seconds)` shortcut is unchanged.
+
 ## [1.5.0] - 2026-06-24
 ### Added
 - **Team voice & dungeon ready-check, surfaced as typed party events.** The framework decodes the
