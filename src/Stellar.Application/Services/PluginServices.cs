@@ -13,6 +13,7 @@ internal sealed class PluginServices : IPluginServices
     public IInventory Inventory { get; }
     public IModuleEquip ModuleEquip { get; }
     public ILoadout Loadout { get; }
+    public IExchange Market { get; }
     public INotifications Notifications { get; }
     public IPluginConfig Config { get; }
     public IGameEvents GameEvents { get; }
@@ -52,6 +53,7 @@ internal sealed class PluginServices : IPluginServices
         IInventory inventory,
         IModuleEquip moduleEquip,
         ILoadout loadout,
+        IExchange market,
         INotifications notifications,
         IPluginConfig config,
         IGameEvents gameEvents,
@@ -90,6 +92,7 @@ internal sealed class PluginServices : IPluginServices
         Inventory = inventory;
         ModuleEquip = moduleEquip;
         Loadout = loadout;
+        Market = market;
         Notifications = notifications;
         Config = config;
         GameEvents = gameEvents;

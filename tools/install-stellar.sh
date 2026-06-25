@@ -70,7 +70,7 @@ USER_PLUGINS=(
 # only copies DLLs, so without this it silently deploys whatever Release build
 # was lying around — the #1 cause of "nothing changed" after install (e.g. when
 # the working build was -c Debug). Skip with SKIP_BUILD=1.
-DOTNET="${DOTNET:-(local reference)"
+DOTNET="${DOTNET:-/home/dorasu/.dotnet/dotnet}"
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
     echo "building src/ (Release) before deploy…"
     "$DOTNET" build "$SRC/Stellar.sln" -c Release --nologo -v quiet

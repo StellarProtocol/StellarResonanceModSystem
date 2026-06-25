@@ -172,6 +172,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildLauncherServices();
         BuildInventoryServices(log, typeRegistry);
         BuildLoadoutServices(log, typeRegistry);
+        BuildExchangeServices(log, typeRegistry);
         // Resonance lookup must exist before the plugin-services aggregator —
         // GameAssetsService takes IGameDataResonance via its constructor. Cheap +
         // idempotent; the post-hot-update ConstructGameDataProbe shares the result.
