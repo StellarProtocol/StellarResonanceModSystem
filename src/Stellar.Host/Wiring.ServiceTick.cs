@@ -40,9 +40,10 @@ public sealed partial class BootstrapPlugin
     // per-frame Game.Update postfix — so most rendered frames have ZERO managed entry (the
     // ~12-18 fps managed-crossing tax). masterDt is real seconds since the previous tick (≈ 1/masterRate).
     // Three-band structure:
-    //   Band 1 — every master beat: cheap Lua-bridge probe drains (equip / loadout / exchange).
+    //   Band 1 — every master beat: exchange probe drain only (latency-critical; cheap when idle).
     //   Band 2 — per-plugin Updates at each plugin's own rate (_scheduler.Beat).
-    //   Band 3 — global-gated expensive work (draw/refresh/input) at PerfControls.UpdateRateHz.
+    //   Band 3 — global-gated expensive work (draw/refresh/input) at PerfControls.UpdateRateHz;
+    //            equip + loadout drains also run here (no latency need; avoids 8× Lua cost at ramp rate).
     private void RunFrameworkTick(float masterDt)
     {
         MaybeApplyPerfExperiment();
@@ -54,8 +55,8 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
         try
         {
-            // Band 1 — every master beat (cheap; rides the fastest rate so RPC round-trips land quickly).
-            DrainLuaBridgeProbes();
+            // Band 1 — every master beat (exchange only; cheap when idle — empty-queue dequeue + empty active-list loop).
+            DrainExchangeProbe();
 
             // Band 2 — per-plugin Updates, each plugin firing at its own registered rate.
             Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:plugins");
@@ -81,9 +82,12 @@ public sealed partial class BootstrapPlugin
     private void RunGlobalRateWork(float globalDt)
     {
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:internal");
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
         DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
+        DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
         TickInputAndHotkeys();
@@ -93,9 +97,13 @@ public sealed partial class BootstrapPlugin
         _layoutOverlay?.TickInput();
     }
 
-    // Drains the Lua-bridge probes every master beat so RPC round-trips for a ramped plugin
-    // complete as fast as possible regardless of the global-gate cadence.
-    private void DrainLuaBridgeProbes() => DrainEquipAndLoadout();
+    // Band 1 — drained EVERY master beat so a ramped plugin's exchange RPC round-trips complete
+    // proportionally faster. Cheap when idle (empty-queue dequeue + empty active-list loop).
+    private void DrainExchangeProbe()
+    {
+        try { _exchangeProbe!.DrainPendingDispatches(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] exchange drain threw: {ex.Message}"); }
+    }
 
     // Per-frame input + hotkey poll, driven from the framework tick (Phase E: there is no
     // OnGUI handler anymore). Unity runs Update() once per frame, so no per-OnGUI-pass gate is
@@ -140,7 +148,7 @@ public sealed partial class BootstrapPlugin
             catch (Exception ex) { Log.LogWarning($"[boot] resonance refresh threw: {ex.Message}"); }
         }
 
-        // DrainEquipAndLoadout() removed — moved to Band 1 (DrainLuaBridgeProbes, every master beat).
+        // DrainEquipAndLoadout() is called from Band 3 (RunGlobalRateWork), not here.
 
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:chat");
         _chatService!.Drain();
@@ -157,10 +165,9 @@ public sealed partial class BootstrapPlugin
         TickOverlayServices(deltaTime);
     }
 
-    // Drains the deferred Lua dispatches + polls completion for the module-equip and
-    // loadout (profession-project) probes, and ticks the loadout service's
-    // change-detection. Both probes touch the game's main-thread-only Lua VM, so this
-    // runs on the Update tick. Extracted from RefreshPerTickServices for the 50-LoC gate.
+    // Band 3 — global-rate cadence (these probes have no latency-sensitive consumer; keeping them at the
+    // global rate avoids 8× Lua-read / allocation cost during a rate ramp). Both probes touch the
+    // game's main-thread-only Lua VM, so this runs on the Update tick.
     private void DrainEquipAndLoadout()
     {
         try { _moduleEquipProbe!.DrainPendingCompletions(); }
@@ -168,9 +175,6 @@ public sealed partial class BootstrapPlugin
 
         try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
-
-        try { _exchangeProbe!.DrainPendingDispatches(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] exchange drain threw: {ex.Message}"); }
     }
 
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the
