@@ -42,7 +42,7 @@ public sealed record SpacerElement(float Width = 0f, float Height = 0f) : HudEle
 /// <summary>Drag slider over [<paramref name="Min"/>,<paramref name="Max"/>]. <paramref name="Get"/> reflects
 /// external state (poll-diffed); a drag calls <paramref name="Set"/>.</summary>
 public sealed record SliderElement(
-    Func<float> Get, Action<float> Set, float Min = 0f, float Max = 1f, Func<bool>? Enabled = null) : HudElement;
+    Func<float> Get, Action<float> Set, float Min = 0f, float Max = 1f, Func<bool>? Enabled = null, float Width = 0f) : HudElement;
 
 /// <summary>Single-line text field (wraps the proven UGuiTextInput: Enter submits without opening chat,
 /// Esc/cursor escape). <paramref name="Get"/> seeds the text; Enter/blur calls <paramref name="Submit"/>.

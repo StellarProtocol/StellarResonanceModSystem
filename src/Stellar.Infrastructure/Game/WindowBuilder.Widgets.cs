@@ -197,7 +197,11 @@ internal sealed partial class WindowBuilder
     private void BuildSlider(SliderElement s, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("Slider", parent);
-        var le = go.AddComponent<LayoutElement>(); le.preferredWidth = 160f; le.preferredHeight = 16f; le.flexibleWidth = 1f;
+        var le = go.AddComponent<LayoutElement>(); le.preferredHeight = 16f;
+        // Width>0 pins the slider to a fixed size (no flex) so it renders the same in-game (IL2CPP) as in the
+        // sandbox; Width<=0 keeps the legacy "fill the row" behaviour for the global rate slider.
+        if (s.Width > 0f) { le.preferredWidth = le.minWidth = s.Width; le.flexibleWidth = 0f; }
+        else { le.preferredWidth = 160f; le.flexibleWidth = 1f; }
         var slider = go.AddComponent<Slider>();
         slider.minValue = s.Min; slider.maxValue = s.Max; slider.direction = Slider.Direction.LeftToRight;
 

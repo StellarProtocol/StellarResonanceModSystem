@@ -9,11 +9,11 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
 /// Per-plugin update-rate controls for the Settings → Performance panel.
-/// Each plugin row has: name label, a compact rate cycle-button (steps through the snap
-/// stops), a flexible gap that shows the live ramp indicator while ramping and absorbs the
-/// row slack, and a right-aligned self-documenting "Self-rate" cycle button (Off → Boost →
-/// Self-managed). Buttons (not a slider) are used because a slider lays out unpredictably
-/// in-game (IL2CPP) vs the Mono sandbox; a button renders identically in both.
+/// Each plugin row has: name label, a small fixed-width rate slider (snap stops, 0 = follow
+/// global), a value readout, a flexible gap that shows the live ramp indicator while ramping
+/// and absorbs the row slack, and a right-aligned self-documenting "Self-rate" cycle button
+/// (Off → Boost → Self-managed). The slider is pinned to a fixed width so it stays small and
+/// renders consistently in-game.
 /// </summary>
 internal sealed partial class PerformancePanel
 {
@@ -24,11 +24,11 @@ internal sealed partial class PerformancePanel
     };
 
     private const int MaxPluginRows = 64;
-    // Fixed column widths for the two buttons + name. The middle gap is a Weight:1 CellElement
-    // that absorbs all leftover row width, so the self-rate button right-aligns regardless of
-    // viewport width and the columns never overlap.
+    // Fixed column widths. The slider is pinned small; the middle gap is a Weight:1 CellElement that
+    // absorbs all leftover row width, so the self-rate button right-aligns regardless of viewport width.
     private const float PluginNameWidth = 140f;
-    private const float PluginRateButtonWidth = 120f;   // fits "Follow global"
+    private const float PluginSliderWidth = 90f;        // small, fixed — the user wants a compact slider
+    private const float PluginRateLabelWidth = 80f;     // value readout next to the slider
     private const float PluginModeButtonWidth = 115f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
@@ -56,8 +56,10 @@ internal sealed partial class PerformancePanel
                 () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
                 Width: PluginNameWidth, NoWrap: true),                                    // name (fixed)
 
-            new ButtonElement(() => PluginRateLabel(Id()), () => CycleRate(Id()),
-                Width: PluginRateButtonWidth),                                            // rate: cycles the stops
+            new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
+                0f, PluginStops.Length - 1, Width: PluginSliderWidth),                    // small fixed-width rate slider
+
+            new TextElement(() => PluginRateLabel(Id()), Width: PluginRateLabelWidth),    // value readout
 
             // Flexible gap that absorbs the slack so the self-rate button right-aligns; shows the live
             // ramp indicator (accent) ONLY while ramping, empty otherwise.
@@ -74,14 +76,25 @@ internal sealed partial class PerformancePanel
         }, Gap: 10f);
     }
 
-    // Step the static per-plugin rate through PluginStops (wrapping). 0 = follow global.
-    private void CycleRate(string id)
+    // --- rate slider <-> stored Hz (snap to the nearest PluginStops entry; index 0 = follow global) ---
+    private float GetPluginSliderIndex(string id)
     {
-        var cur = _prefs.GetPluginRate(id);   // 0 = follow global
-        var idx = 0;
-        for (var i = 0; i < PluginStops.Length; i++) if (PluginStops[i] == cur) { idx = i; break; }
-        idx = (idx + 1) % PluginStops.Length;
-        _prefs.SetPluginRate(id, PluginStops[idx]);
+        var hz = _prefs.GetPluginRate(id);            // 0 = follow global
+        if (hz <= 0) return 0f;
+        var best = 1; var bestDist = int.MaxValue;
+        for (var i = 1; i < PluginStops.Length; i++)
+        {
+            var d = Math.Abs(PluginStops[i] - hz);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        return best;
+    }
+
+    private void SetPluginSliderIndex(string id, float v)
+    {
+        var i = (int)Math.Round(v);
+        if (i < 0) i = 0; else if (i >= PluginStops.Length) i = PluginStops.Length - 1;
+        _prefs.SetPluginRate(id, PluginStops[i]);
     }
 
     // --- Self-rate cycle button: one self-documenting control replacing the old Self/Hold toggles ---
