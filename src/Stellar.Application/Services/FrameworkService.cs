@@ -10,6 +10,8 @@ internal sealed class FrameworkService : IFramework
     public long FrameCount { get; private set; }
     public int ScreenWidth { get; private set; }
     public int ScreenHeight { get; private set; }
+    public int EffectiveUpdateRateHz => Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz;
+    public IUpdateRateScope RequestUpdateRate(int hz) => InertUpdateRateScope.Instance;
 
     internal void SetScreen(int width, int height) { ScreenWidth = width; ScreenHeight = height; }
 

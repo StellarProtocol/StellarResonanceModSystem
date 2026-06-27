@@ -18,4 +18,15 @@ public interface IFramework
 
     /// <summary>Current display height in pixels. Updated once per frame before <see cref="Update"/> fires.</summary>
     int ScreenHeight { get; }
+
+    /// <summary>The rate this plugin is currently ticking at (Hz). Reflects the user's per-plugin
+    /// config plus any dynamic ramp this plugin is currently holding.</summary>
+    int EffectiveUpdateRateHz { get; }
+
+    /// <summary>Ask the framework to tick THIS plugin at no less than <paramref name="hz"/> until the
+    /// returned scope is disposed. Requests stack (the maximum wins). The value is clamped to the
+    /// supported range. Returns an inert (no-op) scope unless the user granted this plugin
+    /// rate-control permission, so calling it is always safe.</summary>
+    /// <param name="hz">Requested minimum tick rate in Hz.</param>
+    IUpdateRateScope RequestUpdateRate(int hz);
 }
