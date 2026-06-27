@@ -25,9 +25,9 @@ internal sealed partial class PerformancePanel
     // Fixed column widths. Tuned via the UI sandbox so the row total + 3 gaps fits the
     // ~577px scroll viewport (586 content − ~9 scrollbar) with NO overlap and a usable slider.
     private const float PluginNameWidth = 120f;
-    private const float PluginSliderWidth = 150f;
+    private const float PluginSliderWidth = 110f;
     private const float PluginRateLabelWidth = 95f;
-    private const float PluginModeButtonWidth = 150f;
+    private const float PluginModeButtonWidth = 115f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
     private IReadOnlyList<PluginInfo> _pluginCache = Array.Empty<PluginInfo>();
@@ -80,10 +80,10 @@ internal sealed partial class PerformancePanel
         return _prefs.GetPluginSustained(id) ? "Self-managed" : "Boost";
     }
 
-    private string SelfRateButtonLabel(string id) => "Self-rate: " + SelfRateMode(id);
-
-    // NOTE: kept the "Self-rate: " prefix — at 150px it fits "Self-rate: Self-managed" (verified in the
-    // sandbox); see PluginModeButtonWidth. If a future font widens it, drop the prefix here, not the width.
+    // Bare mode word only ("Off"/"Boost"/"Self-managed") — the section description carries the
+    // "Self-rate" framing, so a prefix here is redundant and only widens the button. The longest
+    // label "Self-managed" fits PluginModeButtonWidth (115px) with padding; verified in the sandbox.
+    private string SelfRateButtonLabel(string id) => SelfRateMode(id);
 
     private void CycleSelfRate(string id)
     {
