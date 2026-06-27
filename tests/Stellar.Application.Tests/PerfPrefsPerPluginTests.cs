@@ -50,11 +50,23 @@ public sealed class PerfPrefsPerPluginTests
     {
         var cfg = new MemSection();
         var prefs = new PerfPrefs(cfg);
-        (string guid, int? rate, bool allow)? pushed = null;
-        prefs.OnPluginConfigChanged = (g, r, a) => pushed = (g, r, a);
+        (string guid, int? rate, bool allow, bool sustained)? pushed = null;
+        prefs.OnPluginConfigChanged = (g, r, a, sus) => pushed = (g, r, a, sus);
         prefs.SetPluginRate("x", 60);
-        Assert.Equal(("x", (int?)60, false), pushed);
+        Assert.Equal(("x", (int?)60, false, false), pushed);
         prefs.SetPluginSelfControl("x", true);
-        Assert.Equal(("x", (int?)60, true), pushed);
+        Assert.Equal(("x", (int?)60, true, false), pushed);
+        prefs.SetPluginSustained("x", true);
+        Assert.Equal(("x", (int?)60, true, true), pushed);
+    }
+
+    [Fact]
+    public void Sustained_flag_round_trips()
+    {
+        var cfg = new MemSection();
+        var prefs = new PerfPrefs(cfg);
+        prefs.SetPluginSustained("stellar.foo", true);
+        Assert.True(prefs.GetPluginSustained("stellar.foo"));
+        Assert.True(cfg.Get<bool>("plugin_sustained.stellar.foo", false));
     }
 }

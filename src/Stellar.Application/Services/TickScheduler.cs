@@ -20,6 +20,7 @@ internal sealed partial class TickScheduler
         public string Guid = "";
         public int? StaticRateHz;
         public bool AllowSelfControl;
+        public bool AllowSustained;
         public readonly List<RampScope> Ramps = new();
         public readonly RateGate Gate = new();
         public Action<float>? RaiseUpdate;
@@ -49,11 +50,12 @@ internal sealed partial class TickScheduler
         Recompute();
     }
 
-    public void ConfigurePlugin(string guid, int? staticRateHz, bool allowSelfControl)
+    public void ConfigurePlugin(string guid, int? staticRateHz, bool allowSelfControl, bool allowSustained = false)
     {
         var e = GetOrAdd(guid);
         e.StaticRateHz = staticRateHz is > 0 ? PerfControls.ClampRate(staticRateHz.Value) : null;
         e.AllowSelfControl = allowSelfControl;
+        e.AllowSustained = allowSustained;
         Recompute();
     }
 

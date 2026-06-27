@@ -208,6 +208,19 @@ public sealed class TickSchedulerTests
     }
 
     [Fact]
+    public void Sustained_plugin_ramp_is_not_auto_expired()
+    {
+        var s = new TickScheduler(maxHoldSeconds: 1.0);
+        s.SetGlobalRate(30);
+        s.RegisterPlugin("a", _ => { });
+        s.ConfigurePlugin("a", null, allowSelfControl: true, allowSustained: true);
+        _ = s.RequestDynamicRate("a", 240);
+        Assert.Equal(240, s.MasterRateHz);
+        for (var i = 0; i < 300; i++) s.Beat(1f / 240f);   // > 1s of holds
+        Assert.Equal(240, s.MasterRateHz);                 // still held — no auto-expire
+    }
+
+    [Fact]
     public void Leaked_ramp_logs_on_auto_release()
     {
         var logs = new System.Collections.Generic.List<string>();

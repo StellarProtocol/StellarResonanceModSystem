@@ -20,7 +20,7 @@ public sealed partial class BootstrapPlugin
         // reconciles the live framework tick rate + V-Sync uncap to PerfControls each tick.
         _perfPrefs = new PerfPrefs(_pluginConfigService!.GetSection("perf"));
         _perfPrefs.OnGlobalRateChanged = hz => _scheduler?.SetGlobalRate(hz);
-        _perfPrefs.OnPluginConfigChanged = (guid, rate, allow) => _scheduler?.ConfigurePlugin(guid, rate, allow);
+        _perfPrefs.OnPluginConfigChanged = (guid, rate, allow, sustained) => _scheduler?.ConfigurePlugin(guid, rate, allow, sustained);
 
         // Native UI: adapter + service. Allowlist projected from Infrastructure
         // to Application's descriptor type.

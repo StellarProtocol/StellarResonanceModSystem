@@ -77,6 +77,7 @@ internal sealed partial class TickScheduler
     private bool ExpireStaleRamps(Entry e, float masterDt)
     {
         if (e.Ramps.Count == 0) return false;
+        if (e.AllowSustained) return false;   // user opted this plugin into indefinite holds — no leak-guard
         var any = false;
         for (var i = e.Ramps.Count - 1; i >= 0; i--)
         {

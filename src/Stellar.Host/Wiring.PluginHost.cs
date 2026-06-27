@@ -129,7 +129,7 @@ public sealed partial class BootstrapPlugin
         foreach (var p in _pluginRegistry!.List())
         {
             var rate = _perfPrefs!.GetPluginRate(p.Id);
-            _scheduler!.ConfigurePlugin(p.Id, rate > 0 ? rate : (int?)null, _perfPrefs.GetPluginSelfControl(p.Id));
+            _scheduler!.ConfigurePlugin(p.Id, rate > 0 ? rate : (int?)null, _perfPrefs.GetPluginSelfControl(p.Id), _perfPrefs.GetPluginSustained(p.Id));
         }
     }
 }
