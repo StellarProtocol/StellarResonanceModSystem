@@ -68,6 +68,28 @@ The startup sequence at a glance:
 3. `AppDomainHotUpdateWatcher` waits for all 8 hot-update Panda assemblies to load.
 4. On all-loaded: create the native uGUI canvas hierarchy (`HudService` + `WindowService` attach), apply 6 HarmonyX postfix patches on `Panda.Core.Game.*` lifecycle methods, load user plugins from `<game>/stellar/plugins/**/*.dll`.
 
+## Framework tick — single variable-speed clock (v1.7.0+)
+
+Stellar drives all its per-frame work from **one** injected `StellarTicker` MonoBehaviour using
+`InvokeRepeating`, not a per-frame `Update` — most rendered frames have zero managed entry (the
+"managed-crossing tax" the IMGUI overlay was deleted to avoid). As of v1.7.0 that clock is
+**variable-speed**: its rate = `max(global rate, every plugin's effective rate)`, clamped `[10, 240]` and
+realized at ≤ the render frame rate.
+
+A `TickScheduler` (Application) owns the rate math and gates each consumer behind a per-consumer
+accumulator (`RateGate`), so consumers tick at their own rate off the shared clock. Each beat runs three bands:
+
+1. **Every beat** — the Lua-bridge probe drains (exchange/equip/loadout). Cheap when idle; riding the master
+   clock means a ramped plugin's main-thread RPC round-trips complete proportionally faster (the lever behind
+   the market-snipe feature).
+2. **Per-plugin Updates** — each plugin's `IFramework.Update` fires at its own configured/dynamic rate.
+3. **Global-gated** — the expensive draw/refresh/input work, pinned to the global rate via an accumulator, so
+   raising the clock for one plugin never multiplies HUD draw cost.
+
+Plugins set a persistent per-plugin rate (Settings → Performance) or temporarily ramp via
+`IFramework.RequestUpdateRate` (permission-gated, leak-guarded). Idle (nothing ramped) the clock rests at the
+global rate and behaviour is identical to pre-1.7.0. See [`plugin-development.md`](plugin-development.md#update-rate).
+
 ## What's deliberately out of scope
 
 - **Packet modification.** Read-only inspection only. Even without anti-cheat, sending forged packets to a live server is the line between QoL and exploitation. See [`README.md`](../README.md) for the full QoL-only stance.

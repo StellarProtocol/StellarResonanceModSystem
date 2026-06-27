@@ -52,7 +52,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | Sub-service | What it gives you |
 |---|---|
 | `Log` (`IPluginLog`) | `Info` / `Warning` / `Error` / `Debug` into `BepInEx/LogOutput.log`. Tag your lines `[MyMod]`. |
-| `Framework` (`IFramework`) | `Update` event (once per game tick, `float deltaTime`) + `FrameCount`. |
+| `Framework` (`IFramework`) | `Update` event (fires at *your plugin's* update rate, `float deltaTime`) + `FrameCount` + `EffectiveUpdateRateHz` + `RequestUpdateRate(hz)`. See [Update rate](#update-rate). |
 | `ClientState` (`IClientState`) | `IsLoggedIn`, `CurrentSceneName`, and `Login` / `Logout` / `SceneChanged` events. |
 | `GameEvents` (`IGameEvents`) | Low-level escape hatch: `Subscribe(fullTypeName, handler)` returning an `IDisposable`. |
 | `PlayerState` (`IPlayerState`) | Polled local-player snapshot: `IsAvailable`, `Name`, `Level`, `Profession`, `Health`/`MaxHealth`, `Stamina`/`MaxStamina`, `Position`. |
@@ -216,6 +216,36 @@ _accentSlot = _services.Theme.ColorRegistry.Register(
 ### Quiet config save
 
 `IConfigSection.Save()` persists and raises `IPluginConfig.SectionChanged`. When you're writing *because* you reacted to that event (echo suppression), call `SaveQuiet()` instead — it persists without re-raising the event.
+
+## Update rate
+
+`Framework.Update` fires at **your plugin's own update rate**, not a single global rate. By default every
+plugin "follows global" (the Stellar Update Rate slider in Settings → Performance, ~30 Hz), but the user can
+set a per-plugin rate and grant per-plugin permissions there. Read `Framework.EffectiveUpdateRateHz` if you
+need to know how often you're currently ticking.
+
+The framework runs a single variable-speed clock at `max(global, every plugin's rate)`; expensive draw work
+stays gated to the global rate, so a faster plugin doesn't make the whole HUD redraw faster — only *your*
+`Update` (and the Lua-bridge RPC drains your calls depend on) speed up.
+
+### Temporarily ramping your own rate
+
+For a brief latency-sensitive burst (e.g. polling a market listing the instant it appears), ask the framework
+to tick you faster, and **dispose the scope** to revert:
+
+```csharp
+using var fast = _services.Framework.RequestUpdateRate(PerfControls.MaxUpdateRateHz); // 240 Hz cap
+// ... your Update now fires up to ~240 Hz (realized at the frame rate) until `fast` is disposed ...
+```
+
+Rules:
+- It's **permission-gated.** `RequestUpdateRate` returns an inert (no-op) scope unless the user enabled
+  "Self-rate" for your plugin in Settings → Performance — so calling it is always safe, but may do nothing.
+- **Always dispose** (a `using`, or release it on your end-of-work event). A held scope auto-expires after a
+  10 s safety cap (logged as a leak) — unless the user picked "Self-managed", which lets you hold it
+  indefinitely. Prefer scoping the ramp tightly to the work that needs it.
+- Requests **stack** (max wins) and clamp to `[10, 240]`; the realized rate never exceeds the render frame rate.
+- A ramp costs game FPS while held (you're crossing into managed more often) — keep it short.
 
 ## Theming
 
