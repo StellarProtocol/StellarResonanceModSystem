@@ -9,11 +9,10 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
 /// Per-plugin update-rate controls for the Settings → Performance panel.
-/// Each plugin row has: name label, a small fixed-width rate slider (snap stops, 0 = follow
-/// global), a value readout, a flexible gap that shows the live ramp indicator while ramping
-/// and absorbs the row slack, and a right-aligned self-documenting "Self-rate" cycle button
-/// (Off → Boost → Self-managed). The slider is pinned to a fixed width so it stays small and
-/// renders consistently in-game.
+/// Each plugin row has: name label, a wide rate slider with a small knob (snap stops, 0 =
+/// follow global) that fills the row, a one-line value readout (shows the live ramp rate in
+/// accent while ramping), and a self-documenting "Self-rate" cycle button (Off → Boost →
+/// Self-managed).
 /// </summary>
 internal sealed partial class PerformancePanel
 {
@@ -27,8 +26,7 @@ internal sealed partial class PerformancePanel
     // Fixed column widths. The slider is pinned small; the middle gap is a Weight:1 CellElement that
     // absorbs all leftover row width, so the self-rate button right-aligns regardless of viewport width.
     private const float PluginNameWidth = 140f;
-    private const float PluginSliderWidth = 90f;        // small, fixed-width track
-    private const float PluginSliderHandle = 9f;        // small knob (renderer default is 13)
+    private const float PluginSliderHandle = 7f;        // small knob (renderer default is 13)
     private const float PluginRateLabelWidth = 96f;     // value readout — fits "Follow global" on one line
     private const float PluginModeButtonWidth = 115f;
 
@@ -58,7 +56,7 @@ internal sealed partial class PerformancePanel
                 Width: PluginNameWidth, NoWrap: true),                                    // name (fixed)
 
             new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
-                0f, PluginStops.Length - 1, Width: PluginSliderWidth, HandleSize: PluginSliderHandle),  // small slider + small knob
+                0f, PluginStops.Length - 1, HandleSize: PluginSliderHandle),  // elastic track (fills the row) + small knob
 
             // Value readout (one line): the configured rate, or the live ramp rate (accent) while ramping.
             new TextElement(() => PluginRateOrRampLabel(Id()),
