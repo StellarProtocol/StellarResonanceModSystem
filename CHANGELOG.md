@@ -6,6 +6,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-28
+### Added
+- **Per-plugin & dynamic update rate.** Each plugin's `IFramework.Update` now ticks at its own rate
+  instead of being welded to the single global rate. In **Settings → Performance** a new "Per-plugin
+  update rate" section lets the user set each plugin's rate (default *Follow global*) and grant a
+  per-plugin **Self-rate** permission (Off / Boost / Self-managed).
+- **`IFramework.RequestUpdateRate(int hz)` → `IUpdateRateScope`** — a permitted plugin can temporarily
+  ramp its own tick rate (e.g. a market snipe's fast-retry window) and revert by disposing the scope.
+  Returns an inert no-op scope unless the user granted the plugin permission. "Self-managed" exempts the
+  ramp from the 10 s leak-guard for plugins that hold an elevated rate indefinitely.
+- **`SliderElement.Width` / `SliderElement.HandleSize`** for compact, fixed-size sliders; `ToggleElement.Enabled`
+  is now honored by the renderer; fixed-width `NoWrap` text now clips to its column.
+### Changed
+- The framework tick is now a single **variable-speed clock** at `max(global, all active plugin rates)`
+  (clamped `[10,240]`, realized ≤ frame rate). The Lua-bridge probe drains ride the master tick so a
+  ramped plugin's RPC round-trips complete proportionally faster; expensive draw/refresh work stays
+  gated to the global rate. Idle behaviour (nothing ramped) is unchanged from 1.6.0.
+### Fixed
+- Perf overlay no longer freezes its per-window timings when the master rate exceeds the global rate.
+
 ## [1.6.0] - 2026-06-25
 ### Added
 - **`IExchange` — player Trading-Center market access**, exposed as `IPluginServices.Market`. Plugins can
