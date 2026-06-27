@@ -49,6 +49,12 @@ public sealed class StellarTicker : MonoBehaviour
         if (hz != _scheduledRateHz) Schedule(hz);
     }
 
+    /// <summary>(Re)schedule to an explicit Hz. No-op when already at that rate.</summary>
+    internal void RescheduleTo(int hz)
+    {
+        if (hz != _scheduledRateHz) Schedule(hz);
+    }
+
     // Public so Unity's InvokeRepeating can find it by name on the injected type.
     public void Tick()
     {

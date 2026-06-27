@@ -212,6 +212,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         // per-frame Game.Update postfix) so most rendered frames have zero managed entry. All
         // services are wired by now, so the tick body (RunFrameworkTick) is safe to start.
         _tickHost = new Stellar.Infrastructure.Unity.UnityTickHost(this, log);
+        if (_scheduler is not null)
+            _scheduler.MasterRateChanged += hz => _tickHost?.Reschedule(hz);
         _tickHost.Install(RunFrameworkTick);
     }
 

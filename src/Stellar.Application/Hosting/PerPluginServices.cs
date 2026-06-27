@@ -5,24 +5,29 @@ namespace Stellar.Application.Hosting;
 /// <summary>
 /// Per-plugin <see cref="IPluginServices"/> view. Delegates every property
 /// to the shared services bag except <see cref="Config"/>, which is unique
-/// to the plugin's GUID. PluginHost constructs one of these per loaded
-/// plugin and passes it to the plugin's constructor so each plugin reads
-/// and writes its own <c>&lt;pluginGuid&gt;.config.json</c> file.
+/// to the plugin's GUID, and <see cref="Framework"/>, which is a per-plugin
+/// facade keyed by the plugin's GUID and driven by the <see cref="Services.TickScheduler"/>.
+/// PluginHost constructs one of these per loaded plugin and passes it to the
+/// plugin's constructor so each plugin reads and writes its own
+/// <c>&lt;pluginGuid&gt;.config.json</c> file and receives Update events at its
+/// own effective rate.
 /// </summary>
 internal sealed class PerPluginServices : IPluginServices
 {
     private readonly IPluginServices _shared;
+    private readonly IFramework _framework;
 
-    public PerPluginServices(IPluginServices shared, IPluginConfig perPluginConfig)
+    public PerPluginServices(IPluginServices shared, IPluginConfig perPluginConfig, IFramework perPluginFramework)
     {
         _shared = shared;
         Config = perPluginConfig;
+        _framework = perPluginFramework;
     }
 
     public IPluginConfig Config { get; }
 
     public IPluginLog Log => _shared.Log;
-    public IFramework Framework => _shared.Framework;
+    public IFramework Framework => _framework;
     public IClientState ClientState => _shared.ClientState;
     public IGameData GameData => _shared.GameData;
     public IPlayerStats PlayerStats => _shared.PlayerStats;

@@ -31,6 +31,7 @@ internal sealed class UnityTickHost
                   "(per-frame managed entry eliminated)");
     }
 
-    /// <summary>Apply a changed <see cref="PerfControls.UpdateRateHz"/> to the live ticker.</summary>
-    public void Reschedule() => _ticker?.Reschedule();
+    /// <summary>Re-rate the live ticker to an explicit Hz. Idempotent (no-op when unchanged). Driven both by
+    /// TickScheduler.MasterRateChanged and by the host's per-tick safety reconcile.</summary>
+    public void Reschedule(int hz) => _ticker?.RescheduleTo(hz);
 }

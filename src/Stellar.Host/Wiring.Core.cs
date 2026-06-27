@@ -13,6 +13,10 @@ public sealed partial class BootstrapPlugin
     private void BuildCoreServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
         _framework = new FrameworkService();
+        _scheduler = new Stellar.Application.Services.TickScheduler(
+            maxHoldSeconds: 10.0,
+            log: m => log.Info(m));
+        _scheduler.SetGlobalRate(Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz);
         _clientState = new ClientStateService();
         _harmonyBridge = new HarmonyEventBridge();
         _messagePipeBridge = new MessagePipeContainerBridge(log, typeRegistry);

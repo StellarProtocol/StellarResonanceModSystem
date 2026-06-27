@@ -54,8 +54,11 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
     /// is created in the disabled state (factory captured but not invoked);
     /// otherwise the factory runs immediately and the instance is stored.
     /// </summary>
+    /// <param name="onDispose">Optional cleanup invoked when the plugin instance is torn down
+    /// (disable or framework shutdown). Used by <see cref="Hosting.PluginHost"/> to unregister
+    /// the per-plugin <see cref="Hosting.PerPluginFramework"/> from the <see cref="TickScheduler"/>.</param>
     public void Register(string id, string displayName, string version,
-                          Func<IPluginServices, object> factory)
+                          Func<IPluginServices, object> factory, Action? onDispose = null)
     {
         if (_slots.ContainsKey(id))
         {
@@ -63,7 +66,7 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
             return;
         }
         var info = new PluginInfo(id, displayName, version, IsEnabled: false, IsErrored: false);
-        _slots[id] = new PluginSlot(info, factory, instance: null);
+        _slots[id] = new PluginSlot(info, factory, instance: null, onDispose);
 
         if (_disabledIds.Contains(id))
         {
@@ -130,6 +133,8 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
             try { (slot.Instance as IDisposable)?.Dispose(); }
             catch (Exception ex) { _log.Warning($"[PluginRegistry] Dispose threw for '{slot.Info.Id}': {ex.GetType().Name}: {ex.Message}"); }
             slot.Instance = null;
+            try { slot.OnDispose?.Invoke(); }
+            catch (Exception ex) { _log.Warning($"[PluginRegistry] OnDispose threw for '{slot.Info.Id}': {ex.GetType().Name}: {ex.Message}"); }
         }
     }
 
@@ -160,6 +165,8 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
         try { (slot.Instance as IDisposable)?.Dispose(); }
         catch (Exception ex) { _log.Warning($"[PluginRegistry] Dispose threw for '{slot.Info.Id}': {ex.GetType().Name}: {ex.Message}"); }
         slot.Instance = null;
+        try { slot.OnDispose?.Invoke(); }
+        catch (Exception ex) { _log.Warning($"[PluginRegistry] OnDispose threw for '{slot.Info.Id}': {ex.GetType().Name}: {ex.Message}"); }
         slot.Info = slot.Info with { IsEnabled = false };
         _disabledIds.Add(slot.Info.Id);
         _log.Info($"[PluginRegistry] disabled '{slot.Info.Id}' (Disposed)");
@@ -183,15 +190,20 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
 
     private sealed class PluginSlot
     {
-        public PluginSlot(PluginInfo info, Func<IPluginServices, object> factory, object? instance)
+        public PluginSlot(PluginInfo info, Func<IPluginServices, object> factory, object? instance, Action? onDispose = null)
         {
             Info = info;
             Factory = factory;
             Instance = instance;
+            OnDispose = onDispose;
         }
         public PluginInfo Info { get; set; }
         public Func<IPluginServices, object> Factory { get; }
         public object? Instance { get; set; }
+        /// <summary>Invoked when the plugin instance is torn down (disable or shutdown).
+        /// Typically unregisters the per-plugin <see cref="PerPluginFramework"/> from the
+        /// <see cref="TickScheduler"/>.</summary>
+        public Action? OnDispose { get; }
         // Flips true after the first successful Factory invocation so the
         // log message can distinguish the original Enable from a soft-cycle
         // re-enable (Mn10).

@@ -1,3 +1,4 @@
+using System;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 
@@ -36,6 +37,9 @@ internal sealed class PerfPrefs
             PerfControls.Uncap = config.Get(UncapKey, PerfControls.Uncap);
     }
 
+    /// <summary>Set by the host so a global-rate change re-rates the master clock. May be null in tests.</summary>
+    public Action<int>? OnGlobalRateChanged { get; set; }
+
     /// <summary>Framework tick rate in Hz (clamped to the supported range). Persisted on change;
     /// the host tick re-rates the live ticker.</summary>
     public int UpdateRateHz
@@ -48,6 +52,7 @@ internal sealed class PerfPrefs
             PerfControls.UpdateRateHz = hz;
             _config.Set(RateKey, hz);
             _config.Save();
+            OnGlobalRateChanged?.Invoke(hz);
         }
     }
 

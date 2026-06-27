@@ -24,13 +24,15 @@ internal sealed class PluginHost : IDisposable
     private readonly IPluginConfigFactory _configFactory;
     private readonly PluginRegistry _registry;
     private readonly IPluginLog _log;
+    private readonly TickScheduler _scheduler;
 
-    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, PluginRegistry registry)
+    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, PluginRegistry registry, TickScheduler scheduler)
     {
         _services = services;
         _configFactory = configFactory;
         _registry = registry;
         _log = services.Log;
+        _scheduler = scheduler;
     }
 
     public void LoadFrom(string directory)
@@ -95,14 +97,20 @@ internal sealed class PluginHost : IDisposable
         // registry can reconstruct the plugin on soft-cycle without re-running
         // the discovery walk.
         var perPluginConfig = _configFactory.Create(pluginGuid);
+        // Capture the per-plugin framework so the registry can unregister it from the
+        // scheduler when the plugin is disabled or disposed (scheduler teardown path).
+        PerPluginFramework? capturedFramework = null;
         Func<IPluginServices, object> factory = sharedServices =>
         {
-            var perPluginServices = new PerPluginServices(sharedServices, perPluginConfig);
+            var perPluginFramework = new PerPluginFramework(pluginGuid, _scheduler, sharedServices.Framework);
+            capturedFramework = perPluginFramework;
+            var perPluginServices = new PerPluginServices(sharedServices, perPluginConfig, perPluginFramework);
             var instance = (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
             return instance;
         };
 
-        _registry.Register(pluginGuid, displayName, version, factory);
+        _registry.Register(pluginGuid, displayName, version, factory,
+            onDispose: () => capturedFramework?.Unregister());
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
     }

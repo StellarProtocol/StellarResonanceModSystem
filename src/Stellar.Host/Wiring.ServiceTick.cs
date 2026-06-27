@@ -9,6 +9,8 @@ public sealed partial class BootstrapPlugin
     // behind IFrameRateLimiter; injected by Host after all services are constructed.
     private Stellar.Application.Abstractions.IFrameRateLimiter? _frameLimiter;
     private Stellar.Infrastructure.Unity.UnityTickHost? _tickHost;
+    private Stellar.Application.Services.TickScheduler? _scheduler;
+    private readonly Stellar.Application.Services.RateGate _globalGate = new();
 
     // Reconciles the live runtime to the Performance settings (PerfControls), which are driven by the
     // Settings → Performance panel and seeded from config at boot. Runs every tick BEFORE the scene
@@ -24,8 +26,9 @@ public sealed partial class BootstrapPlugin
                         $"cwd={System.IO.Directory.GetCurrentDirectory()}");
         }
 
-        // Re-rate the live ticker if the Update Rate setting changed (Reschedule no-ops when unchanged).
-        _tickHost?.Reschedule();
+        // Authoritative + order-safe: each tick reconciles the live ticker to the scheduler's master rate
+        // (no-op when unchanged). Covers boot ordering too.
+        _tickHost?.Reschedule(_scheduler?.MasterRateHz ?? Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz);
 
         // Frame-rate uncap — RE-ENFORCED every tick while ON so any game-side cap re-application
         // (graphics-settings change / scene load / login) is immediately overridden. Diff-state +

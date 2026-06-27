@@ -88,7 +88,7 @@ public sealed partial class BootstrapPlugin
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
 
-        _pluginHost = new PluginHost(services, configFactory, _pluginRegistry);
+        _pluginHost = new PluginHost(services, configFactory, _pluginRegistry, _scheduler!);
     }
 
     /// <summary>
