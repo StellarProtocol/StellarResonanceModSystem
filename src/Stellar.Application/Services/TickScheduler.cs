@@ -30,6 +30,8 @@ internal sealed partial class TickScheduler
     private readonly double _maxHoldSeconds;
     private readonly Action<string>? _log;
     private int _globalRateHz = PerfControls.DefaultUpdateRateHz;
+    private bool _inBeat;
+    private readonly List<string> _pendingUnregister = new();
 
     public TickScheduler(double maxHoldSeconds = 10.0, Action<string>? log = null)
     {
@@ -60,10 +62,24 @@ internal sealed partial class TickScheduler
 
     public void UnregisterPlugin(string guid)
     {
+        if (_inBeat) { _pendingUnregister.Add(guid); return; }
+        RemoveEntry(guid);
+    }
+
+    private void RemoveEntry(string guid)
+    {
         if (!_byGuid.TryGetValue(guid, out var e)) return;
         _byGuid.Remove(guid);
         _entries.Remove(e);
         Recompute();
+    }
+
+    // Applies any unregister requested during dispatch. Allocation-free when nothing was deferred.
+    private void DrainPendingUnregister()
+    {
+        if (_pendingUnregister.Count == 0) return;
+        for (var i = 0; i < _pendingUnregister.Count; i++) RemoveEntry(_pendingUnregister[i]);
+        _pendingUnregister.Clear();
     }
 
     public int EffectiveRateFor(string guid)

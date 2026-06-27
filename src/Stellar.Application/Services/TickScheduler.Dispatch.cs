@@ -45,23 +45,39 @@ internal sealed partial class TickScheduler
     }
 
     /// <summary>Drive once per master beat. Advances every plugin's accumulator and fires the
-    /// Updates that are due, auto-expires stale ramps, then recomputes the master rate.
-    /// Do NOT register/unregister plugins from inside an Update callback raised here.</summary>
+    /// Updates that are due, auto-expires stale ramps, then recomputes the master rate ONLY if a
+    /// ramp expired (the only master-rate change originating inside the beat). A plugin may raise
+    /// its own rate from within its Update; that recomputes immediately, so the master-rate change
+    /// (and the host re-rate) can fire mid-dispatch — this is safe. Structural register/unregister
+    /// requested during dispatch is deferred to the end of the beat.</summary>
     public void Beat(float masterDt)
     {
-        for (var i = 0; i < _entries.Count; i++)
+        var expired = false;
+        _inBeat = true;
+        try
         {
-            var e = _entries[i];
-            ExpireStaleRamps(e, masterDt);
-            var rate = EffectiveRate(e);
-            if (e.Gate.Crossed(masterDt, rate))
-                e.RaiseUpdate?.Invoke(e.Gate.LastDt);
+            for (var i = 0; i < _entries.Count; i++)
+            {
+                var e = _entries[i];
+                expired |= ExpireStaleRamps(e, masterDt);
+                var rate = EffectiveRate(e);
+                if (e.Gate.Crossed(masterDt, rate))
+                    e.RaiseUpdate?.Invoke(e.Gate.LastDt);
+            }
         }
-        Recompute();   // auto-expired ramps may have lowered the needed master rate
+        finally
+        {
+            _inBeat = false;
+            DrainPendingUnregister();
+        }
+        if (expired) Recompute();   // auto-expired ramps may have lowered the needed master rate
     }
 
-    private void ExpireStaleRamps(Entry e, float masterDt)
+    // Returns true if at least one ramp on this entry was auto-released this beat. Empty-fast.
+    private bool ExpireStaleRamps(Entry e, float masterDt)
     {
+        if (e.Ramps.Count == 0) return false;
+        var any = false;
         for (var i = e.Ramps.Count - 1; i >= 0; i--)
         {
             var r = e.Ramps[i];
@@ -70,6 +86,8 @@ internal sealed partial class TickScheduler
             _log?.Invoke($"[TickScheduler] auto-released {r.Hz}Hz ramp on '{e.Guid}' after {_maxHoldSeconds:0}s (leaked scope?)");
             r.MarkReleased();
             e.Ramps.RemoveAt(i);
+            any = true;
         }
+        return any;
     }
 }

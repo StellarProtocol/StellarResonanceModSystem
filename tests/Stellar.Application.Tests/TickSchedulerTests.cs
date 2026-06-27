@@ -182,4 +182,42 @@ public sealed class TickSchedulerTests
         for (var i = 0; i < 250; i++) s.Beat(1f / 240f);
         Assert.Equal(30, s.MasterRateHz);
     }
+
+    [Fact]
+    public void Unregister_during_update_defers_removal_and_skips_no_plugin_that_beat()
+    {
+        var s = new TickScheduler();
+        s.SetGlobalRate(30);
+        int aFired = 0, bFired = 0, cFired = 0;
+        s.RegisterPlugin("a", _ => { aFired++; s.UnregisterPlugin("b"); });
+        s.ConfigurePlugin("a", null, false);
+        s.RegisterPlugin("b", _ => bFired++);
+        s.ConfigurePlugin("b", null, false);
+        s.RegisterPlugin("c", _ => cFired++);
+        s.ConfigurePlugin("c", null, false);
+
+        s.Beat(1f / 30f);                 // a unregisters b mid-beat -> deferred; b still ticks, c not skipped
+        Assert.Equal(1, aFired);
+        Assert.Equal(1, bFired);
+        Assert.Equal(1, cFired);
+
+        s.Beat(1f / 30f);                 // b is now removed
+        Assert.Equal(2, aFired);
+        Assert.Equal(1, bFired);          // unchanged — b gone
+        Assert.Equal(2, cFired);
+    }
+
+    [Fact]
+    public void Leaked_ramp_logs_on_auto_release()
+    {
+        var logs = new System.Collections.Generic.List<string>();
+        var s = new TickScheduler(maxHoldSeconds: 1.0, log: logs.Add);
+        s.SetGlobalRate(30);
+        s.RegisterPlugin("a", _ => { });
+        s.ConfigurePlugin("a", null, true);
+        _ = s.RequestDynamicRate("a", 240);
+        for (var i = 0; i < 250; i++) s.Beat(1f / 240f);
+        Assert.Equal(30, s.MasterRateHz);
+        Assert.Contains(logs, m => m.Contains("auto-released"));
+    }
 }
