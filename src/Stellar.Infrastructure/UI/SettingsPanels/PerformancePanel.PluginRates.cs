@@ -44,6 +44,13 @@ internal sealed partial class PerformancePanel
             new TextElement(() => "No plugins loaded.", () => _theme.Colors.TextMuted));
     }
 
+    // Drop the redundant "Stellar." prefix every plugin shares, so names fit the column and don't spill onto the slider.
+    private static string ShortName(string? displayName)
+    {
+        var n = displayName ?? "";
+        return n.StartsWith("Stellar.", StringComparison.Ordinal) ? n.Substring("Stellar.".Length) : n;
+    }
+
     private HudElement BuildPluginRow(int idx)
     {
         PluginInfo? At() => idx < _pluginCache.Count ? _pluginCache[idx] : null;
@@ -51,9 +58,9 @@ internal sealed partial class PerformancePanel
 
         return new RowElement(new HudElement[]
         {
-            new TextElement(() => At()?.DisplayName ?? "",
+            new TextElement(() => ShortName(At()?.DisplayName),
                 () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
-                Width: PluginNameWidth, NoWrap: true),                                    // name (fixed)
+                Width: PluginNameWidth, NoWrap: true),                                    // name (fixed; "Stellar." stripped)
 
             new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
                 0f, PluginStops.Length - 1, HandleSize: PluginSliderHandle),  // elastic track (fills the row) + small knob
