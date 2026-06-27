@@ -36,10 +36,14 @@ public sealed partial class BootstrapPlugin
         _frameLimiter?.Reconcile();
     }
 
-    // Driven by StellarTicker's InvokeRepeating schedule at PerfControls.UpdateRateHz — NOT a
+    // Driven by StellarTicker's InvokeRepeating schedule at _scheduler.MasterRateHz — NOT a
     // per-frame Game.Update postfix — so most rendered frames have ZERO managed entry (the
-    // ~12-18 fps managed-crossing tax). deltaTime is real seconds since the previous tick (≈ 1/rate).
-    private void RunFrameworkTick(float deltaTime)
+    // ~12-18 fps managed-crossing tax). masterDt is real seconds since the previous tick (≈ 1/masterRate).
+    // Three-band structure:
+    //   Band 1 — every master beat: cheap Lua-bridge probe drains (equip / loadout / exchange).
+    //   Band 2 — per-plugin Updates at each plugin's own rate (_scheduler.Beat).
+    //   Band 3 — global-gated expensive work (draw/refresh/input) at PerfControls.UpdateRateHz.
+    private void RunFrameworkTick(float masterDt)
     {
         MaybeApplyPerfExperiment();
 
@@ -50,31 +54,48 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
         try
         {
-            _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+            // Band 1 — every master beat (cheap; rides the fastest rate so RPC round-trips land quickly).
+            DrainLuaBridgeProbes();
+
+            // Band 2 — per-plugin Updates, each plugin firing at its own registered rate.
             Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:plugins");
-            _framework!.Tick(deltaTime);
+            _scheduler?.Beat(masterDt);
             Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:plugins");
-            TryLoadGameDataEagerOnce();   // fires once when Bokura.*TableBase handles are populated
-            DrainGameDataDeferred();      // one deferred table per tick; no-op until eager done / queue empty
-            RefreshPerTickServices(deltaTime);
-            ProbeGameRootOnce(_gameInstance);
+
+            // Band 3 — expensive draw/refresh/input work, gated to the global rate.
+            if (_globalGate.Crossed(masterDt, Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz))
+                RunGlobalRateWork(_globalGate.LastDt);
         }
         finally
         {
             Stellar.Abstractions.Diagnostics.PerfProbe.EndUpdate();
         }
 
-        TickInputAndHotkeys();
+        // Commit timings (no-op unless PERFHUD). masterDt is the master tick interval; [Perf] avgFps
+        // reflects the master tick rate, not the render frame rate — read real FPS from DXVK when throttled.
+        Stellar.Abstractions.Diagnostics.PerfProbe.RecordFrame(masterDt);
+    }
 
+    // Extracted so RunFrameworkTick stays under the 50-LoC analyzer limit (STELLAR0002).
+    // Runs only on the global-gated beat (PerfControls.UpdateRateHz); globalDt is _globalGate.LastDt.
+    private void RunGlobalRateWork(float globalDt)
+    {
+        _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+        _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)
+        TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
+        DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
+        RefreshPerTickServices(globalDt);
+        ProbeGameRootOnce(_gameInstance);
+        TickInputAndHotkeys();
         // Layout edit-mode input (select/drag) — driven from the tick AFTER the input poll (so the latched
         // mouse edge + pointer are fresh). Edit-mode interaction is fully decoupled from any IMGUI/OnGUI
         // handler; all rendering goes through the uGUI path (HudThemeAssets / WindowThemeAssets bake on demand).
         _layoutOverlay?.TickInput();
-
-        // Commit timings (no-op unless PERFHUD). deltaTime is the tick interval, so [Perf] avgFps is the
-        // TICK rate, not the render frame rate — read real FPS from DXVK when throttled.
-        Stellar.Abstractions.Diagnostics.PerfProbe.RecordFrame(deltaTime);
     }
+
+    // Drains the Lua-bridge probes every master beat so RPC round-trips for a ramped plugin
+    // complete as fast as possible regardless of the global-gate cadence.
+    private void DrainLuaBridgeProbes() => DrainEquipAndLoadout();
 
     // Per-frame input + hotkey poll, driven from the framework tick (Phase E: there is no
     // OnGUI handler anymore). Unity runs Update() once per frame, so no per-OnGUI-pass gate is
@@ -119,7 +140,7 @@ public sealed partial class BootstrapPlugin
             catch (Exception ex) { Log.LogWarning($"[boot] resonance refresh threw: {ex.Message}"); }
         }
 
-        DrainEquipAndLoadout();
+        // DrainEquipAndLoadout() removed — moved to Band 1 (DrainLuaBridgeProbes, every master beat).
 
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:chat");
         _chatService!.Drain();
