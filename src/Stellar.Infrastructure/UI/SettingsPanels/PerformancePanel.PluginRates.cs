@@ -27,8 +27,9 @@ internal sealed partial class PerformancePanel
     // Fixed column widths. The slider is pinned small; the middle gap is a Weight:1 CellElement that
     // absorbs all leftover row width, so the self-rate button right-aligns regardless of viewport width.
     private const float PluginNameWidth = 140f;
-    private const float PluginSliderWidth = 90f;        // small, fixed — the user wants a compact slider
-    private const float PluginRateLabelWidth = 80f;     // value readout next to the slider
+    private const float PluginSliderWidth = 90f;        // small, fixed-width track
+    private const float PluginSliderHandle = 9f;        // small knob (renderer default is 13)
+    private const float PluginRateLabelWidth = 96f;     // value readout — fits "Follow global" on one line
     private const float PluginModeButtonWidth = 115f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
@@ -57,23 +58,24 @@ internal sealed partial class PerformancePanel
                 Width: PluginNameWidth, NoWrap: true),                                    // name (fixed)
 
             new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
-                0f, PluginStops.Length - 1, Width: PluginSliderWidth),                    // small fixed-width rate slider
+                0f, PluginStops.Length - 1, Width: PluginSliderWidth, HandleSize: PluginSliderHandle),  // small slider + small knob
 
-            new TextElement(() => PluginRateLabel(Id()), Width: PluginRateLabelWidth),    // value readout
-
-            // Flexible gap that absorbs the slack so the self-rate button right-aligns; shows the live
-            // ramp indicator (accent) ONLY while ramping, empty otherwise.
-            new CellElement(
-                new TextElement(() => IsRamping(Id())
-                        ? (_effectiveRateFor(Id()) >= PerfControls.MaxUpdateRateHz
-                            ? "→ every frame" : $"→ {_effectiveRateFor(Id())} Hz")
-                        : "",
-                    () => _theme.Colors.Accent, Align: TextAlign.Center),
-                Weight: 1f),
+            // Value readout (one line): the configured rate, or the live ramp rate (accent) while ramping.
+            new TextElement(() => PluginRateOrRampLabel(Id()),
+                () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
+                Width: PluginRateLabelWidth, NoWrap: true),
 
             new ButtonElement(() => SelfRateButtonLabel(Id()), () => CycleSelfRate(Id()),
                 Width: PluginModeButtonWidth),                                            // self-rate: Off/Boost/Self-managed
         }, Gap: 10f);
+    }
+
+    // Value readout: the live ramp rate (while a Boost/Self-managed ramp is raising it) else the configured rate.
+    private string PluginRateOrRampLabel(string id)
+    {
+        if (!IsRamping(id)) return PluginRateLabel(id);
+        var eff = _effectiveRateFor(id);
+        return eff >= PerfControls.MaxUpdateRateHz ? "→ every frame" : $"→ {eff} Hz";
     }
 
     // --- rate slider <-> stored Hz (snap to the nearest PluginStops entry; index 0 = follow global) ---

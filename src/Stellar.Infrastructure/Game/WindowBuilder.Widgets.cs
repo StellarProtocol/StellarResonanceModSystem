@@ -220,10 +220,11 @@ internal sealed partial class WindowBuilder
         var fimg = fillGo.AddComponent<Image>(); fimg.sprite = _assets.Capsule; fimg.type = Image.Type.Sliced; fimg.color = _assets.MenuAccent; fimg.raycastTarget = false;
         token.ReskinActions.Add(() => { if (fimg != null) fimg.color = _assets.MenuAccent; });   // accent follows theme
 
+        var handle = s.HandleSize > 0f ? s.HandleSize : 13f;   // per-slider knob size (default 13)
         var handleArea = UGuiPrimitives.NewChild("HandleArea", go.transform);
-        var hart = handleArea.GetComponent<RectTransform>(); hart.anchorMin = Vector2.zero; hart.anchorMax = Vector2.one; hart.sizeDelta = new Vector2(-13f, 0f); hart.anchoredPosition = Vector2.zero;
+        var hart = handleArea.GetComponent<RectTransform>(); hart.anchorMin = Vector2.zero; hart.anchorMax = Vector2.one; hart.sizeDelta = new Vector2(-handle, 0f); hart.anchoredPosition = Vector2.zero;
         var handleGo = UGuiPrimitives.NewChild("Handle", handleArea.transform);
-        var hrt = handleGo.GetComponent<RectTransform>(); hrt.sizeDelta = new Vector2(13f, 13f);
+        var hrt = handleGo.GetComponent<RectTransform>(); hrt.sizeDelta = new Vector2(handle, handle);
         var himg = handleGo.AddComponent<Image>(); himg.sprite = _assets.Capsule; himg.type = Image.Type.Sliced; himg.color = new Color(0.81f, 0.88f, 0.95f, 1f);
 
         slider.fillRect = fillrt; slider.handleRect = hrt; slider.targetGraphic = himg;
