@@ -46,7 +46,7 @@ internal sealed partial class PerformancePanel
 
         return new RowElement(new HudElement[]
         {
-            new TextElement(() => At()?.DisplayName ?? "", Width: PluginNameWidth, NoWrap: true),
+            new TextElement(() => At()?.DisplayName ?? "", () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted, Width: PluginNameWidth, NoWrap: true),
             new SliderElement(
                 () => GetPluginSliderIndex(Id()),
                 v => SetPluginSliderIndex(Id(), v),
