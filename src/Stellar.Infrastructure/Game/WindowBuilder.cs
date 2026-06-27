@@ -365,6 +365,8 @@ internal sealed partial class WindowBuilder
         var le = go.AddComponent<LayoutElement>();
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }   // fixed column cell
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
+        // Clip a fixed-width single line to its column so a long label truncates instead of spilling onto neighbours.
+        if (t.Width > 0f && t.NoWrap) go.AddComponent<RectMask2D>();
         // Readability outline for chrome-less overlays (UnityEngine.UI.Shadow is stripped from the game interop;
         // Outline survives). 4-direction dark halo so light text stays legible over any world background.
         if (t.Shadow)
