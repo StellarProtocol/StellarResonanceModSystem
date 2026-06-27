@@ -60,8 +60,9 @@ internal sealed partial class PerformancePanel
             new SeparatorElement(),
             new TextElement(() => "Per-plugin update rate", Emphasis: true),
             new TextElement(() =>
-                "Override how often each plugin refreshes. Default is \"Follow global\" (matches the global rate above). " +
-                "Self = let this plugin drive its own update rate; Hold = keep its ramp running indefinitely (skip the 10 s safety cap). Hold applies only when Self is on.",
+                "Override how often each plugin refreshes. Self-rate lets a plugin drive its own update rate: " +
+                "Boost speeds it up briefly (released after a 10 s safety cap); Self-managed lets the plugin fully " +
+                "control and hold its own rate with no cap. Default is Off (follows the global rate).",
                 () => _theme.Colors.TextMuted),
             pluginSection,
         });

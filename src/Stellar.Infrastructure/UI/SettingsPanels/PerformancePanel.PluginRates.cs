@@ -9,9 +9,9 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
 /// Per-plugin update-rate controls for the Settings → Performance panel.
-/// Each plugin row has: name label, rate slider (snapped to meaningful stops),
-/// rate/ramp value label (folded), Self-rate toggle, Self caption, Sustained toggle,
-/// and a Hold caption (dimmed when Self is off).
+/// Each plugin row has: name label, a fixed-width rate-slider cell (so the columns
+/// stay deterministic and never overlap), a rate/ramp value label (folded), and a
+/// single self-documenting "Self-rate" cycle button (Off → Boost → Self-managed).
 /// </summary>
 internal sealed partial class PerformancePanel
 {
@@ -22,8 +22,12 @@ internal sealed partial class PerformancePanel
     };
 
     private const int MaxPluginRows = 64;
-    private const float PluginNameWidth = 150f;
-    private const float PluginRateLabelWidth = 96f;
+    // Fixed column widths. Tuned via the UI sandbox so the row total + 3 gaps fits the
+    // ~577px scroll viewport (586 content − ~9 scrollbar) with NO overlap and a usable slider.
+    private const float PluginNameWidth = 120f;
+    private const float PluginSliderWidth = 150f;
+    private const float PluginRateLabelWidth = 95f;
+    private const float PluginModeButtonWidth = 150f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
     private IReadOnlyList<PluginInfo> _pluginCache = Array.Empty<PluginInfo>();
@@ -49,22 +53,46 @@ internal sealed partial class PerformancePanel
             new TextElement(() => At()?.DisplayName ?? "",
                 () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
                 Width: PluginNameWidth, NoWrap: true),
-            new SliderElement(() => GetPluginSliderIndex(Id()),
-                v => SetPluginSliderIndex(Id(), v), 0f, PluginStops.Length - 1),
+            // The slider lives in a STABLE fixed-width cell (not the elastic flex cell) so every
+            // column is a known width and the row total is deterministic — this is the fix for the
+            // slider being squeezed into / overlapping the adjacent value + button columns.
+            new CellElement(
+                new SliderElement(() => GetPluginSliderIndex(Id()),
+                    v => SetPluginSliderIndex(Id(), v), 0f, PluginStops.Length - 1),
+                Width: PluginSliderWidth),
             new TextElement(() => PluginRateOrRampLabel(Id()),
                 () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
                 Width: PluginRateLabelWidth),
-            new ToggleElement(() => "",
-                () => _prefs.GetPluginSelfControl(Id()),
-                v => _prefs.SetPluginSelfControl(Id(), v)),
-            new TextElement(() => "Self"),
-            new ToggleElement(() => "",
-                () => _prefs.GetPluginSustained(Id()),
-                v => _prefs.SetPluginSustained(Id(), v),
-                Enabled: () => _prefs.GetPluginSelfControl(Id())),
-            new TextElement(() => "Hold",
-                () => _prefs.GetPluginSelfControl(Id()) ? (ColorRgba?)null : _theme.Colors.TextMuted),
-        }, Gap: 8f);
+            new ButtonElement(() => SelfRateButtonLabel(Id()),
+                () => CycleSelfRate(Id()), Width: PluginModeButtonWidth),
+        }, Gap: 10f);
+    }
+
+    // --- Self-rate cycle button: one self-documenting control replacing the old Self/Hold toggles ---
+    // The three modes map onto the two backing bools (Sustained requires Self-control):
+    //   Off          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
+    //   Boost        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
+    //   Self-managed = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
+
+    private string SelfRateMode(string id)
+    {
+        if (!_prefs.GetPluginSelfControl(id)) return "Off";
+        return _prefs.GetPluginSustained(id) ? "Self-managed" : "Boost";
+    }
+
+    private string SelfRateButtonLabel(string id) => "Self-rate: " + SelfRateMode(id);
+
+    // NOTE: kept the "Self-rate: " prefix — at 150px it fits "Self-rate: Self-managed" (verified in the
+    // sandbox); see PluginModeButtonWidth. If a future font widens it, drop the prefix here, not the width.
+
+    private void CycleSelfRate(string id)
+    {
+        switch (SelfRateMode(id))
+        {
+            case "Off":   _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, false); break; // -> Boost
+            case "Boost": _prefs.SetPluginSustained(id, true);                                          break; // -> Self-managed
+            default:      _prefs.SetPluginSelfControl(id, false); _prefs.SetPluginSustained(id, false); break; // Self-managed -> Off
+        }
     }
 
     private int GetPluginSliderIndex(string id)
