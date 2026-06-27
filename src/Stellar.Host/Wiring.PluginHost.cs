@@ -122,5 +122,14 @@ public sealed partial class BootstrapPlugin
         var pluginDirectory = Path.Combine(BepInEx.Paths.GameRootPath, UserPluginSubdirectory);
         log.Info($"[boot] loading user plugins from {pluginDirectory}");
         _pluginHost!.LoadFrom(pluginDirectory);
+
+        // Seed the scheduler with any persisted per-plugin rate + self-control prefs.
+        // Runs after LoadFrom so the registry is fully populated; _perfPrefs and _scheduler
+        // are both live (built in Load() before OnHotUpdateReady fires).
+        foreach (var p in _pluginRegistry!.List())
+        {
+            var rate = _perfPrefs!.GetPluginRate(p.Id);
+            _scheduler!.ConfigurePlugin(p.Id, rate > 0 ? rate : (int?)null, _perfPrefs.GetPluginSelfControl(p.Id));
+        }
     }
 }

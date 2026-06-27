@@ -69,4 +69,37 @@ internal sealed class PerfPrefs
             _config.Save();
         }
     }
+
+    private const string PluginRatePrefix = "plugin_rate.";
+    private const string PluginSelfCtlPrefix = "plugin_selfcontrol.";
+
+    /// <summary>Set by the host to push a per-plugin change into the TickScheduler. (guid, staticRateHz?, allowSelfControl).</summary>
+    public Action<string, int?, bool>? OnPluginConfigChanged { get; set; }
+
+    /// <summary>Per-plugin static rate in Hz; 0 = follow global.</summary>
+    public int GetPluginRate(string guid) => _config.Get<int>(PluginRatePrefix + guid, 0);
+
+    public void SetPluginRate(string guid, int hz)
+    {
+        var clamped = hz <= 0 ? 0 : PerfControls.ClampRate(hz);
+        _config.Set(PluginRatePrefix + guid, clamped);
+        _config.Save();
+        Push(guid);
+    }
+
+    /// <summary>Whether the user has allowed this plugin to control its own rate (dynamic ramp).</summary>
+    public bool GetPluginSelfControl(string guid) => _config.Get<bool>(PluginSelfCtlPrefix + guid, false);
+
+    public void SetPluginSelfControl(string guid, bool allow)
+    {
+        _config.Set(PluginSelfCtlPrefix + guid, allow);
+        _config.Save();
+        Push(guid);
+    }
+
+    private void Push(string guid)
+    {
+        var rate = GetPluginRate(guid);
+        OnPluginConfigChanged?.Invoke(guid, rate > 0 ? rate : (int?)null, GetPluginSelfControl(guid));
+    }
 }
