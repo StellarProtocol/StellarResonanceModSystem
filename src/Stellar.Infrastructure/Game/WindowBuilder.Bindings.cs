@@ -79,19 +79,32 @@ internal sealed partial class WindowBuilder
     internal sealed class ToggleBinding
     {
         public Image Track = null!;
+        public Button Btn = null!;
         public RectTransform Knob = null!;
         public Func<bool> Get = null!;
+        public Func<bool>? EnabledFn;
         public Color On, Off;
         private bool _init, _last;
+        private bool _enabledInit, _lastEnabled;
         public void Apply()
         {
             if (Track == null || !Track.gameObject.activeInHierarchy) return;
             var on = Get();
-            if (_init && on == _last) return;
+            if (_init && on == _last) { ApplyEnabled(); return; }
             Track.color = on ? On : Off;
             Knob.anchorMin = Knob.anchorMax = Knob.pivot = new Vector2(on ? 1f : 0f, 0.5f);
             Knob.anchoredPosition = new Vector2(on ? -2f : 2f, 0f);
             _last = on; _init = true;
+            ApplyEnabled();
+        }
+
+        private void ApplyEnabled()
+        {
+            if (EnabledFn == null) return;
+            var enabled = EnabledFn();
+            if (_enabledInit && enabled == _lastEnabled) return;
+            if (Btn != null) Btn.interactable = enabled;
+            _lastEnabled = enabled; _enabledInit = true;
         }
     }
 

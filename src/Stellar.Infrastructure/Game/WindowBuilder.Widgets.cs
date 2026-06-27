@@ -187,7 +187,7 @@ internal sealed partial class WindowBuilder
         btn.onClick.AddListener((UnityAction)(() => { if (SuppressClickInEditMode(token)) return; set(!get()); ClearSelectionAfterClick(); }));
         token.Toggles.Add(new ToggleBinding
         {
-            Track = track, Knob = krt, Get = t.Get,
+            Track = track, Btn = btn, Knob = krt, Get = t.Get, EnabledFn = t.Enabled,
             On = new Color(0.18f, 0.49f, 0.32f, 1f),
             Off = new Color(0.29f, 0.32f, 0.36f, 1f),
         });

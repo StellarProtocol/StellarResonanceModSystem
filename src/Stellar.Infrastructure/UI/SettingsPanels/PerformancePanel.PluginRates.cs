@@ -10,7 +10,8 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 /// <summary>
 /// Per-plugin update-rate controls for the Settings → Performance panel.
 /// Each plugin row has: name label, rate slider (snapped to meaningful stops),
-/// rate value label, a Self-rate toggle, and an optional ramp-readout.
+/// rate/ramp value label (folded), Self-rate toggle, Self caption, Sustained toggle,
+/// and a Hold caption (dimmed when Self is off).
 /// </summary>
 internal sealed partial class PerformancePanel
 {
@@ -23,7 +24,6 @@ internal sealed partial class PerformancePanel
     private const int MaxPluginRows = 64;
     private const float PluginNameWidth = 150f;
     private const float PluginRateLabelWidth = 96f;
-    private const float PluginRampWidth = 96f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
     private IReadOnlyList<PluginInfo> _pluginCache = Array.Empty<PluginInfo>();
@@ -46,18 +46,24 @@ internal sealed partial class PerformancePanel
 
         return new RowElement(new HudElement[]
         {
-            new TextElement(() => At()?.DisplayName ?? "", () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted, Width: PluginNameWidth, NoWrap: true),
-            new SliderElement(
-                () => GetPluginSliderIndex(Id()),
-                v => SetPluginSliderIndex(Id(), v),
-                0f, PluginStops.Length - 1),
-            new TextElement(() => PluginRateLabel(Id()), Width: PluginRateLabelWidth),
-            new ToggleElement(
-                () => "",
+            new TextElement(() => At()?.DisplayName ?? "",
+                () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
+                Width: PluginNameWidth, NoWrap: true),
+            new SliderElement(() => GetPluginSliderIndex(Id()),
+                v => SetPluginSliderIndex(Id(), v), 0f, PluginStops.Length - 1),
+            new TextElement(() => PluginRateOrRampLabel(Id()),
+                () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
+                Width: PluginRateLabelWidth),
+            new ToggleElement(() => "",
                 () => _prefs.GetPluginSelfControl(Id()),
                 v => _prefs.SetPluginSelfControl(Id(), v)),
-            new TextElement(() => "Self-rate"),
-            new TextElement(() => RampReadout(Id()), Width: PluginRampWidth),
+            new TextElement(() => "Self"),
+            new ToggleElement(() => "",
+                () => _prefs.GetPluginSustained(Id()),
+                v => _prefs.SetPluginSustained(Id(), v),
+                Enabled: () => _prefs.GetPluginSelfControl(Id())),
+            new TextElement(() => "Hold",
+                () => _prefs.GetPluginSelfControl(Id()) ? (ColorRgba?)null : _theme.Colors.TextMuted),
         }, Gap: 8f);
     }
 
@@ -89,13 +95,20 @@ internal sealed partial class PerformancePanel
         return $"{hz} Hz";
     }
 
-    private string RampReadout(string id)
+    private bool IsRamping(string id)
     {
-        if (!_prefs.GetPluginSelfControl(id)) return "";
+        if (!_prefs.GetPluginSelfControl(id)) return false;
         var baseHz = _prefs.GetPluginRate(id) > 0 ? _prefs.GetPluginRate(id) : PerfControls.UpdateRateHz;
-        var eff = _effectiveRateFor(id);
-        if (eff <= baseHz) return "";
-        if (eff >= PerfControls.MaxUpdateRateHz) return "→ every frame now";
-        return $"→ {eff} Hz now";
+        return _effectiveRateFor(id) > baseHz;
+    }
+
+    private string PluginRateOrRampLabel(string id)
+    {
+        if (IsRamping(id))
+        {
+            var eff = _effectiveRateFor(id);
+            return eff >= PerfControls.MaxUpdateRateHz ? "Every frame ↑" : $"{eff} Hz ↑";
+        }
+        return PluginRateLabel(id);
     }
 }
