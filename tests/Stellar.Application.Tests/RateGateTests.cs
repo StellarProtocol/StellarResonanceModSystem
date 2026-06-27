@@ -43,4 +43,18 @@ public sealed class RateGateTests
         Assert.True(gate.Crossed(5.0f, 30));   // 5s hitch -> crosses once
         Assert.False(gate.Crossed(0.001f, 30)); // residue clamped: next tiny beat does NOT immediately re-cross
     }
+
+    [Fact]
+    public void LastDt_resets_and_reaccumulates_after_crossing()
+    {
+        var gate = new RateGate();
+        // Drive to the first crossing (4 x 10ms at 30Hz).
+        for (var i = 0; i < 4; i++) gate.Crossed(0.010f, 30);
+        // _elapsed resets to 0; the residual ~6.7ms carries in _acc.
+        gate.Crossed(0.010f, 30);            // acc ~16.7ms -> no cross
+        gate.Crossed(0.010f, 30);            // acc ~26.7ms -> no cross
+        Assert.True(gate.Crossed(0.010f, 30)); // acc ~36.7ms >= 33.3ms -> cross
+        // precision:3 == +/-0.5ms tolerance; float32 accumulation error here is ~nanoseconds.
+        Assert.Equal(0.030f, gate.LastDt, 3);
+    }
 }
