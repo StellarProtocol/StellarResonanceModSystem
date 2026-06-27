@@ -42,13 +42,6 @@ public sealed class StellarTicker : MonoBehaviour
         InvokeRepeating(nameof(Tick), 0f, 1f / hz);
     }
 
-    /// <summary>Called by the host when the rate setting changes (Settings → Performance slider).</summary>
-    internal void Reschedule()
-    {
-        var hz = Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz;
-        if (hz != _scheduledRateHz) Schedule(hz);
-    }
-
     /// <summary>(Re)schedule to an explicit Hz. No-op when already at that rate.</summary>
     internal void RescheduleTo(int hz)
     {

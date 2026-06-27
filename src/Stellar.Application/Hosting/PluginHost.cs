@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Stellar.Abstractions.Plugins;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -82,37 +83,52 @@ internal sealed class PluginHost : IDisposable
             return false;
         }
 
-        // Per-plugin config: GUID derived from the plugin's assembly name,
-        // lowercased. e.g. Stellar.StatInspector → stellar.statinspector.
-        var pluginGuid = (asm.GetName().Name ?? pluginType.FullName ?? "unknown")
-            .ToLowerInvariant();
+        var pluginGuid = (asm.GetName().Name ?? pluginType.FullName ?? "unknown").ToLowerInvariant();
         var version = asm.GetName().Version?.ToString() ?? "0.0.0";
         // The display name lives on the plugin instance's Name property, which
         // requires construction. The PluginRegistry calls the factory on enable;
         // until the first successful enable, we fall back to the assembly's
         // short name for the Plugins panel listing.
         var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
-
-        // Capture ctor + per-plugin config in the factory delegate so the
-        // registry can reconstruct the plugin on soft-cycle without re-running
-        // the discovery walk.
         var perPluginConfig = _configFactory.Create(pluginGuid);
-        // Capture the per-plugin framework so the registry can unregister it from the
-        // scheduler when the plugin is disabled or disposed (scheduler teardown path).
-        PerPluginFramework? capturedFramework = null;
+
+        // Shared mutable cell: both the factory lambda (writer) and the onDispose
+        // lambda (reader) capture the same StrongBox so each soft-cycle enable
+        // updates the reference that onDispose will unregister.
+        var frameworkCell = new StrongBox<PerPluginFramework?>();
+
         Func<IPluginServices, object> factory = sharedServices =>
-        {
-            var perPluginFramework = new PerPluginFramework(pluginGuid, _scheduler, sharedServices.Framework);
-            capturedFramework = perPluginFramework;
-            var perPluginServices = new PerPluginServices(sharedServices, perPluginConfig, perPluginFramework);
-            var instance = (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
-            return instance;
-        };
+            BuildAndInvoke(ctor, pluginGuid, perPluginConfig, frameworkCell, sharedServices);
 
         _registry.Register(pluginGuid, displayName, version, factory,
-            onDispose: () => capturedFramework?.Unregister());
+            onDispose: () => frameworkCell.Value?.Unregister());
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
+    }
+
+    // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
+    // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
+    // On plugin-ctor failure the facade is unregistered from the scheduler before rethrowing,
+    // so a failed plugin leaves no dangling scheduler entry.
+    private IStellarPlugin BuildAndInvoke(
+        ConstructorInfo ctor,
+        string pluginGuid,
+        IPluginConfig perPluginConfig,
+        StrongBox<PerPluginFramework?> frameworkCell,
+        IPluginServices sharedServices)
+    {
+        var perPluginFramework = new PerPluginFramework(pluginGuid, _scheduler, sharedServices.Framework);
+        frameworkCell.Value = perPluginFramework;
+        var perPluginServices = new PerPluginServices(sharedServices, perPluginConfig, perPluginFramework);
+        try
+        {
+            return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
+        }
+        catch
+        {
+            perPluginFramework.Unregister();
+            throw;
+        }
     }
 
     public void Dispose()
