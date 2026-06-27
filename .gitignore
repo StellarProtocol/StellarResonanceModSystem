@@ -41,3 +41,7 @@ tools/BepInEx-stage
 # Python bytecode (tools/release/*.py run locally)
 __pycache__/
 *.pyc
+
+# Local dev symlinks (machine-specific; created by setup-dev-env.sh / build-bundle.sh — never commit)
+.local/
+src/samples

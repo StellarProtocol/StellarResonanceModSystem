@@ -84,7 +84,7 @@ internal sealed partial class TickScheduler
             var r = e.Ramps[i];
             r.Elapsed += masterDt;
             if (r.Elapsed < _maxHoldSeconds) continue;
-            _log?.Invoke($"[TickScheduler] auto-released {r.Hz}Hz ramp on '{e.Guid}' after {_maxHoldSeconds:0}s (leaked scope?)");
+            DiagRampAutoReleased(e, r);   // diagnostic logging lives in TickScheduler.Diagnostics.cs
             r.MarkReleased();
             e.Ramps.RemoveAt(i);
             any = true;
