@@ -9,24 +9,26 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
 /// Per-plugin update-rate controls for the Settings → Performance panel.
-/// Each plugin row has: name label, a fixed-width rate-slider cell (so the columns
-/// stay deterministic and never overlap), a rate/ramp value label (folded), and a
-/// single self-documenting "Self-rate" cycle button (Off → Boost → Self-managed).
+/// Each plugin row has: name label, a compact rate cycle-button (steps through the snap
+/// stops), a flexible gap that shows the live ramp indicator while ramping and absorbs the
+/// row slack, and a right-aligned self-documenting "Self-rate" cycle button (Off → Boost →
+/// Self-managed). Buttons (not a slider) are used because a slider lays out unpredictably
+/// in-game (IL2CPP) vs the Mono sandbox; a button renders identically in both.
 /// </summary>
 internal sealed partial class PerformancePanel
 {
-    // Snap stops for the per-plugin slider. Index 0 = "Follow global" (stored as 0).
+    // Snap stops for the per-plugin rate cycle button. Index 0 = "Follow global" (stored as 0).
     private static readonly int[] PluginStops =
     {
         0, 10, 15, PerfControls.DefaultUpdateRateHz, 60, 120, PerfControls.MaxUpdateRateHz,
     };
 
     private const int MaxPluginRows = 64;
-    // Fixed column widths. Tuned via the UI sandbox so the row total + 3 gaps fits the
-    // ~577px scroll viewport (586 content − ~9 scrollbar) with NO overlap and a usable slider.
-    private const float PluginNameWidth = 120f;
-    private const float PluginSliderWidth = 110f;
-    private const float PluginRateLabelWidth = 95f;
+    // Fixed column widths for the two buttons + name. The middle gap is a Weight:1 CellElement
+    // that absorbs all leftover row width, so the self-rate button right-aligns regardless of
+    // viewport width and the columns never overlap.
+    private const float PluginNameWidth = 140f;
+    private const float PluginRateButtonWidth = 120f;   // fits "Follow global"
     private const float PluginModeButtonWidth = 115f;
 
     // Refreshed each frame by the outer ConditionalElement's When predicate.
@@ -52,20 +54,34 @@ internal sealed partial class PerformancePanel
         {
             new TextElement(() => At()?.DisplayName ?? "",
                 () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
-                Width: PluginNameWidth, NoWrap: true),
-            // The slider lives in a STABLE fixed-width cell (not the elastic flex cell) so every
-            // column is a known width and the row total is deterministic — this is the fix for the
-            // slider being squeezed into / overlapping the adjacent value + button columns.
+                Width: PluginNameWidth, NoWrap: true),                                    // name (fixed)
+
+            new ButtonElement(() => PluginRateLabel(Id()), () => CycleRate(Id()),
+                Width: PluginRateButtonWidth),                                            // rate: cycles the stops
+
+            // Flexible gap that absorbs the slack so the self-rate button right-aligns; shows the live
+            // ramp indicator (accent) ONLY while ramping, empty otherwise.
             new CellElement(
-                new SliderElement(() => GetPluginSliderIndex(Id()),
-                    v => SetPluginSliderIndex(Id(), v), 0f, PluginStops.Length - 1),
-                Width: PluginSliderWidth),
-            new TextElement(() => PluginRateOrRampLabel(Id()),
-                () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
-                Width: PluginRateLabelWidth),
-            new ButtonElement(() => SelfRateButtonLabel(Id()),
-                () => CycleSelfRate(Id()), Width: PluginModeButtonWidth),
+                new TextElement(() => IsRamping(Id())
+                        ? (_effectiveRateFor(Id()) >= PerfControls.MaxUpdateRateHz
+                            ? "→ every frame" : $"→ {_effectiveRateFor(Id())} Hz")
+                        : "",
+                    () => _theme.Colors.Accent, Align: TextAlign.Center),
+                Weight: 1f),
+
+            new ButtonElement(() => SelfRateButtonLabel(Id()), () => CycleSelfRate(Id()),
+                Width: PluginModeButtonWidth),                                            // self-rate: Off/Boost/Self-managed
         }, Gap: 10f);
+    }
+
+    // Step the static per-plugin rate through PluginStops (wrapping). 0 = follow global.
+    private void CycleRate(string id)
+    {
+        var cur = _prefs.GetPluginRate(id);   // 0 = follow global
+        var idx = 0;
+        for (var i = 0; i < PluginStops.Length; i++) if (PluginStops[i] == cur) { idx = i; break; }
+        idx = (idx + 1) % PluginStops.Length;
+        _prefs.SetPluginRate(id, PluginStops[idx]);
     }
 
     // --- Self-rate cycle button: one self-documenting control replacing the old Self/Hold toggles ---
@@ -95,26 +111,6 @@ internal sealed partial class PerformancePanel
         }
     }
 
-    private int GetPluginSliderIndex(string id)
-    {
-        var hz = _prefs.GetPluginRate(id);
-        if (hz <= 0) return 0;
-        var best = 1;
-        var bestDist = Math.Abs(PluginStops[1] - hz);
-        for (var i = 2; i < PluginStops.Length; i++)
-        {
-            var d = Math.Abs(PluginStops[i] - hz);
-            if (d < bestDist) { bestDist = d; best = i; }
-        }
-        return best;
-    }
-
-    private void SetPluginSliderIndex(string id, float v)
-    {
-        var idx = Math.Clamp((int)Math.Round(v), 0, PluginStops.Length - 1);
-        _prefs.SetPluginRate(id, PluginStops[idx]);
-    }
-
     private string PluginRateLabel(string id)
     {
         var hz = _prefs.GetPluginRate(id);
@@ -128,15 +124,5 @@ internal sealed partial class PerformancePanel
         if (!_prefs.GetPluginSelfControl(id)) return false;
         var baseHz = _prefs.GetPluginRate(id) > 0 ? _prefs.GetPluginRate(id) : PerfControls.UpdateRateHz;
         return _effectiveRateFor(id) > baseHz;
-    }
-
-    private string PluginRateOrRampLabel(string id)
-    {
-        if (IsRamping(id))
-        {
-            var eff = _effectiveRateFor(id);
-            return eff >= PerfControls.MaxUpdateRateHz ? "Every frame ↑" : $"{eff} Hz ↑";
-        }
-        return PluginRateLabel(id);
     }
 }
