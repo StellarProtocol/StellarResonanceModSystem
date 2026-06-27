@@ -55,6 +55,12 @@ public static class PerfProbe
     private static double _lastUpdateMs;
     private static readonly Dictionary<string, double> _publishedWindowMs = new();
 
+    // Set true by MarkDrawFrame() when the global-rate Band 3 runs this tick; cleared inside RecordFrame
+    // after the conditional window/draw publish. Ensures per-window timings only refresh on draw ticks;
+    // on the faster master ticks between draws the last published values are held (republishing from the
+    // empty per-frame accumulators on non-draw ticks would wipe them and freeze the overlay).
+    private static bool _drewThisFrame;
+
     /// <summary>Monotonic Unity-frame counter; bumped by <see cref="RecordFrame"/>.</summary>
     public static int FrameCounter { get; private set; }
 
@@ -111,6 +117,11 @@ public static class PerfProbe
         _updateMsThisFrame += _updateSw.Elapsed.TotalMilliseconds;
         _updateAllocThisFrame += System.GC.GetAllocatedBytesForCurrentThread() - _updateAllocStart;
     }
+
+    /// <summary>Marks that the global-rate draw band ran this tick. Per-window/draw timings only refresh on
+    /// these frames; on the faster master ticks between draws the last published values are held (otherwise
+    /// they'd be wiped to empty and the overlay would freeze). No-op unless the harness is enabled.</summary>
+    public static void MarkDrawFrame() { if (_enabled) _drewThisFrame = true; }
 
     // --- generic named segments (to localise WITHIN the update path: which
     // plugin / service owns the per-frame cost). Accumulate per frame; the
@@ -210,12 +221,19 @@ public static class PerfProbe
         if (!_enabled) return;
 
         _lastFrameMs = deltaSeconds * 1000.0;
-        _lastDrawMs = _drawMsThisFrame;
         _lastUpdateMs = _updateMsThisFrame;
         _lastUpdateAllocBytes = _updateAllocThisFrame;
 
-        _publishedWindowMs.Clear();
-        foreach (var kv in _windowMsThisFrame) _publishedWindowMs[kv.Key] = kv.Value;
+        // Draw-cadence data (windows + draw ms) only refreshes on frames where the global draw band ran;
+        // on the faster master ticks between draws we HOLD the last published values (republishing from the
+        // empty per-frame accumulators would wipe them and freeze the overlay). Update CPU / FPS stay per-tick.
+        if (_drewThisFrame)
+        {
+            _lastDrawMs = _drawMsThisFrame;
+            _publishedWindowMs.Clear();
+            foreach (var kv in _windowMsThisFrame) _publishedWindowMs[kv.Key] = kv.Value;
+            _drewThisFrame = false;
+        }
 
         foreach (var kv in _segMsThisFrame)
         {
@@ -346,6 +364,7 @@ public static class PerfProbe
         _hookWireTicks = 0; _hookWireAlloc = 0; _hookWireCalls = 0;
         _lastHookWireMs = 0; _lastHookWireAlloc = 0; _lastHookWireCalls = 0;
         _publishedWindowMs.Clear();
+        _drewThisFrame = false;
         _segSw.Clear();
         _segMsThisFrame.Clear();
         FrameCounter = 0;

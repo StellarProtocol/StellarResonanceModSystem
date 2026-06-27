@@ -81,6 +81,7 @@ public sealed partial class BootstrapPlugin
     // Runs only on the global-gated beat (PerfControls.UpdateRateHz); globalDt is _globalGate.LastDt.
     private void RunGlobalRateWork(float globalDt)
     {
+        Stellar.Abstractions.Diagnostics.PerfProbe.MarkDrawFrame();
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)

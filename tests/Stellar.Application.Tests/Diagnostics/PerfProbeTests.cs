@@ -59,8 +59,10 @@ public sealed class PerfProbeTests
 
             // Two OnGUI passes (Layout + Repaint) within one Unity frame: the
             // same window is timed twice, then the frame is committed once.
+            // MarkDrawFrame reflects that Band 3 (draw) ran this tick.
             PerfProbe.BeginWindow("party"); Spin(); PerfProbe.EndWindow("party");
             PerfProbe.BeginWindow("party"); Spin(); PerfProbe.EndWindow("party");
+            PerfProbe.MarkDrawFrame();
             PerfProbe.RecordFrame(0.016);
 
             var snap = PerfProbe.Snapshot();
@@ -71,23 +73,82 @@ public sealed class PerfProbeTests
     }
 
     [Fact]
-    public void RecordFrame_ResetsPerFrameWindowAccumulators()
+    public void RecordFrame_DrawFrame_PublishesWindowMs_AndDropsClosedWindows()
     {
         PerfProbe.OverrideEnabledForTests(true);
         try
         {
             PerfProbe.ResetForTests();
-            PerfProbe.BeginWindow("a"); Spin(); PerfProbe.EndWindow("a");
-            PerfProbe.RecordFrame(0.016);   // commits frame 1: "a" present
 
-            // Frame 2 touches only "b". After committing, the snapshot reflects
-            // frame 2's per-window map — "a" did no work this frame so it is 0/absent.
-            PerfProbe.BeginWindow("b"); Spin(); PerfProbe.EndWindow("b");
+            // Draw frame 1: window "a" drawn. MarkDrawFrame ensures the guard is set.
+            PerfProbe.BeginWindow("a"); Spin(); PerfProbe.EndWindow("a");
+            PerfProbe.MarkDrawFrame();
             PerfProbe.RecordFrame(0.016);
 
+            var snap1 = PerfProbe.Snapshot();
+            Assert.True(snap1.WindowMs.ContainsKey("a"));
+
+            // Draw frame 2: only "b" drawn. Published map is replaced — "a" should be gone
+            // (the draw-frame republish does Clear() + repopulate, so closed windows drop).
+            PerfProbe.BeginWindow("b"); Spin(); PerfProbe.EndWindow("b");
+            PerfProbe.MarkDrawFrame();
+            PerfProbe.RecordFrame(0.016);
+
+            var snap2 = PerfProbe.Snapshot();
+            Assert.True(snap2.WindowMs.ContainsKey("b"));
+            Assert.False(snap2.WindowMs.ContainsKey("a"), "closed window 'a' must be removed on next draw frame");
+        }
+        finally { PerfProbe.OverrideEnabledForTests(false); PerfProbe.ResetForTests(); }
+    }
+
+    [Fact]
+    public void RecordFrame_NonDrawTick_HoldsLastPublishedWindowMs()
+    {
+        PerfProbe.OverrideEnabledForTests(true);
+        try
+        {
+            PerfProbe.ResetForTests();
+
+            // Draw frame: publish window "a".
+            PerfProbe.BeginWindow("a"); Spin(); PerfProbe.EndWindow("a");
+            PerfProbe.MarkDrawFrame();
+            PerfProbe.RecordFrame(0.016);
+            var drawSnap = PerfProbe.Snapshot();
+            var drawMs = drawSnap.WindowMs["a"];
+            Assert.True(drawMs > 0.0);
+
+            // Fast master tick (no MarkDrawFrame, no window timing): published map must be HELD.
+            PerfProbe.RecordFrame(0.004);
+
+            var holdSnap = PerfProbe.Snapshot();
+            Assert.True(holdSnap.WindowMs.ContainsKey("a"), "published window ms must be held on non-draw ticks");
+            Assert.Equal(drawMs, holdSnap.WindowMs["a"], 6);
+        }
+        finally { PerfProbe.OverrideEnabledForTests(false); PerfProbe.ResetForTests(); }
+    }
+
+    [Fact]
+    public void RecordFrame_NonDrawTick_StillUpdatesFpsAndUpdateCpu()
+    {
+        PerfProbe.OverrideEnabledForTests(true);
+        try
+        {
+            PerfProbe.ResetForTests();
+
+            // Draw frame to establish a baseline.
+            PerfProbe.MarkDrawFrame();
+            PerfProbe.RecordFrame(0.033);   // ~30 fps
+
+            var startCounter = PerfProbe.FrameCounter;
+
+            // Fast master tick — no MarkDrawFrame. FrameCounter and LastFrameMs (FPS) must still update.
+            PerfProbe.BeginUpdate(); Spin(); PerfProbe.EndUpdate();
+            PerfProbe.RecordFrame(0.004);   // 250 Hz master rate
+
             var snap = PerfProbe.Snapshot();
-            Assert.True(snap.WindowMs.ContainsKey("b"));
-            Assert.False(snap.WindowMs.ContainsKey("a"));
+            Assert.Equal(startCounter + 1, PerfProbe.FrameCounter);
+            Assert.Equal(4.0, snap.LastFrameMs, 3);
+            Assert.True(snap.LastUpdateMs > 0.0);
         }
         finally { PerfProbe.OverrideEnabledForTests(false); PerfProbe.ResetForTests(); }
     }
