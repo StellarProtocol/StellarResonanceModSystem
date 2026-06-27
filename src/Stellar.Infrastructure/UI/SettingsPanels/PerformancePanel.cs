@@ -6,52 +6,66 @@ using Stellar.Application.Services;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Settings → Performance panel. Two controls, wired to <see cref="PerfPrefs"/>:
-/// the <b>Stellar Update Rate</b> slider (how many times/sec the framework crosses
-/// into the managed runtime to drive its HUD/input/overlays — the dominant lever on
-/// Stellar's game-FPS cost) and the <b>Uncap Frame Rate</b> toggle (removes the game's
-/// V-Sync/FPS cap). Wording is deliberately <em>relative</em> (no fake precision): the
-/// slider snaps to meaningful stops and the description re-labels by band.
+/// Settings → Performance panel. Global rate + frame-cap controls, wired to
+/// <see cref="PerfPrefs"/>. A per-plugin override section (implemented in the
+/// <c>PerformancePanel.PluginRates.cs</c> partial) lets users assign individual
+/// update rates or enable self-rate ramps per plugin.
 /// </summary>
-internal sealed class PerformancePanel
+internal sealed partial class PerformancePanel
 {
-    // Meaningful slider stops. Index 0..N-1 map to these Hz; the top is "every frame".
+    // Meaningful slider stops for the global rate. Index 0..N-1 map to these Hz.
     private static readonly int[] RateStops = { 10, 15, PerfControls.DefaultUpdateRateHz, 60, 120, PerfControls.MaxUpdateRateHz };
 
     private readonly PerfPrefs _prefs;
     private readonly ITheme _theme;
+    private readonly IPluginInventory _inventory;
+    private readonly Func<string, int> _effectiveRateFor;
 
-    public PerformancePanel(PerfPrefs prefs, ITheme theme)
+    public PerformancePanel(PerfPrefs prefs, ITheme theme, IPluginInventory inventory, Func<string, int> effectiveRateFor)
     {
         _prefs = prefs;
         _theme = theme;
+        _inventory = inventory;
+        _effectiveRateFor = effectiveRateFor;
     }
 
-    public HudElement Describe() => new ColumnElement(new HudElement[]
+    public HudElement Describe()
     {
-        new TextElement(() => "Stellar Update Rate", Emphasis: true),
-        new TextElement(() =>
-            "How often Stellar refreshes its HUD, input and overlays each second. Lower = more game FPS; higher = smoother Stellar UI.",
-            () => _theme.Colors.TextMuted),
-        new RowElement(new HudElement[]
+        var pluginSection = BuildPluginSection();
+        return new ColumnElement(new HudElement[]
         {
-            new SliderElement(RateToSlider, SliderToRate, 0f, RateStops.Length - 1),
-            new TextElement(RateValueLabel, Width: 96f),
-        }, Gap: 8f),
-        new TextElement(RateDescription, () => _theme.Colors.TextMuted),
+            new TextElement(() => "Stellar Update Rate", Emphasis: true),
+            new TextElement(() =>
+                "How often Stellar refreshes its HUD, input and overlays each second. Lower = more game FPS; higher = smoother Stellar UI.",
+                () => _theme.Colors.TextMuted),
+            new RowElement(new HudElement[]
+            {
+                new SliderElement(RateToSlider, SliderToRate, 0f, RateStops.Length - 1),
+                new TextElement(RateValueLabel, Width: 96f),
+            }, Gap: 8f),
+            new TextElement(RateDescription, () => _theme.Colors.TextMuted),
 
-        new SeparatorElement(),
+            new SeparatorElement(),
 
-        new RowElement(new HudElement[]
-        {
-            new ToggleElement(() => "", () => _prefs.Uncap, v => _prefs.Uncap = v),
-            new TextElement(() => "Uncap Frame Rate"),
-        }, Gap: 6f),
-        new TextElement(() =>
-            "Removes the game's frame-rate cap (disables V-Sync + the FPS limit) so it runs as fast as your GPU allows. " +
-            "Higher FPS, but more GPU heat/power/fan noise and possible screen tearing.",
-            () => _theme.Colors.TextMuted),
-    });
+            new RowElement(new HudElement[]
+            {
+                new ToggleElement(() => "", () => _prefs.Uncap, v => _prefs.Uncap = v),
+                new TextElement(() => "Uncap Frame Rate"),
+            }, Gap: 6f),
+            new TextElement(() =>
+                "Removes the game's frame-rate cap (disables V-Sync + the FPS limit) so it runs as fast as your GPU allows. " +
+                "Higher FPS, but more GPU heat/power/fan noise and possible screen tearing.",
+                () => _theme.Colors.TextMuted),
+
+            new SeparatorElement(),
+            new TextElement(() => "Per-plugin update rate", Emphasis: true),
+            new TextElement(() =>
+                "Override how often each plugin refreshes. Default is \"Follow global\" (matches the global rate above). " +
+                "Enable Self-rate to let a plugin briefly speed itself up when it needs to.",
+                () => _theme.Colors.TextMuted),
+            pluginSection,
+        });
+    }
 
     // --- slider <-> rate mapping (snap to the nearest meaningful stop) ---
 

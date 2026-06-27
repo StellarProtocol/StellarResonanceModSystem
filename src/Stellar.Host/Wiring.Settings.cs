@@ -40,7 +40,7 @@ public sealed partial class BootstrapPlugin
             Themes  = new ThemesPanel(_namedTheme, _namedTheme, _themeRenderer, _colorRegistry!, _customThemes!),
             Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer),
             GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log),
-            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer),
+            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor),
             About   = new AboutPanel(_themeRenderer),
         };
 
