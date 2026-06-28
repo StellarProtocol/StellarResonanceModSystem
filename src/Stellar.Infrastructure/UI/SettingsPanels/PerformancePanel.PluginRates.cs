@@ -70,8 +70,8 @@ internal sealed partial class PerformancePanel
                 () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
                 Width: PluginRateLabelWidth, NoWrap: true),
 
-            new ButtonElement(() => SelfRateButtonLabel(Id()), () => CycleSelfRate(Id()),
-                Width: PluginModeButtonWidth),                                            // self-rate: Off/Boost/Self-managed
+            new DropdownElement(() => SelfRateIndex(Id()), () => SelfRateOptions,
+                i => SetSelfRate(Id(), i), Width: PluginModeButtonWidth),                 // self-rate: Off/Boost/Self-managed
         }, Gap: 10f);
     }
 
@@ -104,30 +104,26 @@ internal sealed partial class PerformancePanel
         _prefs.SetPluginRate(id, PluginStops[i]);
     }
 
-    // --- Self-rate cycle button: one self-documenting control replacing the old Self/Hold toggles ---
-    // The three modes map onto the two backing bools (Sustained requires Self-control):
-    //   Off          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
-    //   Boost        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
-    //   Self-managed = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
+    // --- Self-rate dropdown: one self-documenting control replacing the old Self/Hold toggles ---
+    // The three modes (indices 0/1/2) map onto the two backing bools (Sustained requires Self-control):
+    //   Off (0)          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
+    //   Boost (1)        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
+    //   Self-managed (2) = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
+    private static readonly IReadOnlyList<string> SelfRateOptions = new[] { "Off", "Boost", "Self-managed" };
 
-    private string SelfRateMode(string id)
+    private int SelfRateIndex(string id)
     {
-        if (!_prefs.GetPluginSelfControl(id)) return "Off";
-        return _prefs.GetPluginSustained(id) ? "Self-managed" : "Boost";
+        if (!_prefs.GetPluginSelfControl(id)) return 0;          // Off
+        return _prefs.GetPluginSustained(id) ? 2 : 1;           // Self-managed : Boost
     }
 
-    // Bare mode word only ("Off"/"Boost"/"Self-managed") — the section description carries the
-    // "Self-rate" framing, so a prefix here is redundant and only widens the button. The longest
-    // label "Self-managed" fits PluginModeButtonWidth (115px) with padding; verified in the sandbox.
-    private string SelfRateButtonLabel(string id) => SelfRateMode(id);
-
-    private void CycleSelfRate(string id)
+    private void SetSelfRate(string id, int index)
     {
-        switch (SelfRateMode(id))
+        switch (index)
         {
-            case "Off":   _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, false); break; // -> Boost
-            case "Boost": _prefs.SetPluginSustained(id, true);                                          break; // -> Self-managed
-            default:      _prefs.SetPluginSelfControl(id, false); _prefs.SetPluginSustained(id, false); break; // Self-managed -> Off
+            case 1:  _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, false); break; // Boost
+            case 2:  _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, true);  break; // Self-managed
+            default: _prefs.SetPluginSelfControl(id, false); _prefs.SetPluginSustained(id, false); break; // Off
         }
     }
 

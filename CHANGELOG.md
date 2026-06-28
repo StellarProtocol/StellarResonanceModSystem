@@ -6,6 +6,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-06-28
+### Added
+- **`DropdownElement`** — a reusable compact dropdown for a small, fixed set of mutually-exclusive choices.
+  The trigger shows the current option (caption + ▾); clicking it opens a themed floating option list that
+  floats **above the window's scroll clip** (parented to the canvas root, so a dropdown inside a `ScrollElement`
+  is not clipped by its `RectMask2D`). Picking an option calls back with its index; the list dismisses on pick,
+  outside-click (a full-screen invisible blocker), or Escape. Drop it into any window element tree like the
+  other widgets.
+### Changed
+- The Settings → Performance per-plugin **Self-rate** control (Off / Boost / Self-managed) is now a
+  `DropdownElement` instead of a click-to-cycle button.
+
 ## [1.7.1] - 2026-06-28
 ### Fixed
 - **Binary-compatibility regression from 1.7.0.** `SliderElement`'s new `Width` / `HandleSize` were added

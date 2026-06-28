@@ -58,6 +58,17 @@ public sealed record SliderElement(
 public sealed record InputElement(Func<string> Get, Action<string> Submit, float Width = 180f,
     Action<string>? OnChange = null) : HudElement;
 
+/// <summary>Compact dropdown for a small, fixed set of mutually-exclusive choices (e.g. a mode selector) — a
+/// reusable replacement for a click-to-cycle button. The trigger shows the current option (caption + ▾); a
+/// click opens a themed floating option list that floats above the window's scroll clip. Picking an option
+/// calls <paramref name="OnSelect"/> with its index; the list dismisses on pick, outside-click, or Esc.</summary>
+/// <param name="Selected">Current selected index (poll-diffed); out of range → empty caption.</param>
+/// <param name="Options">Option captions in order; the index passed to <paramref name="OnSelect"/> indexes this list.</param>
+/// <param name="OnSelect">Invoked with the picked option's index.</param>
+/// <param name="Width">Fixed trigger width in px; 0 → sized to the current caption like a normal button.</param>
+public sealed record DropdownElement(
+    Func<int> Selected, Func<IReadOnlyList<string>> Options, Action<int> OnSelect, float Width = 0f) : HudElement;
+
 /// <summary>Vertical scroll viewport (fixed <paramref name="Height"/>) wrapping a child subtree + a themed
 /// thin scrollbar.</summary>
 public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudElement;
