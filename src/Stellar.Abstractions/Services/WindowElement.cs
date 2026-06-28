@@ -42,8 +42,14 @@ public sealed record SpacerElement(float Width = 0f, float Height = 0f) : HudEle
 /// <summary>Drag slider over [<paramref name="Min"/>,<paramref name="Max"/>]. <paramref name="Get"/> reflects
 /// external state (poll-diffed); a drag calls <paramref name="Set"/>.</summary>
 public sealed record SliderElement(
-    Func<float> Get, Action<float> Set, float Min = 0f, float Max = 1f, Func<bool>? Enabled = null,
-    float Width = 0f, float HandleSize = 0f) : HudElement;
+    Func<float> Get, Action<float> Set, float Min = 0f, float Max = 1f, Func<bool>? Enabled = null) : HudElement
+{
+    /// <summary>Fixed track width in px; 0 → elastic (the track expands to fill its Row cell).</summary>
+    public float Width { get; init; }
+
+    /// <summary>Handle (knob) size in px; 0 → the theme default handle size.</summary>
+    public float HandleSize { get; init; }
+}
 
 /// <summary>Single-line text field (wraps the proven UGuiTextInput: Enter submits without opening chat,
 /// Esc/cursor escape). <paramref name="Get"/> seeds the text; Enter/blur calls <paramref name="Submit"/>.
