@@ -18,7 +18,10 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.7.0 adds <b>per-plugin &amp; dynamic update-rate control</b>:
+    /// BepInEx chainloader happy. 1.7.1 is a binary-compatibility hotfix: <c>SliderElement</c>'s
+    /// <c>Width</c>/<c>HandleSize</c> moved off the record primary constructor (added in 1.7.0, which
+    /// broke the old positional ctor) to init-only properties, so plugins compiled against ≤1.6.0
+    /// (e.g. AutoFishing) load again. 1.7.0 adds <b>per-plugin &amp; dynamic update-rate control</b>:
     /// each plugin's <c>IFramework.Update</c> ticks at its own rate (user-configurable in
     /// Settings → Performance), and a plugin may temporarily ramp its own rate via
     /// <c>IFramework.RequestUpdateRate</c> (returns an <c>IUpdateRateScope</c>), gated by a
@@ -36,5 +39,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.7.0";
+    public const string Value = "1.7.1";
 }

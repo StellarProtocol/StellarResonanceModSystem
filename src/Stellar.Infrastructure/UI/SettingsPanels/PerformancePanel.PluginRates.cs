@@ -63,7 +63,7 @@ internal sealed partial class PerformancePanel
                 Width: PluginNameWidth, NoWrap: true),                                    // name (fixed; "Stellar." stripped)
 
             new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
-                0f, PluginStops.Length - 1, HandleSize: PluginSliderHandle),  // elastic track (fills the row) + small knob
+                0f, PluginStops.Length - 1) { HandleSize = PluginSliderHandle },  // elastic track (fills the row) + small knob
 
             // Value readout (one line): the configured rate, or the live ramp rate (accent) while ramping.
             new TextElement(() => PluginRateOrRampLabel(Id()),

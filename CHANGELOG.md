@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-28
+### Fixed
+- **Binary-compatibility regression from 1.7.0.** `SliderElement`'s new `Width` / `HandleSize` were added
+  to the record's **primary constructor**, which changed the generated constructor signature and broke the
+  old positional ctor. Plugins compiled against framework ≤1.6.0 that construct a `SliderElement` (e.g.
+  `Stellar.AutoFishing`) failed to load on 1.7.0 with a `TargetInvocationException` wrapping
+  `MissingMethodException`. `Width` / `HandleSize` are now **init-only properties** (the original primary
+  ctor is restored), so those plugins load again.
+
 ## [1.7.0] - 2026-06-28
 ### Added
 - **Per-plugin & dynamic update rate.** Each plugin's `IFramework.Update` now ticks at its own rate
