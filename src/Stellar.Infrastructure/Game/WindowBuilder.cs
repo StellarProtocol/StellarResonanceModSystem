@@ -297,6 +297,7 @@ internal sealed partial class WindowBuilder
             case ToggleElement tg: BuildToggle(tg, parent, token); break;      // .Widgets.cs
             case SliderElement sl: BuildSlider(sl, parent, token); break;      // .Widgets.cs
             case InputElement inp: BuildInput(inp, parent, token); break;      // .Widgets.cs
+            case DropdownElement dd: BuildDropdown(dd, parent, token); break;  // .Dropdown.cs
             case ScrollElement sc: BuildScroll(sc, parent, token); break;      // .Widgets.cs
             case ColorPickerElement cp: BuildColorPicker(cp, parent, token); break; // .ColorPicker.cs
             case SwatchElement sw: BuildSwatch(sw, parent, token); break;       // .Preview.cs

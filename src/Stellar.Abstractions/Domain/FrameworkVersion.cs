@@ -18,7 +18,10 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.7.1 is a binary-compatibility hotfix: <c>SliderElement</c>'s
+    /// BepInEx chainloader happy. 1.8.0 adds <c>DropdownElement</c> — a reusable compact dropdown (trigger
+    /// caption + ▾ that opens a themed floating option list above the window's scroll clip; dismiss on pick,
+    /// outside-click, or Escape). The Settings → Performance per-plugin <b>Self-rate</b> control now uses it
+    /// in place of the click-to-cycle button. 1.7.1 was a binary-compatibility hotfix: <c>SliderElement</c>'s
     /// <c>Width</c>/<c>HandleSize</c> moved off the record primary constructor (added in 1.7.0, which
     /// broke the old positional ctor) to init-only properties, so plugins compiled against ≤1.6.0
     /// (e.g. AutoFishing) load again. 1.7.0 adds <b>per-plugin &amp; dynamic update-rate control</b>:
@@ -39,5 +42,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.7.1";
+    public const string Value = "1.8.0";
 }
