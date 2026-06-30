@@ -52,10 +52,13 @@ public sealed partial class WindowInteractionTicker
         {
             var cn = ChartNavs[i];
             if (cn.Nav == null || !cn.Nav.gameObject.activeInHierarchy) continue;
+            if (!Contains(cn.Nav, mp)) continue;
+            if (FrontWindowBlocks(mp, FindWindowRoot(cn.Nav))) continue;
             if (Contains(cn.Left, mp)) { _navGrab = NavGrab.Left; return i; }
             if (Contains(cn.Right, mp)) { _navGrab = NavGrab.Right; return i; }
             if (Contains(cn.Body, mp)) { return BeginBodyOrReset(i, cn, mp); }
-            if (Contains(cn.Nav, mp)) { TryNavReset(cn); return -1; }   // bare-strip click → maybe double-click reset
+            TryNavReset(cn);   // bare-strip click → maybe double-click reset
+            return -1;
         }
         _navGrab = NavGrab.None;
         return -1;

@@ -133,28 +133,33 @@ internal sealed partial class WindowBuilder
         var bg = bgGo.AddComponent<Image>(); bg.color = PanelBgColor(); bg.raycastTarget = true;
     }
 
-    // One option row: a left-aligned themed button (accent sprite if it's the current selection). Click runs
-    // onPick (select + close). Static label (popup is transient) → no token binding, so it destroys cleanly.
+    // One option row: SelectableElement style (SwatchBg chip, transparent rest / accent hover / accent-fill for the
+    // active selection). Hover is ticker-driven via _registerHover (same path as BuildSelectable) — the
+    // EventSystem ColorTint path was tried first but doesn't fire reliably here since the ticker bypasses the
+    // EventSystem for all other interactions. bg.color is set after AddComponent<Button> because OnEnable snaps
+    // it to default-white before we can set Transition.None.
     private void BuildDropdownItem(Transform panel, string text, bool active, float minW, Action onPick)
     {
         var go = UGuiPrimitives.NewChild("DropdownItem", panel);
-        var img = go.AddComponent<Image>();
-        img.sprite = active ? _assets.ButtonAccentBg : NormalButtonSprite(_assets.ButtonStyle);
-        img.type = Image.Type.Sliced; img.raycastTarget = true;
-        var btn = go.AddComponent<Button>(); btn.targetGraphic = img;
-
-        var lg = go.AddComponent<HorizontalLayoutGroup>();
-        lg.padding = new RectOffset(9, 9, 3, 3); lg.childAlignment = TextAnchor.MiddleLeft;
-        lg.childControlWidth = true; lg.childControlHeight = true;
-        lg.childForceExpandWidth = true; lg.childForceExpandHeight = false;
-        var le = go.AddComponent<LayoutElement>(); le.minHeight = Scaled(11) + 12f; le.minWidth = minW;
-
+        var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = 1f; le.minWidth = minW;
+        var bg = go.AddComponent<Image>();
+        if (_assets.SwatchBg != null) { bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; }
+        bg.raycastTarget = true;
+        var btn = go.AddComponent<Button>(); btn.targetGraphic = bg; btn.transition = Selectable.Transition.None;
+        var rest = active ? SelOn() : SelRest();
+        bg.color = rest;   // override the white that Button.OnEnable snapped to before we set Transition.None
+        btn.onClick.AddListener((UnityAction)(() => onPick()));
+        _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { if (bg != null) bg.color = on ? SelHover() : rest; });
+        var vlg = go.AddComponent<VerticalLayoutGroup>();
+        vlg.padding = new RectOffset(6, 6, 4, 4); vlg.spacing = 0f;
+        vlg.childControlWidth = true; vlg.childControlHeight = true;
+        vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
+        vlg.childAlignment = TextAnchor.UpperLeft;
+        go.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         var labelGo = UGuiPrimitives.NewChild("Label", go.transform);
         var label = labelGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(label, Scaled(11), TextAnchor.MiddleLeft, bold: false);
         label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText; label.text = text;
-
-        btn.onClick.AddListener((UnityAction)(() => onPick()));
     }
 
     // Place the panel's top-left just under the trigger (open upward if it would overflow the screen bottom),

@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -37,6 +37,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     private bool _fontRebuildHooked;
     private Action<Font>? _onFontRebuilt;   // cached delegate so subscribe/unsubscribe match (IL2CPP event)
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
+    private int _zseq;    // monotonic mount counter — drives ZSeq (stable tiebreak within same ZFront tier)
+    private int _zfront;  // monotonic BringToFront counter — drives ZFront (overrides ZCat/ZSeq when non-zero)
 
     // The shared OS dynamic font repacks its glyph atlas when a text-heavy panel requests many glyphs; that
     // strands earlier/hidden Text with stale UVs (garbled glyphs). Refresh every window's text on rebuild.
@@ -79,6 +81,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer
         _builder = null;
         _ticker = null;
         _tokens.Clear();   // canvas + all window GOs gone; WindowService self-heal re-mounts (re-adds tokens)
+        _zseq = 0;
+        _zfront = 0;
     }
 
     public bool IsCanvasAvailable() => EnsureCanvas();
@@ -104,7 +108,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             token.ZOrder = reg.Spec.ZOrder;
             token.ZCat = (int)reg.Spec.Category;
             token.ZPopup = reg.Spec.DismissOnOutsideClick;
-            token.ZId = reg.Spec.Id;
+            token.ZSeq = _zseq++;
             ReorderWindows();
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
             return token;
@@ -115,8 +119,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer
     private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
     private readonly System.Collections.Generic.List<WindowToken> _zsort = new();
 
-    // Re-assign sibling indices so draw order follows (ZOrder, Category, Id) — deterministic, independent of mount
-    // order. Called after every mount (mounts are infrequent). Lower key = drawn first = behind; popups on top.
+    // Re-assign sibling indices so draw order follows: popups → ZOrder → ZFront (explicit front, beats category)
+    // → ZCat → ZSeq. ZFront=0 means never explicitly fronted; non-zero overrides ZCat so BringToFront works
+    // cross-category (e.g. an HUD window can surface above a Tools window that normally wins on ZCat).
     private void ReorderWindows()
     {
         _zsort.Clear();
@@ -126,13 +131,21 @@ internal sealed partial class WindowRenderer : IWindowRenderer
             var pa = a.ZPopup ? PopupOrder : a.ZOrder;
             var pb = b.ZPopup ? PopupOrder : b.ZOrder;
             if (pa != pb) return pa - pb;
+            if (a.ZFront != b.ZFront) return a.ZFront - b.ZFront;   // explicit front overrides category
             if (a.ZCat != b.ZCat) return a.ZCat - b.ZCat;
-            return string.CompareOrdinal(a.ZId, b.ZId);
+            return a.ZSeq - b.ZSeq;
         });
         for (var i = 0; i < _zsort.Count; i++) _zsort[i].Rect.SetSiblingIndex(i);
     }
 
     public bool IsAlive(object? token) => token is WindowToken t && t.Root != null;
+
+    public void BringToFront(object? token)
+    {
+        if (token is not WindowToken t) return;
+        t.ZFront = ++_zfront;
+        ReorderWindows();
+    }
 
     public void ApplyValues(object? token, WindowRegistration reg, bool hide)
     {

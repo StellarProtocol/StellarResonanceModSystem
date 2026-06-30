@@ -14,6 +14,7 @@ internal sealed partial class WindowService : IWindowHost
 {
     private const float ApplyInterval = 0.1f;
     private readonly IWindowRenderer _renderer;
+    private readonly IWindowOrder? _order;
     private readonly IPluginLog _log;
     private readonly IGameMenuState _menuState;
     private readonly IClientState _clientState;
@@ -21,7 +22,7 @@ internal sealed partial class WindowService : IWindowHost
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, IGameMenuState menuState, IClientState clientState)
-    { _renderer = renderer; _log = log; _menuState = menuState; _clientState = clientState; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _menuState = menuState; _clientState = clientState; }
 
     public IWindowControl Register(WindowRegistration reg)
     {
@@ -100,6 +101,7 @@ internal sealed partial class WindowService : IWindowHost
             if (!_renderer.IsCanvasAvailable()) { e.Token = null; return; }
             e.Token = SafeMount(e);
             if (e.Token is null) return;
+            if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
             ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout
             SafeApply(e);
             e.Dirty = false; return;
@@ -139,6 +141,7 @@ internal sealed partial class WindowService : IWindowHost
         public WindowRegistration Reg { get; }
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
+        public bool BringToFrontPending;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
         public bool IsShown => Token != null && Visible;
@@ -149,6 +152,11 @@ internal sealed partial class WindowService : IWindowHost
         public void SetVisiblePersist(bool visible) => Owner.SetVisiblePersist(Reg.Spec.Id, visible);
         public void Remove() => Removed = true;
 
+        public void BringToFront()
+        {
+            if (Token != null) Owner._order?.BringToFront(Token);
+            else BringToFrontPending = true;   // window not yet mounted — apply on next mount
+        }
         public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Reg.Spec.DefaultRect;
         public void SetRect(WindowRect rect)
         {
@@ -164,5 +172,5 @@ internal sealed partial class WindowService : IWindowHost
     }
     private sealed class NoOpHandle : IWindowControl
     { public bool IsShown => false; public void MarkDirty(){} public void SetVisible(bool v){} public void SetVisiblePersist(bool v){} public void Remove(){}
-      public WindowRect Rect => default; public void SetRect(WindowRect rect){} }
+      public WindowRect Rect => default; public void SetRect(WindowRect rect){} public void BringToFront(){} }
 }
