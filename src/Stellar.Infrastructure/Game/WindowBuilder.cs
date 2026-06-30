@@ -141,9 +141,10 @@ internal sealed partial class WindowBuilder
         public bool Resizable;   // window's root is fixed-size (grip-resizable) rather than content-height-fit
         internal bool EditModeInteractive;   // window's controls stay clickable during layout-edit mode (toolbar only)
         internal int ZOrder;     // plugin-set explicit draw order (higher = on top); primary stacking key
-        internal int ZCat;       // WindowCategory as int (HUD=0<Tools=1<Debug=2) — tiebreak when ZOrder ties
+        internal int ZCat;       // WindowCategory as int (HUD=0<Tools=1<Debug=2) — tiebreak when no explicit front
         internal bool ZPopup;    // click-away popup → always stacked above every Category
-        internal string ZId = "";   // window id — final stable tiebreak
+        internal int ZSeq;       // mount sequence — final tiebreak within same ZFront tier
+        internal int ZFront;     // BringToFront counter — non-zero overrides ZCat/ZSeq; higher = more recently fronted
         private bool _laidOut;   // first structural layout done? (mount = immediate; later per-tick = deferred)
 
         /// <summary>Re-arm the immediate first-layout path. Called when a window is re-shown after being hidden so
