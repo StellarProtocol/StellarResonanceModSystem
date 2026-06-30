@@ -56,7 +56,11 @@ internal sealed partial class PandaDungeonProbe
         if (!DungeonSyncReader.TryRead(payload, out var result))
             return;
 
-        _sink.SetCurrentRun(result.SceneUuid);
+        // scene_uuid <= 1 is the open-world/lobby sentinel — don't let it clobber a
+        // real dungeon instance id (observed: a spurious scene_uuid=1 sync arrives
+        // mid/post-run and would overwrite the actual run id otherwise).
+        if (result.SceneUuid > 1)
+            _sink.SetCurrentRun(result.SceneUuid);
         if (result.HasSettlement)
             _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);
 
