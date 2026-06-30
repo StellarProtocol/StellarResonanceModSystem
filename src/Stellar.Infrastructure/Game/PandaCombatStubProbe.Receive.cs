@@ -102,15 +102,8 @@ internal sealed partial class PandaCombatStubProbe
         // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
         _sink.ResetEntities();
 
-        // Run id (PENDING): the server-assigned per-instance scene uuid (AttrSceneUuid=342)
-        // rides on EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone
-        // in the run, identical across the run). BUT every enter-scene fires here — dungeon AND
-        // town — so we only LATCH it as pending. The dungeon probe promotes it to the live run
-        // id on a SyncDungeonData packet (dungeon-only), so the town scene the player returns to
-        // after a clear (but before the plugin uploads) can't clobber the dungeon run id.
         DiagEnterSceneStructure(span);
-        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
-            _dungeonSink.SetPendingScene(sceneUuid);
+        LatchDungeonRunId(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;
@@ -136,6 +129,26 @@ internal sealed partial class PandaCombatStubProbe
                 CaptureEntityDetail(eid, attr);
             }
         }
+    }
+
+    // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
+    // EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone in the
+    // run, identical across the run). Every enter-scene fires here — dungeon AND town —
+    // so we MAGNITUDE-GATE the latch: dungeon-instance uuids are server snowflakes far
+    // above the floor, while town/home/open-world scene ids are small persistent values
+    // below it. Only a dungeon enter-scene reaches SetCurrentRun, so the town the player
+    // returns to after a clear (before the plugin uploads) can't clobber the run id; the
+    // last dungeon id persists until the next dungeon or logout.
+    //
+    // HEURISTIC: this is a magnitude gate, not a classification. The principled
+    // alternative — classify the scene as a dungeon via AttrSceneBasicId (341) against the
+    // game-data scene/dungeon tables — can replace this if a non-dungeon scene ever exceeds
+    // the floor, or a real dungeon instance ever falls below it.
+    private void LatchDungeonRunId(ReadOnlySpan<byte> span)
+    {
+        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid)
+            && sceneUuid > DungeonInstanceUuidFloor)
+            _dungeonSink.SetCurrentRun(sceneUuid);
     }
 
     private void OnNearDelta(ReadOnlySpan<byte> span)

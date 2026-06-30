@@ -47,6 +47,22 @@ internal sealed partial class PandaCombatStubProbe
     private int _damageLogCount;
     private const int DamageLogCap = 5;
 
+    /// <summary>
+    /// Floor that separates dungeon-instance scene uuids from persistent
+    /// town/home/open-world scene ids. Dungeon instances are server snowflakes
+    /// (observed ~1e17–4e17), all far above 2^53; town/home scenes carry small
+    /// ids (e.g. 281509336449024 ≈ 2.8e14, below 2^53). The enter-scene latch
+    /// gates on this so only a dungeon enter-scene promotes the run id.
+    ///
+    /// <para>
+    /// HEURISTIC, not a classification: if a non-dungeon scene ever exceeds this
+    /// floor (or a dungeon falls below it), replace the gate with a real scene
+    /// classification via <c>AttrSceneBasicId</c> (341) + the game-data scene/
+    /// dungeon tables.
+    /// </para>
+    /// </summary>
+    private const long DungeonInstanceUuidFloor = 1L << 53; // 9007199254740992
+
     public PandaCombatStubProbe(ICombatEventSink sink, IDungeonStateSink dungeonSink, IPluginLog log)
     {
         _sink        = sink        ?? throw new ArgumentNullException(nameof(sink));

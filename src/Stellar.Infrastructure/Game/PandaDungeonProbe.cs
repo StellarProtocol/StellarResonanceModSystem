@@ -44,21 +44,21 @@ internal sealed partial class PandaDungeonProbe
         => dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
 
     /// <summary>
-    /// Clear the active run id + settlement. Wired to leave-scene / logout so a
-    /// stale run id doesn't linger between dungeons.
+    /// Clear the active run id + settlement. Wired to logout so a stale run id
+    /// doesn't linger between sessions. NOT wired to leave-scene — the run id is
+    /// deliberately held through the return-to-town transition so the upload
+    /// plugin can archive against the dungeon id after the player has left.
     /// </summary>
     public void OnLeaveOrLogout() => _sink.Reset();
 
     // Observer callback: every WorldNtf-uuid packet, any method id. Structural
-    // match → update state. Non-dungeon methods short-circuit in the reader.
+    // match → update settlement. Non-dungeon methods short-circuit in the reader.
     //
-    // SyncDungeonData (method 23) flows ONLY while inside a dungeon. We exploit
-    // that to CONFIRM the dungeon run: at this moment the pending enter-scene id
-    // latched by PandaCombatStubProbe IS the dungeon's per-instance scene uuid
-    // (AttrSceneUuid=342), so promoting pending → CurrentRunId here pins the run
-    // key to the dungeon. The town scene the player returns to after a clear also
-    // sets pending, but NO method-23 follows in town, so CurrentRunId stays the
-    // dungeon id until the next dungeon's method-23. Confirm is idempotent.
+    // This probe NO LONGER touches the run id. SyncDungeonData (method 23) was
+    // assumed to fire only inside a dungeon, but in-game it ALSO fires in town —
+    // so a town method-23 would promote the town scene as the run id. The run id
+    // is now latched directly (and magnitude-gated to dungeon instances) by
+    // PandaCombatStubProbe.OnEnterScene; this probe only reads the settlement.
     //
     // We deliberately do NOT read scene_uuid from this payload: DungeonSyncData's
     // field 1 arrives through the game's dirty-mask container encoding and the
@@ -69,9 +69,6 @@ internal sealed partial class PandaDungeonProbe
     {
         if (!DungeonSyncReader.TryRead(payload, out var result))
             return;
-
-        // SyncDungeonData only fires in a dungeon → the pending scene is a dungeon.
-        _sink.ConfirmDungeonRun();
 
         if (result.HasSettlement)
             _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);

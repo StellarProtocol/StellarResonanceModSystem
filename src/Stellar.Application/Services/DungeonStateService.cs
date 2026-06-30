@@ -7,21 +7,16 @@ namespace Stellar.Application.Services;
 
 /// <summary>
 /// Implementation of <see cref="IDungeonState"/> (read side) and
-/// <see cref="IDungeonStateSink"/> (write side). The Infrastructure dungeon
-/// probe pushes the decoded <c>scene_uuid</c> + settlement on the network
-/// receive thread; plugins read <see cref="CurrentRunId"/> / <see cref="LastSettlement"/>
-/// on the main thread. State is published via volatile/interlocked so reads are
-/// lock-free and never tear.
+/// <see cref="IDungeonStateSink"/> (write side). The Infrastructure combat probe
+/// pushes the decoded dungeon <c>scene_uuid</c> on enter-scene (magnitude-gated
+/// to dungeon instances), and the dungeon probe pushes the settlement — both on
+/// the network receive thread; plugins read <see cref="CurrentRunId"/> /
+/// <see cref="LastSettlement"/> on the main thread. State is published via
+/// volatile/interlocked so reads are lock-free and never tear.
 /// </summary>
 internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 {
     private long _currentRunId;
-
-    // The most recent enter-scene uuid, latched but NOT yet promoted to the live
-    // run id. Every enter-scene (dungeon or town) overwrites it; only a dungeon-only
-    // SyncDungeonData packet promotes it via ConfirmDungeonRun. This keeps a clear →
-    // return-to-town transition from clobbering the dungeon run id before upload.
-    private long _pendingSceneId;
 
     // Settlement is a multi-field struct, so it can't be published with a single
     // volatile/interlocked write without tearing. Guard it with a small lock —
@@ -37,25 +32,12 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         get { lock (_settlementLock) return _lastSettlement; }
     }
 
-    public void SetPendingScene(long sceneUuid)
+    public void SetCurrentRun(long sceneUuid)
     {
-        // Latch only — never touches CurrentRunId. A town the player returns to
-        // updates this but stays unpromoted (no SyncDungeonData follows in town).
-        Interlocked.Exchange(ref _pendingSceneId, sceneUuid);
-    }
-
-    public void ConfirmDungeonRun()
-    {
-        long pending = Interlocked.Read(ref _pendingSceneId);
-        // Guard: ignore the uninitialised case. Only a real (non-zero) pending
-        // scene gets promoted.
-        if (pending <= 0)
-            return;
-
-        long previous = Interlocked.Exchange(ref _currentRunId, pending);
+        long previous = Interlocked.Exchange(ref _currentRunId, sceneUuid);
         // A new run id means the prior run's settlement no longer applies.
-        // Re-confirming the same dungeon (repeat SyncDungeonData) is idempotent.
-        if (previous != pending)
+        // Re-entering the same dungeon (same uuid) is idempotent — keep settlement.
+        if (previous != sceneUuid)
             lock (_settlementLock) _lastSettlement = null;
     }
 
@@ -68,7 +50,6 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public void Reset()
     {
         Interlocked.Exchange(ref _currentRunId, 0);
-        Interlocked.Exchange(ref _pendingSceneId, 0);
         lock (_settlementLock) _lastSettlement = null;
     }
 }
