@@ -101,7 +101,11 @@ public sealed partial class BootstrapPlugin
             ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin();  _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
             ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
-            ["OnLeaveScene"] = (_, _) => { BeginSceneTransition(); _clientState!.RaiseSceneChanged(null); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.OnLeaveSceneEvent", null); },
+            // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to
+            // town before the plugin archives/uploads the just-finished run, so the latched
+            // run id must survive the dungeon→town transition. It's cleared only on logout
+            // (below) or overwritten when the next dungeon confirms a new id.
+            ["OnLeaveScene"] = (_, _) => { BeginSceneTransition(); _clientState!.RaiseSceneChanged(null); _harmonyBridge!.Publish("Panda.Core.OnLeaveSceneEvent", null); },
         };
 
         foreach (var methodName in GameLifecycleMethods)
