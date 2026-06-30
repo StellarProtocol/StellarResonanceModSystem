@@ -156,6 +156,82 @@ internal sealed partial class PandaCombatStubProbe
         _log.Info($"[EntityDetail] first fashion decode: entity={eid.Value} entries={entries.Count} firstId={entries[0].FashionId}");
     }
 
+    // One-shot ENTER-SCENE STRUCTURE diagnostic. Fires once per scene-enter that
+    // carries a SceneAttrs sub-message, REGARDLESS of STELLAR_DIAGNOSTICS (same
+    // policy as the other boot one-shots — the toggle gates per-event repetition,
+    // not structure discovery). Surfaces the offline-unconfirmable layout so the
+    // user's live run can pin which field is the stable per-run id:
+    //   - top-level EnterScene fields (field# + wire type)
+    //   - EnterSceneInfo.SceneGuid (field 3, string)
+    //   - every EnterSceneInfo.SceneAttrs row: attr id + int64-decoded value
+    //     (AttrSceneUuid=342 is the candidate run id; AttrSceneBasicId=341 is the
+    //     dungeon TEMPLATE — same across runs; compare across runs to confirm)
+    //   - a hex dump of the first 64 payload bytes
+    // To CONFIRM: the AttrSceneUuid value must be IDENTICAL across every
+    // enter-scene log within one dungeon run and DIFFER between separate runs.
+    private bool _firstEnterSceneStructLogged;
+    private const int EnterSceneHexDumpBytes = 64;
+
+    private void DiagEnterSceneStructure(ReadOnlySpan<byte> payload)
+    {
+        if (_firstEnterSceneStructLogged) return;
+        _firstEnterSceneStructLogged = true;
+
+        _log.Info($"[EnterScene][struct] top-level fields: {DescribeTopLevelFields(payload)} " +
+                  $"(len={payload.Length})");
+
+        if (EnterSceneReader.TryReadSceneAttrs(payload, out var sceneAttrs, out var sceneGuid))
+        {
+            _log.Info($"[EnterScene][struct] SceneGuid=\"{sceneGuid ?? "<none>"}\" " +
+                      $"SceneAttrs.uuid={sceneAttrs.Uuid} attrCount={sceneAttrs.Items.Count}");
+            for (int i = 0; i < sceneAttrs.Items.Count; i++)
+            {
+                var attr = sceneAttrs.Items[i];
+                string note = attr.Id switch
+                {
+                    AttrTypeIds.AttrSceneUuid    => " <-- AttrSceneUuid (candidate STABLE run id)",
+                    AttrTypeIds.AttrSceneBasicId => " (AttrSceneBasicId = dungeon TEMPLATE, not a run id)",
+                    AttrTypeIds.AttrSceneName    => " (AttrSceneName)",
+                    AttrTypeIds.AttrSceneLevelId => " (AttrSceneLevelId)",
+                    _ => string.Empty,
+                };
+                _log.Info($"[EnterScene][struct]   sceneAttr id={attr.Id} " +
+                          $"long={attr.DecodedLong} bytes={attr.RawData.Length}{note}");
+            }
+        }
+        else
+        {
+            _log.Info("[EnterScene][struct] SceneAttrs sub-message absent or malformed " +
+                      "(no per-run scene id available from this enter-scene)");
+        }
+
+        _log.Info($"[EnterScene][struct] hex[0..{EnterSceneHexDumpBytes}]={HexDump(payload, EnterSceneHexDumpBytes)}");
+    }
+
+    // Walk the top-level protobuf fields, listing each (field#, wireType) tag
+    // without descending. Defensive — stops at the first malformed tag.
+    private static string DescribeTopLevelFields(ReadOnlySpan<byte> payload)
+    {
+        var sb = new System.Text.StringBuilder();
+        int pos = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) break;
+            if (sb.Length > 0) sb.Append(", ");
+            sb.Append($"f{field}/w{wire}");
+            if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
+        }
+        return sb.Length == 0 ? "<none>" : sb.ToString();
+    }
+
+    private static string HexDump(ReadOnlySpan<byte> payload, int max)
+    {
+        int n = payload.Length < max ? payload.Length : max;
+        var sb = new System.Text.StringBuilder(n * 2);
+        for (int i = 0; i < n; i++) sb.Append(payload[i].ToString("x2"));
+        return sb.ToString();
+    }
+
     /// <summary>
     /// Recover the concrete IL2CPP class FullName for a boxed managed reference
     /// whose declared type is just an interface (e.g.

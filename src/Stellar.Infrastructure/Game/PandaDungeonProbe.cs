@@ -51,16 +51,19 @@ internal sealed partial class PandaDungeonProbe
 
     // Observer callback: every WorldNtf-uuid packet, any method id. Structural
     // match → update state. Non-dungeon methods short-circuit in the reader.
+    //
+    // The run id is NO LONGER sourced here. DungeonSyncData.scene_uuid (field 1)
+    // arrives through the game's dirty-mask container encoding, so the bare-varint
+    // read returns a different value within one run (observed 1771, then 579, then
+    // 1) — unreliable as a stable run key. The run id now comes from the enter-scene
+    // path (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342) in PandaCombatStubProbe.
+    // This probe keeps ONLY the settlement (clear time / master-mode score), which
+    // it reads correctly because the settlement sub-message is a full snapshot.
     private void OnWorldNtf(uint methodId, byte[] payload)
     {
         if (!DungeonSyncReader.TryRead(payload, out var result))
             return;
 
-        // scene_uuid <= 1 is the open-world/lobby sentinel — don't let it clobber a
-        // real dungeon instance id (observed: a spurious scene_uuid=1 sync arrives
-        // mid/post-run and would overwrite the actual run id otherwise).
-        if (result.SceneUuid > 1)
-            _sink.SetCurrentRun(result.SceneUuid);
         if (result.HasSettlement)
             _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);
 

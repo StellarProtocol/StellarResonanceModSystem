@@ -18,9 +18,10 @@ namespace Stellar.Abstractions.Services;
 public interface IDungeonState
 {
     /// <summary>
-    /// The unique id of the dungeon run currently in progress
-    /// (<c>DungeonSyncData.scene_uuid</c>). 0 when not in a dungeon / between
-    /// runs. Use this as the run key (e.g. <c>level_uuid</c> for log uploads).
+    /// The unique id of the dungeon run currently in progress — the
+    /// server-assigned per-instance scene uuid, stable across the whole run and
+    /// shared by every client in it. 0 when not in a dungeon / between runs. Use
+    /// this as the run key (e.g. <c>level_uuid</c> for log uploads).
     /// </summary>
     long CurrentRunId { get; }
 

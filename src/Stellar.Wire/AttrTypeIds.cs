@@ -15,6 +15,10 @@ public static class AttrTypeIds
     public const int AttrEquipData       = 200;   // repeated EquipNine (gear) — decoded by AttrEquipDataReader
     public const int AttrFashionData     = 201;   // FashionData{ repeated FashionInfo } (worn cosmetics + dye colours) — AttrFashionDataReader
     public const int AttrProfessionId    = 220;   // entity's profession/class id
+    public const int AttrSceneName       = 340;   // scene-level attr (EnterSceneInfo.SceneAttrs): scene display name (string)
+    public const int AttrSceneBasicId    = 341;   // scene-level attr: scene TEMPLATE id (same across runs of one dungeon) — NOT a run id
+    public const int AttrSceneUuid       = 342;   // scene-level attr: server-assigned per-INSTANCE scene uuid (int64) — the stable per-run id shared by everyone in the run
+    public const int AttrSceneLevelId    = 345;   // scene-level attr: level/dungeon level id
     public const int AttrFightPoint      = 10030;  // ability/combat score ("Ability Score" in ZDPS); present per-entity in SyncNearEntities for EntChar
     public const int AttrSeasonLevel     = 10070;  // season/battle-pass level
     public const int AttrHp              = 11310;

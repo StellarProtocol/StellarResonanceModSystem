@@ -28,7 +28,11 @@ public sealed partial class BootstrapPlugin
         // dead end for combat data. The stub probe keeps its first-seen
         // diagnostic logging to surface unwired method IDs (e.g. 12293 =
         // legacy FullSkillEnd; 72/73 = unknown).
-        _combatStubProbe = new PandaCombatStubProbe(_combatService!, log);
+        // Combat probe also publishes the dungeon run id: the enter-scene payload
+        // (method 3) it already parses carries the stable per-instance scene uuid
+        // (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342), which it pushes into the
+        // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
+        _combatStubProbe = new PandaCombatStubProbe(_combatService!, _dungeonStateService!, log);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six
