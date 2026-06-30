@@ -169,13 +169,17 @@ internal sealed partial class PandaCombatStubProbe
     //   - a hex dump of the first 64 payload bytes
     // To CONFIRM: the AttrSceneUuid value must be IDENTICAL across every
     // enter-scene log within one dungeon run and DIFFER between separate runs.
-    private bool _firstEnterSceneStructLogged;
+    private int _enterSceneStructLogCount;
+    private const int EnterSceneStructLogMax = 30;
     private const int EnterSceneHexDumpBytes = 64;
 
     private void DiagEnterSceneStructure(ReadOnlySpan<byte> payload)
     {
-        if (_firstEnterSceneStructLogged) return;
-        _firstEnterSceneStructLogged = true;
+        // Log EVERY enter-scene (capped) so a live run shows the town->dungeon
+        // sequence of AttrSceneUuid values — needed to confirm whether attr 342 is
+        // per-instance (changes per dungeon entry) or a persistent/home scene id.
+        if (_enterSceneStructLogCount >= EnterSceneStructLogMax) return;
+        _enterSceneStructLogCount++;
 
         _log.Info($"[EnterScene][struct] top-level fields: {DescribeTopLevelFields(payload)} " +
                   $"(len={payload.Length})");
