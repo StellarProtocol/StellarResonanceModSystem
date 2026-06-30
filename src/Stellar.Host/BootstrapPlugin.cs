@@ -64,6 +64,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     // register buttons); read side (IProfileCardActionSource) → the native-card injector.
     private ProfileCardActionRegistry? _profileCardActions;
     private PartyService? _partyService;
+    private DungeonStateService? _dungeonStateService;   // WorldNtf SyncDungeonData → IDungeonState
     private HarmonyEventBridge? _harmonyBridge;
     private MessagePipeContainerBridge? _messagePipeBridge;
 
@@ -94,6 +95,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaSocialDataProbe? _socialDataProbe;
     private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
+    private PandaDungeonProbe? _dungeonProbe;
     private WorldNtfLuaStubDispatcher? _worldNtfLuaDispatcher;
     private GrpcTeamNtfStubDispatcher? _grpcTeamNtfDispatcher;
     // Injects the registered profile-card action buttons (IProfileCardActionSource) into the game's

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Stellar.Abstractions.Services;
@@ -32,6 +33,14 @@ internal sealed partial class WorldNtfStubDispatcher
     private static WorldNtfStubDispatcher? Instance;
 
     private readonly StubRouter _router = new();
+
+    // WorldNtf catch-all observers — fire for EVERY WorldNtf-uuid packet
+    // regardless of method id. Unlike the method-keyed router these are for
+    // consumers that detect their packet STRUCTURALLY because the method id is
+    // not known offline (e.g. the dungeon probe matching SyncDungeonData). Kept
+    // separate so the common method-keyed path stays a single dictionary lookup.
+    private readonly List<Action<uint, byte[]>> _observers = new();
+
     private readonly IPluginLog _log;
     private Harmony? _harmony;
     private bool _patched;
@@ -47,6 +56,18 @@ internal sealed partial class WorldNtfStubDispatcher
     /// </summary>
     public void Register(uint methodId, Action<uint, byte[]> handler) =>
         _router.Register(methodId, handler);
+
+    /// <summary>
+    /// Registers <paramref name="observer"/> to receive EVERY WorldNtf-uuid
+    /// packet as <c>(methodId, payload)</c>, regardless of method id. For
+    /// consumers that recognise their packet structurally rather than by a known
+    /// method id. Call before <see cref="Install"/>. Observers run after the
+    /// method-keyed router on each matching packet.
+    /// </summary>
+    public void RegisterObserver(Action<uint, byte[]> observer)
+    {
+        if (observer is not null) _observers.Add(observer);
+    }
 
     /// <summary>
     /// Installs the single owner postfix. Idempotent — subsequent calls no-op.
@@ -124,11 +145,20 @@ internal sealed partial class WorldNtfStubDispatcher
         if (stubCall is null) return;
 
         if (!TryReadHeader(stubCall, out var uuid, out var methodId)) return;
-        if (uuid != BPSRServiceIds.WorldNtf || !_router.Subscribes(methodId)) return;
+        if (uuid != BPSRServiceIds.WorldNtf) return;
+
+        // Cheap-reject: only pay the payload extraction when a method-keyed
+        // handler is subscribed OR at least one WorldNtf catch-all observer is
+        // registered. Foreign methods with neither still cost only the header read.
+        bool routed = _router.Subscribes(methodId);
+        if (!routed && _observers.Count == 0) return;
 
         var bytes = ExtractPayload(stubCall);
         if (bytes is null) return;
 
-        _router.Route(methodId, bytes);
+        if (routed) _router.Route(methodId, bytes);
+
+        for (int i = 0; i < _observers.Count; i++)
+            _observers[i](methodId, bytes);
     }
 }

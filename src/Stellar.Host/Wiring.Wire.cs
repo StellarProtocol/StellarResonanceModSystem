@@ -44,18 +44,26 @@ public sealed partial class BootstrapPlugin
         _partyStubProbe.Start(_grpcTeamNtfDispatcher.IsInstalled);
 
         InstallSocialDataProbe(log);
-
-        // Combat + inventory both dispatch off Zservice.WorldNtfStub.OnCallStub.
-        // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe
-        // registers its method IDs before Install() so the router has all handlers
-        // in place before any packets arrive. Register-before-install ordering is
-        // required — do NOT move Install() above either RegisterWith() call.
-        _worldNtfDispatcher = new WorldNtfStubDispatcher(log);
-        _combatStubProbe.RegisterWith(_worldNtfDispatcher);
-        _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
-        _worldNtfDispatcher.Install(PluginGuid);
-
+        InstallWorldNtfDispatcher(log);
         InstallReadyCheckProbe(log);
+    }
+
+    // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.
+    // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe registers
+    // before Install() so the router/observers are fully populated before any packets
+    // arrive. Register-before-install ordering is required — do NOT move Install()
+    // above any RegisterWith() call.
+    private void InstallWorldNtfDispatcher(BepInExPluginLog log)
+    {
+        _worldNtfDispatcher = new WorldNtfStubDispatcher(log);
+        _combatStubProbe!.RegisterWith(_worldNtfDispatcher);
+        _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
+        // Dungeon: SyncDungeonData's WorldNtf method id is not known offline, so the
+        // probe registers as a WorldNtf catch-all observer and matches structurally
+        // (scene_uuid present).
+        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, log);
+        _dungeonProbe.RegisterWith(_worldNtfDispatcher);
+        _worldNtfDispatcher.Install(PluginGuid);
     }
 
     // Ready-check (WorldNtf 70/71) is Lua-only — it flows through ZLuaStub, NOT the C#
@@ -87,9 +95,9 @@ public sealed partial class BootstrapPlugin
             // Capture the Game instance here (NOT from a per-frame Update hook) for the resolver probe.
             ["Init"]         = (inst, _) => { _gameInstance ??= inst; log.Info("[boot] *** Game.Init complete ***"); },
             ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin();  _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
-            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
+            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
-            ["OnLeaveScene"] = (_, _) => { BeginSceneTransition(); _clientState!.RaiseSceneChanged(null); _harmonyBridge!.Publish("Panda.Core.OnLeaveSceneEvent", null); },
+            ["OnLeaveScene"] = (_, _) => { BeginSceneTransition(); _clientState!.RaiseSceneChanged(null); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.OnLeaveSceneEvent", null); },
         };
 
         foreach (var methodName in GameLifecycleMethods)

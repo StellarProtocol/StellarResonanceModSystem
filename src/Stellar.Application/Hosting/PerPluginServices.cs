@@ -63,4 +63,5 @@ internal sealed class PerPluginServices : IPluginServices
     public IProfileCardActions ProfileCardActions => _shared.ProfileCardActions;
     public IPluginExchange Exchange => _shared.Exchange;
     public INoticeTips NoticeTips => _shared.NoticeTips;
+    public IDungeonState Dungeon => _shared.Dungeon;
 }

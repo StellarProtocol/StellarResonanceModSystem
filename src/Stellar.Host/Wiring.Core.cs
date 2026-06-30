@@ -36,6 +36,9 @@ public sealed partial class BootstrapPlugin
         _profileCardActions = new ProfileCardActionRegistry();
         _combatService = new CombatService(log, new CombatEntityTracker(), _socialDataCache);
         _partyService = new PartyService(_combatService, _clientState, log);
+        // Dungeon run state (WorldNtf SyncDungeonData → IDungeonState). Read+write
+        // sides on one service; the Infrastructure probe (Wiring.Wire.cs) pushes via IDungeonStateSink.
+        _dungeonStateService = new DungeonStateService();
         // B-01: frame-rate uncap / vSync reconciler. Diff-state + Unity writes live in Infrastructure;
         // the IFrameRateLimiter port keeps QualitySettings out of Host's tick body.
         _frameLimiter = new Stellar.Infrastructure.Unity.FrameRateReconciler(log);
