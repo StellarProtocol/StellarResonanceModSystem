@@ -102,14 +102,15 @@ internal sealed partial class PandaCombatStubProbe
         // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
         _sink.ResetEntities();
 
-        // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
-        // EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone in the run,
-        // identical across the run) — unlike DungeonSyncData.scene_uuid which arrives through a
-        // dirty-mask container and is unreliable as a bare varint. The dungeon probe no longer
-        // sets the run id; it owns only the settlement now.
+        // Run id (PENDING): the server-assigned per-instance scene uuid (AttrSceneUuid=342)
+        // rides on EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone
+        // in the run, identical across the run). BUT every enter-scene fires here — dungeon AND
+        // town — so we only LATCH it as pending. The dungeon probe promotes it to the live run
+        // id on a SyncDungeonData packet (dungeon-only), so the town scene the player returns to
+        // after a clear (but before the plugin uploads) can't clobber the dungeon run id.
         DiagEnterSceneStructure(span);
         if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
-            _dungeonSink.SetCurrentRun(sceneUuid);
+            _dungeonSink.SetPendingScene(sceneUuid);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;

@@ -52,17 +52,26 @@ internal sealed partial class PandaDungeonProbe
     // Observer callback: every WorldNtf-uuid packet, any method id. Structural
     // match → update state. Non-dungeon methods short-circuit in the reader.
     //
-    // The run id is NO LONGER sourced here. DungeonSyncData.scene_uuid (field 1)
-    // arrives through the game's dirty-mask container encoding, so the bare-varint
-    // read returns a different value within one run (observed 1771, then 579, then
-    // 1) — unreliable as a stable run key. The run id now comes from the enter-scene
-    // path (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342) in PandaCombatStubProbe.
-    // This probe keeps ONLY the settlement (clear time / master-mode score), which
-    // it reads correctly because the settlement sub-message is a full snapshot.
+    // SyncDungeonData (method 23) flows ONLY while inside a dungeon. We exploit
+    // that to CONFIRM the dungeon run: at this moment the pending enter-scene id
+    // latched by PandaCombatStubProbe IS the dungeon's per-instance scene uuid
+    // (AttrSceneUuid=342), so promoting pending → CurrentRunId here pins the run
+    // key to the dungeon. The town scene the player returns to after a clear also
+    // sets pending, but NO method-23 follows in town, so CurrentRunId stays the
+    // dungeon id until the next dungeon's method-23. Confirm is idempotent.
+    //
+    // We deliberately do NOT read scene_uuid from this payload: DungeonSyncData's
+    // field 1 arrives through the game's dirty-mask container encoding and the
+    // bare-varint read returns a shifting value within one run (1771, 579, 1) —
+    // unreliable as a stable run key. The settlement sub-message IS a full
+    // snapshot, so the clear time / master-mode score read here are correct.
     private void OnWorldNtf(uint methodId, byte[] payload)
     {
         if (!DungeonSyncReader.TryRead(payload, out var result))
             return;
+
+        // SyncDungeonData only fires in a dungeon → the pending scene is a dungeon.
+        _sink.ConfirmDungeonRun();
 
         if (result.HasSettlement)
             _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);
