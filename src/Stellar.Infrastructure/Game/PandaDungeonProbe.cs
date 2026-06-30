@@ -36,11 +36,12 @@ internal sealed partial class PandaDungeonProbe
     }
 
     /// <summary>
-    /// Subscribe to every WorldNtf packet on the shared dispatcher. Must be
-    /// called before <see cref="WorldNtfStubDispatcher.Install"/>.
+    /// Register for the SyncDungeonData method (id 23, confirmed from the game's
+    /// lua WorldNtf dispatcher). Must be called before
+    /// <see cref="WorldNtfStubDispatcher.Install"/>.
     /// </summary>
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
-        => dispatcher.RegisterObserver(OnWorldNtf);
+        => dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
 
     /// <summary>
     /// Clear the active run id + settlement. Wired to leave-scene / logout so a

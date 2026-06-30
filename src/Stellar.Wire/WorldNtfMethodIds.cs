@@ -12,6 +12,7 @@ public static class WorldNtfMethodIds
     public const uint SyncNearEntities     = 6;
     public const uint SyncContainerData    = 21; // full inventory sync (CharSerialize)
     public const uint SyncContainerDirtyData = 22; // incremental container update
+    public const uint SyncDungeonData      = 23; // DungeonSyncData (scene_uuid + settlement). Confirmed: lua/zservice/world_ntf_gen.lua OnCallStub GetMethodId()==23
     public const uint SyncServerTime       = 43;
     public const uint SyncNearDeltaInfo    = 45;
     public const uint SyncToMeDeltaInfo    = 46;
