@@ -24,11 +24,12 @@ internal sealed class EntityTransformsService : IEntityTransforms
 
     private readonly IGameTypeRegistry _typeRegistry;
 
-    // Cached reflection handles — resolved once, reused on every call.
-    private bool _resolved;
+    // Cached reflection handles — resolved lazily, retried until all are non-null.
+    // Do NOT add a permanent "resolved" bool; the guard is handle-presence so that
+    // a failed attempt (Panda.* not loaded yet) retries on the next tick (I-1).
     private PropertyInfo? _mgrInstanceProperty;  // ZUtil.ZSingleton<ZEntityMgr>.Instance
     private MethodInfo?   _getEntityMethod;      // ZEntityMgr.GetEntity(long uuid) → ZEntity
-    private PropertyInfo? _modelProperty;        // ZEntity.Model → ZModel
+    private PropertyInfo? _modelProperty;        // ZEntity.Model → ZModel (resolved from abstract base, I-2)
 
     // Position accessor — resolved from the live model type on first non-null model.
     private MethodInfo? _getPosition;
@@ -94,36 +95,71 @@ internal sealed class EntityTransformsService : IEntityTransforms
     // Bootstrap
     // -------------------------------------------------------------------------
 
+    // I-1: guard is handle-presence, not a permanent bool, so failed attempts retry
+    // on the next tick (Panda.* hot-update assemblies may not be loaded yet).
     private void EnsureResolved()
     {
-        if (_resolved)
+        if (_mgrInstanceProperty is not null && _getEntityMethod is not null && _modelProperty is not null)
         {
             return;
         }
-        _resolved = true;
         try
         {
-            var mgrType = _typeRegistry.FindType(ManagerTypeName);
-            if (mgrType is null)
-            {
-                return;
-            }
-
-            // Singleton instance: ZUtil.ZSingleton<ZEntityMgr>.Instance
-            _mgrInstanceProperty = FindSingletonInstanceProperty(mgrType);
-
-            // GetEntity(long uuid) — bind by parameter types to pick the right overload.
-            _getEntityMethod = mgrType.GetMethod(
-                "GetEntity",
-                AnyInstance,
-                binder: null,
-                types: new[] { typeof(long) },
-                modifiers: null);
+            TryResolveHandles();
         }
         catch
         {
-            // Leave unresolved — TryGetTransform returns false.
+            // Leave unresolved — TryGetTransform returns false; next tick will retry.
         }
+    }
+
+    // Attempts to resolve all three reflection handles atomically.
+    // Returns without assigning if any prerequisite is absent (hot-update not loaded yet).
+    private void TryResolveHandles()
+    {
+        var mgrType = _typeRegistry.FindType(ManagerTypeName);
+        if (mgrType is null)
+        {
+            return;
+        }
+
+        // I-2: resolve Model from the abstract base type so it works for every
+        // ZEntity subclass, not just the first concrete type encountered.
+        var entityType = _typeRegistry.FindType("Panda.ZGame.ZEntity");
+        if (entityType is null)
+        {
+            return;
+        }
+
+        // Singleton instance: ZUtil.ZSingleton<ZEntityMgr>.Instance
+        var instanceProp = FindSingletonInstanceProperty(mgrType);
+        if (instanceProp is null)
+        {
+            return;
+        }
+
+        // GetEntity(long uuid) — bind by parameter types to pick the right overload.
+        var getEntity = mgrType.GetMethod(
+            "GetEntity",
+            AnyInstance,
+            binder: null,
+            types: new[] { typeof(long) },
+            modifiers: null);
+        if (getEntity is null)
+        {
+            return;
+        }
+
+        var modelProp = entityType.GetProperty("Model", AnyInstance);
+        if (modelProp is null)
+        {
+            return;
+        }
+
+        // All handles resolved — publish atomically so the guard in EnsureResolved stays coherent.
+        _mgrInstanceProperty = instanceProp;
+        _getEntityMethod     = getEntity;
+        _modelProperty       = modelProp;
     }
 
     private static PropertyInfo? FindSingletonInstanceProperty(Type tMgr)
@@ -186,7 +222,8 @@ internal sealed class EntityTransformsService : IEntityTransforms
     {
         try
         {
-            _modelProperty ??= entity.GetType().GetProperty("Model", AnyInstance);
+            // _modelProperty is resolved from the abstract ZEntity base in EnsureResolved (I-2);
+            // it is never initialised here from the concrete instance type.
             return _modelProperty?.GetValue(entity);
         }
         catch
