@@ -11,11 +11,14 @@ namespace Stellar.Infrastructure.Game;
 /// <item>Any child of zuiroot/UILayerDramaBottom is active (NPC talk_main, talk_dialog_window, talk_option_window, …).</item>
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
+/// <item>The loading screen (zuiroot/UILayerSystemTip/loading_window) is active.</item>
 /// </list>
 /// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
 /// created+activated on open and gone when closed, so "any active child" is a robust,
 /// menu-agnostic signal. The three Drama layers cover NPC dialogue and story cutscenes;
-/// talk_* views use UILayerDramaBottom with AudioGameState=Dialogue. Confirmed by Lua
+/// talk_* views use UILayerDramaBottom with AudioGameState=Dialogue. The loading screen
+/// is a targeted path check (not any-child) because UILayerSystemTip also hosts
+/// tips_broadcast and sys_dialog which are active during normal gameplay. Confirmed by Lua
 /// vm_scripts_path.lua UI view config. Menu-state recon: docs/recon/2026-06-02-menu-state.md.
 ///
 /// <para>
@@ -34,8 +37,9 @@ namespace Stellar.Infrastructure.Game;
 internal sealed class PandaMenuStateProbe : IGameMenuState
 {
     private const string RootName = "zuiroot";
-    private const string MainMenuRelPath = "UILayerMain/main_funcs_list_window_pc(Clone)";
-    private const string FuncLayerName = "UILayerFunc";
+    private const string MainMenuRelPath    = "UILayerMain/main_funcs_list_window_pc(Clone)";
+    private const string LoadingRelPath     = "UILayerSystemTip/loading_window(Clone)";  // loading screen; targeted check avoids tips_broadcast false-positives
+    private const string FuncLayerName      = "UILayerFunc";
     private const string DramaBottomLayerName = "UILayerDramaBottom";   // NPC dialogue (talk_main, talk_dialog_window, …)
     private const string DramaVideoLayerName  = "UILayerDramaVideo";    // story cutscene video
     private const string DramaTopLayerName    = "UILayerDramaTop";      // story top overlay
@@ -63,18 +67,19 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
             if (_zuiroot == null) { _open = false; return; }
         }
 
-        _open = MainMenuOpen(_zuiroot)
+        _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
+             || NamedWindowActive(_zuiroot, LoadingRelPath)
              || AnyChildActive(_zuiroot, FuncLayerName)
              || AnyChildActive(_zuiroot, DramaBottomLayerName)
              || AnyChildActive(_zuiroot, DramaVideoLayerName)
              || AnyChildActive(_zuiroot, DramaTopLayerName);
     }
 
-    private static bool MainMenuOpen(Transform root)
+    // Transform.Find walks the relative path only (cheap) and sees inactive objects —
+    // no global scan, no menu-closed miss.
+    private static bool NamedWindowActive(Transform root, string relPath)
     {
-        // Transform.Find walks the named relative path only (cheap) and finds the
-        // window even while inactive — so no global scan and no menu-closed miss.
-        var t = root.Find(MainMenuRelPath);
+        var t = root.Find(relPath);
         return t != null && t.gameObject.activeInHierarchy;
     }
 
