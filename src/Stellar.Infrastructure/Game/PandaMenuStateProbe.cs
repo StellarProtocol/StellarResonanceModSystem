@@ -10,12 +10,14 @@ namespace Stellar.Infrastructure.Game;
 /// IGameMenuState: a full-screen game menu is "open" when any of the following is true:
 /// <list type="bullet">
 /// <item>The Main Menu (zuiroot/UILayerMain/main_funcs_list_window_pc) is active.</item>
+/// <item>The Line Selector panel (zuiroot/UILayerMain/main_line_window) is active.</item>
 /// <item>Any child of zuiroot/UILayerFunc is active (inventory, map, character, gear, skills, …).</item>
 /// <item>Any child of zuiroot/UILayerDramaBottom is active (NPC talk_main, talk_dialog_window, talk_option_window, …).</item>
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
 /// <item>The loading screen (zuiroot/UILayerSystemTip/loading_window) is active.</item>
-/// <item>The dungeon/world-boss match confirm popup (common_matching / world_boss_matching canvas) is active — detected via Resources.FindObjectsOfTypeAll&lt;Canvas&gt;() since it runs on its own canvas, not under zuiroot.</item>
+/// <item>Any child of zuiroot/UILayerFuncPopup is active (dungeon enter confirm: team_enter/team_copy_popup, and similar full-screen popups).</item>
+/// <item>The dungeon/world-boss queue-pop confirm (common_matching / world_boss_matching) is active under zuiroot/UILayerTop.</item>
 /// </list>
 /// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
 /// created+activated on open and gone when closed, so "any active child" is a robust,
@@ -42,13 +44,16 @@ namespace Stellar.Infrastructure.Game;
 internal sealed class PandaMenuStateProbe : IGameMenuState
 {
     private const string RootName = "zuiroot";
+    private const string MainLayerName        = "UILayerMain";
     private const string MainMenuRelPath      = "UILayerMain/main_funcs_list_window_pc(Clone)";
+    private const string LineWindowPrefix     = "main_line_window";     // line selector panel (SwitchLine)
     private const string SystemTipLayerName  = "UILayerSystemTip";
     private const string LoadingWindowPrefix = "loading_window";     // matches "loading_window" and "loading_window(Clone)"
     private const string TopLayerName        = "UILayerTop";
     private const string MatchConfirmPrefix  = "common_matching";    // dungeon queue-pop confirm (accept/reject); IsFullScreen=true
     private const string BossMatchPrefix     = "world_boss_matching"; // world-boss queue confirm; same layer, same pattern
     private const string FuncLayerName        = "UILayerFunc";
+    private const string FuncPopupLayerName   = "UILayerFuncPopup";   // full-screen popups: team_enter (team_copy_popup), …
     private const string DramaBottomLayerName = "UILayerDramaBottom"; // NPC dialogue (talk_main, talk_dialog_window, …)
     private const string DramaVideoLayerName  = "UILayerDramaVideo";  // story cutscene video
     private const string DramaTopLayerName    = "UILayerDramaTop";    // story top overlay
@@ -84,9 +89,11 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
 
         var wasOpen = _open;
         _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
+             || PrefixChildActive(_zuiroot, MainLayerName, LineWindowPrefix)
              || LoadingScreenActive(_zuiroot)
              || MatchConfirmActive(_zuiroot)
              || AnyChildActive(_zuiroot, FuncLayerName)
+             || AnyChildActive(_zuiroot, FuncPopupLayerName)
              || AnyChildActive(_zuiroot, DramaBottomLayerName)
              || AnyChildActive(_zuiroot, DramaVideoLayerName)
              || AnyChildActive(_zuiroot, DramaTopLayerName);
@@ -112,22 +119,10 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private static bool LoadingScreenActive(Transform root)
         => PrefixChildActive(root, SystemTipLayerName, LoadingWindowPrefix);
 
-    // common_matching is Lua-configured on UILayerTop but at runtime it lives on its
-    // own Canvas (not under zuiroot). Use Resources.FindObjectsOfTypeAll<Canvas>() to
-    // find it by name prefix regardless of its position in the hierarchy. Cheap: there
-    // are few Canvas objects in the scene and the check runs at ~10 Hz.
+    // common_matching and world_boss_matching: Lua-configured on UILayerTop, IsFullScreen=true.
     private static bool MatchConfirmActive(Transform root)
-    {
-        if (PrefixChildActive(root, TopLayerName, MatchConfirmPrefix)) return true;
-        if (PrefixChildActive(root, TopLayerName, BossMatchPrefix)) return true;
-        foreach (var canvas in UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Canvas>())
-        {
-            if (!canvas.gameObject.activeInHierarchy) continue;
-            var n = canvas.name;
-            if (n.StartsWith(MatchConfirmPrefix) || n.StartsWith(BossMatchPrefix)) return true;
-        }
-        return false;
-    }
+        => PrefixChildActive(root, TopLayerName, MatchConfirmPrefix)
+        || PrefixChildActive(root, TopLayerName, BossMatchPrefix);
 
     private static void DumpActiveCanvases(Action<string> log)
     {
@@ -136,9 +131,9 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         foreach (var canvas in UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Canvas>())
         {
             if (!canvas.gameObject.activeInHierarchy) continue;
-            var root = canvas.transform.root;
-            if (root.name == RootName) continue;
-            sb.AppendLine($"  canvas='{canvas.name}' root='{root.name}'");
+            var r = canvas.transform.root;
+            if (r.name == RootName) continue;
+            sb.AppendLine($"  canvas='{canvas.name}' root='{r.name}'");
         }
         log(sb.ToString());
     }
