@@ -6,6 +6,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-07-01
+### Fixed
+- **`AutoHideBehindGameMenus` windows now hide behind more full-screen game screens.**
+  `PandaMenuStateProbe` was extended to detect NPC dialogue, loading screens, the dungeon-enter
+  confirm popup, the line-selector panel, and story cutscenes as full-screen menu states. (#29)
+  - The dungeon-enter confirm view instantiates as `team_copy_popup` on `UILayerFuncPopup` (not
+    `common_matching` on `UILayerTop`), so detection now scans `UILayerFuncPopup` (`AnyChildActive`)
+    and checks the `main_line_window` prefix on `UILayerMain`.
+  - Removed the probe's diagnostic-logging infrastructure (`Log`, `DumpZuiroot`, `DumpActiveCanvases`);
+    the layer map is documented in `GameMenuState.md` instead.
+
 ## [1.9.0] - 2026-06-30
 ### Added
 - **`IWindowControl.BringToFront()`** — explicitly raises a window above others via a `ZFront` counter
