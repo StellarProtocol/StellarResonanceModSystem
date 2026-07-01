@@ -12,14 +12,16 @@ namespace Stellar.Infrastructure.Game;
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
 /// <item>The loading screen (zuiroot/UILayerSystemTip/loading_window) is active.</item>
+/// <item>The dungeon/world-boss match confirm popup (zuiroot/UILayerTop/common_matching or world_boss_matching) is active.</item>
 /// </list>
 /// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
 /// created+activated on open and gone when closed, so "any active child" is a robust,
 /// menu-agnostic signal. The three Drama layers cover NPC dialogue and story cutscenes;
 /// talk_* views use UILayerDramaBottom with AudioGameState=Dialogue. The loading screen
-/// is a targeted path check (not any-child) because UILayerSystemTip also hosts
-/// tips_broadcast and sys_dialog which are active during normal gameplay. Confirmed by Lua
-/// vm_scripts_path.lua UI view config. Menu-state recon: docs/recon/2026-06-02-menu-state.md.
+/// and match-confirm popups use targeted prefix scans (not any-child) because their
+/// host layers also contain Permanent views active during normal gameplay
+/// (UILayerSystemTip: tips_broadcast/sys_dialog; UILayerTop: hero_dungeon_key).
+/// Confirmed by Lua vm_scripts_path.lua UI view config. Menu-state recon: docs/recon/2026-06-02-menu-state.md.
 ///
 /// <para>
 /// <b>Performance.</b> The naive form called <c>GameObject.Find</c> twice <i>every
@@ -39,11 +41,14 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private const string RootName = "zuiroot";
     private const string MainMenuRelPath      = "UILayerMain/main_funcs_list_window_pc(Clone)";
     private const string SystemTipLayerName  = "UILayerSystemTip";
-    private const string LoadingWindowPrefix = "loading_window";  // matches "loading_window" and "loading_window(Clone)"
-    private const string FuncLayerName       = "UILayerFunc";
-    private const string DramaBottomLayerName = "UILayerDramaBottom";   // NPC dialogue (talk_main, talk_dialog_window, …)
-    private const string DramaVideoLayerName  = "UILayerDramaVideo";    // story cutscene video
-    private const string DramaTopLayerName    = "UILayerDramaTop";      // story top overlay
+    private const string LoadingWindowPrefix = "loading_window";     // matches "loading_window" and "loading_window(Clone)"
+    private const string TopLayerName        = "UILayerTop";
+    private const string MatchConfirmPrefix  = "common_matching";    // dungeon queue-pop confirm (accept/reject); IsFullScreen=true
+    private const string BossMatchPrefix     = "world_boss_matching"; // world-boss queue confirm; same layer, same pattern
+    private const string FuncLayerName        = "UILayerFunc";
+    private const string DramaBottomLayerName = "UILayerDramaBottom"; // NPC dialogue (talk_main, talk_dialog_window, …)
+    private const string DramaVideoLayerName  = "UILayerDramaVideo";  // story cutscene video
+    private const string DramaTopLayerName    = "UILayerDramaTop";    // story top overlay
 
     // ~10 Hz at 60 fps. Menu open/close detection does not need per-frame latency.
     private const int CheckIntervalTicks = 6;
@@ -70,6 +75,7 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
 
         _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
              || LoadingScreenActive(_zuiroot)
+             || MatchConfirmActive(_zuiroot)
              || AnyChildActive(_zuiroot, FuncLayerName)
              || AnyChildActive(_zuiroot, DramaBottomLayerName)
              || AnyChildActive(_zuiroot, DramaVideoLayerName)
@@ -88,13 +94,24 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     // so we can't use AnyChildActive. Scan by name prefix to match both
     // "loading_window" and "loading_window(Clone)" regardless of Instantiate suffix.
     private static bool LoadingScreenActive(Transform root)
+        => PrefixChildActive(root, SystemTipLayerName, LoadingWindowPrefix);
+
+    // UILayerTop also hosts hero_dungeon_key (Permanent, active during normal play),
+    // so we can't use AnyChildActive. Check only the IsFullScreen match-confirm popups.
+    private static bool MatchConfirmActive(Transform root)
+        => PrefixChildActive(root, TopLayerName, MatchConfirmPrefix)
+        || PrefixChildActive(root, TopLayerName, BossMatchPrefix);
+
+    // Scan children of the named layer for an active one whose name starts with prefix.
+    // Handles both bare names and Unity's "(Clone)" suffix without two separate lookups.
+    private static bool PrefixChildActive(Transform root, string layerName, string prefix)
     {
-        var layer = root.Find(SystemTipLayerName);
+        var layer = root.Find(layerName);
         if (layer == null) return false;
         for (var i = 0; i < layer.childCount; i++)
         {
             var child = layer.GetChild(i);
-            if (child.gameObject.activeInHierarchy && child.name.StartsWith(LoadingWindowPrefix))
+            if (child.gameObject.activeInHierarchy && child.name.StartsWith(prefix))
                 return true;
         }
         return false;
