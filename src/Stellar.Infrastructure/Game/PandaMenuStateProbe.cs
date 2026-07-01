@@ -4,14 +4,19 @@ using UnityEngine;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// IGameMenuState: a full-screen game menu is "open" when either the Main Menu
-/// (zuiroot/UILayerMain/main_funcs_list_window_pc) is active, OR any child of
-/// zuiroot/UILayerFunc is active. UILayerFunc is the game's dedicated layer for
-/// full-screen functional windows (inventory bag_backpack_main_pc, map_main_pc,
-/// character weapon_role_main_pc, gear/skills/talents/…), each created+activated
-/// on open and gone when closed — so "any active UILayerFunc child" is a robust,
-/// menu-agnostic signal that covers them all without enumerating each. Confirmed
-/// by in-world recon 2026-06-02 (docs/recon/2026-06-02-menu-state.md).
+/// IGameMenuState: a full-screen game menu is "open" when any of the following is true:
+/// <list type="bullet">
+/// <item>The Main Menu (zuiroot/UILayerMain/main_funcs_list_window_pc) is active.</item>
+/// <item>Any child of zuiroot/UILayerFunc is active (inventory, map, character, gear, skills, …).</item>
+/// <item>Any child of zuiroot/UILayerDramaBottom is active (NPC talk_main, talk_dialog_window, talk_option_window, …).</item>
+/// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
+/// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
+/// </list>
+/// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
+/// created+activated on open and gone when closed, so "any active child" is a robust,
+/// menu-agnostic signal. The three Drama layers cover NPC dialogue and story cutscenes;
+/// talk_* views use UILayerDramaBottom with AudioGameState=Dialogue. Confirmed by Lua
+/// vm_scripts_path.lua UI view config. Menu-state recon: docs/recon/2026-06-02-menu-state.md.
 ///
 /// <para>
 /// <b>Performance.</b> The naive form called <c>GameObject.Find</c> twice <i>every
@@ -31,6 +36,9 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private const string RootName = "zuiroot";
     private const string MainMenuRelPath = "UILayerMain/main_funcs_list_window_pc(Clone)";
     private const string FuncLayerName = "UILayerFunc";
+    private const string DramaBottomLayerName = "UILayerDramaBottom";   // NPC dialogue (talk_main, talk_dialog_window, …)
+    private const string DramaVideoLayerName  = "UILayerDramaVideo";    // story cutscene video
+    private const string DramaTopLayerName    = "UILayerDramaTop";      // story top overlay
 
     // ~10 Hz at 60 fps. Menu open/close detection does not need per-frame latency.
     private const int CheckIntervalTicks = 6;
@@ -55,7 +63,11 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
             if (_zuiroot == null) { _open = false; return; }
         }
 
-        _open = MainMenuOpen(_zuiroot) || AnyFuncWindowOpen(_zuiroot);
+        _open = MainMenuOpen(_zuiroot)
+             || AnyChildActive(_zuiroot, FuncLayerName)
+             || AnyChildActive(_zuiroot, DramaBottomLayerName)
+             || AnyChildActive(_zuiroot, DramaVideoLayerName)
+             || AnyChildActive(_zuiroot, DramaTopLayerName);
     }
 
     private static bool MainMenuOpen(Transform root)
@@ -66,10 +78,10 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         return t != null && t.gameObject.activeInHierarchy;
     }
 
-    // Any active child under the functional-window layer = a full-screen menu is up.
-    private static bool AnyFuncWindowOpen(Transform root)
+    // Any active child under the named layer = that UI surface is in use.
+    private static bool AnyChildActive(Transform root, string layerName)
     {
-        var layer = root.Find(FuncLayerName);
+        var layer = root.Find(layerName);
         if (layer == null) return false;
         for (var i = 0; i < layer.childCount; i++)
             if (layer.GetChild(i).gameObject.activeInHierarchy) return true;
