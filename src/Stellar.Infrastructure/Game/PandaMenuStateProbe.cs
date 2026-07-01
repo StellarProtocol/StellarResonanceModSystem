@@ -37,9 +37,10 @@ namespace Stellar.Infrastructure.Game;
 internal sealed class PandaMenuStateProbe : IGameMenuState
 {
     private const string RootName = "zuiroot";
-    private const string MainMenuRelPath    = "UILayerMain/main_funcs_list_window_pc(Clone)";
-    private const string LoadingRelPath     = "UILayerSystemTip/loading_window(Clone)";  // loading screen; targeted check avoids tips_broadcast false-positives
-    private const string FuncLayerName      = "UILayerFunc";
+    private const string MainMenuRelPath      = "UILayerMain/main_funcs_list_window_pc(Clone)";
+    private const string SystemTipLayerName  = "UILayerSystemTip";
+    private const string LoadingWindowPrefix = "loading_window";  // matches "loading_window" and "loading_window(Clone)"
+    private const string FuncLayerName       = "UILayerFunc";
     private const string DramaBottomLayerName = "UILayerDramaBottom";   // NPC dialogue (talk_main, talk_dialog_window, …)
     private const string DramaVideoLayerName  = "UILayerDramaVideo";    // story cutscene video
     private const string DramaTopLayerName    = "UILayerDramaTop";      // story top overlay
@@ -68,7 +69,7 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         }
 
         _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
-             || NamedWindowActive(_zuiroot, LoadingRelPath)
+             || LoadingScreenActive(_zuiroot)
              || AnyChildActive(_zuiroot, FuncLayerName)
              || AnyChildActive(_zuiroot, DramaBottomLayerName)
              || AnyChildActive(_zuiroot, DramaVideoLayerName)
@@ -81,6 +82,22 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     {
         var t = root.Find(relPath);
         return t != null && t.gameObject.activeInHierarchy;
+    }
+
+    // UILayerSystemTip also hosts tips_broadcast/sys_dialog (active during normal play),
+    // so we can't use AnyChildActive. Scan by name prefix to match both
+    // "loading_window" and "loading_window(Clone)" regardless of Instantiate suffix.
+    private static bool LoadingScreenActive(Transform root)
+    {
+        var layer = root.Find(SystemTipLayerName);
+        if (layer == null) return false;
+        for (var i = 0; i < layer.childCount; i++)
+        {
+            var child = layer.GetChild(i);
+            if (child.gameObject.activeInHierarchy && child.name.StartsWith(LoadingWindowPrefix))
+                return true;
+        }
+        return false;
     }
 
     // Any active child under the named layer = that UI surface is in use.
