@@ -44,6 +44,7 @@ internal sealed class PluginServices : IPluginServices
     public IPluginExchange Exchange { get; }
     public INoticeTips NoticeTips { get; }
     public IDungeonState Dungeon { get; }
+    public IEntityTransforms EntityTransforms { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -84,7 +85,8 @@ internal sealed class PluginServices : IPluginServices
         IProfileCardActions profileCardActions,
         IPluginExchange exchange,
         INoticeTips noticeTips,
-        IDungeonState dungeon)
+        IDungeonState dungeon,
+        IEntityTransforms entityTransforms)
     {
         Log = log;
         Framework = framework;
@@ -125,5 +127,6 @@ internal sealed class PluginServices : IPluginServices
         Exchange = exchange;
         NoticeTips = noticeTips;
         Dungeon = dungeon;
+        EntityTransforms = entityTransforms;
     }
 }
