@@ -1,3 +1,6 @@
+using System;
+using System.Text;
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Application.Abstractions;
 using UnityEngine;
 
@@ -12,7 +15,7 @@ namespace Stellar.Infrastructure.Game;
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
 /// <item>The loading screen (zuiroot/UILayerSystemTip/loading_window) is active.</item>
-/// <item>The dungeon/world-boss match confirm popup (zuiroot/UILayerTop/common_matching or world_boss_matching) is active.</item>
+/// <item>The dungeon/world-boss match confirm popup (common_matching / world_boss_matching canvas) is active — detected via Resources.FindObjectsOfTypeAll&lt;Canvas&gt;() since it runs on its own canvas, not under zuiroot.</item>
 /// </list>
 /// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
 /// created+activated on open and gone when closed, so "any active child" is a robust,
@@ -53,9 +56,13 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     // ~10 Hz at 60 fps. Menu open/close detection does not need per-frame latency.
     private const int CheckIntervalTicks = 6;
 
+    // Injected by the host when STELLAR_DIAGNOSTICS=1; null in production (no-op path).
+    internal Action<string>? Log { get; set; }
+
     private bool _open;
     private int _ticksUntilCheck;
     private Transform? _zuiroot;   // cached persistent UI root; Unity '== null' detects scene-change destruction
+    private bool _diagDumped;
 
     public bool IsFullScreenMenuOpen => _open;
 
@@ -73,6 +80,9 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
             if (_zuiroot == null) { _open = false; return; }
         }
 
+        if (StellarDiagnostics.IsEnabled && !_diagDumped && Log != null) { DumpZuiroot(_zuiroot, Log); _diagDumped = true; }
+
+        var wasOpen = _open;
         _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
              || LoadingScreenActive(_zuiroot)
              || MatchConfirmActive(_zuiroot)
@@ -80,6 +90,12 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
              || AnyChildActive(_zuiroot, DramaBottomLayerName)
              || AnyChildActive(_zuiroot, DramaVideoLayerName)
              || AnyChildActive(_zuiroot, DramaTopLayerName);
+
+        if (StellarDiagnostics.IsEnabled && _open != wasOpen && Log != null)
+        {
+            DumpZuiroot(_zuiroot, Log);
+            DumpActiveCanvases(Log);
+        }
     }
 
     // Transform.Find walks the relative path only (cheap) and sees inactive objects —
@@ -96,11 +112,36 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private static bool LoadingScreenActive(Transform root)
         => PrefixChildActive(root, SystemTipLayerName, LoadingWindowPrefix);
 
-    // UILayerTop also hosts hero_dungeon_key (Permanent, active during normal play),
-    // so we can't use AnyChildActive. Check only the IsFullScreen match-confirm popups.
+    // common_matching is Lua-configured on UILayerTop but at runtime it lives on its
+    // own Canvas (not under zuiroot). Use Resources.FindObjectsOfTypeAll<Canvas>() to
+    // find it by name prefix regardless of its position in the hierarchy. Cheap: there
+    // are few Canvas objects in the scene and the check runs at ~10 Hz.
     private static bool MatchConfirmActive(Transform root)
-        => PrefixChildActive(root, TopLayerName, MatchConfirmPrefix)
-        || PrefixChildActive(root, TopLayerName, BossMatchPrefix);
+    {
+        if (PrefixChildActive(root, TopLayerName, MatchConfirmPrefix)) return true;
+        if (PrefixChildActive(root, TopLayerName, BossMatchPrefix)) return true;
+        foreach (var canvas in UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Canvas>())
+        {
+            if (!canvas.gameObject.activeInHierarchy) continue;
+            var n = canvas.name;
+            if (n.StartsWith(MatchConfirmPrefix) || n.StartsWith(BossMatchPrefix)) return true;
+        }
+        return false;
+    }
+
+    private static void DumpActiveCanvases(Action<string> log)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[MenuStateProbe] active canvases (non-zuiroot):");
+        foreach (var canvas in UnityEngine.Resources.FindObjectsOfTypeAll<UnityEngine.Canvas>())
+        {
+            if (!canvas.gameObject.activeInHierarchy) continue;
+            var root = canvas.transform.root;
+            if (root.name == RootName) continue;
+            sb.AppendLine($"  canvas='{canvas.name}' root='{root.name}'");
+        }
+        log(sb.ToString());
+    }
 
     // Scan children of the named layer for an active one whose name starts with prefix.
     // Handles both bare names and Unity's "(Clone)" suffix without two separate lookups.
@@ -115,6 +156,32 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
                 return true;
         }
         return false;
+    }
+
+    // STELLAR_DIAGNOSTICS=1: one-shot dump of the full zuiroot layer tree so we can
+    // verify hierarchy paths without attaching a debugger. Emits to BepInEx log via
+    // UnityEngine.Debug (picked up by BepInEx log sink automatically).
+    private static void DumpZuiroot(Transform root, Action<string> log)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"[MenuStateProbe] zuiroot children ({root.childCount}):");
+        for (var i = 0; i < root.childCount; i++)
+        {
+            var layer = root.GetChild(i);
+            sb.Append($"  [{i}] {layer.name} (active={layer.gameObject.activeInHierarchy}, children={layer.childCount})");
+            if (layer.childCount > 0)
+            {
+                sb.Append(" => ");
+                for (var j = 0; j < layer.childCount; j++)
+                {
+                    var child = layer.GetChild(j);
+                    if (j > 0) sb.Append(", ");
+                    sb.Append($"{child.name}(active={child.gameObject.activeInHierarchy})");
+                }
+            }
+            sb.AppendLine();
+        }
+        log(sb.ToString());
     }
 
     // Any active child under the named layer = that UI surface is in use.

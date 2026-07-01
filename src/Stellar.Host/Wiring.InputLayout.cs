@@ -31,6 +31,8 @@ public sealed partial class BootstrapPlugin
         _layoutEditor  = new LayoutEditorService(_layoutStorage, log);
 
         _menuState = new Stellar.Infrastructure.Game.PandaMenuStateProbe();
+        if (Stellar.Abstractions.Diagnostics.StellarDiagnostics.IsEnabled)
+            _menuState.Log = log.Info;
         // Perf harness: route PerfProbe's periodic summary lines to the framework
         // log so the numbers are readable headlessly (scenario runs / log tail),
         // not only on the on-screen overlay. No-op unless STELLAR_PERFHUD=1.
