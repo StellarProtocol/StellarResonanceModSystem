@@ -88,4 +88,6 @@ public interface IPluginServices
     INoticeTips NoticeTips { get; }
     /// <summary>Current dungeon run: per-run unique id (<c>level_uuid</c>) and clear-time/score once the run settles.</summary>
     IDungeonState Dungeon { get; }
+    /// <summary>Reads live world transforms (position + facing) of entities by id — for replay/position capture.</summary>
+    IEntityTransforms EntityTransforms { get; }
 }
