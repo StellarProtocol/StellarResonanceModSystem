@@ -61,6 +61,7 @@ public sealed partial class WindowInteractionTicker
             // this manual contains-check is intentional, not a duplicate of RectangleContainsScreenPoint.
             var r = cp.Plot.rect;
             if (lp.x < r.xMin || lp.x > r.xMax || lp.y < r.yMin || lp.y > r.yMax) continue;
+            if (FrontWindowBlocks(mp, FindWindowRoot(cp.Plot))) continue;
             try
             {
                 var w = cp.Get();
@@ -80,7 +81,9 @@ public sealed partial class WindowInteractionTicker
         {
             var plot = ChartPans[i].Plot;
             if (plot == null || !plot.gameObject.activeInHierarchy) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(plot, mp, null)) return i;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(plot, mp, null)) continue;
+            if (FrontWindowBlocks(mp, FindWindowRoot(plot))) continue;
+            return i;
         }
         return -1;
     }

@@ -31,6 +31,32 @@ plugins built against ≤1.9.1 (see the `SliderElement`/1.7.1 precedent below)._
   short-lived `IMonsterCatalog`/`MonsterCatalogService` probe path) — superseded by the `GetMonsterByEntity`
   + `MonsterInfo.MonsterType`/`IsBoss` resolution above and no longer needed.
 
+## [1.9.1] - 2026-07-01
+### Fixed
+- **`AutoHideBehindGameMenus` windows now hide behind more full-screen game screens.**
+  `PandaMenuStateProbe` was extended to detect NPC dialogue, loading screens, the dungeon-enter
+  confirm popup, the line-selector panel, and story cutscenes as full-screen menu states. (#29)
+  - The dungeon-enter confirm view instantiates as `team_copy_popup` on `UILayerFuncPopup` (not
+    `common_matching` on `UILayerTop`), so detection now scans `UILayerFuncPopup` (`AnyChildActive`)
+    and checks the `main_line_window` prefix on `UILayerMain`.
+  - Removed the probe's diagnostic-logging infrastructure (`Log`, `DumpZuiroot`, `DumpActiveCanvases`);
+    the layer map is documented in `GameMenuState.md` instead.
+
+## [1.9.0] - 2026-06-30
+### Added
+- **`IWindowControl.BringToFront()`** — explicitly raises a window above others via a `ZFront` counter
+  that sorts above category (`ZCat`), so cross-category fronting works (e.g. a HUD window surfaces above
+  a Tools window). A `BringToFrontPending` flag covers the still-hidden case, so `SetVisible(true)` +
+  `BringToFront()` in the same line always surfaces on top. (#27)
+### Fixed
+- **Interaction pass-through to covered windows.** A `FrontWindowBlocks` guard now wraps every hit-test
+  in `WindowInteractionTicker` (hovers, resize grip, drag areas, scrollbar suppression, chart pan/zoom,
+  chart navigator, render-host drag/zoom), so back-window elements (chart, 3D portrait, scrollbar) no
+  longer receive interaction when a front window covers the pointer. (#27)
+- **Dropdown item styling** now matches `SelectableElement`: rounded `SwatchBg` chip, transparent rest /
+  accent@0.14 hover / accent@0.28 active selection, VLG 6/4 padding, `ContentSizeFitter`. Hover is
+  ticker-driven (Unity EventSystem `ColorTint` doesn't fire reliably alongside the ticker). (#27)
+
 ## [1.8.0] - 2026-06-28
 ### Added
 - **`DropdownElement`** — a reusable compact dropdown for a small, fixed set of mutually-exclusive choices.

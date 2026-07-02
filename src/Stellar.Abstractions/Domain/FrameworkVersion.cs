@@ -18,7 +18,15 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.8.0 adds <c>DropdownElement</c> — a reusable compact dropdown (trigger
+    /// BepInEx chainloader happy. 1.9.1 is a fix: <c>PandaMenuStateProbe</c> now also detects NPC
+    /// dialogue, loading screens, the dungeon-enter confirm popup (<c>team_copy_popup</c> on
+    /// <c>UILayerFuncPopup</c>), the line-selector panel, and story cutscenes as full-screen menu
+    /// states, so <c>AutoHideBehindGameMenus</c> windows hide in all those cases.
+    /// 1.9.0 adds <c>IWindowControl.BringToFront()</c> (a <c>ZFront</c> counter
+    /// that sorts above category so explicit fronting works cross-category, with a pending flag so
+    /// <c>SetVisible(true)</c> + <c>BringToFront()</c> works on a still-hidden window), a front-window
+    /// interaction pass-through guard, and a restyled dropdown item to match <c>SelectableElement</c>.
+    /// 1.8.0 adds <c>DropdownElement</c> — a reusable compact dropdown (trigger
     /// caption + ▾ that opens a themed floating option list above the window's scroll clip; dismiss on pick,
     /// outside-click, or Escape). The Settings → Performance per-plugin <b>Self-rate</b> control now uses it
     /// in place of the click-to-cycle button. 1.7.1 was a binary-compatibility hotfix: <c>SliderElement</c>'s
@@ -42,5 +50,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.8.0";
+    public const string Value = "1.9.1";
 }

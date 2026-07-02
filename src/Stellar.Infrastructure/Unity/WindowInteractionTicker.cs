@@ -86,7 +86,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             var (cell, set) = Hovers[i];
             if (cell == null) continue;
             if (!cell.gameObject.activeInHierarchy) { if (_hoverState[i]) { _hoverState[i] = false; try { set(false); } catch { } } continue; }
-            var over = RectTransformUtility.RectangleContainsScreenPoint(cell, hp, null);
+            var over = RectTransformUtility.RectangleContainsScreenPoint(cell, hp, null)
+                       && !FrontWindowBlocks(hp, FindWindowRoot(cell));
             if (over != _hoverState[i]) { _hoverState[i] = over; try { set(over); } catch { } }
         }
 
@@ -299,9 +300,12 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private int HitResizeGrip(Vector3 mp)
     {
         for (var i = 0; i < DragResizers.Count; i++)
-            if (DragResizers[i].Grip != null && DragResizers[i].Grip.gameObject.activeInHierarchy
-                && RectTransformUtility.RectangleContainsScreenPoint(DragResizers[i].Grip, mp, null))
-                return i;
+        {
+            if (DragResizers[i].Grip == null || !DragResizers[i].Grip.gameObject.activeInHierarchy) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(DragResizers[i].Grip, mp, null)) continue;
+            if (FrontWindowBlocks(mp, DragResizers[i].Target)) continue;
+            return i;
+        }
         return -1;
     }
 
@@ -327,7 +331,11 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (rt == null || !rt.gameObject.activeInHierarchy) continue;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, mp, null, out var lp)) continue;
             var r = rt.rect;
-            if (lp.x >= r.xMin - 6f && lp.x <= r.xMax + 6f && lp.y >= r.yMin && lp.y <= r.yMax) return true;
+            if (lp.x < r.xMin - 6f || lp.x > r.xMax + 6f || lp.y < r.yMin || lp.y > r.yMax) continue;
+            // Only suppress the drag if the scrollbar's own window is the front window at this point —
+            // a scrollbar in a back window must not block dragging the front window's titlebar.
+            if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
+            return true;
         }
         return false;
     }
@@ -351,8 +359,12 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private int HitTest(Vector3 mp)
     {
         for (var i = 0; i < DragAreas.Count; i++)
-            if (DragAreas[i].Area != null && RectTransformUtility.RectangleContainsScreenPoint(DragAreas[i].Area, mp, null))
-                return i;
+        {
+            if (DragAreas[i].Area == null) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(DragAreas[i].Area, mp, null)) continue;
+            if (FrontWindowBlocks(mp, FindWindowRoot(DragAreas[i].Area))) continue;
+            return i;
+        }
         return -1;
     }
 

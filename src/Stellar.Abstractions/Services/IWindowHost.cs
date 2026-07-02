@@ -56,4 +56,9 @@ public interface IWindowControl
     /// <summary>Move/resize the window (size honoured only for <see cref="WindowSpec.Resizable"/> windows). The
     /// new rect is persisted by the framework. Used by plugins that remember their own per-mode geometry.</summary>
     void SetRect(WindowRect rect);
+
+    /// <summary>Bring this window in front of all other windows at the same <see cref="WindowSpec.ZOrder"/> and
+    /// <see cref="WindowSpec.Category"/>. Call this when a plugin programmatically opens another plugin's window
+    /// (e.g. CombatMeter opening EntityInspector) so the opened window is not obscured by the caller.</summary>
+    void BringToFront();
 }
