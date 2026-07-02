@@ -50,5 +50,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.9.1";
+    public const string Value = "1.10.0";
 }
