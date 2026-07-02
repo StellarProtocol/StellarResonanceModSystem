@@ -133,22 +133,22 @@ internal sealed partial class PandaCombatStubProbe
 
     // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
     // EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone in the
-    // run, identical across the run). Every enter-scene fires here — dungeon AND town —
-    // so we MAGNITUDE-GATE the latch: dungeon-instance uuids are server snowflakes far
-    // above the floor, while town/home/open-world scene ids are small persistent values
-    // below it. Only a dungeon enter-scene reaches SetCurrentRun, so the town the player
-    // returns to after a clear (before the plugin uploads) can't clobber the run id; the
-    // last dungeon id persists until the next dungeon or logout.
+    // run, identical across the run). Every enter-scene fires here — instanced content
+    // (dungeon / instanced world-boss / raid) AND town/open-world — so we route the uuid
+    // through DungeonRunIdGate: an instanced snowflake becomes the run id; a town/field
+    // scene resolves to 0. Setting 0 on a non-instanced scene is deliberate — it clears
+    // the previous run's id so it CANNOT linger and get stamped onto a later open-world
+    // run (the run-identity collision fix). The plugin latches _lastRunId at combat start
+    // and reads LastSettlement at archive, so the dungeon->town archive window still
+    // uploads correctly under the dungeon id even though CurrentRunId has dropped to 0.
     //
-    // HEURISTIC: this is a magnitude gate, not a classification. The principled
-    // alternative — classify the scene as a dungeon via AttrSceneBasicId (341) against the
-    // game-data scene/dungeon tables — can replace this if a non-dungeon scene ever exceeds
-    // the floor, or a real dungeon instance ever falls below it.
+    // When the enter-scene carries no readable scene id (TryReadSceneId == false: absent
+    // SceneAttrs or an explicit 0), we leave the current run id untouched rather than
+    // clobbering a valid run from a malformed/partial packet.
     private void LatchDungeonRunId(ReadOnlySpan<byte> span)
     {
-        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid)
-            && sceneUuid > DungeonInstanceUuidFloor)
-            _dungeonSink.SetCurrentRun(sceneUuid);
+        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
+            _dungeonSink.SetCurrentRun(DungeonRunIdGate.Resolve(sceneUuid));
     }
 
     private void OnNearDelta(ReadOnlySpan<byte> span)

@@ -63,6 +63,39 @@ public sealed class DungeonStateServiceTests
     }
 
     [Fact]
+    public void SetCurrentRun_Zero_PreservesSettlement()
+    {
+        // Run-identity collision fix: leaving a dungeon to town/open-world clears the
+        // run id to 0 (so the id can't linger onto a later open-world run), but the
+        // just-earned settlement must SURVIVE — the upload plugin reads LastSettlement
+        // at archive time on that very dungeon->town transition.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetSettlement(120, 42);
+
+        write.SetCurrentRun(0);
+        Assert.Equal(0L, read.CurrentRunId);
+        Assert.NotNull(read.LastSettlement);
+        Assert.Equal(120, read.LastSettlement!.Value.PassTimeSeconds);
+        Assert.Equal(42, read.LastSettlement!.Value.MasterModeScore);
+    }
+
+    [Fact]
+    public void SetCurrentRun_ZeroThenNewDungeon_ClearsStaleSettlement()
+    {
+        // After the settlement survives the drop-to-0 (above), the NEXT real run must
+        // still clear the prior run's stale settlement when it latches its own id.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetSettlement(120, 42);
+        write.SetCurrentRun(0);              // leave to town — settlement kept
+        write.SetCurrentRun(Dungeon2Id);     // enter a new dungeon — stale settlement cleared
+
+        Assert.Equal(Dungeon2Id, read.CurrentRunId);
+        Assert.Null(read.LastSettlement);
+    }
+
+    [Fact]
     public void SettlementOnly_DoesNotChangeRunId()
     {
         // The dungeon probe (method-23) no longer touches the run id; it only

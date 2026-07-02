@@ -23,13 +23,19 @@ namespace Stellar.Application.Abstractions;
 internal interface IDungeonStateSink
 {
     /// <summary>
-    /// Set the live run id to the just-entered scene's server-assigned
-    /// per-instance scene uuid (<c>AttrSceneUuid</c>) decoded from the
-    /// enter-scene payload. The caller (combat probe) is responsible for only
-    /// invoking this for actual dungeon instances — it magnitude-gates on the
-    /// uuid so the small town/home scene id the player returns to (after a clear,
-    /// before the plugin uploads) never reaches here and clobbers the dungeon
-    /// run id. Changing the id clears any prior run's settlement.
+    /// Set the live run id from the just-entered scene. The combat probe routes
+    /// every enter-scene's <c>AttrSceneUuid</c> through the magnitude gate: an
+    /// instanced-content snowflake (dungeon / instanced world-boss / raid) is
+    /// passed through as the run id; a town/home/open-world FIELD scene resolves
+    /// to <c>0</c>. Passing 0 on a non-instanced scene deliberately clears the run
+    /// id so the previous dungeon's id cannot linger onto a later open-world run.
+    /// <para>
+    /// Beginning a genuinely different run (a new non-zero id) clears the prior
+    /// run's settlement. Transitioning to 0 (leaving a dungeon to town) does NOT
+    /// — the upload plugin reads <c>LastSettlement</c> at archive time on that
+    /// very transition, and latches its own run id at combat start, so the
+    /// post-clear archive still uploads correctly under the dungeon id.
+    /// </para>
     /// </summary>
     void SetCurrentRun(long sceneUuid);
 

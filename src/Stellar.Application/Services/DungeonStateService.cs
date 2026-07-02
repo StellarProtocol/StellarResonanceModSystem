@@ -35,9 +35,14 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public void SetCurrentRun(long sceneUuid)
     {
         long previous = Interlocked.Exchange(ref _currentRunId, sceneUuid);
-        // A new run id means the prior run's settlement no longer applies.
-        // Re-entering the same dungeon (same uuid) is idempotent — keep settlement.
-        if (previous != sceneUuid)
+        // Clear the prior run's settlement only when a genuinely different run BEGINS
+        // (a new non-zero id). Re-entering the same dungeon (same uuid) is idempotent —
+        // keep settlement. Transitioning to 0 (leaving a dungeon to town/open-world)
+        // must ALSO keep it: the upload plugin reads LastSettlement at archive time on
+        // that very dungeon->town transition, so the just-earned clear/result must
+        // survive the drop-to-0. The stale settlement is then cleared when the next
+        // real run latches its id, or on Reset (logout).
+        if (sceneUuid != 0 && previous != sceneUuid)
             lock (_settlementLock) _lastSettlement = null;
     }
 
