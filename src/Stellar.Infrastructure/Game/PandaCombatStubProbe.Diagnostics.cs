@@ -273,24 +273,4 @@ internal sealed partial class PandaCombatStubProbe
         }
     }
 
-    // Boss-recon spike (Task 1): build the (id, val) attr list from an appearing
-    // entity and delegate to MonsterCatalogService.DiagMonster. Always-on — not
-    // gated on StellarDiagnostics (same policy as DiagEnterSceneStructure).
-    private void DiagBossRecon(AppearEntityMsg entity)
-    {
-        if (entity.Attrs is not { } attrs)
-        {
-            _monsterCatalog.DiagMonster(entity.Uuid, System.Array.Empty<(int, long)>());
-            return;
-        }
-
-        var list = new System.Collections.Generic.List<(int id, long val)>(attrs.Items.Count);
-        for (int i = 0; i < attrs.Items.Count; i++)
-        {
-            var a = attrs.Items[i];
-            list.Add((a.Id, a.DecodedLong));
-        }
-
-        _monsterCatalog.DiagMonster(entity.Uuid, list);
-    }
 }

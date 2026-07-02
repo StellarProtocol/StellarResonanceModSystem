@@ -28,7 +28,6 @@ internal sealed partial class PandaCombatStubProbe
     private readonly ICombatEventSink      _sink;
     private readonly IDungeonStateSink     _dungeonSink;
     private readonly IPluginLog            _log;
-    private readonly MonsterCatalogService _monsterCatalog;
 
     /// <summary>
     /// Cached local entity uuid. Set when <see cref="OnSelfDelta"/> first
@@ -51,13 +50,11 @@ internal sealed partial class PandaCombatStubProbe
     public PandaCombatStubProbe(
         ICombatEventSink sink,
         IDungeonStateSink dungeonSink,
-        IPluginLog log,
-        MonsterCatalogService monsterCatalog)
+        IPluginLog log)
     {
-        _sink           = sink           ?? throw new ArgumentNullException(nameof(sink));
-        _dungeonSink    = dungeonSink    ?? throw new ArgumentNullException(nameof(dungeonSink));
-        _log            = log            ?? throw new ArgumentNullException(nameof(log));
-        _monsterCatalog = monsterCatalog ?? throw new ArgumentNullException(nameof(monsterCatalog));
+        _sink        = sink        ?? throw new ArgumentNullException(nameof(sink));
+        _dungeonSink = dungeonSink ?? throw new ArgumentNullException(nameof(dungeonSink));
+        _log         = log         ?? throw new ArgumentNullException(nameof(log));
     }
 
     /// <summary>
