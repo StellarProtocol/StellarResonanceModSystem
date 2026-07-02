@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Domain.GameData;
 using Stellar.Abstractions.Services;
 
@@ -7,12 +8,33 @@ namespace Stellar.Application.Services;
 
 internal sealed class GameDataWorldService : IGameDataWorld
 {
+    // AttrTypeIds.AttrId = 10 (Stellar.Wire) — duplicated here as a local constant
+    // because Application does not reference Wire. Source: AttrTypeIds.cs line 11.
+    private const int AttrIdConfigId = 10;
+
+    private readonly CombatEntityTracker _entityTracker;
+
     private IReadOnlyDictionary<int, MonsterInfo>? _monsters;
     private IReadOnlyDictionary<int, NpcInfo>?     _npcs;
     private IReadOnlyDictionary<int, SceneInfo>?   _scenes;
     private IReadOnlyDictionary<int, MapInfo>?     _maps;
 
+    public GameDataWorldService(CombatEntityTracker entityTracker)
+    {
+        _entityTracker = entityTracker ?? throw new System.ArgumentNullException(nameof(entityTracker));
+    }
+
     public MonsterInfo? GetMonster(int id) => TryGet(Volatile.Read(ref _monsters), id);
+
+    public MonsterInfo? GetMonsterByEntity(EntityId entityId)
+    {
+        var attrs = _entityTracker.GetAttributes(entityId);
+        if (!attrs.TryGetValue(AttrIdConfigId, out var configIdLong)) return null;
+        var configId = unchecked((int)configIdLong);
+        if (configId == 0) return null;
+        return GetMonster(configId);
+    }
+
     public NpcInfo?     GetNpc(int id)     => TryGet(Volatile.Read(ref _npcs), id);
     public SceneInfo?   GetScene(int id)   => TryGet(Volatile.Read(ref _scenes), id);
     public MapInfo?     GetMap(int id)     => TryGet(Volatile.Read(ref _maps), id);

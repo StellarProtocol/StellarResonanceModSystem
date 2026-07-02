@@ -29,13 +29,16 @@ internal sealed partial class PandaGameDataProbe
                     factionId = ReadInt(row, rowType, "Faction");
                 }
                 var iconPath = ReadString(row, rowType, "IconPath");
+                var monsterType = ReadInt(row, rowType, "MonsterType");
 
                 return (id, new MonsterInfo(
                     Id: id,
                     Name: name ?? string.Empty,
                     Level: level,
                     FactionId: factionId,
-                    IconPath: iconPath ?? string.Empty));
+                    IconPath: iconPath ?? string.Empty,
+                    MonsterType: monsterType,
+                    IsBoss: MonsterBossRule.IsBoss(monsterType)));
             });
     }
 

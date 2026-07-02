@@ -49,6 +49,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
     // ── Core services (Wiring.Core.cs) ──────────────────────────────────────
     private FrameworkService? _framework;
     private ClientStateService? _clientState;
+    // Shared between CombatService (writes) and GameDataWorldService (reads attr-10 for GetMonsterByEntity).
+    private CombatEntityTracker? _entityTracker;
     private GameEventsService? _gameEvents;
     private PlayerStateService? _playerState;
     private GameDataService? _gameDataService;

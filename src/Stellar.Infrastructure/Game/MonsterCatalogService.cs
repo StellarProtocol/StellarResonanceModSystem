@@ -1,26 +1,28 @@
 using System;
 using System.Reflection;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
+using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Resolves the config/template id for a live monster entity via IL2CPP
-/// reflection, keying <c>Bokura.MonsterTableBase</c> rows for boss
-/// classification.
+/// Resolves the config/template id for a live monster entity.
 ///
 /// <para>
-/// <b>Recon-stub state:</b> <see cref="TryGetMonsterConfigId"/> returns
-/// <c>null</c> until the in-game boss-recon spike (Task 1) confirms which
-/// field carries the config id. The <see cref="MonsterCatalogService.Diagnostics"/>
-/// partial runs an always-on one-shot dump (<c>[BossRecon]</c>) for the first
-/// 8 appearing monster entities to surface the candidate fields live.
+/// Post-recon (2026-07-02): <see cref="TryGetMonsterConfigId"/> reads
+/// <c>AttrTypeIds.AttrId</c> (attr id 10) from the <see cref="CombatEntityTracker"/>
+/// cache. The attr is broadcast in <c>SyncNearEntities</c> and cached by
+/// <c>PandaCombatStubProbe.SetEntityAttribute</c>. No ZEntity/IL2CPP reflection is
+/// needed for the config-id read.
 /// </para>
 ///
 /// <para>
-/// See <c>recon/replay-boss-identification-notes.md</c> for the confirmed
-/// field once the in-game pass is complete.
+/// The ZEntity reflection handles (for <see cref="DiagMonster"/>) are retained for
+/// the one-shot <c>[BossRecon]</c> diagnostic only; they are unused in the production
+/// code path.
 /// </para>
 ///
 /// <para>Main-thread only; do not call from the network receive thread.</para>
@@ -34,6 +36,7 @@ internal sealed partial class MonsterCatalogService : IMonsterCatalog
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
+    private readonly CombatEntityTracker _entityTracker;
 
     // -----------------------------------------------------------------------
     // ZEntityMgr reflection handles (reused from EntityTransformsService path).
@@ -67,10 +70,12 @@ internal sealed partial class MonsterCatalogService : IMonsterCatalog
     /// </summary>
     /// <param name="log">Logger for boot/diagnostic output.</param>
     /// <param name="typeRegistry">Game type registry for IL2CPP reflection.</param>
-    public MonsterCatalogService(IPluginLog log, IGameTypeRegistry typeRegistry)
+    /// <param name="entityTracker">Combat entity tracker supplying cached attr-10 values.</param>
+    public MonsterCatalogService(IPluginLog log, IGameTypeRegistry typeRegistry, CombatEntityTracker entityTracker)
     {
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _typeRegistry = typeRegistry ?? throw new ArgumentNullException(nameof(typeRegistry));
+        _entityTracker = entityTracker ?? throw new ArgumentNullException(nameof(entityTracker));
     }
 
     // -----------------------------------------------------------------------
@@ -80,11 +85,12 @@ internal sealed partial class MonsterCatalogService : IMonsterCatalog
     /// <inheritdoc/>
     public int? TryGetMonsterConfigId(long entityUuid)
     {
-        // TODO(boss-recon): implement after the in-game [BossRecon] dump confirms
-        // the config-id source. Until then return null so callers treat every
-        // monster as an unidentified add. Do NOT remove this stub — Tasks 2 and 3
-        // depend on the IMonsterCatalog interface being live at compile time.
-        return null;
+        // Config id = AttrTypeIds.AttrId (attr id 10), confirmed by recon 2026-07-02.
+        // Broadcast in SyncNearEntities; cached by PandaCombatStubProbe.SetEntityAttribute.
+        var attrs = _entityTracker.GetAttributes(new EntityId(entityUuid));
+        if (!attrs.TryGetValue(AttrTypeIds.AttrId, out var configIdLong)) return null;
+        var configId = unchecked((int)configIdLong);
+        return configId == 0 ? null : configId;
     }
 
     // -----------------------------------------------------------------------

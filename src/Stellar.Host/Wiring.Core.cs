@@ -22,7 +22,11 @@ public sealed partial class BootstrapPlugin
         _messagePipeBridge = new MessagePipeContainerBridge(log, typeRegistry);
         _gameEvents = new GameEventsService(log);
         _playerState = new PlayerStateService();
-        _gameDataService = new GameDataService();
+        // CombatEntityTracker is shared between CombatService (writes) and
+        // GameDataWorldService (reads attr-10 for GetMonsterByEntity). Stored on
+        // BootstrapPlugin so the two construction sites can reference the same instance.
+        _entityTracker = new CombatEntityTracker();
+        _gameDataService = new GameDataService(_entityTracker);
         _playerStatsService = new PlayerStatsService();
         _playerStateProbe = new PandaPlayerStateProbe(log, typeRegistry);
         _playerStatsProbe = new PandaPlayerStatsProbe(log, _playerStateProbe);
@@ -34,7 +38,7 @@ public sealed partial class BootstrapPlugin
         // Generic profile-card action registry: plugins register buttons (write side); the native-card
         // injector reads the registered set (IProfileCardActionSource) and injects one per action per open.
         _profileCardActions = new ProfileCardActionRegistry();
-        _combatService = new CombatService(log, new CombatEntityTracker(), _socialDataCache);
+        _combatService = new CombatService(log, _entityTracker, _socialDataCache);
         _partyService = new PartyService(_combatService, _clientState, log);
         // Dungeon run state (WorldNtf SyncDungeonData → IDungeonState). Read+write
         // sides on one service; the Infrastructure probe (Wiring.Wire.cs) pushes via IDungeonStateSink.

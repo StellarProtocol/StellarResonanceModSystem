@@ -34,7 +34,7 @@ public sealed partial class BootstrapPlugin
         // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
         // Boss-recon spike (Task 1): MonsterCatalogService holds the always-on
         // [BossRecon] one-shot dump and will later implement TryGetMonsterConfigId.
-        _monsterCatalog  = new MonsterCatalogService(log, typeRegistry);
+        _monsterCatalog  = new MonsterCatalogService(log, typeRegistry, _entityTracker!);
         _combatStubProbe = new PandaCombatStubProbe(
             _combatService!, _dungeonStateService!, log, _monsterCatalog);
 
