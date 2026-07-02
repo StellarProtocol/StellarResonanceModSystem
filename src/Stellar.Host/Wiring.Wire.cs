@@ -32,7 +32,11 @@ public sealed partial class BootstrapPlugin
         // (method 3) it already parses carries the stable per-instance scene uuid
         // (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342), which it pushes into the
         // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
-        _combatStubProbe = new PandaCombatStubProbe(_combatService!, _dungeonStateService!, log);
+        // Boss-recon spike (Task 1): MonsterCatalogService holds the always-on
+        // [BossRecon] one-shot dump and will later implement TryGetMonsterConfigId.
+        _monsterCatalog  = new MonsterCatalogService(log, typeRegistry);
+        _combatStubProbe = new PandaCombatStubProbe(
+            _combatService!, _dungeonStateService!, log, _monsterCatalog);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six

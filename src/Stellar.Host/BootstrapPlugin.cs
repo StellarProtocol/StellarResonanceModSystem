@@ -91,6 +91,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaWireTap? _wireTap;
     private PandaChatProbe? _chatProbe;
     private PandaCombatStubProbe? _combatStubProbe;
+    private MonsterCatalogService? _monsterCatalog;
     private PandaPartyStubProbe? _partyStubProbe;
     private PandaSocialDataProbe? _socialDataProbe;
     private PandaReadyCheckProbe? _readyCheckProbe;

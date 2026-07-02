@@ -54,8 +54,11 @@ internal sealed partial class PandaCombatStubProbe
         foreach (var entity in appears)
         {
             DiagAppearEntity(entity);
-            if (entity.Attrs is not { } attrs) continue;
+            // Boss-recon spike (Task 1): dump the first 8 monster entities' full attr set +
+            // best-effort ZEntity config-id. Always-on one-shot — see MonsterCatalogService.Diagnostics.cs.
             var eid = new EntityId(entity.Uuid);
+            if (eid.IsMonster) DiagBossRecon(entity);
+            if (entity.Attrs is not { } attrs) continue;
             for (int i = 0; i < attrs.Items.Count; i++)
             {
                 var attr = attrs.Items[i];
