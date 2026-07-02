@@ -102,7 +102,6 @@ internal sealed partial class PandaCombatStubProbe
         // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
         _sink.ResetEntities();
 
-        DiagEnterSceneStructure(span);
         LatchDungeonRunId(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);

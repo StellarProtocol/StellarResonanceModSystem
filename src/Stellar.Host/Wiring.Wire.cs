@@ -55,7 +55,7 @@ public sealed partial class BootstrapPlugin
 
     // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.
     // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe registers
-    // before Install() so the router/observers are fully populated before any packets
+    // before Install() so the router is fully populated before any packets
     // arrive. Register-before-install ordering is required — do NOT move Install()
     // above any RegisterWith() call.
     private void InstallWorldNtfDispatcher(BepInExPluginLog log)
@@ -63,9 +63,9 @@ public sealed partial class BootstrapPlugin
         _worldNtfDispatcher = new WorldNtfStubDispatcher(log);
         _combatStubProbe!.RegisterWith(_worldNtfDispatcher);
         _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
-        // Dungeon: SyncDungeonData's WorldNtf method id is not known offline, so the
-        // probe registers as a WorldNtf catch-all observer and matches structurally
-        // (scene_uuid present).
+        // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
+        // (lua/zservice/world_ntf_gen.lua), so the probe registers directly by
+        // method id like the other probes.
         _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
         _worldNtfDispatcher.Install(PluginGuid);

@@ -22,21 +22,21 @@ public sealed class MonsterBossRuleTests
     [Fact]
     public void MonsterType2_IsBossTrue()
     {
-        var info = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "icons/33301.png", MonsterType: 2, IsBoss: true);
+        var info = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "icons/33301.png") { MonsterType = 2, IsBoss = true };
         Assert.True(info.IsBoss);
     }
 
     [Fact]
     public void MonsterType0_IsBossFalse()
     {
-        var info = new MonsterInfo(3000020, "Tempest Ogre - Resonance", 10, 1, "", MonsterType: 0, IsBoss: false);
+        var info = new MonsterInfo(3000020, "Tempest Ogre - Resonance", 10, 1, "") { MonsterType = 0, IsBoss = false };
         Assert.False(info.IsBoss);
     }
 
     [Fact]
     public void MonsterType1_IsBossFalse()
     {
-        var info = new MonsterInfo(5000, "Elite Guard", 30, 2, "", MonsterType: 1, IsBoss: false);
+        var info = new MonsterInfo(5000, "Elite Guard", 30, 2, "") { MonsterType = 1, IsBoss = false };
         Assert.False(info.IsBoss);
     }
 

@@ -7,21 +7,19 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// Detects <c>WorldNtf.SyncDungeonData</c> packets and feeds the decoded run id
-/// + settlement into the Application <see cref="IDungeonStateSink"/>. The exact
-/// WorldNtf method id for SyncDungeonData is not known offline (it lives in the
-/// runtime-only <c>Panda.ZRpcGen</c>), so this probe does NOT register by method
-/// id. Instead it subscribes as a WorldNtf catch-all observer on the shared
-/// <see cref="WorldNtfStubDispatcher"/> and structurally matches each WorldNtf
-/// payload via <see cref="DungeonSyncReader"/> — accepting only when the shape
-/// is a non-zero <c>scene_uuid</c> (field 1), which no other WorldNtf method
-/// carries at field 1 as a varint.
+/// + settlement into the Application <see cref="IDungeonStateSink"/>. The
+/// WorldNtf method id for SyncDungeonData (23) is confirmed
+/// (<c>lua/zservice/world_ntf_gen.lua</c>), so this probe registers directly by
+/// method id on the shared <see cref="WorldNtfStubDispatcher"/> — same as the
+/// combat and inventory probes — and additionally verifies the payload shape via
+/// <see cref="DungeonSyncReader"/>, accepting only when it carries a non-zero
+/// <c>scene_uuid</c> (field 1).
 ///
 /// <para>
 /// Runs on the network receive thread; never throws across the IL2CPP boundary
-/// (the dispatcher wraps the observer call in a try/catch, and the reader is
-/// fully defensive). First-seen diagnostics — including the actual method id the
-/// packet arrived on, so the user can later switch to a direct method-id
-/// registration — live in <c>PandaDungeonProbe.Diagnostics.cs</c>.
+/// (the dispatcher wraps the handler call in a try/catch, and the reader is
+/// fully defensive). First-seen diagnostics live in
+/// <c>PandaDungeonProbe.Diagnostics.cs</c>.
 /// </para>
 /// </summary>
 internal sealed partial class PandaDungeonProbe

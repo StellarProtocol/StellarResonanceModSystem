@@ -6,26 +6,28 @@ namespace Stellar.Abstractions.Domain.GameData;
 /// <param name="Level">Base level of this monster type.</param>
 /// <param name="FactionId">Faction id this monster belongs to.</param>
 /// <param name="IconPath">Addressable path for the monster's icon sprite.</param>
-/// <param name="MonsterType">Numeric monster classification (0=Monster, 1=Elite, 2=Boss).
-/// Mirrors <c>EMonsterType</c> from the zproto enum. <c>MonsterRank</c> is empty for all
-/// table rows and must not be used for classification — use this field instead.</param>
-/// <param name="IsBoss">
-/// <c>true</c> when <see cref="MonsterType"/> equals <see cref="MonsterTypeBoss"/> (2).
-/// Derived at load time from the table row. Confirmed by recon on the Ancient Purifier
-/// run: attr-10 → MonsterTable[33301].MonsterType == 2.
-/// </param>
 public readonly record struct MonsterInfo(
     int Id,
     string Name,
     int Level,
     int FactionId,
-    string IconPath,
-    int MonsterType = 0,
-    bool IsBoss = false)
+    string IconPath)
 {
     /// <summary>
     /// The <c>MonsterType</c> value that identifies a boss —
     /// <c>EMonsterType.Boss = 2</c> (confirmed by recon 2026-07-02).
     /// </summary>
     public const int MonsterTypeBoss = 2;
+
+    /// <summary>Numeric monster classification (0=Monster, 1=Elite, 2=Boss).
+    /// Mirrors <c>EMonsterType</c> from the zproto enum. <c>MonsterRank</c> is empty for all
+    /// table rows and must not be used for classification — use this field instead.</summary>
+    public int MonsterType { get; init; }
+
+    /// <summary>
+    /// <c>true</c> when <see cref="MonsterType"/> equals <see cref="MonsterTypeBoss"/> (2).
+    /// Derived at load time from the table row. Confirmed by recon on the Ancient Purifier
+    /// run: attr-10 → MonsterTable[33301].MonsterType == 2.
+    /// </summary>
+    public bool IsBoss { get; init; }
 }

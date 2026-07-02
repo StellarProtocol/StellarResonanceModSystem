@@ -76,7 +76,7 @@ public sealed class GameDataWorldServiceTests
         var svc = new GameDataWorldService(tracker);
         svc.LoadMonsters(new Dictionary<int, MonsterInfo>
         {
-            [33301] = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "", MonsterType: 2, IsBoss: true),
+            [33301] = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "") { MonsterType = 2, IsBoss = true },
         });
 
         var eid = new EntityId(0x_0000_0001_0280_0001L);  // arbitrary uuid
@@ -95,7 +95,7 @@ public sealed class GameDataWorldServiceTests
         var svc = MakeService();
         svc.LoadMonsters(new Dictionary<int, MonsterInfo>
         {
-            [33301] = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "", MonsterType: 2, IsBoss: true),
+            [33301] = new MonsterInfo(33301, "Ancient Purifier", 50, 1, "") { MonsterType = 2, IsBoss = true },
         });
 
         // No attr-10 set for this entity.

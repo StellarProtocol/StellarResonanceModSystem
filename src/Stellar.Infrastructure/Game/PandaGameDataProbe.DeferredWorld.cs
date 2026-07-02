@@ -36,9 +36,11 @@ internal sealed partial class PandaGameDataProbe
                     Name: name ?? string.Empty,
                     Level: level,
                     FactionId: factionId,
-                    IconPath: iconPath ?? string.Empty,
-                    MonsterType: monsterType,
-                    IsBoss: MonsterBossRule.IsBoss(monsterType)));
+                    IconPath: iconPath ?? string.Empty)
+                {
+                    MonsterType = monsterType,
+                    IsBoss = MonsterBossRule.IsBoss(monsterType)
+                });
             });
     }
 

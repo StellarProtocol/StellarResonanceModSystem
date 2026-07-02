@@ -34,7 +34,8 @@ public readonly struct DungeonSyncResult
 /// non-dungeon WorldNtf method does not produce a false positive.
 ///
 /// <para>
-/// Wire layout (per offline recon — confirm method id in-game):
+/// Wire layout (per offline recon; WorldNtf method id 23 confirmed in-game —
+/// see <c>WorldNtfMethodIds.SyncDungeonData</c>):
 /// <code>
 /// message SyncDungeonData   { DungeonSyncData   v_data       = 1; }   // WorldNtf method body
 /// message DungeonSyncData   { int64             scene_uuid   = 1;     // -> level_uuid
