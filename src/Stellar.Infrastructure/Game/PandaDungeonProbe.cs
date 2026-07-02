@@ -49,8 +49,8 @@ internal sealed partial class PandaDungeonProbe
     /// </summary>
     public void OnLeaveOrLogout() => _sink.Reset();
 
-    // Observer callback: every WorldNtf-uuid packet, any method id. Structural
-    // match → update settlement. Non-dungeon methods short-circuit in the reader.
+    // SyncDungeonData (WorldNtf method 23) handler, registered directly by method
+    // id on the shared dispatcher. Structural match → update settlement.
     //
     // This probe NO LONGER touches the run id. SyncDungeonData (method 23) was
     // assumed to fire only inside a dungeon, but in-game it ALSO fires in town —
