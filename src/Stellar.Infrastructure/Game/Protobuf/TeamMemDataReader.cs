@@ -110,14 +110,14 @@ internal static class TeamMemDataReader
 }
 
 /// <summary>
-/// Parser for <c>TeamMemberSocialData</c>. Only fields 1 (basic_data) and 4
-/// (profession_data) are projected; the rest (avatar, face, equip, etc.) are
+/// Parser for <c>TeamMemberSocialData</c>. Fields 1 (basic_data), 2 (avatar_info),
+/// and 4 (profession_data) are projected; the rest (face, equip, etc.) are
 /// skipped.
 ///
 /// <code>
 ///   message TeamMemberSocialData {
 ///     BasicData       basic_data       = 1;
-///     AvatarInfo      avatar_info      = 2;   // skipped
+///     AvatarInfo      avatar_info      = 2;
 ///     FaceData        face_data        = 3;   // skipped
 ///     ProfessionData  profession_data  = 4;
 ///     EquipData       equip_data       = 5;   // skipped
@@ -132,6 +132,7 @@ internal static class TeamMemberSocialDataReader
         string? name   = null;
         int     level  = 0;
         int     profession = 0;
+        string  profileUrl = "", halfBodyUrl = "";
         int     p      = 0;
 
         while (p < payload.Length)
@@ -145,6 +146,10 @@ internal static class TeamMemberSocialDataReader
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var basicBytes)) { social = null; return false; }
                     if (!BasicDataReader.TryRead(basicBytes, out name, out level)) { social = null; return false; }
                     break;
+                case (2, 2):
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var avBytes)) { social = null; return false; }
+                    AvatarInfoReader.Read(avBytes, out profileUrl, out halfBodyUrl);
+                    break;
                 case (4, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref p, out var profBytes)) { social = null; return false; }
                     if (!ProfessionDataReader.TryRead(profBytes, out profession)) { social = null; return false; }
@@ -155,7 +160,7 @@ internal static class TeamMemberSocialDataReader
             }
         }
 
-        social = new PartyMemberSocialSync(name, level, profession, groupId);
+        social = new PartyMemberSocialSync(name, level, profession, groupId, profileUrl, halfBodyUrl);
         return true;
     }
 }

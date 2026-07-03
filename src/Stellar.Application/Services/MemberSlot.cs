@@ -23,6 +23,8 @@ internal sealed class MemberSlot
     public int        TalentId;    // TeamMemData.talent_id — selected talent/spec
     public MicrophoneStatus MicStatus = MicrophoneStatus.Opened; // base from TeamMemData.voice_is_open, refined by GrpcTeamNtf m25
     public bool       Speaking;    // GrpcTeamNtf m26 (ESpeakStatus == Begin)
+    public string     ProfileUrl = "";
+    public string     HalfBodyUrl = "";
 
     public bool IsOnline => OnlineStatusRaw == 1;
 }

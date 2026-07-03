@@ -27,4 +27,16 @@ internal sealed partial class PandaSocialDataProbe
             $"[EntityDetail] first social decode (char={s.CharId} name={s.Name} level={s.Level} " +
             $"fp={s.FightPoint} prof={s.ProfessionId} gear={s.Gear.Count} fashion={s.Fashion.Count})");
     }
+
+    private bool _avatarUrlOneShot;
+
+    /// <summary>One-shot (fires regardless of the diagnostics toggle) confirmation that avatar
+    /// picture URLs were parsed out of a <c>Social.GetSocialData</c> reply's <c>avatar_info</c>.</summary>
+    private void LogAvatarUrlOneShot(SocialSnapshot s)
+    {
+        if (_avatarUrlOneShot || s.HalfBodyUrl.Length == 0) return;
+        _avatarUrlOneShot = true;
+
+        _log.Info($"[Stellar] first avatar URLs parsed: char={s.CharId} profile={s.ProfileUrl} halfBody={s.HalfBodyUrl}");
+    }
 }
