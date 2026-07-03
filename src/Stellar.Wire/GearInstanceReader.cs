@@ -265,22 +265,22 @@ public static class GearInstanceReader
             else if (!WireProtocol.SkipField(item, ref pos, wire)) break;
         }
 
-        var (perfection, attrs) = ReadEquipAttr(equipAttr);
-        return new GearInstance(slot, uuid, configId, quality, refine, perfection, attrs, enchant);
+        var (perfection, attrs, breakThrough) = ReadEquipAttr(equipAttr);
+        return new GearInstance(slot, uuid, configId, quality, refine, perfection, attrs, enchant, breakThrough);
     }
 
     // EquipAttr { perfection_value = 7; basic_attr = 10; advance_attr = 11; recast_attr = 12;
     //             perfection_level = 13; rare_quality_attr = 14; max_perfection_value = 15;
-    //             equip_attr_set = 17 }
+    //             equip_attr_set = 17; break_through_time = 18 }
     // SPEC/school (v2) gear leaves the top-level advance_attr(11) EMPTY and stores the CURRENT spec's
     // rolls in equip_attr_set(17) { basic=1; advance=2; recast=3; rare=4 } instead (in-world 2026-06-13:
     // self raid gear had adv=0 at the top level — the Crit/Luck rolls the game shows live in the set).
     // Per bucket, the set wins when non-empty; else the top-level fills in (normal v1 gear has no set).
-    private static (GearPerfection Perfection, GearAttrRolls Attrs) ReadEquipAttr(ReadOnlySpan<byte> equipAttr)
+    private static (GearPerfection Perfection, GearAttrRolls Attrs, int BreakThrough) ReadEquipAttr(ReadOnlySpan<byte> equipAttr)
     {
-        if (equipAttr.IsEmpty) return (default, GearAttrRolls.Empty);
+        if (equipAttr.IsEmpty) return (default, GearAttrRolls.Empty, 0);
 
-        int pv = 0, pMax = 0, pLevel = 0;
+        int pv = 0, pMax = 0, pLevel = 0, breakThrough = 0;
         List<GearAttrRoll>? basic = null, advanced = null, recast = null, rare = null;
         List<GearAttrRoll>? sBasic = null, sAdvanced = null, sRecast = null, sRare = null;
         int pos = 0;
@@ -292,6 +292,7 @@ public static class GearInstanceReader
                 if (field == 7) pv = (int)v;
                 else if (field == 13) pLevel = (int)v;
                 else if (field == 15) pMax = (int)v;
+                else if (field == 18) breakThrough = (int)v;
             }
             else if (wire == 2 && field is 10 or 11 or 12 or 14)
             {
@@ -321,7 +322,7 @@ public static class GearInstanceReader
         var attrs = fBasic.Count == 0 && fAdvanced.Count == 0 && fRecast.Count == 0 && fRare.Count == 0
             ? GearAttrRolls.Empty
             : new GearAttrRolls(fBasic, fAdvanced, fRecast, fRare);
-        return (new GearPerfection(pv, pMax, pLevel), attrs);
+        return (new GearPerfection(pv, pMax, pLevel), attrs, breakThrough);
     }
 
     private static IReadOnlyList<GearAttrRoll> Pick(List<GearAttrRoll>? set, List<GearAttrRoll>? top)
