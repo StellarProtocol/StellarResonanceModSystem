@@ -41,6 +41,10 @@ public readonly record struct SocialIdentity(string Guild, int PartySize, int Ma
 /// <param name="Fashion">Worn cosmetics from <c>fashion_data</c>; never null.</param>
 /// <param name="Identity">Guild/party/master-score/title extras; <see cref="SocialIdentity.None"/> when
 /// the reply's mask excluded those sections.</param>
+/// <param name="ProfileUrl">HTTPS URL of the player's square profile picture on the game's CDN
+/// (<c>avatar_info.profile.url</c>); empty when the player has none or the section was absent.</param>
+/// <param name="HalfBodyUrl">HTTPS URL of the player's half-body ID-card picture on the game's CDN
+/// (<c>avatar_info.half_body.url</c>); empty when the player has none or the section was absent.</param>
 public sealed record SocialSnapshot(
     long CharId,
     string Name,
@@ -49,4 +53,6 @@ public sealed record SocialSnapshot(
     int ProfessionId,
     IReadOnlyList<GearSlotRef> Gear,
     IReadOnlyList<FashionEntry> Fashion,
-    SocialIdentity Identity);
+    SocialIdentity Identity,
+    string ProfileUrl = "",
+    string HalfBodyUrl = "");

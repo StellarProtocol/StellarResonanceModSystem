@@ -28,6 +28,7 @@ public static class SocialDataReader
     {
         long charId = 0, fightPoint = 0; int level = 0, professionId = 0; string name = "", guild = "";
         int partySize = 0, masterScore = 0, titleId = 0;
+        string profileUrl = "", halfBodyUrl = "";
         var gear = new List<GearSlotRef>(11);
         IReadOnlyList<FashionEntry> fashion = Array.Empty<FashionEntry>();
         int pos = 0;
@@ -48,6 +49,7 @@ public static class SocialDataReader
                     case 13: guild = ReadFirstStringField(inner, 2); break;              // union_data.name
                     case 16: titleId = (int)ReadFirstVarintField(inner, 11); break;      // personal_zone.title_id
                     case 22: masterScore = ReadMasterScore(inner); break;
+                    case 4:  AvatarInfoReader.Read(inner, out profileUrl, out halfBodyUrl); break;
                 }
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
@@ -59,7 +61,7 @@ public static class SocialDataReader
         if (charId == 0 || name.Length == 0) return null;
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return new SocialSnapshot(charId, name, level, fightPoint, professionId, gear, fashion,
-            new SocialIdentity(guild, partySize, masterScore, titleId));
+            new SocialIdentity(guild, partySize, masterScore, titleId), profileUrl, halfBodyUrl);
     }
 
     // master_mode_dungeon_data { season_score = 1, is_show = 2 }. The is_show flag is INVERTED on the
