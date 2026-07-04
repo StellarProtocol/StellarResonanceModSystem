@@ -4,7 +4,7 @@ using System.Reflection;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Reflection-facing helpers for <see cref="PandaDungeonSyncServiceHook"/>:
+/// Reflection-facing helpers for <see cref="PandaDungeonSyncSubscription"/>:
 /// walk <c>SyncDungeonDirtyDataMessageEvent.VData</c>
 /// (<c>Zproto.BufferStream</c>) → <c>.Buffer</c>
 /// (<c>Google.Protobuf.ByteString</c>) → <c>ToByteArray()</c> and coerce the
@@ -14,7 +14,7 @@ namespace Stellar.Infrastructure.Game;
 /// <c>Invoke</c>. Every failure returns <see langword="null"/> — never throws
 /// toward the IL2CPP boundary.
 /// </summary>
-internal sealed partial class PandaDungeonSyncServiceHook
+internal sealed partial class PandaDungeonSyncSubscription
 {
     // Accessors cached per concrete runtime type (interop types are stable for
     // the process lifetime; the guards only re-resolve if a different concrete

@@ -139,7 +139,7 @@ public sealed class DungeonDirtyDataReaderTests
         => Assert.False(DungeonDirtyDataReader.TryReadTimerStart(new byte[] { 0xFF, 0xFF }, out _));
 
     // ── bare-blob entry point (TryReadDirtyBlob) ────────────────────────────
-    // The DungeonSyncService hook captures the BufferStream.Buffer bytes
+    // The DungeonSync MessagePipe subscription captures the BufferStream.Buffer bytes
     // directly — the exact framing lua MergeData consumes, with NO protobuf
     // envelope. These mirror the lua reader shapes end-to-end on that entry.
 

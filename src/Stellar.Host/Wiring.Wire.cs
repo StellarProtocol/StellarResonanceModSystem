@@ -51,23 +51,26 @@ public sealed partial class BootstrapPlugin
         InstallSocialDataProbe(log);
         InstallWorldNtfDispatcher(log);
         InstallReadyCheckProbe(log);
-        InstallDungeonSyncServiceHook(log);
+        InstallDungeonSyncSubscription(log);
     }
 
-    // The dungeon container dirty-DELTA's C# consumer: Panda.ZGame.
-    // DungeonSyncService (MessagePipe ISubscriber<SyncDungeonDirtyDataMessageEvent>
-    // → lua/sync/dungeon_sync.lua MergeData). Its handler is the AUTHORITATIVE
-    // seam for the true timer_info.startTime — it fires regardless of which wire
-    // method delivers the delta (the method-24 stub tap above is inferred, kept
-    // as corroborating diagnostics). The hook's prefix copies the bare merge
-    // blob and enqueues into the dungeon probe's deferred queue; parsing +
-    // rank-2 latch happen at drain on the gated tick (DrainDungeonDeferred in
-    // Wiring.ServiceTick.cs). Constructed after InstallWorldNtfDispatcher — it
-    // enqueues into _dungeonProbe.
-    private void InstallDungeonSyncServiceHook(BepInExPluginLog log)
+    // The dungeon container dirty-DELTA (SyncDungeonDirtyDataMessageEvent →
+    // Panda.ZGame.DungeonSyncService → lua/sync/dungeon_sync.lua MergeData) is
+    // the AUTHORITATIVE source of the true timer_info.startTime. We receive it
+    // by SUBSCRIBING to the game's own MessagePipe — NO HarmonyX patch: the
+    // previous prefix on the service's compiler-generated handler lambda
+    // crashed the game natively at the first event fire. Construction only
+    // here; the subscription attempt itself runs from the gated framework tick
+    // (RunGlobalRateWork in Wiring.ServiceTick.cs) and opportunistically when
+    // the VContainer resolver attaches (ProbeGameRootOnce in
+    // Wiring.Resolver.cs), because the subscriber is resolved from the game's
+    // container / GlobalMessagePipe, which are not up at boot. The handler
+    // copies the bare merge blob and enqueues into the dungeon probe's deferred
+    // queue; parsing + rank-2 latch happen at drain on the gated tick
+    // (DrainDungeonDeferred in Wiring.ServiceTick.cs).
+    private void InstallDungeonSyncSubscription(BepInExPluginLog log)
     {
-        _dungeonSyncServiceHook = new PandaDungeonSyncServiceHook(_dungeonProbe!, log);
-        _dungeonSyncServiceHook.PatchAll(PluginGuid);
+        _dungeonSyncSubscription = new PandaDungeonSyncSubscription(_dungeonProbe!, log);
     }
 
     // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.

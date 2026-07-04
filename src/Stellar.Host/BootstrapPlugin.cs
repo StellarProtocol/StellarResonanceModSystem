@@ -98,7 +98,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
     private PandaDungeonProbe? _dungeonProbe;
-    private PandaDungeonSyncServiceHook? _dungeonSyncServiceHook;
+    private PandaDungeonSyncSubscription? _dungeonSyncSubscription;
     private WorldNtfLuaStubDispatcher? _worldNtfLuaDispatcher;
     private GrpcTeamNtfStubDispatcher? _grpcTeamNtfDispatcher;
     // Injects the registered profile-card action buttons (IProfileCardActionSource) into the game's
@@ -319,6 +319,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         catch (Exception ex) { log.Warning($"[Bootstrap] Phase9 dispose threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _grpcTeamNtfDispatcher?.Uninstall(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] GrpcTeamNtfDispatcher Uninstall threw: {ex.GetType().Name}: {ex.Message}"); }
+        try { _dungeonSyncSubscription?.Dispose(); }
+        catch (Exception ex) { log.Warning($"[Bootstrap] DungeonSyncSubscription Dispose threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _wireTap?.DisposeCapture(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] WireTap DisposeCapture threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _pluginRegistry?.DisposeAll(); }

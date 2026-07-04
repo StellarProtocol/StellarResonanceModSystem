@@ -34,6 +34,10 @@ public sealed partial class BootstrapPlugin
             _gameRootProbed = true;
             _messagePipeBridge!.AttachResolver(resolver);
             _inventoryProbe!.AttachResolver(resolver);
+            // Dungeon dirty-delta subscription prefers the container-resolved
+            // ISubscriber<T> — attempt immediately now that the resolver is
+            // attached (the framework tick keeps retrying otherwise).
+            _dungeonSyncSubscription?.TrySubscribe(_messagePipeBridge!);
             Log.LogInfo($"[boot] VContainer resolver attached ({resolver.GetType().FullName})");
         }
         catch (Exception ex)

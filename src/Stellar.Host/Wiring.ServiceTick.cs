@@ -92,6 +92,7 @@ public sealed partial class BootstrapPlugin
         DrainDungeonDeferred();            // dungeon lua-path deliveries deferred for scene-teardown crash safety
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
+        TrySubscribeDungeonSync();         // bounded retry until the game's MessagePipe is reachable
         TickInputAndHotkeys();
         // Layout edit-mode input (select/drag) — driven from the tick AFTER the input poll (so the latched
         // mouse edge + pointer are fresh). Edit-mode interaction is fully decoupled from any IMGUI/OnGUI
@@ -115,6 +116,15 @@ public sealed partial class BootstrapPlugin
     {
         try { _dungeonProbe?.DrainDeferred(); }
         catch (Exception ex) { Log.LogWarning($"[boot] dungeon deferred drain threw: {ex.Message}"); }
+    }
+
+    // Dungeon dirty-delta MessagePipe subscription — no-op once subscribed (or once the
+    // bounded attempt budget is spent). Runs on the gated tick because the subscriber is
+    // resolved from the game's VContainer / GlobalMessagePipe, which come up after boot.
+    private void TrySubscribeDungeonSync()
+    {
+        if (_messagePipeBridge is null) return;
+        _dungeonSyncSubscription?.TrySubscribe(_messagePipeBridge);
     }
 
     // Per-frame input + hotkey poll, driven from the framework tick (Phase E: there is no

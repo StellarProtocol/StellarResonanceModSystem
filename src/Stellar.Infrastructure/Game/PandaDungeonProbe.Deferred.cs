@@ -37,7 +37,7 @@ internal sealed partial class PandaDungeonProbe
 
     // How a queued payload should be parsed at drain: a WorldNtf stub delivery
     // (protobuf envelope around the merge blob for method 24) vs the BARE
-    // container-merge blob captured off the DungeonSyncService hook (the bytes
+    // container-merge blob captured by the DungeonSync MessagePipe subscription (the bytes
     // the game's own lua MergeData consumes directly — no protobuf unwrap).
     private enum DeferredPayloadKind
     {
@@ -74,7 +74,7 @@ internal sealed partial class PandaDungeonProbe
     internal void OnWorldNtfDeferred(uint methodId, byte[] payload)
         => EnqueueDeferred(methodId, payload, DeferredPayloadKind.WorldNtf);
 
-    // Deferred enqueue for the DungeonSyncService hook (PandaDungeonSyncServiceHook):
+    // Deferred enqueue for the dirty-delta MessagePipe handler (PandaDungeonSyncSubscription):
     // the payload is the BARE container-merge blob (exactly what the game's lua
     // MergeData consumes — no protobuf envelope). Runs on the MessagePipe publish
     // thread (downstream of WorldNtfStub.OnCallStub): enqueue only, same
@@ -186,9 +186,9 @@ internal sealed partial class PandaDungeonProbe
     // The dungeon container's dirty-DELTA — the path the game's own timer HUD
     // gets its clock from. Two delivery shapes share this handler:
     // <list>
-    //   BareDirtyBlob — the AUTHORITATIVE source: PandaDungeonSyncServiceHook's
-    //   prefix on Panda.ZGame.DungeonSyncService captured the bare
-    //   container-merge blob (the exact bytes lua MergeData consumes);
+    //   BareDirtyBlob — the AUTHORITATIVE source: PandaDungeonSyncSubscription's
+    //   MessagePipe handler captured the bare container-merge blob (the exact
+    //   bytes lua MergeData consumes);
     //   WorldNtf — the inferred method-24 stub tap, whose payload still carries
     //   the SyncDungeonDirtyData{BufferStream{bytes}} protobuf envelope.
     // </list>
@@ -208,7 +208,7 @@ internal sealed partial class PandaDungeonProbe
         if (!parsed) return;
 
         string source = bare
-            ? "timer_info.delta (DungeonSyncService hook)"
+            ? "timer_info.delta (DungeonSync subscription)"
             : "timer_info.delta (method 24)";
 
         DiagDungeonDirtyTimer(dirty, source);

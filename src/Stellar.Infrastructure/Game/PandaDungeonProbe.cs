@@ -36,8 +36,8 @@ namespace Stellar.Infrastructure.Game;
 /// publisher → <c>Panda.ZGame.DungeonSyncService.OnSync</c> →
 /// <c>lua/sync/dungeon_sync.lua</c> → <c>dungeon_sync_data.lua MergeData</c>).
 /// The AUTHORITATIVE tap for that delta is
-/// <see cref="PandaDungeonSyncServiceHook"/> — a HarmonyX prefix on the
-/// DungeonSyncService's MessagePipe handler, which captures the BARE merge
+/// <see cref="PandaDungeonSyncSubscription"/> — our own MessagePipe
+/// subscription to the same event (no patching), which captures the BARE merge
 /// blob downstream of whatever wire method delivers it and enqueues via
 /// <see cref="OnDungeonSyncDeltaDeferred"/>. The method-24 registration below
 /// is the INFERRED wire-origin tap, kept as corroborating diagnostics. Both

@@ -157,7 +157,7 @@ public sealed class PandaDungeonProbeDeferredTests
         Assert.Contains(_log.InfoLines, l => l.Contains("skipped as stale"));
     }
 
-    // ── DungeonSyncService hook path (bare merge blob, no protobuf wrap) ────
+    // ── DungeonSync subscription path (bare merge blob, no protobuf wrap) ──
 
     [Fact]
     public void Drain_HookPathBareDelta_UpgradesActiveTimeLatch_Rank2()
@@ -170,14 +170,14 @@ public sealed class PandaDungeonProbeDeferredTests
             ((Stellar.Application.Abstractions.IDungeonStateSink)_service)
                 .SetRunTimerStart(500_000, Stellar.Application.Abstractions.RunTimerSource.FlowActiveTime));
 
-        // …then the DungeonSyncService hook captures the BARE container delta
+        // …then the DungeonSync MessagePipe subscription captures the BARE container delta
         // carrying the true timer_info.start_time.
         _probe.OnDungeonSyncDeltaDeferred(BareDirtyTimerBlob(startTimeSeconds: 777));
         _probe.DrainDeferred();
 
         Assert.Equal(777_000, ((IDungeonState)_service).RunTimerStartMs);
         Assert.Contains(_log.InfoLines,
-            l => l.Contains("run-timer UPGRADED") && l.Contains("timer_info.delta (DungeonSyncService hook)"));
+            l => l.Contains("run-timer UPGRADED") && l.Contains("timer_info.delta (DungeonSync subscription)"));
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class PandaDungeonProbeDeferredTests
 
         Assert.Equal(777_000, ((IDungeonState)_service).RunTimerStartMs);
         Assert.Contains(_log.InfoLines,
-            l => l.Contains("run-timer latched") && l.Contains("timer_info.delta (DungeonSyncService hook)"));
+            l => l.Contains("run-timer latched") && l.Contains("timer_info.delta (DungeonSync subscription)"));
     }
 
     [Fact]

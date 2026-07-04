@@ -1,0 +1,70 @@
+using System;
+using Stellar.Abstractions.Diagnostics;
+
+namespace Stellar.Infrastructure.Game;
+
+/// <summary>
+/// Diagnostics for <see cref="PandaDungeonSyncSubscription"/>. One-shot lines are
+/// ALWAYS-ON (they confirm the subscription installs and fires live — the key
+/// uncertainty of a freshly traced seam); per-event repeats gate on
+/// <c>STELLAR_DIAGNOSTICS=1</c>. Capture lines run on the game's MessagePipe publish
+/// thread — bounded to one line each in steady state so the capture path stays inert.
+/// </summary>
+internal sealed partial class PandaDungeonSyncSubscription
+{
+    private bool _firstCaptureLogged;
+    private bool _extractFailWarned;
+    private bool _pendingLogged;
+    private bool _exhaustedWarned;
+    private bool _subscribeThrewWarned;
+
+    // One-shot always-on: the first captured delta proves the subscription is live
+    // end-to-end (handler fired + bytes extracted). Repeats only under the toggle.
+    private void DiagDeltaCaptured(int byteCount)
+    {
+        if (!_firstCaptureLogged)
+        {
+            _firstCaptureLogged = true;
+            _log.Info($"[DungeonSync] first container delta captured ({byteCount} bytes) — MessagePipe subscription live; parsing at drain");
+            return;
+        }
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[DungeonSync] delta captured ({byteCount} bytes)");
+    }
+
+    // One-shot always-on: the handler fired but the event → BufferStream →
+    // ByteString walk failed — the interop surface differs from the recon'd
+    // shape and the extraction needs a revisit.
+    private void DiagExtractFailed()
+    {
+        if (_extractFailWarned) return;
+        _extractFailWarned = true;
+        _log.Warning("[DungeonSync] subscription handler fired but delta bytes could not be extracted (VData/Buffer/ToByteArray walk failed) — interop shape mismatch");
+    }
+
+    // Resolution not yet possible (no route to ISubscriber<T> yet). One-shot info at
+    // first miss, one-shot warning when the bounded retry budget runs out; the
+    // in-between retries stay silent (they run on every gated tick).
+    private void DiagSubscribePending()
+    {
+        if (_attempts >= MaxSubscribeAttempts)
+        {
+            if (_exhaustedWarned) return;
+            _exhaustedWarned = true;
+            _log.Warning($"[DungeonSync] MessagePipe subscription unavailable after {_attempts} attempts — giving up; run-clock falls back to method-24 tap / method-55 edge / active_time");
+            return;
+        }
+        if (_pendingLogged) return;
+        _pendingLogged = true;
+        _log.Info("[DungeonSync] MessagePipe subscriber not resolvable yet (container/global provider not up) — retrying from the framework tick");
+    }
+
+    // A resolution/subscribe attempt threw (never propagates — wiring must not take
+    // down the host). One-shot; subsequent attempts keep retrying quietly.
+    private void DiagSubscribeThrew(Exception ex)
+    {
+        if (_subscribeThrewWarned) return;
+        _subscribeThrewWarned = true;
+        _log.Warning($"[DungeonSync] subscription attempt threw: {ex.GetType().Name}: {ex.Message} — retrying from the framework tick");
+    }
+}
