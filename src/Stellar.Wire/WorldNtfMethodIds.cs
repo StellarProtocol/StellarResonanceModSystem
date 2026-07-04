@@ -14,6 +14,7 @@ public static class WorldNtfMethodIds
     public const uint SyncContainerDirtyData = 22; // incremental container update
     public const uint SyncDungeonData      = 23; // DungeonSyncData (scene_uuid + settlement). Confirmed: lua/zservice/world_ntf_gen.lua OnCallStub GetMethodId()==23
     public const uint SyncServerTime       = 43;
+    public const uint NotifyStartPlayingDungeon = 55; // NotifyStartPlayingDungeon{ StartPlayingDungeonParam v_param=1 { int64 char_id=1; bool is_use_key=2 } } — Lua-routed (world_ntf_gen.lua GetMethodId()==55); its ARRIVAL is the play-start edge
     public const uint SyncNearDeltaInfo    = 45;
     public const uint SyncToMeDeltaInfo    = 46;
     public const uint NotifyAllMemberReady = 70; // ready-check open/close: NotifyAllMemberReady{ bool v_open_or_close=1 }

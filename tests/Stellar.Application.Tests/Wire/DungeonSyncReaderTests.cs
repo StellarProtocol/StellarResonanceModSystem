@@ -164,14 +164,14 @@ public sealed class DungeonSyncReaderTests
         Assert.True(DungeonSyncReader.TryRead(body, out var r));
         Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
         Assert.Equal(1700000000L * 1000L, startMs);
-        Assert.Equal("timer_info", source);
+        Assert.Equal(DungeonRunTimerSource.TimerInfo, source);
     }
 
     [Fact]
     public void TryGetRunTimerStart_TimerZero_FallsBackToFlowPlayTime()
     {
         // Early hub deliveries carry an all-zero timer_info — a zero start_time
-        // must never win; flow_info.play_time is the fallback.
+        // must never win; flow_info.play_time is the next candidate.
         var timerInfo = Msg(Varint(1, 1), Varint(2, 0));     // type only, start_time 0
         var flowInfo  = Msg(Varint(4, 1700000123));          // play_time
         var data = Msg(
@@ -183,7 +183,7 @@ public sealed class DungeonSyncReaderTests
         Assert.True(DungeonSyncReader.TryRead(body, out var r));
         Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
         Assert.Equal(1700000123L * 1000L, startMs);
-        Assert.Equal("flow.play_time", source);
+        Assert.Equal(DungeonRunTimerSource.FlowPlayTime, source);
     }
 
     [Fact]
@@ -198,16 +198,23 @@ public sealed class DungeonSyncReaderTests
         Assert.True(DungeonSyncReader.TryRead(body, out var r));
         Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
         Assert.Equal(1700000000L * 1000L, startMs);
-        Assert.Equal("timer_info", source);
+        Assert.Equal(DungeonRunTimerSource.TimerInfo, source);
     }
 
     [Fact]
-    public void TryGetRunTimerStart_BothSourcesZero_ReturnsFalse()
+    public void TryGetRunTimerStart_OnlyActiveTimeNonZero_UsesActiveTimeLastResort()
     {
-        // Pre-start hub delivery: both sub-messages present, all clocks zero —
-        // nothing must latch (stays 0 downstream).
+        // THE live entry-sync shape (instrumented Master run): state=1 Active,
+        // active_time = live epoch, ready/play/end all zero, timer_info all
+        // zero. active_time is the ONLY payload-borne clock the live path ever
+        // delivers — it must be selected, flagged as the approximate source.
         var timerInfo = Msg(Varint(1, 1), Varint(2, 0));
-        var flowInfo  = Msg(Varint(1, 1), Varint(4, 0));
+        var flowInfo  = Msg(
+            Varint(1, 1),               // state = 1 (Active)
+            Varint(2, 1783186742),      // active_time = live epoch seconds
+            Varint(3, 0),
+            Varint(4, 0),
+            Varint(5, 0));
         var data = Msg(
             Varint(1, 99L),
             LenDelim(2, flowInfo),
@@ -215,8 +222,47 @@ public sealed class DungeonSyncReaderTests
         var body = LenDelim(1, data);
 
         Assert.True(DungeonSyncReader.TryRead(body, out var r));
-        Assert.False(r.TryGetRunTimerStart(out var startMs, out _));
+        Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
+        Assert.Equal(1783186742L * 1000L, startMs);
+        Assert.Equal(DungeonRunTimerSource.FlowActiveTime, source);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_PlayTimeBeatsActiveTime()
+    {
+        // Within one payload the exact play-start epoch outranks the
+        // approximate entry-time epoch.
+        var flowInfo = Msg(
+            Varint(2, 1700000100),      // active_time (approx)
+            Varint(4, 1700000123));     // play_time (exact)
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
+        Assert.Equal(1700000123L * 1000L, startMs);
+        Assert.Equal(DungeonRunTimerSource.FlowPlayTime, source);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_AllSourcesZero_ReturnsFalse()
+    {
+        // Pre-start hub delivery: both sub-messages present, all clocks zero
+        // (incl. active_time) — nothing must latch (stays 0 downstream).
+        var timerInfo = Msg(Varint(1, 1), Varint(2, 0));
+        var flowInfo  = Msg(Varint(1, 1), Varint(2, 0), Varint(4, 0));
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.TryGetRunTimerStart(out var startMs, out var source));
         Assert.Equal(0L, startMs);
+        Assert.Equal(DungeonRunTimerSource.None, source);
     }
 
     [Fact]

@@ -66,10 +66,13 @@ public sealed partial class BootstrapPlugin
         // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
         // (lua/zservice/world_ntf_gen.lua), so the probe registers directly by
         // method id like the other probes. It ALSO registers on the Lua stub
-        // dispatcher (see InstallReadyCheckProbe) — the game's own lua handler
-        // for method 23 is what feeds the live dungeon container, so the live
-        // run's dungeon sync may flow through ZLuaStub, not the C# stub.
-        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, log);
+        // dispatcher (see InstallReadyCheckProbe) for methods 23 + 55 — Lua-path
+        // deliveries are queue-deferred to the framework tick (crash safety; see
+        // PandaDungeonProbe.Deferred.cs and DrainDungeonDeferred in
+        // Wiring.ServiceTick.cs). _combatService supplies the interpolated
+        // server clock (ICombatSnapshot.ServerNowMs) for the method-55
+        // arrival-edge stamp.
+        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
         _worldNtfDispatcher.Install(PluginGuid);
     }
@@ -82,9 +85,12 @@ public sealed partial class BootstrapPlugin
         _readyCheckProbe = new PandaReadyCheckProbe(_partyService!, log);
         _worldNtfLuaDispatcher = new WorldNtfLuaStubDispatcher(log);
         _readyCheckProbe.RegisterWith(_worldNtfLuaDispatcher);
-        // Dungeon probe also taps method 23 on the LUA stub path — the game's
-        // own world_ntf_gen.lua consumes SyncDungeonData here (container
-        // ResetData), so the live run's dungeon sync may never reach the C# stub.
+        // Dungeon probe also taps the LUA stub path: method 23 (SyncDungeonData —
+        // the game's own world_ntf_gen.lua consumes it here) and method 55
+        // (NotifyStartPlayingDungeon — Lua-only, the play-start edge). Its lua
+        // callback only ENQUEUES (crash safety — inline lua-path processing
+        // crashed a post-dungeon scene load); processing happens on the gated
+        // framework tick via DrainDungeonDeferred (Wiring.ServiceTick.cs).
         // Constructed in InstallWorldNtfDispatcher, which runs before this method.
         _dungeonProbe!.RegisterWithLua(_worldNtfLuaDispatcher);
         _worldNtfLuaDispatcher.Install(PluginGuid);

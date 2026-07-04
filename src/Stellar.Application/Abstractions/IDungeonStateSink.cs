@@ -54,18 +54,20 @@ internal interface IDungeonStateSink
 
     /// <summary>
     /// Record the run-timer start time (server epoch ms) for the current run.
-    /// The probe feeds this from two sources in HUD priority order — PRIMARY
-    /// <c>DungeonSyncData.timer_info.start_time</c> (the game's own dungeon
-    /// clock derives from it, per <c>dungeon_timer_vm.lua getEndTimeStamp</c>),
-    /// FALLBACK <c>flow_info.play_time</c>. Callers should only push non-zero
-    /// values (zero = "run not started yet"); the implementation ignores zero
-    /// writes AND is first-non-zero-wins — once latched, a later non-zero write
-    /// (e.g. from the other source) cannot shift the clock. The latch clears on
-    /// a new run (<see cref="SetCurrentRun"/> with a new non-zero id) or
-    /// <see cref="Reset"/>. See
-    /// <see cref="Stellar.Abstractions.Services.IDungeonState.RunTimerStartMs"/>.
+    /// The latch is RANK-BASED, not first-wins: <paramref name="source"/>'s
+    /// numeric value is its priority rank (lower = better; see
+    /// <see cref="RunTimerSource"/>). A write wins when the slot is empty OR its
+    /// rank is STRICTLY better than the latched source's — so the precise
+    /// method-55 arrival edge (rank 1) can UPGRADE the approximate
+    /// <c>flow_info.active_time</c> latch (rank 4) that the entry sync lands
+    /// first on the live path. Zero values are always ignored (zero = "run not
+    /// started yet"); equal/worse ranks are ignored. The latch clears on a new
+    /// run (<see cref="SetCurrentRun"/> with a new non-zero id) or
+    /// <see cref="Reset"/>, and is preserved across the run-id drop-to-0 (leave
+    /// to town). Returns what happened so the caller can log latch vs upgrade.
+    /// See <see cref="Stellar.Abstractions.Services.IDungeonState.RunTimerStartMs"/>.
     /// </summary>
-    void SetRunTimerStart(long startMs);
+    RunTimerWrite SetRunTimerStart(long startMs, RunTimerSource source);
 
     /// <summary>
     /// Clear the active run and any settlement — invoked on logout.

@@ -1,6 +1,34 @@
 namespace Stellar.Wire;
 
 /// <summary>
+/// Which wire field inside a single <c>SyncDungeonData</c> delivery supplied
+/// the run-timer start candidate selected by
+/// <see cref="DungeonSyncResult.TryGetRunTimerStart"/>. Ordered by descending
+/// precision: <c>timer_info.start_time</c> is HUD-exact when present;
+/// <c>flow_info.play_time</c> is the exact play-start epoch; and
+/// <c>flow_info.active_time</c> is an APPROXIMATION — a live entry sync stamps
+/// it with the current epoch at dungeon ENTRY, i.e. roughly one Ready-countdown
+/// EARLY relative to the true play start. Downstream the consumer maps these
+/// onto the cross-delivery latch ranks (Application <c>RunTimerSource</c>),
+/// where the arrival edge of WorldNtf method 55 (<c>NotifyStartPlayingDungeon</c>)
+/// outranks all three payload-borne sources.
+/// </summary>
+public enum DungeonRunTimerSource
+{
+    /// <summary>No non-zero source present on this delivery.</summary>
+    None = 0,
+
+    /// <summary><c>timer_info.start_time</c> (field 15.2) — HUD-authoritative when non-zero.</summary>
+    TimerInfo = 1,
+
+    /// <summary><c>flow_info.play_time</c> (field 2.4) — exact play-start epoch when non-zero.</summary>
+    FlowPlayTime = 2,
+
+    /// <summary><c>flow_info.active_time</c> (field 2.2) — approximate (entry-time epoch, fires ~countdown-length early).</summary>
+    FlowActiveTime = 3,
+}
+
+/// <summary>
 /// Decoded result of a <c>WorldNtf.SyncDungeonData</c> structural parse. A
 /// value with <see cref="SceneUuid"/> != 0 is the per-run unique id that the
 /// StellarLogs upload plugin consumes as <c>level_uuid</c>. When
@@ -105,32 +133,45 @@ public readonly struct DungeonSyncResult
     public long RunTimerStartMs { get; init; }
 
     /// <summary>
-    /// Select the run-timer start carried by this delivery, in HUD priority
-    /// order: PRIMARY <c>timer_info.start_time</c> (<see cref="RunTimerStartMs"/>),
-    /// FALLBACK <c>flow_info.play_time</c> (<see cref="DungeonFlowInfo.PlayTimeMs"/>).
-    /// Zero-valued sources never win; returns <see langword="false"/> when
-    /// neither source is present and non-zero. <paramref name="source"/> carries
-    /// the diagnostic tag of the winning source
-    /// (<c>"timer_info"</c> / <c>"flow.play_time"</c>).
+    /// Select the BEST run-timer start candidate carried by this delivery, in
+    /// descending precision order: <c>timer_info.start_time</c>
+    /// (<see cref="RunTimerStartMs"/>), then <c>flow_info.play_time</c>
+    /// (<see cref="DungeonFlowInfo.PlayTimeMs"/>), then LAST
+    /// <c>flow_info.active_time</c> (<see cref="DungeonFlowInfo.ActiveTimeMs"/>
+    /// — approximate: live evidence shows the entry sync stamps it with the
+    /// live epoch while <c>ready_time</c>/<c>play_time</c>/<c>end_time</c> stay
+    /// zero and no further sync ever re-delivers them, so it is the only
+    /// payload-borne clock the live path carries; it fires roughly one
+    /// Ready-countdown EARLY). Zero-valued sources never win; returns
+    /// <see langword="false"/> when no source is present and non-zero.
+    /// <paramref name="source"/> identifies the winner so the consumer can
+    /// assign its cross-delivery latch rank.
     /// </summary>
-    public bool TryGetRunTimerStart(out long startMs, out string source)
+    public bool TryGetRunTimerStart(out long startMs, out DungeonRunTimerSource source)
     {
         if (HasTimerInfo && RunTimerStartMs != 0)
         {
             startMs = RunTimerStartMs;
-            source = "timer_info";
+            source = DungeonRunTimerSource.TimerInfo;
             return true;
         }
 
         if (HasFlowInfo && FlowInfo.PlayTime != 0)
         {
             startMs = FlowInfo.PlayTimeMs;
-            source = "flow.play_time";
+            source = DungeonRunTimerSource.FlowPlayTime;
+            return true;
+        }
+
+        if (HasFlowInfo && FlowInfo.ActiveTime != 0)
+        {
+            startMs = FlowInfo.ActiveTimeMs;
+            source = DungeonRunTimerSource.FlowActiveTime;
             return true;
         }
 
         startMs = 0;
-        source = "";
+        source = DungeonRunTimerSource.None;
         return false;
     }
 }
@@ -148,7 +189,14 @@ public readonly struct DungeonFlowInfo
     /// <summary>Raw <c>EDungeonState state</c> (field 1, varint enum) — the dungeon flow state.</summary>
     public int State { get; init; }
 
-    /// <summary>Raw <c>active_time</c> (field 2, varint).</summary>
+    /// <summary>
+    /// Raw <c>active_time</c> (field 2, varint) — epoch SECONDS. Live evidence
+    /// (instrumented Master run): the dungeon's single entry sync stamps this
+    /// with the live current epoch while <c>ready_time</c>/<c>play_time</c>/
+    /// <c>end_time</c> stay zero, and no later sync re-delivers the flow — so
+    /// this is the LAST-RESORT approximate run-timer source (fires roughly one
+    /// Ready-countdown EARLY relative to the true play start).
+    /// </summary>
     public int ActiveTime { get; init; }
 
     /// <summary>Raw <c>ready_time</c> (field 3, varint) — epoch when the Ready countdown began.</summary>
@@ -184,4 +232,11 @@ public readonly struct DungeonFlowInfo
     /// Zero when the run has not started.
     /// </summary>
     public long PlayTimeMs => PlayTime * 1000L;
+
+    /// <summary>
+    /// <see cref="ActiveTime"/> converted to epoch ms (<c>* 1000L</c>; raw value
+    /// confirmed epoch seconds on a live run). APPROXIMATE last-resort run-timer
+    /// source — see <see cref="ActiveTime"/>.
+    /// </summary>
+    public long ActiveTimeMs => ActiveTime * 1000L;
 }

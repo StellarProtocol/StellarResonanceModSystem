@@ -153,13 +153,80 @@ public sealed class DungeonStateServiceTests
 
     private const long RunTimerStartMs = 1700000000000L;
 
-    [Fact]
-    public void SetRunTimerStart_PublishesRawValue()
+    [Theory]
+    [InlineData((int)RunTimerSource.Method55Edge)]
+    [InlineData((int)RunTimerSource.TimerInfo)]
+    [InlineData((int)RunTimerSource.FlowPlayTime)]
+    [InlineData((int)RunTimerSource.FlowActiveTime)]
+    public void SetRunTimerStart_EmptySlot_LatchesFromAnySource(int sourceRank)
     {
+        // Any source may perform the initial latch when the slot is empty —
+        // the rank only matters when competing against an existing latch.
+        // (int-typed theory data: RunTimerSource is internal, and a public
+        // xunit method cannot expose an internal parameter type.)
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        var result = write.SetRunTimerStart(RunTimerStartMs, (RunTimerSource)sourceRank);
+        Assert.Equal(RunTimerWrite.Latched, result);
         Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_HigherRank_UpgradesLowerRankLatch()
+    {
+        // THE live-path sequence: the entry sync latches the approximate
+        // flow.active_time (rank 4) FIRST, then the method-55 play-start edge
+        // (rank 1) arrives and must OVERWRITE it. A plain first-wins guard
+        // would have frozen the approximation in.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.FlowActiveTime);
+
+        var result = write.SetRunTimerStart(RunTimerStartMs + 20000, RunTimerSource.Method55Edge);
+        Assert.Equal(RunTimerWrite.Upgraded, result);
+        Assert.Equal(RunTimerStartMs + 20000, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_LowerRank_DoesNotOverwriteHigherRankLatch()
+    {
+        // Once the precise edge is latched, a later approximate/payload source
+        // must not shift the clock.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.Method55Edge);
+
+        var result = write.SetRunTimerStart(RunTimerStartMs + 5000, RunTimerSource.FlowActiveTime);
+        Assert.Equal(RunTimerWrite.Ignored, result);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_EqualRank_DoesNotOverwrite()
+    {
+        // Method 55 fires once per party member (the game's own Lua impl
+        // early-returns on self) — duplicate equal-rank writes are ignored.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.Method55Edge);
+
+        var result = write.SetRunTimerStart(RunTimerStartMs + 300, RunTimerSource.Method55Edge);
+        Assert.Equal(RunTimerWrite.Ignored, result);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_IntermediateRank_UpgradesWorseButLosesToBetter()
+    {
+        // Full ladder: active_time (4) → timer_info (2) upgrades; then
+        // play_time (3) must NOT downgrade; then method55 (1) upgrades again.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        Assert.Equal(RunTimerWrite.Latched,  write.SetRunTimerStart(1000, RunTimerSource.FlowActiveTime));
+        Assert.Equal(RunTimerWrite.Upgraded, write.SetRunTimerStart(2000, RunTimerSource.TimerInfo));
+        Assert.Equal(RunTimerWrite.Ignored,  write.SetRunTimerStart(3000, RunTimerSource.FlowPlayTime));
+        Assert.Equal(RunTimerWrite.Upgraded, write.SetRunTimerStart(4000, RunTimerSource.Method55Edge));
+        Assert.Equal(4000L, read.RunTimerStartMs);
     }
 
     [Fact]
@@ -167,10 +234,25 @@ public sealed class DungeonStateServiceTests
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.TimerInfo);
 
         write.SetCurrentRun(Dungeon2Id);
         Assert.Equal(0L, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetCurrentRun_NewId_AlsoClearsLatchedRank()
+    {
+        // The rank must clear WITH the value: after a new run begins, even a
+        // worse-ranked source must latch normally (empty-slot semantics).
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.Method55Edge);
+
+        write.SetCurrentRun(Dungeon2Id);
+        var result = write.SetRunTimerStart(RunTimerStartMs + 9000, RunTimerSource.FlowActiveTime);
+        Assert.Equal(RunTimerWrite.Latched, result);
+        Assert.Equal(RunTimerStartMs + 9000, read.RunTimerStartMs);
     }
 
     [Fact]
@@ -181,7 +263,7 @@ public sealed class DungeonStateServiceTests
         // transition.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.TimerInfo);
 
         write.SetCurrentRun(0);
         Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
@@ -190,45 +272,30 @@ public sealed class DungeonStateServiceTests
     [Fact]
     public void SetRunTimerStart_Zero_DoesNotOverwriteLatchedValue()
     {
-        // flow_info.play_time is 0 on hub/pre-start deliveries — a zero write
-        // must never wipe a latched non-zero start (the live falsification of
-        // the timer_info source arrived exactly as such an all-zero delivery).
+        // flow_info fields are 0 on hub/pre-start deliveries — a zero write
+        // must never wipe a latched non-zero start, regardless of its rank.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.FlowActiveTime);
 
-        write.SetRunTimerStart(0);
-        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
-    }
-
-    [Fact]
-    public void SetRunTimerStart_FirstNonZeroWins_SecondNonZeroIgnored()
-    {
-        // The probe feeds TWO sources (timer_info.start_time primary,
-        // flow_info.play_time fallback). Whichever arrives non-zero FIRST wins
-        // for the current run — a later delivery from the other source must not
-        // shift an already-latched clock.
-        var (read, write) = NewService();
-        write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
-
-        write.SetRunTimerStart(RunTimerStartMs + 5000);
+        var result = write.SetRunTimerStart(0, RunTimerSource.Method55Edge);
+        Assert.Equal(RunTimerWrite.Ignored, result);
         Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
     }
 
     [Fact]
     public void SetRunTimerStart_NewRun_RelatchesAfterClear()
     {
-        // The first-wins guard is per-run: a new run id clears the latch, and
-        // the next run's first non-zero write must latch normally.
+        // The rank guard is per-run: a new run id clears the latch, and the
+        // next run's first non-zero write must latch normally.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.TimerInfo);
 
         write.SetCurrentRun(Dungeon2Id);
         Assert.Equal(0L, read.RunTimerStartMs);
 
-        write.SetRunTimerStart(RunTimerStartMs + 7000);
+        write.SetRunTimerStart(RunTimerStartMs + 7000, RunTimerSource.TimerInfo);
         Assert.Equal(RunTimerStartMs + 7000, read.RunTimerStartMs);
     }
 
@@ -237,19 +304,25 @@ public sealed class DungeonStateServiceTests
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(0);
+        var result = write.SetRunTimerStart(0, RunTimerSource.TimerInfo);
+        Assert.Equal(RunTimerWrite.Ignored, result);
         Assert.Equal(0L, read.RunTimerStartMs);
     }
 
     [Fact]
-    public void Reset_ClearsRunTimerStart()
+    public void Reset_ClearsRunTimerStartAndRank()
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetRunTimerStart(RunTimerStartMs);
+        write.SetRunTimerStart(RunTimerStartMs, RunTimerSource.Method55Edge);
 
         write.Reset();
         Assert.Equal(0L, read.RunTimerStartMs);
+
+        // Rank cleared too: a worse-ranked source can latch the fresh slot.
+        var result = write.SetRunTimerStart(RunTimerStartMs + 1000, RunTimerSource.FlowActiveTime);
+        Assert.Equal(RunTimerWrite.Latched, result);
+        Assert.Equal(RunTimerStartMs + 1000, read.RunTimerStartMs);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Stellar.Abstractions.Diagnostics;
+using Stellar.Application.Abstractions;
 using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game;
@@ -135,17 +136,30 @@ internal sealed partial class PandaDungeonProbe
     }
 
     /// <summary>
-    /// Always-on, fires once per actual latch (at most once per run): records
+    /// Always-on, fires once per actual latch (empty slot → value): records
     /// WHICH source latched <c>IDungeonState.RunTimerStartMs</c> —
-    /// <c>src=timer_info</c> (PRIMARY, HUD-authoritative) vs
-    /// <c>src=flow.play_time</c> (fallback). Called by
-    /// <c>MaybeLatchRunTimer</c> only when the pre-write value was zero, i.e.
-    /// when this delivery actually performed the first-non-zero-wins latch.
+    /// <c>src=method55.edge</c> / <c>src=timer_info</c> /
+    /// <c>src=flow.play_time</c> / <c>src=flow.active_time (approx,
+    /// pre-countdown)</c>. Driven by the service's write result, so it fires
+    /// exactly when the write performed the latch.
     /// </summary>
-    private void DiagRunTimerLatched(string source, long startMs, in DungeonSyncResult result)
+    private void DiagRunTimerLatched(string source, long startMs, long sceneUuid)
         => _log.Info(
             $"[Dungeon] run-timer latched src={source} start_s={startMs / 1000} start_ms={startMs} " +
-            $"scene={result.SceneUuid} runId={_state.CurrentRunId}");
+            $"scene={sceneUuid} runId={_state.CurrentRunId}");
+
+    /// <summary>
+    /// Always-on: a strictly better-ranked source OVERWROTE an earlier
+    /// (approximate) latch — e.g. the method-55 arrival edge upgrading the
+    /// entry sync's flow.active_time approximation. This line is the live
+    /// validation signal for the rank design: seeing it on a real run proves
+    /// both the approximate pre-latch AND the precise edge fired in order.
+    /// </summary>
+    private void DiagRunTimerUpgraded(string source, long startMs, long previousMs, long sceneUuid)
+        => _log.Info(
+            $"[Dungeon] run-timer UPGRADED src={source} start_s={startMs / 1000} start_ms={startMs} " +
+            $"(was start_ms={previousMs}, delta_ms={startMs - previousMs}) " +
+            $"scene={sceneUuid} runId={_state.CurrentRunId}");
 
     /// <summary>
     /// One-shot, always-on: log the raw <c>DungeonTimerInfo</c> fields the first
@@ -166,6 +180,57 @@ internal sealed partial class PandaDungeonProbe
             $"pause_time={result.TimerPauseTime} pause_total_time={result.TimerPauseTotalTime} " +
             $"cur_pause_timestamp={result.TimerCurPauseTimestamp} -> RunTimerStartMs={result.RunTimerStartMs} " +
             $"scene={result.SceneUuid} method={methodId} (semantic unconfirmed: start_time assumed epoch seconds)");
+    }
+
+    // Session caps for the deferred-path diagnostics (all emitted at DRAIN time
+    // on the framework tick — never inside the Lua callback).
+    private const int StartPlayingCap = 8;
+    private int _startPlayingLogged;
+    private int _deferredDropsLogged;
+    private bool _deferredThrewLogged;
+
+    /// <summary>
+    /// Always-on, session-capped (<see cref="StartPlayingCap"/> lines): one per
+    /// drained WorldNtf method-55 (<c>NotifyStartPlayingDungeon</c>) delivery —
+    /// the play-start EDGE. Logs the arrival stamp (captured at enqueue, so
+    /// drain latency does not skew it), which clock supplied it (interpolated
+    /// server clock vs client-UTC fallback with its skew caveat), the parsed
+    /// char_id (the ntf also fires for other members' starts), and what the
+    /// rank-guarded write did (latched / UPGRADED an approximate latch /
+    /// ignored duplicate).
+    /// </summary>
+    private void DiagStartPlayingDungeon(in DeferredLuaDelivery item, RunTimerWrite write, long previousMs)
+    {
+        if (_startPlayingLogged >= StartPlayingCap) return;
+        _startPlayingLogged++;
+
+        bool hasCharId = StartPlayingDungeonReader.TryReadCharId(item.Payload, out long charId);
+        _log.Info(
+            $"[Dungeon] NotifyStartPlayingDungeon (method 55) src=method55.edge " +
+            $"arrival_ms={item.ArrivalMs} clock={(item.ArrivalIsServerClock ? "server" : "client-utc(skew caveat)")} " +
+            $"char_id={(hasCharId ? charId.ToString() : "unparsed")} write={write} " +
+            $"(was start_ms={previousMs}) runId={_state.CurrentRunId} " +
+            $"({_startPlayingLogged}/{StartPlayingCap})");
+    }
+
+    // Drain-side visibility for the bounded queue's drop-new overflow policy.
+    // Logs only when the drop counter has grown since the last drain, capped to
+    // one line per new plateau to keep the log quiet under a pathological burst.
+    private void DiagDeferredDrops()
+    {
+        int dropped = System.Threading.Volatile.Read(ref _deferredDropped);
+        if (dropped <= _deferredDropsLogged) return;
+        _deferredDropsLogged = dropped;
+        _log.Warning($"[Dungeon] deferred lua-path queue overflow — {dropped} deliveries dropped so far (cap {DeferredCap})");
+    }
+
+    // One-shot: a deferred handler threw on the tick. The exception is already
+    // contained (the drain wraps each item) — this line only surfaces it.
+    private void DiagDeferredHandlerThrew(uint methodId, System.Exception ex)
+    {
+        if (_deferredThrewLogged) return;
+        _deferredThrewLogged = true;
+        _log.Warning($"[Dungeon] deferred handler threw (method={methodId}): {ex.GetType().Name}: {ex.Message}");
     }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)

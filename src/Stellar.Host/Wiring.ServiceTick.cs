@@ -89,6 +89,7 @@ public sealed partial class BootstrapPlugin
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
         DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
+        DrainDungeonDeferred();            // dungeon lua-path deliveries deferred for scene-teardown crash safety
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
         TickInputAndHotkeys();
@@ -104,6 +105,16 @@ public sealed partial class BootstrapPlugin
     {
         try { _exchangeProbe!.DrainPendingDispatches(); }
         catch (Exception ex) { Log.LogWarning($"[boot] exchange drain threw: {ex.Message}"); }
+    }
+
+    // Dungeon lua-path deliveries (SyncDungeonData 23 + NotifyStartPlayingDungeon 55) are
+    // NEVER processed inside ZLuaStub.OnCallStub — inline processing there crashed the client
+    // during a post-dungeon scene load. The probe queues them; this drain runs on the gated
+    // tick, so queued items wait out any scene transition automatically.
+    private void DrainDungeonDeferred()
+    {
+        try { _dungeonProbe?.DrainDeferred(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] dungeon deferred drain threw: {ex.Message}"); }
     }
 
     // Per-frame input + hotkey poll, driven from the framework tick (Phase E: there is no

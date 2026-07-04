@@ -19,6 +19,12 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     private long _currentRunId;
     private int _currentDifficulty;
     private long _runTimerStartMs;
+    // Rank of the source currently holding the run-timer latch (0 = empty slot;
+    // otherwise the RunTimerSource numeric value, lower = better). Written only
+    // under _runTimerLock; the value itself stays readable lock-free via
+    // Interlocked.Read on _runTimerStartMs.
+    private int _runTimerRank;
+    private readonly object _runTimerLock = new();
 
     // Settlement is a multi-field struct, so it can't be published with a single
     // volatile/interlocked write without tearing. Guard it with a small lock —
@@ -52,7 +58,7 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         {
             lock (_settlementLock) _lastSettlement = null;
             Interlocked.Exchange(ref _currentDifficulty, 0);
-            Interlocked.Exchange(ref _runTimerStartMs, 0);
+            ClearRunTimerLatch();
         }
     }
 
@@ -65,24 +71,47 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public void SetDifficulty(int difficulty)
         => Interlocked.Exchange(ref _currentDifficulty, difficulty);
 
-    public void SetRunTimerStart(long startMs)
+    public RunTimerWrite SetRunTimerStart(long startMs, RunTimerSource source)
     {
         // Zero is the wire's "run not started yet" value (timer_info.start_time /
         // flow_info.play_time are 0 on hub/pre-start deliveries) — a zero must
-        // never overwrite a latched non-zero start. And the FIRST non-zero write
-        // wins for the current run: the probe feeds two sources (timer_info
-        // primary, flow_info fallback) and a later delivery from the other
-        // source must not shift an already-latched clock. Clearing happens
-        // exclusively via SetCurrentRun (new run id) or Reset (logout).
-        if (startMs == 0) return;
-        Interlocked.CompareExchange(ref _runTimerStartMs, startMs, 0);
+        // never overwrite a latched non-zero start. Non-zero writes compete by
+        // SOURCE RANK (the RunTimerSource numeric value, lower = better): a
+        // write wins when the slot is empty OR its rank is STRICTLY better than
+        // the latched one, so the precise method-55 arrival edge (rank 1) can
+        // UPGRADE the approximate flow.active_time entry-sync latch (rank 4)
+        // that lands first on the live path. Equal/worse ranks are ignored —
+        // duplicate method-55 ntfs (one per party member) cannot shift the
+        // clock. Clearing happens exclusively via SetCurrentRun (new run id) or
+        // Reset (logout).
+        if (startMs == 0) return RunTimerWrite.Ignored;
+        int rank = (int)source;
+        lock (_runTimerLock)
+        {
+            int latchedRank = _runTimerRank;
+            if (latchedRank != 0 && rank >= latchedRank) return RunTimerWrite.Ignored;
+            Interlocked.Exchange(ref _runTimerStartMs, startMs);
+            _runTimerRank = rank;
+            return latchedRank == 0 ? RunTimerWrite.Latched : RunTimerWrite.Upgraded;
+        }
     }
 
     public void Reset()
     {
         Interlocked.Exchange(ref _currentRunId, 0);
         Interlocked.Exchange(ref _currentDifficulty, 0);
-        Interlocked.Exchange(ref _runTimerStartMs, 0);
+        ClearRunTimerLatch();
         lock (_settlementLock) _lastSettlement = null;
+    }
+
+    // Empty the run-timer latch slot (value + source rank together, under the
+    // latch lock so a concurrent SetRunTimerStart can't see a half-cleared slot).
+    private void ClearRunTimerLatch()
+    {
+        lock (_runTimerLock)
+        {
+            Interlocked.Exchange(ref _runTimerStartMs, 0);
+            _runTimerRank = 0;
+        }
     }
 }

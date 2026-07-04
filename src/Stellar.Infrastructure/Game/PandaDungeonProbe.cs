@@ -16,21 +16,32 @@ namespace Stellar.Infrastructure.Game;
 /// <c>scene_uuid</c> (field 1).
 ///
 /// <para>
-/// The probe ALSO registers method 23 on the <see cref="WorldNtfLuaStubDispatcher"/>
-/// (ZLuaStub path): the game's own <c>world_ntf_gen.lua</c> is what decodes
-/// SyncDungeonData into the live dungeon container (<c>ContainerMgr.DungeonSyncData
-/// ResetData</c>), and BPSR routes a WorldNtf method to EITHER the C# stub OR the
-/// Lua stub. A second live run falsified the C#-only tap: during a real Master-6
-/// run NO method-23 delivery with non-zero flow fields ever reached the C# stub —
-/// the only C#-side traffic was a login-time bulk sync of PAST dungeon states.
-/// The Lua registration tests the hypothesis that the LIVE run's dungeon sync
-/// flows through ZLuaStub instead.
+/// The probe ALSO registers on the <see cref="WorldNtfLuaStubDispatcher"/>
+/// (ZLuaStub path) for method 23 AND method 55
+/// (<c>NotifyStartPlayingDungeon</c> — the play-start EDGE; its consumer is the
+/// Lua stub per <c>world_ntf_gen.lua</c> → <c>world_ntf_impl.lua</c>). A live
+/// instrumented run confirmed the dungeon's entry sync is delivered on BOTH
+/// paths but carries a usable clock only in <c>flow_info.active_time</c>
+/// (approximate); the exact play-start is the method-55 arrival edge.
 /// </para>
 ///
 /// <para>
-/// Runs on the network receive thread; never throws across the IL2CPP boundary
-/// (the dispatchers wrap the handler call in a try/catch, and the reader is
-/// fully defensive). First-seen + broad-delivery diagnostics live in
+/// CRASH SAFETY — the Lua-path callback does NO work: a live run with an
+/// inline Lua-path handler crashed the client during the scene load right
+/// after leaving the dungeon (the identical build minus the Lua tap passed the
+/// same in/out test), so Lua-path processing during scene teardown is the
+/// prime suspect. The Lua callback now only copies the (already-owned) payload
+/// + method id + an arrival timestamp into a small bounded queue; ALL parsing,
+/// sink writes and logging happen on the framework's main-thread tick, which
+/// is gated off during scene transitions — queued items simply wait for the
+/// gate to clear. See <c>PandaDungeonProbe.Deferred.cs</c>.
+/// </para>
+///
+/// <para>
+/// The C# stub path keeps its inline handling (network receive thread) — that
+/// path has never crashed. Never throws across the IL2CPP boundary (the
+/// dispatchers wrap the handler call in a try/catch, and the readers are fully
+/// defensive). First-seen + broad-delivery diagnostics live in
 /// <c>PandaDungeonProbe.Diagnostics.cs</c>.
 /// </para>
 /// </summary>
@@ -38,13 +49,15 @@ internal sealed partial class PandaDungeonProbe
 {
     private readonly IDungeonStateSink _sink;
     private readonly IDungeonState _state;
+    private readonly ICombatSnapshot _combat;
     private readonly IPluginLog _log;
 
-    public PandaDungeonProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log)
+    public PandaDungeonProbe(IDungeonStateSink sink, IDungeonState state, ICombatSnapshot combat, IPluginLog log)
     {
-        _sink  = sink  ?? throw new ArgumentNullException(nameof(sink));
-        _state = state ?? throw new ArgumentNullException(nameof(state));
-        _log   = log   ?? throw new ArgumentNullException(nameof(log));
+        _sink   = sink   ?? throw new ArgumentNullException(nameof(sink));
+        _state  = state  ?? throw new ArgumentNullException(nameof(state));
+        _combat = combat ?? throw new ArgumentNullException(nameof(combat));
+        _log    = log    ?? throw new ArgumentNullException(nameof(log));
     }
 
     /// <summary>
@@ -56,13 +69,18 @@ internal sealed partial class PandaDungeonProbe
         => dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
 
     /// <summary>
-    /// Register for the SyncDungeonData method (id 23) on the LUA stub path
-    /// (ZLuaStub) — the path the game's own <c>world_ntf_gen.lua</c> container
-    /// decode uses. Must be called before
-    /// <see cref="WorldNtfLuaStubDispatcher.Install"/>.
+    /// Register on the LUA stub path (ZLuaStub) for SyncDungeonData (id 23; the
+    /// path the game's own <c>world_ntf_gen.lua</c> container decode uses) and
+    /// NotifyStartPlayingDungeon (id 55; Lua-only — its arrival is the precise
+    /// play-start edge, rank-1 run-timer source). Both route through the
+    /// crash-safe deferred queue (<c>PandaDungeonProbe.Deferred.cs</c>). Must be
+    /// called before <see cref="WorldNtfLuaStubDispatcher.Install"/>.
     /// </summary>
     public void RegisterWithLua(WorldNtfLuaStubDispatcher dispatcher)
-        => dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfLua);
+    {
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfLua);
+        dispatcher.Register(WorldNtfMethodIds.NotifyStartPlayingDungeon, OnWorldNtfLua);
+    }
 
     /// <summary>
     /// Clear the active run id + settlement. Wired to logout so a stale run id
@@ -74,10 +92,10 @@ internal sealed partial class PandaDungeonProbe
 
     private void OnWorldNtf(uint methodId, byte[] payload) => HandleDelivery("cs", methodId, payload);
 
-    private void OnWorldNtfLua(uint methodId, byte[] payload) => HandleDelivery("lua", methodId, payload);
-
-    // SyncDungeonData (WorldNtf method 23) handler, shared by the C# and Lua stub
-    // registrations. Structural match → update settlement.
+    // SyncDungeonData (WorldNtf method 23) handler — inline on the C# stub path
+    // (network receive thread, crash-safe by precedent); on the Lua path it runs
+    // DEFERRED on the framework tick (PandaDungeonProbe.Deferred.cs).
+    // Structural match → update settlement.
     //
     // This probe NO LONGER touches the run id. SyncDungeonData (method 23) was
     // assumed to fire only inside a dungeon, but in-game it ALSO fires in town —
@@ -110,24 +128,44 @@ internal sealed partial class PandaDungeonProbe
         DiagDungeonTimer(methodId, result);
     }
 
-    // Run-timer start latch. Source priority is the game HUD's own
-    // (dungeon_timer_vm.lua getEndTimeStamp derives the on-screen clock from
-    // timer_info.start_time): PRIMARY timer_info.start_time, FALLBACK
-    // flow_info.play_time — selected by DungeonSyncResult.TryGetRunTimerStart,
-    // which never yields a zero. Whichever source arrives non-zero FIRST wins
-    // for the current run: the service's SetRunTimerStart is first-non-zero-wins
-    // (and zero-ignoring), so a later delivery from the other source cannot
-    // shift an already-latched clock. The pre-write zero check below only
-    // detects whether THIS delivery performed the latch, for the always-on
-    // source diagnostic.
+    // Run-timer start latch from a SyncDungeonData payload. The payload's best
+    // candidate (timer_info.start_time > flow.play_time > flow.active_time,
+    // never zero) is pushed with its cross-delivery RANK: the service latches
+    // when the slot is empty and lets a strictly better-ranked source UPGRADE a
+    // worse one (the method-55 arrival edge, rank 1, is fed separately from the
+    // deferred path). Live evidence made this necessary: the entry sync's only
+    // non-zero clock is flow.active_time (approximate, rank 4) and it arrives
+    // BEFORE method 55 — a plain first-wins guard would have frozen the
+    // approximation in.
     private void MaybeLatchRunTimer(in DungeonSyncResult result)
     {
-        if (!result.TryGetRunTimerStart(out long startMs, out string timerSource))
+        if (!result.TryGetRunTimerStart(out long startMs, out DungeonRunTimerSource wireSource))
             return;
 
-        bool latching = _state.RunTimerStartMs == 0;
-        _sink.SetRunTimerStart(startMs);
-        if (latching)
-            DiagRunTimerLatched(timerSource, startMs, result);
+        var source = MapSource(wireSource);
+        long previousMs = _state.RunTimerStartMs;
+        var write = _sink.SetRunTimerStart(startMs, source);
+        if (write == RunTimerWrite.Latched)
+            DiagRunTimerLatched(SourceLabel(source), startMs, result.SceneUuid);
+        else if (write == RunTimerWrite.Upgraded)
+            DiagRunTimerUpgraded(SourceLabel(source), startMs, previousMs, result.SceneUuid);
     }
+
+    // Wire-layer per-payload source → Application cross-delivery latch rank.
+    private static RunTimerSource MapSource(DungeonRunTimerSource source) => source switch
+    {
+        DungeonRunTimerSource.TimerInfo    => RunTimerSource.TimerInfo,
+        DungeonRunTimerSource.FlowPlayTime => RunTimerSource.FlowPlayTime,
+        _                                  => RunTimerSource.FlowActiveTime,
+    };
+
+    // Diagnostic tag for the latch/upgrade lines — the approximate source is
+    // labelled explicitly so a log reader never mistakes it for the exact edge.
+    private static string SourceLabel(RunTimerSource source) => source switch
+    {
+        RunTimerSource.Method55Edge => "method55.edge",
+        RunTimerSource.TimerInfo    => "timer_info",
+        RunTimerSource.FlowPlayTime => "flow.play_time",
+        _                           => "flow.active_time (approx, pre-countdown)",
+    };
 }
