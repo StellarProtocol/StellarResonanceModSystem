@@ -8,6 +8,8 @@ public static class AttrTypeIds
 {
     public const int AttrName            = 1;
     public const int AttrId              = 10;
+    public const int AttrSummonerId      = 90;    // true caster for a summon/pet entity's owner, when TopSummonerId is absent (Stellar.Application AttrCatalog.g.cs id 90)
+    public const int AttrTopSummonerId   = 91;    // preferred over AttrSummonerId — the ROOT caster for chained summons (AttrCatalog.g.cs id 91; same field family as SyncDamageInfo.TopSummonerId)
     public const int AttrPos             = 52;
     public const int AttrSkillLevelIdList = 116;  // repeated SkillLevelInfo {skill_id, current_level, remodel_level=Tier} — per-entity equipped loadout (incl. Battle Imagines)
     public const int AttrTeamId          = 194;   // BPSR-Meter e_attr_type.py — entity's team membership; key for in-AOI party identification

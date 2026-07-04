@@ -51,11 +51,13 @@ internal sealed partial class PandaCombatStubProbe
         // Appears — extract AttrName + the skill loadout (AttrSkillLevelIdList) from each entity's
         // AttrCollection. The full attr set (incl. the equipped-skill list that carries Battle Imagines)
         // ships on appear, NOT in subsequent deltas — so it must be read here, not only in ApplyAttrDeltas.
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var entity in appears)
         {
             DiagAppearEntity(entity);
             var eid = new EntityId(entity.Uuid);
             if (entity.Attrs is not { } attrs) continue;
+            long summonerId = 0, topSummonerId = 0;
             for (int i = 0; i < attrs.Items.Count; i++)
             {
                 var attr = attrs.Items[i];
@@ -79,10 +81,23 @@ internal sealed partial class PandaCombatStubProbe
                 }
                 else
                 {
+                    if (attr.Id == AttrTypeIds.AttrSummonerId) summonerId = attr.DecodedLong;
+                    else if (attr.Id == AttrTypeIds.AttrTopSummonerId) topSummonerId = attr.DecodedLong;
                     CaptureEntityDetail(eid, attr);
                 }
             }
+            EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
         }
+    }
+
+    // Raises CombatEvent.EntitySummonAppeared when this appear carried a resolvable owner attribution
+    // (AttrTopSummonerId preferred; AttrSummonerId as fallback). Most appearing entities (players,
+    // unowned mobs) carry neither, so this is a no-op for the common case.
+    private void EmitSummonAppeared(EntityId summonId, long summonerId, long topSummonerId, long timestampMs)
+    {
+        long owner = topSummonerId != 0 ? topSummonerId : summonerId;
+        if (owner == 0) return;
+        _sink.EnqueueEvent(new CombatEvent.EntitySummonAppeared(timestampMs, new EntityId(owner), summonId));
     }
 
     // EnterScene (method 3) — the local player's full Entity (PlayerEnt) carries self's COMPLETE attr set,
