@@ -138,6 +138,67 @@ public sealed class DungeonDirtyDataReaderTests
     public void NonProtobufEnvelope_ReturnsFalse()
         => Assert.False(DungeonDirtyDataReader.TryReadTimerStart(new byte[] { 0xFF, 0xFF }, out _));
 
+    // ── bare-blob entry point (TryReadDirtyBlob) ────────────────────────────
+    // The DungeonSyncService hook captures the BufferStream.Buffer bytes
+    // directly — the exact framing lua MergeData consumes, with NO protobuf
+    // envelope. These mirror the lua reader shapes end-to-end on that entry.
+
+    [Fact]
+    public void BareBlob_TimerOnlyDelta_ExtractsStartTime()
+    {
+        var blob = Container(Field(15, Container(Field(2, I32(1_750_000_000)))));
+
+        Assert.True(DungeonDirtyDataReader.TryReadDirtyBlob(blob, out var result));
+        Assert.True(result.HasTimerInfo);
+        Assert.Equal(1_750_000_000, result.StartTimeSeconds);
+        Assert.Equal(1_750_000_000_000L, result.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void BareBlob_MultipleFields_SkipsOthersAndParsesTimer()
+    {
+        var blob = Container(
+            Field(1, I64(746498365818142720L)),                      // sceneUuid (int64 scalar)
+            Field(2, Container(Field(1, I32(3)))),                    // flowInfo — skipped container
+            Field(10, EmptyContainer()),                              // empty [-2][-3] form
+            Field(15, Container(Field(2, I32(123_456)), Field(3, I32(900)), Field(4, I32(2)))),
+            Field(27, I32(0)));                                       // errCode (int32 scalar)
+
+        Assert.True(DungeonDirtyDataReader.TryReadDirtyBlob(blob, out var result));
+        Assert.Equal(123_456, result.StartTimeSeconds);
+        Assert.Equal(900, result.DungeonTimes);
+        Assert.Equal(2, result.Direction);
+    }
+
+    [Fact]
+    public void BareBlob_UnknownTimerField_SkipsViaSizeLikeTheGame()
+    {
+        var blob = Container(
+            Field(15, Container(
+                Field(2, I32(555)),
+                Field(12, I32(999)))));   // unknown per current dungeon_timer_info.lua
+
+        Assert.True(DungeonDirtyDataReader.TryReadDirtyBlob(blob, out var result));
+        Assert.Equal(555, result.StartTimeSeconds);
+    }
+
+    [Fact]
+    public void BareBlob_EmptyTimerContainer_PresentButZeroStart()
+    {
+        var blob = Container(Field(15, EmptyContainer()));
+
+        Assert.True(DungeonDirtyDataReader.TryReadDirtyBlob(blob, out var result));
+        Assert.True(result.HasTimerInfo);
+        Assert.Equal(0, result.StartTimeSeconds);
+    }
+
+    [Fact]
+    public void BareBlob_ProtobufWrappedInput_IsRejected()
+        // A method-24-shaped (protobuf-wrapped) payload must not misparse as a
+        // bare blob — the first int32 is a protobuf tag, not the -2 begin tag.
+        => Assert.False(DungeonDirtyDataReader.TryReadDirtyBlob(
+            Wrap(Container(Field(15, Container(Field(2, I32(777)))))), out _));
+
     // ---- payload builders -------------------------------------------------
 
     // Full container framing: [-2][size][entries…][-3], size = entry bytes only.

@@ -35,10 +35,17 @@ namespace Stellar.Infrastructure.Game;
 /// (<c>SyncDungeonDirtyData</c>, C#-routed: <c>Zservice.WorldNtfStub</c>
 /// publisher → <c>Panda.ZGame.DungeonSyncService.OnSync</c> →
 /// <c>lua/sync/dungeon_sync.lua</c> → <c>dungeon_sync_data.lua MergeData</c>).
-/// The probe taps method 24 through the same deferred queue and parses the
-/// blob with <see cref="DungeonDirtyDataReader"/>; a non-zero
+/// The AUTHORITATIVE tap for that delta is
+/// <see cref="PandaDungeonSyncServiceHook"/> — a HarmonyX prefix on the
+/// DungeonSyncService's MessagePipe handler, which captures the BARE merge
+/// blob downstream of whatever wire method delivers it and enqueues via
+/// <see cref="OnDungeonSyncDeltaDeferred"/>. The method-24 registration below
+/// is the INFERRED wire-origin tap, kept as corroborating diagnostics. Both
+/// shapes drain through the same handler and parse with
+/// <see cref="DungeonDirtyDataReader"/>; a non-zero
 /// <c>timer_info.start_time</c> latches at rank 2 (TimerInfo), UPGRADING an
-/// earlier rank-4 active_time latch mid-run.
+/// earlier rank-4 active_time latch mid-run (duplicates are harmless — the
+/// rank guard ignores equal-rank rewrites).
 /// </para>
 ///
 /// <para>

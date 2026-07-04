@@ -157,17 +157,97 @@ public sealed class PandaDungeonProbeDeferredTests
         Assert.Contains(_log.InfoLines, l => l.Contains("skipped as stale"));
     }
 
-    // SyncDungeonDirtyData { BufferStream v_data=1 { bytes buffer=1 } } around
-    // the int32-LE merge blob: [-2][size][15][-2][tsize][2][start][-3][-3] —
-    // same framing as DungeonDirtyDataReaderTests.
-    private static byte[] DirtyTimerPayload(int startTimeSeconds)
+    // ── DungeonSyncService hook path (bare merge blob, no protobuf wrap) ────
+
+    [Fact]
+    public void Drain_HookPathBareDelta_UpgradesActiveTimeLatch_Rank2()
+    {
+        _service.SetCurrentRun(RunA);
+        _combat.ServerNowMs = 111_000;
+
+        // The entry sync latched the APPROXIMATE flow.active_time (rank 4)…
+        Assert.Equal(Stellar.Application.Abstractions.RunTimerWrite.Latched,
+            ((Stellar.Application.Abstractions.IDungeonStateSink)_service)
+                .SetRunTimerStart(500_000, Stellar.Application.Abstractions.RunTimerSource.FlowActiveTime));
+
+        // …then the DungeonSyncService hook captures the BARE container delta
+        // carrying the true timer_info.start_time.
+        _probe.OnDungeonSyncDeltaDeferred(BareDirtyTimerBlob(startTimeSeconds: 777));
+        _probe.DrainDeferred();
+
+        Assert.Equal(777_000, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.Contains(_log.InfoLines,
+            l => l.Contains("run-timer UPGRADED") && l.Contains("timer_info.delta (DungeonSyncService hook)"));
+    }
+
+    [Fact]
+    public void Drain_HookPathBareDelta_LatchesWhenSlotEmpty()
+    {
+        _service.SetCurrentRun(RunA);
+
+        _probe.OnDungeonSyncDeltaDeferred(BareDirtyTimerBlob(startTimeSeconds: 777));
+        _probe.DrainDeferred();
+
+        Assert.Equal(777_000, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.Contains(_log.InfoLines,
+            l => l.Contains("run-timer latched") && l.Contains("timer_info.delta (DungeonSyncService hook)"));
+    }
+
+    [Fact]
+    public void Drain_HookPathBareDelta_ZeroStartTime_DoesNotDisturbLatch()
+    {
+        _service.SetCurrentRun(RunA);
+        ((Stellar.Application.Abstractions.IDungeonStateSink)_service)
+            .SetRunTimerStart(500_000, Stellar.Application.Abstractions.RunTimerSource.FlowActiveTime);
+
+        _probe.OnDungeonSyncDeltaDeferred(BareDirtyTimerBlob(startTimeSeconds: 0));
+        _probe.DrainDeferred();
+
+        Assert.Equal(500_000, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.DoesNotContain(_log.InfoLines, l => l.Contains("run-timer UPGRADED"));
+    }
+
+    [Fact]
+    public void Drain_HookPathBareDelta_RunChangedBetweenEnqueueAndDrain_SkipsLatch()
+    {
+        _service.SetCurrentRun(RunA);
+        _probe.OnDungeonSyncDeltaDeferred(BareDirtyTimerBlob(startTimeSeconds: 777));
+
+        _service.SetCurrentRun(RunB);
+        _probe.DrainDeferred();
+
+        Assert.Equal(0, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.Contains(_log.InfoLines, l => l.Contains("skipped as stale"));
+    }
+
+    [Fact]
+    public void Drain_HookPathBareDelta_ProtobufWrappedBytes_AreRejectedNotMisparsed()
+    {
+        // Wrong framing for the hook path (a protobuf-wrapped method-24 payload
+        // must NOT parse as a bare blob) — the reader rejects it, nothing latches.
+        _service.SetCurrentRun(RunA);
+
+        _probe.OnDungeonSyncDeltaDeferred(DirtyTimerPayload(startTimeSeconds: 777));
+        _probe.DrainDeferred();
+
+        Assert.Equal(0, ((IDungeonState)_service).RunTimerStartMs);
+    }
+
+    // The BARE int32-LE merge blob (what DungeonSyncService.OnSync hands lua):
+    // [-2][size][15][-2][tsize][2][start][-3][-3] — no protobuf envelope.
+    private static byte[] BareDirtyTimerBlob(int startTimeSeconds)
     {
         var timerEntries = Bytes(I32(2), I32(startTimeSeconds));
         var timer = Bytes(I32(-2), I32(timerEntries.Length), timerEntries, I32(-3));
         var entries = Bytes(I32(15), timer);
-        var blob = Bytes(I32(-2), I32(entries.Length), entries, I32(-3));
-        return LenDelim(1, LenDelim(1, blob));
+        return Bytes(I32(-2), I32(entries.Length), entries, I32(-3));
     }
+
+    // SyncDungeonDirtyData { BufferStream v_data=1 { bytes buffer=1 } } around
+    // the int32-LE merge blob — the method-24 stub-tap shape; same framing as
+    // DungeonDirtyDataReaderTests.
+    private static byte[] DirtyTimerPayload(int startTimeSeconds)
+        => LenDelim(1, LenDelim(1, BareDirtyTimerBlob(startTimeSeconds)));
 
     private static byte[] I32(int v) => System.BitConverter.GetBytes(v);
 

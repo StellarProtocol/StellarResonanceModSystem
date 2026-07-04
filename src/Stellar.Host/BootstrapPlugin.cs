@@ -98,6 +98,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
     private PandaDungeonProbe? _dungeonProbe;
+    private PandaDungeonSyncServiceHook? _dungeonSyncServiceHook;
     private WorldNtfLuaStubDispatcher? _worldNtfLuaDispatcher;
     private GrpcTeamNtfStubDispatcher? _grpcTeamNtfDispatcher;
     // Injects the registered profile-card action buttons (IProfileCardActionSource) into the game's

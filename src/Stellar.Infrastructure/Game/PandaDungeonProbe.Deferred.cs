@@ -35,28 +35,32 @@ internal sealed partial class PandaDungeonProbe
     // drain (main-thread only — the drain owns it; no interlocking needed).
     private int _deferredStaleSkipped;
 
+    // How a queued payload should be parsed at drain: a WorldNtf stub delivery
+    // (protobuf envelope around the merge blob for method 24) vs the BARE
+    // container-merge blob captured off the DungeonSyncService hook (the bytes
+    // the game's own lua MergeData consumes directly — no protobuf unwrap).
+    private enum DeferredPayloadKind
+    {
+        WorldNtf,
+        BareDirtyBlob,
+    }
+
     private readonly struct DeferredLuaDelivery
     {
-        public DeferredLuaDelivery(uint methodId, byte[] payload, long arrivalMs, bool arrivalIsServerClock, long enqueueRunId)
-        {
-            MethodId = methodId;
-            Payload = payload;
-            ArrivalMs = arrivalMs;
-            ArrivalIsServerClock = arrivalIsServerClock;
-            EnqueueRunId = enqueueRunId;
-        }
+        public uint MethodId { get; init; }
+        public byte[] Payload { get; init; }
 
-        public uint MethodId { get; }
-        public byte[] Payload { get; }
+        /// <summary>How <see cref="Payload"/> is framed — see <see cref="DeferredPayloadKind"/>.</summary>
+        public DeferredPayloadKind Kind { get; init; }
 
         /// <summary>Epoch ms captured at ENQUEUE (the packet's arrival), so drain latency never skews the method-55 edge stamp.</summary>
-        public long ArrivalMs { get; }
+        public long ArrivalMs { get; init; }
 
         /// <summary>True when <see cref="ArrivalMs"/> came from the interpolated server clock; false = client UTC fallback (skew caveat).</summary>
-        public bool ArrivalIsServerClock { get; }
+        public bool ArrivalIsServerClock { get; init; }
 
         /// <summary>The latched run id at ENQUEUE. A scene change between enqueue and drain (the tick is gated off during the switch) changes the current run id — draining this item into the NEW run's state would be a cross-run write, so the drain skips it when the ids differ.</summary>
-        public long EnqueueRunId { get; }
+        public long EnqueueRunId { get; init; }
     }
 
     // Deferred enqueue callback — registered for every Lua-path method AND for
@@ -68,6 +72,17 @@ internal sealed partial class PandaDungeonProbe
     // PandaDungeonProbeDeferredTests via InternalsVisibleTo — no IL2CPP
     // dispatcher needed.
     internal void OnWorldNtfDeferred(uint methodId, byte[] payload)
+        => EnqueueDeferred(methodId, payload, DeferredPayloadKind.WorldNtf);
+
+    // Deferred enqueue for the DungeonSyncService hook (PandaDungeonSyncServiceHook):
+    // the payload is the BARE container-merge blob (exactly what the game's lua
+    // MergeData consumes — no protobuf envelope). Runs on the MessagePipe publish
+    // thread (downstream of WorldNtfStub.OnCallStub): enqueue only, same
+    // discipline and count/cap machinery as the stub paths.
+    internal void OnDungeonSyncDeltaDeferred(byte[] bareBlob)
+        => EnqueueDeferred(WorldNtfMethodIds.SyncDungeonDirtyData, bareBlob, DeferredPayloadKind.BareDirtyBlob);
+
+    private void EnqueueDeferred(uint methodId, byte[] payload, DeferredPayloadKind kind)
     {
         bool counted = false;
         try
@@ -79,7 +94,15 @@ internal sealed partial class PandaDungeonProbe
             }
             long arrivalMs = CaptureArrivalMs(out bool serverClock);
             long runId = _state.CurrentRunId;
-            var item = new DeferredLuaDelivery(methodId, payload, arrivalMs, serverClock, runId);
+            var item = new DeferredLuaDelivery
+            {
+                MethodId = methodId,
+                Payload = payload,
+                Kind = kind,
+                ArrivalMs = arrivalMs,
+                ArrivalIsServerClock = serverClock,
+                EnqueueRunId = runId,
+            };
             // Count LAST — after everything that can throw — so a throw above
             // (e.g. from the clock read) can never leak _deferredCount upward
             // until the bounded queue wedges permanently at "full". The catch
@@ -160,24 +183,39 @@ internal sealed partial class PandaDungeonProbe
         HandleDelivery("lua", item.MethodId, item.Payload);
     }
 
-    // WorldNtf method 24 (SyncDungeonDirtyData) — the dungeon container's
-    // dirty-DELTA, the path the game's own timer HUD gets its clock from. Parse
-    // just the timer_info slice; a non-zero start_time latches at rank 2
+    // The dungeon container's dirty-DELTA — the path the game's own timer HUD
+    // gets its clock from. Two delivery shapes share this handler:
+    // <list>
+    //   BareDirtyBlob — the AUTHORITATIVE source: PandaDungeonSyncServiceHook's
+    //   prefix on Panda.ZGame.DungeonSyncService captured the bare
+    //   container-merge blob (the exact bytes lua MergeData consumes);
+    //   WorldNtf — the inferred method-24 stub tap, whose payload still carries
+    //   the SyncDungeonDirtyData{BufferStream{bytes}} protobuf envelope.
+    // </list>
+    // Parse just the timer_info slice; a non-zero start_time latches at rank 2
     // (TimerInfo), UPGRADING the approximate rank-4 flow.active_time latch the
     // entry sync landed earlier in the run. scene_uuid is intentionally NOT
     // required (deltas carry only changed fields); the run-id scope guard in
-    // HandleDeferred already protects against cross-run writes.
+    // HandleDeferred already protects against cross-run writes. Duplicate
+    // deliveries across the two shapes are harmless — the rank guard ignores
+    // equal-rank rewrites.
     private void HandleDungeonDirtyDelta(in DeferredLuaDelivery item)
     {
-        if (!DungeonDirtyDataReader.TryReadTimerStart(item.Payload, out var dirty))
-            return;
+        bool bare = item.Kind == DeferredPayloadKind.BareDirtyBlob;
+        bool parsed = bare
+            ? DungeonDirtyDataReader.TryReadDirtyBlob(item.Payload, out DungeonDirtyTimerResult dirty)
+            : DungeonDirtyDataReader.TryReadTimerStart(item.Payload, out dirty);
+        if (!parsed) return;
 
-        DiagDungeonDirtyTimer(dirty);
+        string source = bare
+            ? "timer_info.delta (DungeonSyncService hook)"
+            : "timer_info.delta (method 24)";
+
+        DiagDungeonDirtyTimer(dirty, source);
         if (dirty.StartTimeSeconds == 0) return;
 
         long previousMs = _state.RunTimerStartMs;
         var write = _sink.SetRunTimerStart(dirty.RunTimerStartMs, RunTimerSource.TimerInfo);
-        const string source = "timer_info.delta (method 24)";
         if (write == RunTimerWrite.Latched)
             DiagRunTimerLatched(source, dirty.RunTimerStartMs, sceneUuid: 0);
         else if (write == RunTimerWrite.Upgraded)

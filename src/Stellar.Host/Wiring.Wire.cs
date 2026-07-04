@@ -51,6 +51,23 @@ public sealed partial class BootstrapPlugin
         InstallSocialDataProbe(log);
         InstallWorldNtfDispatcher(log);
         InstallReadyCheckProbe(log);
+        InstallDungeonSyncServiceHook(log);
+    }
+
+    // The dungeon container dirty-DELTA's C# consumer: Panda.ZGame.
+    // DungeonSyncService (MessagePipe ISubscriber<SyncDungeonDirtyDataMessageEvent>
+    // → lua/sync/dungeon_sync.lua MergeData). Its handler is the AUTHORITATIVE
+    // seam for the true timer_info.startTime — it fires regardless of which wire
+    // method delivers the delta (the method-24 stub tap above is inferred, kept
+    // as corroborating diagnostics). The hook's prefix copies the bare merge
+    // blob and enqueues into the dungeon probe's deferred queue; parsing +
+    // rank-2 latch happen at drain on the gated tick (DrainDungeonDeferred in
+    // Wiring.ServiceTick.cs). Constructed after InstallWorldNtfDispatcher — it
+    // enqueues into _dungeonProbe.
+    private void InstallDungeonSyncServiceHook(BepInExPluginLog log)
+    {
+        _dungeonSyncServiceHook = new PandaDungeonSyncServiceHook(_dungeonProbe!, log);
+        _dungeonSyncServiceHook.PatchAll(PluginGuid);
     }
 
     // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.
