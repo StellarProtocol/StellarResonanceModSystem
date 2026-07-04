@@ -187,6 +187,7 @@ internal sealed partial class PandaDungeonProbe
     private const int StartPlayingCap = 8;
     private int _startPlayingLogged;
     private int _deferredDropsLogged;
+    private int _deferredStaleLogged;
     private bool _deferredThrewLogged;
 
     /// <summary>
@@ -222,6 +223,17 @@ internal sealed partial class PandaDungeonProbe
         if (dropped <= _deferredDropsLogged) return;
         _deferredDropsLogged = dropped;
         _log.Warning($"[Dungeon] deferred lua-path queue overflow — {dropped} deliveries dropped so far (cap {DeferredCap})");
+    }
+
+    // Drain-side visibility for the run-id scope guard: items enqueued under
+    // one run id and drained under another are skipped (no sink writes). Same
+    // plateau pattern as the drop diag — one line per new plateau.
+    private void DiagDeferredStaleSkips()
+    {
+        int stale = _deferredStaleSkipped;
+        if (stale <= _deferredStaleLogged) return;
+        _deferredStaleLogged = stale;
+        _log.Info($"[Dungeon] deferred lua-path items skipped as stale — run id changed between enqueue and drain ({stale} so far)");
     }
 
     // One-shot: a deferred handler threw on the tick. The exception is already

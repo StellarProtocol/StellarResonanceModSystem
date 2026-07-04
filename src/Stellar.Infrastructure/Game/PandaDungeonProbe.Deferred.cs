@@ -31,15 +31,19 @@ internal sealed partial class PandaDungeonProbe
     private readonly ConcurrentQueue<DeferredLuaDelivery> _deferred = new();
     private int _deferredCount;
     private int _deferredDropped;
+    // Items dropped at DRAIN because the run id changed between enqueue and
+    // drain (main-thread only — the drain owns it; no interlocking needed).
+    private int _deferredStaleSkipped;
 
     private readonly struct DeferredLuaDelivery
     {
-        public DeferredLuaDelivery(uint methodId, byte[] payload, long arrivalMs, bool arrivalIsServerClock)
+        public DeferredLuaDelivery(uint methodId, byte[] payload, long arrivalMs, bool arrivalIsServerClock, long enqueueRunId)
         {
             MethodId = methodId;
             Payload = payload;
             ArrivalMs = arrivalMs;
             ArrivalIsServerClock = arrivalIsServerClock;
+            EnqueueRunId = enqueueRunId;
         }
 
         public uint MethodId { get; }
@@ -50,13 +54,20 @@ internal sealed partial class PandaDungeonProbe
 
         /// <summary>True when <see cref="ArrivalMs"/> came from the interpolated server clock; false = client UTC fallback (skew caveat).</summary>
         public bool ArrivalIsServerClock { get; }
+
+        /// <summary>The latched run id at ENQUEUE. A scene change between enqueue and drain (the tick is gated off during the switch) changes the current run id — draining this item into the NEW run's state would be a cross-run write, so the drain skips it when the ids differ.</summary>
+        public long EnqueueRunId { get; }
     }
 
     // LUA-path callback (network thread, possibly mid scene-teardown): enqueue
     // ONLY. No parsing, no sink writes, no logging — a catch-all guard on top of
     // the dispatcher's own, because this path has crashed the client before.
-    private void OnWorldNtfLua(uint methodId, byte[] payload)
+    // Internal (not private) solely as the unit-test seam: the callback +
+    // DrainDeferred pair is exercised directly by PandaDungeonProbeDeferredTests
+    // via InternalsVisibleTo — no IL2CPP dispatcher needed.
+    internal void OnWorldNtfLua(uint methodId, byte[] payload)
     {
+        bool counted = false;
         try
         {
             if (Volatile.Read(ref _deferredCount) >= DeferredCap)
@@ -64,14 +75,22 @@ internal sealed partial class PandaDungeonProbe
                 Interlocked.Increment(ref _deferredDropped);
                 return;
             }
-            Interlocked.Increment(ref _deferredCount);
             long arrivalMs = CaptureArrivalMs(out bool serverClock);
-            _deferred.Enqueue(new DeferredLuaDelivery(methodId, payload, arrivalMs, serverClock));
+            long runId = _state.CurrentRunId;
+            var item = new DeferredLuaDelivery(methodId, payload, arrivalMs, serverClock, runId);
+            // Count LAST — after everything that can throw — so a throw above
+            // (e.g. from the clock read) can never leak _deferredCount upward
+            // until the bounded queue wedges permanently at "full". The catch
+            // decrement covers the residual Enqueue-throw window.
+            Interlocked.Increment(ref _deferredCount);
+            counted = true;
+            _deferred.Enqueue(item);
         }
         catch
         {
             // Never throw across the IL2CPP boundary — and never log here
             // either (logging is work; this callback must stay inert).
+            if (counted) Interlocked.Decrement(ref _deferredCount);
         }
     }
 
@@ -110,10 +129,22 @@ internal sealed partial class PandaDungeonProbe
             catch (Exception ex) { DiagDeferredHandlerThrew(item.MethodId, ex); }
         }
         DiagDeferredDrops();
+        DiagDeferredStaleSkips();
     }
 
     private void HandleDeferred(in DeferredLuaDelivery item)
     {
+        // Run-id scope guard: a scene change between enqueue and drain means
+        // this item belongs to a PREVIOUS run — applying its sink writes
+        // (SetRunTimerStart / settlement / difficulty) would pollute the NEW
+        // run's state (e.g. a stale method-55 edge latching the new run's
+        // timer). Skip the writes and count it for the drain-side diag.
+        if (item.EnqueueRunId != _state.CurrentRunId)
+        {
+            _deferredStaleSkipped++;
+            return;
+        }
+
         if (item.MethodId == WorldNtfMethodIds.NotifyStartPlayingDungeon)
         {
             HandleStartPlayingDungeon(item);
