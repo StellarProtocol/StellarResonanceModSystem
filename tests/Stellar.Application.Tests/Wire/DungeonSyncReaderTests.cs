@@ -36,6 +36,35 @@ public sealed class DungeonSyncReaderTests
     }
 
     [Fact]
+    public void Reads_dungeon_scene_info_difficulty()
+    {
+        // DungeonSceneInfo { difficulty(1) = 6 }
+        var sceneInfo = Msg(Varint(1, 6));
+
+        // DungeonSyncData { scene_uuid(1)=99, dungeon_scene_info(21)=... }
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(21, sceneInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.Equal(99L, r.SceneUuid);
+        Assert.True(r.HasDungeonSceneInfo);
+        Assert.Equal(6, r.DungeonDifficulty);
+    }
+
+    [Fact]
+    public void Reads_run_id_without_dungeon_scene_info()
+    {
+        var data = Msg(Varint(1, 99L));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.HasDungeonSceneInfo);
+        Assert.Equal(0, r.DungeonDifficulty);
+    }
+
+    [Fact]
     public void Reads_run_id_without_settlement()
     {
         var data = Msg(Varint(1, 42L));

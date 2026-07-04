@@ -71,6 +71,10 @@ internal sealed partial class PandaDungeonProbe
         if (result.HasSettlement)
             _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);
 
+        if (result.HasDungeonSceneInfo)
+            _sink.SetDifficulty(result.DungeonDifficulty);
+
         DiagDungeonSync(methodId, result);
+        DiagDungeonDifficulty(methodId, result);
     }
 }

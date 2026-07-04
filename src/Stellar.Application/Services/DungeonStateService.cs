@@ -17,6 +17,7 @@ namespace Stellar.Application.Services;
 internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 {
     private long _currentRunId;
+    private int _currentDifficulty;
 
     // Settlement is a multi-field struct, so it can't be published with a single
     // volatile/interlocked write without tearing. Guard it with a small lock —
@@ -32,6 +33,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         get { lock (_settlementLock) return _lastSettlement; }
     }
 
+    public int CurrentDifficulty => Interlocked.CompareExchange(ref _currentDifficulty, 0, 0);
+
     public void SetCurrentRun(long sceneUuid)
     {
         long previous = Interlocked.Exchange(ref _currentRunId, sceneUuid);
@@ -43,7 +46,10 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         // survive the drop-to-0. The stale settlement is then cleared when the next
         // real run latches its id, or on Reset (logout).
         if (sceneUuid != 0 && previous != sceneUuid)
+        {
             lock (_settlementLock) _lastSettlement = null;
+            Interlocked.Exchange(ref _currentDifficulty, 0);
+        }
     }
 
     public void SetSettlement(int passTimeSeconds, int masterModeScore)
@@ -52,9 +58,13 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
             _lastSettlement = new DungeonSettlementInfo(passTimeSeconds, masterModeScore);
     }
 
+    public void SetDifficulty(int difficulty)
+        => Interlocked.Exchange(ref _currentDifficulty, difficulty);
+
     public void Reset()
     {
         Interlocked.Exchange(ref _currentRunId, 0);
+        Interlocked.Exchange(ref _currentDifficulty, 0);
         lock (_settlementLock) _lastSettlement = null;
     }
 }

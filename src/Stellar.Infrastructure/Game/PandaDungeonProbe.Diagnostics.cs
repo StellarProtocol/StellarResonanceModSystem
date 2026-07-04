@@ -14,6 +14,23 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaDungeonProbe
 {
     private bool _firstDetectionLogged;
+    private bool _firstDifficultyLogged;
+
+    /// <summary>
+    /// One-shot, always-on: log the raw <c>DungeonSceneInfo.difficulty</c> value
+    /// the first time field 21 is seen. The semantic (1-20 challenge level vs. a
+    /// small tier enum) is UNCONFIRMED — this line is what the user's next
+    /// Master-N run is used to confirm against.
+    /// </summary>
+    private void DiagDungeonDifficulty(uint methodId, DungeonSyncResult result)
+    {
+        if (!result.HasDungeonSceneInfo || _firstDifficultyLogged) return;
+
+        _firstDifficultyLogged = true;
+        _log.Info(
+            $"[Dungeon] dungeon difficulty raw={result.DungeonDifficulty} scene={result.SceneUuid} " +
+            $"method={methodId} (semantic unconfirmed: 1-20 level vs. tier enum)");
+    }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)
     {

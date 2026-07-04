@@ -31,4 +31,18 @@ public interface IDungeonState
     /// clear time and master-mode score.
     /// </summary>
     DungeonSettlementInfo? LastSettlement { get; }
+
+    /// <summary>
+    /// Raw value of <c>DungeonSceneInfo.difficulty</c> (<c>DungeonSyncData.dungeon_scene_info</c>,
+    /// field 21) for the current run, or 0 when not yet seen / not applicable.
+    /// <para>
+    /// <b>Semantic UNCONFIRMED.</b> The lobby lets the player pick a "Master
+    /// 1-20" challenge level; game tables only expose the tier
+    /// (normal/hard/master). This value travels on the wire and is the
+    /// candidate for the numeric level, but whether it carries the literal
+    /// 1-20 level or a small tier enum has not been confirmed against a real
+    /// Master-tier run. Treat it as diagnostic until confirmed.
+    /// </para>
+    /// </summary>
+    int CurrentDifficulty { get; }
 }

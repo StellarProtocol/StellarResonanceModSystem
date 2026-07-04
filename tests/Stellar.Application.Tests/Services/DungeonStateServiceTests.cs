@@ -108,6 +108,50 @@ public sealed class DungeonStateServiceTests
     }
 
     [Fact]
+    public void SetDifficulty_PublishesRawValue()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetDifficulty(6);
+        Assert.Equal(6, read.CurrentDifficulty);
+    }
+
+    [Fact]
+    public void SetCurrentRun_NewId_ClearsPriorDifficulty()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetDifficulty(6);
+
+        write.SetCurrentRun(Dungeon2Id);
+        Assert.Equal(0, read.CurrentDifficulty);
+    }
+
+    [Fact]
+    public void SetCurrentRun_Zero_PreservesDifficulty()
+    {
+        // Mirrors settlement: leaving to town clears the run id but the upload
+        // plugin still needs the difficulty at archive time on that transition.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetDifficulty(6);
+
+        write.SetCurrentRun(0);
+        Assert.Equal(6, read.CurrentDifficulty);
+    }
+
+    [Fact]
+    public void Reset_ClearsDifficulty()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetDifficulty(6);
+
+        write.Reset();
+        Assert.Equal(0, read.CurrentDifficulty);
+    }
+
+    [Fact]
     public void Reset_ClearsRunIdAndSettlement()
     {
         var (read, write) = NewService();

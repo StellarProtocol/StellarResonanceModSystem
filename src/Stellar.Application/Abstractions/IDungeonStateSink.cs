@@ -45,6 +45,14 @@ internal interface IDungeonStateSink
     void SetSettlement(int passTimeSeconds, int masterModeScore);
 
     /// <summary>
+    /// Record the raw <c>DungeonSceneInfo.difficulty</c> value (field 1) decoded
+    /// from <c>DungeonSyncData.dungeon_scene_info</c> (field 21) for the current
+    /// run. Semantic UNCONFIRMED — see
+    /// <see cref="Stellar.Abstractions.Services.IDungeonState.CurrentDifficulty"/>.
+    /// </summary>
+    void SetDifficulty(int difficulty);
+
+    /// <summary>
     /// Clear the active run and any settlement — invoked on logout.
     /// </summary>
     void Reset();
