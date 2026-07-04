@@ -19,9 +19,16 @@ public readonly record struct GearSlotRef(int Slot, int EquipId);
 /// on the game's own card, and we follow the native privacy behaviour).</param>
 /// <param name="TitleId">Equipped title id from <c>personal_zone.title_id</c>; 0 when none. Resolving the
 /// display name requires the dungeon-title game table (deferred).</param>
-public readonly record struct SocialIdentity(string Guild, int PartySize, int MasterScore, int TitleId)
+/// <param name="FashionCollect">Fashion collection-point count from <c>personal_zone.fashion_collect_point</c>;
+/// 0 when absent. Candidate source for the ID-card "collection points" badge (unconfirmed).</param>
+/// <param name="RideCollect">Ride collection-point count from <c>personal_zone.ride_collect_point</c>; 0 when absent.</param>
+/// <param name="WeaponSkinCollect">Weapon-skin collection-point count from
+/// <c>personal_zone.weapon_skin_collect_point</c>; 0 when absent.</param>
+public readonly record struct SocialIdentity(
+    string Guild, int PartySize, int MasterScore, int TitleId,
+    int FashionCollect = 0, int RideCollect = 0, int WeaponSkinCollect = 0)
 {
-    /// <summary>Empty identity — no guild/party/score/title parsed.</summary>
+    /// <summary>Empty identity — no guild/party/score/title/collect-point data parsed.</summary>
     public static SocialIdentity None => new(string.Empty, 0, 0, 0);
 }
 

@@ -30,7 +30,7 @@ public class SocialDataReaderTests
         { var a = new List<byte>(); VInt(a, 4, 47597); Len(data, 11, a.ToArray()); } // user_attr_data{fight_point}
         { var t = new List<byte>(); VInt(t, 4, 5); Len(data, 12, t.ToArray()); }    // team_data{team_num=5}
         { var u = new List<byte>(); Len(u, 2, Str("Eroge")); Len(data, 13, u.ToArray()); } // union_data{name}
-        { var z = new List<byte>(); VInt(z, 11, 301); Len(data, 16, z.ToArray()); } // personal_zone{title_id}
+        { var z = new List<byte>(); VInt(z, 11, 301); VInt(z, 13, 9265); VInt(z, 18, 42); VInt(z, 20, 7); Len(data, 16, z.ToArray()); } // personal_zone{title_id, fashion_collect, ride_collect, weaponSkin_collect}
         { var m = new List<byte>(); VInt(m, 1, 2868); Len(data, 22, m.ToArray()); } // master_mode_dungeon_data{season_score}
 
         var reply = new List<byte>(); Len(reply, 2, data.ToArray());   // GetSocialDataReply.data = field 2
@@ -46,7 +46,7 @@ public class SocialDataReaderTests
         Assert.Equal(2, snap.Gear.Count);
         Assert.Equal(new GearSlotRef(200, 1001), snap.Gear[0]);
         Assert.Equal(new GearSlotRef(205, 1002), snap.Gear[1]);
-        Assert.Equal(new SocialIdentity("Eroge", 5, 2868, 301), snap.Identity);
+        Assert.Equal(new SocialIdentity("Eroge", 5, 2868, 301, 9265, 42, 7), snap.Identity);
     }
 
     [Fact]
@@ -62,6 +62,9 @@ public class SocialDataReaderTests
 
         Assert.NotNull(snap);
         Assert.Equal(SocialIdentity.None, snap!.Identity);
+        Assert.Equal(0, snap.Identity.FashionCollect);
+        Assert.Equal(0, snap.Identity.RideCollect);
+        Assert.Equal(0, snap.Identity.WeaponSkinCollect);
     }
 
     [Fact]

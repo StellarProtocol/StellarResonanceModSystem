@@ -28,6 +28,7 @@ public static class SocialDataReader
     {
         long charId = 0, fightPoint = 0; int level = 0, professionId = 0; string name = "", guild = "";
         int partySize = 0, masterScore = 0, titleId = 0;
+        int fashionCollect = 0, rideCollect = 0, weaponSkinCollect = 0;
         string profileUrl = "", halfBodyUrl = "";
         var gear = new List<GearSlotRef>(11);
         IReadOnlyList<FashionEntry> fashion = Array.Empty<FashionEntry>();
@@ -47,7 +48,7 @@ public static class SocialDataReader
                     case 11: fightPoint = ReadFirstVarintField(inner, 4); break;
                     case 12: partySize = (int)ReadFirstVarintField(inner, 4); break;     // team_data.team_num
                     case 13: guild = ReadFirstStringField(inner, 2); break;              // union_data.name
-                    case 16: titleId = (int)ReadFirstVarintField(inner, 11); break;      // personal_zone.title_id
+                    case 16: ReadPersonalZone(inner, out titleId, out fashionCollect, out rideCollect, out weaponSkinCollect); break; // personal_zone
                     case 22: masterScore = ReadMasterScore(inner); break;
                     case 4:  AvatarInfoReader.Read(inner, out profileUrl, out halfBodyUrl); break;
                 }
@@ -61,7 +62,31 @@ public static class SocialDataReader
         if (charId == 0 || name.Length == 0) return null;
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return new SocialSnapshot(charId, name, level, fightPoint, professionId, gear, fashion,
-            new SocialIdentity(guild, partySize, masterScore, titleId), profileUrl, halfBodyUrl);
+            new SocialIdentity(guild, partySize, masterScore, titleId, fashionCollect, rideCollect, weaponSkinCollect),
+            profileUrl, halfBodyUrl);
+    }
+
+    // personal_zone { title_id = 11, fashion_collect_point = 13, ride_collect_point = 18,
+    // weapon_skin_collect_point = 20 }. Single walk over the submessage — mirrors ReadEquip/ReadBasic style.
+    private static void ReadPersonalZone(ReadOnlySpan<byte> p, out int titleId, out int fashionCollect, out int rideCollect, out int weaponSkinCollect)
+    {
+        titleId = 0; fashionCollect = 0; rideCollect = 0; weaponSkinCollect = 0;
+        int pos = 0;
+        while (pos < p.Length)
+        {
+            if (!WireProtocol.TryReadTag(p, ref pos, out var f, out var w)) break;
+            if (w == 0 && WireProtocol.TryReadVarint(p, ref pos, out var v))
+            {
+                switch (f)
+                {
+                    case 11: titleId = (int)v; break;
+                    case 13: fashionCollect = (int)v; break;
+                    case 18: rideCollect = (int)v; break;
+                    case 20: weaponSkinCollect = (int)v; break;
+                }
+            }
+            else if (!WireProtocol.SkipField(p, ref pos, w)) break;
+        }
     }
 
     // master_mode_dungeon_data { season_score = 1, is_show = 2 }. The is_show flag is INVERTED on the
