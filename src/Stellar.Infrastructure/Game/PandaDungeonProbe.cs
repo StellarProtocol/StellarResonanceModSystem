@@ -108,7 +108,7 @@ internal sealed partial class PandaDungeonProbe
     /// the deferred queue — nothing else runs on the wire thread.
     /// </summary>
     public void RegisterOnWireTap(Stellar.Application.Abstractions.IWireTap tap)
-        => tap.Register(WorldNtfMethodIds.WorldNtf, WorldNtfMethodIds.SyncDungeonDirtyData, env =>
+        => tap.Register(Stellar.Wire.BPSRServiceIds.WorldNtf, WorldNtfMethodIds.SyncDungeonDirtyData, env =>
         {
             try { OnWorldNtfDeferred(env.MethodId, env.Payload.ToArray()); }
             catch { /* wire thread — never throw into the recv hook */ }
