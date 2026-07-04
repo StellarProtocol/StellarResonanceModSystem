@@ -43,6 +43,51 @@ public readonly struct DungeonSyncResult
     /// </para>
     /// </summary>
     public int DungeonDifficulty { get; init; }
+
+    /// <summary>
+    /// Raw <c>DungeonTimerInfo</c> fields (<c>type</c>, <c>dungeon_times</c>,
+    /// <c>direction</c>, <c>pause_time</c>, <c>pause_total_time</c>,
+    /// <c>cur_pause_timestamp</c>) captured alongside <see cref="RunTimerStartMs"/>
+    /// purely for the one-shot diagnostic log — not otherwise surfaced through
+    /// <c>IDungeonState</c>. Only meaningful when <see cref="HasTimerInfo"/>.
+    /// </summary>
+    public int TimerType { get; init; }
+
+    /// <summary>Raw <c>DungeonTimerInfo.dungeon_times</c> (field 3). Diagnostic only; see <see cref="TimerType"/>.</summary>
+    public int TimerDungeonTimes { get; init; }
+
+    /// <summary>Raw <c>DungeonTimerInfo.direction</c> (field 4). Diagnostic only; see <see cref="TimerType"/>.</summary>
+    public int TimerDirection { get; init; }
+
+    /// <summary>Raw <c>DungeonTimerInfo.pause_time</c> (field 8). Diagnostic only; see <see cref="TimerType"/>.</summary>
+    public int TimerPauseTime { get; init; }
+
+    /// <summary>Raw <c>DungeonTimerInfo.pause_total_time</c> (field 9). Diagnostic only; see <see cref="TimerType"/>.</summary>
+    public int TimerPauseTotalTime { get; init; }
+
+    /// <summary>Raw <c>DungeonTimerInfo.cur_pause_timestamp</c> (field 11). Diagnostic only; see <see cref="TimerType"/>.</summary>
+    public int TimerCurPauseTimestamp { get; init; }
+
+    /// <summary>
+    /// True when a <c>DungeonTimerInfo</c> (field 15) was present on this
+    /// payload — i.e. <see cref="RunTimerStartMs"/> is meaningful.
+    /// </summary>
+    public bool HasTimerInfo { get; init; }
+
+    /// <summary>
+    /// Server epoch ms when the dungeon run-timer started, derived from
+    /// <c>DungeonTimerInfo.start_time</c> (field 2, varint) inside
+    /// <c>DungeonSyncData.timer_info</c> (field 15). Only meaningful when
+    /// <see cref="HasTimerInfo"/>.
+    /// <para>
+    /// <b>Semantic UNCONFIRMED</b>: <c>start_time</c> is assumed to be an epoch
+    /// timestamp in SECONDS and is converted to ms here via <c>* 1000L</c>, but
+    /// this has not been verified against a real dungeon run's wall-clock time.
+    /// Treat as a diagnostic value until confirmed — same caveat as
+    /// <see cref="DungeonDifficulty"/> carried before its first live run.
+    /// </para>
+    /// </summary>
+    public long RunTimerStartMs { get; init; }
 }
 
 /// <summary>
@@ -62,10 +107,22 @@ public readonly struct DungeonSyncResult
 ///                             DungeonDamage     damage       = 5;
 ///                             DungeonSettlement settlement   = 7;
 ///                             DungeonScore      dungeon_score = 14;
+///                             DungeonTimerInfo  timer_info    = 15;
 ///                             DungeonSceneInfo  dungeon_scene_info = 21; }
 /// message DungeonSettlement { int32             pass_time        = 1;
 ///                             int32             master_mode_score = 5; }
 /// message DungeonSceneInfo  { int32             difficulty       = 1; } // semantic unconfirmed (see DungeonDifficulty)
+/// message DungeonTimerInfo  { int32             type             = 1;
+///                             int32             start_time       = 2;   // semantic unconfirmed (see RunTimerStartMs)
+///                             int32             dungeon_times    = 3;
+///                             int32             direction        = 4;
+///                             int32             index            = 5;
+///                             int32             change_time      = 6;
+///                             int32             effect_type      = 7;
+///                             int32             pause_time       = 8;
+///                             int32             pause_total_time = 9;
+///                             int32             out_look_type    = 10;
+///                             int32             cur_pause_timestamp = 11; }
 /// </code>
 /// </para>
 ///
@@ -130,6 +187,14 @@ public static class DungeonSyncReader
             MasterModeScore     = acc.MasterModeScore,
             HasDungeonSceneInfo = acc.HasDungeonSceneInfo,
             DungeonDifficulty   = acc.DungeonDifficulty,
+            HasTimerInfo        = acc.HasTimerInfo,
+            RunTimerStartMs     = acc.RunTimerStartMs,
+            TimerType               = acc.TimerType,
+            TimerDungeonTimes       = acc.TimerDungeonTimes,
+            TimerDirection          = acc.TimerDirection,
+            TimerPauseTime          = acc.TimerPauseTime,
+            TimerPauseTotalTime     = acc.TimerPauseTotalTime,
+            TimerCurPauseTimestamp  = acc.TimerCurPauseTimestamp,
         };
         return true;
     }
@@ -145,6 +210,14 @@ public static class DungeonSyncReader
         public int MasterModeScore;
         public bool HasDungeonSceneInfo;
         public int DungeonDifficulty;
+        public bool HasTimerInfo;
+        public long RunTimerStartMs;
+        public int TimerType;
+        public int TimerDungeonTimes;
+        public int TimerDirection;
+        public int TimerPauseTime;
+        public int TimerPauseTotalTime;
+        public int TimerCurPauseTimestamp;
     }
 
     // Dispatch a single decoded (field, wire) tag into the accumulator. Returns
@@ -186,7 +259,31 @@ public static class DungeonSyncReader
             return true;
         }
 
+        if (field == 15 && wire == 2)
+            return TryApplyTimerInfoField(data, ref pos, ref acc);
+
         return WireProtocol.SkipField(data, ref pos, wire);
+    }
+
+    // timer_info (DungeonTimerInfo sub-message, field 15) — carries the
+    // run-timer start time; semantic unconfirmed, see
+    // DungeonSyncResult.RunTimerStartMs. Split out of TryApplyField to keep
+    // that method's body under the STELLAR0002 (>50 LoC) gate.
+    private static bool TryApplyTimerInfoField(ReadOnlySpan<byte> data, ref int pos, ref FieldAccumulator acc)
+    {
+        if (!WireProtocol.TryReadLengthDelimited(data, ref pos, out var timerInfo)) return false;
+        if (TryReadDungeonTimerInfo(timerInfo, out var raw))
+        {
+            acc.HasTimerInfo = true;
+            acc.RunTimerStartMs = raw.StartTime * 1000L;
+            acc.TimerType = raw.Type;
+            acc.TimerDungeonTimes = raw.DungeonTimes;
+            acc.TimerDirection = raw.Direction;
+            acc.TimerPauseTime = raw.PauseTime;
+            acc.TimerPauseTotalTime = raw.PauseTotalTime;
+            acc.TimerCurPauseTimestamp = raw.CurPauseTimestamp;
+        }
+        return true;
     }
 
     // DungeonSettlement { int32 pass_time = 1; int32 master_mode_score = 5; }
@@ -242,5 +339,66 @@ public static class DungeonSyncReader
             }
         }
         return true;
+    }
+
+    // Raw fields lifted out of DungeonTimerInfo — StartTime is the field of
+    // interest (see DungeonSyncResult.RunTimerStartMs); the rest are carried
+    // purely for the one-shot diagnostic log. Grouping them in a struct keeps
+    // TryReadDungeonTimerInfo's signature under the STELLAR0003 (>5 params) gate.
+    private struct DungeonTimerRaw
+    {
+        public int Type;
+        public int StartTime;
+        public int DungeonTimes;
+        public int Direction;
+        public int PauseTime;
+        public int PauseTotalTime;
+        public int CurPauseTimestamp;
+    }
+
+    // DungeonTimerInfo { type(1), start_time(2), dungeon_times(3), direction(4),
+    // index(5), change_time(6), effect_type(7), pause_time(8),
+    // pause_total_time(9), out_look_type(10), cur_pause_timestamp(11) } — only
+    // the fields consumed by RunTimerStartMs / the diagnostic log are decoded;
+    // index/change_time/effect_type/out_look_type are skipped like any other
+    // unknown field. Semantic of start_time is unconfirmed, see
+    // DungeonSyncResult.RunTimerStartMs.
+    private static bool TryReadDungeonTimerInfo(ReadOnlySpan<byte> span, out DungeonTimerRaw raw)
+    {
+        raw = default;
+
+        int pos = 0;
+        while (pos < span.Length)
+        {
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire))
+                return false;
+
+            if (wire != 0)
+            {
+                if (!WireProtocol.SkipField(span, ref pos, wire)) return false;
+                continue;
+            }
+
+            if (!WireProtocol.TryReadVarint(span, ref pos, out var v)) return false;
+            ApplyTimerField(field, (int)v, ref raw);
+        }
+        return true;
+    }
+
+    // Dispatch a single decoded varint field into the DungeonTimerInfo scratch
+    // struct. Split out of TryReadDungeonTimerInfo to keep that method's body
+    // short (STELLAR0002).
+    private static void ApplyTimerField(int field, int value, ref DungeonTimerRaw raw)
+    {
+        switch (field)
+        {
+            case 1: raw.Type = value; break;
+            case 2: raw.StartTime = value; break;
+            case 3: raw.DungeonTimes = value; break;
+            case 4: raw.Direction = value; break;
+            case 8: raw.PauseTime = value; break;
+            case 9: raw.PauseTotalTime = value; break;
+            case 11: raw.CurPauseTimestamp = value; break;
+        }
     }
 }

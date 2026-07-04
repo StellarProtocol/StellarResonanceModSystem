@@ -45,4 +45,17 @@ public interface IDungeonState
     /// </para>
     /// </summary>
     int CurrentDifficulty { get; }
+
+    /// <summary>
+    /// Server epoch ms when the dungeon run-timer started
+    /// (<c>DungeonSyncData.timer_info</c>, field 15 → <c>DungeonTimerInfo.start_time</c>,
+    /// field 2), or 0 when absent / not yet seen.
+    /// <para>
+    /// <b>Semantic UNCONFIRMED</b> (see <see cref="CurrentDifficulty"/> for
+    /// precedent) — <c>start_time</c> is assumed to be an epoch timestamp in
+    /// SECONDS and is converted to ms here. Treat as diagnostic until confirmed
+    /// against a real run.
+    /// </para>
+    /// </summary>
+    long RunTimerStartMs { get; }
 }

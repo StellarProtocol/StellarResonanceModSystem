@@ -53,6 +53,15 @@ internal interface IDungeonStateSink
     void SetDifficulty(int difficulty);
 
     /// <summary>
+    /// Record the run-timer start time (server epoch ms) decoded from
+    /// <c>DungeonSyncData.timer_info</c> (field 15) →
+    /// <c>DungeonTimerInfo.start_time</c> (field 2) for the current run.
+    /// Semantic UNCONFIRMED — see
+    /// <see cref="Stellar.Abstractions.Services.IDungeonState.RunTimerStartMs"/>.
+    /// </summary>
+    void SetRunTimerStart(long startMs);
+
+    /// <summary>
     /// Clear the active run and any settlement — invoked on logout.
     /// </summary>
     void Reset();

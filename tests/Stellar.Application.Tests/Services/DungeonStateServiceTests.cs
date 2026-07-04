@@ -151,6 +151,53 @@ public sealed class DungeonStateServiceTests
         Assert.Equal(0, read.CurrentDifficulty);
     }
 
+    private const long RunTimerStartMs = 1700000000000L;
+
+    [Fact]
+    public void SetRunTimerStart_PublishesRawValue()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetCurrentRun_NewId_ClearsPriorRunTimerStart()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.SetCurrentRun(Dungeon2Id);
+        Assert.Equal(0L, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetCurrentRun_Zero_PreservesRunTimerStart()
+    {
+        // Mirrors settlement/difficulty: leaving to town clears the run id but
+        // the upload plugin still needs the timer start at archive time on that
+        // transition.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.SetCurrentRun(0);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void Reset_ClearsRunTimerStart()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.Reset();
+        Assert.Equal(0L, read.RunTimerStartMs);
+    }
+
     [Fact]
     public void Reset_ClearsRunIdAndSettlement()
     {

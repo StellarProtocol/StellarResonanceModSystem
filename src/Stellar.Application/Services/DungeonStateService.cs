@@ -18,6 +18,7 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 {
     private long _currentRunId;
     private int _currentDifficulty;
+    private long _runTimerStartMs;
 
     // Settlement is a multi-field struct, so it can't be published with a single
     // volatile/interlocked write without tearing. Guard it with a small lock —
@@ -35,6 +36,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 
     public int CurrentDifficulty => Interlocked.CompareExchange(ref _currentDifficulty, 0, 0);
 
+    public long RunTimerStartMs => Interlocked.Read(ref _runTimerStartMs);
+
     public void SetCurrentRun(long sceneUuid)
     {
         long previous = Interlocked.Exchange(ref _currentRunId, sceneUuid);
@@ -49,6 +52,7 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         {
             lock (_settlementLock) _lastSettlement = null;
             Interlocked.Exchange(ref _currentDifficulty, 0);
+            Interlocked.Exchange(ref _runTimerStartMs, 0);
         }
     }
 
@@ -61,10 +65,14 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public void SetDifficulty(int difficulty)
         => Interlocked.Exchange(ref _currentDifficulty, difficulty);
 
+    public void SetRunTimerStart(long startMs)
+        => Interlocked.Exchange(ref _runTimerStartMs, startMs);
+
     public void Reset()
     {
         Interlocked.Exchange(ref _currentRunId, 0);
         Interlocked.Exchange(ref _currentDifficulty, 0);
+        Interlocked.Exchange(ref _runTimerStartMs, 0);
         lock (_settlementLock) _lastSettlement = null;
     }
 }

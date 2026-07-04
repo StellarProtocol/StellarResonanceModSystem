@@ -15,6 +15,7 @@ internal sealed partial class PandaDungeonProbe
 {
     private bool _firstDetectionLogged;
     private bool _firstDifficultyLogged;
+    private bool _firstTimerLogged;
 
     /// <summary>
     /// One-shot, always-on: log the raw <c>DungeonSceneInfo.difficulty</c> value
@@ -30,6 +31,25 @@ internal sealed partial class PandaDungeonProbe
         _log.Info(
             $"[Dungeon] dungeon difficulty raw={result.DungeonDifficulty} scene={result.SceneUuid} " +
             $"method={methodId} (semantic unconfirmed: 1-20 level vs. tier enum)");
+    }
+
+    /// <summary>
+    /// One-shot, always-on: log the raw <c>DungeonTimerInfo</c> fields the first
+    /// time field 15 is seen. The semantic of <c>start_time</c> (assumed epoch
+    /// SECONDS, converted to ms) is UNCONFIRMED — this line is what the user's
+    /// next real dungeon run is used to confirm against.
+    /// </summary>
+    private void DiagDungeonTimer(uint methodId, DungeonSyncResult result)
+    {
+        if (!result.HasTimerInfo || _firstTimerLogged) return;
+
+        _firstTimerLogged = true;
+        _log.Info(
+            $"[Dungeon] dungeon timer_info raw type={result.TimerType} " +
+            $"dungeon_times={result.TimerDungeonTimes} direction={result.TimerDirection} " +
+            $"pause_time={result.TimerPauseTime} pause_total_time={result.TimerPauseTotalTime} " +
+            $"cur_pause_timestamp={result.TimerCurPauseTimestamp} -> RunTimerStartMs={result.RunTimerStartMs} " +
+            $"scene={result.SceneUuid} method={methodId} (semantic unconfirmed: start_time assumed epoch seconds)");
     }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)

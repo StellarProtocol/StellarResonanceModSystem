@@ -65,6 +65,44 @@ public sealed class DungeonSyncReaderTests
     }
 
     [Fact]
+    public void Reads_dungeon_timer_info_start_time()
+    {
+        // DungeonTimerInfo { type(1)=1, start_time(2)=1700000000, dungeon_times(3)=600,
+        //                    direction(4)=1, pause_time(8)=0, pause_total_time(9)=0,
+        //                    cur_pause_timestamp(11)=0 }
+        var timerInfo = Msg(
+            Varint(1, 1),
+            Varint(2, 1700000000),
+            Varint(3, 600),
+            Varint(4, 1));
+
+        // DungeonSyncData { scene_uuid(1)=99, timer_info(15)=... }
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.Equal(99L, r.SceneUuid);
+        Assert.True(r.HasTimerInfo);
+        Assert.Equal(1700000000L * 1000L, r.RunTimerStartMs);
+        Assert.Equal(1, r.TimerType);
+        Assert.Equal(600, r.TimerDungeonTimes);
+        Assert.Equal(1, r.TimerDirection);
+    }
+
+    [Fact]
+    public void Reads_run_id_without_dungeon_timer_info()
+    {
+        var data = Msg(Varint(1, 99L));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.HasTimerInfo);
+        Assert.Equal(0L, r.RunTimerStartMs);
+    }
+
+    [Fact]
     public void Reads_run_id_without_settlement()
     {
         var data = Msg(Varint(1, 42L));
