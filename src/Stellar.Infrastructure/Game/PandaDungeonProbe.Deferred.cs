@@ -59,13 +59,15 @@ internal sealed partial class PandaDungeonProbe
         public long EnqueueRunId { get; }
     }
 
-    // LUA-path callback (network thread, possibly mid scene-teardown): enqueue
-    // ONLY. No parsing, no sink writes, no logging — a catch-all guard on top of
-    // the dispatcher's own, because this path has crashed the client before.
-    // Internal (not private) solely as the unit-test seam: the callback +
-    // DrainDeferred pair is exercised directly by PandaDungeonProbeDeferredTests
-    // via InternalsVisibleTo — no IL2CPP dispatcher needed.
-    internal void OnWorldNtfLua(uint methodId, byte[] payload)
+    // Deferred enqueue callback — registered for every Lua-path method AND for
+    // the C#-path dirty-delta (method 24). Runs on the network thread, possibly
+    // mid scene-teardown: enqueue ONLY. No parsing, no sink writes, no logging —
+    // a catch-all guard on top of the dispatcher's own, because the Lua path has
+    // crashed the client before. Internal (not private) solely as the unit-test
+    // seam: the callback + DrainDeferred pair is exercised directly by
+    // PandaDungeonProbeDeferredTests via InternalsVisibleTo — no IL2CPP
+    // dispatcher needed.
+    internal void OnWorldNtfDeferred(uint methodId, byte[] payload)
     {
         bool counted = false;
         try
@@ -150,7 +152,36 @@ internal sealed partial class PandaDungeonProbe
             HandleStartPlayingDungeon(item);
             return;
         }
+        if (item.MethodId == WorldNtfMethodIds.SyncDungeonDirtyData)
+        {
+            HandleDungeonDirtyDelta(item);
+            return;
+        }
         HandleDelivery("lua", item.MethodId, item.Payload);
+    }
+
+    // WorldNtf method 24 (SyncDungeonDirtyData) — the dungeon container's
+    // dirty-DELTA, the path the game's own timer HUD gets its clock from. Parse
+    // just the timer_info slice; a non-zero start_time latches at rank 2
+    // (TimerInfo), UPGRADING the approximate rank-4 flow.active_time latch the
+    // entry sync landed earlier in the run. scene_uuid is intentionally NOT
+    // required (deltas carry only changed fields); the run-id scope guard in
+    // HandleDeferred already protects against cross-run writes.
+    private void HandleDungeonDirtyDelta(in DeferredLuaDelivery item)
+    {
+        if (!DungeonDirtyDataReader.TryReadTimerStart(item.Payload, out var dirty))
+            return;
+
+        DiagDungeonDirtyTimer(dirty);
+        if (dirty.StartTimeSeconds == 0) return;
+
+        long previousMs = _state.RunTimerStartMs;
+        var write = _sink.SetRunTimerStart(dirty.RunTimerStartMs, RunTimerSource.TimerInfo);
+        const string source = "timer_info.delta (method 24)";
+        if (write == RunTimerWrite.Latched)
+            DiagRunTimerLatched(source, dirty.RunTimerStartMs, sceneUuid: 0);
+        else if (write == RunTimerWrite.Upgraded)
+            DiagRunTimerUpgraded(source, dirty.RunTimerStartMs, previousMs, sceneUuid: 0);
     }
 
     // WorldNtf method 55 (NotifyStartPlayingDungeon) — the play-start EDGE. Its

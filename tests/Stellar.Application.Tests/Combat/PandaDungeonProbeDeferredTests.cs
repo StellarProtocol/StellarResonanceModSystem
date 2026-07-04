@@ -12,7 +12,7 @@ namespace Stellar.Application.Tests.Combat;
 /// <summary>
 /// Covers the crash-safe deferred Lua-tap machinery in
 /// <see cref="PandaDungeonProbe"/> (the <c>Deferred</c> partial) through its
-/// test seam: the enqueue callback (<c>OnWorldNtfLua</c>, internal for these
+/// test seam: the enqueue callback (<c>OnWorldNtfDeferred</c>, internal for these
 /// tests) plus <see cref="PandaDungeonProbe.DrainDeferred"/>, observed via a
 /// real <see cref="DungeonStateService"/>. Two hardening invariants:
 /// <list type="number">
@@ -49,7 +49,7 @@ public sealed class PandaDungeonProbeDeferredTests
         _service.SetCurrentRun(RunA);
         _combat.ServerNowMs = 111_000;
 
-        _probe.OnWorldNtfLua(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
         _probe.DrainDeferred();
 
         Assert.Equal(111_000, ((IDungeonState)_service).RunTimerStartMs);
@@ -61,7 +61,7 @@ public sealed class PandaDungeonProbeDeferredTests
     {
         _service.SetCurrentRun(RunA);
         _combat.ServerNowMs = 111_000;
-        _probe.OnWorldNtfLua(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
 
         // Scene change before the gated tick drains: a NEW run begins.
         _service.SetCurrentRun(RunB);
@@ -78,7 +78,7 @@ public sealed class PandaDungeonProbeDeferredTests
     {
         _service.SetCurrentRun(RunA);
         _combat.ServerNowMs = 111_000;
-        _probe.OnWorldNtfLua(WorldNtfMethodIds.SyncDungeonData, SettlementPayload(passTime: 372, score: 8800));
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.SyncDungeonData, SettlementPayload(passTime: 372, score: 8800));
 
         _service.SetCurrentRun(RunB);
         _probe.DrainDeferred();
@@ -98,16 +98,84 @@ public sealed class PandaDungeonProbeDeferredTests
         // later delivery would be dropped forever.
         _combat.ThrowOnClockRead = true;
         for (int i = 0; i < DeferredCap; i++)
-            _probe.OnWorldNtfLua(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
+            _probe.OnWorldNtfDeferred(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
 
         // A healthy delivery afterwards must still get a slot and latch.
         _combat.ThrowOnClockRead = false;
         _combat.ServerNowMs = 222_000;
-        _probe.OnWorldNtfLua(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.NotifyStartPlayingDungeon, Array.Empty<byte>());
         _probe.DrainDeferred();
 
         Assert.Equal(222_000, ((IDungeonState)_service).RunTimerStartMs);
         Assert.DoesNotContain(_log.WarningLines, l => l.Contains("queue overflow"));
+    }
+
+    [Fact]
+    public void Drain_DirtyDeltaStartTime_UpgradesActiveTimeLatch_Rank2()
+    {
+        _service.SetCurrentRun(RunA);
+        _combat.ServerNowMs = 111_000;
+
+        // The entry sync latched the APPROXIMATE flow.active_time (rank 4)…
+        Assert.Equal(Stellar.Application.Abstractions.RunTimerWrite.Latched,
+            ((Stellar.Application.Abstractions.IDungeonStateSink)_service)
+                .SetRunTimerStart(500_000, Stellar.Application.Abstractions.RunTimerSource.FlowActiveTime));
+
+        // …then the method-24 dirty delta delivers the true timer_info.start_time.
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.SyncDungeonDirtyData, DirtyTimerPayload(startTimeSeconds: 777));
+        _probe.DrainDeferred();
+
+        // Rank-2 (timer_info) upgraded the rank-4 latch mid-run.
+        Assert.Equal(777_000, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.Contains(_log.InfoLines, l => l.Contains("run-timer UPGRADED") && l.Contains("timer_info.delta (method 24)"));
+    }
+
+    [Fact]
+    public void Drain_DirtyDeltaWithZeroStartTime_DoesNotDisturbLatch()
+    {
+        _service.SetCurrentRun(RunA);
+        ((Stellar.Application.Abstractions.IDungeonStateSink)_service)
+            .SetRunTimerStart(500_000, Stellar.Application.Abstractions.RunTimerSource.FlowActiveTime);
+
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.SyncDungeonDirtyData, DirtyTimerPayload(startTimeSeconds: 0));
+        _probe.DrainDeferred();
+
+        Assert.Equal(500_000, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.DoesNotContain(_log.InfoLines, l => l.Contains("run-timer UPGRADED"));
+    }
+
+    [Fact]
+    public void Drain_DirtyDelta_RunChangedBetweenEnqueueAndDrain_SkipsLatch()
+    {
+        _service.SetCurrentRun(RunA);
+        _probe.OnWorldNtfDeferred(WorldNtfMethodIds.SyncDungeonDirtyData, DirtyTimerPayload(startTimeSeconds: 777));
+
+        _service.SetCurrentRun(RunB);
+        _probe.DrainDeferred();
+
+        Assert.Equal(0, ((IDungeonState)_service).RunTimerStartMs);
+        Assert.Contains(_log.InfoLines, l => l.Contains("skipped as stale"));
+    }
+
+    // SyncDungeonDirtyData { BufferStream v_data=1 { bytes buffer=1 } } around
+    // the int32-LE merge blob: [-2][size][15][-2][tsize][2][start][-3][-3] —
+    // same framing as DungeonDirtyDataReaderTests.
+    private static byte[] DirtyTimerPayload(int startTimeSeconds)
+    {
+        var timerEntries = Bytes(I32(2), I32(startTimeSeconds));
+        var timer = Bytes(I32(-2), I32(timerEntries.Length), timerEntries, I32(-3));
+        var entries = Bytes(I32(15), timer);
+        var blob = Bytes(I32(-2), I32(entries.Length), entries, I32(-3));
+        return LenDelim(1, LenDelim(1, blob));
+    }
+
+    private static byte[] I32(int v) => System.BitConverter.GetBytes(v);
+
+    private static byte[] Bytes(params byte[][] parts)
+    {
+        var b = new List<byte>();
+        foreach (var p in parts) b.AddRange(p);
+        return b.ToArray();
     }
 
     // DungeonSyncData { scene_uuid(1), settlement(7) = { pass_time(1), master_mode_score(5) } }

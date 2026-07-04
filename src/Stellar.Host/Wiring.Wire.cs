@@ -65,9 +65,11 @@ public sealed partial class BootstrapPlugin
         _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
         // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
         // (lua/zservice/world_ntf_gen.lua), so the probe registers directly by
-        // method id like the other probes. It ALSO registers on the Lua stub
-        // dispatcher (see InstallReadyCheckProbe) for methods 23 + 55 — Lua-path
-        // deliveries are queue-deferred to the framework tick (crash safety; see
+        // method id like the other probes — plus method 24 (SyncDungeonDirtyData,
+        // the dungeon container dirty-DELTA the game's timer HUD is fed by;
+        // C#-routed, queue-deferred). It ALSO registers on the Lua stub
+        // dispatcher (see InstallReadyCheckProbe) for methods 23 + 55 + 24 —
+        // deferred deliveries are queue-drained on the framework tick (crash safety; see
         // PandaDungeonProbe.Deferred.cs and DrainDungeonDeferred in
         // Wiring.ServiceTick.cs). _combatService supplies the interpolated
         // server clock (ICombatSnapshot.ServerNowMs) for the method-55

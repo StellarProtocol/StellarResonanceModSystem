@@ -214,6 +214,29 @@ internal sealed partial class PandaDungeonProbe
             $"({_startPlayingLogged}/{StartPlayingCap})");
     }
 
+    private bool _firstDirtyTimerLogged;
+
+    /// <summary>
+    /// Method-24 (SyncDungeonDirtyData) timer_info slice. One-shot always-on
+    /// the first time a dirty delta carries a NON-ZERO <c>start_time</c> (the
+    /// live-confirmation line for the traced HUD delta path — zero deliveries
+    /// do not consume it); per-event repeats gated on
+    /// <c>STELLAR_DIAGNOSTICS=1</c>. Emitted at DRAIN time on the framework
+    /// tick, never inside the enqueue callback.
+    /// </summary>
+    private void DiagDungeonDirtyTimer(in DungeonDirtyTimerResult dirty)
+    {
+        bool oneShot = dirty.StartTimeSeconds != 0 && !_firstDirtyTimerLogged;
+        if (oneShot) _firstDirtyTimerLogged = true;
+        else if (!StellarDiagnostics.IsEnabled) return;
+
+        _log.Info(
+            $"[Dungeon] dirty-delta timer_info (method 24) src=timer_info.delta " +
+            $"start_time_s={dirty.StartTimeSeconds} dungeon_times={dirty.DungeonTimes} " +
+            $"direction={dirty.Direction} pause_total_time={dirty.PauseTotalTime} " +
+            $"runId={_state.CurrentRunId}{(oneShot ? " (first non-zero start_time — HUD delta path confirmed)" : "")}");
+    }
+
     // Drain-side visibility for the bounded queue's drop-new overflow policy.
     // Logs only when the drop counter has grown since the last drain, capped to
     // one line per new plateau to keep the log quiet under a pathological burst.

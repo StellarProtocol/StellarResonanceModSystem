@@ -21,8 +21,24 @@ namespace Stellar.Infrastructure.Game;
 /// (<c>NotifyStartPlayingDungeon</c> — the play-start EDGE; its consumer is the
 /// Lua stub per <c>world_ntf_gen.lua</c> → <c>world_ntf_impl.lua</c>). A live
 /// instrumented run confirmed the dungeon's entry sync is delivered on BOTH
-/// paths but carries a usable clock only in <c>flow_info.active_time</c>
-/// (approximate); the exact play-start is the method-55 arrival edge.
+/// paths but carries a usable clock only in <c>flow_info.active_time</c> —
+/// which a third live falsification proved is the SCENE-ENTRY time, not play
+/// start (staging-area imagine casts predated our 0:00), and method 55 was
+/// never observed on that run.
+/// </para>
+///
+/// <para>
+/// The game's own dungeon-timer HUD nevertheless shows the true clock: it reads
+/// <c>ContainerMgr.DungeonSyncData.timerInfo.startTime</c>
+/// (<c>dungeon_timer_vm.lua getEndTimeStamp</c>), which is fed by the dungeon
+/// container's dirty-DELTA path — WorldNtf <b>method 24</b>
+/// (<c>SyncDungeonDirtyData</c>, C#-routed: <c>Zservice.WorldNtfStub</c>
+/// publisher → <c>Panda.ZGame.DungeonSyncService.OnSync</c> →
+/// <c>lua/sync/dungeon_sync.lua</c> → <c>dungeon_sync_data.lua MergeData</c>).
+/// The probe taps method 24 through the same deferred queue and parses the
+/// blob with <see cref="DungeonDirtyDataReader"/>; a non-zero
+/// <c>timer_info.start_time</c> latches at rank 2 (TimerInfo), UPGRADING an
+/// earlier rank-4 active_time latch mid-run.
 /// </para>
 ///
 /// <para>
@@ -61,25 +77,36 @@ internal sealed partial class PandaDungeonProbe
     }
 
     /// <summary>
-    /// Register for the SyncDungeonData method (id 23, confirmed from the game's
-    /// lua WorldNtf dispatcher) on the C# stub path. Must be called before
+    /// Register on the C# stub path: SyncDungeonData (id 23, confirmed from the
+    /// game's lua WorldNtf dispatcher) inline, plus SyncDungeonDirtyData (id 24
+    /// — the dungeon container's dirty-DELTA, the path the true
+    /// <c>timer_info.start_time</c> arrives on; C#-routed, its consumer is
+    /// <c>Panda.ZGame.DungeonSyncService</c> → <c>lua/sync/dungeon_sync.lua</c>)
+    /// via the crash-safe deferred queue. Must be called before
     /// <see cref="WorldNtfStubDispatcher.Install"/>.
     /// </summary>
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
-        => dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
+    {
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
+    }
 
     /// <summary>
     /// Register on the LUA stub path (ZLuaStub) for SyncDungeonData (id 23; the
-    /// path the game's own <c>world_ntf_gen.lua</c> container decode uses) and
+    /// path the game's own <c>world_ntf_gen.lua</c> container decode uses),
     /// NotifyStartPlayingDungeon (id 55; Lua-only — its arrival is the precise
-    /// play-start edge, rank-1 run-timer source). Both route through the
-    /// crash-safe deferred queue (<c>PandaDungeonProbe.Deferred.cs</c>). Must be
-    /// called before <see cref="WorldNtfLuaStubDispatcher.Install"/>.
+    /// play-start edge, rank-1 run-timer source) and SyncDungeonDirtyData (id
+    /// 24; expected on the C# stub, registered here too in case delivery is
+    /// dual-path like method 23 — the rank guard makes duplicates harmless).
+    /// All route through the crash-safe deferred queue
+    /// (<c>PandaDungeonProbe.Deferred.cs</c>). Must be called before
+    /// <see cref="WorldNtfLuaStubDispatcher.Install"/>.
     /// </summary>
     public void RegisterWithLua(WorldNtfLuaStubDispatcher dispatcher)
     {
-        dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfLua);
-        dispatcher.Register(WorldNtfMethodIds.NotifyStartPlayingDungeon, OnWorldNtfLua);
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfDeferred);
+        dispatcher.Register(WorldNtfMethodIds.NotifyStartPlayingDungeon, OnWorldNtfDeferred);
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
     }
 
     /// <summary>
