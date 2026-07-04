@@ -95,9 +95,24 @@ internal sealed partial class PandaDungeonProbe
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
-        // Method 24 deliberately not tapped (see RegisterWithLua) — the
-        // MessagePipe subscription owns the dirty-delta path.
+        // Method 24 deliberately not tapped on the stub dispatchers (see
+        // RegisterWithLua) — the TCP wire tap below owns the dirty-delta path.
     }
+
+    /// <summary>
+    /// Register for the dirty-delta (method 24) NOTIFY on the TCP wire tap —
+    /// capture-proven route (packet_20260705_032808.log: msg_type=2, service
+    /// 1664308034, method 24 arrives at the leader's dungeon-start click). The
+    /// wire tap's recv hook already copies + decompresses the payload on its
+    /// own long-proven path; this handler copies the slice and enqueues into
+    /// the deferred queue — nothing else runs on the wire thread.
+    /// </summary>
+    public void RegisterOnWireTap(Stellar.Application.Abstractions.IWireTap tap)
+        => tap.Register(WorldNtfMethodIds.WorldNtf, WorldNtfMethodIds.SyncDungeonDirtyData, env =>
+        {
+            try { OnWorldNtfDeferred(env.MethodId, env.Payload.ToArray()); }
+            catch { /* wire thread — never throw into the recv hook */ }
+        });
 
     /// <summary>
     /// Register on the LUA stub path (ZLuaStub) for SyncDungeonData (id 23; the

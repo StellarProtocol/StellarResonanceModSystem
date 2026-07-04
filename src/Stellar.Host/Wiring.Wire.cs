@@ -96,6 +96,10 @@ public sealed partial class BootstrapPlugin
         // arrival-edge stamp.
         _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
+        // Dirty-delta (method 24) rides the TCP wire tap — the capture-proven,
+        // long-stable recv path (registered at boot, before any game traffic,
+        // same pattern as the chat probe).
+        _dungeonProbe.RegisterOnWireTap(_wireTap!);
         _worldNtfDispatcher.Install(PluginGuid);
     }
 
