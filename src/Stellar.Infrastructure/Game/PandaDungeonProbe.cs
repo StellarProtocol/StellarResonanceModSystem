@@ -101,18 +101,33 @@ internal sealed partial class PandaDungeonProbe
         if (result.HasDungeonSceneInfo)
             _sink.SetDifficulty(result.DungeonDifficulty);
 
-        // flow_info.play_time is the AUTHORITATIVE run-timer start (a live run
-        // falsified timer_info.start_time: the first delivery was a hub scene
-        // with all timer fields zero). Never latch zeros — a zero play_time is
-        // the pre-start state and must not overwrite a previously latched value
-        // (the service additionally guards against zero writes).
-        if (result.HasFlowInfo && result.FlowInfo.PlayTime != 0)
-            _sink.SetRunTimerStart(result.FlowInfo.PlayTimeMs);
+        MaybeLatchRunTimer(result);
 
         DiagDungeonDelivery(source, methodId, result);
         DiagDungeonSync(methodId, result);
         DiagDungeonDifficulty(methodId, result);
         DiagDungeonFlow(methodId, result);
         DiagDungeonTimer(methodId, result);
+    }
+
+    // Run-timer start latch. Source priority is the game HUD's own
+    // (dungeon_timer_vm.lua getEndTimeStamp derives the on-screen clock from
+    // timer_info.start_time): PRIMARY timer_info.start_time, FALLBACK
+    // flow_info.play_time — selected by DungeonSyncResult.TryGetRunTimerStart,
+    // which never yields a zero. Whichever source arrives non-zero FIRST wins
+    // for the current run: the service's SetRunTimerStart is first-non-zero-wins
+    // (and zero-ignoring), so a later delivery from the other source cannot
+    // shift an already-latched clock. The pre-write zero check below only
+    // detects whether THIS delivery performed the latch, for the always-on
+    // source diagnostic.
+    private void MaybeLatchRunTimer(in DungeonSyncResult result)
+    {
+        if (!result.TryGetRunTimerStart(out long startMs, out string timerSource))
+            return;
+
+        bool latching = _state.RunTimerStartMs == 0;
+        _sink.SetRunTimerStart(startMs);
+        if (latching)
+            DiagRunTimerLatched(timerSource, startMs, result);
     }
 }

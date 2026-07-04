@@ -67,12 +67,15 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 
     public void SetRunTimerStart(long startMs)
     {
-        // Zero is the wire's "run not started yet" value (flow_info.play_time is
-        // 0 on hub/pre-start deliveries) — a zero must never overwrite a latched
-        // non-zero start. Clearing happens exclusively via SetCurrentRun (new
-        // run id) or Reset (logout).
+        // Zero is the wire's "run not started yet" value (timer_info.start_time /
+        // flow_info.play_time are 0 on hub/pre-start deliveries) — a zero must
+        // never overwrite a latched non-zero start. And the FIRST non-zero write
+        // wins for the current run: the probe feeds two sources (timer_info
+        // primary, flow_info fallback) and a later delivery from the other
+        // source must not shift an already-latched clock. Clearing happens
+        // exclusively via SetCurrentRun (new run id) or Reset (logout).
         if (startMs == 0) return;
-        Interlocked.Exchange(ref _runTimerStartMs, startMs);
+        Interlocked.CompareExchange(ref _runTimerStartMs, startMs, 0);
     }
 
     public void Reset()

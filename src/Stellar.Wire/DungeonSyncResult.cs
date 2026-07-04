@@ -44,10 +44,10 @@ public readonly struct DungeonSyncResult
 
     /// <summary>
     /// True when a <c>DungeonFlowInfo</c> (field 2) was present on this payload —
-    /// i.e. <see cref="FlowInfo"/> is meaningful. This is the PRIMARY source of
-    /// the run-timer start (<see cref="DungeonFlowInfo.PlayTimeMs"/>): a live run
-    /// falsified <c>timer_info.start_time</c> (it arrived all-zero on the first
-    /// hub delivery and never carried the start).
+    /// i.e. <see cref="FlowInfo"/> is meaningful. <see cref="DungeonFlowInfo.PlayTimeMs"/>
+    /// is the FALLBACK source of the run-timer start; the PRIMARY source is
+    /// <c>timer_info.start_time</c> (<see cref="RunTimerStartMs"/>) — see
+    /// <see cref="TryGetRunTimerStart"/>.
     /// </summary>
     public bool HasFlowInfo { get; init; }
 
@@ -92,22 +92,56 @@ public readonly struct DungeonSyncResult
     /// <c>DungeonSyncData.timer_info</c> (field 15), converted seconds → ms.
     /// Only meaningful when <see cref="HasTimerInfo"/>.
     /// <para>
-    /// <b>DIAGNOSTIC ONLY</b> — a live run showed this field arriving all-zero
-    /// and never carrying the run-timer start. The authoritative run-timer start
-    /// is <c>flow_info.play_time</c> (<see cref="DungeonFlowInfo.PlayTimeMs"/>);
-    /// this value is retained purely for the one-shot diagnostic log and no
-    /// longer feeds <c>IDungeonState.RunTimerStartMs</c>.
+    /// <b>PRIMARY (HUD-authoritative) run-timer start</b> — the game's own
+    /// dungeon clock derives from this field: <c>dungeon_timer_vm.lua
+    /// getEndTimeStamp</c> computes <c>(timer_info.start_time + dungeon_times
+    /// [+ pause_total_time]) * 1000</c>. It CAN arrive all-zero on early hub
+    /// deliveries (which is what once falsified it as the sole source), so
+    /// consumers select via <see cref="TryGetRunTimerStart"/>: a non-zero
+    /// start_time wins; otherwise <c>flow_info.play_time</c>
+    /// (<see cref="DungeonFlowInfo.PlayTimeMs"/>) is the fallback.
     /// </para>
     /// </summary>
     public long RunTimerStartMs { get; init; }
+
+    /// <summary>
+    /// Select the run-timer start carried by this delivery, in HUD priority
+    /// order: PRIMARY <c>timer_info.start_time</c> (<see cref="RunTimerStartMs"/>),
+    /// FALLBACK <c>flow_info.play_time</c> (<see cref="DungeonFlowInfo.PlayTimeMs"/>).
+    /// Zero-valued sources never win; returns <see langword="false"/> when
+    /// neither source is present and non-zero. <paramref name="source"/> carries
+    /// the diagnostic tag of the winning source
+    /// (<c>"timer_info"</c> / <c>"flow.play_time"</c>).
+    /// </summary>
+    public bool TryGetRunTimerStart(out long startMs, out string source)
+    {
+        if (HasTimerInfo && RunTimerStartMs != 0)
+        {
+            startMs = RunTimerStartMs;
+            source = "timer_info";
+            return true;
+        }
+
+        if (HasFlowInfo && FlowInfo.PlayTime != 0)
+        {
+            startMs = FlowInfo.PlayTimeMs;
+            source = "flow.play_time";
+            return true;
+        }
+
+        startMs = 0;
+        source = "";
+        return false;
+    }
 }
 
 /// <summary>
 /// Decoded <c>DungeonFlowInfo</c> (per
 /// <c>proto/zproto/stru_dungeon_flow_info.proto</c>) — the dungeon flow
 /// state-machine snapshot carried on <c>DungeonSyncData.flow_info</c> (field 2).
-/// <see cref="PlayTime"/> is the PRIMARY source of the run-timer start consumed
-/// by <c>IDungeonState.RunTimerStartMs</c>.
+/// <see cref="PlayTime"/> is the FALLBACK source of the run-timer start consumed
+/// by <c>IDungeonState.RunTimerStartMs</c> (primary: <c>timer_info.start_time</c>;
+/// see <see cref="DungeonSyncResult.TryGetRunTimerStart"/>).
 /// </summary>
 public readonly struct DungeonFlowInfo
 {
@@ -121,10 +155,9 @@ public readonly struct DungeonFlowInfo
     public int ReadyTime { get; init; }
 
     /// <summary>
-    /// Raw <c>play_time</c> (field 4, varint) — epoch (assumed SECONDS, same
-    /// caveat as the retired <c>timer_info.start_time</c>) when play officially
-    /// begins after the Ready countdown. Zero until the run actually starts —
-    /// consumers MUST NOT latch a zero value.
+    /// Raw <c>play_time</c> (field 4, varint) — epoch (assumed SECONDS) when
+    /// play officially begins after the Ready countdown. Zero until the run
+    /// actually starts — consumers MUST NOT latch a zero value.
     /// </summary>
     public int PlayTime { get; init; }
 
@@ -146,8 +179,9 @@ public readonly struct DungeonFlowInfo
 
     /// <summary>
     /// <see cref="PlayTime"/> converted to epoch ms (<c>* 1000L</c>, assuming the
-    /// raw value is epoch seconds). The PRIMARY driver of
-    /// <c>IDungeonState.RunTimerStartMs</c>. Zero when the run has not started.
+    /// raw value is epoch seconds). The FALLBACK driver of
+    /// <c>IDungeonState.RunTimerStartMs</c> (primary: <c>timer_info.start_time</c>).
+    /// Zero when the run has not started.
     /// </summary>
     public long PlayTimeMs => PlayTime * 1000L;
 }

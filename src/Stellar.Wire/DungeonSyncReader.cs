@@ -16,7 +16,7 @@ namespace Stellar.Wire;
 /// <code>
 /// message SyncDungeonData   { DungeonSyncData   v_data       = 1; }   // WorldNtf method body
 /// message DungeonSyncData   { int64             scene_uuid   = 1;     // -> level_uuid
-///                             DungeonFlowInfo   flow_info    = 2;     // PRIMARY run-timer source (play_time)
+///                             DungeonFlowInfo   flow_info    = 2;     // FALLBACK run-timer source (play_time)
 ///                             DungeonDamage     damage       = 5;
 ///                             DungeonSettlement settlement   = 7;
 ///                             DungeonScore      dungeon_score = 14;
@@ -28,13 +28,13 @@ namespace Stellar.Wire;
 /// message DungeonFlowInfo   { EDungeonState     state            = 1;   // varint enum
 ///                             int32             active_time      = 2;
 ///                             int32             ready_time       = 3;
-///                             int32             play_time        = 4;   // epoch (assumed s) when play begins — PRIMARY RunTimerStartMs source
+///                             int32             play_time        = 4;   // epoch (assumed s) when play begins — FALLBACK RunTimerStartMs source
 ///                             int32             end_time         = 5;
 ///                             int32             settlement_time  = 6;
 ///                             int32             dungeon_times    = 7;
 ///                             int32             result           = 8; } // future kill/partial verdict candidate (diag only)
 /// message DungeonTimerInfo  { int32             type             = 1;
-///                             int32             start_time       = 2;   // FALSIFIED as run-timer source — diag only (see DungeonSyncResult.RunTimerStartMs)
+///                             int32             start_time       = 2;   // epoch s — PRIMARY run-timer source (HUD-authoritative; dungeon_timer_vm.lua)
 ///                             int32             dungeon_times    = 3;
 ///                             int32             direction        = 4;
 ///                             int32             index            = 5;
@@ -194,8 +194,8 @@ public static class DungeonSyncReader
     }
 
     // flow_info (DungeonFlowInfo sub-message, field 2) — the dungeon flow
-    // state-machine snapshot; play_time is the PRIMARY run-timer start source
-    // (timer_info.start_time was falsified live). Split out of TryApplyField to
+    // state-machine snapshot; play_time is the FALLBACK run-timer start source
+    // (primary: timer_info.start_time). Split out of TryApplyField to
     // keep that method's body under the STELLAR0002 (>50 LoC) gate.
     private static bool TryApplyFlowInfoField(ReadOnlySpan<byte> data, ref int pos, ref FieldAccumulator acc)
     {
@@ -208,8 +208,8 @@ public static class DungeonSyncReader
         return true;
     }
 
-    // timer_info (DungeonTimerInfo sub-message, field 15) — carries the
-    // run-timer start time; semantic unconfirmed, see
+    // timer_info (DungeonTimerInfo sub-message, field 15) — carries the PRIMARY
+    // (HUD-authoritative) run-timer start time; see
     // DungeonSyncResult.RunTimerStartMs. Split out of TryApplyField to keep
     // that method's body under the STELLAR0002 (>50 LoC) gate.
     private static bool TryApplyTimerInfoField(ReadOnlySpan<byte> data, ref int pos, ref FieldAccumulator acc)
@@ -285,8 +285,8 @@ public static class DungeonSyncReader
     }
 
     // Raw fields lifted out of DungeonTimerInfo — StartTime is the field of
-    // interest (see DungeonSyncResult.RunTimerStartMs); the rest are carried
-    // purely for the one-shot diagnostic log. Grouping them in a struct keeps
+    // interest (PRIMARY run-timer source, see DungeonSyncResult.RunTimerStartMs);
+    // the rest are carried purely for the diagnostic log. Grouping them in a struct keeps
     // TryReadDungeonTimerInfo's signature under the STELLAR0003 (>5 params) gate.
     private struct DungeonTimerRaw
     {
@@ -304,8 +304,8 @@ public static class DungeonSyncReader
     // pause_total_time(9), out_look_type(10), cur_pause_timestamp(11) } — only
     // the fields consumed by RunTimerStartMs / the diagnostic log are decoded;
     // index/change_time/effect_type/out_look_type are skipped like any other
-    // unknown field. Semantic of start_time is unconfirmed, see
-    // DungeonSyncResult.RunTimerStartMs.
+    // unknown field. start_time is the PRIMARY (HUD-authoritative) run-timer
+    // source, see DungeonSyncResult.RunTimerStartMs.
     private static bool TryReadDungeonTimerInfo(ReadOnlySpan<byte> span, out DungeonTimerRaw raw)
     {
         raw = default;
@@ -361,7 +361,7 @@ public static class DungeonSyncReader
 
     // DungeonFlowInfo { state(1), active_time(2), ready_time(3), play_time(4),
     // end_time(5), settlement_time(6), dungeon_times(7), result(8) } — all
-    // varints. play_time is the PRIMARY run-timer start (epoch, assumed seconds).
+    // varints. play_time is the FALLBACK run-timer start (epoch, assumed seconds).
     private static bool TryReadDungeonFlowInfo(ReadOnlySpan<byte> span, out DungeonFlowInfo flow)
     {
         flow = default;

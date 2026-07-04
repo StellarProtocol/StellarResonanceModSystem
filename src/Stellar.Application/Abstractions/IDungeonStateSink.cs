@@ -53,12 +53,16 @@ internal interface IDungeonStateSink
     void SetDifficulty(int difficulty);
 
     /// <summary>
-    /// Record the run-timer start time (server epoch ms) decoded from
-    /// <c>DungeonSyncData.flow_info</c> (field 2) →
-    /// <c>DungeonFlowInfo.play_time</c> (field 4) for the current run. Callers
-    /// should only push non-zero values (zero = "run not started yet"); the
-    /// implementation additionally ignores zero writes so a pre-start delivery
-    /// can never wipe a latched start. See
+    /// Record the run-timer start time (server epoch ms) for the current run.
+    /// The probe feeds this from two sources in HUD priority order — PRIMARY
+    /// <c>DungeonSyncData.timer_info.start_time</c> (the game's own dungeon
+    /// clock derives from it, per <c>dungeon_timer_vm.lua getEndTimeStamp</c>),
+    /// FALLBACK <c>flow_info.play_time</c>. Callers should only push non-zero
+    /// values (zero = "run not started yet"); the implementation ignores zero
+    /// writes AND is first-non-zero-wins — once latched, a later non-zero write
+    /// (e.g. from the other source) cannot shift the clock. The latch clears on
+    /// a new run (<see cref="SetCurrentRun"/> with a new non-zero id) or
+    /// <see cref="Reset"/>. See
     /// <see cref="Stellar.Abstractions.Services.IDungeonState.RunTimerStartMs"/>.
     /// </summary>
     void SetRunTimerStart(long startMs);

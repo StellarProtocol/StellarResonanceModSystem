@@ -135,11 +135,25 @@ internal sealed partial class PandaDungeonProbe
     }
 
     /// <summary>
+    /// Always-on, fires once per actual latch (at most once per run): records
+    /// WHICH source latched <c>IDungeonState.RunTimerStartMs</c> —
+    /// <c>src=timer_info</c> (PRIMARY, HUD-authoritative) vs
+    /// <c>src=flow.play_time</c> (fallback). Called by
+    /// <c>MaybeLatchRunTimer</c> only when the pre-write value was zero, i.e.
+    /// when this delivery actually performed the first-non-zero-wins latch.
+    /// </summary>
+    private void DiagRunTimerLatched(string source, long startMs, in DungeonSyncResult result)
+        => _log.Info(
+            $"[Dungeon] run-timer latched src={source} start_s={startMs / 1000} start_ms={startMs} " +
+            $"scene={result.SceneUuid} runId={_state.CurrentRunId}");
+
+    /// <summary>
     /// One-shot, always-on: log the raw <c>DungeonTimerInfo</c> fields the first
     /// time field 15 arrives with a NON-ZERO <c>start_time</c> (zero deliveries
-    /// no longer consume the one-shot — the live falsification showed the first
-    /// delivery is an all-zero hub packet). Retained for diagnostics only;
-    /// <c>flow_info.play_time</c> now drives <c>RunTimerStartMs</c>.
+    /// do not consume the one-shot — early hub packets arrive all-zero).
+    /// <c>timer_info.start_time</c> is the PRIMARY <c>RunTimerStartMs</c> source
+    /// (HUD-authoritative, <c>dungeon_timer_vm.lua</c>); this line confirms the
+    /// raw fields on the first real delivery.
     /// </summary>
     private void DiagDungeonTimer(uint methodId, DungeonSyncResult result)
     {

@@ -148,6 +148,89 @@ public sealed class DungeonSyncReaderTests
     }
 
     [Fact]
+    public void TryGetRunTimerStart_BothSourcesNonZero_TimerInfoWins()
+    {
+        // HUD priority: the game's own dungeon clock derives from
+        // timer_info.start_time (dungeon_timer_vm.lua getEndTimeStamp), so when
+        // one delivery carries BOTH non-zero sources the timer_info value wins.
+        var timerInfo = Msg(Varint(2, 1700000000));          // start_time
+        var flowInfo  = Msg(Varint(4, 1700000123));          // play_time
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
+        Assert.Equal(1700000000L * 1000L, startMs);
+        Assert.Equal("timer_info", source);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_TimerZero_FallsBackToFlowPlayTime()
+    {
+        // Early hub deliveries carry an all-zero timer_info — a zero start_time
+        // must never win; flow_info.play_time is the fallback.
+        var timerInfo = Msg(Varint(1, 1), Varint(2, 0));     // type only, start_time 0
+        var flowInfo  = Msg(Varint(4, 1700000123));          // play_time
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
+        Assert.Equal(1700000123L * 1000L, startMs);
+        Assert.Equal("flow.play_time", source);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_TimerInfoOnly_UsesTimerInfo()
+    {
+        var timerInfo = Msg(Varint(2, 1700000000));
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.TryGetRunTimerStart(out var startMs, out var source));
+        Assert.Equal(1700000000L * 1000L, startMs);
+        Assert.Equal("timer_info", source);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_BothSourcesZero_ReturnsFalse()
+    {
+        // Pre-start hub delivery: both sub-messages present, all clocks zero —
+        // nothing must latch (stays 0 downstream).
+        var timerInfo = Msg(Varint(1, 1), Varint(2, 0));
+        var flowInfo  = Msg(Varint(1, 1), Varint(4, 0));
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo),
+            LenDelim(15, timerInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.TryGetRunTimerStart(out var startMs, out _));
+        Assert.Equal(0L, startMs);
+    }
+
+    [Fact]
+    public void TryGetRunTimerStart_NeitherSourcePresent_ReturnsFalse()
+    {
+        var data = Msg(Varint(1, 99L));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.TryGetRunTimerStart(out var startMs, out _));
+        Assert.Equal(0L, startMs);
+    }
+
+    [Fact]
     public void Reads_run_id_without_flow_info()
     {
         var data = Msg(Varint(1, 99L));

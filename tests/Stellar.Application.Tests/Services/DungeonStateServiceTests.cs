@@ -202,6 +202,37 @@ public sealed class DungeonStateServiceTests
     }
 
     [Fact]
+    public void SetRunTimerStart_FirstNonZeroWins_SecondNonZeroIgnored()
+    {
+        // The probe feeds TWO sources (timer_info.start_time primary,
+        // flow_info.play_time fallback). Whichever arrives non-zero FIRST wins
+        // for the current run — a later delivery from the other source must not
+        // shift an already-latched clock.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.SetRunTimerStart(RunTimerStartMs + 5000);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_NewRun_RelatchesAfterClear()
+    {
+        // The first-wins guard is per-run: a new run id clears the latch, and
+        // the next run's first non-zero write must latch normally.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.SetCurrentRun(Dungeon2Id);
+        Assert.Equal(0L, read.RunTimerStartMs);
+
+        write.SetRunTimerStart(RunTimerStartMs + 7000);
+        Assert.Equal(RunTimerStartMs + 7000, read.RunTimerStartMs);
+    }
+
+    [Fact]
     public void SetRunTimerStart_Zero_OnFreshRun_StaysZero()
     {
         var (read, write) = NewService();
