@@ -95,7 +95,8 @@ internal sealed partial class PandaDungeonProbe
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
-        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
+        // Method 24 deliberately not tapped (see RegisterWithLua) — the
+        // MessagePipe subscription owns the dirty-delta path.
     }
 
     /// <summary>
@@ -113,7 +114,13 @@ internal sealed partial class PandaDungeonProbe
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfDeferred);
         dispatcher.Register(WorldNtfMethodIds.NotifyStartPlayingDungeon, OnWorldNtfDeferred);
-        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
+        // Method 24 (SyncDungeonDirtyData) is deliberately NOT tapped here: the
+        // dirty-deltas fire continuously (every container change) and the
+        // dispatcher's inline IL2CPP payload extraction on the lua path during
+        // scene teardown is the prime suspect for the leave-dungeon crashes
+        // (crash reproduced with the delta tap present and no Harmony patch
+        // installed). The MessagePipe subscription (PandaDungeonSyncSubscription)
+        // is the sanctioned source for the delta's timer payload.
     }
 
     /// <summary>

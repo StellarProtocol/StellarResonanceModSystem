@@ -65,6 +65,12 @@ internal sealed partial class PandaDungeonSyncSubscription
     {
         if (_subscribeThrewWarned) return;
         _subscribeThrewWarned = true;
-        _log.Warning($"[DungeonSync] subscription attempt threw: {ex.GetType().Name}: {ex.Message} — retrying from the framework tick");
+        // Unwrap the full inner chain — a bare TargetInvocationException told us
+        // nothing on 2026-07-05; the inner exception names the failing interop call.
+        var chain = new System.Text.StringBuilder();
+        for (var e = ex; e is not null && chain.Length < 600; e = e.InnerException)
+            chain.Append(chain.Length > 0 ? " <= " : "").Append(e.GetType().Name).Append(": ").Append(e.Message);
+        var site = ex.InnerException?.StackTrace?.Split('\n') is { Length: > 0 } frames ? frames[0].Trim() : "";
+        _log.Warning($"[DungeonSync] subscription attempt threw: {chain} @ {site} — retrying from the framework tick");
     }
 }
