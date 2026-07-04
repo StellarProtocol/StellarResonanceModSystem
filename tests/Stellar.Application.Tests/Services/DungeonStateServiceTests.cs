@@ -188,6 +188,29 @@ public sealed class DungeonStateServiceTests
     }
 
     [Fact]
+    public void SetRunTimerStart_Zero_DoesNotOverwriteLatchedValue()
+    {
+        // flow_info.play_time is 0 on hub/pre-start deliveries — a zero write
+        // must never wipe a latched non-zero start (the live falsification of
+        // the timer_info source arrived exactly as such an all-zero delivery).
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(RunTimerStartMs);
+
+        write.SetRunTimerStart(0);
+        Assert.Equal(RunTimerStartMs, read.RunTimerStartMs);
+    }
+
+    [Fact]
+    public void SetRunTimerStart_Zero_OnFreshRun_StaysZero()
+    {
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(0);
+        Assert.Equal(0L, read.RunTimerStartMs);
+    }
+
+    [Fact]
     public void Reset_ClearsRunTimerStart()
     {
         var (read, write) = NewService();

@@ -92,6 +92,73 @@ public sealed class DungeonSyncReaderTests
     }
 
     [Fact]
+    public void Reads_dungeon_flow_info_play_time()
+    {
+        // DungeonFlowInfo { state(1)=3, active_time(2)=1700000100, ready_time(3)=1700000110,
+        //                   play_time(4)=1700000123, end_time(5)=0, settlement_time(6)=0,
+        //                   dungeon_times(7)=600, result(8)=2 }
+        var flowInfo = Msg(
+            Varint(1, 3),
+            Varint(2, 1700000100),
+            Varint(3, 1700000110),
+            Varint(4, 1700000123),
+            Varint(7, 600),
+            Varint(8, 2));
+
+        // DungeonSyncData { scene_uuid(1)=99, flow_info(2)=... }
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.Equal(99L, r.SceneUuid);
+        Assert.True(r.HasFlowInfo);
+        Assert.Equal(3, r.FlowInfo.State);
+        Assert.Equal(1700000100, r.FlowInfo.ActiveTime);
+        Assert.Equal(1700000110, r.FlowInfo.ReadyTime);
+        Assert.Equal(1700000123, r.FlowInfo.PlayTime);
+        Assert.Equal(0, r.FlowInfo.EndTime);
+        Assert.Equal(0, r.FlowInfo.SettlementTime);
+        Assert.Equal(600, r.FlowInfo.DungeonTimes);
+        Assert.Equal(2, r.FlowInfo.Result);
+        // RunTimerStartMs source math: play_time (epoch s) * 1000.
+        Assert.Equal(1700000123L * 1000L, r.FlowInfo.PlayTimeMs);
+    }
+
+    [Fact]
+    public void Reads_zero_valued_flow_info_as_present_with_zero_play_time()
+    {
+        // The live-falsification shape: first delivery is a hub scene whose
+        // flow fields are all zero. It must parse as PRESENT (HasFlowInfo) with
+        // play_time 0 — the no-latch decision is the probe/service's, keyed on
+        // PlayTime != 0.
+        var flowInfo = Msg(
+            Varint(1, 1),       // state only; all timers zero/absent
+            Varint(4, 0));
+        var data = Msg(
+            Varint(1, 99L),
+            LenDelim(2, flowInfo));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.HasFlowInfo);
+        Assert.Equal(0, r.FlowInfo.PlayTime);
+        Assert.Equal(0L, r.FlowInfo.PlayTimeMs);
+    }
+
+    [Fact]
+    public void Reads_run_id_without_flow_info()
+    {
+        var data = Msg(Varint(1, 99L));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.False(r.HasFlowInfo);
+        Assert.Equal(0, r.FlowInfo.PlayTime);
+    }
+
+    [Fact]
     public void Reads_run_id_without_dungeon_timer_info()
     {
         var data = Msg(Varint(1, 99L));

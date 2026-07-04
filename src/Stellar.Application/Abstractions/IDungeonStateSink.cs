@@ -54,9 +54,11 @@ internal interface IDungeonStateSink
 
     /// <summary>
     /// Record the run-timer start time (server epoch ms) decoded from
-    /// <c>DungeonSyncData.timer_info</c> (field 15) →
-    /// <c>DungeonTimerInfo.start_time</c> (field 2) for the current run.
-    /// Semantic UNCONFIRMED — see
+    /// <c>DungeonSyncData.flow_info</c> (field 2) →
+    /// <c>DungeonFlowInfo.play_time</c> (field 4) for the current run. Callers
+    /// should only push non-zero values (zero = "run not started yet"); the
+    /// implementation additionally ignores zero writes so a pre-start delivery
+    /// can never wipe a latched start. See
     /// <see cref="Stellar.Abstractions.Services.IDungeonState.RunTimerStartMs"/>.
     /// </summary>
     void SetRunTimerStart(long startMs);

@@ -74,11 +74,17 @@ internal sealed partial class PandaDungeonProbe
         if (result.HasDungeonSceneInfo)
             _sink.SetDifficulty(result.DungeonDifficulty);
 
-        if (result.HasTimerInfo)
-            _sink.SetRunTimerStart(result.RunTimerStartMs);
+        // flow_info.play_time is the AUTHORITATIVE run-timer start (a live run
+        // falsified timer_info.start_time: the first delivery was a hub scene
+        // with all timer fields zero). Never latch zeros — a zero play_time is
+        // the pre-start state and must not overwrite a previously latched value
+        // (the service additionally guards against zero writes).
+        if (result.HasFlowInfo && result.FlowInfo.PlayTime != 0)
+            _sink.SetRunTimerStart(result.FlowInfo.PlayTimeMs);
 
         DiagDungeonSync(methodId, result);
         DiagDungeonDifficulty(methodId, result);
+        DiagDungeonFlow(methodId, result);
         DiagDungeonTimer(methodId, result);
     }
 }

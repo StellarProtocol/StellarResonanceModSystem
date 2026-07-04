@@ -48,13 +48,17 @@ public interface IDungeonState
 
     /// <summary>
     /// Server epoch ms when the dungeon run-timer started
-    /// (<c>DungeonSyncData.timer_info</c>, field 15 → <c>DungeonTimerInfo.start_time</c>,
-    /// field 2), or 0 when absent / not yet seen.
+    /// (<c>DungeonSyncData.flow_info</c>, field 2 → <c>DungeonFlowInfo.play_time</c>,
+    /// field 4 — the epoch when play officially begins after the Ready
+    /// countdown), or 0 when not yet seen for the current run. Only non-zero
+    /// wire values are latched; the value clears when a new run begins and
+    /// survives the dungeon→town transition so it is readable at archive time.
     /// <para>
-    /// <b>Semantic UNCONFIRMED</b> (see <see cref="CurrentDifficulty"/> for
-    /// precedent) — <c>start_time</c> is assumed to be an epoch timestamp in
-    /// SECONDS and is converted to ms here. Treat as diagnostic until confirmed
-    /// against a real run.
+    /// <b>Semantic caveat</b> (see <see cref="CurrentDifficulty"/> for
+    /// precedent) — <c>play_time</c> is assumed to be an epoch timestamp in
+    /// SECONDS and is converted to ms here. The earlier
+    /// <c>timer_info.start_time</c> source was falsified by a live run (arrived
+    /// all-zero) and is now diagnostic-only.
     /// </para>
     /// </summary>
     long RunTimerStartMs { get; }

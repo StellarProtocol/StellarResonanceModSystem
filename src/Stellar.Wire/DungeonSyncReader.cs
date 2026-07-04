@@ -3,94 +3,6 @@ using System;
 namespace Stellar.Wire;
 
 /// <summary>
-/// Decoded result of a <c>WorldNtf.SyncDungeonData</c> structural parse. A
-/// value with <see cref="SceneUuid"/> != 0 is the per-run unique id that the
-/// StellarLogs upload plugin consumes as <c>level_uuid</c>. When
-/// <see cref="HasSettlement"/> is <see langword="true"/> the run reached a
-/// settlement (clear/result screen) and <see cref="PassTimeSeconds"/> /
-/// <see cref="MasterModeScore"/> are populated.
-/// </summary>
-public readonly struct DungeonSyncResult
-{
-    /// <summary>The per-run unique scene id (<c>DungeonSyncData.scene_uuid</c>, field 1). Non-zero on a valid parse.</summary>
-    public long SceneUuid { get; init; }
-
-    /// <summary>True when a <c>DungeonSettlement</c> (field 7) was present — i.e. the run reached its clear/result screen.</summary>
-    public bool HasSettlement { get; init; }
-
-    /// <summary>Clear time in seconds (<c>DungeonSettlement.pass_time</c>, field 1). Only meaningful when <see cref="HasSettlement"/>.</summary>
-    public int PassTimeSeconds { get; init; }
-
-    /// <summary>Master-mode score (<c>DungeonSettlement.master_mode_score</c>, field 5). Only meaningful when <see cref="HasSettlement"/>.</summary>
-    public int MasterModeScore { get; init; }
-
-    /// <summary>
-    /// True when a <c>DungeonSceneInfo</c> (field 21) was present on this
-    /// payload — i.e. <see cref="DungeonDifficulty"/> is meaningful.
-    /// </summary>
-    public bool HasDungeonSceneInfo { get; init; }
-
-    /// <summary>
-    /// Raw value of <c>DungeonSceneInfo.difficulty</c> (field 1, varint) inside
-    /// <c>DungeonSyncData.dungeon_scene_info</c> (field 21). Only meaningful when
-    /// <see cref="HasDungeonSceneInfo"/>.
-    /// <para>
-    /// <b>Semantic UNCONFIRMED</b>: this is the value the lobby's Master 1-20
-    /// selector should land on, but whether it carries the raw 1-20 challenge
-    /// level or a small tier enum (normal/hard/master) has not been verified
-    /// against a real Master-tier run yet. Treat as a diagnostic value until
-    /// confirmed; consumers should not assume it is the literal level number.
-    /// </para>
-    /// </summary>
-    public int DungeonDifficulty { get; init; }
-
-    /// <summary>
-    /// Raw <c>DungeonTimerInfo</c> fields (<c>type</c>, <c>dungeon_times</c>,
-    /// <c>direction</c>, <c>pause_time</c>, <c>pause_total_time</c>,
-    /// <c>cur_pause_timestamp</c>) captured alongside <see cref="RunTimerStartMs"/>
-    /// purely for the one-shot diagnostic log — not otherwise surfaced through
-    /// <c>IDungeonState</c>. Only meaningful when <see cref="HasTimerInfo"/>.
-    /// </summary>
-    public int TimerType { get; init; }
-
-    /// <summary>Raw <c>DungeonTimerInfo.dungeon_times</c> (field 3). Diagnostic only; see <see cref="TimerType"/>.</summary>
-    public int TimerDungeonTimes { get; init; }
-
-    /// <summary>Raw <c>DungeonTimerInfo.direction</c> (field 4). Diagnostic only; see <see cref="TimerType"/>.</summary>
-    public int TimerDirection { get; init; }
-
-    /// <summary>Raw <c>DungeonTimerInfo.pause_time</c> (field 8). Diagnostic only; see <see cref="TimerType"/>.</summary>
-    public int TimerPauseTime { get; init; }
-
-    /// <summary>Raw <c>DungeonTimerInfo.pause_total_time</c> (field 9). Diagnostic only; see <see cref="TimerType"/>.</summary>
-    public int TimerPauseTotalTime { get; init; }
-
-    /// <summary>Raw <c>DungeonTimerInfo.cur_pause_timestamp</c> (field 11). Diagnostic only; see <see cref="TimerType"/>.</summary>
-    public int TimerCurPauseTimestamp { get; init; }
-
-    /// <summary>
-    /// True when a <c>DungeonTimerInfo</c> (field 15) was present on this
-    /// payload — i.e. <see cref="RunTimerStartMs"/> is meaningful.
-    /// </summary>
-    public bool HasTimerInfo { get; init; }
-
-    /// <summary>
-    /// Server epoch ms when the dungeon run-timer started, derived from
-    /// <c>DungeonTimerInfo.start_time</c> (field 2, varint) inside
-    /// <c>DungeonSyncData.timer_info</c> (field 15). Only meaningful when
-    /// <see cref="HasTimerInfo"/>.
-    /// <para>
-    /// <b>Semantic UNCONFIRMED</b>: <c>start_time</c> is assumed to be an epoch
-    /// timestamp in SECONDS and is converted to ms here via <c>* 1000L</c>, but
-    /// this has not been verified against a real dungeon run's wall-clock time.
-    /// Treat as a diagnostic value until confirmed — same caveat as
-    /// <see cref="DungeonDifficulty"/> carried before its first live run.
-    /// </para>
-    /// </summary>
-    public long RunTimerStartMs { get; init; }
-}
-
-/// <summary>
 /// Pure structural parser for <c>WorldNtf.SyncDungeonData { DungeonSyncData
 /// v_data = 1 }</c>. Used by the Infrastructure dungeon probe to recognise a
 /// dungeon-sync packet WITHOUT a known method id: every WorldNtf payload is fed
@@ -104,6 +16,7 @@ public readonly struct DungeonSyncResult
 /// <code>
 /// message SyncDungeonData   { DungeonSyncData   v_data       = 1; }   // WorldNtf method body
 /// message DungeonSyncData   { int64             scene_uuid   = 1;     // -> level_uuid
+///                             DungeonFlowInfo   flow_info    = 2;     // PRIMARY run-timer source (play_time)
 ///                             DungeonDamage     damage       = 5;
 ///                             DungeonSettlement settlement   = 7;
 ///                             DungeonScore      dungeon_score = 14;
@@ -112,8 +25,16 @@ public readonly struct DungeonSyncResult
 /// message DungeonSettlement { int32             pass_time        = 1;
 ///                             int32             master_mode_score = 5; }
 /// message DungeonSceneInfo  { int32             difficulty       = 1; } // semantic unconfirmed (see DungeonDifficulty)
+/// message DungeonFlowInfo   { EDungeonState     state            = 1;   // varint enum
+///                             int32             active_time      = 2;
+///                             int32             ready_time       = 3;
+///                             int32             play_time        = 4;   // epoch (assumed s) when play begins — PRIMARY RunTimerStartMs source
+///                             int32             end_time         = 5;
+///                             int32             settlement_time  = 6;
+///                             int32             dungeon_times    = 7;
+///                             int32             result           = 8; } // future kill/partial verdict candidate (diag only)
 /// message DungeonTimerInfo  { int32             type             = 1;
-///                             int32             start_time       = 2;   // semantic unconfirmed (see RunTimerStartMs)
+///                             int32             start_time       = 2;   // FALSIFIED as run-timer source — diag only (see DungeonSyncResult.RunTimerStartMs)
 ///                             int32             dungeon_times    = 3;
 ///                             int32             direction        = 4;
 ///                             int32             index            = 5;
@@ -187,6 +108,8 @@ public static class DungeonSyncReader
             MasterModeScore     = acc.MasterModeScore,
             HasDungeonSceneInfo = acc.HasDungeonSceneInfo,
             DungeonDifficulty   = acc.DungeonDifficulty,
+            HasFlowInfo         = acc.HasFlowInfo,
+            FlowInfo            = acc.FlowInfo,
             HasTimerInfo        = acc.HasTimerInfo,
             RunTimerStartMs     = acc.RunTimerStartMs,
             TimerType               = acc.TimerType,
@@ -210,6 +133,8 @@ public static class DungeonSyncReader
         public int MasterModeScore;
         public bool HasDungeonSceneInfo;
         public int DungeonDifficulty;
+        public bool HasFlowInfo;
+        public DungeonFlowInfo FlowInfo;
         public bool HasTimerInfo;
         public long RunTimerStartMs;
         public int TimerType;
@@ -259,10 +184,28 @@ public static class DungeonSyncReader
             return true;
         }
 
+        if (field == 2 && wire == 2)
+            return TryApplyFlowInfoField(data, ref pos, ref acc);
+
         if (field == 15 && wire == 2)
             return TryApplyTimerInfoField(data, ref pos, ref acc);
 
         return WireProtocol.SkipField(data, ref pos, wire);
+    }
+
+    // flow_info (DungeonFlowInfo sub-message, field 2) — the dungeon flow
+    // state-machine snapshot; play_time is the PRIMARY run-timer start source
+    // (timer_info.start_time was falsified live). Split out of TryApplyField to
+    // keep that method's body under the STELLAR0002 (>50 LoC) gate.
+    private static bool TryApplyFlowInfoField(ReadOnlySpan<byte> data, ref int pos, ref FieldAccumulator acc)
+    {
+        if (!WireProtocol.TryReadLengthDelimited(data, ref pos, out var flowInfo)) return false;
+        if (TryReadDungeonFlowInfo(flowInfo, out var flow))
+        {
+            acc.HasFlowInfo = true;
+            acc.FlowInfo = flow;
+        }
+        return true;
     }
 
     // timer_info (DungeonTimerInfo sub-message, field 15) — carries the
@@ -399,6 +342,76 @@ public static class DungeonSyncReader
             case 8: raw.PauseTime = value; break;
             case 9: raw.PauseTotalTime = value; break;
             case 11: raw.CurPauseTimestamp = value; break;
+        }
+    }
+
+    // Mutable scratch for the DungeonFlowInfo walk — mirrors DungeonTimerRaw;
+    // keeps ApplyFlowField's signature under the STELLAR0003 (>5 params) gate.
+    private struct DungeonFlowRaw
+    {
+        public int State;
+        public int ActiveTime;
+        public int ReadyTime;
+        public int PlayTime;
+        public int EndTime;
+        public int SettlementTime;
+        public int DungeonTimes;
+        public int Result;
+    }
+
+    // DungeonFlowInfo { state(1), active_time(2), ready_time(3), play_time(4),
+    // end_time(5), settlement_time(6), dungeon_times(7), result(8) } — all
+    // varints. play_time is the PRIMARY run-timer start (epoch, assumed seconds).
+    private static bool TryReadDungeonFlowInfo(ReadOnlySpan<byte> span, out DungeonFlowInfo flow)
+    {
+        flow = default;
+        var raw = new DungeonFlowRaw();
+
+        int pos = 0;
+        while (pos < span.Length)
+        {
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire))
+                return false;
+
+            if (wire != 0)
+            {
+                if (!WireProtocol.SkipField(span, ref pos, wire)) return false;
+                continue;
+            }
+
+            if (!WireProtocol.TryReadVarint(span, ref pos, out var v)) return false;
+            ApplyFlowField(field, (int)v, ref raw);
+        }
+
+        flow = new DungeonFlowInfo
+        {
+            State          = raw.State,
+            ActiveTime     = raw.ActiveTime,
+            ReadyTime      = raw.ReadyTime,
+            PlayTime       = raw.PlayTime,
+            EndTime        = raw.EndTime,
+            SettlementTime = raw.SettlementTime,
+            DungeonTimes   = raw.DungeonTimes,
+            Result         = raw.Result,
+        };
+        return true;
+    }
+
+    // Dispatch a single decoded varint field into the DungeonFlowInfo scratch
+    // struct. Split out of TryReadDungeonFlowInfo to keep that method's body
+    // short (STELLAR0002).
+    private static void ApplyFlowField(int field, int value, ref DungeonFlowRaw raw)
+    {
+        switch (field)
+        {
+            case 1: raw.State = value; break;
+            case 2: raw.ActiveTime = value; break;
+            case 3: raw.ReadyTime = value; break;
+            case 4: raw.PlayTime = value; break;
+            case 5: raw.EndTime = value; break;
+            case 6: raw.SettlementTime = value; break;
+            case 7: raw.DungeonTimes = value; break;
+            case 8: raw.Result = value; break;
         }
     }
 }

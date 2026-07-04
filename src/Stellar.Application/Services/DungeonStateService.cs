@@ -66,7 +66,14 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         => Interlocked.Exchange(ref _currentDifficulty, difficulty);
 
     public void SetRunTimerStart(long startMs)
-        => Interlocked.Exchange(ref _runTimerStartMs, startMs);
+    {
+        // Zero is the wire's "run not started yet" value (flow_info.play_time is
+        // 0 on hub/pre-start deliveries) — a zero must never overwrite a latched
+        // non-zero start. Clearing happens exclusively via SetCurrentRun (new
+        // run id) or Reset (logout).
+        if (startMs == 0) return;
+        Interlocked.Exchange(ref _runTimerStartMs, startMs);
+    }
 
     public void Reset()
     {
