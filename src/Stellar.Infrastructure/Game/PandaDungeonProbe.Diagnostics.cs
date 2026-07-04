@@ -4,19 +4,97 @@ using Stellar.Wire;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Opt-in diagnostics for <see cref="PandaDungeonProbe"/>, gated behind
-/// <c>STELLAR_DIAGNOSTICS=1</c> so the steady-state dispatch path pays zero log
-/// cost. The first detected dungeon-sync is ALWAYS logged once (regardless of
-/// the toggle) as a boot sanity check confirming the direct method-id
-/// registration (23) is receiving and structurally matching packets.
-/// Subsequent detections only log when diagnostics is on.
+/// Diagnostics for <see cref="PandaDungeonProbe"/>. The per-event repeat log is
+/// gated behind <c>STELLAR_DIAGNOSTICS=1</c> so the steady-state dispatch path
+/// pays zero log cost. ALWAYS-ON (toggle-independent): the one-shot first-seen
+/// lines (detection / difficulty / flow / timer), and the session-capped
+/// broad-delivery log (<see cref="DiagDungeonDelivery"/>, max
+/// 2×<see cref="BroadDeliveryCap"/> lines) used to locate which stub path the
+/// LIVE run's dungeon clock arrives on.
 /// </summary>
 internal sealed partial class PandaDungeonProbe
 {
+    // Broad-delivery throttles: two independent budgets so a login-time bulk
+    // sync of PAST dungeon states (settlement=True pass_time=0 lines observed
+    // live) cannot starve the interesting lines out of the session.
+    private const int BroadDeliveryCap = 20;
+    private int _broadAnyLogged;
+    private int _broadNonZeroLogged;
+
     private bool _firstDetectionLogged;
     private bool _firstDifficultyLogged;
     private bool _firstFlowLogged;
     private bool _firstTimerLogged;
+
+    /// <summary>
+    /// Broad, ALWAYS-ON (not gated on <c>StellarDiagnostics</c>) delivery log
+    /// used to locate where the LIVE run's dungeon clock arrives. Two throttled
+    /// budgets per session, <see cref="BroadDeliveryCap"/> lines each:
+    /// <list type="bullet">
+    /// <item>"any": every structurally-valid SyncDungeonData delivery (either
+    /// stub path) — the second live falsification showed we cannot trust
+    /// scene_uuid matching (dirty-mask field-1 reads shift within one run), so
+    /// every delivery is a candidate;</item>
+    /// <item>"non-zero": deliveries carrying ANY non-zero flow_info or
+    /// timer_info field, or a scene_uuid equal to the latched run id — the
+    /// money lines, budgeted separately so login bulk syncs can't consume
+    /// them.</item>
+    /// </list>
+    /// One in-game session (enter dungeon, idle 20s, archive, leave) is enough
+    /// to pinpoint the source: src=cs vs src=lua, plus the full field dump.
+    /// </summary>
+    private void DiagDungeonDelivery(string source, uint methodId, DungeonSyncResult result)
+    {
+        bool nonZero = HasNonZeroFlowOrTimer(result);
+        bool logAsAny = _broadAnyLogged < BroadDeliveryCap;
+        bool logAsNonZero = nonZero && _broadNonZeroLogged < BroadDeliveryCap;
+        if (!logAsAny && !logAsNonZero) return;
+
+        if (logAsAny) _broadAnyLogged++;
+        if (logAsNonZero) _broadNonZeroLogged++;
+
+        var f = result.FlowInfo;
+        _log.Info(
+            $"[Dungeon] delivery src={source} method={methodId} scene_uuid={result.SceneUuid} " +
+            $"runId={_state.CurrentRunId} " +
+            $"flow(has={result.HasFlowInfo} state={f.State} active_time={f.ActiveTime} " +
+            $"ready_time={f.ReadyTime} play_time={f.PlayTime} end_time={f.EndTime} " +
+            $"settlement_time={f.SettlementTime} dungeon_times={f.DungeonTimes} result={f.Result}) " +
+            $"timer(has={result.HasTimerInfo} type={result.TimerType} start_time_s={result.RunTimerStartMs / 1000} " +
+            $"dungeon_times={result.TimerDungeonTimes} direction={result.TimerDirection} " +
+            $"pause_time={result.TimerPauseTime} pause_total={result.TimerPauseTotalTime} " +
+            $"cur_pause_ts={result.TimerCurPauseTimestamp}) " +
+            $"settlement={result.HasSettlement} pass_time={result.PassTimeSeconds}s " +
+            $"(any {_broadAnyLogged}/{BroadDeliveryCap}, nonzero {_broadNonZeroLogged}/{BroadDeliveryCap})");
+    }
+
+    // True when the delivery carries ANY non-zero flow_info / timer_info field,
+    // or its scene_uuid matches the latched run id (best-effort — the dirty-mask
+    // field-1 read is known-unreliable, so this is never the only trigger).
+    private bool HasNonZeroFlowOrTimer(in DungeonSyncResult result)
+    {
+        long runId = _state.CurrentRunId;
+        if (runId != 0 && result.SceneUuid == runId) return true;
+
+        var f = result.FlowInfo;
+        if (result.HasFlowInfo &&
+            (f.State | f.ActiveTime | f.ReadyTime | f.PlayTime |
+             f.EndTime | f.SettlementTime | f.DungeonTimes | f.Result) != 0)
+        {
+            return true;
+        }
+
+        if (result.HasTimerInfo &&
+            (result.RunTimerStartMs != 0 ||
+             (result.TimerType | result.TimerDungeonTimes | result.TimerDirection |
+              result.TimerPauseTime | result.TimerPauseTotalTime |
+              result.TimerCurPauseTimestamp) != 0))
+        {
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// One-shot, always-on: log the raw <c>DungeonSceneInfo.difficulty</c> value

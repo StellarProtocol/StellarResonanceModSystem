@@ -65,8 +65,11 @@ public sealed partial class BootstrapPlugin
         _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
         // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
         // (lua/zservice/world_ntf_gen.lua), so the probe registers directly by
-        // method id like the other probes.
-        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, log);
+        // method id like the other probes. It ALSO registers on the Lua stub
+        // dispatcher (see InstallReadyCheckProbe) — the game's own lua handler
+        // for method 23 is what feeds the live dungeon container, so the live
+        // run's dungeon sync may flow through ZLuaStub, not the C# stub.
+        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
         _worldNtfDispatcher.Install(PluginGuid);
     }
@@ -79,6 +82,11 @@ public sealed partial class BootstrapPlugin
         _readyCheckProbe = new PandaReadyCheckProbe(_partyService!, log);
         _worldNtfLuaDispatcher = new WorldNtfLuaStubDispatcher(log);
         _readyCheckProbe.RegisterWith(_worldNtfLuaDispatcher);
+        // Dungeon probe also taps method 23 on the LUA stub path — the game's
+        // own world_ntf_gen.lua consumes SyncDungeonData here (container
+        // ResetData), so the live run's dungeon sync may never reach the C# stub.
+        // Constructed in InstallWorldNtfDispatcher, which runs before this method.
+        _dungeonProbe!.RegisterWithLua(_worldNtfLuaDispatcher);
         _worldNtfLuaDispatcher.Install(PluginGuid);
     }
 
