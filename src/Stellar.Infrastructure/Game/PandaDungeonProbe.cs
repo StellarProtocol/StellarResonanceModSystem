@@ -16,56 +16,22 @@ namespace Stellar.Infrastructure.Game;
 /// <c>scene_uuid</c> (field 1).
 ///
 /// <para>
-/// The probe ALSO registers on the <see cref="WorldNtfLuaStubDispatcher"/>
-/// (ZLuaStub path) for method 23 AND method 55
-/// (<c>NotifyStartPlayingDungeon</c> — the play-start EDGE; its consumer is the
-/// Lua stub per <c>world_ntf_gen.lua</c> → <c>world_ntf_impl.lua</c>). A live
-/// instrumented run confirmed the dungeon's entry sync is delivered on BOTH
-/// paths but carries a usable clock only in <c>flow_info.active_time</c> —
-/// which a third live falsification proved is the SCENE-ENTRY time, not play
-/// start (staging-area imagine casts predated our 0:00), and method 55 was
-/// never observed on that run.
+/// Run-timer note: the parsed <c>flow_info.active_time</c> latches an
+/// APPROXIMATE run clock (scene-entry time, ~countdown early);
+/// <c>timer_info.start_time</c> latches the true clock when the full sync
+/// carries it (observed on mid-run rejoin). Capturing the true clock on FRESH
+/// entry requires the dungeon container's dirty-DELTA (WorldNtf method 24),
+/// which is unreachable from this framework today — the full evidence trail
+/// and every falsified route live in
+/// <c>docs/recon/dungeon-clock-recon.md</c> (devkit). Do not re-attempt those
+/// routes without reading it.
 /// </para>
 ///
 /// <para>
-/// The game's own dungeon-timer HUD nevertheless shows the true clock: it reads
-/// <c>ContainerMgr.DungeonSyncData.timerInfo.startTime</c>
-/// (<c>dungeon_timer_vm.lua getEndTimeStamp</c>), which is fed by the dungeon
-/// container's dirty-DELTA path — WorldNtf <b>method 24</b>
-/// (<c>SyncDungeonDirtyData</c>, C#-routed: <c>Zservice.WorldNtfStub</c>
-/// publisher → <c>Panda.ZGame.DungeonSyncService.OnSync</c> →
-/// <c>lua/sync/dungeon_sync.lua</c> → <c>dungeon_sync_data.lua MergeData</c>).
-/// The AUTHORITATIVE tap for that delta is
-/// <see cref="PandaDungeonSyncSubscription"/> — our own MessagePipe
-/// subscription to the same event (no patching), which captures the BARE merge
-/// blob downstream of whatever wire method delivers it and enqueues via
-/// <see cref="OnDungeonSyncDeltaDeferred"/>. The method-24 registration below
-/// is the INFERRED wire-origin tap, kept as corroborating diagnostics. Both
-/// shapes drain through the same handler and parse with
-/// <see cref="DungeonDirtyDataReader"/>; a non-zero
-/// <c>timer_info.start_time</c> latches at rank 2 (TimerInfo), UPGRADING an
-/// earlier rank-4 active_time latch mid-run (duplicates are harmless — the
-/// rank guard ignores equal-rank rewrites).
-/// </para>
-///
-/// <para>
-/// CRASH SAFETY — the Lua-path callback does NO work: a live run with an
-/// inline Lua-path handler crashed the client during the scene load right
-/// after leaving the dungeon (the identical build minus the Lua tap passed the
-/// same in/out test), so Lua-path processing during scene teardown is the
-/// prime suspect. The Lua callback now only copies the (already-owned) payload
-/// + method id + an arrival timestamp into a small bounded queue; ALL parsing,
-/// sink writes and logging happen on the framework's main-thread tick, which
-/// is gated off during scene transitions — queued items simply wait for the
-/// gate to clear. See <c>PandaDungeonProbe.Deferred.cs</c>.
-/// </para>
-///
-/// <para>
-/// The C# stub path keeps its inline handling (network receive thread) — that
-/// path has never crashed. Never throws across the IL2CPP boundary (the
-/// dispatchers wrap the handler call in a try/catch, and the readers are fully
-/// defensive). First-seen + broad-delivery diagnostics live in
-/// <c>PandaDungeonProbe.Diagnostics.cs</c>.
+/// The C# stub path handles inline on the network receive thread — this path
+/// has run crash-free for weeks. Never throws across the IL2CPP boundary (the
+/// dispatcher wraps handler calls, and the readers are fully defensive).
+/// Diagnostics live in <c>PandaDungeonProbe.Diagnostics.cs</c>.
 /// </para>
 /// </summary>
 internal sealed partial class PandaDungeonProbe
@@ -84,66 +50,16 @@ internal sealed partial class PandaDungeonProbe
     }
 
     /// <summary>
-    /// Register on the C# stub path: SyncDungeonData (id 23, confirmed from the
-    /// game's lua WorldNtf dispatcher) inline, plus SyncDungeonDirtyData (id 24
-    /// — the dungeon container's dirty-DELTA, the path the true
-    /// <c>timer_info.start_time</c> arrives on; C#-routed, its consumer is
-    /// <c>Panda.ZGame.DungeonSyncService</c> → <c>lua/sync/dungeon_sync.lua</c>)
-    /// via the crash-safe deferred queue. Must be called before
-    /// <see cref="WorldNtfStubDispatcher.Install"/>.
+    /// Register on the C# stub path for SyncDungeonData (id 23, confirmed from
+    /// the game's lua WorldNtf dispatcher) — the probe's ONLY tap. The
+    /// clock-hunt-era taps (lua stub 23/55, method 24 on every transport,
+    /// MessagePipe subscription, OnSync delegate wrap) were all removed
+    /// 2026-07-05 after live falsification; see docs/recon/dungeon-clock-recon.md.
+    /// Must be called before <see cref="WorldNtfStubDispatcher.Install"/>.
     /// </summary>
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
-        // Method 24 (dirty-delta) on the C# stub ONLY. Evidence trail
-        // (2026-07-05): the event namespace Zservice.WorldNtfEvents proves the
-        // delta flows through this stub; this dispatcher's extraction has
-        // handled combat's method-46 firehose crash-free for weeks; the two
-        // leave/start crashes correlate with the LUA dispatcher's reflective
-        // coercion (kept OFF, see RegisterWithLua); MessagePipe subscription is
-        // impossible (Il2CppInterop can't convert delegates over the
-        // non-blittable event struct); the TCP wire tap never sees WorldNtf
-        // (documented dead end). Handler is enqueue-only either way.
-        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
-    }
-
-    /// <summary>
-    /// Register for the dirty-delta (method 24) NOTIFY on the TCP wire tap —
-    /// capture-proven route (packet_20260705_032808.log: msg_type=2, service
-    /// 1664308034, method 24 arrives at the leader's dungeon-start click). The
-    /// wire tap's recv hook already copies + decompresses the payload on its
-    /// own long-proven path; this handler copies the slice and enqueues into
-    /// the deferred queue — nothing else runs on the wire thread.
-    /// </summary>
-    public void RegisterOnWireTap(Stellar.Application.Abstractions.IWireTap tap)
-        => tap.Register(Stellar.Wire.BPSRServiceIds.WorldNtf, WorldNtfMethodIds.SyncDungeonDirtyData, env =>
-        {
-            try { OnWorldNtfDeferred(env.MethodId, env.Payload.ToArray()); }
-            catch { /* wire thread — never throw into the recv hook */ }
-        });
-
-    /// <summary>
-    /// Register on the LUA stub path (ZLuaStub) for SyncDungeonData (id 23; the
-    /// path the game's own <c>world_ntf_gen.lua</c> container decode uses),
-    /// NotifyStartPlayingDungeon (id 55; Lua-only — its arrival is the precise
-    /// play-start edge, rank-1 run-timer source) and SyncDungeonDirtyData (id
-    /// 24; expected on the C# stub, registered here too in case delivery is
-    /// dual-path like method 23 — the rank guard makes duplicates harmless).
-    /// All route through the crash-safe deferred queue
-    /// (<c>PandaDungeonProbe.Deferred.cs</c>). Must be called before
-    /// <see cref="WorldNtfLuaStubDispatcher.Install"/>.
-    /// </summary>
-    public void RegisterWithLua(WorldNtfLuaStubDispatcher dispatcher)
-    {
-        dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtfDeferred);
-        dispatcher.Register(WorldNtfMethodIds.NotifyStartPlayingDungeon, OnWorldNtfDeferred);
-        // Method 24 (SyncDungeonDirtyData) is deliberately NOT tapped here: the
-        // dirty-deltas fire continuously (every container change) and the
-        // dispatcher's inline IL2CPP payload extraction on the lua path during
-        // scene teardown is the prime suspect for the leave-dungeon crashes
-        // (crash reproduced with the delta tap present and no Harmony patch
-        // installed). The MessagePipe subscription (PandaDungeonSyncSubscription)
-        // is the sanctioned source for the delta's timer payload.
     }
 
     /// <summary>

@@ -51,27 +51,8 @@ public sealed partial class BootstrapPlugin
         InstallSocialDataProbe(log);
         InstallWorldNtfDispatcher(log);
         InstallReadyCheckProbe(log);
-        InstallDungeonSyncSubscription(log);
     }
 
-    // The dungeon container dirty-DELTA (SyncDungeonDirtyDataMessageEvent →
-    // Panda.ZGame.DungeonSyncService → lua/sync/dungeon_sync.lua MergeData) is
-    // the AUTHORITATIVE source of the true timer_info.startTime. We receive it
-    // by SUBSCRIBING to the game's own MessagePipe — NO HarmonyX patch: the
-    // previous prefix on the service's compiler-generated handler lambda
-    // crashed the game natively at the first event fire. Construction only
-    // here; the subscription attempt itself runs from the gated framework tick
-    // (RunGlobalRateWork in Wiring.ServiceTick.cs) and opportunistically when
-    // the VContainer resolver attaches (ProbeGameRootOnce in
-    // Wiring.Resolver.cs), because the subscriber is resolved from the game's
-    // container / GlobalMessagePipe, which are not up at boot. The handler
-    // copies the bare merge blob and enqueues into the dungeon probe's deferred
-    // queue; parsing + rank-2 latch happen at drain on the gated tick
-    // (DrainDungeonDeferred in Wiring.ServiceTick.cs).
-    private void InstallDungeonSyncSubscription(BepInExPluginLog log)
-    {
-        _dungeonSyncSubscription = new PandaDungeonSyncSubscription(_dungeonProbe!, log);
-    }
 
     // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.
     // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe registers
@@ -84,22 +65,13 @@ public sealed partial class BootstrapPlugin
         _combatStubProbe!.RegisterWith(_worldNtfDispatcher);
         _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
         // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
-        // (lua/zservice/world_ntf_gen.lua), so the probe registers directly by
-        // method id like the other probes — plus method 24 (SyncDungeonDirtyData,
-        // the dungeon container dirty-DELTA the game's timer HUD is fed by;
-        // C#-routed, queue-deferred). It ALSO registers on the Lua stub
-        // dispatcher (see InstallReadyCheckProbe) for methods 23 + 55 + 24 —
-        // deferred deliveries are queue-drained on the framework tick (crash safety; see
-        // PandaDungeonProbe.Deferred.cs and DrainDungeonDeferred in
-        // Wiring.ServiceTick.cs). _combatService supplies the interpolated
-        // server clock (ICombatSnapshot.ServerNowMs) for the method-55
-        // arrival-edge stamp.
+        // (lua/zservice/world_ntf_gen.lua); the probe registers directly by
+        // method id like the other probes — its ONLY tap. Every clock-hunt-era
+        // tap (lua 23/55, method 24 on all transports, MessagePipe, OnSync wrap)
+        // was removed 2026-07-05; see docs/recon/dungeon-clock-recon.md before
+        // re-attempting any of them.
         _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
-        // Dirty-delta (method 24) rides the TCP wire tap — the capture-proven,
-        // long-stable recv path (registered at boot, before any game traffic,
-        // same pattern as the chat probe).
-        _dungeonProbe.RegisterOnWireTap(_wireTap!);
         _worldNtfDispatcher.Install(PluginGuid);
     }
 
@@ -111,14 +83,6 @@ public sealed partial class BootstrapPlugin
         _readyCheckProbe = new PandaReadyCheckProbe(_partyService!, log);
         _worldNtfLuaDispatcher = new WorldNtfLuaStubDispatcher(log);
         _readyCheckProbe.RegisterWith(_worldNtfLuaDispatcher);
-        // Dungeon probe also taps the LUA stub path: method 23 (SyncDungeonData —
-        // the game's own world_ntf_gen.lua consumes it here) and method 55
-        // (NotifyStartPlayingDungeon — Lua-only, the play-start edge). Its lua
-        // callback only ENQUEUES (crash safety — inline lua-path processing
-        // crashed a post-dungeon scene load); processing happens on the gated
-        // framework tick via DrainDungeonDeferred (Wiring.ServiceTick.cs).
-        // Constructed in InstallWorldNtfDispatcher, which runs before this method.
-        _dungeonProbe!.RegisterWithLua(_worldNtfLuaDispatcher);
         _worldNtfLuaDispatcher.Install(PluginGuid);
     }
 

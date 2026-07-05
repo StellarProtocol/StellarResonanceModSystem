@@ -89,10 +89,8 @@ public sealed partial class BootstrapPlugin
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
         DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
-        DrainDungeonDeferred();            // dungeon lua-path deliveries deferred for scene-teardown crash safety
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
-        TrySubscribeDungeonSync();         // bounded retry until the game's MessagePipe is reachable
         TickInputAndHotkeys();
         // Layout edit-mode input (select/drag) — driven from the tick AFTER the input poll (so the latched
         // mouse edge + pointer are fresh). Edit-mode interaction is fully decoupled from any IMGUI/OnGUI
@@ -106,25 +104,6 @@ public sealed partial class BootstrapPlugin
     {
         try { _exchangeProbe!.DrainPendingDispatches(); }
         catch (Exception ex) { Log.LogWarning($"[boot] exchange drain threw: {ex.Message}"); }
-    }
-
-    // Dungeon lua-path deliveries (SyncDungeonData 23 + NotifyStartPlayingDungeon 55) are
-    // NEVER processed inside ZLuaStub.OnCallStub — inline processing there crashed the client
-    // during a post-dungeon scene load. The probe queues them; this drain runs on the gated
-    // tick, so queued items wait out any scene transition automatically.
-    private void DrainDungeonDeferred()
-    {
-        try { _dungeonProbe?.DrainDeferred(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] dungeon deferred drain threw: {ex.Message}"); }
-    }
-
-    // Dungeon dirty-delta MessagePipe subscription — no-op once subscribed (or once the
-    // bounded attempt budget is spent). Runs on the gated tick because the subscriber is
-    // resolved from the game's VContainer / GlobalMessagePipe, which come up after boot.
-    private void TrySubscribeDungeonSync()
-    {
-        if (_messagePipeBridge is null) return;
-        _dungeonSyncSubscription?.TrySubscribe(_messagePipeBridge);
     }
 
     // Per-frame input + hotkey poll, driven from the framework tick (Phase E: there is no

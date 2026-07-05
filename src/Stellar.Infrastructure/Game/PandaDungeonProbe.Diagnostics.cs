@@ -186,89 +186,12 @@ internal sealed partial class PandaDungeonProbe
     // on the framework tick — never inside the Lua callback).
     private const int StartPlayingCap = 8;
     private int _startPlayingLogged;
-    private int _deferredDropsLogged;
-    private int _deferredStaleLogged;
-    private bool _deferredThrewLogged;
 
-    /// <summary>
-    /// Always-on, session-capped (<see cref="StartPlayingCap"/> lines): one per
-    /// drained WorldNtf method-55 (<c>NotifyStartPlayingDungeon</c>) delivery —
-    /// the play-start EDGE. Logs the arrival stamp (captured at enqueue, so
-    /// drain latency does not skew it), which clock supplied it (interpolated
-    /// server clock vs client-UTC fallback with its skew caveat), the parsed
-    /// char_id (the ntf also fires for other members' starts), and what the
-    /// rank-guarded write did (latched / UPGRADED an approximate latch /
-    /// ignored duplicate).
-    /// </summary>
-    private void DiagStartPlayingDungeon(in DeferredLuaDelivery item, RunTimerWrite write, long previousMs)
-    {
-        if (_startPlayingLogged >= StartPlayingCap) return;
-        _startPlayingLogged++;
 
-        bool hasCharId = StartPlayingDungeonReader.TryReadCharId(item.Payload, out long charId);
-        _log.Info(
-            $"[Dungeon] NotifyStartPlayingDungeon (method 55) src=method55.edge " +
-            $"arrival_ms={item.ArrivalMs} clock={(item.ArrivalIsServerClock ? "server" : "client-utc(skew caveat)")} " +
-            $"char_id={(hasCharId ? charId.ToString() : "unparsed")} write={write} " +
-            $"(was start_ms={previousMs}) runId={_state.CurrentRunId} " +
-            $"({_startPlayingLogged}/{StartPlayingCap})");
-    }
 
-    private bool _firstDirtyTimerLogged;
 
-    /// <summary>
-    /// SyncDungeonDirtyData timer_info slice — from either the DungeonSyncService
-    /// hook (bare blob, authoritative) or the inferred method-24 stub tap
-    /// (protobuf-wrapped); <paramref name="source"/> tags which. One-shot
-    /// always-on the first time a dirty delta carries a NON-ZERO
-    /// <c>start_time</c> (the live-confirmation line for the traced HUD delta
-    /// path — zero deliveries do not consume it); per-event repeats gated on
-    /// <c>STELLAR_DIAGNOSTICS=1</c>. Emitted at DRAIN time on the framework
-    /// tick, never inside the enqueue callback.
-    /// </summary>
-    private void DiagDungeonDirtyTimer(in DungeonDirtyTimerResult dirty, string source)
-    {
-        bool oneShot = dirty.StartTimeSeconds != 0 && !_firstDirtyTimerLogged;
-        if (oneShot) _firstDirtyTimerLogged = true;
-        else if (!StellarDiagnostics.IsEnabled) return;
 
-        _log.Info(
-            $"[Dungeon] dirty-delta timer_info src={source} " +
-            $"start_time_s={dirty.StartTimeSeconds} dungeon_times={dirty.DungeonTimes} " +
-            $"direction={dirty.Direction} pause_total_time={dirty.PauseTotalTime} " +
-            $"runId={_state.CurrentRunId}{(oneShot ? " (first non-zero start_time — HUD delta path confirmed)" : "")}");
-    }
 
-    // Drain-side visibility for the bounded queue's drop-new overflow policy.
-    // Logs only when the drop counter has grown since the last drain, capped to
-    // one line per new plateau to keep the log quiet under a pathological burst.
-    private void DiagDeferredDrops()
-    {
-        int dropped = System.Threading.Volatile.Read(ref _deferredDropped);
-        if (dropped <= _deferredDropsLogged) return;
-        _deferredDropsLogged = dropped;
-        _log.Warning($"[Dungeon] deferred lua-path queue overflow — {dropped} deliveries dropped so far (cap {DeferredCap})");
-    }
-
-    // Drain-side visibility for the run-id scope guard: items enqueued under
-    // one run id and drained under another are skipped (no sink writes). Same
-    // plateau pattern as the drop diag — one line per new plateau.
-    private void DiagDeferredStaleSkips()
-    {
-        int stale = _deferredStaleSkipped;
-        if (stale <= _deferredStaleLogged) return;
-        _deferredStaleLogged = stale;
-        _log.Info($"[Dungeon] deferred lua-path items skipped as stale — run id changed between enqueue and drain ({stale} so far)");
-    }
-
-    // One-shot: a deferred handler threw on the tick. The exception is already
-    // contained (the drain wraps each item) — this line only surfaces it.
-    private void DiagDeferredHandlerThrew(uint methodId, System.Exception ex)
-    {
-        if (_deferredThrewLogged) return;
-        _deferredThrewLogged = true;
-        _log.Warning($"[Dungeon] deferred handler threw (method={methodId}): {ex.GetType().Name}: {ex.Message}");
-    }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)
     {
