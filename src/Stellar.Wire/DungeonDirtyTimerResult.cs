@@ -28,6 +28,18 @@ public readonly struct DungeonDirtyTimerResult
     /// <summary><c>pause_total_time</c> (field 9) — 0 when untouched; diagnostics only.</summary>
     public int PauseTotalTime { get; init; }
 
+    /// <summary>True when the delta carried a flow_info container (field 2) with a result.</summary>
+    public bool HasFlowResult { get; init; }
+    /// <summary><c>DungeonFlowInfo.result</c> (field 8): 0=Null, 1=Success, 2=Failed. 0 when untouched.</summary>
+    public int FlowResult { get; init; }
+
+    /// <summary>True when the delta carried a settlement container (field 7).</summary>
+    public bool HasSettlement { get; init; }
+    /// <summary><c>DungeonSettlement.pass_time</c> (field 1) — authoritative clear time seconds.</summary>
+    public int PassTimeSeconds { get; init; }
+    /// <summary><c>DungeonSettlement.master_mode_score</c> (field 5).</summary>
+    public int MasterModeScore { get; init; }
+
     /// <summary><see cref="StartTimeSeconds"/> as epoch milliseconds (the framework's run-timer unit).</summary>
     public long RunTimerStartMs => StartTimeSeconds * 1000L;
 }
