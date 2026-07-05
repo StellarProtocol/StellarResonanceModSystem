@@ -106,4 +106,27 @@ public class DungeonDirtyDataReaderGuardTests
         Assert.Equal(481, r.PassTimeSeconds);
         Assert.Equal(425, r.MasterModeScore);
     }
+
+    [Fact]
+    public void GuardedDelta_SettlementAndTimer_BothSurvive()
+    {
+        // Regression: timer field assignment must use 'with' to preserve prior settlement fields.
+        // Top container carrying both field 7 (settlement) and field 15 (timer_info),
+        // in ascending index order (as the game sends them). Both should survive.
+        var b = new List<byte>();
+        V(b, TagBegin); V(b, 60);           // top
+        V(b, 7);                            // field 7 = settlement
+        V(b, TagBegin); V(b, 16);           //   settlement BEGIN
+        V(b, 1); V(b, 481);                 //   pass_time
+        V(b, TagEnd);                       //   settlement END
+        V(b, 15);                           // field 15 = timer_info
+        V(b, TagBegin); V(b, 16);           //   timer BEGIN
+        V(b, 2); V(b, 1783236876);          //   start_time
+        V(b, TagEnd);                       //   timer END
+        V(b, TagEnd);                       // top END
+        var ok = DungeonDirtyDataReader.TryReadDirtyBlob(b.ToArray(), out var r);
+        Assert.True(ok);
+        Assert.True(r.HasSettlement); Assert.Equal(481, r.PassTimeSeconds);
+        Assert.True(r.HasTimerInfo); Assert.Equal(1783236876, r.StartTimeSeconds);
+    }
 }

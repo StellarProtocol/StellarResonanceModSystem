@@ -178,7 +178,7 @@ public static class DungeonDirtyDataReader
             else if (index == TimerFieldPauseTotalTime) pauseTotal = value;
         }
 
-        result = new DungeonDirtyTimerResult
+        result = result with
         {
             HasTimerInfo = true,
             StartTimeSeconds = startTime,
