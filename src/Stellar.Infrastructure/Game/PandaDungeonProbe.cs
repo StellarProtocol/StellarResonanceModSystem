@@ -20,11 +20,12 @@ namespace Stellar.Infrastructure.Game;
 /// APPROXIMATE run clock (scene-entry time, ~countdown early);
 /// <c>timer_info.start_time</c> latches the true clock when the full sync
 /// carries it (observed on mid-run rejoin). Capturing the true clock on FRESH
-/// entry requires the dungeon container's dirty-DELTA (WorldNtf method 24),
-/// which is unreachable from this framework today — the full evidence trail
-/// and every falsified route live in
-/// <c>docs/recon/dungeon-clock-recon.md</c> (devkit). Do not re-attempt those
-/// routes without reading it.
+/// entry requires the dungeon container's dirty-DELTA (WorldNtf method 24,
+/// <c>SyncDungeonDirtyData</c>), confirmed reachable via
+/// <c>WorldNtfStub.OnCallStub</c> (census 2026-07-05) and now tapped by
+/// <see cref="OnDungeonDirty"/> below. The full evidence trail and every
+/// falsified route that preceded this live in
+/// <c>docs/recon/dungeon-clock-recon.md</c> (devkit).
 /// </para>
 ///
 /// <para>
@@ -51,7 +52,9 @@ internal sealed partial class PandaDungeonProbe
 
     /// <summary>
     /// Register on the C# stub path for SyncDungeonData (id 23, confirmed from
-    /// the game's lua WorldNtf dispatcher) — the probe's ONLY tap. The
+    /// the game's lua WorldNtf dispatcher) and SyncDungeonDirtyData (id 24,
+    /// confirmed via <c>OnCallStub</c> census 2026-07-05 — the true
+    /// <c>timer_info.start_time</c> carrier on fresh entry). The earlier
     /// clock-hunt-era taps (lua stub 23/55, method 24 on every transport,
     /// MessagePipe subscription, OnSync delegate wrap) were all removed
     /// 2026-07-05 after live falsification; see docs/recon/dungeon-clock-recon.md.
@@ -60,6 +63,7 @@ internal sealed partial class PandaDungeonProbe
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnDungeonDirty); // true start_time
     }
 
     /// <summary>
@@ -71,6 +75,23 @@ internal sealed partial class PandaDungeonProbe
     public void OnLeaveOrLogout() => _sink.Reset();
 
     private void OnWorldNtf(uint methodId, byte[] payload) => HandleDelivery("cs", methodId, payload);
+
+    // SyncDungeonDirtyData (WorldNtf method 24, dirty-delta) — the ONLY carrier
+    // of the true timer_info.start_time on fresh entry (the method-23 full
+    // sync's timer_info is all-zero on entry; see class doc). Inline on the
+    // network receive thread, crash-safe: the reader is fully defensive and the
+    // dispatcher wraps this in try/catch. Feeds the SAME rank-latch as the full
+    // sync, so a valid delta UPGRADES the approximate flow.active_time latch.
+    private void OnDungeonDirty(uint methodId, byte[] payload)
+    {
+        if (!DungeonDirtyDataReader.TryReadTimerStart(payload, out var timer))
+            return;
+        if (timer.StartTimeSeconds == 0)
+            return;
+
+        var write = _sink.SetRunTimerStart(timer.RunTimerStartMs, RunTimerSource.TimerInfo);
+        DiagDungeonDirtyTimer(methodId, timer, write);
+    }
 
     // SyncDungeonData (WorldNtf method 23) handler — inline on the C# stub path
     // (network receive thread, crash-safe by precedent); on the Lua path it runs

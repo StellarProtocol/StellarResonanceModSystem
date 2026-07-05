@@ -193,6 +193,20 @@ internal sealed partial class PandaDungeonProbe
 
 
 
+    /// <summary>
+    /// Dirty-delta timer capture trace (dungeon-clock Phase 2A) — fires on every
+    /// non-zero <c>SyncDungeonDirtyData.timer_info.start_time</c> delivery.
+    /// Gated behind <c>STELLAR_DIAGNOSTICS=1</c>; no-op off.
+    /// </summary>
+    private void DiagDungeonDirtyTimer(uint methodId, in DungeonDirtyTimerResult timer, RunTimerWrite write)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+
+        _log.Info(
+            $"[Dungeon] dirty timer method={methodId} start={timer.StartTimeSeconds}s " +
+            $"dir={timer.Direction} write={write}");
+    }
+
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)
     {
         // One-shot, always-on: confirm the registered method id is delivering
