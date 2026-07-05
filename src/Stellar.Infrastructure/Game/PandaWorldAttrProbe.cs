@@ -63,8 +63,8 @@ internal sealed partial class PandaWorldAttrProbe
 
             var attr = _getWorldLuaAttr!.Invoke(instance, new object[] { AttrTypeIds.AttrDeathCount });
             if (attr is null) return;
-            _attrValueProp ??= attr.GetType().GetProperty("Value");
-            if (_attrValueProp is null) { _disabled = true; DiagResolveMissing("IAttr.Value"); return; }
+            _attrValueProp ??= ResolveValueProp(attr);
+            if (_attrValueProp is null) { _disabled = true; DiagAttrShape(attr); return; }
             var raw = _attrValueProp.GetValue(attr);
             if (raw is null) return;
 
@@ -101,5 +101,24 @@ internal sealed partial class PandaWorldAttrProbe
             return false;
         }
         return true;
+    }
+
+    // The Il2CppInterop IAttr wrapper's numeric value accessor isn't reliably a property literally
+    // named "Value" on the concrete runtime type (the live probe proved GetProperty("Value") null).
+    // Prefer a readable "Value" property; else the first readable integer-typed instance property.
+    // (DiagAttrShape dumps the real member surface when this returns null, to nail it definitively.)
+    private static PropertyInfo? ResolveValueProp(object attr)
+    {
+        const BindingFlags F = BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+        var t = attr.GetType();
+        var named = t.GetProperty("Value", F);
+        if (named is not null && named.CanRead && named.GetIndexParameters().Length == 0) return named;
+        foreach (var p in t.GetProperties(F))
+        {
+            if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
+            var pt = p.PropertyType;
+            if (pt == typeof(int) || pt == typeof(long) || pt == typeof(uint) || pt == typeof(short)) return p;
+        }
+        return null;
     }
 }
