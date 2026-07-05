@@ -47,6 +47,27 @@ internal sealed partial class MessagePipeContainerBridge
         return null;
     }
 
+    /// <summary>
+    /// Resolve an arbitrary game service instance through the same container ladder
+    /// (GameRoot resolver → VContainerSettings root scope). Used by consumers that
+    /// need the service OBJECT rather than a MessagePipe subscriber (e.g. the
+    /// DungeonSyncService OnSync delegate wrap). Null when no route lands yet.
+    /// </summary>
+    internal object? TryResolveService(string fullTypeName, out string route)
+    {
+        var serviceType = _types.FindType(fullTypeName);
+        if (serviceType is null) { route = $"none ({fullTypeName} not loaded)"; return null; }
+
+        var viaResolver = TryRoute(() => ResolveFromResolver(_resolver, serviceType));
+        if (viaResolver is not null) { route = "GameRoot container resolver"; return viaResolver; }
+
+        var viaRootScope = TryRoute(() => ResolveFromResolver(FindRootScopeResolver(), serviceType));
+        if (viaRootScope is not null) { route = "VContainerSettings.RootLifetimeScope.Container"; return viaRootScope; }
+
+        route = "none";
+        return null;
+    }
+
     // A route probe must never throw out of the ladder: an unregistered type makes
     // VContainer's Resolve throw, and interop getters can throw on dead objects.
     private static object? TryRoute(Func<object?> probe)

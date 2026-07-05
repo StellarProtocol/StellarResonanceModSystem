@@ -61,6 +61,25 @@ internal sealed partial class PandaDungeonSyncSubscription
 
     // A resolution/subscribe attempt threw (never propagates — wiring must not take
     // down the host). One-shot; subsequent attempts keep retrying quietly.
+    private bool _onSyncWrapLogged;
+    private bool _onSyncShapeWarned;
+
+    private void DiagOnSyncWrapped()
+    {
+        // Log every (re)wrap — a re-wrap after lua re-assignment is signal, not noise.
+        _log.Info(_onSyncWrapLogged
+            ? "[DungeonSync] OnSync re-wrapped (lua re-assigned the handler)"
+            : "[DungeonSync] DungeonSyncService.OnSync wrapped (delegate call-through; no patching) — dirty-delta capture live");
+        _onSyncWrapLogged = true;
+    }
+
+    private void DiagOnSyncShapeMissing(string? detail)
+    {
+        if (_onSyncShapeWarned) return;
+        _onSyncShapeWarned = true;
+        _log.Warning($"[DungeonSync] OnSync wrap unavailable ({detail}) — falling back to MessagePipe/stub routes");
+    }
+
     private void DiagSubscribeThrew(Exception ex)
     {
         // Non-blittable-struct delegate conversion is a PERMANENT Il2CppInterop

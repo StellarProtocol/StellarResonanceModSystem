@@ -71,6 +71,14 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
 
         try
         {
+            // PRIMARY route: wrap DungeonSyncService.OnSync — the delegate property
+            // lua itself assigns (sync/dungeon_sync.lua). System.Action<IntPtr,int>
+            // is fully blittable, so this dodges the non-blittable-struct wall that
+            // makes the MessagePipe event subscription impossible. Also re-wraps if
+            // lua re-assigns the property (checked every attempt tick). An active
+            // wrap refunds the attempt so the re-check never exhausts the budget.
+            if (TryWrapOnSync(bridge)) { _attempts--; return; }
+
             _subscription = bridge.TrySubscribe(EventTypeFullName, OnDirtyDataEvent);
             if (_subscription is null)
             {
@@ -85,9 +93,10 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
         }
     }
 
-    /// <summary>Unsubscribes from the game broker on framework shutdown.</summary>
+    /// <summary>Unsubscribes from the game broker and restores lua's OnSync on shutdown.</summary>
     public void Dispose()
     {
+        UnwrapOnSync();
         var token = _subscription;
         _subscription = null;
         token?.Dispose();
