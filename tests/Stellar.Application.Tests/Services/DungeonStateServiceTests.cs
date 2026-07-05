@@ -108,6 +108,21 @@ public sealed class DungeonStateServiceTests
     }
 
     [Fact]
+    public void SetSettlement_MergesSplitDeltas_PassAndScore()
+    {
+        // Regression: completion data arrives split across method-24 deltas.
+        // One delta carries pass_time; a LATER delta carries master_score.
+        // Without merging, the second call would clobber the first.
+        var (read, write) = NewService();
+        write.SetCurrentRun(DungeonId);
+        write.SetSettlement(477, 0);   // delta A: pass only
+        write.SetSettlement(0, 425);   // delta B: score only — must NOT clobber pass
+        Assert.NotNull(read.LastSettlement);
+        Assert.Equal(477, read.LastSettlement!.Value.PassTimeSeconds);
+        Assert.Equal(425, read.LastSettlement!.Value.MasterModeScore);
+    }
+
+    [Fact]
     public void SetDifficulty_PublishesRawValue()
     {
         var (read, write) = NewService();
