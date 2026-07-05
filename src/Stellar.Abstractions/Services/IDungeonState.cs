@@ -62,4 +62,10 @@ public interface IDungeonState
     /// </para>
     /// </summary>
     long RunTimerStartMs { get; }
+
+    /// <summary>Outcome of the current/just-finished run (from flow_info.result). None until resolved.</summary>
+    Stellar.Abstractions.Domain.DungeonOutcome LastOutcome { get; }
+
+    /// <summary>Enemies defeated this run (World attr AttrDeathCount=348); 0 if unknown.</summary>
+    int LastDefeatedCount { get; }
 }

@@ -73,4 +73,11 @@ internal interface IDungeonStateSink
     /// Clear the active run and any settlement — invoked on logout.
     /// </summary>
     void Reset();
+
+    /// <summary>Latch the run outcome from DungeonFlowInfo.result (0=None,1=Success,2=Failed).
+    /// Sticky like the settlement; only advances None→Success/Failed, never downgrades.</summary>
+    void SetOutcome(int flowResult);
+
+    /// <summary>Latch the per-run Defeated count (World attr AttrDeathCount=348).</summary>
+    void SetDefeated(int count);
 }
