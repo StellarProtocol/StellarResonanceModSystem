@@ -51,6 +51,7 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
     private IDisposable? _subscription;
     private int _attempts;
     private bool _messagePipeImpossible;   // non-blittable delegate wall — MessagePipe route dead, wrap route unaffected
+    private uint _throttle;                // un-wrapped attempts run every 32nd tick (scene scan cost)
 
     public PandaDungeonSyncSubscription(PandaDungeonProbe probe, IPluginLog log)
     {
@@ -68,6 +69,9 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
     public void TrySubscribe(MessagePipeContainerBridge bridge)
     {
         if (_subscription is not null || _attempts >= MaxSubscribeAttempts) return;
+        // Un-wrapped attempts scan the scene for LifetimeScopes — throttle those
+        // to ~1 Hz (every 32nd tick). An ACTIVE wrap re-checks cheaply every tick.
+        if (_installedOnSync is null && (++_throttle & 31) != 0) return;
         _attempts++;
 
         try

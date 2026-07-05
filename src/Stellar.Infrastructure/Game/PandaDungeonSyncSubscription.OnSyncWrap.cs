@@ -40,27 +40,39 @@ internal sealed partial class PandaDungeonSyncSubscription
     /// </summary>
     private bool TryWrapOnSync(MessagePipeContainerBridge bridge)
     {
-        var service = _wrapService ??= bridge.TryResolveService(ServiceTypeFullName, out _);
-        if (service is null) return false;
+        try
+        {
+            var service = _wrapService ??= bridge.TryResolveService(ServiceTypeFullName, out _);
+            if (service is null) return false;
 
-        if (!ResolveOnSyncAccessors(service)) return false;
+            if (!ResolveOnSyncAccessors(service)) return false;
 
-        var current = _onSyncGetter!.Invoke(service, null);
-        if (current is null) return false;                       // lua not initialized yet
-        if (IsOurInstalledDelegate(current)) return true;        // wrap still in place
+            var current = _onSyncGetter!.Invoke(service, null);
+            if (current is null) return false;                       // lua not initialized yet
+            if (IsOurInstalledDelegate(current)) return true;        // wrap still in place
 
-        // Fresh wrap (first install, or lua re-assigned a new handler over ours).
-        _originalOnSync = current;
-        _originalInvoke = current.GetType().GetMethod("Invoke");
-        if (_originalInvoke is null) return false;
+            // Fresh wrap (first install, or lua re-assigned a new handler over ours).
+            _originalOnSync = current;
+            _originalInvoke = current.GetType().GetMethod("Invoke");
+            if (_originalInvoke is null) return false;
 
-        var converted = ConvertWrapperTo(_onSyncGetter.ReturnType);
-        if (converted is null) return false;
+            var converted = ConvertWrapperTo(_onSyncGetter.ReturnType);
+            if (converted is null) return false;
 
-        _onSyncSetter!.Invoke(service, new[] { converted });
-        _installedOnSync = _onSyncGetter.Invoke(service, null);  // re-read for pointer identity
-        DiagOnSyncWrapped();
-        return true;
+            _onSyncSetter!.Invoke(service, new[] { converted });
+            _installedOnSync = _onSyncGetter.Invoke(service, null);  // re-read for pointer identity
+            DiagOnSyncWrapped();
+            return true;
+        }
+        catch
+        {
+            // A scene change disposes the child scope — the cached service/interop
+            // handles go stale and reads throw. Reset and re-resolve on later ticks.
+            _wrapService = null;
+            _installedOnSync = null;
+            _originalOnSync = null;
+            return false;
+        }
     }
 
     private bool ResolveOnSyncAccessors(object service)
