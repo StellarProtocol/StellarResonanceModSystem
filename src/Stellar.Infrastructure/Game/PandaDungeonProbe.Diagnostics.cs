@@ -194,17 +194,19 @@ internal sealed partial class PandaDungeonProbe
 
 
     /// <summary>
-    /// Dirty-delta timer capture trace (dungeon-clock Phase 2A) — fires on every
-    /// non-zero <c>SyncDungeonDirtyData.timer_info.start_time</c> delivery.
+    /// Dirty-delta capture trace (dungeon-clock Phase 2B) — fires on every
+    /// <c>SyncDungeonDirtyData</c> delta the reader successfully parses,
+    /// logging the full timer/flow-result/settlement capture for validation.
     /// Gated behind <c>STELLAR_DIAGNOSTICS=1</c>; no-op off.
     /// </summary>
-    private void DiagDungeonDirtyTimer(uint methodId, in DungeonDirtyTimerResult timer, RunTimerWrite write)
+    private void DiagDungeonDirtyDelta(uint methodId, in DungeonDirtyTimerResult d)
     {
         if (!StellarDiagnostics.IsEnabled) return;
 
         _log.Info(
-            $"[Dungeon] dirty timer method={methodId} start={timer.StartTimeSeconds}s " +
-            $"dir={timer.Direction} write={write}");
+            $"[Dungeon] dirty delta method={methodId} start={d.StartTimeSeconds}s " +
+            $"flow(has={d.HasFlowResult} result={d.FlowResult}) " +
+            $"settle(has={d.HasSettlement} pass={d.PassTimeSeconds}s score={d.MasterModeScore})");
     }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)

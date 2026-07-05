@@ -84,13 +84,19 @@ internal sealed partial class PandaDungeonProbe
     // sync, so a valid delta UPGRADES the approximate flow.active_time latch.
     private void OnDungeonDirty(uint methodId, byte[] payload)
     {
-        if (!DungeonDirtyDataReader.TryReadTimerStart(payload, out var timer))
-            return;
-        if (timer.StartTimeSeconds == 0)
+        if (!DungeonDirtyDataReader.TryReadTimerStart(payload, out var d))
             return;
 
-        var write = _sink.SetRunTimerStart(timer.RunTimerStartMs, RunTimerSource.TimerInfo);
-        DiagDungeonDirtyTimer(methodId, timer, write);
+        if (d.StartTimeSeconds > 0)
+            _sink.SetRunTimerStart(d.RunTimerStartMs, RunTimerSource.TimerInfo);
+
+        if (d.HasFlowResult && d.FlowResult > 0)
+            _sink.SetOutcome(d.FlowResult);
+
+        if (d.HasSettlement && (d.PassTimeSeconds > 0 || d.MasterModeScore > 0))
+            _sink.SetSettlement(d.PassTimeSeconds, d.MasterModeScore);
+
+        DiagDungeonDirtyDelta(methodId, d);
     }
 
     // SyncDungeonData (WorldNtf method 23) handler — inline on the C# stub path
