@@ -14,9 +14,13 @@ internal sealed partial class WorldNtfStubDispatcher
     // and allow several occurrences — the timer_info-bearing dungeon delta (24) is
     // not necessarily the first — so the real blob can validate DungeonDirtyDataReader
     // offline. 22 = SyncContainerDirtyData (inventory precedent), 24 = SyncDungeonDirtyData.
-    private static readonly HashSet<uint> CensusFullDump = new() { 22, 24 };
+    // Full-hex dump set. 22/24 = dirty-delta container blobs; 23 = SyncDungeonData FULL sync —
+    // only the LARGE dungeon sync carries dungeon_scene_info (field 21 = difficulty), so 23 is
+    // size-gated below to skip the small town/partial syncs and land the budget on the dungeon one.
+    private static readonly HashSet<uint> CensusFullDump = new() { 22, 23, 24 };
     private readonly Dictionary<uint, int> _censusFullSeen = new();
     private const int CensusFullMaxPerMethod = 6;
+    private const int Method23DungeonMinLen = 2000;  // dungeon full sync ~12KB; town/partial are small
 
     private void DiagCensus(uint methodId, object stubCall)
     {
@@ -26,8 +30,9 @@ internal sealed partial class WorldNtfStubDispatcher
         {
             var seen = _censusFullSeen.TryGetValue(methodId, out var n) ? n : 0;
             if (seen >= CensusFullMaxPerMethod) return;
-            _censusFullSeen[methodId] = seen + 1;
             var full = ExtractPayload(stubCall);
+            if (methodId == 23 && (full?.Length ?? 0) < Method23DungeonMinLen) return;  // skip town/partial 23s
+            _censusFullSeen[methodId] = seen + 1;
             _log.Info($"[Census] WorldNtf method={methodId} #{seen} len={full?.Length ?? -1} FULLHEX={Hex(full, int.MaxValue)}");
             return;
         }
