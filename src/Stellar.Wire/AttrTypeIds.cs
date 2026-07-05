@@ -26,4 +26,5 @@ public static class AttrTypeIds
     public const int AttrHp              = 11310;
     public const int AttrMaxHp           = 11320;
     public const int AttrLevel           = 10000;  // character level
+    public const int AttrDeathCount      = 348;    // scene/World-level per-run "Defeated" counter (Z.World:GetWorldLuaAttr(AttrDeathCount); EN label from Lang("DeadCount")) — delivery path not yet traced, diagnostic-only (see PandaCombatStubProbe.Diagnostics.cs DiagDeathCountAttr)
 }

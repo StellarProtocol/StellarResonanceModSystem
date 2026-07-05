@@ -83,7 +83,7 @@ internal sealed partial class PandaCombatStubProbe
                 {
                     if (attr.Id == AttrTypeIds.AttrSummonerId) summonerId = attr.DecodedLong;
                     else if (attr.Id == AttrTypeIds.AttrTopSummonerId) topSummonerId = attr.DecodedLong;
-                    CaptureEntityDetail(eid, attr);
+                    CaptureEntityDetail(eid, attr, "appear");
                 }
             }
             EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
@@ -118,6 +118,7 @@ internal sealed partial class PandaCombatStubProbe
         _sink.ResetEntities();
 
         LatchDungeonRunId(span);
+        DiagScanSceneAttrsForDeathCount(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;
@@ -140,7 +141,7 @@ internal sealed partial class PandaCombatStubProbe
             }
             else
             {
-                CaptureEntityDetail(eid, attr);
+                CaptureEntityDetail(eid, attr, "enter-scene-self");
             }
         }
     }
@@ -327,7 +328,7 @@ internal sealed partial class PandaCombatStubProbe
             }
             else
             {
-                CaptureEntityDetail(eid, attr);
+                CaptureEntityDetail(eid, attr, "delta");
             }
         }
         if (hp >= 0 || maxHp >= 0)     _sink.UpdateEntityVitals(eid, hp, maxHp);
@@ -345,8 +346,11 @@ internal sealed partial class PandaCombatStubProbe
     // inspector reads (level / season level / profession). Only varint-decodable
     // scalar attrs are stored as numbers — string/packed attrs are never routed
     // here. FightPoint is stored by each caller alongside its UpdateEntityFightPoint.
-    private void CaptureEntityDetail(EntityId eid, AttrMsg attr)
+    // <paramref name="path"/> identifies which of the three call sites reached here —
+    // consumed only by the AttrDeathCount(348) recon diagnostic (Task 6).
+    private void CaptureEntityDetail(EntityId eid, AttrMsg attr, string path)
     {
+        if (attr.Id == AttrTypeIds.AttrDeathCount) DiagDeathCountAttr(eid, attr, path);
         if (attr.Id == AttrTypeIds.AttrEquipData)
         {
             _sink.SetEntityEquipment(eid, AttrEquipDataReader.Read(attr.RawData.Span));

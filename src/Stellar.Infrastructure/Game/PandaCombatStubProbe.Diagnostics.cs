@@ -156,6 +156,48 @@ internal sealed partial class PandaCombatStubProbe
         _log.Info($"[EntityDetail] first fashion decode: entity={eid.Value} entries={entries.Count} firstId={entries[0].FashionId}");
     }
 
+    // Recon probe for Task 6 (Defeated / AttrDeathCount=348): the World-entity attr's
+    // delivery path is NOT yet traced (unlike scene attrs 340-345, which are proven to
+    // ride EnterSceneInfo.SceneAttrs). This logs every occurrence seen across the three
+    // attr-iteration sites (appear / enter-scene self / delta) so the Task-9 in-game
+    // smoke can confirm which carrier ships it and that its value matches the Victory
+    // screen's "Defeated" count. Dedup'd per (entity, value) so a steady-state resend of
+    // the same value doesn't spam the log; a genuinely changing count (0 -> 1 -> 2 ...)
+    // still logs each new value.
+    private static readonly HashSet<(long Uuid, long Value)> SeenDeathCountValues = new();
+    private static readonly object SeenDeathCountLock = new();
+
+    private void DiagDeathCountAttr(EntityId eid, AttrMsg attr, string path)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        long value = attr.DecodedLong;
+
+        bool first;
+        lock (SeenDeathCountLock) first = SeenDeathCountValues.Add((eid.Value, value));
+        if (!first) return;
+
+        _log.Info($"[CombatStub][DeathCount] AttrDeathCount(348) seen entity={eid.Value} value={value} path={path}");
+    }
+
+    // AttrDeathCount(348) is documented as a scene/World-level attr (same family as
+    // AttrSceneName=340 / AttrSceneUuid=342 / AttrSceneLevelId=345), which ride
+    // EnterSceneInfo.SceneAttrs — a DIFFERENT AttrCollection than PlayerEnt.Attrs (the
+    // self entity's own attrs, scanned in OnEnterScene above). Scan SceneAttrs
+    // separately on every EnterScene so we don't miss 348 if it never appears on any
+    // per-entity AttrCollection at all. Uses EntityId(0) as the "no entity" sentinel
+    // since scene-level attrs are not entity-scoped.
+    private void DiagScanSceneAttrsForDeathCount(ReadOnlySpan<byte> span)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        if (!EnterSceneReader.TryReadSceneAttrs(span, out var sceneAttrs, out _)) return;
+        for (int i = 0; i < sceneAttrs.Items.Count; i++)
+        {
+            var attr = sceneAttrs.Items[i];
+            if (attr.Id == AttrTypeIds.AttrDeathCount)
+                DiagDeathCountAttr(default, attr, "enter-scene-SceneAttrs");
+        }
+    }
+
     /// <summary>
     /// Recover the concrete IL2CPP class FullName for a boxed managed reference
     /// whose declared type is just an interface (e.g.
