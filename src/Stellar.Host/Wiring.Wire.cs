@@ -72,6 +72,9 @@ public sealed partial class BootstrapPlugin
         // re-attempting any of them.
         _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
+        // Defeated count rides ZWorld's AttrDeathCount (348), NOT the wire — read on the main-thread
+        // framework tick (PandaWorldAttrProbe.Tick from RunGlobalRateWork), not this dispatcher.
+        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log);
         _worldNtfDispatcher.Install(PluginGuid);
     }
 
