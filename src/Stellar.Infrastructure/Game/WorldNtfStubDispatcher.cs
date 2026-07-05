@@ -127,6 +127,8 @@ internal sealed partial class WorldNtfStubDispatcher
         if (!TryReadHeader(stubCall, out var uuid, out var methodId)) return;
         if (uuid != BPSRServiceIds.WorldNtf) return;
 
+        DiagCensus(methodId, stubCall);   // NEW — read-only WorldNtf methodId census
+
         // Cheap-reject: only pay the payload extraction when a method-keyed
         // handler is subscribed. Foreign/unsubscribed methods cost only the
         // header read.
