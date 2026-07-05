@@ -45,6 +45,8 @@ public static class DungeonDirtyDataReader
     private const int TagEnd = -3;
 
     private const int FieldSceneUuid = 1;   // int64 scalar
+    private const int FieldFlowInfo = 2;    // DungeonFlowInfo container
+    private const int FieldSettlement = 7;  // DungeonSettlement container
     private const int FieldTimerInfo = 15;  // nested DungeonTimerInfo container
     private const int FieldErrCode = 27;    // int32 scalar (last known field)
 
@@ -53,6 +55,13 @@ public static class DungeonDirtyDataReader
     private const int TimerFieldDirection = 4;
     private const int TimerFieldPauseTotalTime = 9;
     private const int TimerFieldMax = 11;
+
+    private const int FlowFieldResult = 8;      // flow_info.result (int32 scalar)
+    private const int FlowFieldMax = 8;         // fields 1..8 are int32 scalars
+
+    private const int SettleFieldPassTime = 1;  // settlement.pass_time (int32)
+    private const int SettleFieldMasterScore = 5;
+    private const int SettleFieldMax = 5;        // fields 1..5; nested sub-msgs (award/pos/boss) skipped
 
     /// <summary>
     /// Attempt to decode <paramref name="worldNtfBody"/> as a
@@ -107,7 +116,7 @@ public static class DungeonDirtyDataReader
             if (!TryApplyDirtyField(blob, ref pos, index, ref result)) return false;
         }
 
-        return result.HasTimerInfo;
+        return result.HasTimerInfo || result.HasFlowResult || result.HasSettlement;
     }
 
     // Consume one top-level DungeonSyncData dirty entry's payload. Field types
@@ -123,6 +132,12 @@ public static class DungeonDirtyDataReader
 
         if (index == FieldTimerInfo)
             return TryReadTimerContainer(blob, ref pos, ref result);
+
+        if (index == FieldFlowInfo)
+            return TryReadFlowContainer(blob, ref pos, ref result);
+
+        if (index == FieldSettlement)
+            return TryReadSettlementContainer(blob, ref pos, ref result);
 
         return TrySkipContainer(blob, ref pos);
     }
@@ -171,6 +186,62 @@ public static class DungeonDirtyDataReader
             Direction = direction,
             PauseTotalTime = pauseTotal,
         };
+        return true;
+    }
+
+    // DungeonFlowInfo dirty container — fields 1..8 all int32 scalars; capture result (8).
+    private static bool TryReadFlowContainer(ReadOnlySpan<byte> blob, ref int pos, ref DungeonDirtyTimerResult result)
+    {
+        if (!TryReadInt32(blob, ref pos, out int tag) || tag != TagBegin) return false;
+        if (!TryReadInt32(blob, ref pos, out int size)) return false;
+        if (size == TagEnd) { result = result with { HasFlowResult = true }; return true; }
+        if (size < 0 || size > blob.Length - pos) return false;
+        int entriesEnd = pos + size;
+        int flowResult = 0;
+        while (true)
+        {
+            if (!TryReadInt32(blob, ref pos, out int index)) return false;
+            if (index == TagEnd) break;
+            if (index <= 0) return false;
+            if (index > FlowFieldMax)
+            {
+                pos = entriesEnd;
+                if (!TryReadInt32(blob, ref pos, out int endTag) || endTag != TagEnd) return false;
+                break;
+            }
+            if (!TryReadInt32(blob, ref pos, out int value)) return false;
+            if (index == FlowFieldResult) flowResult = value;
+        }
+        result = result with { HasFlowResult = true, FlowResult = flowResult };
+        return true;
+    }
+
+    // DungeonSettlement dirty container — field 1 (pass_time) + 5 (master_mode_score) are int32
+    // scalars; 2/3/4 (award map, settlement_pos map, world_boss_settlement) are nested containers.
+    private static bool TryReadSettlementContainer(ReadOnlySpan<byte> blob, ref int pos, ref DungeonDirtyTimerResult result)
+    {
+        if (!TryReadInt32(blob, ref pos, out int tag) || tag != TagBegin) return false;
+        if (!TryReadInt32(blob, ref pos, out int size)) return false;
+        if (size == TagEnd) { result = result with { HasSettlement = true }; return true; }
+        if (size < 0 || size > blob.Length - pos) return false;
+        int entriesEnd = pos + size;
+        int passTime = 0, masterScore = 0;
+        while (true)
+        {
+            if (!TryReadInt32(blob, ref pos, out int index)) return false;
+            if (index == TagEnd) break;
+            if (index <= 0) return false;
+            if (index > SettleFieldMax)
+            {
+                pos = entriesEnd;
+                if (!TryReadInt32(blob, ref pos, out int endTag) || endTag != TagEnd) return false;
+                break;
+            }
+            if (index == SettleFieldPassTime) { if (!TryReadInt32(blob, ref pos, out passTime)) return false; }
+            else if (index == SettleFieldMasterScore) { if (!TryReadInt32(blob, ref pos, out masterScore)) return false; }
+            else { if (!TrySkipContainer(blob, ref pos)) return false; }   // 2/3/4 nested containers
+        }
+        result = result with { HasSettlement = true, PassTimeSeconds = passTime, MasterModeScore = masterScore };
         return true;
     }
 

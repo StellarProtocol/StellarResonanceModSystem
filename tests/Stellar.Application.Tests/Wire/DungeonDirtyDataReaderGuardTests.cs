@@ -72,4 +72,38 @@ public class DungeonDirtyDataReaderGuardTests
         Assert.False(ok);
         Assert.False(result.HasTimerInfo);
     }
+
+    [Fact]
+    public void GuardedDelta_FlowResultFailed_IsCaptured()
+    {
+        var b = new List<byte>();
+        V(b, TagBegin); V(b, 40);          // top
+        V(b, 2);                            // field 2 = flow_info
+        V(b, TagBegin); V(b, 16);           //   flow BEGIN
+        V(b, 8); V(b, 2);                   //   field 8 = result = 2 (Failed)
+        V(b, TagEnd);                       //   flow END
+        V(b, TagEnd);                       // top END
+        var ok = DungeonDirtyDataReader.TryReadDirtyBlob(b.ToArray(), out var r);
+        Assert.True(ok);
+        Assert.True(r.HasFlowResult);
+        Assert.Equal(2, r.FlowResult);
+    }
+
+    [Fact]
+    public void GuardedDelta_Settlement_PassTimeAndScore_Captured()
+    {
+        var b = new List<byte>();
+        V(b, TagBegin); V(b, 40);          // top
+        V(b, 7);                            // field 7 = settlement
+        V(b, TagBegin); V(b, 24);           //   settlement BEGIN
+        V(b, 1); V(b, 481);                 //   field 1 = pass_time = 481 (8m1s)
+        V(b, 5); V(b, 425);                 //   field 5 = master_mode_score = 425
+        V(b, TagEnd);                       //   settlement END
+        V(b, TagEnd);                       // top END
+        var ok = DungeonDirtyDataReader.TryReadDirtyBlob(b.ToArray(), out var r);
+        Assert.True(ok);
+        Assert.True(r.HasSettlement);
+        Assert.Equal(481, r.PassTimeSeconds);
+        Assert.Equal(425, r.MasterModeScore);
+    }
 }
