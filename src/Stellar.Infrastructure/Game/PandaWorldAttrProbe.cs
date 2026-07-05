@@ -33,9 +33,14 @@ internal sealed partial class PandaWorldAttrProbe
 
     private bool _disabled;                 // permanent: type/method missing or a read faulted
     private Type? _zworldType;
-    private MethodInfo? _getWorldLuaAttr;   // GetWorldLuaAttr(int) -> IAttr
+    private MethodInfo? _getWorldLuaAttr;   // GetWorldLuaAttr(int) -> Zproto.IAttr (abstract base)
     private PropertyInfo? _instanceProp;     // static ZSingleton<ZWorld>.Instance
-    private PropertyInfo? _attrValueProp;    // IAttr.Value (resolved lazily off the first result)
+    // The runtime object GetWorldLuaAttr returns is a concrete Zproto.ZAttr<int>, but Il2CppInterop
+    // hands it back wrapped as the abstract Zproto.IAttr base (which has NO Value member — only
+    // ParseProto/BindWatcher). So we re-wrap the returned pointer as ZAttr<int> and read its Value.
+    private ConstructorInfo? _zattrIntCtor;  // Zproto.ZAttr<int>.ctor(IntPtr)
+    private PropertyInfo? _zattrIntValue;    // Zproto.ZAttr<int>.Value  (int)
+    private PropertyInfo? _pointerProp;      // Il2CppObjectBase.Pointer (off the returned attr)
     private int _lastDefeated = -1;
 
     public PandaWorldAttrProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log)
@@ -63,9 +68,12 @@ internal sealed partial class PandaWorldAttrProbe
 
             var attr = _getWorldLuaAttr!.Invoke(instance, new object[] { AttrTypeIds.AttrDeathCount });
             if (attr is null) return;
-            _attrValueProp ??= ResolveValueProp(attr);
-            if (_attrValueProp is null) { _disabled = true; DiagAttrShape(attr); return; }
-            var raw = _attrValueProp.GetValue(attr);
+            if (!TryResolveAttrInt(attr)) { DiagAttrShape(attr); return; }  // disables on hard-miss
+
+            var ptr = (IntPtr)_pointerProp!.GetValue(attr)!;                // native ZAttr<int> pointer
+            if (ptr == IntPtr.Zero) return;
+            var typed = _zattrIntCtor!.Invoke(new object[] { ptr });        // re-wrap as ZAttr<int>
+            var raw = _zattrIntValue!.GetValue(typed);
             if (raw is null) return;
 
             int value = Convert.ToInt32(raw);
@@ -103,22 +111,30 @@ internal sealed partial class PandaWorldAttrProbe
         return true;
     }
 
-    // The Il2CppInterop IAttr wrapper's numeric value accessor isn't reliably a property literally
-    // named "Value" on the concrete runtime type (the live probe proved GetProperty("Value") null).
-    // Prefer a readable "Value" property; else the first readable integer-typed instance property.
-    // (DiagAttrShape dumps the real member surface when this returns null, to nail it definitively.)
-    private static PropertyInfo? ResolveValueProp(object attr)
+    // Resolve, ONCE, the concrete Zproto.ZAttr<int> wrapper (ctor + Value getter) and the
+    // Il2CppObjectBase.Pointer accessor off the returned attr. The value member is NOT on the
+    // abstract Zproto.IAttr the method returns — it lives on the concrete generic instantiation
+    // (confirmed offline: ilspycmd Panda.ZRpcGen Zproto.ZAttr`1 → `public T Value`). Returns false
+    // (and permanently disables) if any piece is missing.
+    private bool TryResolveAttrInt(object attr)
     {
-        const BindingFlags F = BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
-        var t = attr.GetType();
-        var named = t.GetProperty("Value", F);
-        if (named is not null && named.CanRead && named.GetIndexParameters().Length == 0) return named;
-        foreach (var p in t.GetProperties(F))
+        if (_zattrIntValue is not null && _zattrIntCtor is not null && _pointerProp is not null) return true;
+
+        _pointerProp ??= attr.GetType().GetProperty(
+            "Pointer", BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+
+        var open = AccessTools.TypeByName("Zproto.ZAttr`1");
+        var closed = open?.MakeGenericType(typeof(int));
+        _zattrIntCtor ??= closed?.GetConstructor(new[] { typeof(IntPtr) });
+        _zattrIntValue ??= closed?.GetProperty("Value");
+
+        if (_pointerProp is null || _zattrIntCtor is null || _zattrIntValue is null)
         {
-            if (!p.CanRead || p.GetIndexParameters().Length != 0) continue;
-            var pt = p.PropertyType;
-            if (pt == typeof(int) || pt == typeof(long) || pt == typeof(uint) || pt == typeof(short)) return p;
+            _disabled = true;
+            DiagResolveMissing(open is null ? "type Zproto.ZAttr`1"
+                : _pointerProp is null ? "Il2CppObjectBase.Pointer" : "ZAttr<int>.ctor/Value");
+            return false;
         }
-        return null;
+        return true;
     }
 }
