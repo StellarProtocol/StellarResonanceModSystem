@@ -37,6 +37,11 @@ set_doorstop true   # ensure Stellar loads (in case a prior 'vanilla' disabled i
 # worktree build, not the main checkout). Override with SRC=... if needed.
 SRC="${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../src" && pwd)}"
 
+# Devkit root (framework/tools/../.. == the stellar-devkit checkout) — parent of
+# both plugin-repos/ (per-plugin dev repos) and plugins/ (the plugins monorepo,
+# whose samples/ holds the dev-only tools without a dedicated repo).
+DEVKIT_ROOT="${DEVKIT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 # Layered framework DLLs that BepInEx must see. ZstdSharp.dll is the managed
 # zstd port pulled in by Stellar.Infrastructure via NuGet and lands next to
 # Infrastructure.dll after a Release build (CopyLocalLockFileAssemblies=true).
@@ -52,19 +57,43 @@ FRAMEWORK_DLLS=(
     "$SRC/Stellar.Infrastructure/bin/Release/ZstdSharp.dll"
 )
 
-# Sample user plugins. Each entry is "subdir-name|path/to/dll".
+# User plugins. Each entry is "install-subdir|MODE|path". Sources moved off the
+# retired framework/src/samples/ tree onto the two live trees:
+#   - MODE=build  : shipping plugins in plugin-repos/Stellar<Name>Plugin/ — their
+#                   active dev homes; buildable here (NuGet interop refs). PATH is
+#                   the .csproj; the DLL is <csproj-dir>/bin/Release/Stellar.<subdir>.dll
+#                   (all set AppendTargetFrameworkToOutputPath=false → flat bin/Release).
+#   - MODE=prebuilt: dev-only tools in the plugins/ monorepo (plugins/samples/). That
+#                   tree is reference material published as PREBUILT DLLs — it is not
+#                   built here (needs a StellarResonanceModSystem sibling + game-interop
+#                   props, per plugins/samples/Directory.Build.props). PATH is the DLL.
 USER_PLUGINS=(
-    "DebugInfo|$SRC/samples/Stellar.DebugInfo/bin/Release/Stellar.DebugInfo.dll"
-    "AutoNav|$SRC/samples/Stellar.AutoNav/bin/Release/Stellar.AutoNav.dll"
-    "PlayerHUD|$SRC/samples/Stellar.PlayerHUD/bin/Release/Stellar.PlayerHUD.dll"
-    "CooldownBar|$SRC/samples/Stellar.CooldownBar/bin/Release/Stellar.CooldownBar.dll"
-    "CombatMeter|$SRC/samples/Stellar.CombatMeter/bin/Release/Stellar.CombatMeter.dll"
-    "ChatTools|$SRC/samples/Stellar.ChatTools/bin/Release/Stellar.ChatTools.dll"
-    "DataInspector|$SRC/samples/Stellar.DataInspector/bin/Release/Stellar.DataInspector.dll"
-    "StatInspector|$SRC/samples/Stellar.StatInspector/bin/Release/Stellar.StatInspector.dll"
-    "ModuleOptimizer|$SRC/samples/Stellar.ModuleOptimizer/bin/Release/Stellar.ModuleOptimizer.dll"
-    "EntityInspector|$SRC/samples/Stellar.EntityInspector/bin/Release/Stellar.EntityInspector.dll"
+    "DebugInfo|prebuilt|$DEVKIT_ROOT/plugins/samples/Stellar.DebugInfo/bin/Release/Stellar.DebugInfo.dll"
+    "AutoNav|prebuilt|$DEVKIT_ROOT/plugins/samples/Stellar.AutoNav/bin/Release/Stellar.AutoNav.dll"
+    "DataInspector|prebuilt|$DEVKIT_ROOT/plugins/samples/Stellar.DataInspector/bin/Release/Stellar.DataInspector.dll"
+    "PlayerHUD|build|$DEVKIT_ROOT/plugin-repos/StellarPlayerHUDPlugin/Stellar.PlayerHUD.csproj"
+    "CooldownBar|build|$DEVKIT_ROOT/plugin-repos/StellarCooldownBarPlugin/Stellar.CooldownBar.csproj"
+    "CombatMeter|build|$DEVKIT_ROOT/plugin-repos/StellarCombatMeterPlugin/Stellar.CombatMeter.csproj"
+    "ChatTools|build|$DEVKIT_ROOT/plugin-repos/StellarChatToolsPlugin/Stellar.ChatTools.csproj"
+    "StatInspector|build|$DEVKIT_ROOT/plugin-repos/StellarStatInspectorPlugin/Stellar.StatInspector.csproj"
+    "ModuleOptimizer|build|$DEVKIT_ROOT/plugin-repos/StellarModuleOptimizerPlugin/Stellar.ModuleOptimizer.csproj"
+    "EntityInspector|build|$DEVKIT_ROOT/plugin-repos/StellarEntityInspectorPlugin/Stellar.EntityInspector.csproj"
 )
+
+# Resolve a plugin entry's DLL path from its "subdir|mode|path" spec.
+# NOTE: separate `local` statements — a single `local a=.. b="${a..}"` line does
+# NOT reliably see `a`'s new value, which would silently return an empty path.
+plugin_dll() {  # $1 = "subdir|mode|path" -> echoes the expected DLL path
+    local subdir="${1%%|*}"
+    local rest="${1#*|}"
+    local mode="${rest%%|*}"
+    local path="${rest#*|}"
+    if [ "$mode" = build ]; then
+        echo "${path%/*}/bin/Release/Stellar.$subdir.dll"   # ${path%/*} = csproj dir (pure bash, no dirname)
+    else
+        echo "$path"
+    fi
+}
 
 # Build Release FIRST so a deploy never ships a stale bin/Release. This script
 # only copies DLLs, so without this it silently deploys whatever Release build
@@ -72,8 +101,21 @@ USER_PLUGINS=(
 # the working build was -c Debug). Skip with SKIP_BUILD=1.
 DOTNET="${DOTNET:-/home/dorasu/.dotnet/dotnet}"
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    echo "building src/ (Release) before deploy…"
+    echo "building framework src/ (Release) before deploy…"
     "$DOTNET" build "$SRC/Stellar.sln" -c Release --nologo -v quiet
+    # build-mode plugins live in their own repos (plugin-repos/), NOT in
+    # Stellar.sln — build each csproj individually so a deploy never ships a stale
+    # plugin DLL. prebuilt-mode plugins (plugins/ monorepo) ship as published DLLs
+    # and are copied as-is (that tree isn't buildable here — see the array comment).
+    for entry in "${USER_PLUGINS[@]}"; do
+        subdir="${entry%%|*}"; rest="${entry#*|}"; mode="${rest%%|*}"; path="${rest#*|}"
+        if [ "$mode" = build ]; then
+            echo "building plugin $subdir…"
+            "$DOTNET" build "$path" -c Release --nologo -v quiet
+        else
+            echo "using prebuilt $subdir (plugins/ monorepo — not built from source here)"
+        fi
+    done
 fi
 
 # Sanity check inputs.
@@ -81,8 +123,8 @@ for dll in "${FRAMEWORK_DLLS[@]}"; do
     [ -f "$dll" ] || { echo "missing $dll — build src/ first"; exit 1; }
 done
 for entry in "${USER_PLUGINS[@]}"; do
-    dll="${entry#*|}"
-    [ -f "$dll" ] || { echo "missing $dll — build src/ first"; exit 1; }
+    dll="$(plugin_dll "$entry")"
+    [ -f "$dll" ] || { echo "missing $dll — build ${entry#*|} first (or unset SKIP_BUILD)"; exit 1; }
 done
 
 # Framework directory (BepInEx auto-discovers DLLs here).
@@ -98,8 +140,8 @@ done
 
 # User plugin folders live outside BepInEx/plugins to keep concerns separate.
 for entry in "${USER_PLUGINS[@]}"; do
-    subdir="${entry%|*}"
-    dll="${entry#*|}"
+    subdir="${entry%%|*}"   # first field only (entry = subdir|mode|path)
+    dll="$(plugin_dll "$entry")"
     PLUGIN_DIR="$GAME/stellar/plugins/$subdir"
     mkdir -p "$PLUGIN_DIR"
     cp -v "$dll" "$PLUGIN_DIR/"
