@@ -63,6 +63,17 @@ internal sealed partial class PandaDungeonSyncSubscription
     // down the host). One-shot; subsequent attempts keep retrying quietly.
     private void DiagSubscribeThrew(Exception ex)
     {
+        // Non-blittable-struct delegate conversion is a PERMANENT Il2CppInterop
+        // limitation (confirmed live 2026-07-05) — stop retrying instead of
+        // burning 18k attempts on a condition that cannot change this session.
+        if (ex.InnerException is ArgumentException ae && ae.Message.Contains("non-blittable"))
+        {
+            _attempts = MaxSubscribeAttempts;
+            if (_subscribeThrewWarned) return;
+            _subscribeThrewWarned = true;
+            _log.Warning("[DungeonSync] MessagePipe subscription impossible: Il2CppInterop cannot convert delegates over the non-blittable event struct — dirty-delta rides the C# stub tap instead");
+            return;
+        }
         if (_subscribeThrewWarned) return;
         _subscribeThrewWarned = true;
         // Unwrap the full inner chain — a bare TargetInvocationException told us

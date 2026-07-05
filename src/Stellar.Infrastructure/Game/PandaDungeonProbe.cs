@@ -95,8 +95,16 @@ internal sealed partial class PandaDungeonProbe
     public void RegisterWith(WorldNtfStubDispatcher dispatcher)
     {
         dispatcher.Register(WorldNtfMethodIds.SyncDungeonData, OnWorldNtf);
-        // Method 24 deliberately not tapped on the stub dispatchers (see
-        // RegisterWithLua) — the TCP wire tap below owns the dirty-delta path.
+        // Method 24 (dirty-delta) on the C# stub ONLY. Evidence trail
+        // (2026-07-05): the event namespace Zservice.WorldNtfEvents proves the
+        // delta flows through this stub; this dispatcher's extraction has
+        // handled combat's method-46 firehose crash-free for weeks; the two
+        // leave/start crashes correlate with the LUA dispatcher's reflective
+        // coercion (kept OFF, see RegisterWithLua); MessagePipe subscription is
+        // impossible (Il2CppInterop can't convert delegates over the
+        // non-blittable event struct); the TCP wire tap never sees WorldNtf
+        // (documented dead end). Handler is enqueue-only either way.
+        dispatcher.Register(WorldNtfMethodIds.SyncDungeonDirtyData, OnWorldNtfDeferred);
     }
 
     /// <summary>
