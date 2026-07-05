@@ -190,6 +190,7 @@ public static class DungeonDirtyDataReader
     {
         if (count > blob.Length - pos) return false;
         pos += count;
+        SkipGuard(blob, ref pos);   // scalar values carry a trailing canary too
         return true;
     }
 
@@ -199,6 +200,22 @@ public static class DungeonDirtyDataReader
         if (blob.Length - pos < 4) return false;
         value = BinaryPrimitives.ReadInt32LittleEndian(blob.Slice(pos, 4));
         pos += 4;
+        SkipGuard(blob, ref pos);
         return true;
+    }
+
+    // This game build writes a 4-byte 0xDEADBEEF canary AFTER every value in the
+    // container-merge stream (confirmed live: census method-24 blob is
+    // -2,GUARD,size,GUARD,…). We consume it after each value. CONDITIONAL — only
+    // when the next word actually equals the canary — so a guard-free stream (the
+    // synthetic unit tests) still parses. 0xDEADBEEF never occurs as a real value
+    // here (tags/sizes/field-ids are small; start_time is a ~1.7e9 epoch int32,
+    // nowhere near 0xDEADBEEF). Mirrors Infrastructure's proven BlobReader.SkipGuard.
+    private const uint Guard = 0xDEADBEEF;
+
+    private static void SkipGuard(ReadOnlySpan<byte> blob, ref int pos)
+    {
+        if (blob.Length - pos < 4) return;
+        if ((uint)BinaryPrimitives.ReadInt32LittleEndian(blob.Slice(pos, 4)) == Guard) pos += 4;
     }
 }
