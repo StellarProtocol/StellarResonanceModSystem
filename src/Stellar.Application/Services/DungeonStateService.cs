@@ -33,6 +33,12 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     private readonly object _settlementLock = new();
     private DungeonSettlementInfo? _lastSettlement;
 
+    // Outcome/defeated are sticky latches, same lifecycle as _lastSettlement:
+    // published lock-free via Interlocked/Volatile, cleared on a genuinely-new
+    // run and on Reset(), preserved across the drop-to-0 town transition.
+    private int _lastOutcome;
+    private int _lastDefeated;
+
     public long CurrentRunId => Interlocked.Read(ref _currentRunId);
 
     public DungeonSettlementInfo? LastSettlement
@@ -43,6 +49,11 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public int CurrentDifficulty => Interlocked.CompareExchange(ref _currentDifficulty, 0, 0);
 
     public long RunTimerStartMs => Interlocked.Read(ref _runTimerStartMs);
+
+    public Stellar.Abstractions.Domain.DungeonOutcome LastOutcome
+        => (Stellar.Abstractions.Domain.DungeonOutcome)Volatile.Read(ref _lastOutcome);
+
+    public int LastDefeatedCount => Volatile.Read(ref _lastDefeated);
 
     public void SetCurrentRun(long sceneUuid)
     {
@@ -59,6 +70,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
             lock (_settlementLock) _lastSettlement = null;
             Interlocked.Exchange(ref _currentDifficulty, 0);
             ClearRunTimerLatch();
+            Interlocked.Exchange(ref _lastOutcome, 0);
+            Interlocked.Exchange(ref _lastDefeated, 0);
         }
     }
 
@@ -70,6 +83,18 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
 
     public void SetDifficulty(int difficulty)
         => Interlocked.Exchange(ref _currentDifficulty, difficulty);
+
+    public void SetOutcome(int flowResult)
+    {
+        if (flowResult <= 0) return; // 0 = None = "not resolved"; ignore
+        Interlocked.Exchange(ref _lastOutcome, flowResult);
+    }
+
+    public void SetDefeated(int count)
+    {
+        if (count < 0) return;
+        Interlocked.Exchange(ref _lastDefeated, count);
+    }
 
     public RunTimerWrite SetRunTimerStart(long startMs, RunTimerSource source)
     {
@@ -102,6 +127,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         Interlocked.Exchange(ref _currentDifficulty, 0);
         ClearRunTimerLatch();
         lock (_settlementLock) _lastSettlement = null;
+        Interlocked.Exchange(ref _lastOutcome, 0);
+        Interlocked.Exchange(ref _lastDefeated, 0);
     }
 
     // Empty the run-timer latch slot (value + source rank together, under the
