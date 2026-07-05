@@ -50,6 +50,7 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
     private readonly IPluginLog _log;
     private IDisposable? _subscription;
     private int _attempts;
+    private bool _messagePipeImpossible;   // non-blittable delegate wall — MessagePipe route dead, wrap route unaffected
 
     public PandaDungeonSyncSubscription(PandaDungeonProbe probe, IPluginLog log)
     {
@@ -78,7 +79,9 @@ internal sealed partial class PandaDungeonSyncSubscription : IDisposable
             // lua re-assigns the property (checked every attempt tick). An active
             // wrap refunds the attempt so the re-check never exhausts the budget.
             if (TryWrapOnSync(bridge)) { _attempts--; return; }
+            DiagWrapStillPending();
 
+            if (_messagePipeImpossible) return;   // wrap keeps retrying; MessagePipe is dead
             _subscription = bridge.TrySubscribe(EventTypeFullName, OnDirtyDataEvent);
             if (_subscription is null)
             {

@@ -73,6 +73,17 @@ internal sealed partial class PandaDungeonSyncSubscription
         _onSyncWrapLogged = true;
     }
 
+    // Why-not visibility for the wrap route: one line at ~10s and ~2min in (attempt
+    // counts at the 30 Hz tick), naming which precondition is still unmet.
+    private void DiagWrapStillPending()
+    {
+        if (_attempts != 300 && _attempts != 3600) return;
+        var status = _wrapService is null
+            ? "DungeonSyncService not resolvable from the container yet"
+            : "service resolved but OnSync is still null (lua sync module not initialized)";
+        _log.Info($"[DungeonSync] OnSync wrap pending after {_attempts} attempts: {status}");
+    }
+
     private void DiagOnSyncShapeMissing(string? detail)
     {
         if (_onSyncShapeWarned) return;
@@ -87,10 +98,12 @@ internal sealed partial class PandaDungeonSyncSubscription
         // burning 18k attempts on a condition that cannot change this session.
         if (ex.InnerException is ArgumentException ae && ae.Message.Contains("non-blittable"))
         {
-            _attempts = MaxSubscribeAttempts;
+            // Permanent for the MessagePipe route ONLY — do NOT exhaust the shared
+            // attempt budget (that killed the OnSync wrap route on 2026-07-05).
+            _messagePipeImpossible = true;
             if (_subscribeThrewWarned) return;
             _subscribeThrewWarned = true;
-            _log.Warning("[DungeonSync] MessagePipe subscription impossible: Il2CppInterop cannot convert delegates over the non-blittable event struct — dirty-delta rides the C# stub tap instead");
+            _log.Warning("[DungeonSync] MessagePipe route impossible (non-blittable event struct) — OnSync wrap route keeps retrying");
             return;
         }
         if (_subscribeThrewWarned) return;
