@@ -40,6 +40,12 @@ public readonly struct DungeonDirtyTimerResult
     /// <summary><c>DungeonSettlement.master_mode_score</c> (field 5).</summary>
     public int MasterModeScore { get; init; }
 
+    /// <summary>True when the delta carried a <c>dungeon_scene_info</c> container (field 21), even an empty one.</summary>
+    public bool HasSceneInfo { get; init; }
+
+    /// <summary><c>DungeonSceneInfo.difficulty</c> (field 1) — the Master level (1-20). 0 when untouched.</summary>
+    public int Difficulty { get; init; }
+
     /// <summary><see cref="StartTimeSeconds"/> as epoch milliseconds (the framework's run-timer unit).</summary>
     public long RunTimerStartMs => StartTimeSeconds * 1000L;
 }

@@ -96,6 +96,9 @@ internal sealed partial class PandaDungeonProbe
         if (d.HasSettlement && (d.PassTimeSeconds > 0 || d.MasterModeScore > 0))
             _sink.SetSettlement(d.PassTimeSeconds, d.MasterModeScore);
 
+        if (d.HasSceneInfo && d.Difficulty > 0)
+            _sink.SetDifficulty(d.Difficulty);
+
         DiagDungeonDirtyDelta(methodId, d);
     }
 

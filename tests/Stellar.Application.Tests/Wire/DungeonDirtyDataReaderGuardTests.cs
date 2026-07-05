@@ -129,4 +129,42 @@ public class DungeonDirtyDataReaderGuardTests
         Assert.True(r.HasSettlement); Assert.Equal(481, r.PassTimeSeconds);
         Assert.True(r.HasTimerInfo); Assert.Equal(1783236876, r.StartTimeSeconds);
     }
+
+    [Fact]
+    public void GuardedDelta_SceneInfo_DifficultyCaptured()
+    {
+        // Top container carrying field 21 (dungeon_scene_info) → sub-container field 1 = difficulty.
+        var b = new List<byte>();
+        V(b, TagBegin); V(b, 24);           // top
+        V(b, 21);                            // field 21 = dungeon_scene_info
+        V(b, TagBegin); V(b, 8);            //   scene BEGIN
+        V(b, 1); V(b, 6);                    //   field 1 = difficulty = 6 (Master 6)
+        V(b, TagEnd);                        //   scene END
+        V(b, TagEnd);                        // top END
+        var ok = DungeonDirtyDataReader.TryReadDirtyBlob(b.ToArray(), out var r);
+        Assert.True(ok);
+        Assert.True(r.HasSceneInfo);
+        Assert.Equal(6, r.Difficulty);
+    }
+
+    [Fact]
+    public void GuardedDelta_SettlementAndSceneInfo_BothSurvive()
+    {
+        // Regression: scene-info field assignment must use 'with' to preserve prior settlement fields.
+        var b = new List<byte>();
+        V(b, TagBegin); V(b, 60);           // top
+        V(b, 7);                             // field 7 = settlement
+        V(b, TagBegin); V(b, 16);           //   settlement BEGIN
+        V(b, 1); V(b, 481);                  //   pass_time
+        V(b, TagEnd);                        //   settlement END
+        V(b, 21);                            // field 21 = dungeon_scene_info
+        V(b, TagBegin); V(b, 8);            //   scene BEGIN
+        V(b, 1); V(b, 6);                    //   difficulty = 6
+        V(b, TagEnd);                        //   scene END
+        V(b, TagEnd);                        // top END
+        var ok = DungeonDirtyDataReader.TryReadDirtyBlob(b.ToArray(), out var r);
+        Assert.True(ok);
+        Assert.True(r.HasSettlement); Assert.Equal(481, r.PassTimeSeconds);
+        Assert.True(r.HasSceneInfo); Assert.Equal(6, r.Difficulty);
+    }
 }

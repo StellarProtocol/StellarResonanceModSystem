@@ -48,6 +48,7 @@ public static class DungeonDirtyDataReader
     private const int FieldFlowInfo = 2;    // DungeonFlowInfo container
     private const int FieldSettlement = 7;  // DungeonSettlement container
     private const int FieldTimerInfo = 15;  // nested DungeonTimerInfo container
+    private const int FieldDungeonSceneInfo = 21; // DungeonSceneInfo container
     private const int FieldErrCode = 27;    // int32 scalar (last known field)
 
     private const int TimerFieldStartTime = 2;
@@ -62,6 +63,9 @@ public static class DungeonDirtyDataReader
     private const int SettleFieldPassTime = 1;  // settlement.pass_time (int32)
     private const int SettleFieldMasterScore = 5;
     private const int SettleFieldMax = 5;        // fields 1..5; nested sub-msgs (award/pos/boss) skipped
+
+    private const int SceneFieldDifficulty = 1; // DungeonSceneInfo.difficulty (int32)
+    private const int SceneFieldMax = 1;        // only field 1 is defined
 
     /// <summary>
     /// Attempt to decode <paramref name="worldNtfBody"/> as a
@@ -116,7 +120,7 @@ public static class DungeonDirtyDataReader
             if (!TryApplyDirtyField(blob, ref pos, index, ref result)) return false;
         }
 
-        return result.HasTimerInfo || result.HasFlowResult || result.HasSettlement;
+        return result.HasTimerInfo || result.HasFlowResult || result.HasSettlement || result.HasSceneInfo;
     }
 
     // Consume one top-level DungeonSyncData dirty entry's payload. Field types
@@ -138,6 +142,9 @@ public static class DungeonDirtyDataReader
 
         if (index == FieldSettlement)
             return TryReadSettlementContainer(blob, ref pos, ref result);
+
+        if (index == FieldDungeonSceneInfo)
+            return TryReadSceneInfoContainer(blob, ref pos, ref result);
 
         return TrySkipContainer(blob, ref pos);
     }
@@ -242,6 +249,34 @@ public static class DungeonDirtyDataReader
             else { if (!TrySkipContainer(blob, ref pos)) return false; }   // 2/3/4 nested containers
         }
         result = result with { HasSettlement = true, PassTimeSeconds = passTime, MasterModeScore = masterScore };
+        return true;
+    }
+
+    // DungeonSceneInfo dirty container — field 1 (difficulty, the Master 1-20
+    // level) is the only defined field (proto has just int32 difficulty = 1).
+    private static bool TryReadSceneInfoContainer(ReadOnlySpan<byte> blob, ref int pos, ref DungeonDirtyTimerResult result)
+    {
+        if (!TryReadInt32(blob, ref pos, out int tag) || tag != TagBegin) return false;
+        if (!TryReadInt32(blob, ref pos, out int size)) return false;
+        if (size == TagEnd) { result = result with { HasSceneInfo = true }; return true; }
+        if (size < 0 || size > blob.Length - pos) return false;
+        int entriesEnd = pos + size;
+        int difficulty = 0;
+        while (true)
+        {
+            if (!TryReadInt32(blob, ref pos, out int index)) return false;
+            if (index == TagEnd) break;
+            if (index <= 0) return false;
+            if (index > SceneFieldMax)
+            {
+                pos = entriesEnd;
+                if (!TryReadInt32(blob, ref pos, out int endTag) || endTag != TagEnd) return false;
+                break;
+            }
+            if (!TryReadInt32(blob, ref pos, out int value)) return false;
+            if (index == SceneFieldDifficulty) difficulty = value;
+        }
+        result = result with { HasSceneInfo = true, Difficulty = difficulty };
         return true;
     }
 

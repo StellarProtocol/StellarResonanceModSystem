@@ -206,7 +206,8 @@ internal sealed partial class PandaDungeonProbe
         _log.Info(
             $"[Dungeon] dirty delta method={methodId} start={d.StartTimeSeconds}s " +
             $"flow(has={d.HasFlowResult} result={d.FlowResult}) " +
-            $"settle(has={d.HasSettlement} pass={d.PassTimeSeconds}s score={d.MasterModeScore})");
+            $"settle(has={d.HasSettlement} pass={d.PassTimeSeconds}s score={d.MasterModeScore}) " +
+            $"scene(has={d.HasSceneInfo} diff={d.Difficulty})");
     }
 
     private void DiagDungeonSync(uint methodId, DungeonSyncResult result)
