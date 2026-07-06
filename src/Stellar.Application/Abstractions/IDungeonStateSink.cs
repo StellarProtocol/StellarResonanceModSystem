@@ -41,8 +41,11 @@ internal interface IDungeonStateSink
 
     /// <summary>
     /// Record the settlement (clear/result) summary for the current run.
+    /// <paramref name="masterModeScore"/> is the max/par (<c>settlement.master_mode_score</c>),
+    /// <paramref name="totalScore"/> is the achieved score (<c>dungeon_score.total_score</c>) —
+    /// the two combine as "achieved/max" (e.g. 686/700). Non-zero fields merge across split deltas.
     /// </summary>
-    void SetSettlement(int passTimeSeconds, int masterModeScore);
+    void SetSettlement(int passTimeSeconds, int masterModeScore, int totalScore);
 
     /// <summary>
     /// Record the raw <c>DungeonSceneInfo.difficulty</c> value (field 1) decoded

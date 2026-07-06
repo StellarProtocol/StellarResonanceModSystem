@@ -75,18 +75,19 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         }
     }
 
-    public void SetSettlement(int passTimeSeconds, int masterModeScore)
+    public void SetSettlement(int passTimeSeconds, int masterModeScore, int totalScore)
     {
         // Completion data arrives split across method-24 deltas (pass_time in one,
-        // master_score in another). Merge non-zero fields so a later score-only
-        // delta can't clobber a latched pass_time (and vice-versa). Cleared on a
+        // master_score / total_score in another). Merge non-zero fields so a later
+        // partial delta can't clobber an already-latched field. Cleared on a
         // new run / Reset like before, so the merge always starts fresh per run.
         lock (_settlementLock)
         {
             var prior = _lastSettlement;
             int pass  = passTimeSeconds != 0 ? passTimeSeconds : prior?.PassTimeSeconds ?? 0;
             int score = masterModeScore  != 0 ? masterModeScore  : prior?.MasterModeScore ?? 0;
-            _lastSettlement = new DungeonSettlementInfo(pass, score);
+            int total = totalScore       != 0 ? totalScore       : prior?.TotalScore ?? 0;
+            _lastSettlement = new DungeonSettlementInfo(pass, score, total);
         }
     }
 

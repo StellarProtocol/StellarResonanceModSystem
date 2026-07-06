@@ -37,8 +37,13 @@ public readonly struct DungeonDirtyTimerResult
     public bool HasSettlement { get; init; }
     /// <summary><c>DungeonSettlement.pass_time</c> (field 1) — authoritative clear time seconds.</summary>
     public int PassTimeSeconds { get; init; }
-    /// <summary><c>DungeonSettlement.master_mode_score</c> (field 5).</summary>
+    /// <summary><c>DungeonSettlement.master_mode_score</c> (field 5) — the max/par score.</summary>
     public int MasterModeScore { get; init; }
+
+    /// <summary>True when the delta carried a <c>dungeon_score</c> container (field 14).</summary>
+    public bool HasScore { get; init; }
+    /// <summary><c>DungeonScore.total_score</c> (field 14 → 1) — the achieved score the settlement screen shows.</summary>
+    public int TotalScore { get; init; }
 
     /// <summary>True when the delta carried a <c>dungeon_scene_info</c> container (field 21), even an empty one.</summary>
     public bool HasSceneInfo { get; init; }

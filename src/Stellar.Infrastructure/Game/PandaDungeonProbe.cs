@@ -93,8 +93,8 @@ internal sealed partial class PandaDungeonProbe
         if (d.HasFlowResult && d.FlowResult > 0)
             _sink.SetOutcome(d.FlowResult);
 
-        if (d.HasSettlement && (d.PassTimeSeconds > 0 || d.MasterModeScore > 0))
-            _sink.SetSettlement(d.PassTimeSeconds, d.MasterModeScore);
+        if ((d.HasSettlement || d.HasScore) && (d.PassTimeSeconds > 0 || d.MasterModeScore > 0 || d.TotalScore > 0))
+            _sink.SetSettlement(d.PassTimeSeconds, d.MasterModeScore, d.TotalScore);
 
         if (d.HasSceneInfo && d.Difficulty > 0)
             _sink.SetDifficulty(d.Difficulty);
@@ -123,8 +123,8 @@ internal sealed partial class PandaDungeonProbe
         if (!DungeonSyncReader.TryRead(payload, out var result))
             return;
 
-        if (result.HasSettlement)
-            _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore);
+        if (result.HasSettlement || result.HasScore)
+            _sink.SetSettlement(result.PassTimeSeconds, result.MasterModeScore, result.TotalScore);
 
         if (result.HasDungeonSceneInfo)
             _sink.SetDifficulty(result.DungeonDifficulty);

@@ -40,7 +40,7 @@ public sealed class DungeonStateServiceTests
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
         // Re-entering the same dungeon (same uuid) must not wipe the settlement.
         write.SetCurrentRun(DungeonId);
         Assert.Equal(DungeonId, read.CurrentRunId);
@@ -53,7 +53,7 @@ public sealed class DungeonStateServiceTests
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
 
         // Player enters a second dungeon: the new enter-scene sets the new id and
         // the prior run's settlement is cleared.
@@ -71,7 +71,7 @@ public sealed class DungeonStateServiceTests
         // at archive time on that very dungeon->town transition.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
 
         write.SetCurrentRun(0);
         Assert.Equal(0L, read.CurrentRunId);
@@ -87,7 +87,7 @@ public sealed class DungeonStateServiceTests
         // still clear the prior run's stale settlement when it latches its own id.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
         write.SetCurrentRun(0);              // leave to town — settlement kept
         write.SetCurrentRun(Dungeon2Id);     // enter a new dungeon — stale settlement cleared
 
@@ -102,7 +102,7 @@ public sealed class DungeonStateServiceTests
         // records the settlement against whatever run is current.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
         Assert.Equal(DungeonId, read.CurrentRunId);
         Assert.NotNull(read.LastSettlement);
     }
@@ -115,11 +115,12 @@ public sealed class DungeonStateServiceTests
         // Without merging, the second call would clobber the first.
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(477, 0);   // delta A: pass only
-        write.SetSettlement(0, 425);   // delta B: score only — must NOT clobber pass
+        write.SetSettlement(477, 0, 0);      // delta A: pass only
+        write.SetSettlement(0, 425, 686);    // delta B: master + total score — must NOT clobber pass
         Assert.NotNull(read.LastSettlement);
         Assert.Equal(477, read.LastSettlement!.Value.PassTimeSeconds);
         Assert.Equal(425, read.LastSettlement!.Value.MasterModeScore);
+        Assert.Equal(686, read.LastSettlement!.Value.TotalScore);   // achieved score merges + survives
     }
 
     [Fact]
@@ -345,7 +346,7 @@ public sealed class DungeonStateServiceTests
     {
         var (read, write) = NewService();
         write.SetCurrentRun(DungeonId);
-        write.SetSettlement(120, 42);
+        write.SetSettlement(120, 42, 0);
 
         write.Reset();
         Assert.Equal(0L, read.CurrentRunId);

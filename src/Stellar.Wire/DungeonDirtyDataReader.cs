@@ -47,6 +47,7 @@ public static class DungeonDirtyDataReader
     private const int FieldSceneUuid = 1;   // int64 scalar
     private const int FieldFlowInfo = 2;    // DungeonFlowInfo container
     private const int FieldSettlement = 7;  // DungeonSettlement container
+    private const int FieldDungeonScore = 14; // DungeonScore container (total_score)
     private const int FieldTimerInfo = 15;  // nested DungeonTimerInfo container
     private const int FieldDungeonSceneInfo = 21; // DungeonSceneInfo container
     private const int FieldErrCode = 27;    // int32 scalar (last known field)
@@ -63,6 +64,9 @@ public static class DungeonDirtyDataReader
     private const int SettleFieldPassTime = 1;  // settlement.pass_time (int32)
     private const int SettleFieldMasterScore = 5;
     private const int SettleFieldMax = 5;        // fields 1..5; nested sub-msgs (award/pos/boss) skipped
+
+    private const int ScoreFieldTotalScore = 1;  // DungeonScore.total_score (int32) — the achieved score
+    private const int ScoreFieldMax = 2;          // total_score(1), cur_ratio(2)
 
     private const int SceneFieldDifficulty = 1; // DungeonSceneInfo.difficulty (int32)
     private const int SceneFieldMax = 1;        // only field 1 is defined
@@ -120,7 +124,7 @@ public static class DungeonDirtyDataReader
             if (!TryApplyDirtyField(blob, ref pos, index, ref result)) return false;
         }
 
-        return result.HasTimerInfo || result.HasFlowResult || result.HasSettlement || result.HasSceneInfo;
+        return result.HasTimerInfo || result.HasFlowResult || result.HasSettlement || result.HasScore || result.HasSceneInfo;
     }
 
     // Consume one top-level DungeonSyncData dirty entry's payload. Field types
@@ -142,6 +146,9 @@ public static class DungeonDirtyDataReader
 
         if (index == FieldSettlement)
             return TryReadSettlementContainer(blob, ref pos, ref result);
+
+        if (index == FieldDungeonScore)
+            return TryReadScoreContainer(blob, ref pos, ref result);
 
         if (index == FieldDungeonSceneInfo)
             return TryReadSceneInfoContainer(blob, ref pos, ref result);
@@ -249,6 +256,35 @@ public static class DungeonDirtyDataReader
             else { if (!TrySkipContainer(blob, ref pos)) return false; }   // 2/3/4 nested containers
         }
         result = result with { HasSettlement = true, PassTimeSeconds = passTime, MasterModeScore = masterScore };
+        return true;
+    }
+
+    // DungeonScore dirty container — total_score (1) is the achieved run score
+    // the settlement screen shows (686), DISTINCT from settlement.master_mode_score
+    // (the max/par 700). cur_ratio (2) is skipped by value.
+    private static bool TryReadScoreContainer(ReadOnlySpan<byte> blob, ref int pos, ref DungeonDirtyTimerResult result)
+    {
+        if (!TryReadInt32(blob, ref pos, out int tag) || tag != TagBegin) return false;
+        if (!TryReadInt32(blob, ref pos, out int size)) return false;
+        if (size == TagEnd) { result = result with { HasScore = true }; return true; }
+        if (size < 0 || size > blob.Length - pos) return false;
+        int entriesEnd = pos + size;
+        int totalScore = 0;
+        while (true)
+        {
+            if (!TryReadInt32(blob, ref pos, out int index)) return false;
+            if (index == TagEnd) break;
+            if (index <= 0) return false;
+            if (index > ScoreFieldMax)
+            {
+                pos = entriesEnd;
+                if (!TryReadInt32(blob, ref pos, out int endTag) || endTag != TagEnd) return false;
+                break;
+            }
+            if (!TryReadInt32(blob, ref pos, out int value)) return false;
+            if (index == ScoreFieldTotalScore) totalScore = value;
+        }
+        result = result with { HasScore = true, TotalScore = totalScore };
         return true;
     }
 
