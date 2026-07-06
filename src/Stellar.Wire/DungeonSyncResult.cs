@@ -51,6 +51,20 @@ public readonly struct DungeonSyncResult
     public int MasterModeScore { get; init; }
 
     /// <summary>
+    /// True when a <c>DungeonScore</c> (field 14) was present on this payload —
+    /// i.e. <see cref="TotalScore"/> is meaningful.
+    /// </summary>
+    public bool HasScore { get; init; }
+
+    /// <summary>
+    /// The run's achieved "Total Score" (<c>DungeonScore.total_score</c>, field
+    /// 14 → 1) — the number the in-game settlement screen shows, DISTINCT from
+    /// <see cref="MasterModeScore"/> (settlement field 5, the max/par). Only
+    /// meaningful when <see cref="HasScore"/>.
+    /// </summary>
+    public int TotalScore { get; init; }
+
+    /// <summary>
     /// True when a <c>DungeonSceneInfo</c> (field 21) was present on this
     /// payload — i.e. <see cref="DungeonDifficulty"/> is meaningful.
     /// </summary>

@@ -106,6 +106,8 @@ public static class DungeonSyncReader
             HasSettlement       = acc.HasSettlement,
             PassTimeSeconds     = acc.PassTime,
             MasterModeScore     = acc.MasterModeScore,
+            HasScore            = acc.HasScore,
+            TotalScore          = acc.TotalScore,
             HasDungeonSceneInfo = acc.HasDungeonSceneInfo,
             DungeonDifficulty   = acc.DungeonDifficulty,
             HasFlowInfo         = acc.HasFlowInfo,
@@ -131,6 +133,8 @@ public static class DungeonSyncReader
         public bool HasSettlement;
         public int PassTime;
         public int MasterModeScore;
+        public bool HasScore;
+        public int TotalScore;
         public bool HasDungeonSceneInfo;
         public int DungeonDifficulty;
         public bool HasFlowInfo;
@@ -170,6 +174,9 @@ public static class DungeonSyncReader
             return true;
         }
 
+        if (field == 14 && wire == 2)
+            return TryApplyDungeonScoreField(data, ref pos, ref acc);
+
         if (field == 21 && wire == 2)
         {
             // dungeon_scene_info (DungeonSceneInfo sub-message) — carries the
@@ -191,6 +198,21 @@ public static class DungeonSyncReader
             return TryApplyTimerInfoField(data, ref pos, ref acc);
 
         return WireProtocol.SkipField(data, ref pos, wire);
+    }
+
+    // dungeon_score (DungeonScore sub-message, field 14) — total_score is the achieved
+    // "Total Score" the settlement screen shows (686), DISTINCT from settlement.master_mode_score
+    // (field 5, the max/par = 700). The recurring "wrong master score" bug read only field 5.
+    // Split out of TryApplyField to keep that method's body under the STELLAR0002 (>50 LoC) gate.
+    private static bool TryApplyDungeonScoreField(ReadOnlySpan<byte> data, ref int pos, ref FieldAccumulator acc)
+    {
+        if (!WireProtocol.TryReadLengthDelimited(data, ref pos, out var scoreMsg)) return false;
+        if (TryReadDungeonScore(scoreMsg, out var totalScore))
+        {
+            acc.HasScore = true;
+            acc.TotalScore = totalScore;
+        }
+        return true;
     }
 
     // flow_info (DungeonFlowInfo sub-message, field 2) — the dungeon flow
@@ -250,6 +272,32 @@ public static class DungeonSyncReader
             {
                 if (!WireProtocol.TryReadVarint(span, ref pos, out var v)) return false;
                 masterModeScore = (int)v;
+            }
+            else if (!WireProtocol.SkipField(span, ref pos, wire))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // DungeonScore { int32 total_score = 1; int32 cur_ratio = 2; } — total_score
+    // is the achieved run score the settlement screen shows (686), read here so
+    // it can be surfaced ALONGSIDE settlement.master_mode_score (the max/par, 700).
+    private static bool TryReadDungeonScore(ReadOnlySpan<byte> span, out int totalScore)
+    {
+        totalScore = 0;
+
+        int pos = 0;
+        while (pos < span.Length)
+        {
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire))
+                return false;
+
+            if (field == 1 && wire == 0)
+            {
+                if (!WireProtocol.TryReadVarint(span, ref pos, out var v)) return false;
+                totalScore = (int)v;
             }
             else if (!WireProtocol.SkipField(span, ref pos, wire))
             {

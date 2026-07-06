@@ -36,6 +36,33 @@ public sealed class DungeonSyncReaderTests
     }
 
     [Fact]
+    public void Reads_total_score_from_dungeon_score_alongside_master_mode_score()
+    {
+        // The real Depths-of-Decay-M20 shape: settlement carries master_mode_score
+        // (max/par 700) while the SEPARATE dungeon_score(14) carries the achieved
+        // total_score (686). The recurring bug read only field 5 → showed 700.
+        var settlement = Msg(
+            Varint(1, 796),    // pass_time
+            Varint(5, 700));   // master_mode_score (max/par)
+        var dungeonScore = Msg(
+            Varint(1, 686),    // total_score (achieved — the settlement screen's number)
+            Varint(2, 98));    // cur_ratio (ignored)
+
+        // DungeonSyncData { scene_uuid(1)=..., dungeon_score(14)=..., settlement(7)=... }
+        var data = Msg(
+            Varint(1, 588872378860175360L),
+            LenDelim(14, dungeonScore),
+            LenDelim(7, settlement));
+        var body = LenDelim(1, data);
+
+        Assert.True(DungeonSyncReader.TryRead(body, out var r));
+        Assert.True(r.HasSettlement);
+        Assert.Equal(700, r.MasterModeScore);
+        Assert.True(r.HasScore);
+        Assert.Equal(686, r.TotalScore);
+    }
+
+    [Fact]
     public void Reads_dungeon_scene_info_difficulty()
     {
         // DungeonSceneInfo { difficulty(1) = 6 }
