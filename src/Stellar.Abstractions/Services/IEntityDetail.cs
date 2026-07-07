@@ -27,4 +27,10 @@ public interface IEntityDetail
     /// gear + wardrobe), or null if none received. Available for any player; the inspector's fallback
     /// when the AOI broadcast is absent (far/never-seen players). See <see cref="SocialSnapshot"/>.</summary>
     SocialSnapshot? GetSocialSnapshot(EntityId entity);
+
+    /// <summary>Ask the game to re-fetch this player's social data (master score, guild, portraits)
+    /// by originating its own <c>Social.GetSocialData</c> request. Fire-and-forget: the refreshed
+    /// snapshot arrives asynchronously via the wire-tap and replaces the cached value — poll
+    /// <see cref="GetSocialSnapshot"/> to observe it. No-op for non-player entities.</summary>
+    void RefreshSocialSnapshot(EntityId entity);
 }

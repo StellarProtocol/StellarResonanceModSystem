@@ -171,7 +171,7 @@ public sealed class CombatEntityTrackerTests
     [Fact]
     public void CombatService_GetVitals_DelegatesToTracker()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_0280L);
 
         svc.UpdateEntityVitals(id, hp: 3000, maxHp: 8000);
@@ -185,7 +185,7 @@ public sealed class CombatEntityTrackerTests
     [Fact]
     public void CombatService_GetLiveDps_AccumulatesAfterDrain()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var src = new EntityId(0x0000_0001_0000_0040L);
         var tgt = new EntityId(0x0000_0001_0000_0080L);
 
@@ -205,7 +205,7 @@ public sealed class CombatEntityTrackerTests
     [Fact]
     public void CombatService_GetTeamId_DelegatesToTracker()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_0280L);
 
         svc.UpdateEntityTeamId(id, teamId: 42L);
@@ -216,7 +216,7 @@ public sealed class CombatEntityTrackerTests
     [Fact]
     public void CombatService_GetEntityName_DelegatesToTracker()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_5188L);
 
         svc.UpdateEntityName(id, "TestPlayer");
@@ -227,7 +227,7 @@ public sealed class CombatEntityTrackerTests
     [Fact]
     public void CombatService_OnEntityDisappeared_ClearsTrackerState()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_0280L);
 
         svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);

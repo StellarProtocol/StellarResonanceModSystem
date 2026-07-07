@@ -26,6 +26,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private readonly IPluginLog                   _log;
     private readonly CombatEntityTracker          _entities;
     private readonly SocialDataCache              _social;
+    private readonly ISocialRefreshRequester      _socialRefresh;
     private readonly ConcurrentQueue<CombatEvent> _queue   = new();
     private readonly Queue<CombatEvent>           _ring    = new(RingCapacity);
     private readonly object                       _ringLock = new();
@@ -73,11 +74,12 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private static int _firstHitsLogged;
     private const  int DiagFirstHits = 3;
 
-    public CombatService(IPluginLog log, CombatEntityTracker entities, SocialDataCache social)
+    public CombatService(IPluginLog log, CombatEntityTracker entities, SocialDataCache social, ISocialRefreshRequester socialRefresh)
     {
-        _log      = log      ?? throw new ArgumentNullException(nameof(log));
-        _entities = entities ?? throw new ArgumentNullException(nameof(entities));
-        _social   = social   ?? throw new ArgumentNullException(nameof(social));
+        _log           = log           ?? throw new ArgumentNullException(nameof(log));
+        _entities      = entities      ?? throw new ArgumentNullException(nameof(entities));
+        _social        = social        ?? throw new ArgumentNullException(nameof(social));
+        _socialRefresh = socialRefresh ?? throw new ArgumentNullException(nameof(socialRefresh));
     }
 
     // --- ICombatSnapshot / ICombatLookup / ICombatEvents read surface ---
@@ -259,6 +261,12 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     public IReadOnlyList<FashionEntry> GetFashion(EntityId entity) => _entities.GetFashion(entity);
 
     public SocialSnapshot? GetSocialSnapshot(EntityId entity) => _social.GetSocialSnapshot(entity);
+
+    public void RefreshSocialSnapshot(EntityId entity)
+    {
+        if (!entity.IsPlayer) return;
+        _socialRefresh.RequestSelfSocialData(entity.Value >> 16);
+    }
 
     // --- ICombatEventSink (wire thread) ---
 
