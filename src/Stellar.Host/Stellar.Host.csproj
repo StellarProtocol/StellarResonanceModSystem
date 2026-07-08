@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- Local developer override (gitignored): sets GameInstallDir and defines the DeployFramework
+       target that copies the built framework DLLs into the game. See Local.props.example. -->
+  <Import Project="$(MSBuildThisFileDirectory)Local.props" Condition="Exists('$(MSBuildThisFileDirectory)Local.props')" />
+
   <PropertyGroup>
     <RootNamespace>Stellar.Host</RootNamespace>
     <AssemblyName>Stellar.Host</AssemblyName>
@@ -18,16 +22,4 @@
     <!-- Needed to call UnityEngine.Time.unscaledDeltaTime in the OnGUI perf probe. -->
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameInterop)/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-
-  <!-- Deploy all framework DLLs after build when Local.props sets GameInstallDir. -->
-  <Import Project="$(MSBuildThisFileDirectory)Local.props" Condition="Exists('$(MSBuildThisFileDirectory)Local.props')" />
-  <Target Name="DeployFramework" AfterTargets="Build" Condition="'$(GameInstallDir)'!=''">
-    <PropertyGroup>
-      <SrcDir>$(MSBuildThisFileDirectory)</SrcDir>
-      <FwDir>$(GameInstallDir)\BepInEx\plugins\Stellar.Framework</FwDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(FwDir)" />
-    <Copy SourceFiles="$(SrcDir)..\Stellar.Abstractions\bin\Release\Stellar.Abstractions.dll;$(SrcDir)..\Stellar.PluginContracts\bin\Release\Stellar.PluginContracts.dll;$(SrcDir)..\Stellar.Application\bin\Release\Stellar.Application.dll;$(SrcDir)..\Stellar.Wire\bin\Release\Stellar.Wire.dll;$(SrcDir)..\Stellar.Infrastructure\bin\Release\Stellar.Infrastructure.dll;$(SrcDir)bin\Release\Stellar.Host.dll;$(SrcDir)..\Stellar.Infrastructure\bin\Release\ZstdSharp.dll"
-           DestinationFolder="$(FwDir)" SkipUnchangedFiles="true" />
-  </Target>
 </Project>
