@@ -12,12 +12,25 @@ public abstract record HudElement;
 /// <summary>Horizontal layout container: children arranged left-to-right with optional spacing.</summary>
 /// <param name="Children">Child elements arranged horizontally.</param>
 /// <param name="Gap">Spacing in pixels between each child.</param>
-public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 0f) : HudElement;
+/// <param name="Justify">How children are packed horizontally; default <see cref="RowJustify.Left"/>.</param>
+public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 0f, RowJustify Justify = RowJustify.Left) : HudElement
+{
+#pragma warning disable STELLAR0004   // 2-param compat overload — not a real dependency; exempt as record secondary ctor
+    /// <summary>Backwards-compatible overload for plugins compiled against the pre-Justify signature.</summary>
+    public RowElement(IReadOnlyList<HudElement> children, float gap)
+        : this(children, gap, RowJustify.Left) { }
+#pragma warning restore STELLAR0004
+}
 
 /// <summary>Vertical layout container: children stacked top-to-bottom with optional spacing.</summary>
 /// <param name="Children">Child elements stacked vertically.</param>
 /// <param name="Gap">Spacing in pixels between each child.</param>
-public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap = 0f) : HudElement;
+public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap = 0f) : HudElement
+{
+    /// <summary>Uniform inner padding on all four sides in pixels. Adds breathing room between the column
+    /// boundary and its content — use when a backdrop or explicit border sits at the column edge.</summary>
+    public int Padding { get; init; }
+}
 
 /// <summary>A themed panel container: fills its area with the active theme's menu background + a 1px border and
 /// lays out a single <paramref name="Child"/> inside with uniform padding. Use it to give a borderless popup
@@ -25,6 +38,17 @@ public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap
 /// <param name="Child">The content laid out inside the panel.</param>
 /// <param name="Padding">Uniform inner padding in pixels.</param>
 public sealed record PanelElement(HudElement Child, float Padding = 8f) : HudElement;
+
+/// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>
+public enum RowJustify
+{
+    /// <summary>Pack children to the left; slack space is to the right (default).</summary>
+    Left,
+    /// <summary>Pack children to the centre; slack split equally on both sides.</summary>
+    Center,
+    /// <summary>Pack children to the right; slack space is to the left.</summary>
+    Right,
+}
 
 /// <summary>Horizontal text alignment within the text's cell. Default Left; Right is used for numeric table
 /// columns (so magnitudes line up against the right edge of a fixed-width <see cref="CellElement"/>).</summary>

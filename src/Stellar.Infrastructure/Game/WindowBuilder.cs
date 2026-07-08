@@ -171,6 +171,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<SelectableBinding> Selectables = new(); // per-apply selected-state re-tint for SelectableElement rows
         internal readonly List<MeterRowBinding> MeterRows = new();      // per-apply poll for bespoke CombatMeter rows
         internal readonly List<AccentRowBinding> AccentRows = new();    // per-apply poll for role-stripe/share-backdrop rows
+        internal readonly List<GameTextureBinding> GameTextures = new();   // per-apply poll for GameTextureElement (sync with VirtualList)
         internal readonly List<CooldownTileBinding> CooldownTiles = new(); // per-apply poll for CooldownBar tiles (icon+fill+seconds+★)
         internal readonly List<ChartBinding> Charts = new();            // per-apply poll: re-mesh LineChart only on series/range change
         internal readonly List<Texture2D> IconTextures = new();        // PNG icons (HideAndDontSave) — reclaimed on destroy
@@ -232,9 +233,15 @@ internal sealed partial class WindowBuilder
                 }
                 catch { }
             }
+            ApplyValues();
+        }
+
+        private void ApplyValues()
+        {
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
             for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
             for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
+            for (var i = 0; i < GameTextures.Count; i++) GameTextures[i].Apply();
             for (var i = 0; i < Buttons.Count; i++) Buttons[i].Apply();
             for (var i = 0; i < Toggles.Count; i++) Toggles[i].Apply();
             for (var i = 0; i < Sliders.Count; i++) Sliders[i].Apply();
@@ -288,9 +295,14 @@ internal sealed partial class WindowBuilder
     {
         switch (el)
         {
-            case RowElement r:    BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode); break;
-            case ColumnElement c: BuildLayout(c.Children, parent, token, c.Gap == 0f ? SectionGap : c.Gap, UGuiPrimitives.ColumnMode); break;
+            case RowElement r:
+                BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode);
+                if (r.Justify != RowJustify.Left && parent.GetChild(parent.childCount - 1).GetComponent<HorizontalLayoutGroup>() is { } hlg)
+                    hlg.childAlignment = r.Justify == RowJustify.Center ? TextAnchor.MiddleCenter : TextAnchor.MiddleRight;
+                break;
+            case ColumnElement c: BuildColumn(c, parent, token); break;
             case PanelElement pn: BuildPanel(pn, parent, token); break;
+            case BackdropElement bd: BuildBackdrop(bd, parent, token); break;
             case TextElement t:   BuildText(t, parent, token); break;
             case SeparatorElement sep: BuildSeparator(parent, token, sep.Vertical); break;
             case SpacerElement sp: BuildSpacer(parent, sp.Width, sp.Height); break;
@@ -318,7 +330,7 @@ internal sealed partial class WindowBuilder
             case CooldownTileElement ct: BuildCooldownTile(ct, parent, token); break;  // .CooldownTile.cs
             case DragSlotElement ds: BuildDragSlot(ds, parent, token); break;      // .DragSlot.cs
             case RenderTextureHostElement rh: BuildRenderHost(rh, parent); break;  // .DragSlot.cs
-            case GameTextureElement gt: BuildGameTexture(gt, parent); break;       // .DragSlot.cs
+            case GameTextureElement gt: BuildGameTexture(gt, parent, token); break; // .GameTexture.cs
             case LineChartElement lc: BuildLineChart(lc, parent, token); break;     // .LineChart.cs
         }
     }
@@ -337,6 +349,13 @@ internal sealed partial class WindowBuilder
         if (columns == UGuiPrimitives.ColumnMode && go.GetComponent<VerticalLayoutGroup>() is { } vlg)
             vlg.childForceExpandWidth = true;
         foreach (var child in children) BuildElement(child, go.transform, token);
+    }
+
+    private void BuildColumn(ColumnElement c, Transform parent, WindowToken token)
+    {
+        BuildLayout(c.Children, parent, token, c.Gap == 0f ? SectionGap : c.Gap, UGuiPrimitives.ColumnMode);
+        if (c.Padding > 0 && parent.GetChild(parent.childCount - 1).GetComponent<VerticalLayoutGroup>() is { } vlg)
+            vlg.padding = new RectOffset(c.Padding, c.Padding, c.Padding, c.Padding);
     }
 
     // BuildPanel + PanelBgColor/PanelBorderColor (PanelElement rendering) live in WindowBuilder.Panel.cs.

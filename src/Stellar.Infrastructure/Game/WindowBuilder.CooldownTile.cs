@@ -1,6 +1,7 @@
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
@@ -38,7 +39,7 @@ internal sealed partial class WindowBuilder
 
         var star = AddOverlayText(token, iconBox.transform, "Star", TextAnchor.UpperRight, 11);
         star.color = CdStarCol; star.text = "★"; star.gameObject.SetActive(false);
-        var charge = AddOverlayText(token, iconBox.transform, "Chg", TextAnchor.LowerRight, 9);
+        var charge = AddOverlayText(token, iconBox.transform, "Chg", TextAnchor.UpperRight, 13);
         charge.color = CdChgCol; charge.gameObject.SetActive(false);
 
         var secsGo = UGuiPrimitives.NewChild("Secs", root.transform);
@@ -52,6 +53,21 @@ internal sealed partial class WindowBuilder
             El = ct, Outline = outline, Art = art, FillRt = fillRt, FillImg = fillImg, Secs = secs,
             StarGo = star.gameObject, ChargeGo = charge.gameObject, Charge = charge,
         });
+
+        if (ct.OnClick != null)
+        {
+            var clickerGo = UGuiPrimitives.NewChild("TileClicker", root.transform);
+            clickerGo.AddComponent<LayoutElement>().ignoreLayout = true;
+            UGuiPrimitives.Stretch(clickerGo);
+            var clickImg = clickerGo.AddComponent<Image>();
+            clickImg.color = Color.clear;
+            clickImg.raycastTarget = true;
+            var btn = clickerGo.AddComponent<Button>();
+            btn.targetGraphic = clickImg;
+            btn.transition = Selectable.Transition.None;
+            var onClick = ct.OnClick;
+            btn.onClick.AddListener((UnityAction)onClick);
+        }
     }
 
     // Builds the icon square's layers: accent outline ring (returned), dark inset, art RawImage, foot fill-bar.
@@ -129,7 +145,7 @@ internal sealed partial class WindowBuilder
             var star = El.IsImagine(); if (star != _star) { _star = star; StarGo.SetActive(star); }
 
             var ch = El.ChargeCount();
-            if (ch != _charge) { _charge = ch; var show = ch > 1; ChargeGo.SetActive(show); if (show) Charge.text = "×" + ch; }
+            if (ch != _charge) { _charge = ch; var show = ch > 1; ChargeGo.SetActive(show); if (show) Charge.text = ch.ToString(); }
         }
     }
 }

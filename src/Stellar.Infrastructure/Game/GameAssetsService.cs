@@ -435,10 +435,10 @@ internal sealed partial class GameAssetsService : IGameAssets
         Item,       // standalone Texture2D (in-world: all 11 equipped items resolved as Texture2D,
                     // Sprite-first produced 11 warnings/login) — Sprite is the one-shot fallback
         Skill,      // standalone Texture2D — skill icons live under ui/textures/ like Imagine
-        Buff,       // standalone Texture2D — buff icons follow the same convention as skill icons
+        Buff,       // atlas Sprite — buff icon paths are under ui/atlas/ (Sprite atlas, same family as Profession)
     }
 
-    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Buff;
+    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill;
     private static string LabelOf(IconKind kind) => kind switch
     {
         IconKind.Profession => "profession",

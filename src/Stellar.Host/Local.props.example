@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Set to your game_mini directory to auto-deploy framework DLLs after each build. -->
+    <GameInstallDir>E:\path\to\game_mini</GameInstallDir>
+  </PropertyGroup>
+</Project>

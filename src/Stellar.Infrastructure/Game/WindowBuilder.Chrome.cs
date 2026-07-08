@@ -30,6 +30,14 @@ internal sealed partial class WindowBuilder
         // so register whole-frame drag here when Draggable. Overlay/status chromes (Tracker/Party/PillStatus)
         // are edit-only (move only in layout edit-mode, not during play — e.g. AutoNav); Borderless is the
         // launcher → free drag.
+        // Borderless optional black background — on the root's existing click-blocker Image so it fills the
+        // full window rect and expands when the user resizes height (no separate child GO needed).
+        if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundOpacity is { } bgOp
+            && result.root.GetComponent<UnityEngine.UI.Image>() is { } blocker)
+        {
+            blocker.color = new UnityEngine.Color(0f, 0f, 0f, bgOp());
+            token.FrameOpacities.Add(new FrameOpacityBinding { Img = blocker, Opacity = bgOp });
+        }
         if (reg.Spec.Draggable && reg.Spec.Style != WindowPanelStyle.GlassMenu)
         {
             // Drag mode is explicit per window (EditModeDragOnly), NOT inferred from chrome style — so a
