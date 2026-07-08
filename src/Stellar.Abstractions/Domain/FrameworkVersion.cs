@@ -18,7 +18,15 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.9.1 is a fix: <c>PandaMenuStateProbe</c> now also detects NPC
+    /// BepInEx chainloader happy. 1.10.0 adds additive window-framework support behind the CooldownBar
+    /// overlay: <c>WindowSpec.BackgroundOpacity</c> (poll-diffed backdrop on the borderless root that
+    /// expands on height resize), <c>ColumnElement.Padding</c>, <c>RowElement.Justify</c> +
+    /// <c>RowJustify</c> (with a compat overload), <c>BackdropElement</c>, <c>VirtualListElement.ResetScroll</c>,
+    /// and <c>CooldownTileElement.OnClick</c> — all init-props / new records / defaulted params, so
+    /// binary-compatible. Infrastructure: atomic game-asset icon rebind via a <c>WindowToken</c> binding (no
+    /// scroll blink), buff icons as atlas Sprites, a <c>ConditionalElement</c> flex clamp, and a VirtualList
+    /// viewport inset. (#32)
+    /// 1.9.1 is a fix: <c>PandaMenuStateProbe</c> now also detects NPC
     /// dialogue, loading screens, the dungeon-enter confirm popup (<c>team_copy_popup</c> on
     /// <c>UILayerFuncPopup</c>), the line-selector panel, and story cutscenes as full-screen menu
     /// states, so <c>AutoHideBehindGameMenus</c> windows hide in all those cases.
@@ -50,5 +58,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.9.1";
+    public const string Value = "1.10.0";
 }

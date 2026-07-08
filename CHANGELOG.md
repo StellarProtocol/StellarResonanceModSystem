@@ -6,6 +6,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-08
+### Added
+- **Window-framework support behind the CooldownBar overlay** (all additive + binary-compatible). (#32)
+  - `WindowSpec.BackgroundOpacity` (`Func<float>?`) — poll-diffed black backdrop on the borderless root's
+    click-blocker Image; fills the full window rect and expands on height resize.
+  - `ColumnElement.Padding` (`int`) — uniform inner padding on all four sides.
+  - `RowElement.Justify` + `RowJustify` enum (`Left`/`Center`/`Right`) — ships a 2-arg compat overload for
+    plugins built against the old signature.
+  - `BackdropElement` — stretch-fill `ignoreLayout` backdrop (place first in a column so siblings draw on top).
+  - `VirtualListElement.ResetScroll` (`Func<bool>?`) — polled each refresh; true snaps the list to the top.
+  - `CooldownTileElement.OnClick` (`Action?`) — whole-tile click action.
+### Changed
+- **Atomic game-asset icons** — `GameTextureElement` moved to `WindowBuilder.GameTexture.cs`; icon rebind is
+  now a `WindowToken` binding applied in the same `Apply()` pass as the virtual list, removing the one-frame
+  wrong-icon blink while scrolling. Buff icons resolve as atlas `Sprite`s instead of `Texture2D`.
+- **`ConditionalElement` flex clamp** — a `Cond` node inside a row no longer sets `flexibleWidth=1` (it was
+  stealing all slack, centring fixed content in a borderless bar); column parents still force-expand.
+- VirtualList viewport inset 9px on the right so the scrollbar no longer overlaps content.
+- Framework deploy target moved out of the csproj into `Local.props`.
+
 ## [1.9.1] - 2026-07-01
 ### Fixed
 - **`AutoHideBehindGameMenus` windows now hide behind more full-screen game screens.**
