@@ -81,6 +81,11 @@ public sealed record ColorPickerElement(Func<ColorRgba> Get, Action<ColorRgba> S
 /// it tracks live edits.</summary>
 public sealed record SwatchElement(Func<ColorRgba> Color, float Size = 15f) : HudElement;
 
+/// <summary>Full-size black backdrop behind all content — an ignoreLayout Image that stretches to cover its
+/// parent GO. Place as the FIRST child of a ColumnElement so all siblings render on top. <paramref name="Opacity"/>
+/// (0..1) is poll-diffed each Apply tick so a settings slider updates it in real time.</summary>
+public sealed record BackdropElement(Func<float> Opacity) : HudElement;
+
 /// <summary>Icon tile (launcher): a centred PNG <paramref name="Icon"/> over an optional <paramref name="Label"/>,
 /// no background. Hover brightens icon+label and grows the icon ~1.18× (the native rail feel). The whole tile
 /// clicks via <paramref name="OnClick"/>. When <paramref name="Pinned"/> != null, a ★/☆ toggle overlays the
@@ -216,7 +221,11 @@ public sealed record VirtualListElement(
     float      RowHeight,
     IReadOnlyList<HudElement> Pool,
     Action<int> OnWindow,
-    float      Height = 200f) : HudElement;
+    float      Height = 200f) : HudElement
+{
+    /// <summary>When non-null, polled each refresh — returning true resets the scroll offset to the top.</summary>
+    public Func<bool>? ResetScroll { get; init; }
+}
 
 /// <summary>One cooldown/debuff tile for the CooldownBar: a fixed icon square (game-asset art via
 /// <paramref name="Icon"/>/<paramref name="Uv"/>) with an <paramref name="Accent"/>-tinted outline, a foot
@@ -240,4 +249,8 @@ public sealed record CooldownTileElement(
     Func<string>    Seconds,
     Func<ColorRgba> Accent,
     Func<bool>      IsImagine,
-    Func<int>       ChargeCount) : HudElement;
+    Func<int>       ChargeCount) : HudElement
+{
+    /// <summary>When non-null, clicking anywhere on the tile calls this action.</summary>
+    public Action? OnClick { get; init; }
+}

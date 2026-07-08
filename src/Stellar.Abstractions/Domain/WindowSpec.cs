@@ -1,3 +1,5 @@
+using System;
+
 namespace Stellar.Abstractions.Domain;
 
 /// <summary>Immutable declaration of a plugin window's identity, initial geometry, and chrome options.
@@ -100,4 +102,9 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// (if <see cref="Draggable"/>), and the body must supply its own close affordance.
     /// </summary>
     public bool ShowTitleBar { get; init; } = true;
+
+    /// <summary>Borderless windows only: poll-diffed black background opacity (0 = transparent, 1 = fully black).
+    /// Applied to the root's existing click-blocker Image so the background fills the entire window rect and
+    /// expands when the user resizes height — no separate child GO needed. Null = no background (default).</summary>
+    public Func<float>? BackgroundOpacity { get; init; }
 }

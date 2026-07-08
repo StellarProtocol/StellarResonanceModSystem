@@ -72,29 +72,4 @@ internal sealed partial class WindowBuilder
         RegisterRenderHost?.Invoke(raw, rh.Texture, rh.OnDrag, rh.OnScroll, rh.OnPan, rh.OnViewportResize);
     }
 
-    // Game-asset icon box (GameTextureElement: profession crests / imagine icons). The simpler sibling of
-    // BuildRenderHost: a fixed-size, non-interactive RawImage with no backdrop. The ticker re-binds the boxed
-    // texture (and the optional atlas UV sub-rect) each frame, enabling the image only once the async game-asset
-    // load lands — until then the box is an invisible placeholder that keeps its layout slot.
-    private void BuildGameTexture(GameTextureElement gt, Transform parent)
-    {
-        var box = UGuiPrimitives.NewChild("GameTexture", parent);
-        var le = box.AddComponent<LayoutElement>();
-        le.minWidth = le.preferredWidth = gt.Width;
-        le.minHeight = le.preferredHeight = gt.Height;
-        le.flexibleWidth = 0f;
-        // The RawImage lives on a centred CHILD so the ticker can letterbox the sprite INSIDE the fixed
-        // layout box — a RawImage sized by the box itself stretches the texture to the box shape
-        // (squeezed gear icons, user-flagged in-world 2026-06-13). The letterbox is computed manually
-        // (UV sub-rect × texture size vs box dims) at bind time rather than via AspectRatioFitter — the
-        // game's IL2CPP build may strip that component's layout callbacks.
-        var go = UGuiPrimitives.NewChild("Icon", box.transform);
-        var rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(gt.Width, gt.Height);   // placeholder until the texture binds
-        var raw = go.AddComponent<RawImage>();
-        raw.raycastTarget = false;
-        raw.enabled = false;   // hidden until a texture arrives (no white placeholder box)
-        RegisterGameTexture?.Invoke(raw, gt.Texture, gt.Uv, gt.Width, gt.Height);
-    }
 }

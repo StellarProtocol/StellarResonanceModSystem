@@ -3,6 +3,9 @@
 **/obj/
 *.user
 
+# Local developer overrides (machine-specific paths; see Local.props.example)
+**/Local.props
+
 # Tooling downloads (re-acquirable)
 tools/BepInEx-IL2CPP.zip
 tools/BepInEx-stage/

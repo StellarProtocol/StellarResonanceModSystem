@@ -23,11 +23,18 @@ internal sealed partial class WindowBuilder
     {
         var go = UGuiPrimitives.NewChild("Cond", parent);
         UGuiPrimitives.AddLayout(go, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(go);
+        // Clamp horizontal flex to 0 so the Cond go does NOT expand when placed inside a Row HLG.
+        // ExpandColumnWidth sets childForceExpandWidth=true on the VLG, which Unity bubbles up as
+        // flexibleWidth=1f — a Row HLG (childForceExpandWidth=false) would then give all slack to this
+        // one Cond go (296px in a 320px bar), making its content appear centred despite the UpperLeft/
+        // MiddleLeft childAlignment. Column parents that have childForceExpandWidth=true still override
+        // this via Mathf.Max(0,1)=1, so Column-contained Conditionals still fill their parent width.
+        var condLe = go.AddComponent<LayoutElement>(); condLe.flexibleWidth = 0f;
         // Fill: the active branch grows to fill leftover height in a fixed-size window (the Cond grabs the slack
         // via flexibleHeight; childForceExpandHeight stretches the branch + its content to fill it).
         if (cond.Fill)
         {
-            var fle = go.AddComponent<LayoutElement>(); fle.flexibleHeight = 1f;
+            condLe.flexibleHeight = 1f;
             if (go.GetComponent<VerticalLayoutGroup>() is { } gv) gv.childForceExpandHeight = true;
         }
         var thenGo = UGuiPrimitives.NewChild("Then", go.transform);

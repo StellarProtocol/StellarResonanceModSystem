@@ -24,6 +24,9 @@ internal sealed partial class WindowBuilder
         var sr = go.AddComponent<ScrollRect>(); sr.horizontal = false; sr.vertical = true; sr.movementType = ScrollRect.MovementType.Clamped;
 
         var viewportGo = UGuiPrimitives.NewChild("Viewport", go.transform); UGuiPrimitives.Stretch(viewportGo);
+        // Inset 9px from the right edge (5px bar + 4px gap) so the scrollbar does not overlay content —
+        // same fix as BuildScroll; without this the bar sits on top of right-aligned elements (toggles).
+        viewportGo.GetComponent<RectTransform>().offsetMax = new Vector2(-9f, 0f);
         viewportGo.AddComponent<RectMask2D>();
         // Transparent raycast target so the mouse WHEEL has something to hit over the scroll area (the
         // EventSystem routes OnScroll up to the ScrollRect) — matches BuildScroll.
@@ -67,7 +70,7 @@ internal sealed partial class WindowBuilder
         token.VirtualLists.Add(new VirtualListBinding
         {
             Sr = scrollRect, Content = content, Slots = slots,
-            Count = v.Count, RowHeight = v.RowHeight, OnWindow = v.OnWindow,
+            Count = v.Count, RowHeight = v.RowHeight, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
         });
     }
 
@@ -83,11 +86,18 @@ internal sealed partial class WindowBuilder
         public Func<int> Count = null!;
         public float RowHeight;
         public Action<int> OnWindow = null!;
+        public Func<bool>? ResetScroll;
         private int _lastFirst = -1, _lastCount = -1;
 
         public bool Apply()
         {
             if (Content == null || !Content.gameObject.activeInHierarchy) return false;
+            if (ResetScroll?.Invoke() == true)
+            {
+                Sr.normalizedPosition = new Vector2(0f, 1f);
+                Content.anchoredPosition = Vector2.zero;
+                _lastFirst = -1;
+            }
             var count = Count();
             var pool = Slots.Length;
             var countChanged = count != _lastCount;

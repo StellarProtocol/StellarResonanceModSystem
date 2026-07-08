@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- Local developer override (gitignored): sets GameInstallDir and defines the DeployFramework
+       target that copies the built framework DLLs into the game. See Local.props.example. -->
+  <Import Project="$(MSBuildThisFileDirectory)Local.props" Condition="Exists('$(MSBuildThisFileDirectory)Local.props')" />
+
   <PropertyGroup>
     <RootNamespace>Stellar.Host</RootNamespace>
     <AssemblyName>Stellar.Host</AssemblyName>

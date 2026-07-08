@@ -60,4 +60,19 @@ internal sealed partial class WindowBuilder
         var c = _assets.MenuBackground;
         return new Color(c.r * 0.65f, c.g * 0.65f, c.b * 0.65f, 1f);
     }
+
+    // Stretch-fill ignoreLayout black Image behind all siblings. Uses FrameOpacityBinding so the alpha
+    // is poll-diffed each Apply tick (live slider updates). raycastTarget=false: the root's blocker Image
+    // already absorbs all clicks; the backdrop must not intercept events itself.
+    private void BuildBackdrop(BackdropElement bd, Transform parent, WindowToken token)
+    {
+        var go = UGuiPrimitives.NewChild("Backdrop", parent);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        UGuiPrimitives.Stretch(go);
+        var img = go.AddComponent<Image>();
+        img.color = new Color(0f, 0f, 0f, bd.Opacity());
+        img.raycastTarget = false;
+        var op = bd.Opacity;
+        token.FrameOpacities.Add(new FrameOpacityBinding { Img = img, Opacity = op });
+    }
 }
