@@ -11,6 +11,8 @@ namespace Stellar.Abstractions.Domain.Inventory;
 /// <param name="Perfection">Perfection value/max/level of the piece.</param>
 /// <param name="Attrs">The four rolled-attribute groups; never null.</param>
 /// <param name="Enchant">Socketed enchant, or null when the piece carries none.</param>
+/// <param name="BreakThroughTime">Breakthrough stage (wire <c>EquipAttr.break_through_time</c>);
+/// raid gear's displayed item level is the stage's <c>EquipBreakThroughTable.EquipGs</c>.</param>
 public sealed record GearInstance(
     int Slot,
     long ItemUuid,
@@ -19,4 +21,5 @@ public sealed record GearInstance(
     int RefineLevel,
     GearPerfection Perfection,
     GearAttrRolls Attrs,
-    GearEnchant? Enchant);
+    GearEnchant? Enchant,
+    int BreakThroughTime = 0);

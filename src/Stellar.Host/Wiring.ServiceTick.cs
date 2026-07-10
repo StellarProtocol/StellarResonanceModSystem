@@ -91,6 +91,7 @@ public sealed partial class BootstrapPlugin
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
+        _worldAttrProbe?.Tick();   // main-thread read of ZWorld AttrDeathCount(348) → Defeated (no-op in town)
         TickInputAndHotkeys();
         // Layout edit-mode input (select/drag) — driven from the tick AFTER the input poll (so the latched
         // mouse edge + pointer are fresh). Edit-mode interaction is fully decoupled from any IMGUI/OnGUI

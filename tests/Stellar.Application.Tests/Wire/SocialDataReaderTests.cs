@@ -30,7 +30,7 @@ public class SocialDataReaderTests
         { var a = new List<byte>(); VInt(a, 4, 47597); Len(data, 11, a.ToArray()); } // user_attr_data{fight_point}
         { var t = new List<byte>(); VInt(t, 4, 5); Len(data, 12, t.ToArray()); }    // team_data{team_num=5}
         { var u = new List<byte>(); Len(u, 2, Str("Eroge")); Len(data, 13, u.ToArray()); } // union_data{name}
-        { var z = new List<byte>(); VInt(z, 11, 301); Len(data, 16, z.ToArray()); } // personal_zone{title_id}
+        { var z = new List<byte>(); VInt(z, 11, 301); VInt(z, 13, 9265); VInt(z, 18, 42); VInt(z, 20, 7); Len(data, 16, z.ToArray()); } // personal_zone{title_id, fashion_collect, ride_collect, weaponSkin_collect}
         { var m = new List<byte>(); VInt(m, 1, 2868); Len(data, 22, m.ToArray()); } // master_mode_dungeon_data{season_score}
 
         var reply = new List<byte>(); Len(reply, 2, data.ToArray());   // GetSocialDataReply.data = field 2
@@ -46,7 +46,7 @@ public class SocialDataReaderTests
         Assert.Equal(2, snap.Gear.Count);
         Assert.Equal(new GearSlotRef(200, 1001), snap.Gear[0]);
         Assert.Equal(new GearSlotRef(205, 1002), snap.Gear[1]);
-        Assert.Equal(new SocialIdentity("Eroge", 5, 2868, 301), snap.Identity);
+        Assert.Equal(new SocialIdentity("Eroge", 5, 2868, 301, 9265, 42, 7), snap.Identity);
     }
 
     [Fact]
@@ -62,6 +62,9 @@ public class SocialDataReaderTests
 
         Assert.NotNull(snap);
         Assert.Equal(SocialIdentity.None, snap!.Identity);
+        Assert.Equal(0, snap.Identity.FashionCollect);
+        Assert.Equal(0, snap.Identity.RideCollect);
+        Assert.Equal(0, snap.Identity.WeaponSkinCollect);
     }
 
     [Fact]
@@ -102,5 +105,40 @@ public class SocialDataReaderTests
     {
         Assert.Null(SocialDataReader.Read(System.Array.Empty<byte>()));
         Assert.Null(SocialDataReader.Read(new byte[] { 0xFF, 0xFF, 0xFF }));
+    }
+
+    [Fact]
+    public void Read_decodes_avatar_picture_urls()
+    {
+        // SocialData.avatar_info = field 4; AvatarInfo{ profile=2 PictureInfo, half_body=3 PictureInfo }; PictureInfo.url = 1.
+        var data = new List<byte>();
+        VInt(data, 1, 4242);
+        Len(data, 3, BasicData("Eiori", 60));
+        var prof = new List<byte>(); Len(prof, 1, Str("https://cos.example/p.jpg"));
+        var half = new List<byte>(); Len(half, 1, Str("https://cos.example/h.jpg"));
+        var av = new List<byte>(); VInt(av, 1, 9); Len(av, 2, prof.ToArray()); Len(av, 3, half.ToArray());
+        Len(data, 4, av.ToArray());
+        var reply = new List<byte>(); Len(reply, 2, data.ToArray());
+
+        var snap = SocialDataReader.Read(reply.ToArray());
+
+        Assert.NotNull(snap);
+        Assert.Equal("https://cos.example/p.jpg", snap!.ProfileUrl);
+        Assert.Equal("https://cos.example/h.jpg", snap.HalfBodyUrl);
+    }
+
+    [Fact]
+    public void Read_defaults_avatar_urls_empty_when_section_absent()
+    {
+        var data = new List<byte>();
+        VInt(data, 1, 4242);
+        Len(data, 3, BasicData("Eiori", 60));
+        var reply = new List<byte>(); Len(reply, 2, data.ToArray());
+
+        var snap = SocialDataReader.Read(reply.ToArray());
+
+        Assert.NotNull(snap);
+        Assert.Equal("", snap!.ProfileUrl);
+        Assert.Equal("", snap.HalfBodyUrl);
     }
 }

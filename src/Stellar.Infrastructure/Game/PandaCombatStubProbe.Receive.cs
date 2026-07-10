@@ -51,11 +51,13 @@ internal sealed partial class PandaCombatStubProbe
         // Appears — extract AttrName + the skill loadout (AttrSkillLevelIdList) from each entity's
         // AttrCollection. The full attr set (incl. the equipped-skill list that carries Battle Imagines)
         // ships on appear, NOT in subsequent deltas — so it must be read here, not only in ApplyAttrDeltas.
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var entity in appears)
         {
             DiagAppearEntity(entity);
-            if (entity.Attrs is not { } attrs) continue;
             var eid = new EntityId(entity.Uuid);
+            if (entity.Attrs is not { } attrs) continue;
+            long summonerId = 0, topSummonerId = 0;
             for (int i = 0; i < attrs.Items.Count; i++)
             {
                 var attr = attrs.Items[i];
@@ -79,10 +81,23 @@ internal sealed partial class PandaCombatStubProbe
                 }
                 else
                 {
-                    CaptureEntityDetail(eid, attr);
+                    if (attr.Id == AttrTypeIds.AttrSummonerId) summonerId = attr.DecodedLong;
+                    else if (attr.Id == AttrTypeIds.AttrTopSummonerId) topSummonerId = attr.DecodedLong;
+                    CaptureEntityDetail(eid, attr, "appear");
                 }
             }
+            EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
         }
+    }
+
+    // Raises CombatEvent.EntitySummonAppeared when this appear carried a resolvable owner attribution
+    // (AttrTopSummonerId preferred; AttrSummonerId as fallback). Most appearing entities (players,
+    // unowned mobs) carry neither, so this is a no-op for the common case.
+    private void EmitSummonAppeared(EntityId summonId, long summonerId, long topSummonerId, long timestampMs)
+    {
+        long owner = topSummonerId != 0 ? topSummonerId : summonerId;
+        if (owner == 0) return;
+        _sink.EnqueueEvent(new CombatEvent.EntitySummonAppeared(timestampMs, new EntityId(owner), summonId));
     }
 
     // EnterScene (method 3) — the local player's full Entity (PlayerEnt) carries self's COMPLETE attr set,
@@ -101,6 +116,9 @@ internal sealed partial class PandaCombatStubProbe
         // every dungeon re-entry and accumulate for the whole session — the FPS-decays-only-after-re-entry
         // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
         _sink.ResetEntities();
+
+        LatchDungeonRunId(span);
+        DiagScanSceneAttrsForDeathCount(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;
@@ -123,9 +141,29 @@ internal sealed partial class PandaCombatStubProbe
             }
             else
             {
-                CaptureEntityDetail(eid, attr);
+                CaptureEntityDetail(eid, attr, "enter-scene-self");
             }
         }
+    }
+
+    // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
+    // EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone in the
+    // run, identical across the run). Every enter-scene fires here — instanced content
+    // (dungeon / instanced world-boss / raid) AND town/open-world — so we route the uuid
+    // through DungeonRunIdGate: an instanced snowflake becomes the run id; a town/field
+    // scene resolves to 0. Setting 0 on a non-instanced scene is deliberate — it clears
+    // the previous run's id so it CANNOT linger and get stamped onto a later open-world
+    // run (the run-identity collision fix). The plugin latches _lastRunId at combat start
+    // and reads LastSettlement at archive, so the dungeon->town archive window still
+    // uploads correctly under the dungeon id even though CurrentRunId has dropped to 0.
+    //
+    // When the enter-scene carries no readable scene id (TryReadSceneId == false: absent
+    // SceneAttrs or an explicit 0), we leave the current run id untouched rather than
+    // clobbering a valid run from a malformed/partial packet.
+    private void LatchDungeonRunId(ReadOnlySpan<byte> span)
+    {
+        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
+            _dungeonSink.SetCurrentRun(DungeonRunIdGate.Resolve(sceneUuid));
     }
 
     private void OnNearDelta(ReadOnlySpan<byte> span)
@@ -290,7 +328,7 @@ internal sealed partial class PandaCombatStubProbe
             }
             else
             {
-                CaptureEntityDetail(eid, attr);
+                CaptureEntityDetail(eid, attr, "delta");
             }
         }
         if (hp >= 0 || maxHp >= 0)     _sink.UpdateEntityVitals(eid, hp, maxHp);
@@ -308,8 +346,11 @@ internal sealed partial class PandaCombatStubProbe
     // inspector reads (level / season level / profession). Only varint-decodable
     // scalar attrs are stored as numbers — string/packed attrs are never routed
     // here. FightPoint is stored by each caller alongside its UpdateEntityFightPoint.
-    private void CaptureEntityDetail(EntityId eid, AttrMsg attr)
+    // <paramref name="path"/> identifies which of the three call sites reached here —
+    // consumed only by the AttrDeathCount(348) recon diagnostic (Task 6).
+    private void CaptureEntityDetail(EntityId eid, AttrMsg attr, string path)
     {
+        if (attr.Id == AttrTypeIds.AttrDeathCount) DiagDeathCountAttr(eid, attr, path);
         if (attr.Id == AttrTypeIds.AttrEquipData)
         {
             _sink.SetEntityEquipment(eid, AttrEquipDataReader.Read(attr.RawData.Span));

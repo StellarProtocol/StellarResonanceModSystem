@@ -32,6 +32,7 @@ internal sealed partial class WorldNtfStubDispatcher
     private static WorldNtfStubDispatcher? Instance;
 
     private readonly StubRouter _router = new();
+
     private readonly IPluginLog _log;
     private Harmony? _harmony;
     private bool _patched;
@@ -124,7 +125,14 @@ internal sealed partial class WorldNtfStubDispatcher
         if (stubCall is null) return;
 
         if (!TryReadHeader(stubCall, out var uuid, out var methodId)) return;
-        if (uuid != BPSRServiceIds.WorldNtf || !_router.Subscribes(methodId)) return;
+        if (uuid != BPSRServiceIds.WorldNtf) return;
+
+        DiagCensus(methodId, stubCall);   // NEW — read-only WorldNtf methodId census
+
+        // Cheap-reject: only pay the payload extraction when a method-keyed
+        // handler is subscribed. Foreign/unsubscribed methods cost only the
+        // header read.
+        if (!_router.Subscribes(methodId)) return;
 
         var bytes = ExtractPayload(stubCall);
         if (bytes is null) return;

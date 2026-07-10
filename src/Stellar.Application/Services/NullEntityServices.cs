@@ -21,6 +21,7 @@ internal sealed class NullEntityDetail : IEntityDetail
     public IReadOnlyList<FashionEntry> GetFashion(EntityId entity) =>
         Array.Empty<FashionEntry>();
     public SocialSnapshot? GetSocialSnapshot(EntityId entity) => null;
+    public void RefreshSocialSnapshot(EntityId entity) { }
 }
 
 internal sealed class NullEntityPortrait : IEntityPortrait

@@ -36,7 +36,7 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>
     /// Selects real vs mock implementations (visual-capture toolkit), constructs
-    /// the 25-param <see cref="PluginServices"/> aggregator, the
+    /// the <see cref="PluginServices"/> aggregator, the
     /// <see cref="PluginRegistry"/> (fully initialised in one step — B-05), and
     /// the <see cref="PluginHost"/>. Must run after <see cref="BuildUGuiAdapters"/>
     /// (needs <c>_uguiInjection</c>).
@@ -56,15 +56,7 @@ public sealed partial class BootstrapPlugin
         IInventory inventory = SelectMockOrReal<IInventory>(
             "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log);
 
-        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
-        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
-        // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
-        _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
-        _partyControlService = new PartyControlService(_teamControlProbe);
-        // Portrait pipeline: Lua bridge creates the social-data model; the host renders it via the game's own
-        // ZModel2RT render feature (the only path that isolates one model — the SRP renders the world globally).
-        var portraitModelProbe = new PandaPortraitModelProbe(_gameTypeRegistry!, log);
-        var portraitModelHost = new PortraitModelHost(_gameTypeRegistry!, log);
+        var (gameAssets, entityTransforms, portraitService) = BuildInfraServices(log);
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
@@ -76,10 +68,12 @@ public sealed partial class BootstrapPlugin
             gameAssets, _resonanceService!, _gameDataResonance!,
             _combatService!,
             new Stellar.Application.Services.EntityContextMenuService(),
-            new Stellar.Infrastructure.Game.EntityPortraitService(portraitModelProbe, portraitModelHost),
+            portraitService,
             _profileCardActions!,
             new Stellar.Application.Services.PluginExchange(),
-            _noticeTipService!);
+            _noticeTipService!,
+            _dungeonStateService!,
+            entityTransforms);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 
@@ -89,6 +83,27 @@ public sealed partial class BootstrapPlugin
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
 
         _pluginHost = new PluginHost(services, configFactory, _pluginRegistry, _scheduler!);
+    }
+
+    /// <summary>
+    /// Constructs the infrastructure services that feed <see cref="ConstructPluginServices"/>
+    /// — extracted to keep that method under the 50-LoC analyzer gate.
+    /// </summary>
+    private (GameAssetsService gameAssets, EntityTransformsService entityTransforms, Stellar.Infrastructure.Game.EntityPortraitService portraitService)
+        BuildInfraServices(BepInExPluginLog log)
+    {
+        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
+        var entityTransforms = new EntityTransformsService(_gameTypeRegistry!);
+        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
+        // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
+        _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
+        _partyControlService = new PartyControlService(_teamControlProbe);
+        // Portrait pipeline: Lua bridge creates the social-data model; the host renders it via
+        // the game's own ZModel2RT render feature (the only path that isolates one model).
+        var portraitModelProbe = new PandaPortraitModelProbe(_gameTypeRegistry!, log);
+        var portraitModelHost = new PortraitModelHost(_gameTypeRegistry!, log);
+        var portraitService = new Stellar.Infrastructure.Game.EntityPortraitService(portraitModelProbe, portraitModelHost);
+        return (gameAssets, entityTransforms, portraitService);
     }
 
     /// <summary>

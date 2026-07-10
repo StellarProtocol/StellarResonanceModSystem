@@ -11,7 +11,7 @@ public sealed class GameDataServiceTests
     [Fact]
     public void IsAvailable_FalseByDefault()
     {
-        var svc = new GameDataService();
+        var svc = new GameDataService(new CombatEntityTracker());
         Assert.False(svc.IsAvailable);
     }
 
@@ -181,7 +181,7 @@ public sealed class GameDataServiceTests
     [Fact]
     public void SubInterfaces_ReturnTheSameInstanceEachCall()
     {
-        var svc = new GameDataService();
+        var svc = new GameDataService(new CombatEntityTracker());
         Assert.Same(svc.Combat, svc.Combat);
         Assert.Same(svc.Inventory, svc.Inventory);
         Assert.Same(svc.Equip, svc.Equip);
@@ -190,7 +190,7 @@ public sealed class GameDataServiceTests
     }
 
     private static (GameDataService, StubGameDataProbe) NewService()
-        => (new GameDataService(), new StubGameDataProbe());
+        => (new GameDataService(new CombatEntityTracker()), new StubGameDataProbe());
 
     private static GameDataEagerSnapshot EmptyEagerSnapshot() => new GameDataEagerSnapshot
     {

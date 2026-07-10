@@ -21,6 +21,8 @@ namespace Stellar.Abstractions.Domain;
 /// <c>NotifyTeamGroupUpdate</c> (<c>TeamMemberGroupInfo.char_ids</c> ordering). -1 when not yet known. Lets the
 /// raid grid place each member at their exact Team×Slot instead of roster order.</para>
 /// <para><b>DPS aggregation</b> — query <c>ICombatLookup.GetLiveDps(member.EntityId)</c> instead of a per-member DPS field. The combat service aggregates per source EntityId for every entity in AOI, so the same call works for party members, mobs, and randoms uniformly.</para>
+/// <para><b>ProfileUrl / HalfBodyUrl</b> — CDN URLs of the member's 2D profile / half-body pictures from
+/// <c>TeamMemberSocialData.avatar_info</c>; empty until the first social sync or when the player has none.</para>
 /// </remarks>
 public readonly record struct PartyMember(
     long       CharId,
@@ -35,7 +37,9 @@ public readonly record struct PartyMember(
     bool       IsSelf,
     int        GroupId,
     int        Slot = -1,
-    int        Talent = 0)   // TeamMemData.talent_id — the member's selected talent/spec (0 = none)
+    int        Talent = 0,     // TeamMemData.talent_id — the member's selected talent/spec (0 = none)
+    string     ProfileUrl = "",
+    string     HalfBodyUrl = "")
 {
     /// <summary>
     /// Combat entity id derived from <see cref="CharId"/> under the Phase 4 identity

@@ -36,8 +36,14 @@ internal sealed class GameDataService : IGameData
     private readonly GameDataCombatService    _combat    = new GameDataCombatService();
     private readonly GameDataInventoryService _inventory = new GameDataInventoryService();
     private readonly GameDataEquipService     _equip     = new GameDataEquipService();
-    private readonly GameDataWorldService     _world     = new GameDataWorldService();
+    private readonly GameDataWorldService     _world;
     private readonly GameDataProgressService  _progress  = new GameDataProgressService();
+
+    public GameDataService(CombatEntityTracker entityTracker)
+    {
+        _world = new GameDataWorldService(entityTracker
+            ?? throw new System.ArgumentNullException(nameof(entityTracker)));
+    }
 
     private bool _isAvailable;
     private int _deferredIndex;  // next position in DeferredOrder

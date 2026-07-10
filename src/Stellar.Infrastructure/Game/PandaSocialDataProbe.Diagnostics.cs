@@ -27,4 +27,31 @@ internal sealed partial class PandaSocialDataProbe
             $"[EntityDetail] first social decode (char={s.CharId} name={s.Name} level={s.Level} " +
             $"fp={s.FightPoint} prof={s.ProfessionId} gear={s.Gear.Count} fashion={s.Fashion.Count})");
     }
+
+    private bool _avatarUrlOneShot;
+
+    /// <summary>One-shot (fires regardless of the diagnostics toggle) confirmation that avatar
+    /// picture URLs were parsed out of a <c>Social.GetSocialData</c> reply's <c>avatar_info</c>.</summary>
+    private void LogAvatarUrlOneShot(SocialSnapshot s)
+    {
+        if (_avatarUrlOneShot || s.HalfBodyUrl.Length == 0) return;
+        _avatarUrlOneShot = true;
+
+        _log.Info($"[Stellar] first avatar URLs parsed: char={s.CharId} profile={s.ProfileUrl} halfBody={s.HalfBodyUrl}");
+    }
+
+    private bool _collectPointsOneShot;
+
+    /// <summary>One-shot (fires regardless of the diagnostics toggle) confirmation that a parsed
+    /// <see cref="SocialIdentity"/> carried non-zero personal-zone collection-point data — logs all
+    /// three candidates once so the ID-card "collection points" badge source can be confirmed later.</summary>
+    private void LogCollectPointsOneShot(SocialSnapshot s)
+    {
+        if (_collectPointsOneShot) return;
+        var id = s.Identity;
+        if (id.FashionCollect == 0 && id.RideCollect == 0 && id.WeaponSkinCollect == 0) return;
+        _collectPointsOneShot = true;
+
+        _log.Info($"[Stellar] collect points parsed: char={s.CharId} fashion={id.FashionCollect} ride={id.RideCollect} weaponSkin={id.WeaponSkinCollect}");
+    }
 }

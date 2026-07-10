@@ -69,4 +69,19 @@ public abstract record CombatEvent(long TimestampMs)
         int Amount, int ActualAmount, int ShieldAbsorbed,
         bool IsCrit, bool IsLucky, bool IsHeal, bool IsDead,
         DamageElement Element, DamageSourceKind SourceKind) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// A summon/pet entity entered AOI (<c>SyncNearEntities.appear</c>) carrying a resolvable
+    /// owner attribution. Fired once per appear, only when the entity's <c>AttrCollection</c>
+    /// carries <c>AttrTopSummonerId</c> or <c>AttrSummonerId</c> — most appearing entities (players,
+    /// unowned mobs) carry neither and never raise this event. Useful as an early, wind-up-free
+    /// timestamp anchor for a caster's summon-based action (e.g. a Battle Imagine cast) that is
+    /// otherwise only observable once the summon lands its first hit.
+    /// </summary>
+    /// <param name="TimestampMs">Client receive time in server-epoch milliseconds; the wire appear
+    /// message itself carries no timestamp field.</param>
+    /// <param name="SummonerId">Owning entity the summon is attributed to (<c>AttrTopSummonerId</c>,
+    /// falling back to <c>AttrSummonerId</c> when only that is present).</param>
+    /// <param name="SummonId">The summon/pet entity that appeared.</param>
+    public sealed record EntitySummonAppeared(long TimestampMs, EntityId SummonerId, EntityId SummonId) : CombatEvent(TimestampMs);
 }

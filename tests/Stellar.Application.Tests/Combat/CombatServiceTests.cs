@@ -12,7 +12,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void IsAvailable_FalseUntilLocalEntityIdSet()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         Assert.False(svc.IsAvailable);
         svc.SetLocalEntityId(new EntityId(0x0000_0001_0000_0280L));
         Assert.True(svc.IsAvailable);
@@ -21,7 +21,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void SetLocalEntityId_IsIdempotent_FirstNonNoneWins()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var first  = new EntityId(0x0000_0001_0000_0280L);
         var second = new EntityId(0x0000_0002_0000_0280L);
 
@@ -34,7 +34,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void EnqueueEvent_DoesNotFireUntilDrain()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -48,7 +48,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void Drain_PushesIntoRecentEventsRingBuffer()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         for (int i = 0; i < 510; i++)
             svc.EnqueueEvent(new CombatEvent.SkillUsed(i, new EntityId(1), i, SkillEventPhase.Begin));
         svc.Drain();
@@ -67,7 +67,7 @@ public sealed class CombatServiceTests
         // elapsed is 0..a few ms, so the visible value lives in
         // [anchor, anchor + small slack]. Use a tolerant range assertion
         // instead of strict equality.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         const long anchor = 1_700_000_000_000L;
         svc.SetServerNowMs(anchor);
         var read = svc.ServerNowMs;
@@ -80,7 +80,7 @@ public sealed class CombatServiceTests
         // The cooldown countdown stuttered (4-5s jumps) because SyncServerTime
         // anchors fire only every ~5s; between anchors, ServerNowMs must
         // advance via local-clock elapsed so CooldownBar reads a smooth clock.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         const long anchor = 5_000L;
         svc.SetServerNowMs(anchor);
         var first = svc.ServerNowMs;
@@ -96,7 +96,7 @@ public sealed class CombatServiceTests
         // Contract: ServerNowMs == 0 means "no server time observed yet" and
         // is the gate LocalCooldowns uses to skip eviction. The interpolation
         // path must preserve that sentinel.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         Assert.Equal(0L, svc.ServerNowMs);
     }
 
@@ -107,7 +107,7 @@ public sealed class CombatServiceTests
         // jump TO that authoritative value (not continue interpolating from
         // the previous anchor). Verifies that the captured-at tick is reset
         // on every SetServerNowMs.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         svc.SetServerNowMs(10_000L);
         System.Threading.Thread.Sleep(20);
         svc.SetServerNowMs(20_000L);
@@ -118,7 +118,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void SetLocalCooldowns_SeedsSnapshot()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var cds = new[] { new SkillCooldown(1, 100, 5000, SkillCooldownKind.Normal, 0, 5000) };
         svc.SetLocalCooldowns(cds);
         Assert.Single(svc.LocalCooldowns);
@@ -131,7 +131,7 @@ public sealed class CombatServiceTests
         // SyncToMeDeltaInfo.SyncSkillCDs is a delta — each tick only contains
         // skills whose cooldown CHANGED. Wholesale replace would empty the bar
         // immediately. Merge semantics keep prior active cooldowns intact.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
 
         svc.SetLocalCooldowns(new[] { new SkillCooldown(1, 100, 5000, SkillCooldownKind.Normal, 0, 5000) });
         Assert.Single(svc.LocalCooldowns);
@@ -150,7 +150,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void LocalCooldowns_EvictsEntriesExpiredOverOneSecond_WhenServerTimeKnown()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         // Seed two cooldowns at server-time 0.
         svc.SetLocalCooldowns(new[]
         {
@@ -170,7 +170,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_LocalEntity_PopulatesLocalBuffs()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var local = new EntityId(0x0000_0001_0000_0280L);
         svc.SetLocalEntityId(local);
         Assert.Empty(svc.LocalBuffs);
@@ -191,7 +191,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_NewBuff_EmitsApplied()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -208,7 +208,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_Remove_EmitsRemoved_AndDropsFromSet()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(1234L);
         var buff = new ActiveBuff(100, 9001, 1, EntityId.None, 1, 1, 1000, 5000);
         svc.ApplyBuffEvents(entityId, new[] { buff }, System.Array.Empty<int>(), 1000);
@@ -229,7 +229,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_ChangedFields_EmitsRefreshed()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(1234L);
         var v1 = new ActiveBuff(100, 9001, 1, EntityId.None, 1, 1, 1000, 5000);
         svc.ApplyBuffEvents(entityId, new[] { v1 }, System.Array.Empty<int>(), 1000);
@@ -252,7 +252,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_PartialChange_MergesNonZero_PreservesBaseId()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var local = new EntityId(0x0000_0001_0000_0280L);
         svc.SetLocalEntityId(local);
         svc.ApplyBuffEvents(local,
@@ -274,7 +274,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void ApplyBuffEvents_IdenticalUpsertTwice_EmitsOnlyOneApplied()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -324,7 +324,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void IngestDamage_PopulatedMessage_EmitsDamageDealtWithMappedFields()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -369,7 +369,7 @@ public sealed class CombatServiceTests
         // Pure miss / fully-absorbed / immune hit: all three damage candidates
         // are zero. IngestDamage must not emit — otherwise DPS aggregators
         // would count zero-rows against hit counts.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -386,7 +386,7 @@ public sealed class CombatServiceTests
         // the gross "Value"; aggregate that so the meter matches what the
         // player sees. HpLessenValue is post-mitigation HP delta — smaller,
         // and not what the user expects to see in the total.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -401,7 +401,7 @@ public sealed class CombatServiceTests
     public void IngestDamage_HpLessenUsedWhenValueZero()
     {
         // Mid-tier of the precedence: HpLessenValue used when Value is zero.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -417,7 +417,7 @@ public sealed class CombatServiceTests
     {
         // Bottom of the precedence: lucky-only hit (no HP reduction registered
         // as such, no Value field set, only LuckyValue carries the amount).
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -434,7 +434,7 @@ public sealed class CombatServiceTests
         // Pet / totem damage: TopSummonerId is the player who owns the summon;
         // AttackerUuid is the summon itself. Attribution must roll up to the
         // owner so DPS aggregates count the player, not the pet.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -451,7 +451,7 @@ public sealed class CombatServiceTests
     {
         // Direct caster (no pet / totem): TopSummonerId is zero, AttackerUuid
         // is the player. SourceId should be the player.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -471,7 +471,7 @@ public sealed class CombatServiceTests
     [InlineData(0b010, false, false)]   // bit 1 set is neither — ignored
     public void IngestDamage_TypeFlagBitsDecoded(int typeFlag, bool expectCrit, bool expectLucky)
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -491,7 +491,7 @@ public sealed class CombatServiceTests
         // python-src/proto/enums/e_damage_type.py). Plugins like CombatMeter
         // filter out heal rows; CombatService must surface the discriminator
         // accurately so the filter is reliable.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -509,7 +509,7 @@ public sealed class CombatServiceTests
         // Type=0 (Normal) is not a heal. Belt-and-braces against the inverse
         // bug — if someone flips the comparison the heal flag would default
         // true and CombatMeter would filter ALL damage.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -526,7 +526,7 @@ public sealed class CombatServiceTests
         // Belt-and-braces explicit form of the zero-suppression rule. Some
         // misses arrive with isDead/IsCrit flags set but no damage; the
         // suppression must catch them all regardless of other flags.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -545,7 +545,7 @@ public sealed class CombatServiceTests
         // event itself must fire so other plugins (e.g. a future Healing
         // tracker) can observe heals. Heals only get suppressed when amount
         // is zero, not because IsHeal is true.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -563,7 +563,7 @@ public sealed class CombatServiceTests
         // Environmental / unattributed damage: both attacker and top-summoner
         // are zero. SourceId should be EntityId.None so the event surface is
         // unambiguous about "we don't know who did this".
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -580,7 +580,7 @@ public sealed class CombatServiceTests
     {
         // Each IngestDamage call corresponds to one wire row; downstream
         // listeners count by event, so per-call accounting must stay 1:1.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var fired = new List<CombatEvent>();
         svc.CombatEventOccurred += fired.Add;
 
@@ -604,7 +604,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void OnEntityDisappeared_RemovesBuffsCache()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(0x0000_0001_0000_0040L);
 
         // Seed buffs cache.
@@ -623,7 +623,7 @@ public sealed class CombatServiceTests
     [Fact]
     public void UpdateEntityName_ThenGetEntityName_ReturnsName()
     {
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(0x0000_0001_0000_5188L);
 
         Assert.Null(svc.GetEntityName(entityId));
@@ -639,7 +639,7 @@ public sealed class CombatServiceTests
         // Names must evict alongside the buffs cache when the server reports
         // an entity left AoI — otherwise the dictionary grows unbounded across
         // a long play session as players come/go through nearby zones.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(0x0000_0001_0000_5188L);
 
         svc.UpdateEntityName(entityId, "Doraemon");
@@ -658,7 +658,7 @@ public sealed class CombatServiceTests
         // With no mutation between reads the snapshot must be the cached
         // instance — zero per-call allocation on the hot path (CooldownBar
         // reads this every frame).
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         svc.SetLocalCooldowns(new[] { new SkillCooldown(1, 0, 5000, SkillCooldownKind.Normal, 0, 5000) });
 
         var first  = svc.LocalCooldowns;
@@ -672,7 +672,7 @@ public sealed class CombatServiceTests
     {
         // After SetLocalCooldowns bumps the version the next read must
         // return a new snapshot reflecting the mutation.
-        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache());
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         svc.SetLocalCooldowns(new[] { new SkillCooldown(1, 0, 5000, SkillCooldownKind.Normal, 0, 5000) });
 
         var first = svc.LocalCooldowns;

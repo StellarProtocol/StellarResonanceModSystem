@@ -396,6 +396,8 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         // a known raid group back to 0. Clobbering collapsed every team into Group 1 (slot collisions →
         // overflow members dropped from the party-focus grid) whenever the leader invited/moved someone.
         if (data.GroupId    > 0)   slot.GroupId    = data.GroupId;
+        if (data.ProfileUrl.Length  > 0) slot.ProfileUrl  = data.ProfileUrl;
+        if (data.HalfBodyUrl.Length > 0) slot.HalfBodyUrl = data.HalfBodyUrl;
     }
 
     private static void ApplyFastFields(MemberSlot slot, PartyMemberFastSync data)
@@ -429,6 +431,8 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
             if (soc.Name is not null) slot.Name = soc.Name;
             if (soc.Level      > 0)   slot.Level      = soc.Level;
             if (soc.Profession > 0)   slot.Profession = soc.Profession;
+            if (soc.ProfileUrl.Length  > 0) slot.ProfileUrl  = soc.ProfileUrl;
+            if (soc.HalfBodyUrl.Length > 0) slot.HalfBodyUrl = soc.HalfBodyUrl;
         }
         if (r.FastSync is { } fs)
         {
@@ -454,5 +458,7 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         IsSelf:       s.CharId != 0 && s.CharId == _localCharId,
         GroupId:      s.GroupId,
         Slot:         s.Slot,
-        Talent:       s.TalentId);
+        Talent:       s.TalentId,
+        ProfileUrl:   s.ProfileUrl,
+        HalfBodyUrl:  s.HalfBodyUrl);
 }

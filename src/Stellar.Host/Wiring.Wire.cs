@@ -28,7 +28,12 @@ public sealed partial class BootstrapPlugin
         // dead end for combat data. The stub probe keeps its first-seen
         // diagnostic logging to surface unwired method IDs (e.g. 12293 =
         // legacy FullSkillEnd; 72/73 = unknown).
-        _combatStubProbe = new PandaCombatStubProbe(_combatService!, log);
+        // Combat probe also publishes the dungeon run id: the enter-scene payload
+        // (method 3) it already parses carries the stable per-instance scene uuid
+        // (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342), which it pushes into the
+        // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
+        _combatStubProbe = new PandaCombatStubProbe(
+            _combatService!, _dungeonStateService!, log);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six
@@ -44,18 +49,33 @@ public sealed partial class BootstrapPlugin
         _partyStubProbe.Start(_grpcTeamNtfDispatcher.IsInstalled);
 
         InstallSocialDataProbe(log);
-
-        // Combat + inventory both dispatch off Zservice.WorldNtfStub.OnCallStub.
-        // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe
-        // registers its method IDs before Install() so the router has all handlers
-        // in place before any packets arrive. Register-before-install ordering is
-        // required — do NOT move Install() above either RegisterWith() call.
-        _worldNtfDispatcher = new WorldNtfStubDispatcher(log);
-        _combatStubProbe.RegisterWith(_worldNtfDispatcher);
-        _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
-        _worldNtfDispatcher.Install(PluginGuid);
-
+        InstallWorldNtfDispatcher(log);
         InstallReadyCheckProbe(log);
+    }
+
+
+    // Combat + inventory + dungeon all dispatch off Zservice.WorldNtfStub.OnCallStub.
+    // WorldNtfStubDispatcher owns that single HarmonyX postfix; each probe registers
+    // before Install() so the router is fully populated before any packets
+    // arrive. Register-before-install ordering is required — do NOT move Install()
+    // above any RegisterWith() call.
+    private void InstallWorldNtfDispatcher(BepInExPluginLog log)
+    {
+        _worldNtfDispatcher = new WorldNtfStubDispatcher(log);
+        _combatStubProbe!.RegisterWith(_worldNtfDispatcher);
+        _inventoryProbe!.RegisterWith(_worldNtfDispatcher);
+        // Dungeon: SyncDungeonData's WorldNtf method id (23) is confirmed
+        // (lua/zservice/world_ntf_gen.lua); the probe registers directly by
+        // method id like the other probes — its ONLY tap. Every clock-hunt-era
+        // tap (lua 23/55, method 24 on all transports, MessagePipe, OnSync wrap)
+        // was removed 2026-07-05; see docs/recon/dungeon-clock-recon.md before
+        // re-attempting any of them.
+        _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
+        _dungeonProbe.RegisterWith(_worldNtfDispatcher);
+        // Defeated count rides ZWorld's AttrDeathCount (348), NOT the wire — read on the main-thread
+        // framework tick (PandaWorldAttrProbe.Tick from RunGlobalRateWork), not this dispatcher.
+        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log);
+        _worldNtfDispatcher.Install(PluginGuid);
     }
 
     // Ready-check (WorldNtf 70/71) is Lua-only — it flows through ZLuaStub, NOT the C#
@@ -87,8 +107,12 @@ public sealed partial class BootstrapPlugin
             // Capture the Game instance here (NOT from a per-frame Update hook) for the resolver probe.
             ["Init"]         = (inst, _) => { _gameInstance ??= inst; log.Info("[boot] *** Game.Init complete ***"); },
             ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin();  _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
-            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
+            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
+            // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to
+            // town before the plugin archives/uploads the just-finished run, so the latched
+            // run id must survive the dungeon→town transition. It's cleared only on logout
+            // (below) or overwritten when the next dungeon confirms a new id.
             ["OnLeaveScene"] = (_, _) => { BeginSceneTransition(); _clientState!.RaiseSceneChanged(null); _harmonyBridge!.Publish("Panda.Core.OnLeaveSceneEvent", null); },
         };
 

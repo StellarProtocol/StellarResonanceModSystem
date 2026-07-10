@@ -4,7 +4,32 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.0] — 2026-07-03
+_**1.10.0** (minor) — pure interface additions under the plugins-consume-never-implement
+contract (`IEntityTransforms`, `IGameDataWorld.GetMonsterByEntity`); `MonsterInfo`'s new `MonsterType`/
+`IsBoss` are init-only properties, not primary-ctor params, so the type stays binary-compatible with
+plugins built against ≤1.9.1 (see the `SliderElement`/1.7.1 precedent below)._
+### Added
+- **`IEntityTransforms`** — toolkit service reading the live world transform (position + facing) of an
+  arbitrary entity by id, for replay/position capture. `TryGetTransform` returns `false` (leaving the
+  out-params at their defaults) when the entity isn't resolvable this frame; reads must happen on the
+  main thread.
+- **`IGameDataWorld.GetMonsterByEntity(EntityId)`** — resolves a live entity to its `MonsterInfo` table
+  row via the entity's cached attr-10 (config-id) attribute, routed through a shared
+  `CombatEntityTracker` so combat and game-data probes read the same cached attribute set instead of
+  each maintaining their own.
+- **`MonsterInfo.MonsterType` / `MonsterInfo.IsBoss`** — numeric monster classification
+  (`EMonsterType`-mirrored; 0=Monster, 1=Elite, 2=Boss) and a derived boss flag, loaded from the
+  `MonsterTable` row. Confirmed by recon on the Ancient Purifier run: entity attr 10 →
+  `MonsterTable[33301].MonsterType == 2`.
+### Fixed
+- **Run-identity leak across non-instanced scenes.** `IDungeonState.CurrentRunId` (and the internal
+  `DungeonRunIdGate`) now clears to 0 on entering a non-instanced (town/field) scene, instead of
+  letting a previous dungeon run's id linger and get attributed to unrelated open-world activity.
+### Removed
+- Recon scaffolding for boss identification (the entity → monster-config-id spike diagnostic and the
+  short-lived `IMonsterCatalog`/`MonsterCatalogService` probe path) — superseded by the `GetMonsterByEntity`
+  + `MonsterInfo.MonsterType`/`IsBoss` resolution above and no longer needed.
 
 ## [1.10.0] - 2026-07-08
 ### Added

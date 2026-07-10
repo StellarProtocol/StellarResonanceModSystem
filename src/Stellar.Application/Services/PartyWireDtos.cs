@@ -42,4 +42,6 @@ public sealed record PartyMemberSocialSync(
     string? Name,
     int     Level,
     int     Profession,
-    int     GroupId);
+    int     GroupId,
+    string  ProfileUrl = "",
+    string  HalfBodyUrl = "");

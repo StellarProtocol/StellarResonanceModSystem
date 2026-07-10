@@ -86,4 +86,8 @@ public interface IPluginServices
     IPluginExchange Exchange { get; }
     /// <summary>Trigger the game's noticetip system (dungeon bars, win/fail banners, pop-up tips) with full control over content and audio.</summary>
     INoticeTips NoticeTips { get; }
+    /// <summary>Current dungeon run: per-run unique id (<c>level_uuid</c>) and clear-time/score once the run settles.</summary>
+    IDungeonState Dungeon { get; }
+    /// <summary>Reads live world transforms (position + facing) of entities by id — for replay/position capture.</summary>
+    IEntityTransforms EntityTransforms { get; }
 }

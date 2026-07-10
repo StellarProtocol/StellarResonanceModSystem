@@ -1,18 +1,40 @@
 using System;
-using System.Linq;
-using System.Reflection;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.Events;
 
 /// <summary>
-/// Preferred event bridge: resolves <c>MessagePipe.ISubscriber&lt;T&gt;</c> from the game's
-/// VContainer <c>IObjectResolver</c> and calls its <c>Subscribe(Action&lt;T&gt;)</c> extension.
-/// Returns <c>null</c> from <see cref="TrySubscribe"/> when the container or the event type
-/// is unavailable — falls through to <see cref="HarmonyEventBridge"/> in that case.
+/// Preferred event bridge: obtains the game's own <c>MessagePipe.ISubscriber&lt;T&gt;</c>
+/// broker and registers a managed handler on it — plain managed calls into the game's
+/// pub/sub, no HarmonyX patching. Resolution ladder (first hit wins, see the
+/// <c>Resolution</c> partial):
+/// <list type="number">
+///   <item>the VContainer <c>IObjectResolver</c> Host attached off <c>Game.GameRoot</c>;</item>
+///   <item><c>VContainer.Unity.VContainerSettings.Instance.rootLifetimeScopeInstance.Container</c>
+///     (the raw field-backed scope — never <c>GetOrCreateRootLifetimeScopeInstance</c>,
+///     which would side-effect an empty root scope into existence);</item>
+///   <item><c>MessagePipe.GlobalMessagePipe.GetSubscriber&lt;T&gt;()</c> when the game has
+///     called <c>SetProvider</c> (checked via <c>IsInitialized</c>).</item>
+/// </list>
+/// Returns <c>null</c> from <see cref="TrySubscribe"/> when no route yields a subscriber —
+/// falls through to <see cref="HarmonyEventBridge"/> in that case.
+///
+/// <para>
+/// IL2CPP interop shape (verified against the release_2.11 interop assemblies —
+/// the original implementation of this bridge missed all four):
+/// the Action-based Subscribe extension lives on <c>MessagePipe.SubscriberExtensions</c>
+/// (NOT <c>SubscribeExtensions</c>); its handler parameter is
+/// <c>Il2CppSystem.Action&lt;T&gt;</c> (converted from the managed delegate via the
+/// projected <c>op_Implicit</c>, i.e. Il2CppInterop's <c>DelegateSupport.ConvertDelegate</c>);
+/// <c>IObjectResolver.Resolve</c> takes an <c>Il2CppSystem.Type</c>; and the returned
+/// token is an interop <c>Il2CppSystem.IDisposable</c> wrapper that does not implement
+/// managed <see cref="IDisposable"/>. The same code paths also accept plain managed
+/// shapes (System.Action / System.Type / IDisposable), which is what the unit tests
+/// exercise via duck-typed fakes.
+/// </para>
 /// </summary>
-internal sealed class MessagePipeContainerBridge : IGameEventBridge
+internal sealed partial class MessagePipeContainerBridge : IGameEventBridge
 {
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _types;
@@ -26,14 +48,14 @@ internal sealed class MessagePipeContainerBridge : IGameEventBridge
 
     /// <summary>
     /// Called when the framework has located something that quacks like a VContainer resolver.
-    /// Subsequent <see cref="TrySubscribe"/> calls will attempt the container path.
+    /// Subsequent <see cref="TrySubscribe"/> calls will attempt the container route first.
     /// </summary>
     public void AttachResolver(object? resolver)
     {
         _resolver = resolver;
         if (_resolver is null)
         {
-            _log.Warning("[MessagePipe] no resolver attached; container path disabled");
+            _log.Warning("[MessagePipe] no resolver attached; container route disabled (root-scope + GlobalMessagePipe routes remain)");
             return;
         }
         _log.Info($"[MessagePipe] resolver attached: {_resolver.GetType().FullName}");
@@ -41,103 +63,65 @@ internal sealed class MessagePipeContainerBridge : IGameEventBridge
 
     public IDisposable? TrySubscribe(string fullTypeName, Action<object?> handler)
     {
-        if (_resolver is null)
-        {
-            return null;
-        }
-
         var eventType = _types.FindType(fullTypeName);
         if (eventType is null)
         {
             return null;
         }
 
-        var subscriber = ResolveSubscriberFromContainer(eventType);
+        var subscriber = ResolveSubscriber(eventType, out string route);
         if (subscriber is null)
         {
             return null;
         }
 
-        var subscribeAction = FindSubscribeExtensionMethod(eventType);
-        if (subscribeAction is null)
+        var token = InvokeSubscribe(eventType, subscriber, handler);
+        if (token is not null)
         {
-            return null;
+            _log.Info($"[MessagePipe] ISubscriber<{eventType.Name}> resolved via {route}; handler subscribed");
         }
-
-        var forwarder = CreateForwarder(eventType, handler);
-        var closedSubscribe = subscribeAction.MakeGenericMethod(eventType);
-        var token = closedSubscribe.Invoke(null, new object?[] { subscriber, forwarder }) as IDisposable;
         return token;
     }
 
     /// <summary>
-    /// Resolve <c>ISubscriber&lt;T&gt;</c> from the game's VContainer resolver.
-    /// Returns <c>null</c> and logs a warning if the required types are absent
-    /// or the container has no matching <c>Resolve(Type)</c> overload.
+    /// Close the Action-based <c>Subscribe</c> extension over <paramref name="eventType"/>,
+    /// coerce the managed forwarder to the method's declared handler type, and invoke it.
+    /// Returns a managed token that keeps the delegate chain alive, or <c>null</c> when the
+    /// extension surface is missing.
     /// </summary>
-    private object? ResolveSubscriberFromContainer(Type eventType)
+    private IDisposable? InvokeSubscribe(Type eventType, object subscriber, Action<object?> handler)
     {
-        var subscriberInterface = _types.FindType("MessagePipe.ISubscriber`1");
-        if (subscriberInterface is null)
+        var subscribeDef = FindSubscribeExtensionMethod();
+        if (subscribeDef is null)
         {
-            _log.Warning("[MessagePipe] MessagePipe.ISubscriber`1 is not loaded");
             return null;
         }
 
-        var resolveMethod = FindResolveMethod(_resolver!.GetType());
-        if (resolveMethod is null)
+        var closed = subscribeDef.MakeGenericMethod(eventType);
+        var ps = closed.GetParameters();
+
+        // Managed Action<T> forwarder; converted to Il2CppSystem.Action<T> via the
+        // projected op_Implicit when the declared parameter demands it.
+        var forwarder = CreateForwarder(eventType, handler);
+        var coerced = CoerceDelegate(forwarder, ps[1].ParameterType);
+        if (coerced is null)
         {
-            _log.Warning("[MessagePipe] container has no Resolve(Type) method");
+            _log.Warning($"[MessagePipe] cannot convert Action<{eventType.Name}> to {ps[1].ParameterType.Name}");
             return null;
         }
 
-        var closedSubscriber = subscriberInterface.MakeGenericType(eventType);
-        return resolveMethod.Invoke(_resolver, new object[] { closedSubscriber });
-    }
-
-    /// <summary>
-    /// Locate the <c>Subscribe(this ISubscriber&lt;T&gt;, Action&lt;T&gt;)</c> extension
-    /// method on <c>MessagePipe.SubscribeExtensions</c>. Returns <c>null</c> and logs
-    /// a warning if the type or the overload cannot be found.
-    /// </summary>
-    private MethodInfo? FindSubscribeExtensionMethod(Type eventType)
-    {
-        var subscribeExtensions = _types.FindType("MessagePipe.SubscribeExtensions");
-        if (subscribeExtensions is null)
+        // Reflection Invoke does not auto-fill params arrays — pass an explicit
+        // empty filters array of the closed element type.
+        var filters = Array.CreateInstance(ps[2].ParameterType.GetElementType()!, 0);
+        var token = closed.Invoke(null, new object?[] { subscriber, coerced, filters });
+        if (token is null)
         {
-            _log.Warning("[MessagePipe] MessagePipe.SubscribeExtensions is not loaded");
             return null;
         }
 
-        var subscribeAction = subscribeExtensions.GetMethods()
-            .FirstOrDefault(m =>
-                m.Name == "Subscribe" &&
-                m.IsGenericMethodDefinition &&
-                m.GetParameters().Length >= 2 &&
-                m.GetParameters()[1].ParameterType.IsGenericType &&
-                m.GetParameters()[1].ParameterType.GetGenericTypeDefinition() == typeof(Action<>));
-
-        if (subscribeAction is null)
-        {
-            _log.Warning("[MessagePipe] Subscribe(this ISubscriber<T>, Action<T>) extension not found");
-        }
-        return subscribeAction;
+        // Hold the managed forwarder AND the coerced (possibly il2cpp) delegate for the
+        // token's lifetime so the GC can never collect the subscription out from under
+        // the game's broker.
+        return new SubscriptionToken(token, forwarder, coerced);
     }
-
-    private static MethodInfo? FindResolveMethod(Type resolverType)
-    {
-        return resolverType.GetMethod("Resolve", new[] { typeof(Type) })
-            ?? resolverType.GetMethods()
-                .FirstOrDefault(m => m.Name == "Resolve" && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(Type));
-    }
-
-    private static Delegate CreateForwarder(Type eventType, Action<object?> downstream)
-    {
-        var method = typeof(MessagePipeContainerBridge)
-            .GetMethod(nameof(Forward), BindingFlags.Static | BindingFlags.NonPublic)!
-            .MakeGenericMethod(eventType);
-        return (Delegate)method.Invoke(null, new object[] { downstream })!;
-    }
-
-    private static Delegate Forward<T>(Action<object?> downstream) => new Action<T>(message => downstream(message));
 }
