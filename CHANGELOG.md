@@ -4,28 +4,16 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.0] — 2026-07-10
-_**1.11.0** (minor) — consolidates the portraits/replay feature line onto main (merge `ad173a0`):
-every addition is a new service, init-only property, or defaulted parameter under the
-plugins-consume-never-implement contract, binary-compatible with plugins built against ≤1.10.0.
-Note: the `IEntityTransforms` / `IGameDataWorld.GetMonsterByEntity` entries listed under 1.10.0
-below were documented there but did not ship in the 1.10.0 bundle (they lived on the feature
-branch); they ship in this release._
+## [1.11.0] - 2026-07-10
+_**1.11.0** (minor) — consolidates the portraits/replay feature line onto main (merge `ad173a0`): every addition is a new service, init-only property, or defaulted parameter under the plugins-consume-never-implement contract, binary-compatible with plugins built against ≤1.10.0. Note: the `IEntityTransforms` / `IGameDataWorld.GetMonsterByEntity` entries listed under the 1.10.0 sections below were documented there but did not ship in the 1.10.0 bundle; they ship in this release._
 ### Added
-- **`IDungeonState`** — dungeon lifecycle + settlement service: run outcome (`DungeonOutcome`),
-  `DungeonSettlementInfo (PassTimeSeconds, MasterModeScore, TotalScore)` with the achieved
-  total-score carried end-to-end, defeated count, and run-identity gating for fail-outs.
-- **`IEntityTransforms`** — live world transform (position + facing) reads of arbitrary entities by
-  id, main-thread, for replay/position capture.
-- **`IEntityDetail.RefreshSocialSnapshot`** — self social-data refresh (drives the game's
-  `AsyncGetSocialData` via Lua) so plugins can re-read the local player's social snapshot
-  (e.g. master score) after a settlement without waiting for cache expiry.
-- **`SocialSnapshot`** — `MasterScore` and related identity fields.
-- **`IGameDataWorld.GetMonsterByEntity(EntityId)`** + `MonsterInfo.MonsterType`/`IsBoss` —
-  entity→monster-table resolution through the shared combat entity tracker.
-- **`CombatEvent`** — skill-phase event cases (cast phases 101–105) for forensic capture.
-- **`GearInstance.BreakThroughTime`**; `PartyMember` additions.
-- `IPluginServices` exposes the new toolkit services (aggregator members only; STELLAR0005-exempt).
+- **`IDungeonState`** — dungeon lifecycle + settlement service: run outcome (`DungeonOutcome`), `DungeonSettlementInfo (PassTimeSeconds, MasterModeScore, TotalScore)` with the achieved total-score carried end-to-end, defeated count, and run-identity gating for fail-outs.
+- **`IEntityTransforms`** — live world transform (position + facing) reads of arbitrary entities by id (main-thread), for replay/position capture.
+- **`IEntityDetail.RefreshSocialSnapshot`** — self social-data refresh (drives the game's `AsyncGetSocialData` via Lua) so plugins can re-read the local player's social snapshot (e.g. master score) after a settlement without waiting for cache expiry.
+- **`SocialSnapshot.MasterScore`** and related identity fields.
+- **`IGameDataWorld.GetMonsterByEntity(EntityId)`** + `MonsterInfo.MonsterType`/`IsBoss` — entity→monster-table resolution through the shared combat entity tracker.
+- **Skill-phase `CombatEvent` cases** (cast phases 101–105) for forensic capture.
+- **`GearInstance.BreakThroughTime`**; `PartyMember` additions; `IPluginServices` exposes the new toolkit services.
 
 ## [1.10.0] — 2026-07-03
 _**1.10.0** (minor) — pure interface additions under the plugins-consume-never-implement
