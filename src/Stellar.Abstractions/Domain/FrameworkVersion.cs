@@ -18,7 +18,13 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.10.0 adds additive window-framework support behind the CooldownBar
+    /// BepInEx chainloader happy. 1.11.0 consolidates the portraits/replay line: IDungeonState
+    /// (settlement + outcome + achieved score), IEntityTransforms (live entity transforms for
+    /// position/replay capture), IEntityDetail.RefreshSocialSnapshot (self social-data refresh),
+    /// IGameDataWorld.GetMonsterByEntity, SocialSnapshot.MasterScore, GearInstance.BreakThroughTime,
+    /// skill-phase CombatEvents — all additive (new services / init-props / defaulted params),
+    /// binary-compatible with plugins built against 1.10.0.
+    /// 1.10.0 adds additive window-framework support behind the CooldownBar
     /// overlay: <c>WindowSpec.BackgroundOpacity</c> (poll-diffed backdrop on the borderless root that
     /// expands on height resize), <c>ColumnElement.Padding</c>, <c>RowElement.Justify</c> +
     /// <c>RowJustify</c> (with a compat overload), <c>BackdropElement</c>, <c>VirtualListElement.ResetScroll</c>,
@@ -58,5 +64,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.10.0";
+    public const string Value = "1.11.0";
 }
