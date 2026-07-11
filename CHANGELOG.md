@@ -4,6 +4,11 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-07-11
+_**1.12.0** (minor) — adds the game-environment identity service for SEA/JP region-aware uploads (spec: server-region partitioning). Additive; binary-compatible with plugins built against ≤1.11.0._
+### Added
+- **`IGameEnvironment`** — region (`GameRegion` SEA/JP/Unknown, lowercase `RegionCode` wire form) + installed `GameVersion`, detected once at boot from install markers (`StarSEA.exe` → SEA); framework config `environment.region` overrides. Boot log prints `[Stellar] region=… version=… source=…`.
+
 ## [1.11.0] - 2026-07-10
 _**1.11.0** (minor) — consolidates the portraits/replay feature line onto main (merge `ad173a0`): every addition is a new service, init-only property, or defaulted parameter under the plugins-consume-never-implement contract, binary-compatible with plugins built against ≤1.10.0. Note: the `IEntityTransforms` / `IGameDataWorld.GetMonsterByEntity` entries listed under the 1.10.0 sections below were documented there but did not ship in the 1.10.0 bundle; they ship in this release._
 ### Added
