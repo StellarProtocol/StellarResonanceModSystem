@@ -15,7 +15,6 @@ public sealed partial class BootstrapPlugin
     {
         var section = _pluginConfigService!.GetSection("environment");
         _gameEnvironment = new GameEnvironmentService(new BepInExInstallInfo(), section);
-        var source = section.Get<string>("region", null) is null ? "install-marker" : "config";
-        log.Info($"[Stellar] region={_gameEnvironment.RegionCode} version={_gameEnvironment.GameVersion} source={source}");
+        log.Info($"[Stellar] region={_gameEnvironment.RegionCode} version={_gameEnvironment.GameVersion} source={_gameEnvironment.RegionSource}");
     }
 }

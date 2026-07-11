@@ -97,4 +97,36 @@ public class GameEnvironmentServiceTests
             section);
         Assert.Equal(GameRegion.Jp, svc.Region);
     }
+
+    [Fact]
+    public void ValidConfigOverride_RegionSourceIsConfig()
+    {
+        var section = new StubConfigSection();
+        section.Set("region", "jp");
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = SeaRoot, ExecutableName = "StarSEA.exe" },
+            section);
+        Assert.Equal("config", svc.RegionSource);
+    }
+
+    [Fact]
+    public void InvalidConfigOverride_RegionSourceIsInstallMarker()
+    {
+        var section = new StubConfigSection();
+        section.Set("region", "mars");
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = SeaRoot, ExecutableName = "StarSEA.exe" },
+            section);
+        Assert.Equal(GameRegion.Sea, svc.Region);
+        Assert.Equal("install-marker", svc.RegionSource);
+    }
+
+    [Fact]
+    public void NoOverride_RegionSourceIsInstallMarker()
+    {
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = SeaRoot, ExecutableName = "StarSEA.exe" },
+            new StubConfigSection());
+        Assert.Equal("install-marker", svc.RegionSource);
+    }
 }

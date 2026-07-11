@@ -27,9 +27,12 @@ internal sealed class GameEnvironmentService : IGameEnvironment
     public string RegionCode { get; }
     public string GameVersion { get; }
 
+    /// <summary>Where <see cref="Region"/> came from: "config" (valid override honored) or "install-marker" (detection, incl. no-match Unknown).</summary>
+    public string RegionSource { get; }
+
     public GameEnvironmentService(IInstallInfo install, IConfigSection environmentSection)
     {
-        Region = ResolveRegion(install, environmentSection);
+        (Region, RegionSource) = ResolveRegion(install, environmentSection);
         RegionCode = Region switch
         {
             GameRegion.Sea => "sea",
@@ -39,20 +42,20 @@ internal sealed class GameEnvironmentService : IGameEnvironment
         GameVersion = ParseGameVersion(install.GameRootPath) ?? "unknown";
     }
 
-    private static GameRegion ResolveRegion(IInstallInfo install, IConfigSection section)
+    private static (GameRegion Region, string Source) ResolveRegion(IInstallInfo install, IConfigSection section)
     {
         var overrideCode = section.Get<string>("region", null);
-        if (string.Equals(overrideCode, "sea", StringComparison.OrdinalIgnoreCase)) return GameRegion.Sea;
-        if (string.Equals(overrideCode, "jp",  StringComparison.OrdinalIgnoreCase)) return GameRegion.Jp;
+        if (string.Equals(overrideCode, "sea", StringComparison.OrdinalIgnoreCase)) return (GameRegion.Sea, "config");
+        if (string.Equals(overrideCode, "jp",  StringComparison.OrdinalIgnoreCase)) return (GameRegion.Jp, "config");
 
         var exe = install.ExecutableName;
         if (exe is not null)
         {
             foreach (var (name, region) in ExeMarkers)
                 if (string.Equals(exe, name, StringComparison.OrdinalIgnoreCase))
-                    return region;
+                    return (region, "install-marker");
         }
-        return GameRegion.Unknown;
+        return (GameRegion.Unknown, "install-marker");
     }
 
     /// <summary>Parses the <c>release_&lt;ver&gt;</c> segment of the SEA install path. Null when absent (JP rule lands with Task 4).</summary>
