@@ -16,11 +16,18 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed class GameEnvironmentService : IGameEnvironment
 {
-    // Install marker table: executable file name → region. The JP row is added
-    // by Task 4 from the owner's JP install (spec §1 "First implementation task").
+    // Install marker table: executable file name → region. Both rows read off real
+    // installs: SEA = Tencent `StarSEA.exe`; JP = `StarASIA.exe` (owner's JP install,
+    // 2026-07-11 — same `StarLauncher/game/release_<ver>/game_mini` layout as SEA, so
+    // the release_<ver> version rule below covers both).
+    // CAVEAT (owner, 2026-07-11): Steam distributions exist and their exe names are
+    // unverified — an unlisted exe detects as Unknown, which fails SAFE (boot log says
+    // so, upload plugins withhold, `environment.region` config overrides). When a Steam
+    // install surfaces, read its exe name off the install dir and add a row here.
     private static readonly (string ExeName, GameRegion Region)[] ExeMarkers =
     {
         ("StarSEA.exe", GameRegion.Sea),
+        ("StarASIA.exe", GameRegion.Jp),
     };
 
     public GameRegion Region { get; }
