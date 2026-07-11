@@ -90,4 +90,6 @@ public interface IPluginServices
     IDungeonState Dungeon { get; }
     /// <summary>Reads live world transforms (position + facing) of entities by id — for replay/position capture.</summary>
     IEntityTransforms EntityTransforms { get; }
+    /// <summary>Region + version identity of the running game install (SEA / JP), detected once at boot.</summary>
+    IGameEnvironment GameEnvironment { get; }
 }
