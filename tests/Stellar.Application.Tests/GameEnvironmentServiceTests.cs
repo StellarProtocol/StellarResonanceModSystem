@@ -37,6 +37,29 @@ public class GameEnvironmentServiceTests
         Assert.Equal("sea", svc.RegionCode);
     }
 
+    // Real JP install layout (owner's machine, 2026-07-11): Windows path, same
+    // StarLauncher/release_<ver>/game_mini shape as SEA, executable StarASIA.exe.
+    private const string JpRoot = @"E:\bpsr\StarLauncher\game\release_2.11\game_mini";
+
+    [Fact]
+    public void JpExecutable_DetectsJp()
+    {
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = JpRoot, ExecutableName = "StarASIA.exe" },
+            new StubConfigSection());
+        Assert.Equal(GameRegion.Jp, svc.Region);
+        Assert.Equal("jp", svc.RegionCode);
+    }
+
+    [Fact]
+    public void JpInstallPath_ParsesGameVersion_FromWindowsPath()
+    {
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = JpRoot, ExecutableName = "StarASIA.exe" },
+            new StubConfigSection());
+        Assert.Equal("2.11", svc.GameVersion);
+    }
+
     [Fact]
     public void UnknownExecutable_DetectsUnknown()
     {
