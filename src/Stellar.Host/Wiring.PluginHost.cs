@@ -73,7 +73,8 @@ public sealed partial class BootstrapPlugin
             new Stellar.Application.Services.PluginExchange(),
             _noticeTipService!,
             _dungeonStateService!,
-            entityTransforms);
+            entityTransforms,
+            _gameEnvironment!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 

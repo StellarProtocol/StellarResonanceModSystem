@@ -86,4 +86,15 @@ public class GameEnvironmentServiceTests
             new StubConfigSection());
         Assert.Equal("2.11", svc.GameVersion);
     }
+
+    [Fact]
+    public void ConfigOverride_IsCaseInsensitive()
+    {
+        var section = new StubConfigSection();
+        section.Set("region", "JP");
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = SeaRoot, ExecutableName = "StarSEA.exe" },
+            section);
+        Assert.Equal(GameRegion.Jp, svc.Region);
+    }
 }

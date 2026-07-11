@@ -18,7 +18,11 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.11.0 consolidates the portraits/replay line: IDungeonState
+    /// BepInEx chainloader happy. 1.12.0 adds <c>IGameEnvironment</c> — region
+    /// (SEA/JP/Unknown) + installed game version, detected once at boot from
+    /// install markers with a framework-config override; additive, binary-compatible
+    /// with plugins built against ≤1.11.0.
+    /// 1.11.0 consolidates the portraits/replay line: IDungeonState
     /// (settlement + outcome + achieved score), IEntityTransforms (live entity transforms for
     /// position/replay capture), IEntityDetail.RefreshSocialSnapshot (self social-data refresh),
     /// IGameDataWorld.GetMonsterByEntity, SocialSnapshot.MasterScore, GearInstance.BreakThroughTime,
@@ -64,5 +68,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.11.0";
+    public const string Value = "1.12.0";
 }

@@ -167,6 +167,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
 
         BuildCoreServices(log, typeRegistry);
         var configFactory = BuildConfigServices(log);
+        BuildGameEnvironment(log);
         // B-04: theme stack first (NamedThemeService ctor is first inside BuildThemeAndColorStack)
         BuildThemeAndColorStack(log);
         BuildInputAndLayoutServices(log);
