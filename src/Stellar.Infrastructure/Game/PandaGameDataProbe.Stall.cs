@@ -10,7 +10,10 @@ internal sealed partial class PandaGameDataProbe : IStallSubcategorySource
     private IReadOnlyDictionary<int, int>? _stallSubcategories;
 
     public IReadOnlyDictionary<int, int> GetStallSubcategories()
-        => _stallSubcategories ??= LoadStallSubcategories();
+    {
+        if (_stallSubcategories is { Count: > 0 }) return _stallSubcategories;
+        return _stallSubcategories = LoadStallSubcategories();
+    }
 
     private IReadOnlyDictionary<int, int> LoadStallSubcategories()
     {
@@ -20,8 +23,9 @@ internal sealed partial class PandaGameDataProbe : IStallSubcategorySource
             capacityHint: 1024,
             projector: (row, rowType) =>
             {
-                // Row key is the item config id. Recon: column is "Id"; fall back to
-                // "ItemId" if a future patch renames it (first-row diag confirms live).
+                // Row key column is "Id" per the Cpp2IL dump; fall back to "ItemId"
+                // defensively. The shared loader logs the loaded row count, which
+                // confirms a non-empty read live.
                 var id = ReadInt(row, rowType, "Id");
                 if (id == 0) id = ReadInt(row, rowType, "ItemId");
                 var sub = ReadInt(row, rowType, "Subcategory");
