@@ -17,6 +17,7 @@ internal sealed class ExchangeService : IExchange
     private static readonly IReadOnlyList<ExchangeCareItem> NoCare = Array.Empty<ExchangeCareItem>();
     private static readonly IReadOnlyList<ExchangeNoticeListing> NoNotice = Array.Empty<ExchangeNoticeListing>();
     private static readonly IReadOnlyList<ExchangeCatalogItem> NoCatalog = Array.Empty<ExchangeCatalogItem>();
+    private static readonly IReadOnlyDictionary<int, int> NoStallMap = new Dictionary<int, int>();
 
     private readonly IExchangeProbe _probe;
 
@@ -41,6 +42,9 @@ internal sealed class ExchangeService : IExchange
         if (!_probe.IsResolved) return ExchangeBuyOutcome.Timeout;
         return MapOutcome(await _probe.BuyAsync(itemId, quantity, price, ct).ConfigureAwait(false));
     }
+
+    public IReadOnlyDictionary<int, int> GetStallSubcategoryMap()
+        => _probe.ReadStallSubcategoryMap() ?? NoStallMap;
 
     private static ExchangeBuyOutcome MapOutcome(ExchangeBuyRaw raw)
     {
