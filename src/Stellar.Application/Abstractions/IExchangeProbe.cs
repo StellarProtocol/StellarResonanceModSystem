@@ -31,6 +31,10 @@ internal interface IExchangeProbe
     /// time. Callers MUST NOT blind-retry a timed-out buy; reconcile against the inventory/currency delta
     /// first (a retry can double-buy).</summary>
     Task<ExchangeBuyRaw> BuyAsync(int itemId, int quantity, long price, CancellationToken ct);
+
+    /// <summary>Read the live stall→subcategory membership map (stall id → subcategory id), sourced from the
+    /// game-data probe via a lazy provider. Returns an empty map if the source is not yet available.</summary>
+    IReadOnlyDictionary<int, int> ReadStallSubcategoryMap();
 }
 
 /// <summary>Raw buy result from the game's <c>ExchangeBuyItem</c> RPC: <c>Ok</c> is <c>ServerCode == 0</c>,
