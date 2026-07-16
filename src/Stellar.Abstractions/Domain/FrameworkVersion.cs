@@ -18,7 +18,8 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.12.0 adds <c>IGameEnvironment</c> — region
+    /// BepInEx chainloader happy. 1.13.0 adds <c>IExchange.GetStallSubcategoryMap</c>
+    /// (live StallDetailTable membership). 1.12.0 adds <c>IGameEnvironment</c> — region
     /// (SEA/JP/Unknown) + installed game version, detected once at boot from
     /// install markers with a framework-config override; additive, binary-compatible
     /// with plugins built against ≤1.11.0.
@@ -68,5 +69,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.12.0";
+    public const string Value = "1.13.0";
 }
