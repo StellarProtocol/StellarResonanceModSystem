@@ -44,7 +44,7 @@ namespace Stellar.Infrastructure.Game;
 /// </list>
 /// </para>
 /// </summary>
-internal sealed partial class PandaGameDataProbe : IGameDataProbe
+internal sealed partial class PandaGameDataProbe : IGameDataProbe, IStallSubcategorySource
 {
     private const BindingFlags AnyStatic = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
