@@ -44,6 +44,7 @@ internal sealed partial class PandaGameDataProbe : IStallSubcategorySource
                 if (sub != 0) map[itemId] = sub;
             }
             _log.Info($"[Stellar][GameData] eager: StallDetail loaded ({map.Count} rows keyed, from {pairs.Count} table entries)");
+            LogStallMembership(map);   // full [id]=sub dump — gated on STELLAR_DIAGNOSTICS (see .Diagnostics.cs)
         }
         catch (Exception ex)
         {

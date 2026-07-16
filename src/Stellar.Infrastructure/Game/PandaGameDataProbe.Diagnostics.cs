@@ -336,4 +336,18 @@ internal sealed partial class PandaGameDataProbe
         _log.Info(
             $"[Stellar][GameData][diag] {tableName} table type={t.FullName} count={count?.ToString() ?? "?"} props=[{string.Join(',', props)}]");
     }
+
+    /// <summary>
+    /// One-shot dump of the live StallDetail membership map (item id -> Trading-Center subcategory
+    /// leaf). Emits the full <c>[id]=sub</c> list so the plugin's static fallback
+    /// (<c>StallMembership.cs</c>) can be regenerated straight from a diagnostics run after a game
+    /// patch — no throwaway probe needed. No-op unless <see cref="StellarDiagnostics.IsEnabled"/>.
+    /// </summary>
+    private void LogStallMembership(IReadOnlyDictionary<int, int> map)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var sb = new System.Text.StringBuilder();
+        foreach (var kv in map) sb.Append($"[{kv.Key}]={kv.Value}, ");
+        _log.Info($"[Stellar][GameData][diag] StallDetail membership count={map.Count} {sb.ToString().TrimEnd(' ', ',')}");
+    }
 }
