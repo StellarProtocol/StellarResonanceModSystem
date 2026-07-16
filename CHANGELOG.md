@@ -4,6 +4,13 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-07-16
+_**1.13.0** (minor) — adds live Trading-Center membership so exchange plugins categorize new items without a rebuild. Additive; binary-compatible with plugins built against ≤1.12.0._
+### Added
+- **`IExchange.GetStallSubcategoryMap()`** — item config id → Trading-Center subcategory leaf (101-104 Growth / 201-209 Life Skills / 301 Modules / 401-405 Appearance), read live at runtime from the game's `StallDetailTable`. Empty when the table isn't loaded yet; consumers fall back to their own data. Lets the Exchange Buyer plugin surface Season-3 (and future) items with no rebuild.
+### Fixed
+- Game config tables keyed by id in the `ZTable<int, row>` **key** (rather than a value column) — e.g. `StallDetailTable` — are now read via a key-aware path; the previous value-only table loader silently returned 0 rows for them.
+
 ## [1.12.0] - 2026-07-11
 _**1.12.0** (minor) — adds the game-environment identity service for SEA/JP region-aware uploads (spec: server-region partitioning). Additive; binary-compatible with plugins built against ≤1.11.0._
 ### Added
