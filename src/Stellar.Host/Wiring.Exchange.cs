@@ -14,7 +14,7 @@ public sealed partial class BootstrapPlugin
     /// loads, so construction is safe pre-login. Drained from the Host service tick.</summary>
     private void BuildExchangeServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
-        _exchangeProbe = new PandaExchangeProbe(log, typeRegistry);
+        _exchangeProbe = new PandaExchangeProbe(log, typeRegistry, () => _gameDataProbe);
         _exchangeService = new ExchangeService(_exchangeProbe);
     }
 }

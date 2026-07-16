@@ -34,19 +34,30 @@ internal sealed partial class PandaExchangeProbe : IExchangeProbe
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
+    private readonly Func<IStallSubcategorySource?> _stallSource;
 
     // Requests are registered off any thread and serviced on the main (tick) thread — the Lua VM is
     // main-thread-only. _active holds in-flight requests; one per kind (a new request supersedes the old).
     private readonly ConcurrentQueue<PendingRpc> _toRegister = new();
     private readonly List<PendingRpc> _active = new();
 
-    public PandaExchangeProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
+    private static readonly IReadOnlyDictionary<int, int> NoStallMap =
+        new Dictionary<int, int>();
+
+    public PandaExchangeProbe(
+        IPluginLog log,
+        IGameTypeRegistry typeRegistry,
+        Func<IStallSubcategorySource?> stallSource)
     {
         _log = log;
         _typeRegistry = typeRegistry;
+        _stallSource = stallSource;
     }
 
     public bool IsResolved => _bridgeResolved;
+
+    public IReadOnlyDictionary<int, int> ReadStallSubcategoryMap()
+        => _stallSource()?.GetStallSubcategories() ?? NoStallMap;
 
     public Task<IReadOnlyList<ExchangeCareItem>> QueryCareListAsync(ExchangeItemKind kind, CancellationToken ct)
     {

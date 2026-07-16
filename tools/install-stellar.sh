@@ -8,7 +8,11 @@ set -euo pipefail
 # Target prefix is overridable so we can deploy to the MAIN client
 # (STELLAR_PREFIX=/opt/game/BlueProtocol) as well as the legacy test prefix.
 STELLAR_PREFIX="${STELLAR_PREFIX:-/opt/game/BlueProtocol2}"
-GAME="$STELLAR_PREFIX/drive_c/Star/StarLauncher/game/release_2.11/game_mini"
+# Auto-detect the current release dir instead of hardcoding it (the game patches the release_<ver>
+# folder — was release_2.11, now release_3.7, etc.). Pick the highest-versioned release_*/game_mini;
+# override with GAME_RELEASE=<absolute path to game_mini> if needed.
+GAME="${GAME_RELEASE:-$(ls -d "$STELLAR_PREFIX"/drive_c/Star/StarLauncher/game/release_*/game_mini 2>/dev/null | sort -V | tail -1)}"
+[ -n "$GAME" ] && [ -d "$GAME" ] || { echo "no release_*/game_mini found under $STELLAR_PREFIX (set GAME_RELEASE=)"; exit 1; }
 
 # Build/runtime MODE — one switch instead of hand-editing BepInEx.cfg + flags each time.
 #   prod (default) — shipping: IMGUI on, diagnostics off, buffered logging, NO console window (fast).

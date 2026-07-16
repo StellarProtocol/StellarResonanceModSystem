@@ -19,6 +19,7 @@ public sealed class ExchangeServiceTests
         public ExchangeItemKind CareKind;
         public IReadOnlyList<ExchangeCatalogItem> Catalog = new List<ExchangeCatalogItem>();
         public int CatalogCategory = -1;
+        public IReadOnlyDictionary<int, int> StallMap = new Dictionary<int, int>();
 
         public bool IsResolved => Resolved;
         public Task<IReadOnlyList<ExchangeListing>> QueryListingsAsync(int itemId, CancellationToken ct) => Task.FromResult(Listings);
@@ -29,6 +30,7 @@ public sealed class ExchangeServiceTests
         public Task<IReadOnlyList<ExchangeNoticeListing>> QueryNoticeAsync(int itemId, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExchangeNoticeListing>>(new List<ExchangeNoticeListing>());
         public Task<ExchangeBuyRaw> BuyAsync(int itemId, int quantity, long price, CancellationToken ct)
         { BoughtItem = itemId; BoughtQty = quantity; BoughtPrice = price; return Task.FromResult(BuyReturns); }
+        public IReadOnlyDictionary<int, int> ReadStallSubcategoryMap() => StallMap;
     }
 
     [Fact]
@@ -105,5 +107,20 @@ public sealed class ExchangeServiceTests
     {
         var svc = new ExchangeService(new FakeProbe { Resolved = false });
         Assert.Empty(await svc.QueryCatalogAsync(102));
+    }
+
+    [Fact]
+    public void GetStallSubcategoryMap_returns_probe_map()
+    {
+        var probe = new FakeProbe { StallMap = new Dictionary<int, int> { [1052210] = 104 } };
+        Assert.Equal(104, new ExchangeService(probe).GetStallSubcategoryMap()[1052210]);
+    }
+
+    [Fact]
+    public void GetStallSubcategoryMap_is_empty_not_null_when_probe_map_empty()
+    {
+        var map = new ExchangeService(new FakeProbe()).GetStallSubcategoryMap();
+        Assert.NotNull(map);
+        Assert.Empty(map);
     }
 }

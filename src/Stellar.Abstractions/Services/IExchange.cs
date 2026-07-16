@@ -50,4 +50,9 @@ public interface IExchange
     /// <param name="ct">Cancels the request before dispatch.</param>
     /// <returns>The game's outcome for the buy.</returns>
     Task<ExchangeBuyOutcome> BuyAsync(int itemId, int quantity, long price, CancellationToken ct = default);
+
+    /// <summary>Trading-Center membership: item config id → subcategory leaf id, read live
+    /// from the game's StallDetailTable. Empty if the table is not yet loaded or unavailable.
+    /// Consumers should fall back to their own data when this is empty.</summary>
+    IReadOnlyDictionary<int, int> GetStallSubcategoryMap();
 }

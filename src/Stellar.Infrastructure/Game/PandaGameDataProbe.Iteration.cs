@@ -205,6 +205,62 @@ internal sealed partial class PandaGameDataProbe
     }
 
     /// <summary>
+    /// Key-aware variant of <see cref="CollectRowsViaTypedEnumerator"/> for ZTables whose row VALUE
+    /// does not carry its own id — the id lives only in the dictionary KEY (e.g.
+    /// <c>ZTable&lt;int, StallDetailTableBase&gt;</c>, where the row exposes only Category/Subcategory).
+    /// Walks the same typed enumerator but reads BOTH <c>KeyValuePair.Key</c> and <c>.Value</c>. The
+    /// dense-key fallback used by the value-only path is deliberately NOT applied here: item-id-keyed
+    /// tables are large and sparse (keys ~1_010_011+), so a 1..N scan can't reach them.
+    /// </summary>
+    private List<(object? key, object? value)> CollectKeyedRowsViaTypedEnumerator(object table)
+    {
+        var rows = new List<(object?, object?)>(capacity: 1024);
+        var tableType = table.GetType();
+
+        var typedGetEnumerator = FindTypedGetEnumerator(tableType);
+        if (typedGetEnumerator is null) return rows;
+
+        if (!TryInvokeGetEnumerator(typedGetEnumerator, table, tableType.Name, out var enumerator) || enumerator is null)
+        {
+            return rows;
+        }
+
+        var enumeratorType = enumerator.GetType();
+        var moveNext = enumeratorType.GetMethod("MoveNext", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null);
+        var getCurrent = enumeratorType.GetProperty("Current", AnyInstance);
+        if (moveNext is null || getCurrent is null) return rows;
+
+        PropertyInfo? keyProp = null;
+        PropertyInfo? valProp = null;
+        const int safetyCap = 100_000;
+        for (var i = 0; i < safetyCap; i++)
+        {
+            bool advanced;
+            try { advanced = (bool)(moveNext.Invoke(enumerator, Array.Empty<object>()) ?? false); }
+            catch { break; }
+            if (!advanced) break;
+
+            object? current;
+            try { current = getCurrent.GetValue(enumerator); }
+            catch { continue; }
+            if (current is null) continue;
+
+            if (keyProp is null)
+            {
+                keyProp = current.GetType().GetProperty("Key", AnyInstance);
+                valProp = current.GetType().GetProperty("Value", AnyInstance);
+            }
+            if (keyProp is null || valProp is null) continue;
+
+            try { rows.Add((keyProp.GetValue(current), valProp.GetValue(current))); }
+            catch { /* skip this row */ }
+        }
+
+        TryDispose(enumerator);
+        return rows;
+    }
+
+    /// <summary>
     /// Dense-key fallback. Profession is densely keyed (~11 ids, 1..N). Walk a
     /// bounded integer range and call <c>get_Item(K)</c>; swallow lookup failures.
     /// Caps at <c>reportedCount * 4 + 64</c> to bound a sparse-table fallback.
