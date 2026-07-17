@@ -282,10 +282,14 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
             return;
         }
 
+        if (slot.FastSyncStateRaw != data.StateRaw)
+            DiagFastSyncState(charId, slot.FastSyncStateRaw, data);
+
         bool changed =
             slot.Hp      != data.Hp      ||
             slot.MaxHp   != data.MaxHp   ||
             slot.SceneId != data.SceneId ||
+            slot.FastSyncStateRaw != data.StateRaw ||
             slot.Position.X != data.Position.X ||
             slot.Position.Y != data.Position.Y ||
             slot.Position.Z != data.Position.Z;
@@ -406,6 +410,9 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         slot.MaxHp    = data.MaxHp;
         slot.SceneId  = data.SceneId;
         slot.Position = data.Position;
+        // Live status signal (field 6) — previously parsed-and-dropped here. Raw transport only;
+        // the enum is calibrated in-game (spec A2) and mapped by consumers.
+        slot.FastSyncStateRaw = data.StateRaw;
     }
 
     private static void MergeRosterIntoSlot(MemberSlot slot, PartyMemberRoster r)
@@ -440,6 +447,7 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
             slot.MaxHp    = fs.MaxHp;
             slot.SceneId  = fs.SceneId;
             slot.Position = fs.Position;
+            slot.FastSyncStateRaw = fs.StateRaw;
         }
     }
 
@@ -460,5 +468,6 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         Slot:         s.Slot,
         Talent:       s.TalentId,
         ProfileUrl:   s.ProfileUrl,
-        HalfBodyUrl:  s.HalfBodyUrl);
+        HalfBodyUrl:  s.HalfBodyUrl)
+    { FastSyncState = s.FastSyncStateRaw };
 }

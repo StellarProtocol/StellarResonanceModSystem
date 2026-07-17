@@ -47,6 +47,18 @@ public readonly record struct PartyMember(
     /// </summary>
     public EntityId EntityId => new((CharId << 16) | 640);
 
+    /// <summary>
+    /// Raw <c>TeamMemberFastSyncData.state</c> (field 6) from the member's latest fast-sync — a
+    /// live per-member status signal the game client itself discards
+    /// (<c>TeamData.UpdateFastSyncData</c> reads only pos/hp/scene). 0 until the first fast-sync.
+    /// Enum semantics are calibrated empirically (2026-07-17 sync spec, Part A2 — see the
+    /// calibration notes in the devkit's <c>docs/recon/</c>); consumers MUST treat unmapped
+    /// values as "no signal" and fall back to <see cref="IsOnline"/> / HP-based inference rather
+    /// than assuming a meaning. Init-only so plugins compiled against older Abstractions keep
+    /// binary compatibility.
+    /// </summary>
+    public int FastSyncState { get; init; }
+
     /// <summary>True when current HP fraction is below <paramref name="threshold"/> (default 30%).</summary>
     public bool IsLowHp(float threshold = 0.30f)
         => MaxHp > 0 && (float)Hp / MaxHp < threshold;
