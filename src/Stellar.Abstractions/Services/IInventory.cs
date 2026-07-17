@@ -28,8 +28,9 @@ public interface IInventory
     /// first sample lands.</summary>
     ModuleSnapshot? GetModules();
 
-    /// <summary>Currently equipped module UUIDs by slot (1..4). Slots
-    /// with no module are absent from the returned dictionary.</summary>
+    /// <summary>Currently equipped module UUIDs by slot (1..<c>ModSlotMaxCount</c>;
+    /// 4 before patch 3.7, 5 since). Slots with no module are absent from the
+    /// returned dictionary.</summary>
     EquippedSet? GetEquipped();
 
     /// <summary>The LOCAL player's currently equipped gear instances with

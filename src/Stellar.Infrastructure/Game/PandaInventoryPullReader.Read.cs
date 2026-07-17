@@ -221,7 +221,7 @@ internal sealed partial class PandaInventoryPullReader
         catch { return new Dictionary<int, long>(0); }
         if (slotsMap is null) return new Dictionary<int, long>(0);
 
-        var result = new Dictionary<int, long>(capacity: 4);
+        var result = new Dictionary<int, long>(capacity: 5);
         foreach (var (key, value) in EnumerateMapEntries(slotsMap))
         {
             int slot = AsInt32(key);
