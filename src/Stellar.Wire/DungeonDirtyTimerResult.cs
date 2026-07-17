@@ -33,6 +33,11 @@ public readonly struct DungeonDirtyTimerResult
     /// <summary><c>DungeonFlowInfo.result</c> (field 8): 0=Null, 1=Success, 2=Failed. 0 when untouched.</summary>
     public int FlowResult { get; init; }
 
+    /// <summary>True when the flow_info dirty container carried a <c>state</c> entry (field 1) — a delta that left the state untouched must not push a phantom 0.</summary>
+    public bool HasFlowState { get; init; }
+    /// <summary><c>DungeonFlowInfo.state</c> (field 1, <c>EDungeonState</c>: Null=0 Active=1 Ready=2 Playing=3 End=4 Settlement=5 Vote=6). Only meaningful when <see cref="HasFlowState"/>.</summary>
+    public int FlowState { get; init; }
+
     /// <summary>True when the delta carried a settlement container (field 7).</summary>
     public bool HasSettlement { get; init; }
     /// <summary><c>DungeonSettlement.pass_time</c> (field 1) — authoritative clear time seconds.</summary>

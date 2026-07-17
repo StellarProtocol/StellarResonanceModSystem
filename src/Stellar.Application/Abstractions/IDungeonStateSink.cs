@@ -83,4 +83,12 @@ internal interface IDungeonStateSink
 
     /// <summary>Latch the per-run Defeated count (World attr AttrDeathCount=348).</summary>
     void SetDefeated(int count);
+
+    /// <summary>
+    /// Latch the dungeon flow state (raw <c>EDungeonState</c> value) from either dungeon delivery
+    /// path (method-23 full sync or method-24 dirty delta). Same-value re-deliveries are ignored
+    /// (no version bump); negative values are ignored (malformed). Cleared by
+    /// <see cref="SetCurrentRun"/> (new non-zero id) and <see cref="Reset"/>.
+    /// </summary>
+    void SetFlowState(int state);
 }

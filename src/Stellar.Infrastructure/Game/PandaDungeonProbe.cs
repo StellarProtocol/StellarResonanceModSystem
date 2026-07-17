@@ -93,6 +93,9 @@ internal sealed partial class PandaDungeonProbe
         if (d.HasFlowResult && d.FlowResult > 0)
             _sink.SetOutcome(d.FlowResult);
 
+        if (d.HasFlowState)
+            _sink.SetFlowState(d.FlowState);
+
         if ((d.HasSettlement || d.HasScore) && (d.PassTimeSeconds > 0 || d.MasterModeScore > 0 || d.TotalScore > 0))
             _sink.SetSettlement(d.PassTimeSeconds, d.MasterModeScore, d.TotalScore);
 
@@ -130,6 +133,12 @@ internal sealed partial class PandaDungeonProbe
             _sink.SetDifficulty(result.DungeonDifficulty);
 
         MaybeLatchRunTimer(result);
+
+        // Flow state rides the full sync too (entry/rejoin snapshot). Method-23 also fires in
+        // town (see the run-id note above) — a town delivery may push DungeonStateNull, which is
+        // correct ("no dungeon flow"); consumers gate stage logic on CurrentRunId anyway.
+        if (result.HasFlowInfo)
+            _sink.SetFlowState(result.FlowInfo.State);
 
         DiagDungeonDelivery(source, methodId, result);
         DiagDungeonSync(methodId, result);
