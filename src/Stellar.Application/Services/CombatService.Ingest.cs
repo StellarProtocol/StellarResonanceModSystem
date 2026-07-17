@@ -70,6 +70,8 @@ internal sealed partial class CombatService
 
     public void Drain()
     {
+        MaybeSweepIdleEntities();
+
         while (_queue.TryDequeue(out var evt))
         {
             lock (_ringLock)

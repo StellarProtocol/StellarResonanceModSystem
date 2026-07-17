@@ -18,6 +18,8 @@ internal sealed partial class CombatService
         IReadOnlyList<int> removedBuffUuids,
         long timestampMs)
     {
+        // Touch: buff-only-refreshed entities must not be swept as idle (Task 3 idle sweep).
+        _entities.Touch(entityId, System.Environment.TickCount64);
         bool changed = false;
         lock (_buffsByEntityLock)
         {

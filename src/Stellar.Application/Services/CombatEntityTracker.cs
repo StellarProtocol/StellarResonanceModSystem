@@ -67,6 +67,14 @@ internal sealed class CombatEntityTracker
     // Display-name cache (AttrName, EAttrType=1).
     private readonly EntityNameRegistry _names = new();
 
+    // Last write timestamp per NON-PLAYER entity — feeds the idle sweep. Players are never
+    // tracked: roster members' EntityIds are (CharId << 16) | 640, so EntityId.IsPlayer covers
+    // the "players + roster" exemption by construction. Touched from the high-frequency write
+    // paths; the sweep evicts ids idle past the TTL that AOI disappear lists and scene resets
+    // both missed (see Reset()'s doc comment). Clock: Environment.TickCount64 everywhere.
+    private readonly Dictionary<EntityId, long> _lastTouchedMs = new();
+    private readonly object _lastTouchedMsLock = new();
+
     // ── Read surface ────────────────────────────────────────────────────────
 
     public EntityVitals GetVitals(EntityId entityId)
@@ -163,6 +171,7 @@ internal sealed class CombatEntityTracker
             var newMaxHp = maxHp >= 0 ? maxHp : cur.MaxHp;
             _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true);
         }
+        Touch(entityId, System.Environment.TickCount64);
     }
 
     public void AccumulateDps(EntityId sourceId, long timestampMs, long amount)
@@ -173,6 +182,9 @@ internal sealed class CombatEntityTracker
                 _dpsBySource[sourceId] = acc = new DpsAccumulator();
             acc.RecordDamage(timestampMs, amount);
         }
+        // Touch clock is Environment.TickCount64 (idle-sweep clock), NOT the wire-time
+        // timestampMs above — the two are unrelated clocks and must not be mixed.
+        Touch(sourceId, System.Environment.TickCount64);
     }
 
     public void AccumulateHps(EntityId sourceId, long timestampMs, long amount)
@@ -183,6 +195,7 @@ internal sealed class CombatEntityTracker
                 _hpsBySource[sourceId] = acc = new DpsAccumulator();
             acc.RecordDamage(timestampMs, amount);
         }
+        Touch(sourceId, System.Environment.TickCount64);
     }
 
     public void UpdateEntityTeamId(EntityId entityId, long teamId)
@@ -233,6 +246,7 @@ internal sealed class CombatEntityTracker
             }
             map[attrId] = value;
         }
+        Touch(entityId, System.Environment.TickCount64);
     }
 
     public void SetEntityEquipment(EntityId entityId, IReadOnlyList<EquipNineEntry> equip)
@@ -246,6 +260,54 @@ internal sealed class CombatEntityTracker
     {
         // Already a fully-decoded immutable snapshot from AttrFashionDataReader — store as-is.
         lock (_fashionByEntityLock) _fashionByEntity[entityId] = fashion;
+    }
+
+    // ── Idle sweep ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Record that <paramref name="id"/> was written to at <paramref name="nowMs"/>
+    /// (<c>Environment.TickCount64</c>). No-op for players — roster charIds resolve
+    /// to player EntityIds ((CharId &lt;&lt; 16) | 640), so the <see cref="EntityId.IsPlayer"/>
+    /// check exempts "players + roster" by construction, with no separate roster lookup.
+    /// </summary>
+    public void Touch(EntityId id, long nowMs)
+    {
+        if (id.IsPlayer) return;
+        lock (_lastTouchedMsLock) { _lastTouchedMs[id] = nowMs; }
+    }
+
+    /// <summary>
+    /// Returns every non-player entity id whose last <see cref="Touch"/> is at least
+    /// <paramref name="ttlMs"/> milliseconds behind <paramref name="nowMs"/>.
+    /// </summary>
+    public List<EntityId> CollectIdle(long nowMs, long ttlMs)
+    {
+        var idle = new List<EntityId>();
+        lock (_lastTouchedMsLock)
+        {
+            foreach (var kv in _lastTouchedMs)
+            {
+                if (nowMs - kv.Value >= ttlMs) idle.Add(kv.Key);
+            }
+        }
+        return idle;
+    }
+
+    /// <summary>
+    /// Evict a single idle (non-player) entity: same per-entity cleanup as
+    /// <see cref="OnEntityDisappeared"/>, plus the loadout/spec caches that
+    /// AOI-disappear intentionally leaves alone (see its NOTE) — that exemption
+    /// exists for players walking out of range, which never reach this path.
+    /// <para>
+    /// Race window (accepted): CollectIdle snapshots idleness, then evictions run per-field-lock; a wire-thread write for the same id can interleave, and the unconditional Remove calls will drop that just-written data (and possibly its fresh Touch). Self-heals on the entity's next write, or next sweep pass at worst — consistent with this class's documented 'no cross-field consistency guarantee'. A generation check was judged disproportionate; see devkit docs/tech-debt.md D-25.
+    /// </para>
+    /// </summary>
+    public void EvictIdleEntity(EntityId id)
+    {
+        OnEntityDisappeared(id);
+        lock (_skillsByEntityLock)        _skillsByEntity.Remove(id);
+        lock (_subProfessionByEntityLock) _subProfessionByEntity.Remove(id);
+        lock (_lastTouchedMsLock)         _lastTouchedMs.Remove(id);
     }
 
     public void OnEntityDisappeared(EntityId entityId)
@@ -263,7 +325,12 @@ internal sealed class CombatEntityTracker
         lock (_attrsByEntityLock)   _attrsByEntity.Remove(entityId);
         lock (_equipByEntityLock)   _equipByEntity.Remove(entityId);
         lock (_fashionByEntityLock) _fashionByEntity.Remove(entityId);
-        _names.Evict(entityId);
+        // NOTE: a PLAYER's display name is NOT evicted on AOI-disappear. Like the skill loadout
+        // below, it is static identity data, not transient AOI state — a player walking out of
+        // range keeps their resolved name so meter/history/replay rows don't degrade to the
+        // Player#uid fallback. It's cleared on scene Reset() like everything else. Mobs still
+        // evict here: their names are positional flavor, not identity, and their ids recycle.
+        if (!entityId.IsPlayer) _names.Evict(entityId);
         // NOTE: equipped skill loadout (_skillsByEntity) is NOT evicted on AOI-disappear. It is static
         // loadout data, not transient AOI state — a player walking out of range shouldn't blank their
         // Imagines. It's only overwritten when fresh AttrSkillLevelIdList data arrives for that entity.
@@ -292,6 +359,7 @@ internal sealed class CombatEntityTracker
         lock (_attrsByEntityLock)      _attrsByEntity.Clear();
         lock (_equipByEntityLock)      _equipByEntity.Clear();
         lock (_fashionByEntityLock)    _fashionByEntity.Clear();
+        lock (_lastTouchedMsLock)      _lastTouchedMs.Clear();
         _names.Clear();
     }
 }
