@@ -53,18 +53,31 @@ cp "$SRC/Stellar.Infrastructure/bin/Release/ZstdSharp.dll" "$FW_DIR/"
 
 # 3) (plugins ship via the registry the launcher reads — the bundle is framework-only.)
 
-# 4) zip contents at root (python zipfile — abs-path safe, no external 'zip' dep)
+# 4) zip contents at root (python zipfile — abs-path safe, no external 'zip' dep).
+#    DETERMINISTIC: sorted entries + fixed mtime/perms so identical content always
+#    yields a byte-identical zip (stable sha256). This is what keeps version.json's
+#    recorded sha256 in lockstep with the served bundle across rebuilds — a mismatch
+#    is exactly what makes the launcher hang at "downloading 100%".
 ZIP="$OUT_DIR/Stellar-$VERSION.zip"
 rm -f "$ZIP"
 PY="${PYTHON:-python3}"
 "$PY" - "$BUNDLE" "$ZIP" <<'PYEOF'
 import os, sys, zipfile
 src, out = sys.argv[1], os.path.abspath(sys.argv[2])
+paths = []
+for root, dirs, files in os.walk(src):
+    dirs.sort()
+    for f in files:
+        full = os.path.join(root, f)
+        paths.append((full, os.path.relpath(full, src)))
+paths.sort(key=lambda p: p[1])          # stable entry order regardless of FS walk order
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    for root, _dirs, files in os.walk(src):
-        for f in files:
-            full = os.path.join(root, f)
-            z.write(full, os.path.relpath(full, src))
+    for full, arc in paths:
+        zi = zipfile.ZipInfo(arc, date_time=(1980, 1, 1, 0, 0, 0))   # fixed mtime (zip epoch)
+        zi.compress_type = zipfile.ZIP_DEFLATED
+        zi.external_attr = 0o644 << 16                                # fixed perms
+        with open(full, "rb") as fh:
+            z.writestr(zi, fh.read())
 print("bundle ->", out)
 PYEOF
 
