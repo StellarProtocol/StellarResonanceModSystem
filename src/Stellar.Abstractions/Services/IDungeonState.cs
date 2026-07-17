@@ -14,6 +14,11 @@ namespace Stellar.Abstractions.Services;
 /// implementations publish via volatile reads so consumers are lock-free.
 /// <see cref="CurrentRunId"/> resets to 0 on leave-scene / logout.
 /// </para>
+///
+/// <para>
+/// <b>NOTE:</b> This interface sits exactly at the STELLAR0005 8-member cap — do not add members;
+/// split the interface (see docs/coding-standards.md § SOLID) if more surface is needed.
+/// </para>
 /// </summary>
 public interface IDungeonState
 {

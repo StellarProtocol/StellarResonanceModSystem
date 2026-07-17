@@ -19,6 +19,11 @@ namespace Stellar.Application.Abstractions;
 /// Infrastructure calls it, and the read side lives on the Abstractions
 /// <c>IDungeonState</c> interface.
 /// </para>
+///
+/// <para>
+/// <b>NOTE:</b> This interface sits exactly at the STELLAR0005 8-member cap — do not add members;
+/// split the interface (see docs/coding-standards.md § SOLID) if more surface is needed.
+/// </para>
 /// </summary>
 internal interface IDungeonStateSink
 {
