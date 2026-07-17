@@ -298,6 +298,9 @@ internal sealed class CombatEntityTracker
     /// <see cref="OnEntityDisappeared"/>, plus the loadout/spec caches that
     /// AOI-disappear intentionally leaves alone (see its NOTE) — that exemption
     /// exists for players walking out of range, which never reach this path.
+    /// <para>
+    /// Race window (accepted): CollectIdle snapshots idleness, then evictions run per-field-lock; a wire-thread write for the same id can interleave, and the unconditional Remove calls will drop that just-written data (and possibly its fresh Touch). Self-heals on the entity's next write, or next sweep pass at worst — consistent with this class's documented 'no cross-field consistency guarantee'. A generation check was judged disproportionate; see devkit docs/tech-debt.md D-25.
+    /// </para>
     /// </summary>
     public void EvictIdleEntity(EntityId id)
     {
