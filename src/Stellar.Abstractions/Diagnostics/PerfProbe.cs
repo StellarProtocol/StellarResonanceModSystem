@@ -7,8 +7,10 @@ namespace Stellar.Abstractions.Diagnostics;
 
 /// <summary>
 /// Per-frame timing accumulator for the overlay perf harness. Gated by
-/// <c>STELLAR_PERFHUD=1</c> (mirrors <see cref="StellarDiagnostics"/>): when
-/// disabled every method early-returns on a single cached field read so
+/// <c>STELLAR_PERFHUD=1</c> OR a <c>PERFHUD</c> line in <c>game_mini/stellar_perf.flags</c>
+/// (mirrors <see cref="StellarDiagnostics"/>'s flags-file gate via <see cref="PerfControls.Flag"/>,
+/// so Task 4's measured session can be armed by the deploy-script flags file without a Heroic
+/// env edit): when disabled every method early-returns on a single cached field read so
 /// production pays nothing.
 ///
 /// <para><b>Frame model.</b> <c>OnGUI</c> fires multiple times per rendered
@@ -28,15 +30,14 @@ public static class PerfProbe
 {
     private static bool _enabled = ResolveEnabled();
 
-    /// <summary><c>true</c> when <c>STELLAR_PERFHUD=1</c> (or <c>=true</c>) at startup.</summary>
+    /// <summary><c>true</c> when <c>STELLAR_PERFHUD=1</c> was set in the environment, or a
+    /// <c>PERFHUD</c> line is present in <c>stellar_perf.flags</c>, at startup.</summary>
     public static bool IsEnabled => _enabled;
 
-    private static bool ResolveEnabled()
-    {
-        var v = System.Environment.GetEnvironmentVariable("STELLAR_PERFHUD");
-        if (string.IsNullOrEmpty(v)) return false;
-        return v == "1" || v.Equals("true", System.StringComparison.OrdinalIgnoreCase);
-    }
+    // STELLAR_PERFHUD=1 in the env OR "PERFHUD" in game_mini/stellar_perf.flags (the deploy-script
+    // mode file — mirrors StellarDiagnostics.ResolveEnabled). Lets an external A/B driver arm the
+    // perf harness between launches by writing/removing the file, with no Heroic env-var edit.
+    private static bool ResolveEnabled() => PerfControls.Flag("PERFHUD");
 
     // --- accumulators for the frame currently being built ---
     private static readonly Stopwatch _drawSw = new();

@@ -23,6 +23,12 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 {
     private const int RingCapacity = 500;
 
+    /// <summary>Non-player entities untouched for this long are evicted by the idle sweep (Task 3, FPS cache-leak fix).</summary>
+    internal const long IdleEntityTtlMs     = 300_000;  // 5 min without a write = evict (non-players)
+    /// <summary>Minimum spacing between idle sweeps — piggybacked on <see cref="Drain"/> rather than run every call.</summary>
+    internal const long IdleSweepIntervalMs = 30_000;
+    private long _lastIdleSweepMs;
+
     private readonly IPluginLog                   _log;
     private readonly CombatEntityTracker          _entities;
     private readonly SocialDataCache              _social;
@@ -313,12 +319,48 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void OnEntityDisappeared(EntityId entityId)
     {
+        RemoveEntityBuffs(entityId);
+        _entities.OnEntityDisappeared(entityId);
+    }
+
+    // Shared by OnEntityDisappeared (AOI-disappear) and SweepIdleEntities (idle-TTL eviction) —
+    // same buff-cache cleanup, two different triggers for "this entity is gone".
+    private void RemoveEntityBuffs(EntityId entityId)
+    {
         lock (_buffsByEntityLock)
         {
             _buffsByEntity.Remove(entityId);
             if (entityId == _localEntityId) _localBuffs = Array.Empty<ActiveBuff>();
         }
-        _entities.OnEntityDisappeared(entityId);
+    }
+
+    /// <summary>
+    /// Evict non-player entities untouched for <see cref="IdleEntityTtlMs"/>. Mobs are frequently
+    /// touched only by damage packets and never get a matching AOI-disappear, so on a long
+    /// single-map session their vitals/DPS/attr/buff entries would otherwise accumulate for the
+    /// process lifetime (see <see cref="CombatEntityTracker.Reset"/>'s doc comment). Called at
+    /// most every <see cref="IdleSweepIntervalMs"/> via <see cref="MaybeSweepIdleEntities"/>;
+    /// exposed <c>internal</c> so tests can drive it directly at an arbitrary clock value.
+    /// </summary>
+    internal void SweepIdleEntities(long nowMs)
+    {
+        var idle = _entities.CollectIdle(nowMs, IdleEntityTtlMs);
+        for (var i = 0; i < idle.Count; i++)
+        {
+            _entities.EvictIdleEntity(idle[i]);
+            RemoveEntityBuffs(idle[i]);
+        }
+        LogIdleSweep(idle.Count);
+    }
+
+    // Rate-limits SweepIdleEntities to once per IdleSweepIntervalMs — Drain() runs far more
+    // often than that, and CollectIdle is an O(n) scan over every tracked non-player entity.
+    private void MaybeSweepIdleEntities()
+    {
+        var now = Environment.TickCount64;
+        if (now - _lastIdleSweepMs < IdleSweepIntervalMs) return;
+        _lastIdleSweepMs = now;
+        SweepIdleEntities(now);
     }
 
     public void ResetEntities() => _entities.Reset();
