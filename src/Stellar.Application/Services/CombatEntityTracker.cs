@@ -169,7 +169,13 @@ internal sealed class CombatEntityTracker
             _vitalsByEntity.TryGetValue(entityId, out var cur);
             var newHp    = hp    >= 0 ? hp    : cur.Hp;
             var newMaxHp = maxHp >= 0 ? maxHp : cur.MaxHp;
-            _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true);
+            _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true)
+            {
+                // A real hp value (>= 0, incl. 0 = dead) flips the flag; a MaxHp-only delta must
+                // NOT — death inference requires HasHpObservation, so {Hp:0, MaxHp:>0} from a
+                // MaxHp-only first observation reads "alive, HP unknown" (the false-skull fix).
+                HasHpObservation = cur.HasHpObservation || hp >= 0,
+            };
         }
         Touch(entityId, System.Environment.TickCount64);
     }

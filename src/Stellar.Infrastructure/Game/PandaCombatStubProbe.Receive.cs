@@ -55,39 +55,54 @@ internal sealed partial class PandaCombatStubProbe
         foreach (var entity in appears)
         {
             DiagAppearEntity(entity);
-            var eid = new EntityId(entity.Uuid);
-            if (entity.Attrs is not { } attrs) continue;
-            long summonerId = 0, topSummonerId = 0;
-            for (int i = 0; i < attrs.Items.Count; i++)
-            {
-                var attr = attrs.Items[i];
-                if (attr.Id == AttrTypeIds.AttrName)
-                {
-                    var name = attr.DecodedString;
-                    if (!string.IsNullOrEmpty(name)) _sink.UpdateEntityName(eid, name!);
-                }
-                else if (attr.Id == AttrTypeIds.AttrFightPoint)
-                {
-                    _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
-                    _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
-                }
-                else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
-                {
-                    var skills = SkillLevelListReader.Read(attr.RawData.Span);
-                    if (skills.Count > 0)
-                    {
-                        _sink.UpdateEntitySkillLevels(eid, skills);
-                    }
-                }
-                else
-                {
-                    if (attr.Id == AttrTypeIds.AttrSummonerId) summonerId = attr.DecodedLong;
-                    else if (attr.Id == AttrTypeIds.AttrTopSummonerId) topSummonerId = attr.DecodedLong;
-                    CaptureEntityDetail(eid, attr, "appear");
-                }
-            }
-            EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
+            ReadAppearEntity(new EntityId(entity.Uuid), entity.Attrs, ts);
         }
+    }
+
+    // Per-entity attr fan-out for a SyncNearEntities APPEAR. Extracted from OnNearEntities to
+    // keep both bodies under the 50-LoC gate. NEW vs the old inline walk: AttrHp/AttrMaxHp are
+    // now read explicitly and seeded into the vitals cache — appear packets carry the full attr
+    // set, so without this the FIRST DELTA after appear defined vitals, and a MaxHp-only delta
+    // minted the false-dead {Hp:0, MaxHp:>0} state. Mirrors ApplyAttrDeltasForEntity's handling
+    // (which also does NOT store hp/maxHp in the generic attr map).
+    private void ReadAppearEntity(EntityId eid, AttrCollectionMsg? attrsOpt, long ts)
+    {
+        if (attrsOpt is not { } attrs) return;
+        long summonerId = 0, topSummonerId = 0;
+        long hp = -1, maxHp = -1;
+        for (int i = 0; i < attrs.Items.Count; i++)
+        {
+            var attr = attrs.Items[i];
+            if (attr.Id == AttrTypeIds.AttrName)
+            {
+                var name = attr.DecodedString;
+                if (!string.IsNullOrEmpty(name)) _sink.UpdateEntityName(eid, name!);
+            }
+            else if (attr.Id == AttrTypeIds.AttrHp)    { hp = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrMaxHp) { maxHp = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrFightPoint)
+            {
+                _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
+                _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
+            }
+            else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
+            {
+                var skills = SkillLevelListReader.Read(attr.RawData.Span);
+                if (skills.Count > 0) _sink.UpdateEntitySkillLevels(eid, skills);
+            }
+            else
+            {
+                if (attr.Id == AttrTypeIds.AttrSummonerId) summonerId = attr.DecodedLong;
+                else if (attr.Id == AttrTypeIds.AttrTopSummonerId) topSummonerId = attr.DecodedLong;
+                CaptureEntityDetail(eid, attr, "appear");
+            }
+        }
+        if (hp >= 0 || maxHp >= 0)
+        {
+            _sink.UpdateEntityVitals(eid, hp, maxHp);
+            DiagAppearVitalsSeed(eid, hp, maxHp);
+        }
+        EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
     }
 
     // Raises CombatEvent.EntitySummonAppeared when this appear carried a resolvable owner attribution

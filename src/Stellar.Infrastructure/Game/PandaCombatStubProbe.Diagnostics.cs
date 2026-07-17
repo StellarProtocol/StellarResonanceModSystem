@@ -142,6 +142,15 @@ internal sealed partial class PandaCombatStubProbe
             $"attrIds=[{string.Join(",", ids)}] AttrName={nameVal ?? "<none>"}");
     }
 
+    // Appear-packet vitals seed (A1, 2026-07-17 sync spec). Doubles as the 3.7 attr-id validity
+    // check the spec asks for: sane hp/maxHp values here confirm AttrHp=11310 / AttrMaxHp=11320
+    // still hold (Stellar.Wire/AttrTypeIds.cs:26-27). Consumed by the Task 5 calibration session.
+    private void DiagAppearVitalsSeed(EntityId eid, long hp, long maxHp)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[CombatStub][diag] appear vitals seed id={eid.Value} hp={hp} maxHp={maxHp}");
+    }
+
     // One-shot boot diagnostic for the AttrFashionData(201) decode path. Fires
     // once per session regardless of STELLAR_DIAGNOSTICS (boot one-shots are
     // always on; the toggle only gates per-event repetition) — the single line

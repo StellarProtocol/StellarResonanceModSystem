@@ -12,6 +12,17 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="IsKnown">True once at least one AttrHp or AttrMaxHp observation has landed.</param>
 public readonly record struct EntityVitals(long Hp, long MaxHp, bool IsKnown)
 {
+    /// <summary>
+    /// True once a REAL current-HP value has been observed for this entity (an <c>AttrHp</c>
+    /// carrying <c>hp &gt;= 0</c>, including 0 = dead). A MaxHp-only observation leaves this
+    /// <see langword="false"/> while <see cref="IsKnown"/> is already <see langword="true"/> —
+    /// such an entity is "alive, HP unknown", NOT dead. Death inference (e.g. a meter's dead
+    /// styling, wipe detection) must require this flag before reading <see cref="Hp"/> &lt;= 0
+    /// as death. Init-only (not a constructor parameter) so plugins compiled against older
+    /// Abstractions keep binary compatibility.
+    /// </summary>
+    public bool HasHpObservation { get; init; }
+
     /// <summary>Sentinel returned when no observation has been received for this entity yet.</summary>
     public static readonly EntityVitals Unknown = new(0, 0, false);
 }
