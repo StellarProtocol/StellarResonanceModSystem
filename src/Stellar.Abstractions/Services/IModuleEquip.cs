@@ -28,7 +28,8 @@ public interface IModuleEquip
     bool IsAvailable { get; }
 
     /// <summary>Invokes <c>ModVM.AsyncEquipMod(moduleUuid, slotId)</c>.
-    /// Slot is 1..4 (game enforces ModSlotMaxCount = 4). The Task
+    /// Slot is 1..<c>ModSlotMaxCount</c> (4 before patch 3.7, 5 since); the
+    /// framework imposes no cap — the game validates the slot id. The Task
     /// completes when the game's <c>Mod.ModSlots</c> map reflects the
     /// equip or the 6-second timeout elapses.</summary>
     Task<EquipResult> InstallAsync(int slotId, long moduleUuid, CancellationToken ct = default);

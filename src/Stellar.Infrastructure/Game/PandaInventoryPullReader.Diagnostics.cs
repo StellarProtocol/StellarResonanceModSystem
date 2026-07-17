@@ -356,7 +356,7 @@ internal sealed partial class PandaInventoryPullReader
         if (!StellarDiagnostics.IsEnabled) return;
         if (_lastEquippedSnapshot is null) return; // first sample handled by OnSampleLogged
 
-        // Compare slot-by-slot. Diffs are typically 1–4 slots.
+        // Compare slot-by-slot. Diffs are typically 1–5 slots (ModSlotMaxCount; 4 before patch 3.7).
         foreach (var kv in nextEquipped)
         {
             if (!_lastEquippedSnapshot.TryGetValue(kv.Key, out var prev) || prev != kv.Value)
