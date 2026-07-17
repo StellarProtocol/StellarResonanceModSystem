@@ -325,7 +325,12 @@ internal sealed class CombatEntityTracker
         lock (_attrsByEntityLock)   _attrsByEntity.Remove(entityId);
         lock (_equipByEntityLock)   _equipByEntity.Remove(entityId);
         lock (_fashionByEntityLock) _fashionByEntity.Remove(entityId);
-        _names.Evict(entityId);
+        // NOTE: a PLAYER's display name is NOT evicted on AOI-disappear. Like the skill loadout
+        // below, it is static identity data, not transient AOI state — a player walking out of
+        // range keeps their resolved name so meter/history/replay rows don't degrade to the
+        // Player#uid fallback. It's cleared on scene Reset() like everything else. Mobs still
+        // evict here: their names are positional flavor, not identity, and their ids recycle.
+        if (!entityId.IsPlayer) _names.Evict(entityId);
         // NOTE: equipped skill loadout (_skillsByEntity) is NOT evicted on AOI-disappear. It is static
         // loadout data, not transient AOI state — a player walking out of range shouldn't blank their
         // Imagines. It's only overwritten when fresh AttrSkillLevelIdList data arrives for that entity.

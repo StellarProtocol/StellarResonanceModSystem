@@ -149,13 +149,18 @@ public sealed class CombatEntityTrackerTests
     public void OnEntityDisappeared_ClearsAllEntityState()
     {
         var tracker = new CombatEntityTracker();
-        var id = new EntityId(0x0000_0001_0000_0280L);
+        // Non-player id (low 16 bits != 640): a mob's name is positional flavor,
+        // not identity, so it evicts along with everything else on AOI-disappear.
+        // (The player exemption is covered separately below — see
+        // Player_name_survives_aoi_disappear.)
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        Assert.False(id.IsPlayer);
 
         tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
         tracker.AccumulateDps(id, timestampMs: 1000, amount: 5000);
         tracker.AccumulateHps(id, timestampMs: 1000, amount: 2000);
         tracker.UpdateEntityTeamId(id, teamId: 5L);
-        tracker.UpdateEntityName(id, "Player1");
+        tracker.UpdateEntityName(id, "Slime");
 
         tracker.OnEntityDisappeared(id);
 
@@ -164,6 +169,68 @@ public sealed class CombatEntityTrackerTests
         Assert.Equal(0L, tracker.GetLiveHps(id));
         Assert.Equal(0L, tracker.GetTeamId(id));
         Assert.Null(tracker.GetEntityName(id));
+    }
+
+    // ── OnEntityDisappeared: player display-name identity exemption ─────────
+    // Mirrors the pre-existing _skillsByEntity exemption: a player walking out
+    // of AOI shouldn't lose their resolved display name and degrade meter/
+    // history/replay rows to the Player#uid fallback. Mobs are unaffected —
+    // their names are positional flavor and their ids recycle.
+
+    [Fact]
+    public void Player_name_survives_aoi_disappear()
+    {
+        var tracker = new CombatEntityTracker();
+        var playerId = new EntityId(0x0000_0002_0000_0280L);
+        Assert.True(playerId.IsPlayer);
+
+        tracker.UpdateEntityName(playerId, "Doraemon");
+
+        tracker.OnEntityDisappeared(playerId);
+
+        Assert.Equal("Doraemon", tracker.GetEntityName(playerId));
+    }
+
+    [Fact]
+    public void Mob_name_evicted_on_aoi_disappear()
+    {
+        var tracker = new CombatEntityTracker();
+        var mobId = new EntityId(0x0000_0002_0000_0040L);
+        Assert.False(mobId.IsPlayer);
+
+        tracker.UpdateEntityName(mobId, "Slime");
+
+        tracker.OnEntityDisappeared(mobId);
+
+        Assert.Null(tracker.GetEntityName(mobId));
+    }
+
+    [Fact]
+    public void Player_name_cleared_on_scene_reset()
+    {
+        var tracker = new CombatEntityTracker();
+        var playerId = new EntityId(0x0000_0002_0000_0280L);
+
+        tracker.UpdateEntityName(playerId, "Doraemon");
+
+        tracker.Reset();
+
+        Assert.Null(tracker.GetEntityName(playerId));
+    }
+
+    [Fact]
+    public void Player_other_state_still_evicts_on_disappear_while_name_survives()
+    {
+        var tracker = new CombatEntityTracker();
+        var playerId = new EntityId(0x0000_0002_0000_0280L);
+
+        tracker.UpdateEntityVitals(playerId, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityName(playerId, "Doraemon");
+
+        tracker.OnEntityDisappeared(playerId);
+
+        Assert.False(tracker.GetVitals(playerId).IsKnown);
+        Assert.Equal("Doraemon", tracker.GetEntityName(playerId));
     }
 
     // ── CombatService integration (delegation path) ──────────────────────────
@@ -228,7 +295,10 @@ public sealed class CombatEntityTrackerTests
     public void CombatService_OnEntityDisappeared_ClearsTrackerState()
     {
         var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
-        var id = new EntityId(0x0000_0001_0000_0280L);
+        // Non-player id: a mob's name evicts along with vitals/team-id on disappear
+        // (the player name exemption is covered by the Player_* tests above).
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        Assert.False(id.IsPlayer);
 
         svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
         svc.UpdateEntityTeamId(id, teamId: 5L);
