@@ -90,11 +90,7 @@ internal sealed partial class PandaGameDataProbe
 
                 var name = ReadStringOrMlString(row, rowType, "Name");
                 var mapId = ReadInt(row, rowType, "MapId");
-                var sceneKind = ReadInt(row, rowType, "SceneKind");
-                if (sceneKind == 0)
-                {
-                    sceneKind = ReadInt(row, rowType, "Type");
-                }
+                var sceneKind = ReadInt(row, rowType, "SceneType");
 
                 return (id, new SceneInfo(
                     Id: id,
