@@ -134,6 +134,7 @@ internal sealed partial class PandaCombatStubProbe
 
         LatchDungeonRunId(span);
         DiagScanSceneAttrsForDeathCount(span);
+        DiagEnterSceneIdentity(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed || self.Attrs is not { } attrs) return;

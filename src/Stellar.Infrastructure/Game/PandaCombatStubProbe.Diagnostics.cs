@@ -207,6 +207,20 @@ internal sealed partial class PandaCombatStubProbe
         }
     }
 
+    // One line per enter-scene: the raw scene uuid, the run-id gate's decision, and the two
+    // string identities (SceneGuid/ConnectGuid) the framework never previously read. Answers
+    // "does the client hold a per-instance identity at zone-in" (spec 2026-07-19 § 8.3) and
+    // gives the walk-in/lobby validation pass its runId-timing artifact. Enter-scenes only
+    // fire on zone transitions, so volume is negligible even in long sessions.
+    private void DiagEnterSceneIdentity(ReadOnlySpan<byte> span)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        EnterSceneReader.TryReadSceneId(span, out var sceneUuid);
+        EnterSceneReader.TryReadSceneGuids(span, out var sceneGuid, out var connectGuid);
+        _log.Info($"[CombatStub][enter-scene] sceneUuid={sceneUuid} gatedRunId={DungeonRunIdGate.Resolve(sceneUuid)} " +
+                  $"sceneGuid={(sceneGuid.Length > 0 ? sceneGuid : "-")} connectGuid={(connectGuid.Length > 0 ? connectGuid : "-")}");
+    }
+
     /// <summary>
     /// Recover the concrete IL2CPP class FullName for a boxed managed reference
     /// whose declared type is just an interface (e.g.
