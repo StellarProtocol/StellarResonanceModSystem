@@ -1,4 +1,4 @@
-// framework/src/Stellar.Abstractions/Services/IPluginDataStore.cs
+// src/Stellar.Abstractions/Services/IPluginDataStore.cs
 using System.Collections.Generic;
 
 namespace Stellar.Abstractions.Services;
@@ -8,7 +8,7 @@ namespace Stellar.Abstractions.Services;
 /// <see cref="IConfigSection"/> (which holds only primitives, arrays, and
 /// dictionaries). Each plugin gets its own directory
 /// (<c>&lt;plugins-dir&gt;/&lt;pluginGuid&gt;.data/</c>); names are relative to it.
-/// A <paramref name="name"/> may contain at most one <c>/</c> separating a single
+/// A <c>name</c> may contain at most one <c>/</c> separating a single
 /// subdirectory from the file (e.g. <c>replay/123-456.gz</c>); <c>..</c>, rooted
 /// paths, and backslashes are rejected. Every method is best-effort and NEVER
 /// throws — IO faults are logged and swallowed.
