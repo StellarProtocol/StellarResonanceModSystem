@@ -7,16 +7,16 @@ namespace Stellar.Infrastructure.Configuration;
 
 /// <summary>
 /// File-backed <see cref="IPluginDataStore"/> rooted at
-/// <c>&lt;pluginsDir&gt;/&lt;pluginGuid&gt;.data/</c>. Pure BCL IO; never throws.
+/// <c>&lt;baseDir&gt;/&lt;pluginGuid&gt;.data/</c>. Pure BCL IO; never throws.
 /// </summary>
 internal sealed class PluginDataStore : IPluginDataStore
 {
     private readonly string _dataDir;
     private readonly IPluginLog _log;
 
-    public PluginDataStore(string pluginsDirPath, string pluginGuid, IPluginLog log)
+    public PluginDataStore(string baseDirPath, string pluginGuid, IPluginLog log)
     {
-        _dataDir = Path.GetFullPath(Path.Combine(pluginsDirPath, pluginGuid + ".data"));
+        _dataDir = Path.GetFullPath(Path.Combine(baseDirPath, pluginGuid + ".data"));
         _log = log;
     }
 

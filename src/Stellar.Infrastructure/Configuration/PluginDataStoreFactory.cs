@@ -3,17 +3,17 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.Configuration;
 
-/// <summary>Creates a <see cref="PluginDataStore"/> under <c>&lt;pluginsDir&gt;/&lt;guid&gt;.data/</c> per plugin.</summary>
+/// <summary>Creates a <see cref="PluginDataStore"/> under <c>&lt;baseDir&gt;/&lt;guid&gt;.data/</c> per plugin.</summary>
 internal sealed class PluginDataStoreFactory : IPluginDataStoreFactory
 {
-    private readonly string _pluginsDirPath;
+    private readonly string _baseDirPath;
     private readonly IPluginLog _log;
 
-    public PluginDataStoreFactory(string pluginsDirPath, IPluginLog log)
+    public PluginDataStoreFactory(string baseDirPath, IPluginLog log)
     {
-        _pluginsDirPath = pluginsDirPath;
+        _baseDirPath = baseDirPath;
         _log = log;
     }
 
-    public IPluginDataStore Create(string pluginGuid) => new PluginDataStore(_pluginsDirPath, pluginGuid, _log);
+    public IPluginDataStore Create(string pluginGuid) => new PluginDataStore(_baseDirPath, pluginGuid, _log);
 }
