@@ -94,7 +94,7 @@ public sealed partial class BootstrapPlugin
         BuildInfraServices(BepInExPluginLog log)
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
-        var entityTransforms = new EntityTransformsService(_gameTypeRegistry!);
+        var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
         _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);

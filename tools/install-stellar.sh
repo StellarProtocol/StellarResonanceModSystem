@@ -157,6 +157,30 @@ if [ -d "$GAME/BepInEx/plugins/Stellar.HelloWorld" ]; then
     echo "removed legacy Stellar.HelloWorld plugin"
 fi
 
+# ---- Shadow-copy guard (P0). BepInEx recursively scans BepInEx/plugins and the framework
+# scans stellar/plugins; each loads exactly ONE plugin per GUID+version, and when several
+# copies share a version it picks ONE ARBITRARILY. A stale Stellar.Framework.bak-*/<slot>.bak-*
+# dir left in a scan path can therefore SHADOW the build we just deployed — the fix runs in
+# nobody's client while the sha1 on disk "proves" it is deployed. This hid the wire-position
+# fallback for a whole owner session (run WkOzO9KMOY). Evacuate every shadow copy OUT of both
+# scan paths. Moves, never deletes — backups survive, just outside the scan path.
+SHADOW_STASH="$GAME/stellar-backups/evicted-$(date +%Y%m%d-%H%M%S)"
+evacuate_shadows() {
+    for d in "$1"/$2; do
+        [ -d "$d" ] || continue          # unmatched glob stays literal / non-dir → skip
+        mkdir -p "$SHADOW_STASH"
+        mv "$d" "$SHADOW_STASH/" && echo "SHADOW GUARD: evacuated $d -> $SHADOW_STASH/"
+    done
+}
+# Framework scan path: the ONLY valid dir is exactly Stellar.Framework; any suffixed variant shadows it.
+evacuate_shadows "$GAME/BepInEx/plugins" "Stellar.Framework.*"
+# User-plugin scan path: any *.bak* slot shadows the live plugin folder.
+evacuate_shadows "$GAME/stellar/plugins" "*.bak*"
+if [ -d "$SHADOW_STASH" ]; then
+    echo "SHADOW GUARD: moved shadow plugin copies out of the BepInEx/framework scan paths."
+    echo "             They could have been loaded INSTEAD of the build just deployed. See $SHADOW_STASH"
+fi
+
 # ---- Apply MODE: stellar_perf.flags (game cwd = game_mini) + BepInEx.cfg logging ----
 FLAGS="$GAME/stellar_perf.flags"
 CFG="$GAME/BepInEx/config/BepInEx.cfg"

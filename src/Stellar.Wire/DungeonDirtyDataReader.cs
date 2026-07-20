@@ -58,6 +58,7 @@ public static class DungeonDirtyDataReader
     private const int TimerFieldPauseTotalTime = 9;
     private const int TimerFieldMax = 11;
 
+    private const int FlowFieldState = 1;   // flow_info.state (int32 scalar, EDungeonState)
     private const int FlowFieldResult = 8;      // flow_info.result (int32 scalar)
     private const int FlowFieldMax = 8;         // fields 1..8 are int32 scalars
 
@@ -203,7 +204,10 @@ public static class DungeonDirtyDataReader
         return true;
     }
 
-    // DungeonFlowInfo dirty container — fields 1..8 all int32 scalars; capture result (8).
+    // DungeonFlowInfo dirty container — fields 1..8 all int32 scalars; capture state (1) and
+    // result (8). state (field 1) drives the mid-run flow-state transitions IDungeonState
+    // surfaces; a delta that never touched it must not be reported as a phantom 0 (hence the
+    // separate stateSeen flag rather than defaulting flowState to 0 unconditionally).
     private static bool TryReadFlowContainer(ReadOnlySpan<byte> blob, ref int pos, ref DungeonDirtyTimerResult result)
     {
         if (!TryReadInt32(blob, ref pos, out int tag) || tag != TagBegin) return false;
@@ -211,7 +215,8 @@ public static class DungeonDirtyDataReader
         if (size == TagEnd) { result = result with { HasFlowResult = true }; return true; }
         if (size < 0 || size > blob.Length - pos) return false;
         int entriesEnd = pos + size;
-        int flowResult = 0;
+        int flowResult = 0, flowState = 0;
+        bool stateSeen = false;
         while (true)
         {
             if (!TryReadInt32(blob, ref pos, out int index)) return false;
@@ -225,8 +230,10 @@ public static class DungeonDirtyDataReader
             }
             if (!TryReadInt32(blob, ref pos, out int value)) return false;
             if (index == FlowFieldResult) flowResult = value;
+            else if (index == FlowFieldState) { flowState = value; stateSeen = true; }
         }
         result = result with { HasFlowResult = true, FlowResult = flowResult };
+        if (stateSeen) result = result with { HasFlowState = true, FlowState = flowState };
         return true;
     }
 

@@ -169,7 +169,13 @@ internal sealed class CombatEntityTracker
             _vitalsByEntity.TryGetValue(entityId, out var cur);
             var newHp    = hp    >= 0 ? hp    : cur.Hp;
             var newMaxHp = maxHp >= 0 ? maxHp : cur.MaxHp;
-            _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true);
+            _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true)
+            {
+                // A real hp value (>= 0, incl. 0 = dead) flips the flag; a MaxHp-only delta must
+                // NOT — death inference requires HasHpObservation, so {Hp:0, MaxHp:>0} from a
+                // MaxHp-only first observation reads "alive, HP unknown" (the false-skull fix).
+                HasHpObservation = cur.HasHpObservation || hp >= 0,
+            };
         }
         Touch(entityId, System.Environment.TickCount64);
     }
@@ -306,7 +312,14 @@ internal sealed class CombatEntityTracker
     {
         OnEntityDisappeared(id);
         lock (_skillsByEntityLock)        _skillsByEntity.Remove(id);
-        lock (_subProfessionByEntityLock) _subProfessionByEntity.Remove(id);
+        // RETAIN the resolved sub-profession (class identity). It is NOT part of the leak this sweep
+        // targets: only spec-casting entities (players) ever get an entry — mobs, the unbounded
+        // accumulation this sweep exists to bound, never populate it — so keeping it costs one int per
+        // seen player and is cleared wholesale on scene change (Reset). Evicting it broke the combat
+        // meter: OTHER players (non-party) carry entity-type markers other than 640, so EntityId.IsPlayer
+        // is false for them and the sweep treated them as non-player and dropped their class identity —
+        // the meter then rendered their bar the DPS-red default with a blank crest (owner-reported).
+        // The heavy transient state (vitals/dps/attrs/buffs/skills) is still evicted above.
         lock (_lastTouchedMsLock)         _lastTouchedMs.Remove(id);
     }
 

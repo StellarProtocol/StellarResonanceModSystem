@@ -4,6 +4,15 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-07-18
+_**1.14.0** (minor) — CombatMeter sync-fix surface: honest death inference, live party status transport, and dungeon flow-state. Additive; binary-compatible with plugins built against ≤1.13.0._
+### Added
+- **`EntityVitals.HasHpObservation`** — true only once a real current-HP value has been observed; a MaxHp-only attr delta now reads "alive, HP unknown" instead of dead. AOI appear packets now seed vitals directly (previously the first delta after appear defined them).
+- **`PartyMember.FastSyncState`** — raw `TeamMemberFastSyncData.state` (field 6), previously parsed and dropped; the game client itself ignores this field, so semantics are calibrated empirically and consumers must treat unmapped values as "no signal".
+- **`IDungeonState.CurrentFlowState` + `FlowStateVersion`** — the dungeon flow state machine (`EDungeonState`: Active/Ready/Playing/End/Settlement/Vote) surfaced from both the method-23 full sync and the method-24 dirty delta, with a monotonic transition counter as the poll-friendly change notification.
+### Fixed
+- Party fast-sync deliveries that change ONLY the member's status field now fire `MemberUpdated`.
+
 ## [1.13.0] - 2026-07-16
 _**1.13.0** (minor) — adds live Trading-Center membership so exchange plugins categorize new items without a rebuild. Additive; binary-compatible with plugins built against ≤1.12.0._
 ### Added

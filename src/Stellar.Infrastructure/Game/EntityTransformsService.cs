@@ -6,6 +6,9 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.Game;
 
+// Diagnostics live in EntityTransformsService.Diagnostics.cs (per-event gated on
+// StellarDiagnostics + one ungated one-shot the first time the fallback engages).
+
 /// <summary>
 /// Reads entity world transforms (position + facing) by id via the game entity manager.
 /// Reflects into <c>Panda.ZGame.ZEntityMgr</c> (the same singleton the player-state probe
@@ -13,8 +16,15 @@ namespace Stellar.Infrastructure.Game;
 /// <c>GetAttrGoPosition()</c> + <c>GetAttrGoRotation()</c>.
 /// All reflection handles are cached on first use; every failure path returns false.
 /// Main-thread only — must be called from the framework Update tick.
+///
+/// <para>The GameObject transform is the RENDERED view, which streams ≈(0,0,0) for ~7 s after a
+/// silent intra-scene teleport while the entity is alive and fighting (see
+/// <c>docs/recon/thanatos-walkin-geo.md</c>). When that read hits the zero sentinel this service
+/// falls back to <see cref="WireEntityPositions"/> — the server-synced <c>AttrPos(52)</c> logic
+/// position cached off the AOI delta stream — which is crash-proof (a managed read of parsed packet
+/// bytes, never a live IL2CPP deref; see <c>docs/il2cpp-probing-safety.md</c> §4).</para>
 /// </summary>
-internal sealed class EntityTransformsService : IEntityTransforms
+internal sealed partial class EntityTransformsService : IEntityTransforms
 {
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     private const BindingFlags AnyStatic   = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
@@ -22,7 +32,19 @@ internal sealed class EntityTransformsService : IEntityTransforms
     // Recon-confirmed type + method names (replay-entity-transform-notes.md).
     private const string ManagerTypeName    = "Panda.ZGame.ZEntityMgr";
 
+    // Max age of a cached wire position that may substitute for the zero-sentinel view read.
+    // AOI position deltas arrive at roughly the 2 Hz cadence the replay capture samples at, and the
+    // silent-teleport view-settle window is ~7 s; 5 s comfortably covers a few missed deltas plus the
+    // settle window, while old enough that an entity that has genuinely stopped receiving position
+    // updates (idle / left the moving set) is NOT resurrected with a phantom position.
+    // HONEST BOUNDARY: whether AttrPos actually refreshes DURING the un-settled window is UNVERIFIED
+    // offline (thanatos-walkin-geo.md); the owner's raid run is the proof gate. If it does not refresh,
+    // the cached sample ages past this bound and the fallback changes nothing — fails safe either way.
+    internal const long WirePositionMaxStaleMs = 5_000;
+
     private readonly IGameTypeRegistry _typeRegistry;
+    private readonly WireEntityPositions _positions;
+    private readonly IPluginLog _log;
 
     // Cached reflection handles — resolved lazily, retried until all are non-null.
     // Do NOT add a permanent "resolved" bool; the guard is handle-presence so that
@@ -57,9 +79,11 @@ internal sealed class EntityTransformsService : IEntityTransforms
 
     private static readonly object?[] EmptyArgs = Array.Empty<object?>();
 
-    public EntityTransformsService(IGameTypeRegistry typeRegistry)
+    public EntityTransformsService(IGameTypeRegistry typeRegistry, WireEntityPositions positions, IPluginLog log)
     {
         _typeRegistry = typeRegistry;
+        _positions    = positions ?? throw new ArgumentNullException(nameof(positions));
+        _log          = log       ?? throw new ArgumentNullException(nameof(log));
     }
 
     /// <inheritdoc/>
@@ -88,7 +112,89 @@ internal sealed class EntityTransformsService : IEntityTransforms
 
         position = ReadPosition(model);
         yawDegrees = ReadYawDegrees(model);
+
+        // View-transform lag fix (run sea/223237664013287424). The GO transform above is the RENDERED
+        // view, which reads DEGENERATE for the entity's first ~7 s in a silently-teleported scene.
+        // Substitute a FRESH wire position when it does. GO-read FAILURES (entity/model null → false
+        // returns above) are untouched; when no fresh wire exists we keep the GO read exactly as today.
+        MaybeApplyWireFallback(id, ref position, ref yawDegrees);
         return true;
+    }
+
+    // Zero-sentinel predicate — duplicated from the CombatMeter plugin (commit 1ff4564) with the SAME
+    // justification: the map origin is INTERIOR in 518/609 maps, so world (0,0) can be a real in-bounds
+    // coordinate — Y is the discriminator. A real play floor is Y≈100 (raid) and never exactly 0, while a
+    // resolved-but-unpopulated GO transform reads Y==0 exactly. So (Y==0f AND |X|,|Z|<0.5) means "view not
+    // yet populated", not a real position.
+    internal static bool IsZeroSentinel(in Position3D p)
+        => p.Y == 0f && MathF.Abs(p.X) < 0.5f && MathF.Abs(p.Z) < 0.5f;
+
+    // Max vertical (floor) disagreement, in metres, required between a near-zero-Y GO read and a
+    // fresh wire sample before the GO is judged degenerate. See IsDegenerateGoView.
+    internal const float WireFloorDisagreeM = 5f;
+
+    // Max |Y| (metres) a GO read may sit at and still be a candidate for the DEGENERATE un-settled
+    // shapes. Every measured degenerate read has Y ≈ 0 (bit-exact 0 or ≤ ~0.3 jitter), while every
+    // measured real floor is well above (dungeon/raid floors Y≈100, raid lobby Y≈324 — georef table
+    // + owner HUD readings, runs sea/223237664013287424 and sea/i06l2Q07Fk).
+    internal const float GoDegenerateYEpsilon = 1f;
+
+    // Is the GO (rendered-view) read one of the two MEASURED degenerate un-settled shapes
+    // (run sea/223237664013287424): (a) the exact zero sentinel (resolved-but-unpopulated view), or
+    // (b) NEAR-ORIGIN JITTER (X 0→37, Y≈0, Z ±14) — detected as Y ≈ 0 while a fresh wire sample
+    // puts the real floor ≥ WireFloorDisagreeM above.
+    //
+    // A HEALTHY read at any real floor never matches — deliberately: self-AttrPos re-broadcasts
+    // TELEPORT-PAD anchor coordinates while the player is elsewhere (measured run sea/i06l2Q07Fk:
+    // fresh wire said the lobby pad (398.1, 323.8, −42.7) while the live GO walked the arena at
+    // Y≈101), so a fresh wire sample must never displace a healthy view read. This supersedes both
+    // the unconditional wire-first policy (painted pad flickers into fight windows) and the older
+    // |GO.Y − wire.Y| heuristic (a pad broadcast trips it from ANY floor).
+    internal static bool IsDegenerateGoView(in Position3D goPos, in Position3D wirePos)
+    {
+        if (IsZeroSentinel(goPos)) return true;                              // (a) exact zero sentinel
+        return MathF.Abs(goPos.Y) <= GoDegenerateYEpsilon                    // (b) near-origin jitter:
+            && wirePos.Y - goPos.Y > WireFloorDisagreeM;                     //     Y≈0 below a real wire floor
+    }
+
+    internal void MaybeApplyWireFallback(EntityId id, ref Position3D position, ref float yawDegrees)
+    {
+        // Fetch the fresh wire entry FIRST — the trigger compares GO against it, not just the zero shape.
+        if (!_positions.TryGetFresh(id.Value, WirePositionMaxStaleMs, out var s))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: false, default, "no-fresh-wire");
+            return;
+        }
+        var wirePos = new Position3D(s.X, s.Y, s.Z);
+        if (IsZeroSentinel(wirePos))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: true, s, "wire-degenerate");
+            return;
+        }
+        // CONDITIONAL substitution (supersedes wire-first; run sea/i06l2Q07Fk). Self-AttrPos is NOT a
+        // reliable live-position feed: it re-broadcasts TELEPORT-PAD anchor coordinates while the player
+        // is elsewhere, so a fresh wire sample must never displace a HEALTHY view read — wire-first
+        // painted lobby-pad flickers into fight windows. Substitute only for the measured degenerate
+        // view shapes (see IsDegenerateGoView). NOTE: IEntityTransforms is public plugin surface — this
+        // policy applies to every consumer, not just the replay capture (the only in-tree one today).
+        if (!IsDegenerateGoView(position, wirePos))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: true, s, "go-healthy");
+            return;
+        }
+        position = wirePos;
+        if (s.HasYaw) yawDegrees = NormalizeYaw(s.Yaw);
+        DiagWireFallbackEngaged(id, s.AgeMs);
+    }
+
+    // Facing from the wire (AttrPos.dir / AttrDir). UNIT UNVERIFIED offline (degrees vs radians) — the GO
+    // path yields eulerAngles.y in DEGREES; the [PosDbg] diag logs the raw wire dir so the owner run can
+    // confirm the unit. Normalise into [0,360) to match the GO path's output contract regardless; position
+    // (not facing) is the load-bearing datum here.
+    private static float NormalizeYaw(float raw)
+    {
+        var y = raw % 360f;
+        return y < 0f ? y + 360f : y;
     }
 
     // -------------------------------------------------------------------------

@@ -142,6 +142,15 @@ internal sealed partial class PandaCombatStubProbe
             $"attrIds=[{string.Join(",", ids)}] AttrName={nameVal ?? "<none>"}");
     }
 
+    // Appear-packet vitals seed (A1, 2026-07-17 sync spec). Doubles as the 3.7 attr-id validity
+    // check the spec asks for: sane hp/maxHp values here confirm AttrHp=11310 / AttrMaxHp=11320
+    // still hold (Stellar.Wire/AttrTypeIds.cs:26-27). Consumed by the Task 5 calibration session.
+    private void DiagAppearVitalsSeed(EntityId eid, long hp, long maxHp)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[CombatStub][diag] appear vitals seed id={eid.Value} hp={hp} maxHp={maxHp}");
+    }
+
     // One-shot boot diagnostic for the AttrFashionData(201) decode path. Fires
     // once per session regardless of STELLAR_DIAGNOSTICS (boot one-shots are
     // always on; the toggle only gates per-event repetition) — the single line
@@ -154,6 +163,23 @@ internal sealed partial class PandaCombatStubProbe
         if (_firstFashionDecodeLogged || entries.Count == 0) return;
         _firstFashionDecodeLogged = true;
         _log.Info($"[EntityDetail] first fashion decode: entity={eid.Value} entries={entries.Count} firstId={entries[0].FashionId}");
+    }
+
+    // Per-entity AttrPos(52) arrival trace, throttled to ~2 Hz per entity. Proves the walk-in
+    // honest-boundary question: does AttrPos actually REFRESH (non-zero, changing vecs) for each player
+    // during the +0..+7 s un-settled window while go=(0,0,0)? (logic-position-accessor.md §4). Also logs
+    // the raw byte length so the owner run disambiguates the tagged (15/20 B) vs packed (12/16 B) form.
+    private readonly Dictionary<long, long> _posDbgLastMs = new();
+    private const long PosDbgThrottleMs = 500;
+
+    private void DiagWirePos(EntityId eid, int rawLen, in WirePos pos)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var now = Environment.TickCount64;
+        if (_posDbgLastMs.TryGetValue(eid.Value, out var last) && now - last < PosDbgThrottleMs) return;
+        _posDbgLastMs[eid.Value] = now;
+        _log.Info($"[PosDbg][wire] id={eid.Value} raw={rawLen}B vec=({pos.X:0.0},{pos.Y:0.0},{pos.Z:0.0}) " +
+                  $"hasDir={pos.HasDir} dir={pos.Dir:0.00}");
     }
 
     // Recon probe for Task 6 (Defeated / AttrDeathCount=348): the World-entity attr's
@@ -196,6 +222,20 @@ internal sealed partial class PandaCombatStubProbe
             if (attr.Id == AttrTypeIds.AttrDeathCount)
                 DiagDeathCountAttr(default, attr, "enter-scene-SceneAttrs");
         }
+    }
+
+    // One line per enter-scene: the raw scene uuid, the run-id gate's decision, and the two
+    // string identities (SceneGuid/ConnectGuid) the framework never previously read. Answers
+    // "does the client hold a per-instance identity at zone-in" (spec 2026-07-19 § 8.3) and
+    // gives the walk-in/lobby validation pass its runId-timing artifact. Enter-scenes only
+    // fire on zone transitions, so volume is negligible even in long sessions.
+    private void DiagEnterSceneIdentity(ReadOnlySpan<byte> span)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        EnterSceneReader.TryReadSceneId(span, out var sceneUuid);
+        EnterSceneReader.TryReadSceneGuids(span, out var sceneGuid, out var connectGuid);
+        _log.Info($"[CombatStub][enter-scene] sceneUuid={sceneUuid} gatedRunId={DungeonRunIdGate.Resolve(sceneUuid)} " +
+                  $"sceneGuid={(sceneGuid.Length > 0 ? sceneGuid : "-")} connectGuid={(connectGuid.Length > 0 ? connectGuid : "-")}");
     }
 
     /// <summary>

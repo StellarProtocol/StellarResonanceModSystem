@@ -33,7 +33,7 @@ public sealed partial class BootstrapPlugin
         // (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342), which it pushes into the
         // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
         _combatStubProbe = new PandaCombatStubProbe(
-            _combatService!, _dungeonStateService!, log);
+            _combatService!, _dungeonStateService!, _wirePositions, log);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six

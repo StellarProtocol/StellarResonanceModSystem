@@ -16,6 +16,7 @@ internal sealed class MemberSlot
     public long       MaxHp;
     public int        SceneId;
     public Position3D Position;
+    public int        FastSyncStateRaw;   // TeamMemberFastSyncData.state (field 6) — raw; semantics calibrated in-game (A2)
     public int        OnlineStatusRaw;
     public int        EnterTimeRaw;
     public int        GroupId;

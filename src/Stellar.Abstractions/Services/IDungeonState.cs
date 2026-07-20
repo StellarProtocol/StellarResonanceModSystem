@@ -14,6 +14,11 @@ namespace Stellar.Abstractions.Services;
 /// implementations publish via volatile reads so consumers are lock-free.
 /// <see cref="CurrentRunId"/> resets to 0 on leave-scene / logout.
 /// </para>
+///
+/// <para>
+/// <b>NOTE:</b> This interface sits exactly at the STELLAR0005 8-member cap — do not add members;
+/// split the interface (see docs/coding-standards.md § SOLID) if more surface is needed.
+/// </para>
 /// </summary>
 public interface IDungeonState
 {
@@ -68,4 +73,23 @@ public interface IDungeonState
 
     /// <summary>Enemies defeated this run (World attr AttrDeathCount=348); 0 if unknown.</summary>
     int LastDefeatedCount { get; }
+
+    /// <summary>
+    /// Current dungeon flow state (<c>DungeonFlowInfo.state</c>) for the live run —
+    /// <see cref="Stellar.Abstractions.Domain.DungeonFlowState.None"/> when not in an instanced
+    /// run or not yet observed. Sourced from BOTH dungeon delivery paths: the method-23 full sync
+    /// (entry/rejoin) and the method-24 dirty delta (mid-run transitions). Cleared when a new run
+    /// begins and on logout reset; like the settlement, it survives the run-id drop-to-0 on
+    /// leaving to town (consumers gate on <see cref="CurrentRunId"/> for "in a run").
+    /// </summary>
+    Stellar.Abstractions.Domain.DungeonFlowState CurrentFlowState { get; }
+
+    /// <summary>
+    /// Monotonic transition counter for <see cref="CurrentFlowState"/> — increments once per
+    /// observed state CHANGE, never for a same-value re-delivery. This is the change-notification
+    /// mechanism: state is written on the network receive thread, so consumers POLL this counter
+    /// (e.g. on their frame tick) instead of subscribing to a cross-thread event. Resets to 0
+    /// when a new run begins and on logout reset — treat a DECREASE as "new run, adopt silently".
+    /// </summary>
+    int FlowStateVersion { get; }
 }

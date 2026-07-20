@@ -22,6 +22,7 @@ internal static class EnterSceneReader
     private const int SceneAttrsField = 1;
     private const int PlayerEntField  = 2;
     private const int SceneGuidField  = 3;
+    private const int ConnectGuidField = 4;
 
     public static bool TryReadPlayerEntity(ReadOnlySpan<byte> payload, out AppearEntityMsg playerEnt)
     {
@@ -88,6 +89,28 @@ internal static class EnterSceneReader
 
         if (!TryFindField(sceneInfo, SceneAttrsField, out int oa, out int la)) return false;
         return AttrCollectionReader.TryRead(sceneInfo.Slice(oa, la), out sceneAttrs);
+    }
+
+    /// <summary>
+    /// Reads the two string identities on <c>EnterScene.EnterSceneInfo(1)</c> —
+    /// <c>SceneGuid</c> (3) and <c>ConnectGuid</c> (4). These are the client's
+    /// per-connection/per-scene-server identities, present (if at all) from zone-in —
+    /// unlike <c>AttrSceneUuid</c> (342), which stays a persistent field-class id until
+    /// the run officially starts. Diagnostic surface only (spec 2026-07-19 § 8.3):
+    /// neither can key uploads (<c>level_uuid</c> must be the shared snowflake).
+    /// Returns <see langword="false"/> when neither field is present.
+    /// </summary>
+    public static bool TryReadSceneGuids(ReadOnlySpan<byte> payload, out string sceneGuid, out string connectGuid)
+    {
+        sceneGuid = "";
+        connectGuid = "";
+        if (!TryFindField(payload, EnterSceneInfoField, out int o1, out int l1)) return false;
+        var sceneInfo = payload.Slice(o1, l1);
+        if (TryFindField(sceneInfo, SceneGuidField, out int o2, out int l2))
+            sceneGuid = System.Text.Encoding.UTF8.GetString(sceneInfo.Slice(o2, l2));
+        if (TryFindField(sceneInfo, ConnectGuidField, out int o3, out int l3))
+            connectGuid = System.Text.Encoding.UTF8.GetString(sceneInfo.Slice(o3, l3));
+        return sceneGuid.Length > 0 || connectGuid.Length > 0;
     }
 
     // Locate the first length-delimited (wire-type 2) field == targetField; return its payload offset+length

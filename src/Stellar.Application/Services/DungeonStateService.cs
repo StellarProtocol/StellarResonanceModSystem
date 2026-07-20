@@ -39,6 +39,12 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     private int _lastOutcome;
     private int _lastDefeated;
 
+    // Flow state + its transition counter: same sticky lifecycle as outcome/defeated (cleared on
+    // a genuinely-new run and Reset, preserved across the drop-to-0 town transition). Single
+    // writer (both dungeon probe paths run on the network receive thread), lock-free readers.
+    private int _flowState;
+    private int _flowStateVersion;
+
     public long CurrentRunId => Interlocked.Read(ref _currentRunId);
 
     public DungeonSettlementInfo? LastSettlement
@@ -54,6 +60,11 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         => (Stellar.Abstractions.Domain.DungeonOutcome)Volatile.Read(ref _lastOutcome);
 
     public int LastDefeatedCount => Volatile.Read(ref _lastDefeated);
+
+    public Stellar.Abstractions.Domain.DungeonFlowState CurrentFlowState
+        => (Stellar.Abstractions.Domain.DungeonFlowState)Volatile.Read(ref _flowState);
+
+    public int FlowStateVersion => Volatile.Read(ref _flowStateVersion);
 
     public void SetCurrentRun(long sceneUuid)
     {
@@ -72,6 +83,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
             ClearRunTimerLatch();
             Interlocked.Exchange(ref _lastOutcome, 0);
             Interlocked.Exchange(ref _lastDefeated, 0);
+            Interlocked.Exchange(ref _flowState, 0);
+            Interlocked.Exchange(ref _flowStateVersion, 0);
         }
     }
 
@@ -104,6 +117,17 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     {
         if (count < 0) return;
         Interlocked.Exchange(ref _lastDefeated, count);
+    }
+
+    public void SetFlowState(int state)
+    {
+        if (state < 0) return;
+        // Same-value re-deliveries must not bump the version — the version IS the plugin-visible
+        // "a transition happened" signal. Check-then-write is safe: both probe paths share the
+        // single network receive thread (see PandaDungeonProbe), so there is exactly one writer.
+        if (Volatile.Read(ref _flowState) == state) return;
+        Volatile.Write(ref _flowState, state);
+        Interlocked.Increment(ref _flowStateVersion);
     }
 
     public RunTimerWrite SetRunTimerStart(long startMs, RunTimerSource source)
@@ -139,6 +163,8 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
         lock (_settlementLock) _lastSettlement = null;
         Interlocked.Exchange(ref _lastOutcome, 0);
         Interlocked.Exchange(ref _lastDefeated, 0);
+        Interlocked.Exchange(ref _flowState, 0);
+        Interlocked.Exchange(ref _flowStateVersion, 0);
     }
 
     // Empty the run-timer latch slot (value + source rank together, under the

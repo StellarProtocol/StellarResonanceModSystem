@@ -128,4 +128,38 @@ public sealed class EntityIdleSweepTests
 
         Assert.True(tracker.GetVitals(Mob).IsKnown);
     }
+
+    [Fact]
+    public void Sweep_retains_class_identity()
+    {
+        // Regression pin (commit 3225a4c, owner-reported all-red/no-crest meter): OTHER players
+        // carry entity-type markers != 640, so EntityId.IsPlayer is false for them and the idle
+        // sweep treats them as mobs. The sweep must evict their transient state (vitals/dps/…)
+        // but RETAIN the cast-inferred sub-profession — evicting it dropped role colour + crest
+        // on the live meter for every non-party player. Retention is safe: only spec-casting
+        // entities (players) ever populate the map, and Reset() clears it on scene change.
+        var svc = MakeService(out var tracker);
+
+        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100);
+        tracker.SetSubProfession(Mob, 40001);
+        tracker.Touch(Mob, nowMs: 0);
+
+        svc.SweepIdleEntities(CombatService.IdleEntityTtlMs + 1);
+
+        Assert.False(tracker.GetVitals(Mob).IsKnown);        // transient state evicted
+        Assert.Equal(40001, tracker.GetSubProfession(Mob));  // class identity retained
+    }
+
+    [Fact]
+    public void Scene_reset_clears_retained_class_identity()
+    {
+        // The retention above is bounded by the scene: Reset() (scene change) clears the map
+        // wholesale, so keeping identities across sweeps can never grow past one scene's players.
+        var svc = MakeService(out var tracker);
+        tracker.SetSubProfession(Mob, 40001);
+
+        tracker.Reset();
+
+        Assert.Equal(0, tracker.GetSubProfession(Mob));
+    }
 }
