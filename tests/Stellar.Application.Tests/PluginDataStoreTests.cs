@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Stellar.Infrastructure.Configuration;
@@ -5,13 +7,25 @@ using Xunit;
 
 namespace Stellar.Application.Tests;
 
-public class PluginDataStoreTests
+public class PluginDataStoreTests : IDisposable
 {
-    private static PluginDataStore NewStore(out string dataDir)
+    private readonly List<string> _tempRoots = new();
+
+    private PluginDataStore NewStore(out string dataDir)
     {
         var root = Path.Combine(Path.GetTempPath(), "stellar-ds-" + Path.GetRandomFileName());
+        _tempRoots.Add(root);
         dataDir = Path.Combine(root, "test.plugin.data");
         return new PluginDataStore(root, "test.plugin", new NullPluginLog());
+    }
+
+    public void Dispose()
+    {
+        foreach (var root in _tempRoots)
+        {
+            try { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+            catch { /* best-effort cleanup; never fail a test on teardown */ }
+        }
     }
 
     [Fact]
@@ -59,12 +73,13 @@ public class PluginDataStoreTests
     [InlineData("a/b/c.gz")]      // more than one separator
     [InlineData("back\\slash.gz")]
     [InlineData("")]
+    [InlineData("foo\0bar.gz")]   // embedded NUL — Path.GetFullPath throws; TryResolve must swallow it
     public void Invalid_names_are_refused(string name)
     {
-        var store = NewStore(out var dataDir);
+        var store = NewStore(out _);
         store.Write(name, new byte[] { 9 });          // must not throw, must not write
         Assert.Null(store.Read(name));                // read of invalid name → null
-        Assert.False(File.Exists(Path.Combine(dataDir, "..", "escape.gz")));
+        Assert.Empty(store.List());                   // nothing written anywhere in the data dir
     }
 }
 

@@ -28,8 +28,8 @@ internal sealed class PluginDataStore : IPluginDataStore
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             var tmp = full + ".tmp";
             File.WriteAllBytes(tmp, data);
-            if (File.Exists(full)) File.Delete(full);
-            File.Move(tmp, full);   // atomic-ish replace
+            // net6.0+ 3-arg overload replaces atomically; no Delete-then-Move gap where `full` is absent.
+            File.Move(tmp, full, overwrite: true);
         }
         catch (Exception ex) { _log.Warning($"[Stellar][PluginData] write {name} failed: {ex.GetType().Name}: {ex.Message}"); }
     }
@@ -74,15 +74,24 @@ internal sealed class PluginDataStore : IPluginDataStore
         fullPath = "";
         if (string.IsNullOrEmpty(name)) return false;
         if (name.IndexOf('\\') >= 0) return false;
-        if (Path.IsPathRooted(name)) return false;
-        var segments = name.Split('/');
-        if (segments.Length > 2) return false;              // at most one subdir
-        foreach (var seg in segments)
-            if (seg.Length == 0 || seg == "." || seg == "..") return false;
-        var candidate = Path.GetFullPath(Path.Combine(dataDir, name));
-        var root = dataDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ? dataDir : dataDir + Path.DirectorySeparatorChar;
-        if (!candidate.StartsWith(root, StringComparison.Ordinal)) return false;   // defense in depth
-        fullPath = candidate;
-        return true;
+        try
+        {
+            if (Path.IsPathRooted(name)) return false;
+            var segments = name.Split('/');
+            if (segments.Length > 2) return false;              // at most one subdir
+            foreach (var seg in segments)
+                if (seg.Length == 0 || seg == "." || seg == "..") return false;
+            var candidate = Path.GetFullPath(Path.Combine(dataDir, name));
+            var root = dataDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ? dataDir : dataDir + Path.DirectorySeparatorChar;
+            if (!candidate.StartsWith(root, StringComparison.Ordinal)) return false;   // defense in depth
+            fullPath = candidate;
+            return true;
+        }
+        catch (Exception)
+        {
+            // Embedded NUL (or other platform-specific invalid path chars, e.g. ':' under Wine/Windows)
+            // makes Path.IsPathRooted/GetFullPath throw. TryResolve must be total — never throw.
+            return false;
+        }
     }
 }
