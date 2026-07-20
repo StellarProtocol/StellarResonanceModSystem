@@ -16,6 +16,7 @@ internal sealed class PluginServices : IPluginServices
     public IExchange Market { get; }
     public INotifications Notifications { get; }
     public IPluginConfig Config { get; }
+    public IPluginDataStore Data { get; }
     public IGameEvents GameEvents { get; }
     public IPlayerState PlayerState { get; }
     public IChat Chat { get; }
@@ -88,7 +89,8 @@ internal sealed class PluginServices : IPluginServices
         INoticeTips noticeTips,
         IDungeonState dungeon,
         IEntityTransforms entityTransforms,
-        IGameEnvironment gameEnvironment)
+        IGameEnvironment gameEnvironment,
+        IPluginDataStore data)
     {
         Log = log;
         Framework = framework;
@@ -131,5 +133,6 @@ internal sealed class PluginServices : IPluginServices
         Dungeon = dungeon;
         EntityTransforms = entityTransforms;
         GameEnvironment = gameEnvironment;
+        Data = data;
     }
 }

@@ -56,6 +56,7 @@ public sealed partial class BootstrapPlugin
     {
         var pluginsDirPath = Path.Combine(Paths.GameRootPath, UserPluginSubdirectory);
         _configStore = new FileConfigStore(log, pluginsDirPath);
+        _pluginDataStoreFactory = new Stellar.Infrastructure.Configuration.PluginDataStoreFactory(pluginsDirPath, log);
         // Framework-owned config (currently unused by sample plugins — they each
         // get their own per-plugin config via the PluginConfigFactory below).
         _pluginConfigService = new PluginConfigService(_configStore, PluginGuid);

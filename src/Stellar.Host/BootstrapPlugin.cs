@@ -57,6 +57,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PlayerStatsService? _playerStatsService;
     private PluginConfigService? _pluginConfigService;
     private FileConfigStore? _configStore;
+    private Stellar.Application.Abstractions.IPluginDataStoreFactory? _pluginDataStoreFactory;
     private PandaPlayerStateProbe? _playerStateProbe;
     private PandaPlayerStatsProbe? _playerStatsProbe;
     private ChatService? _chatService;
