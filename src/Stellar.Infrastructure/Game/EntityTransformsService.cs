@@ -153,9 +153,25 @@ internal sealed partial class EntityTransformsService : IEntityTransforms
     internal void MaybeApplyWireFallback(EntityId id, ref Position3D position, ref float yawDegrees)
     {
         // Fetch the fresh wire entry FIRST — the trigger compares GO against it, not just the zero shape.
-        if (!_positions.TryGetFresh(id.Value, WirePositionMaxStaleMs, out var s)) return;
+        if (!_positions.TryGetFresh(id.Value, WirePositionMaxStaleMs, out var s))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: false, default, "no-fresh-wire");
+            return;
+        }
         var wirePos = new Position3D(s.X, s.Y, s.Z);
-        if (!ShouldSubstituteFreshWire(position, wirePos)) return;
+        // WIRE-FIRST (owner-confirmed run sea/i3yeDnkRla: the GO view is degenerate for the ENTIRE
+        // pre-archive window — not a brief settle). The replay capture is the ONLY consumer of this
+        // service, and the server-synced AttrPos IS the authoritative logic position, so prefer a fresh,
+        // non-degenerate wire outright instead of gating on the GO-vs-wire heuristic (ShouldSubstitute-
+        // FreshWire), which silently skipped on the owner's runs despite a fresh Y=100 wire + near-origin
+        // GO. GO is kept only when the wire itself is unusable, so a fully-settled run is unaffected
+        // (wire ≈ GO) and the previously-working case still substitutes. See ShouldSubstituteFreshWire's
+        // doc for the old heuristic (retained + unit-tested for reference).
+        if (IsZeroSentinel(wirePos))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: true, s, "wire-degenerate");
+            return;
+        }
         position = wirePos;
         if (s.HasYaw) yawDegrees = NormalizeYaw(s.Yaw);
         DiagWireFallbackEngaged(id, s.AgeMs);
