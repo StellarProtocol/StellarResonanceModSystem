@@ -8,19 +8,23 @@ using Xunit;
 namespace Stellar.Application.Tests.Game;
 
 /// <summary>
-/// Pins the wire-position fallback TRIGGER — origin: run sea/223237664013287424 (Thanatos walk-in).
-/// The measured un-settled GO reads are NEAR-ORIGIN JITTER (X 0→37, Y≈0, Z ±14), not exact zeros, so
-/// the zero-sentinel predicate alone never engaged and the (verified-correct) wire cache went unused
-/// ([PosDbg][fallback] count = 0 over that run). The trigger now also fires on VERTICAL floor
-/// disagreement vs a fresh wire sample.
-/// Instance-path tests pin the WIRE-FIRST contract (commit 001c489): fresh non-degenerate wire
-/// is preferred outright; GO is kept only when the wire is absent, stale, or degenerate.
+/// Pins the wire-position fallback POLICY — conditional substitution:
+/// the wire may substitute ONLY for the two measured degenerate view shapes (exact zero sentinel /
+/// near-origin jitter below a real wire floor — run sea/223237664013287424, Thanatos walk-in), and
+/// NEVER for a healthy view read. Self-AttrPos re-broadcasts TELEPORT-PAD anchor coordinates while
+/// the player is elsewhere (measured run sea/i06l2Q07Fk: fresh wire said the lobby pad
+/// (398.1, 323.8, −42.7) while the live GO walked the arena at Y≈101), so both the unconditional
+/// wire-first policy and the older |GO.Y − wire.Y| heuristic painted pad coordinates into the
+/// replay; the pad pins below must never be weakened.
 /// </summary>
 public sealed class EntityTransformsFallbackTests
 {
-    // Real numbers from run sea/223237664013287424.
+    // Real numbers from run sea/223237664013287424 (degenerate walk-in)…
     private static readonly Position3D JitterGo = new(12f, 0.3f, -8f);          // near-origin jitter (NOT zero-sentinel)
     private static readonly Position3D WireFloor = new(150.8f, 100.2f, -304.1f); // fresh wire (true boss-room floor)
+    // …and from run sea/i06l2Q07Fk (pad broadcast vs healthy view).
+    private static readonly Position3D ArenaGo = new(-12.25f, 100.9f, 0.2f);     // live GO, walking the arena
+    private static readonly Position3D LobbyPadWire = new(398.1f, 323.8f, -42.7f); // fresh wire = teleport-pad anchor
 
     private sealed class StubTypeRegistry : IGameTypeRegistry
     {
@@ -30,36 +34,41 @@ public sealed class EntityTransformsFallbackTests
     private static EntityTransformsService NewService(WireEntityPositions cache, StubLog log)
         => new(new StubTypeRegistry(), cache, log);
 
-    // ── Pure decision (ShouldSubstituteFreshWire) ────────────────────────────
+    // ── Pure decision (IsDegenerateGoView) ───────────────────────────────────
 
     [Fact]
-    public void Decision_ZeroSentinelGo_SubstitutesWire()
-        => Assert.True(EntityTransformsService.ShouldSubstituteFreshWire(Position3D.Zero, WireFloor));
+    public void Decision_ZeroSentinelGo_IsDegenerate()
+        => Assert.True(EntityTransformsService.IsDegenerateGoView(Position3D.Zero, WireFloor));
 
     [Fact]
-    public void Decision_NearOriginJitterGo_FloorDisagrees_SubstitutesWire()
-        => Assert.True(EntityTransformsService.ShouldSubstituteFreshWire(JitterGo, WireFloor));
+    public void Decision_NearOriginJitterGo_BelowWireFloor_IsDegenerate()
+        => Assert.True(EntityTransformsService.IsDegenerateGoView(JitterGo, WireFloor));
 
     [Fact]
-    public void Decision_SettledGo_AgreesVertically_KeepsGo()
+    public void Decision_SettledGo_IsHealthy()
     {
-        // Both on the real floor (ΔY ≈ 0.4 m) — GO stays primary even though X/Z differ ~5 m.
+        // Both on the real floor (ΔY ≈ 0.4 m) — GO is healthy even though X/Z differ ~5 m.
         var settledGo = new Position3D(170f, 100.5f, -290f);
         var wire = new Position3D(165f, 100.1f, -295f);
-        Assert.False(EntityTransformsService.ShouldSubstituteFreshWire(settledGo, wire));
+        Assert.False(EntityTransformsService.IsDegenerateGoView(settledGo, wire));
     }
 
     [Fact]
-    public void Decision_DegenerateWire_NeverSubstitutes()
-        => Assert.False(EntityTransformsService.ShouldSubstituteFreshWire(JitterGo, Position3D.Zero));
+    public void Decision_PadBroadcastWire_NeverDegradesHealthyGo()
+    {
+        // REGRESSION PIN (run sea/i06l2Q07Fk): a pad-anchor wire broadcast 220 m above the live GO
+        // floor must NOT mark the healthy GO degenerate — the old Y-disagreement heuristic and
+        // wire-first both failed exactly here. Never weaken this pin.
+        Assert.False(EntityTransformsService.IsDegenerateGoView(ArenaGo, LobbyPadWire));
+    }
 
     [Fact]
-    public void Decision_FloorDisagreementBoundary()
+    public void Decision_YEpsilonBoundary()
     {
-        var go = new Position3D(0f, 100f, 0f);
-        // Exactly 5 m → not > threshold → keep GO; 5.1 m → substitute.
-        Assert.False(EntityTransformsService.ShouldSubstituteFreshWire(go, new Position3D(0f, 105f, 0f)));
-        Assert.True(EntityTransformsService.ShouldSubstituteFreshWire(go, new Position3D(0f, 105.1f, 0f)));
+        var wire = new Position3D(0f, 100f, 0f);
+        // |GO.Y| exactly at the epsilon → still a degenerate candidate; just past it → healthy.
+        Assert.True(EntityTransformsService.IsDegenerateGoView(new Position3D(5f, 1.0f, 5f), wire));
+        Assert.False(EntityTransformsService.IsDegenerateGoView(new Position3D(5f, 1.1f, 5f), wire));
     }
 
     // ── Instance path (MaybeApplyWireFallback) ───────────────────────────────
@@ -79,7 +88,7 @@ public sealed class EntityTransformsFallbackTests
         Assert.Equal(WireFloor.X, pos.X, 3);
         Assert.Equal(WireFloor.Y, pos.Y, 3);
         Assert.Equal(WireFloor.Z, pos.Z, 3);
-        // (e) the one-shot fallback-engaged line fires on the new (floor-disagreement) branch.
+        // (e) the one-shot fallback-engaged line fires on the degenerate branch.
         Assert.Contains(log.InfoLines, l => l.Contains("wire-position fallback engaged for entity 555"));
     }
 
@@ -100,25 +109,41 @@ public sealed class EntityTransformsFallbackTests
     }
 
     [Fact]
-    public void Fallback_SettledGo_FreshWire_SubstitutesWireFirst()
+    public void Fallback_HealthyGo_FreshDifferentWire_KeepsGo()
     {
-        // WIRE-FIRST re-pin (commit 001c489, owner-verified run VGpZ9yOEfp): the GO view was
-        // degenerate for the ENTIRE pre-archive window on the owner's runs, so the capture path
-        // now prefers a fresh, non-degenerate wire OUTRIGHT — even when the GO agrees vertically.
-        // This test previously pinned the old heuristic ("settled GO stays primary"); that
-        // heuristic remains covered for reference by the Decision_* tests above.
+        // Supersedes the wire-first pin: a fresh wire sample must NOT displace a healthy view read,
+        // even when the two differ — the wire may be a pad re-broadcast (see class doc).
         var cache = new WireEntityPositions(() => 0);
         var log = new StubLog();
         var svc = NewService(cache, log);
         cache.OnPosition(555, new WirePos(165f, 100.1f, -295f, 0f, false));
 
-        var pos = new Position3D(170f, 100.5f, -290f); // settled GO — agrees vertically with wire
+        var pos = new Position3D(170f, 100.5f, -290f); // settled GO on the same floor
         var yaw = 0f;
         svc.MaybeApplyWireFallback(new EntityId(555), ref pos, ref yaw);
 
-        Assert.Equal(165f, pos.X, 3);   // wire substituted anyway — wire-first
-        Assert.Equal(100.1f, pos.Y, 3);
-        Assert.Equal(-295f, pos.Z, 3);
+        Assert.Equal(170f, pos.X, 3);   // GO kept
+        Assert.Empty(log.InfoLines);
+    }
+
+    [Fact]
+    public void Fallback_PadBroadcastWire_KeepsHealthyGo()
+    {
+        // REGRESSION PIN (run sea/i06l2Q07Fk): fresh lobby-pad wire while the live GO walks the
+        // arena — the pad must not be recorded. Never weaken this pin.
+        var cache = new WireEntityPositions(() => 0);
+        var log = new StubLog();
+        var svc = NewService(cache, log);
+        cache.OnPosition(555, new WirePos(LobbyPadWire.X, LobbyPadWire.Y, LobbyPadWire.Z, 0f, false));
+
+        var pos = ArenaGo;
+        var yaw = 0f;
+        svc.MaybeApplyWireFallback(new EntityId(555), ref pos, ref yaw);
+
+        Assert.Equal(ArenaGo.X, pos.X, 3);   // live GO kept — pad rejected
+        Assert.Equal(ArenaGo.Y, pos.Y, 3);
+        Assert.Equal(ArenaGo.Z, pos.Z, 3);
+        Assert.Empty(log.InfoLines);
     }
 
     [Fact]
@@ -162,8 +187,9 @@ public sealed class EntityTransformsFallbackTests
     [Fact]
     public void Fallback_WireYaw_SubstitutedAndNormalized()
     {
-        // When the wire entry carries a facing (AttrDir/Position.dir), the yaw is substituted
-        // along with the position and normalised into [0,360) to match the GO path's contract.
+        // When the substitution engages (degenerate GO) and the wire entry carries a facing
+        // (AttrDir/Position.dir), the yaw is substituted along with the position and normalised
+        // into [0,360) to match the GO path's contract.
         var cache = new WireEntityPositions(() => 0);
         var log = new StubLog();
         var svc = NewService(cache, log);

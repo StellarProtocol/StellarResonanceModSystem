@@ -129,25 +129,32 @@ internal sealed partial class EntityTransformsService : IEntityTransforms
     internal static bool IsZeroSentinel(in Position3D p)
         => p.Y == 0f && MathF.Abs(p.X) < 0.5f && MathF.Abs(p.Z) < 0.5f;
 
-    // Max vertical (floor) disagreement, in metres, tolerated between the GO read and a fresh wire
-    // sample before the wire is preferred. See ShouldSubstituteFreshWire.
+    // Max vertical (floor) disagreement, in metres, required between a near-zero-Y GO read and a
+    // fresh wire sample before the GO is judged degenerate. See IsDegenerateGoView.
     internal const float WireFloorDisagreeM = 5f;
 
-    // Substitution decision given the GO read and a FRESH wire position. Two DEGENERATE GO shapes were
-    // measured during the silent-teleport un-settled window (run sea/223237664013287424): (a) the exact
-    // zero sentinel (resolved-but-unpopulated view), AND (b) NEAR-ORIGIN JITTER (X 0→37, Y≈0, Z ±14) —
-    // NOT exact zeros, so predicate (a) alone never matched and the good wire cache went unused
-    // ([PosDbg][fallback] count = 0 over that whole run). The reliable tell for BOTH is VERTICAL floor
-    // disagreement: the degenerate GO sits at Y≈0 while the true floor is Y≈100 (~100 m measured;
-    // settled agreement is < 5 m). A vertical threshold avoids the false positive a horizontal-distance
-    // trigger would hit during a fast dash — the wire is ≤ 5 s stale at ~2 Hz, so a dash can exceed 10 m
-    // HORIZONTALLY between updates, but a persistent 5 m+ FLOOR gap only happens when the GO view is
-    // degenerate. GO stays primary whenever it agrees vertically with fresh wire.
-    internal static bool ShouldSubstituteFreshWire(in Position3D goPos, in Position3D wirePos)
+    // Max |Y| (metres) a GO read may sit at and still be a candidate for the DEGENERATE un-settled
+    // shapes. Every measured degenerate read has Y ≈ 0 (bit-exact 0 or ≤ ~0.3 jitter), while every
+    // measured real floor is well above (dungeon/raid floors Y≈100, raid lobby Y≈324 — georef table
+    // + owner HUD readings, runs sea/223237664013287424 and sea/i06l2Q07Fk).
+    internal const float GoDegenerateYEpsilon = 1f;
+
+    // Is the GO (rendered-view) read one of the two MEASURED degenerate un-settled shapes
+    // (run sea/223237664013287424): (a) the exact zero sentinel (resolved-but-unpopulated view), or
+    // (b) NEAR-ORIGIN JITTER (X 0→37, Y≈0, Z ±14) — detected as Y ≈ 0 while a fresh wire sample
+    // puts the real floor ≥ WireFloorDisagreeM above.
+    //
+    // A HEALTHY read at any real floor never matches — deliberately: self-AttrPos re-broadcasts
+    // TELEPORT-PAD anchor coordinates while the player is elsewhere (measured run sea/i06l2Q07Fk:
+    // fresh wire said the lobby pad (398.1, 323.8, −42.7) while the live GO walked the arena at
+    // Y≈101), so a fresh wire sample must never displace a healthy view read. This supersedes both
+    // the unconditional wire-first policy (painted pad flickers into fight windows) and the older
+    // |GO.Y − wire.Y| heuristic (a pad broadcast trips it from ANY floor).
+    internal static bool IsDegenerateGoView(in Position3D goPos, in Position3D wirePos)
     {
-        if (IsZeroSentinel(wirePos)) return false;             // degenerate wire entry — never a second zero
-        if (IsZeroSentinel(goPos)) return true;                // (a) exact zero sentinel
-        return MathF.Abs(goPos.Y - wirePos.Y) > WireFloorDisagreeM; // (b) near-origin jitter → Y-floor disagreement
+        if (IsZeroSentinel(goPos)) return true;                              // (a) exact zero sentinel
+        return MathF.Abs(goPos.Y) <= GoDegenerateYEpsilon                    // (b) near-origin jitter:
+            && wirePos.Y - goPos.Y > WireFloorDisagreeM;                     //     Y≈0 below a real wire floor
     }
 
     internal void MaybeApplyWireFallback(EntityId id, ref Position3D position, ref float yawDegrees)
@@ -159,17 +166,20 @@ internal sealed partial class EntityTransformsService : IEntityTransforms
             return;
         }
         var wirePos = new Position3D(s.X, s.Y, s.Z);
-        // WIRE-FIRST (owner-confirmed run sea/i3yeDnkRla: the GO view is degenerate for the ENTIRE
-        // pre-archive window — not a brief settle). The replay capture is the ONLY consumer of this
-        // service, and the server-synced AttrPos IS the authoritative logic position, so prefer a fresh,
-        // non-degenerate wire outright instead of gating on the GO-vs-wire heuristic (ShouldSubstitute-
-        // FreshWire), which silently skipped on the owner's runs despite a fresh Y=100 wire + near-origin
-        // GO. GO is kept only when the wire itself is unusable, so a fully-settled run is unaffected
-        // (wire ≈ GO) and the previously-working case still substitutes. See ShouldSubstituteFreshWire's
-        // doc for the old heuristic (retained + unit-tested for reference).
         if (IsZeroSentinel(wirePos))
         {
             DiagWireFallbackSkip(id, position, wireHit: true, s, "wire-degenerate");
+            return;
+        }
+        // CONDITIONAL substitution (supersedes wire-first; run sea/i06l2Q07Fk). Self-AttrPos is NOT a
+        // reliable live-position feed: it re-broadcasts TELEPORT-PAD anchor coordinates while the player
+        // is elsewhere, so a fresh wire sample must never displace a HEALTHY view read — wire-first
+        // painted lobby-pad flickers into fight windows. Substitute only for the measured degenerate
+        // view shapes (see IsDegenerateGoView). NOTE: IEntityTransforms is public plugin surface — this
+        // policy applies to every consumer, not just the replay capture (the only in-tree one today).
+        if (!IsDegenerateGoView(position, wirePos))
+        {
+            DiagWireFallbackSkip(id, position, wireHit: true, s, "go-healthy");
             return;
         }
         position = wirePos;
