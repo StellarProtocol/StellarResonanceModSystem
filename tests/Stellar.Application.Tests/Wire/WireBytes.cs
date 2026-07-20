@@ -51,6 +51,15 @@ internal sealed class WireBytes
         return this;
     }
 
+    /// <summary>Write a little-endian IEEE-754 float32 (wire type 5, the payload after a fixed32 tag).</summary>
+    public WireBytes Fixed32(float value)
+    {
+        System.Span<byte> b = stackalloc byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(b, value);
+        _ms.Write(b);
+        return this;
+    }
+
     private void WriteVarint(ulong value)
     {
         while (value >= 0x80)

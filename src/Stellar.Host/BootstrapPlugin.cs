@@ -90,6 +90,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private bool _gameDataAllLoaded;             // one-shot guard for "all tables loaded" log
 
     // ── Wire / stub probes (Wiring.Wire.cs) ─────────────────────────────────
+    // Shared wire-position cache: written by the combat probe (AttrPos/AttrDir off the AOI stream),
+    // read by EntityTransformsService as the zero-sentinel fallback. Field initializer so it exists
+    // whenever either wiring method runs (BuildInfraServices vs InstallWireAndStubProbes — order-free).
+    private readonly Stellar.Infrastructure.Game.WireEntityPositions _wirePositions = new();
     private PandaWireTap? _wireTap;
     private PandaChatProbe? _chatProbe;
     private PandaCombatStubProbe? _combatStubProbe;

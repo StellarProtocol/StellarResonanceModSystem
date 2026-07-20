@@ -165,6 +165,23 @@ internal sealed partial class PandaCombatStubProbe
         _log.Info($"[EntityDetail] first fashion decode: entity={eid.Value} entries={entries.Count} firstId={entries[0].FashionId}");
     }
 
+    // Per-entity AttrPos(52) arrival trace, throttled to ~2 Hz per entity. Proves the walk-in
+    // honest-boundary question: does AttrPos actually REFRESH (non-zero, changing vecs) for each player
+    // during the +0..+7 s un-settled window while go=(0,0,0)? (logic-position-accessor.md §4). Also logs
+    // the raw byte length so the owner run disambiguates the tagged (15/20 B) vs packed (12/16 B) form.
+    private readonly Dictionary<long, long> _posDbgLastMs = new();
+    private const long PosDbgThrottleMs = 500;
+
+    private void DiagWirePos(EntityId eid, int rawLen, in WirePos pos)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var now = Environment.TickCount64;
+        if (_posDbgLastMs.TryGetValue(eid.Value, out var last) && now - last < PosDbgThrottleMs) return;
+        _posDbgLastMs[eid.Value] = now;
+        _log.Info($"[PosDbg][wire] id={eid.Value} raw={rawLen}B vec=({pos.X:0.0},{pos.Y:0.0},{pos.Z:0.0}) " +
+                  $"hasDir={pos.HasDir} dir={pos.Dir:0.00}");
+    }
+
     // Recon probe for Task 6 (Defeated / AttrDeathCount=348): the World-entity attr's
     // delivery path is NOT yet traced (unlike scene attrs 340-345, which are proven to
     // ride EnterSceneInfo.SceneAttrs). This logs every occurrence seen across the three

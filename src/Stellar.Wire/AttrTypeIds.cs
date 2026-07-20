@@ -10,7 +10,8 @@ public static class AttrTypeIds
     public const int AttrId              = 10;
     public const int AttrSummonerId      = 90;    // true caster for a summon/pet entity's owner, when TopSummonerId is absent (Stellar.Application AttrCatalog.g.cs id 90)
     public const int AttrTopSummonerId   = 91;    // preferred over AttrSummonerId — the ROOT caster for chained summons (AttrCatalog.g.cs id 91; same field family as SyncDamageInfo.TopSummonerId)
-    public const int AttrPos             = 52;
+    public const int AttrDir             = 50;    // entity facing (single little-endian fixed32 float); yaw source for WireEntityPositions (enum_e_attr_type.proto:26)
+    public const int AttrPos             = 52;    // serialized zproto.Position{ float x=1;y=2;z=3;dir=4 } — server-synced logic position (enum_e_attr_type.proto:28)
     public const int AttrSkillLevelIdList = 116;  // repeated SkillLevelInfo {skill_id, current_level, remodel_level=Tier} — per-entity equipped loadout (incl. Battle Imagines)
     public const int AttrTeamId          = 194;   // BPSR-Meter e_attr_type.py — entity's team membership; key for in-AOI party identification
     public const int AttrTeamMemberNums  = 195;   // accompanying member count; informational

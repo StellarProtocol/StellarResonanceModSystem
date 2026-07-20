@@ -46,7 +46,10 @@ internal sealed partial class PandaCombatStubProbe
 
         // Disappears — drop combat-cache rows for entities that left AOI.
         foreach (var d in disappears)
+        {
             _sink.OnEntityDisappeared(new EntityId(d));
+            _positions.Remove(d);
+        }
 
         // Appears — extract AttrName + the skill loadout (AttrSkillLevelIdList) from each entity's
         // AttrCollection. The full attr set (incl. the equipped-skill list that carries Battle Imagines)
@@ -131,6 +134,8 @@ internal sealed partial class PandaCombatStubProbe
         // every dungeon re-entry and accumulate for the whole session — the FPS-decays-only-after-re-entry
         // leak. Wipe here, BEFORE the self re-population below; the new scene re-broadcasts self + AOI peers.
         _sink.ResetEntities();
+        // Wire position cache follows the same scene lifecycle (bounds it to one scene's AOI entities).
+        _positions.Clear();
 
         LatchDungeonRunId(span);
         DiagScanSceneAttrsForDeathCount(span);
@@ -379,19 +384,44 @@ internal sealed partial class PandaCombatStubProbe
             DiagFashionDecoded(eid, fashion);
             return;
         }
+        if (TryRoutePositionAttr(eid, attr)) return;
         // Retain every SCALAR attr for the inspector's Attributes tab (the full ZDPS-style dump, not just
         // level/profession). DecodedLong is a safe varint-try (returns 0 on a non-varint payload), so this is
         // correct for numeric attrs and harmless otherwise. Skip the known non-scalar attrs so they don't
-        // store a garbage number: AttrName (string → UpdateEntityName), AttrPos (packed Vec3),
-        // AttrSkillLevelIdList (repeated message → handled via the skills path / SetEntitySkillLevels).
+        // store a garbage number: AttrName (string → UpdateEntityName), AttrSkillLevelIdList (repeated
+        // message → handled via the skills path / SetEntitySkillLevels). AttrPos/AttrDir are routed to the
+        // wire position cache by TryRoutePositionAttr above (previously AttrPos was dropped here).
         if (attr.Id == AttrTypeIds.AttrName
-         || attr.Id == AttrTypeIds.AttrPos
          || attr.Id == AttrTypeIds.AttrSkillLevelIdList) return;
         // Skip zero: a non-varint (string/packed) payload decodes to 0, so this drops junk entries that would
         // otherwise pad every entity's attr map. Legit zero-valued scalar attrs (rare) are simply omitted from
         // the Attributes tab — acceptable for a raw debug dump.
         var value = attr.DecodedLong;
         if (value != 0) _sink.SetEntityAttribute(eid, attr.Id, value);
+    }
+
+    // Route the position-family attrs (AttrPos=52 / AttrDir=50) into the wire position cache instead of
+    // the scalar attr map. AttrPos was previously dropped in CaptureEntityDetail; AttrDir previously fell
+    // through and was stored as a junk varint. The cache feeds EntityTransformsService's fallback for the
+    // silent-teleport window (thanatos-walkin-geo.md). Returns true when the attr was position-family
+    // (handled) so the caller stops processing it.
+    private bool TryRoutePositionAttr(EntityId eid, AttrMsg attr)
+    {
+        if (attr.Id == AttrTypeIds.AttrPos)
+        {
+            if (WirePositionReader.TryReadPosition(attr.RawData.Span, out var pos))
+            {
+                _positions.OnPosition(eid.Value, pos);
+                DiagWirePos(eid, attr.RawData.Length, pos);
+            }
+            return true;
+        }
+        if (attr.Id == AttrTypeIds.AttrDir)
+        {
+            if (WirePositionReader.TryReadDir(attr.RawData.Span, out var dir)) _positions.OnDir(eid.Value, dir);
+            return true;
+        }
+        return false;
     }
 
     // Pre-attributed damage fan-out. The wire carries SyncDamageInfo with
