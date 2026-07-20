@@ -92,4 +92,6 @@ public interface IPluginServices
     IEntityTransforms EntityTransforms { get; }
     /// <summary>Region + version identity of the running game install (SEA / JP), detected once at boot.</summary>
     IGameEnvironment GameEnvironment { get; }
+    /// <summary>Per-plugin binary file storage for data too large/opaque for <see cref="Config"/> (e.g. re-upload payloads).</summary>
+    IPluginDataStore Data { get; }
 }
