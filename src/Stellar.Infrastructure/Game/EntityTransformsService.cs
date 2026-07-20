@@ -40,7 +40,7 @@ internal sealed partial class EntityTransformsService : IEntityTransforms
     // HONEST BOUNDARY: whether AttrPos actually refreshes DURING the un-settled window is UNVERIFIED
     // offline (thanatos-walkin-geo.md); the owner's raid run is the proof gate. If it does not refresh,
     // the cached sample ages past this bound and the fallback changes nothing — fails safe either way.
-    private const long WirePositionMaxStaleMs = 5_000;
+    internal const long WirePositionMaxStaleMs = 5_000;
 
     private readonly IGameTypeRegistry _typeRegistry;
     private readonly WireEntityPositions _positions;
