@@ -66,7 +66,7 @@ internal sealed partial class WindowBuilder
             btn.targetGraphic = clickImg;
             btn.transition = Selectable.Transition.None;
             var onClick = ct.OnClick;
-            btn.onClick.AddListener((UnityAction)onClick);
+            btn.onClick.AddListener(() => onClick());
         }
     }
 
