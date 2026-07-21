@@ -4,6 +4,11 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-07-21
+_**1.15.0** (minor) — adds per-plugin binary file storage, the substrate for CombatMeter's byte-for-byte re-upload. Additive; binary-compatible with plugins built against ≤1.14.0._
+### Added
+- **`IPluginServices.Data`** (`IPluginDataStore`) — per-plugin binary file storage (`Write`/`Read`/`Delete`/`List`) for data too large or opaque for `IConfigSection`. Never-throws; names are path-traversal-safe (rejects `..`, rooted paths, backslashes, `>1` separator). Each plugin's store is rooted at `<gameRoot>/stellar/plugindata/<guid>.data/` — a sibling of, and deliberately OUTSIDE, the recursive `stellar/plugins/` DLL scan path (`FrameworkPaths`, with a pinned non-nesting test), so a plugin's stored files can never be shadow-loaded as assemblies.
+
 ## [1.14.0] - 2026-07-18
 _**1.14.0** (minor) — CombatMeter sync-fix surface: honest death inference, live party status transport, and dungeon flow-state. Additive; binary-compatible with plugins built against ≤1.13.0._
 ### Added
