@@ -18,7 +18,12 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.14.0 adds <c>EntityVitals.HasHpObservation</c> (MaxHp-only
+    /// BepInEx chainloader happy. 1.15.0 adds <c>IPluginServices.Data</c> — an
+    /// <c>IPluginDataStore</c> giving each plugin its own binary file storage
+    /// (<c>Write</c>/<c>Read</c>/<c>Delete</c>/<c>List</c>, never-throws, path-traversal-safe)
+    /// for data too large/opaque for <c>IConfigSection</c>; rooted OUTSIDE the plugin-scan
+    /// dir. New service only — additive, binary-compatible with plugins built against ≤1.14.0.
+    /// 1.14.0 adds <c>EntityVitals.HasHpObservation</c> (MaxHp-only
     /// observations no longer read as dead; init-prop, binary-compatible), AOI-appear vitals
     /// seeding, <c>PartyMember.FastSyncState</c> (raw TeamMemberFastSyncData.state transport;
     /// init-prop), and <c>IDungeonState.CurrentFlowState</c>/<c>FlowStateVersion</c>
@@ -75,5 +80,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.14.0";
+    public const string Value = "1.15.0";
 }

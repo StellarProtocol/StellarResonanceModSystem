@@ -56,6 +56,10 @@ public sealed partial class BootstrapPlugin
     {
         var pluginsDirPath = Path.Combine(Paths.GameRootPath, UserPluginSubdirectory);
         _configStore = new FileConfigStore(log, pluginsDirPath);
+        // Data root is a SIBLING of the plugin-scan dir (stellar/plugindata vs stellar/plugins) so
+        // per-plugin retained files are never seen by PluginHost.LoadFrom's recursive DLL scan.
+        var pluginDataRoot = Path.Combine(Paths.GameRootPath, Stellar.Infrastructure.Configuration.FrameworkPaths.PluginDataSubdir);
+        _pluginDataStoreFactory = new Stellar.Infrastructure.Configuration.PluginDataStoreFactory(pluginDataRoot, log);
         // Framework-owned config (currently unused by sample plugins — they each
         // get their own per-plugin config via the PluginConfigFactory below).
         _pluginConfigService = new PluginConfigService(_configStore, PluginGuid);

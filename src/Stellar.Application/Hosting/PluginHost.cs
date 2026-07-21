@@ -23,14 +23,16 @@ internal sealed class PluginHost : IDisposable
 {
     private readonly IPluginServices _services;
     private readonly IPluginConfigFactory _configFactory;
+    private readonly IPluginDataStoreFactory _dataStoreFactory;
     private readonly PluginRegistry _registry;
     private readonly IPluginLog _log;
     private readonly TickScheduler _scheduler;
 
-    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, PluginRegistry registry, TickScheduler scheduler)
+    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler)
     {
         _services = services;
         _configFactory = configFactory;
+        _dataStoreFactory = dataStoreFactory;
         _registry = registry;
         _log = services.Log;
         _scheduler = scheduler;
@@ -91,14 +93,19 @@ internal sealed class PluginHost : IDisposable
         // short name for the Plugins panel listing.
         var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
         var perPluginConfig = _configFactory.Create(pluginGuid);
+        var perPluginData = _dataStoreFactory.Create(pluginGuid);
 
         // Shared mutable cell: both the factory lambda (writer) and the onDispose
         // lambda (reader) capture the same StrongBox so each soft-cycle enable
         // updates the reference that onDispose will unregister.
         var frameworkCell = new StrongBox<PerPluginFramework?>();
 
+        // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
+        // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
+        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData);
+
         Func<IPluginServices, object> factory = sharedServices =>
-            BuildAndInvoke(ctor, pluginGuid, perPluginConfig, frameworkCell, sharedServices);
+            BuildAndInvoke(ctor, bindContext, frameworkCell, sharedServices);
 
         _registry.Register(pluginGuid, displayName, version, factory,
             onDispose: () => frameworkCell.Value?.Unregister());
@@ -112,14 +119,13 @@ internal sealed class PluginHost : IDisposable
     // so a failed plugin leaves no dangling scheduler entry.
     private IStellarPlugin BuildAndInvoke(
         ConstructorInfo ctor,
-        string pluginGuid,
-        IPluginConfig perPluginConfig,
+        PluginBindContext bind,
         StrongBox<PerPluginFramework?> frameworkCell,
         IPluginServices sharedServices)
     {
-        var perPluginFramework = new PerPluginFramework(pluginGuid, _scheduler, sharedServices.Framework);
+        var perPluginFramework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
         frameworkCell.Value = perPluginFramework;
-        var perPluginServices = new PerPluginServices(sharedServices, perPluginConfig, perPluginFramework);
+        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework, bind.PerPluginData);
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -130,6 +136,11 @@ internal sealed class PluginHost : IDisposable
             throw;
         }
     }
+
+    // Bundles per-plugin bind inputs so BuildAndInvoke's parameter list stays
+    // within the STELLAR0003 cap (>5 params = error) as A4 adds perPluginData
+    // alongside the existing pluginGuid + perPluginConfig.
+    private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig, IPluginDataStore PerPluginData);
 
     public void Dispose()
     {

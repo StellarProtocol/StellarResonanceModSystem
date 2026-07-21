@@ -74,7 +74,8 @@ public sealed partial class BootstrapPlugin
             _noticeTipService!,
             _dungeonStateService!,
             entityTransforms,
-            _gameEnvironment!);
+            _gameEnvironment!,
+            _pluginDataStoreFactory!.Create(PluginGuid));
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 
@@ -83,7 +84,7 @@ public sealed partial class BootstrapPlugin
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
 
-        _pluginHost = new PluginHost(services, configFactory, _pluginRegistry, _scheduler!);
+        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!);
     }
 
     /// <summary>

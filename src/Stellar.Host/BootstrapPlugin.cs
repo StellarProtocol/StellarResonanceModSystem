@@ -29,7 +29,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     public const string PluginVersion = Stellar.Abstractions.Domain.FrameworkVersion.Value;
 
     private const string GameTypeFullName = "Panda.Core.Game";
-    private const string UserPluginSubdirectory = "stellar/plugins";
+    // Routed through FrameworkPaths so the plugin-scan dir and the plugin-data dir
+    // (Wiring.Core.cs) stay single-sourced and can never accidentally collide/nest.
+    private const string UserPluginSubdirectory = Stellar.Infrastructure.Configuration.FrameworkPaths.PluginScanSubdir;
 
     private static readonly string[] ExpectedHotUpdateAssemblies =
     {
@@ -57,6 +59,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PlayerStatsService? _playerStatsService;
     private PluginConfigService? _pluginConfigService;
     private FileConfigStore? _configStore;
+    private Stellar.Application.Abstractions.IPluginDataStoreFactory? _pluginDataStoreFactory;
     private PandaPlayerStateProbe? _playerStateProbe;
     private PandaPlayerStatsProbe? _playerStatsProbe;
     private ChatService? _chatService;
