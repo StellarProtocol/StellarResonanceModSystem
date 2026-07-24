@@ -82,14 +82,15 @@ internal sealed partial class PandaCombatStubProbe
     /// </summary>
     private void Dispatch(uint methodId, byte[] payload)
     {
-        var span = (ReadOnlySpan<byte>)payload;
         switch (methodId)
         {
-            case WorldNtfMethodIds.EnterScene:        OnEnterScene(span);    break;
-            case WorldNtfMethodIds.SyncServerTime:    OnServerTime(span);    break;
-            case WorldNtfMethodIds.SyncNearEntities:  OnNearEntities(span);  break;
-            case WorldNtfMethodIds.SyncNearDeltaInfo: OnNearDelta(span);     break;
-            case WorldNtfMethodIds.SyncToMeDeltaInfo: OnSelfDelta(span);     break;
+            case WorldNtfMethodIds.EnterScene:        OnEnterScene(payload);    break;
+            case WorldNtfMethodIds.SyncServerTime:    OnServerTime(payload);    break;
+            case WorldNtfMethodIds.SyncNearEntities:  OnNearEntities(payload);  break;
+            // Delta paths take the byte[] as ReadOnlyMemory so the reader chain can slice
+            // attr payloads zero-copy off this per-packet array (AttrCollectionReader note).
+            case WorldNtfMethodIds.SyncNearDeltaInfo: OnNearDelta(payload);     break;
+            case WorldNtfMethodIds.SyncToMeDeltaInfo: OnSelfDelta(payload);     break;
         }
     }
 }

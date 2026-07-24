@@ -88,7 +88,8 @@ internal static class EnterSceneReader
             sceneGuid = System.Text.Encoding.UTF8.GetString(sceneInfo.Slice(og, lg));
 
         if (!TryFindField(sceneInfo, SceneAttrsField, out int oa, out int la)) return false;
-        return AttrCollectionReader.TryRead(sceneInfo.Slice(oa, la), out sceneAttrs);
+        // One copy per enter-scene (cold one-shot); AttrCollectionReader is memory-based now.
+        return AttrCollectionReader.TryRead(sceneInfo.Slice(oa, la).ToArray(), out sceneAttrs);
     }
 
     /// <summary>

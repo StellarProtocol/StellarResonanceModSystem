@@ -107,24 +107,35 @@ internal sealed partial class PandaWireTap : IWireTap
 
     internal void Dispatch(WireEnvelope envelope)
     {
-        Action<WireEnvelope>[]? snapshot;
-        if (envelope.Kind == WireMessageKind.Return)
+        var snapshot = ResolveHandlers(envelope.Kind, envelope.ServiceUuid, envelope.MethodId);
+        if (snapshot is null) return;
+        DispatchTo(snapshot, envelope);
+    }
+
+    // Handler-snapshot lookup, split out of Dispatch so the receive path can consult it BEFORE
+    // materializing the payload (lazy-payload gate): most of the recv firehose (AOI/world sync)
+    // has no wiretap subscriber — its consumers live on the OnCallStub dispatchers — and used to
+    // pay a full payload copy (or zstd decompress) per packet that Dispatch immediately dropped.
+    // Returns null when nothing is registered for the key.
+    private Action<WireEnvelope>[]? ResolveHandlers(WireMessageKind kind, ulong serviceUuid, uint methodId)
+    {
+        if (kind == WireMessageKind.Return)
         {
-            snapshot = Volatile.Read(ref _returnHandlers);
-            if (snapshot.Length == 0) return;
-        }
-        else
-        {
-            // Dictionary reads without a lock are NOT safe across writers, so
-            // take the lock just long enough to copy out the array reference.
-            // Iteration happens outside the lock — the array is immutable.
-            lock (_lock)
-            {
-                if (!_handlers.TryGetValue((envelope.ServiceUuid, envelope.MethodId), out snapshot))
-                    return;
-            }
+            var returns = Volatile.Read(ref _returnHandlers);
+            return returns.Length == 0 ? null : returns;
         }
 
+        // Dictionary reads without a lock are NOT safe across writers, so
+        // take the lock just long enough to copy out the array reference.
+        // Iteration happens outside the lock — the array is immutable.
+        lock (_lock)
+        {
+            return _handlers.TryGetValue((serviceUuid, methodId), out var snapshot) ? snapshot : null;
+        }
+    }
+
+    private void DispatchTo(Action<WireEnvelope>[] snapshot, in WireEnvelope envelope)
+    {
         for (int i = 0; i < snapshot.Length; i++)
         {
             try { snapshot[i](envelope); }

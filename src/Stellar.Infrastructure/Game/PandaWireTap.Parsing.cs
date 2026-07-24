@@ -29,6 +29,34 @@ internal sealed partial class PandaWireTap
     private bool _zstdUnwrapFailLogged;
     private bool _frameUnwrapDepthLogged;
 
+    // One decompressor per network I/O thread (TCP and UDP/KCP each drive their own).
+    // DCtx + workspace reuse eliminates the per-compressed-packet constructor allocation
+    // that drove the measured burst profile (1.4 MB/tick alloc spikes, A/B 2026-07-25).
+    // Never disposed by design: two threads, process-lifetime, freed with the process.
+    [ThreadStatic] private static Decompressor? _zstdPerThread;
+    private static Decompressor ZstdShared => _zstdPerThread ??= new Decompressor();
+
+    // Decompress into an exact-size buffer using the cached per-thread context — a single
+    // allocation (the output), no compressed-side copy, no trailing ToArray. Falls back to
+    // the legacy two-copy Unwrap when the frame doesn't declare its content size (streaming
+    // frame — rare-to-absent on this wire). Exact sizing matters beyond allocation: nested
+    // FrameDown buffers are length-walked by ProcessFrameBuffer, so a padded tail would
+    // read as a desync.
+    private static byte[] UnwrapExact(ReadOnlySpan<byte> src)
+    {
+        var declared = Decompressor.GetDecompressedSize(src);
+        if (declared > 0 && declared <= int.MaxValue)
+        {
+            var buf = new byte[(int)declared];
+            var written = ZstdShared.Unwrap(src, buf);
+            if (written == buf.Length) return buf;
+            var exact = new byte[written];
+            Array.Copy(buf, exact, written);
+            return exact;
+        }
+        return ZstdShared.Unwrap(src.ToArray()).ToArray();
+    }
+
     // Parsed RPC header fields. Stack-only struct — never allocates.
     private readonly struct WireHeader
     {
@@ -129,8 +157,7 @@ internal sealed partial class PandaWireTap
         if (!isZstd) { nested = rest.ToArray(); return true; }   // copies nested buffer per wrapper frame; acceptable because FrameUp/FrameDown are rare in this game — revisit if framing changes
         try
         {
-            using var dec = new ZstdSharp.Decompressor();
-            nested = dec.Unwrap(rest.ToArray()).ToArray();
+            nested = UnwrapExact(rest);
             return true;
         }
         catch (System.Exception ex)
@@ -164,10 +191,7 @@ internal sealed partial class PandaWireTap
 
         try
         {
-            using var dec = new Decompressor();
-            // Use ToArray then Unwrap — Decompressor doesn't accept Span/Memory.
-            var rawArr = span.Slice(payloadOffset).ToArray();
-            payload = dec.Unwrap(rawArr).ToArray();
+            payload = UnwrapExact(span.Slice(payloadOffset));
             return true;
         }
         catch (Exception ex)

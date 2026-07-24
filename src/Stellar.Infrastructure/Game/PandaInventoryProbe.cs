@@ -70,16 +70,59 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
     /// </summary>
     public void OnLifecycleAdvanced() => _pullReader.OnLifecycleAdvanced();
 
-    public bool TryReadModules(out ModuleSnapshot snapshot) => _pullReader.TryReadModules(out snapshot);
+    // ── Generation-gated read cache (game-thread only) ──
+    // The three TryRead* methods are polled at 1Hz. Rebuilding each snapshot on every poll is the
+    // framework's dominant steady-state allocation (measured ~1.8MB/s in a dungeon → periodic GC
+    // hitch). The underlying data changes ONLY when a sync bumps InventoryProbeState.Generation, so
+    // we serve the last successful build until the generation moves. The `|| !_ok` guard keeps
+    // retrying while a read has never succeeded, so resolution/data that comes online later (before
+    // any capture bumps the generation) is still picked up. Cache fields are touched only here, on
+    // the game thread; Generation is a volatile read of an Interlocked-bumped counter.
+    private long _mGen = long.MinValue; private bool _mOk; private ModuleSnapshot _mSnap = null!;
+    private long _eGen = long.MinValue; private bool _eOk; private EquippedSet _eSet = null!;
 
-    public bool TryReadEquipped(out EquippedSet equipped) => _pullReader.TryReadEquipped(out equipped);
+    public bool TryReadModules(out ModuleSnapshot snapshot)
+    {
+        long gen = _state.Generation;
+        if (gen != _mGen || !_mOk)
+        {
+            _mOk = _pullReader.TryReadModules(out _mSnap);
+            if (_mOk) _mGen = gen;
+        }
+        snapshot = _mSnap;
+        return _mOk;
+    }
+
+    public bool TryReadEquipped(out EquippedSet equipped)
+    {
+        long gen = _state.Generation;
+        if (gen != _eGen || !_eOk)
+        {
+            _eOk = _pullReader.TryReadEquipped(out _eSet);
+            if (_eOk) _eGen = gen;
+        }
+        equipped = _eSet;
+        return _eOk;
+    }
 
     /// <summary>
     /// Reads the local player's equipped Battle Imagine ids from
     /// <c>CharSerialize.Resonance.Installed</c> (proto field 28). Forwarded to
     /// the pull-read collaborator, which walks the same latched CharSerialize.
     /// </summary>
-    public bool TryReadInstalled(out IReadOnlyList<int> installed) => _pullReader.TryReadInstalled(out installed);
+    private long _iGen = long.MinValue; private bool _iOk; private IReadOnlyList<int> _iList = System.Array.Empty<int>();
+
+    public bool TryReadInstalled(out IReadOnlyList<int> installed)
+    {
+        long gen = _state.Generation;
+        if (gen != _iGen || !_iOk)
+        {
+            _iOk = _pullReader.TryReadInstalled(out _iList);
+            if (_iOk) _iGen = gen;
+        }
+        installed = _iList;
+        return _iOk;
+    }
 
     /// <summary>
     /// Reads the current equipped <c>Mod.ModSlots</c> map (slot → uuid) for

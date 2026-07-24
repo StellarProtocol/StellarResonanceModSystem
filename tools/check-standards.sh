@@ -111,6 +111,19 @@ for f in "${files[@]}"; do
         report blocker "$relpath" "phase-named partial; use feature-named Wiring.*.cs"
     fi
 
+    # Path-form GameObject.Find banned — a "a/b/c" literal makes Unity scan the FULL scene
+    # hierarchy (cost grows with scene population). On a repeating tick this is the proven
+    # frametime-spike class: idcard injector crept 0.4→17 ms/tick; the 5 Hz uGUI anchor probe
+    # measured ~30 ms/hit in dungeons (P0 jitter root cause, A/B 2026-07-25). Cache a root once
+    # and walk with a relative Transform.Find (PandaProfileCardActionInjector.FindCardRoot
+    # pattern). Exempt: MenuStateRecon (one-shot recon dump) and PandaHudAdapter (cache-missed
+    # curated-element resolve — tech-debt D-26).
+    if [[ "$relpath" != *"Hooks/MenuStateRecon.cs" && "$relpath" != *"Game/PandaHudAdapter.cs" ]]; then
+        if grep -qE 'GameObject\.Find\("[^"]*/' "$f"; then
+            report blocker "$relpath" "path-form GameObject.Find (full scene scan); cache a root + relative Transform.Find (see FindCardRoot)"
+        fi
+    fi
+
     # Inline diagnostics in production files (must be in *.Diagnostics.cs)
     if [[ "$relpath" != *.Diagnostics.cs ]]; then
         if grep -qE 'if[[:space:]]*\(\s*StellarDiagnostics\.IsEnabled' "$f"; then

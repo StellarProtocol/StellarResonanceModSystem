@@ -83,29 +83,38 @@ internal readonly record struct AttrCollectionMsg(long Uuid, IReadOnlyList<AttrM
 /// </summary>
 internal static class AttrCollectionReader
 {
-    public static bool TryRead(ReadOnlySpan<byte> payload, out AttrCollectionMsg msg)
+    // Memory-based so AttrMsg.RawData can SLICE the source packet array instead of copying
+    // per attr — the dominant hook:combat allocation (a fresh byte[] per attribute of every
+    // entity in every AOI delta; ~32 KB/tick measured in combat, 2026-07-25 audit finding 5).
+    // Safe because (a) every caller passes a per-packet heap array (stub ExtractPayload /
+    // materialized envelope payload), never a reused buffer, and (b) no consumer retains
+    // AttrMsg beyond the synchronous fan-out (CaptureEntityDetail stores decoded VALUES).
+    public static bool TryRead(ReadOnlyMemory<byte> payload, out AttrCollectionMsg msg)
     {
+        var span = payload.Span;
         long uuid = 0;
         var items = new List<AttrMsg>(8);
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) { msg = default; return false; }
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire)) { msg = default; return false; }
             switch ((field, wire))
             {
                 case (1, 0):
-                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) { msg = default; return false; }
+                    if (!WireProtocol.TryReadVarint(span, ref pos, out var u)) { msg = default; return false; }
                     uuid = (long)u;
                     break;
 
                 case (2, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var attrBytes)) { msg = default; return false; }
-                    if (!TryReadAttr(attrBytes, out var attr)) { msg = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var attrBytes)) { msg = default; return false; }
+                    // pos is already advanced past the sub-message, so its memory slice
+                    // starts at (pos - length) — no offset plumbing through WireProtocol.
+                    if (!TryReadAttr(payload.Slice(pos - attrBytes.Length, attrBytes.Length), out var attr)) { msg = default; return false; }
                     items.Add(attr);
                     break;
 
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire)) { msg = default; return false; }
+                    if (!WireProtocol.SkipField(span, ref pos, wire)) { msg = default; return false; }
                     break;
             }
         }
@@ -113,28 +122,28 @@ internal static class AttrCollectionReader
         return true;
     }
 
-    private static bool TryReadAttr(ReadOnlySpan<byte> payload, out AttrMsg attr)
+    private static bool TryReadAttr(ReadOnlyMemory<byte> payload, out AttrMsg attr)
     {
+        var span = payload.Span;
         int id = 0;
         ReadOnlyMemory<byte> raw = ReadOnlyMemory<byte>.Empty;
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) { attr = default; return false; }
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire)) { attr = default; return false; }
             switch ((field, wire))
             {
                 case (1, 0):
-                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var v)) { attr = default; return false; }
+                    if (!WireProtocol.TryReadVarint(span, ref pos, out var v)) { attr = default; return false; }
                     id = (int)v;
                     break;
                 case (2, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bytes)) { attr = default; return false; }
-                    // Copy off the span — the input ReadOnlySpan won't outlive this call,
-                    // but AttrMsg may be retained by an Application-layer snapshot.
-                    raw = bytes.ToArray();
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var bytes)) { attr = default; return false; }
+                    // Zero-copy: slice the enclosing per-packet array (see TryRead's contract note).
+                    raw = payload.Slice(pos - bytes.Length, bytes.Length);
                     break;
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire)) { attr = default; return false; }
+                    if (!WireProtocol.SkipField(span, ref pos, wire)) { attr = default; return false; }
                     break;
             }
         }

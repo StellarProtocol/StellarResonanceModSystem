@@ -187,9 +187,9 @@ internal sealed partial class PandaCombatStubProbe
             _dungeonSink.SetCurrentRun(DungeonRunIdGate.Resolve(sceneUuid));
     }
 
-    private void OnNearDelta(ReadOnlySpan<byte> span)
+    private void OnNearDelta(ReadOnlyMemory<byte> payload)
     {
-        if (!AoiSyncDeltaReader.TryReadList(span, out var deltas))
+        if (!AoiSyncDeltaReader.TryReadList(payload, out var deltas))
         {
             _log.Warning("[CombatStub] failed to parse SyncNearDeltaInfo");
             return;
@@ -222,9 +222,9 @@ internal sealed partial class PandaCombatStubProbe
         ProcessDeltas(filtered, ts);
     }
 
-    private void OnSelfDelta(ReadOnlySpan<byte> span)
+    private void OnSelfDelta(ReadOnlyMemory<byte> payload)
     {
-        if (!AoiSyncToMeDeltaReader.TryReadOuter(span, out var msg))
+        if (!AoiSyncToMeDeltaReader.TryReadOuter(payload, out var msg))
         {
             _log.Warning("[CombatStub] failed to parse SyncToMeDeltaInfo");
             return;

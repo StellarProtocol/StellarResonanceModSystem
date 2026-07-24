@@ -174,6 +174,16 @@ public static class PerfProbe
     private static double _intervalHookWireAllocSum;
     private static long _intervalHookWireCalls;
 
+    // Rewired keyboard-prefix counter (HotkeyKeyBlockPatch) — the only framework hook that can fire
+    // at RENDER-frame rate, so its true call frequency is unknowable statically. Wall-time + calls
+    // only: no per-call GC.GetAllocatedBytesForCurrentThread read, the counter itself must stay ~free.
+    private static long _hookRewiredTicks;
+    private static long _hookRewiredCalls;
+    private static double _lastHookRewiredMs;
+    private static long _lastHookRewiredCalls;
+    private static double _intervalHookRewiredMsSum;
+    private static long _intervalHookRewiredCalls;
+
     /// <summary>Returns a start timestamp (ticks) for a hook, or 0 when disabled.</summary>
     public static long HookBegin() => _enabled ? Stopwatch.GetTimestamp() : 0L;
 
@@ -196,6 +206,15 @@ public static class PerfProbe
         System.Threading.Interlocked.Add(ref _hookWireTicks, Stopwatch.GetTimestamp() - startTicks);
         System.Threading.Interlocked.Add(ref _hookWireAlloc, System.GC.GetAllocatedBytesForCurrentThread() - startAlloc);
         System.Threading.Interlocked.Increment(ref _hookWireCalls);
+    }
+
+    /// <summary>Accumulate one Rewired keyboard-prefix invocation's wall-time (diagnostic counter for
+    /// the render-frame-rate key-block hook; no allocation sampling so the counter stays near-free).</summary>
+    public static void HookEndRewired(long startTicks)
+    {
+        if (!_enabled) return;
+        System.Threading.Interlocked.Add(ref _hookRewiredTicks, Stopwatch.GetTimestamp() - startTicks);
+        System.Threading.Interlocked.Increment(ref _hookRewiredCalls);
     }
 
     /// <summary>Start timing an individual window's draw cost for the current frame.</summary>
@@ -242,7 +261,23 @@ public static class PerfProbe
             _intervalSegMsSum[kv.Key] = s + kv.Value;
         }
 
-        // Drain the thread-safe hook accumulators (filled on the network thread).
+        DrainHookAccumulators();
+
+        _drawMsThisFrame = 0.0;
+        _updateMsThisFrame = 0.0;
+        _updateAllocThisFrame = 0;
+        _windowMsThisFrame.Clear();
+        _segMsThisFrame.Clear();
+        FrameCounter++;
+
+        AccumulateAndMaybeEmit();
+    }
+
+    // Drain the thread-safe hook accumulators (filled on the network thread and,
+    // for the rewired counter, on the game's render thread) into the last-frame
+    // snapshot fields. Extracted from RecordFrame to keep it within STELLAR0002.
+    private static void DrainHookAccumulators()
+    {
         var hookTicks = System.Threading.Interlocked.Exchange(ref _hookCombatTicks, 0L);
         _lastHookCombatAlloc = System.Threading.Interlocked.Exchange(ref _hookCombatAlloc, 0L);
         _lastHookCombatCalls = System.Threading.Interlocked.Exchange(ref _hookCombatCalls, 0L);
@@ -253,14 +288,9 @@ public static class PerfProbe
         _lastHookWireCalls = System.Threading.Interlocked.Exchange(ref _hookWireCalls, 0L);
         _lastHookWireMs = wireTicks * 1000.0 / Stopwatch.Frequency;
 
-        _drawMsThisFrame = 0.0;
-        _updateMsThisFrame = 0.0;
-        _updateAllocThisFrame = 0;
-        _windowMsThisFrame.Clear();
-        _segMsThisFrame.Clear();
-        FrameCounter++;
-
-        AccumulateAndMaybeEmit();
+        var rewiredTicks = System.Threading.Interlocked.Exchange(ref _hookRewiredTicks, 0L);
+        _lastHookRewiredCalls = System.Threading.Interlocked.Exchange(ref _hookRewiredCalls, 0L);
+        _lastHookRewiredMs = rewiredTicks * 1000.0 / Stopwatch.Frequency;
     }
 
     // Roll the just-committed frame into the interval accumulators and, every
@@ -281,6 +311,8 @@ public static class PerfProbe
         _intervalHookWireMsSum += _lastHookWireMs;
         _intervalHookWireAllocSum += _lastHookWireAlloc;
         _intervalHookWireCalls += _lastHookWireCalls;
+        _intervalHookRewiredMsSum += _lastHookRewiredMs;
+        _intervalHookRewiredCalls += _lastHookRewiredCalls;
         foreach (var kv in _publishedWindowMs)
         {
             _intervalWindowMsSum.TryGetValue(kv.Key, out var s);
@@ -307,7 +339,9 @@ public static class PerfProbe
         var avgWireMs = _intervalHookWireMsSum / n;
         var avgWireKb = _intervalHookWireAllocSum / n / 1024.0;
         var avgWireCalls = (double)_intervalHookWireCalls / n;
-        sb.Append($"[Perf] n={n} avgFps={avgFps:0.0} worstFps={worstFps:0.0} avgFrame={avgFrame:0.00}ms avgUpdateCPU={avgUpdate:0.000}ms avgUpdAlloc={avgUpdAllocKb:0.0}KB avgDrawCPU={avgDraw:0.000}ms hook:combat={avgHookMs:0.000}ms/{avgHookCalls:0.0}calls/{avgHookKb:0.0}KB hook:wire={avgWireMs:0.000}ms/{avgWireCalls:0.0}calls/{avgWireKb:0.0}KB");
+        var avgRewiredMs = _intervalHookRewiredMsSum / n;
+        var avgRewiredCalls = (double)_intervalHookRewiredCalls / n;
+        sb.Append($"[Perf] n={n} avgFps={avgFps:0.0} worstFps={worstFps:0.0} avgFrame={avgFrame:0.00}ms avgUpdateCPU={avgUpdate:0.000}ms avgUpdAlloc={avgUpdAllocKb:0.0}KB avgDrawCPU={avgDraw:0.000}ms hook:combat={avgHookMs:0.000}ms/{avgHookCalls:0.0}calls/{avgHookKb:0.0}KB hook:wire={avgWireMs:0.000}ms/{avgWireCalls:0.0}calls/{avgWireKb:0.0}KB hook:rewired={avgRewiredMs:0.000}ms/{avgRewiredCalls:0.0}calls");
         sb.Append($" | hudKill={PerfControls.MasterHudKill} chromeKill={PerfControls.ChromeKill} opaque={PerfControls.ForceOpaque} throttle=1/{PerfControls.ThrottleN}");
         if (_intervalSegMsSum.Count > 0)
         {
@@ -335,6 +369,8 @@ public static class PerfProbe
         _intervalHookWireMsSum = 0.0;
         _intervalHookWireAllocSum = 0.0;
         _intervalHookWireCalls = 0L;
+        _intervalHookRewiredMsSum = 0.0;
+        _intervalHookRewiredCalls = 0L;
         _intervalWindowMsSum.Clear();
         _intervalSegMsSum.Clear();
     }
@@ -364,6 +400,8 @@ public static class PerfProbe
         _lastHookCombatMs = 0; _lastHookCombatAlloc = 0; _lastHookCombatCalls = 0;
         _hookWireTicks = 0; _hookWireAlloc = 0; _hookWireCalls = 0;
         _lastHookWireMs = 0; _lastHookWireAlloc = 0; _lastHookWireCalls = 0;
+        _hookRewiredTicks = 0; _hookRewiredCalls = 0;
+        _lastHookRewiredMs = 0; _lastHookRewiredCalls = 0;
         _publishedWindowMs.Clear();
         _drewThisFrame = false;
         _segSw.Clear();

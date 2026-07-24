@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -37,6 +38,17 @@ internal sealed class InventoryProbeState
     // Set-once-to-true; matches the original non-volatile field exactly.
     private bool _captureHookActive;
 
+    // Monotonic counter bumped on every write that publishes NEW inventory data — a new latched
+    // CharSerialize (method-21 full sync: covers modules + resonance) or a republished equipped
+    // snapshot (method-21 reseed / method-22 dirty delta: covers equipped). Bumped on the network
+    // receive thread, read on the game thread. Lets the probe skip rebuilding an identical snapshot
+    // on every 1Hz poll: that rebuild is the framework's dominant steady-state allocation and,
+    // re-run unchanged, is the GC fuel behind the periodic in-dungeon frame hitch.
+    private long _generation;
+
+    /// <summary>Monotonic version of the latched inventory data; changes only when a sync lands.</summary>
+    public long Generation => Volatile.Read(ref _generation);
+
     /// <summary>
     /// The maintained equipped set (slot → uuid), or <c>null</c> before the
     /// first full sync seeds it. Volatile read — see the type-level thread model.
@@ -51,7 +63,10 @@ internal sealed class InventoryProbeState
     /// <c>ApplyModSlotDelta</c> / <c>ReseedEquippedFromSync</c> code did.
     /// </summary>
     public void PublishEquippedSnapshot(IReadOnlyDictionary<int, long>? next)
-        => _equippedSnapshot = next;
+    {
+        _equippedSnapshot = next;
+        Interlocked.Increment(ref _generation);
+    }
 
     /// <summary>
     /// The latched CharSerialize captured from the WorldNtf method-21 full sync,
@@ -60,7 +75,7 @@ internal sealed class InventoryProbeState
     public object? CapturedCharSerialize
     {
         get => _capturedCharSerialize;
-        set => _capturedCharSerialize = value;
+        set { _capturedCharSerialize = value; Interlocked.Increment(ref _generation); }
     }
 
     /// <summary>
