@@ -15,8 +15,17 @@ namespace Stellar.Infrastructure.Game;
 /// </summary>
 internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDisposable
 {
+    private const string ZuiRootName = "zuiroot";
+
     private readonly IPluginLog _log;
     private readonly ITheme _theme;
+
+    // Cached persistent UI root — same bug class + fix as PandaProfileCardActionInjector.FindCardRoot:
+    // the naive ResolveParent ran a path-form GameObject.Find (a FULL scene-hierarchy scan whose cost
+    // grows with scene population, ~30 ms/hit in a dense dungeon) on the 5 Hz injection probe, forever
+    // while the target menu was closed — the proven P0 frametime-spike source (A/B 2026-07-25).
+    private Transform? _zuiroot;
+
     public PandaUGuiAdapter(IPluginLog log, ITheme theme) { _log = log; _theme = theme; }
 
     /// <summary>Destroys the rail-button icon textures on framework teardown (no leak on soft reload).</summary>
@@ -52,12 +61,35 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
         if (elementRef is ElementRef e && e.Go != null) UnityEngine.Object.Destroy(e.Go);
     }
 
-    private static Transform? ResolveParent(NativeUiAnchor anchor)
+    // Resolve the anchor container via the cached zuiroot + a cheap relative Transform.Find. The
+    // activeInHierarchy guard preserves the old GameObject.Find active-only contract (a closed menu's
+    // window is inactive/destroyed → anchor unavailable, exactly as before). zuiroot re-resolves only
+    // after a scene change kills it; the root lookup is a bare-name Find (no path walk).
+    private Transform? ResolveParent(NativeUiAnchor anchor)
     {
         if (!UGuiAnchorAllowlist.TryGet(anchor, out var entry)) return null;
-        var go = GameObject.Find(entry.InsertionParentPath);
-        return go != null ? go.transform : null;
+        if (_zuiroot == null)
+        {
+            var root = GameObject.Find(ZuiRootName);
+            _zuiroot = root != null ? root.transform : null;
+            if (_zuiroot == null) return null;
+        }
+        var rel = ToZuiRelativePath(entry.InsertionParentPath);
+        if (rel == null)
+        {
+            // Non-zuiroot allowlist path (none exist today): keep the legacy resolve so a future
+            // entry degrades to correct-but-slow instead of silently never injecting.
+            var legacy = UnityEngine.GameObject.Find(entry.InsertionParentPath);
+            return legacy != null ? legacy.transform : null;
+        }
+        var t = _zuiroot.Find(rel);
+        return t != null && t.gameObject.activeInHierarchy ? t : null;
     }
+
+    private static string? ToZuiRelativePath(string path)
+        => path.StartsWith(ZuiRootName + "/", System.StringComparison.Ordinal)
+            ? path.Substring(ZuiRootName.Length + 1)
+            : null;
 
     // Opaque ref handed back to Application; only this adapter reads it.
     private sealed class ElementRef
