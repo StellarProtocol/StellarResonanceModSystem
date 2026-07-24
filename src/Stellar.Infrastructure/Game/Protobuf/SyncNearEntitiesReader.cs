@@ -170,7 +170,8 @@ internal static class SyncNearEntitiesReader
                     }
                     // Silently drop a malformed AttrCollection — we still want
                     // the uuid surfaced so the caller can register the entity.
-                    if (AttrCollectionReader.TryRead(attrBytes, out var ac))
+                    // ToArray: one copy per collection (memory-based reader; appear bursts are bounded).
+                    if (AttrCollectionReader.TryRead(attrBytes.ToArray(), out var ac))
                     {
                         attrs = ac;
                     }

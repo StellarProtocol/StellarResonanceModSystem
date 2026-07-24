@@ -200,7 +200,7 @@ internal sealed partial class PandaInventoryWireCapture
         }
 
         object? rawToArr;
-        try { rawToArr = toArr.Invoke(callDataRaw, null); }
+        try { rawToArr = Il2CppSpanCoercion.InvokeToArray(callDataRaw); }
         catch { return null; }
         if (rawToArr is null) return null;
         return Il2CppSpanCoercion.CoerceToByteArray(rawToArr);

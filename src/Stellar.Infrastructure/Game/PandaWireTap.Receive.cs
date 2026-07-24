@@ -177,7 +177,7 @@ internal sealed partial class PandaWireTap
         }
 
         object? rawToArr;
-        try { rawToArr = toArr.Invoke(arg0, null); }
+        try { rawToArr = Il2CppSpanCoercion.InvokeToArray(arg0); }
         catch { return null; }
         if (rawToArr is null) return null;
 
@@ -203,7 +203,15 @@ internal sealed partial class PandaWireTap
             return;
         }
 
-        var rb = _reassemblyByClient.GetOrAdd(client, _ => new ReassemblyBuffer());
+        if (!_reassemblyByClient.TryGetValue(client, out var rb))
+        {
+            rb = _reassemblyByClient.GetOrAdd(client, _ => new ReassemblyBuffer());
+            // New-connection bookkeeping only (relog/reconnect cadence, never per packet):
+            // drop buffers whose connection went quiet, so dead ZTcpClient/ZUdpConnection
+            // wrappers + their grown buffers don't accumulate across a long session
+            // (audit finding 10).
+            EvictQuietReassemblyBuffers(keep: client);
+        }
 
         // Lock per-buffer. ZTcpConnection.OnData is normally single-threaded
         // per connection, but defensive locking eliminates the risk of
@@ -220,6 +228,21 @@ internal sealed partial class PandaWireTap
             }
 
             DrainReassembledFrames(rb, client);
+            rb.ShrinkIfDrained();   // release a large-packet high-water allocation once empty
+        }
+    }
+
+    // Called only when a NEW connection key appears. Evicts entries not Append-touched for
+    // 5+ minutes (a live game connection receives keepalive/sync traffic far more often).
+    // The current key is always kept.
+    private void EvictQuietReassemblyBuffers(object keep)
+    {
+        const long QuietMs = 5 * 60 * 1000;
+        var now = Environment.TickCount64;
+        foreach (var kv in _reassemblyByClient)
+        {
+            if (ReferenceEquals(kv.Key, keep)) continue;
+            if (now - kv.Value.LastTouchedMs > QuietMs) _reassemblyByClient.TryRemove(kv.Key, out _);
         }
     }
 
@@ -253,11 +276,13 @@ internal sealed partial class PandaWireTap
 
             if (rb.Length < size) break; // incomplete — wait for more chunks
 
-            var packet = new byte[(int)size];
-            System.Buffer.BlockCopy(rb.Data, 0, packet, 0, (int)size);
+            // Dispatch a span straight over the reassembly buffer — no per-packet byte[]
+            // copy. Safe: we hold rb's monitor, handlers run synchronously on this thread,
+            // and anything that must outlive the call (envelope payload, capture record)
+            // materializes its own copy downstream. Drop() shifts the remainder only after
+            // the packet has been fully handled.
+            HandleWireBytes(new System.ReadOnlySpan<byte>(rb.Data, 0, (int)size), client);
             rb.Drop((int)size);
-
-            HandleWireBytes(packet, client);
         }
     }
 
@@ -304,6 +329,16 @@ internal sealed partial class PandaWireTap
 
         if (span.Length < 14) return;
         if (!TryParseWireHeader(span, msgTypeRaw, out var header, out var payloadOffset)) return;
+
+        // Lazy payload materialization — resolve the handler snapshot BEFORE the payload
+        // copy / zstd decompress. Unsubscribed traffic (the AOI/world-sync firehose, whose
+        // consumers live on the OnCallStub dispatchers, not here) previously paid a full
+        // payload allocation per packet that Dispatch immediately dropped: the dominant
+        // share of the measured wire-hook garbage (>100 KB/tick intervals hitched 65% vs
+        // 5.5% quiet — GC pressure, A/B 2026-07-25).
+        var handlers = ResolveHandlers(header.Kind, header.ServiceUuid, header.MethodId);
+        if (handlers is null) return;
+
         if (!TryPreparePayload(span, payloadOffset, isZstdCompressed, header, out var payload)) return;
 
         var env = new WireEnvelope
@@ -324,7 +359,7 @@ internal sealed partial class PandaWireTap
             _log.Info($"[WireTap] first frame dispatched: kind={header.Kind} svc={header.ServiceUuid} method={header.MethodId} callId={header.CallId} payloadLen={payload.Length} zstd={isZstdCompressed}");
         }
 
-        Dispatch(env);
+        DispatchTo(handlers, env);
     }
 
     private void UnwrapAndProcess(ReadOnlySpan<byte> span, object? connection, int depth, bool isZstd)

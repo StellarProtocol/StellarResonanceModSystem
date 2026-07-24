@@ -113,7 +113,7 @@ internal sealed partial class WorldNtfStubDispatcher
         }
 
         object? rawToArr;
-        try { rawToArr = toArr.Invoke(callDataRaw, null); }
+        try { rawToArr = Il2CppSpanCoercion.InvokeToArray(callDataRaw); }
         catch (Exception ex)
         {
             if (!_getCallDataFailLogged)

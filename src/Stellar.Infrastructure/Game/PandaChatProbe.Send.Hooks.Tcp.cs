@@ -279,7 +279,7 @@ internal sealed partial class PandaChatProbe
         if (toArray is null) return null;
 
         object? rawArr;
-        try { rawArr = toArray.Invoke(arg0, null); }
+        try { rawArr = Il2CppSpanCoercion.InvokeToArray(arg0); }
         catch { return null; }
         if (rawArr is null) return null;
 
