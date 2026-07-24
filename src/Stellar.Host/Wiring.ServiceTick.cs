@@ -56,7 +56,9 @@ public sealed partial class BootstrapPlugin
         try
         {
             // Band 1 — every master beat (exchange only; cheap when idle — empty-queue dequeue + empty active-list loop).
+            Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:exchange");
             DrainExchangeProbe();
+            Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:exchange");
 
             // Band 2 — per-plugin Updates, each plugin firing at its own registered rate.
             Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:plugins");
@@ -86,17 +88,27 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:internal");
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:gamedata");
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
         DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:gamedata");
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:equiploadout");
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:equiploadout");
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:worldattr");
         _worldAttrProbe?.Tick();   // main-thread read of ZWorld AttrDeathCount(348) → Defeated (no-op in town)
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:worldattr");
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:input");
         TickInputAndHotkeys();
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:input");
         // Layout edit-mode input (select/drag) — driven from the tick AFTER the input poll (so the latched
         // mouse edge + pointer are fresh). Edit-mode interaction is fully decoupled from any IMGUI/OnGUI
         // handler; all rendering goes through the uGUI path (HudThemeAssets / WindowThemeAssets bake on demand).
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:layout");
         _layoutOverlay?.TickInput();
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:layout");
     }
 
     // Band 1 — drained EVERY master beat so a ramped plugin's exchange RPC round-trips complete
@@ -185,10 +197,16 @@ public sealed partial class BootstrapPlugin
     // keyboard while a window text field is focused (stops the wasd leak); guarded to defer to the spike.
     private void TickOverlayServices(float deltaTime)
     {
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:toast");
         TickNotifications(deltaTime);   // animate the toast stack on the framework tick delta
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:toast");
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:hud");
         _hudService?.Tick(deltaTime);
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:hud");
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
+        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
         _windowService?.Tick(deltaTime);
+        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:window");
         if (_keyboardGate != null)
             _keyboardGate.SetSuppressed(_windowService?.AnyFieldFocused ?? false);
         _hotkeysCapturePoll?.Invoke();   // uGUI Hotkeys panel key capture (no-op unless a cell is capturing)

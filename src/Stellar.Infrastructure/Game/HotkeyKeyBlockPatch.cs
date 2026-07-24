@@ -60,13 +60,23 @@ internal sealed class HotkeyKeyBlockPatch
     // __0 = positional injection — avoids name mismatch between "key" (UnityEngine.Input) and "keyCode" (Rewired.Keyboard)
     private static bool PrefixBlock(int __0, ref bool __result)
     {
-        if (_captureMode) { __result = false; return false; }
-        if (_blocked.Count > 0 && _blocked.Contains((__0, (int)GetCurrentModifiers())))
+        // Perf harness: count + time this hook — it is the only framework hook that can fire at
+        // RENDER-frame rate (Rewired's call frequency is unknowable statically). No-op unless PERFHUD.
+        var perfT = Stellar.Abstractions.Diagnostics.PerfProbe.HookBegin();
+        try
         {
-            __result = false;
-            return false;
+            if (_captureMode) { __result = false; return false; }
+            if (_blocked.Count > 0 && _blocked.Contains((__0, (int)GetCurrentModifiers())))
+            {
+                __result = false;
+                return false;
+            }
+            return true;
         }
-        return true;
+        finally
+        {
+            Stellar.Abstractions.Diagnostics.PerfProbe.HookEndRewired(perfT);
+        }
     }
 
     private static ModifierKeys GetCurrentModifiers()
