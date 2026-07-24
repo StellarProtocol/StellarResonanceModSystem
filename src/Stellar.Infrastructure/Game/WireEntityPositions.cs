@@ -43,6 +43,13 @@ internal sealed class WireEntityPositions
     private readonly ConcurrentDictionary<long, Entry> _byUuid = new();
     private readonly Func<long> _clock;
 
+    // Approximate entry count maintained via Interlocked on insert/remove/clear.
+    // ConcurrentDictionary.Count acquires EVERY stripe lock — reading it per position
+    // update (dozens–hundreds/sec in crowds) contended with the main-thread reader
+    // (audit finding 8, 2026-07-25). Off-by-a-few drift under races is harmless: the
+    // cap check only decides whether to run the prune walk, which re-reads the real dict.
+    private int _approxCount;
+
     /// <summary>Production ctor — clock is <see cref="Environment.TickCount64"/> (monotonic, cross-thread).</summary>
     public WireEntityPositions() : this(static () => Environment.TickCount64) { }
 
@@ -59,14 +66,14 @@ internal sealed class WireEntityPositions
     public void OnPosition(long uuid, in WirePos pos)
     {
         var now = _clock();
-        _byUuid.TryGetValue(uuid, out var old);
+        var existed = _byUuid.TryGetValue(uuid, out var old);
         _byUuid[uuid] = new Entry(
             new Position3D(pos.X, pos.Y, pos.Z),
             pos.HasDir ? pos.Dir : old.Yaw,
             HasPos: true,
             HasYaw: pos.HasDir || old.HasYaw,
             StampMs: now);
-        PruneIfOverCap();
+        if (!existed) OnInserted();
     }
 
     /// <summary>
@@ -83,7 +90,7 @@ internal sealed class WireEntityPositions
         // last cached position instead of dropping out cleanly at 5s. A brand-new yaw-only entry keeps
         // StampMs=0 (HasPos=false → never served as a position regardless).
         _byUuid[uuid] = new Entry(old.Pos, yaw, HasPos: old.HasPos, HasYaw: true, StampMs: old.StampMs);
-        if (!existed) PruneIfOverCap();
+        if (!existed) OnInserted();
     }
 
     /// <summary>
@@ -102,16 +109,24 @@ internal sealed class WireEntityPositions
     }
 
     /// <summary>Drop one entity (AOI-disappear).</summary>
-    public void Remove(long uuid) => _byUuid.TryRemove(uuid, out _);
+    public void Remove(long uuid)
+    {
+        if (_byUuid.TryRemove(uuid, out _)) System.Threading.Interlocked.Decrement(ref _approxCount);
+    }
 
     /// <summary>Drop all entities (scene change).</summary>
-    public void Clear() => _byUuid.Clear();
-
-    // Evict the single oldest entry when a new insert pushes past the cap. Only ever scans when over
-    // cap (rare — AOI is bounded and Clear() runs on every scene change), so the O(n) walk is cold.
-    private void PruneIfOverCap()
+    public void Clear()
     {
-        if (_byUuid.Count <= MaxEntities) return;
+        _byUuid.Clear();
+        System.Threading.Interlocked.Exchange(ref _approxCount, 0);
+    }
+
+    // Genuine insert bookkeeping: bump the cheap counter and, only when it crosses the cap,
+    // run the eviction walk. The walk re-reads the real dictionary, so counter drift can at
+    // worst trigger one early/late prune — never incorrect eviction.
+    private void OnInserted()
+    {
+        if (System.Threading.Interlocked.Increment(ref _approxCount) <= MaxEntities) return;
         long oldestKey = 0, oldestMs = long.MaxValue;
         var found = false;
         foreach (var kv in _byUuid)
@@ -121,6 +136,7 @@ internal sealed class WireEntityPositions
             oldestKey = kv.Key;
             found = true;
         }
-        if (found) _byUuid.TryRemove(oldestKey, out _);
+        if (found && _byUuid.TryRemove(oldestKey, out _))
+            System.Threading.Interlocked.Decrement(ref _approxCount);
     }
 }

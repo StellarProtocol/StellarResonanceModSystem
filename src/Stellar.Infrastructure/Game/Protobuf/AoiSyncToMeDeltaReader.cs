@@ -38,24 +38,26 @@ internal static class AoiSyncToMeDeltaReader
     /// missing field 1 entirely — that shape is unexpected for the live wire
     /// path and likely indicates the caller picked the wrong message id.
     /// </summary>
-    public static bool TryReadOuter(ReadOnlySpan<byte> payload, out AoiSyncToMeDeltaMsg msg)
+    public static bool TryReadOuter(ReadOnlyMemory<byte> payload, out AoiSyncToMeDeltaMsg msg)
     {
+        var span = payload.Span;
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire))
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire))
             {
                 msg = default; return false;
             }
             if (field == 1 && wire == 2)
             {
-                if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var inner))
+                if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var innerSpan))
                 {
                     msg = default; return false;
                 }
+                var inner = payload.Slice(pos - innerSpan.Length, innerSpan.Length);
                 return TryRead(inner, out msg);
             }
-            if (!WireProtocol.SkipField(payload, ref pos, wire))
+            if (!WireProtocol.SkipField(span, ref pos, wire))
             {
                 msg = default; return false;
             }
@@ -63,37 +65,41 @@ internal static class AoiSyncToMeDeltaReader
         msg = default; return false;
     }
 
-    public static bool TryRead(ReadOnlySpan<byte> payload, out AoiSyncToMeDeltaMsg msg)
+    public static bool TryRead(ReadOnlyMemory<byte> payload, out AoiSyncToMeDeltaMsg msg)
     {
+        var span = payload.Span;
         long uuid = 0;
         AoiSyncDeltaMsg? baseDelta = null;
-        var cds = new List<SkillCooldown>(8);
+        // Lazy — most self-deltas carry zero cooldown rows (audit finding 9); the retained
+        // snapshot contract (SetLocalCooldowns keeps the list) means it must stay a FRESH
+        // allocation when rows exist, never a reused scratch instance.
+        List<SkillCooldown>? cds = null;
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) { msg = default; return false; }
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire)) { msg = default; return false; }
             switch ((field, wire))
             {
                 case (1, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bd)) { msg = default; return false; }
-                    if (!AoiSyncDeltaReader.TryReadDelta(bd, out var d)) { msg = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var bd)) { msg = default; return false; }
+                    if (!AoiSyncDeltaReader.TryReadDelta(payload.Slice(pos - bd.Length, bd.Length), out var d)) { msg = default; return false; }
                     baseDelta = d;
                     break;
                 case (3, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var cb)) { msg = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var cb)) { msg = default; return false; }
                     if (!SkillCDInfoReader.TryRead(cb, out var cd)) { msg = default; return false; }
-                    cds.Add(cd);
+                    (cds ??= new List<SkillCooldown>(8)).Add(cd);
                     break;
                 case (5, 0):
-                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) { msg = default; return false; }
+                    if (!WireProtocol.TryReadVarint(span, ref pos, out var u)) { msg = default; return false; }
                     uuid = (long)u;
                     break;
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire)) { msg = default; return false; }
+                    if (!WireProtocol.SkipField(span, ref pos, wire)) { msg = default; return false; }
                     break;
             }
         }
-        msg = new AoiSyncToMeDeltaMsg(uuid, baseDelta, cds);
+        msg = new AoiSyncToMeDeltaMsg(uuid, baseDelta, (IReadOnlyList<SkillCooldown>?)cds ?? Array.Empty<SkillCooldown>());
         return true;
     }
 }

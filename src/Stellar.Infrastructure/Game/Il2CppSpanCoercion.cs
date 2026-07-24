@@ -29,6 +29,24 @@ internal static class Il2CppSpanCoercion
     // 0 = not attempted, 1 = attempted (success or fail — never retry).
     internal static int SpanExtractorResolved;
 
+    // Compiled open-instance delegate for SpanToArrayMethod. MethodInfo.Invoke costs
+    // reflection overhead + boxing on EVERY recv chunk / stub payload (audit finding 6);
+    // the compiled lambda is a plain call. Null when expression compilation failed —
+    // InvokeToArray falls back to the reflective Invoke.
+    private static volatile Func<object, object?>? _spanToArrayInvoker;
+
+    /// <summary>
+    /// Invoke the resolved ToArray extractor on an IL2CPP span wrapper — compiled-delegate
+    /// fast path with a reflective fallback. Callers must gate on
+    /// <see cref="SpanToArrayMethod"/> being non-null (unchanged contract).
+    /// </summary>
+    internal static object? InvokeToArray(object spanWrapper)
+    {
+        var fast = _spanToArrayInvoker;
+        if (fast is not null) return fast(spanWrapper);
+        return SpanToArrayMethod?.Invoke(spanWrapper, null);
+    }
+
     /// <summary>
     /// Resolve a usable extractor (ToArray) on the IL2CPP ReadOnlySpan&lt;byte&gt;
     /// wrapper. Writes to the static accessor field. Idempotent — called at
@@ -53,6 +71,21 @@ internal static class Il2CppSpanCoercion
             SpanExtractorReady = toArray is not null;
             if (toArray is not null)
             {
+                // Compile (object o) => (object)((T)o).ToArray() once; per-call reflection gone.
+                try
+                {
+                    var p = System.Linq.Expressions.Expression.Parameter(typeof(object), "o");
+                    var call = System.Linq.Expressions.Expression.Call(
+                        System.Linq.Expressions.Expression.Convert(p, t), toArray);
+                    _spanToArrayInvoker = System.Linq.Expressions.Expression
+                        .Lambda<Func<object, object?>>(
+                            System.Linq.Expressions.Expression.Convert(call, typeof(object)), p)
+                        .Compile();
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"[WireTap] ToArray delegate compile failed (reflective fallback stays): {ex.GetType().Name}: {ex.Message}");
+                }
                 log.Info($"[WireTap] resolved ToArray on {t.FullName}");
             }
             else

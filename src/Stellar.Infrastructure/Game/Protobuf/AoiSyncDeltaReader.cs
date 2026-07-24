@@ -31,13 +31,18 @@ internal readonly record struct AoiSyncDeltaMsg(
 /// </summary>
 internal static class AoiSyncDeltaReader
 {
-    public static bool TryReadList(ReadOnlySpan<byte> payload, out IReadOnlyList<AoiSyncDeltaMsg> deltas)
+    // Memory-based end-to-end so the AttrCollection path (field 2) can slice the source
+    // packet array instead of copying per attribute (see AttrCollectionReader.TryRead's
+    // contract note). The other sub-readers (events / damages / buffs) decode into value
+    // types and keep their span inputs unchanged.
+    public static bool TryReadList(ReadOnlyMemory<byte> payload, out IReadOnlyList<AoiSyncDeltaMsg> deltas)
     {
+        var span = payload.Span;
         var list = new List<AoiSyncDeltaMsg>(4);
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire))
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire))
             {
                 deltas = Array.Empty<AoiSyncDeltaMsg>();
                 return false;
@@ -45,12 +50,12 @@ internal static class AoiSyncDeltaReader
             switch ((field, wire))
             {
                 case (1, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bytes))
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var bytes))
                     {
                         deltas = Array.Empty<AoiSyncDeltaMsg>();
                         return false;
                     }
-                    if (!TryReadDelta(bytes, out var d))
+                    if (!TryReadDelta(payload.Slice(pos - bytes.Length, bytes.Length), out var d))
                     {
                         deltas = Array.Empty<AoiSyncDeltaMsg>();
                         return false;
@@ -58,7 +63,7 @@ internal static class AoiSyncDeltaReader
                     list.Add(d);
                     break;
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire))
+                    if (!WireProtocol.SkipField(span, ref pos, wire))
                     {
                         deltas = Array.Empty<AoiSyncDeltaMsg>();
                         return false;
@@ -70,44 +75,45 @@ internal static class AoiSyncDeltaReader
         return true;
     }
 
-    public static bool TryReadDelta(ReadOnlySpan<byte> payload, out AoiSyncDeltaMsg delta)
+    public static bool TryReadDelta(ReadOnlyMemory<byte> payload, out AoiSyncDeltaMsg delta)
     {
+        var span = payload.Span;
         long uuid = 0;
         AttrCollectionMsg? attrs  = null;
         EventDataListMsg?  events = null;
         BuffEventBatch?    buffEvents = null;
         IReadOnlyList<SyncDamageInfoMsg> damages = Array.Empty<SyncDamageInfoMsg>();
         int pos = 0;
-        while (pos < payload.Length)
+        while (pos < span.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) { delta = default; return false; }
+            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire)) { delta = default; return false; }
             switch ((field, wire))
             {
                 case (1, 0):
-                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) { delta = default; return false; }
+                    if (!WireProtocol.TryReadVarint(span, ref pos, out var u)) { delta = default; return false; }
                     uuid = (long)u;
                     break;
                 case (2, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var ab)) { delta = default; return false; }
-                    if (!AttrCollectionReader.TryRead(ab, out var a)) { delta = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var ab)) { delta = default; return false; }
+                    if (!AttrCollectionReader.TryRead(payload.Slice(pos - ab.Length, ab.Length), out var a)) { delta = default; return false; }
                     attrs = a;
                     break;
                 case (4, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var eb)) { delta = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var eb)) { delta = default; return false; }
                     if (!EventDataListReader.TryRead(eb, out var e)) { delta = default; return false; }
                     events = e;
                     break;
                 case (7, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var sb)) { delta = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var sb)) { delta = default; return false; }
                     if (!SkillEffectReader.TryRead(sb, out var dmgs)) { delta = default; return false; }
                     damages = dmgs;
                     break;
                 case (10, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bb)) { delta = default; return false; }
+                    if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var bb)) { delta = default; return false; }
                     buffEvents = BuffEffectSyncReader.TryRead(bb);
                     break;
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire)) { delta = default; return false; }
+                    if (!WireProtocol.SkipField(span, ref pos, wire)) { delta = default; return false; }
                     break;
             }
         }

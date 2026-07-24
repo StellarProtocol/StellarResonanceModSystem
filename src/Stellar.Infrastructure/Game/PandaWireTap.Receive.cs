@@ -177,7 +177,7 @@ internal sealed partial class PandaWireTap
         }
 
         object? rawToArr;
-        try { rawToArr = toArr.Invoke(arg0, null); }
+        try { rawToArr = Il2CppSpanCoercion.InvokeToArray(arg0); }
         catch { return null; }
         if (rawToArr is null) return null;
 
@@ -203,7 +203,15 @@ internal sealed partial class PandaWireTap
             return;
         }
 
-        var rb = _reassemblyByClient.GetOrAdd(client, _ => new ReassemblyBuffer());
+        if (!_reassemblyByClient.TryGetValue(client, out var rb))
+        {
+            rb = _reassemblyByClient.GetOrAdd(client, _ => new ReassemblyBuffer());
+            // New-connection bookkeeping only (relog/reconnect cadence, never per packet):
+            // drop buffers whose connection went quiet, so dead ZTcpClient/ZUdpConnection
+            // wrappers + their grown buffers don't accumulate across a long session
+            // (audit finding 10).
+            EvictQuietReassemblyBuffers(keep: client);
+        }
 
         // Lock per-buffer. ZTcpConnection.OnData is normally single-threaded
         // per connection, but defensive locking eliminates the risk of
@@ -220,6 +228,21 @@ internal sealed partial class PandaWireTap
             }
 
             DrainReassembledFrames(rb, client);
+            rb.ShrinkIfDrained();   // release a large-packet high-water allocation once empty
+        }
+    }
+
+    // Called only when a NEW connection key appears. Evicts entries not Append-touched for
+    // 5+ minutes (a live game connection receives keepalive/sync traffic far more often).
+    // The current key is always kept.
+    private void EvictQuietReassemblyBuffers(object keep)
+    {
+        const long QuietMs = 5 * 60 * 1000;
+        var now = Environment.TickCount64;
+        foreach (var kv in _reassemblyByClient)
+        {
+            if (ReferenceEquals(kv.Key, keep)) continue;
+            if (now - kv.Value.LastTouchedMs > QuietMs) _reassemblyByClient.TryRemove(kv.Key, out _);
         }
     }
 
