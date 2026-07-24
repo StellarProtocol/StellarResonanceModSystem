@@ -253,11 +253,13 @@ internal sealed partial class PandaWireTap
 
             if (rb.Length < size) break; // incomplete — wait for more chunks
 
-            var packet = new byte[(int)size];
-            System.Buffer.BlockCopy(rb.Data, 0, packet, 0, (int)size);
+            // Dispatch a span straight over the reassembly buffer — no per-packet byte[]
+            // copy. Safe: we hold rb's monitor, handlers run synchronously on this thread,
+            // and anything that must outlive the call (envelope payload, capture record)
+            // materializes its own copy downstream. Drop() shifts the remainder only after
+            // the packet has been fully handled.
+            HandleWireBytes(new System.ReadOnlySpan<byte>(rb.Data, 0, (int)size), client);
             rb.Drop((int)size);
-
-            HandleWireBytes(packet, client);
         }
     }
 
@@ -304,6 +306,16 @@ internal sealed partial class PandaWireTap
 
         if (span.Length < 14) return;
         if (!TryParseWireHeader(span, msgTypeRaw, out var header, out var payloadOffset)) return;
+
+        // Lazy payload materialization — resolve the handler snapshot BEFORE the payload
+        // copy / zstd decompress. Unsubscribed traffic (the AOI/world-sync firehose, whose
+        // consumers live on the OnCallStub dispatchers, not here) previously paid a full
+        // payload allocation per packet that Dispatch immediately dropped: the dominant
+        // share of the measured wire-hook garbage (>100 KB/tick intervals hitched 65% vs
+        // 5.5% quiet — GC pressure, A/B 2026-07-25).
+        var handlers = ResolveHandlers(header.Kind, header.ServiceUuid, header.MethodId);
+        if (handlers is null) return;
+
         if (!TryPreparePayload(span, payloadOffset, isZstdCompressed, header, out var payload)) return;
 
         var env = new WireEnvelope
@@ -324,7 +336,7 @@ internal sealed partial class PandaWireTap
             _log.Info($"[WireTap] first frame dispatched: kind={header.Kind} svc={header.ServiceUuid} method={header.MethodId} callId={header.CallId} payloadLen={payload.Length} zstd={isZstdCompressed}");
         }
 
-        Dispatch(env);
+        DispatchTo(handlers, env);
     }
 
     private void UnwrapAndProcess(ReadOnlySpan<byte> span, object? connection, int depth, bool isZstd)
