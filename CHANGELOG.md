@@ -4,17 +4,32 @@ All notable changes to the Stellar framework are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **✍️ Writing standard (owner rule, 2026-07-25) — patch notes are for PLAYERS.**
+> The launcher shows every bullet under `### Added` / `### Changed` / `### Fixed` /
+> `### Removed` **verbatim to mod users** as the patch notes. Write those bullets in
+> plain language: lead with what the player sees or feels ("higher FPS in dungeons",
+> "no more stutter every few seconds"), one short sentence each, **no code identifiers,
+> class names, or internals**. Put all technical detail — APIs, internals, measurements,
+> file/type names — under a **`### Developer notes`** heading: the release pipeline
+> ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
+> summary line under the version heading is also repo-only.
+
 ## [1.16.0] - 2026-07-25
 _**1.16.0** (minor) — the frametime-jitter release: eliminates the framework's in-dungeon FPS loss and frame-spike comb, root-caused by matched A/B on a live client (PR #44). Additive; binary-compatible with plugins built against ≤1.15.0._
 ### Fixed
-- **uGUI anchor probe no longer scans the scene** — `PandaUGuiAdapter` resolved injection anchors with a path-form `GameObject.Find` (a full scene-hierarchy walk, ~30 ms/hit in dense dungeons) every 200 ms, forever, while the game menu was closed. It now caches `zuiroot` and walks a relative `Transform.Find` (active-only contract preserved). This was the dominant cause of the reported jitter: framework-pure measured 86→144 FPS with the frame-spike comb eliminated.
-- **1 Hz inventory poll is generation-guarded** — the poll rebuilt the full module inventory + equipped set via reflection every second (~1.8 MB/s of garbage → periodic stop-the-world GC frames, 100–475 ms on low-spec machines) even when nothing changed. It now rebuilds only after an actual inventory sync lands.
-- **Wire tap allocates only for subscribed traffic** — the recv path resolved payloads before checking for a consumer, so the unsubscribed AOI/world-sync firehose paid a copy (or zstd decompress) per packet that was immediately dropped. Handlers are now resolved first; the reassembly drain dispatches spans without a per-packet copy; zstd uses a cached per-thread decompressor with exact-size output. Reassembly buffers from dead connections are evicted after 5 quiet minutes and oversized buffers shrink once drained.
-- **Rewired key-block prefixes install on demand** — the `Rewired.Keyboard.GetKey*` Harmony prefixes (measured ~8–25k calls/sec at render rate) existed from boot even with no blocked binding. They now install when the first block/capture arms and uninstall when the last clears; when active, a primary-key pre-filter skips the modifier interop reads for unrelated keys.
-- **Combat parse path is zero-copy** — AOI attr payloads slice the per-packet array instead of allocating a `byte[]` per attribute per entity per delta (measured −45% allocation per combat packet); the self-delta cooldown list allocates lazily; the wire-position cache no longer takes every dictionary stripe lock per position update; the IL2CPP span extractor uses a compiled delegate instead of `MethodInfo.Invoke` per packet.
-### Added
-- **`PerfProbe.HookEndRewired`** + `hook:rewired=ms/calls` in the `[Perf]` interval line, and `BeginSeg` coverage for the previously unsegmented tick items (`fw:exchange`, `fw:gamedata`, `fw:equiploadout`, `svc:worldattr`, `fw:input`, `fw:layout`, `svc:toast`, `svc:hud`, `svc:window`) — PERFHUD-gated diagnostics used to attribute this release's fixes.
-- **check-standards: path-form `GameObject.Find` ban** — a `"a/b/c"` path literal in `GameObject.Find` is now a blocker (full-scene-scan class; cache a root + relative `Transform.Find` instead). Exemptions documented in the devkit tech-debt (D-26).
+- **Much higher FPS in dungeons and busy areas.** The framework was quietly doing heavy background work several times per second — on our test machine that alone cost up to 50 FPS in a dungeon (86 → 144 after the fix). This work is now nearly free.
+- **The regular micro-stutter is gone.** If your frametime graph showed small spikes about 5 times every second — even with no plugins installed — that was us. Fixed.
+- **No more short freezes every few seconds.** The framework re-checked your whole inventory once per second and threw the result away, which piled up memory and caused brief frozen frames (worst on lower-end PCs). It now only does that work when your inventory actually changes.
+- **Smoother big fights.** Network and combat data is now processed with far less memory churn, so crowded areas and boss fights cause fewer hitches.
+- **Zero input overhead unless you use key-blocking.** The hotkey "block from game" feature used to sit on the game's keyboard input all the time; now it activates only while you actually have a blocked hotkey or are recording a new one.
+### Developer notes
+_These details never appear in the launcher — full technical background lives here and in PR #44._
+- Anchor probe: `PandaUGuiAdapter` ran a path-form `GameObject.Find` (full scene walk, ~30 ms/hit in dense scenes) every 200 ms while the game menu was closed; now cached `zuiroot` + relative `Transform.Find`, active-only contract preserved. A check-standards blocker now bans path-form `GameObject.Find` literals (exemptions: devkit tech-debt D-26).
+- Inventory: the 1 Hz poll rebuilt the full module inventory via reflection (~1.8 MB/s garbage → 100–475 ms stop-the-world GC frames on low-spec); now generation-guarded on actual inventory syncs. Measured avgUpdAlloc 55 → 9.8 KB/tick.
+- Wire tap: handler snapshot resolved before payload materialization (unsubscribed AOI/world traffic no longer copied), zero-copy reassembly drain, cached per-thread zstd decompressor with exact-size output, quiet-connection eviction + drained-buffer shrink.
+- Input: `Rewired.Keyboard.GetKey*` prefixes (~8–25k calls/s at render rate) install on first block/capture and uninstall when cleared; primary-key pre-filter before modifier interop reads.
+- Combat parse: AOI attr payloads slice the per-packet array (−45% alloc per combat packet), lazy cooldown list, positions cache uses an Interlocked counter instead of per-update `ConcurrentDictionary.Count`, compiled delegate replaces `MethodInfo.Invoke` for the IL2CPP span extractor.
+- New PERFHUD diagnostics: `PerfProbe.HookEndRewired` + `hook:rewired=ms/calls` in the `[Perf]` line, and `BeginSeg` coverage for the previously unsegmented tick items.
 
 ## [1.15.0] - 2026-07-21
 _**1.15.0** (minor) — adds per-plugin binary file storage, the substrate for CombatMeter's byte-for-byte re-upload. Additive; binary-compatible with plugins built against ≤1.14.0._
