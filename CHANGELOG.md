@@ -14,6 +14,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [1.16.1] - 2026-07-25
+_**1.16.1** — same code as 1.16.0, re-cut under a fresh bundle filename because a CDN cache mismatch left some 1.16.0 downloads stuck at 100%. Carries the full 1.16.0 patch notes so players updating straight from 1.15.0 see what changed._
+### Fixed
+- Update download no longer gets stuck at 100% for some players (a caching problem on our download server with the 1.16.0 file — this version uses a fresh file).
+- Much higher FPS in dungeons and busy areas. The framework was quietly doing heavy background work several times per second — on our test machine that alone cost up to 50 FPS in a dungeon (86 to 144 after the fix). This work is now nearly free.
+- The regular micro-stutter is gone. If your frametime graph showed small spikes about 5 times every second — even with no plugins installed — that was us. Fixed.
+- No more short freezes every few seconds. The framework re-checked your whole inventory once per second and threw the result away, which piled up memory and caused brief frozen frames (worst on lower-end PCs). It now only does that work when your inventory actually changes.
+- Smoother big fights. Network and combat data is now processed with far less memory churn, so crowded areas and boss fights cause fewer hitches.
+- Zero input overhead unless you use key-blocking. The hotkey "block from game" feature used to sit on the game's keyboard input all the time; now it activates only while you actually have a blocked hotkey or are recording a new one.
+### Developer notes
+- Identical framework code to 1.16.0 (only FrameworkVersion + this changelog differ). The 1.16.0 manifest republish (player-facing patch notes, PR #46) rotated the bundle sha256 while CDN edges still held the previous zip (max-age 14400); launchers on those edges failed the hash check and hung at 100%. A fresh `Stellar-1.16.1.zip` filename has no cached copies anywhere, so every edge serves consistent manifest+bundle. Lesson (now in docs/release-process.md): a same-version republish requires an immediate CDN purge; prefer a patch bump instead.
+- Patch-note bullets are now plain text (the launcher renders no markdown — 1.16.0's `**` showed literally).
+
 ## [1.16.0] - 2026-07-25
 _**1.16.0** (minor) — the frametime-jitter release: eliminates the framework's in-dungeon FPS loss and frame-spike comb, root-caused by matched A/B on a live client (PR #44). Additive; binary-compatible with plugins built against ≤1.15.0._
 ### Fixed
