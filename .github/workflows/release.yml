@@ -174,6 +174,29 @@ jobs:
         shell: bash
         run: |
           V="${{ steps.ver.outputs.version }}"
+
+          # ── BUNDLE IMMUTABILITY GUARD ──────────────────────────────────────────────
+          # A published Stellar-<ver>.zip is IMMUTABLE. Re-publishing the same version
+          # with different bytes rotates the manifest sha while CDN edges keep serving
+          # the old zip (max-age 14400) → every launcher on a stale edge fails the hash
+          # check and hangs at "downloading 100%". This exact user-facing incident has
+          # now happened TWICE (2026-07-16 local/CI double-publish; 2026-07-25 same-
+          # version changelog republish). Changelog/docs fixes ride a PATCH BUMP.
+          # Identical bytes (idempotent re-run of the same build) are allowed through.
+          if aws s3api head-object --bucket "$BUCKET" --key "Stellar-$V.zip" --endpoint-url "$S3_ENDPOINT" >/dev/null 2>&1; then
+            aws s3 cp "s3://$BUCKET/Stellar-$V.zip" /tmp/published-$V.zip --endpoint-url "$S3_ENDPOINT" --quiet
+            PUB_SHA=$(sha256sum /tmp/published-$V.zip | cut -d' ' -f1)
+            NEW_SHA=$(sha256sum "dist/Stellar-$V.zip" | cut -d' ' -f1)
+            if [ "$PUB_SHA" != "$NEW_SHA" ]; then
+              echo "::error::Stellar-$V.zip is already published with sha256=$PUB_SHA but this build produced $NEW_SHA."
+              echo "::error::Published bundles are immutable (stale CDN edges would hash-mismatch and hang launchers at 100%)."
+              echo "::error::Bump the version (patch release) instead of republishing $V."
+              exit 1
+            fi
+            echo "Stellar-$V.zip already published with identical bytes — idempotent re-run, continuing."
+          fi
+          # ───────────────────────────────────────────────────────────────────────────
+
           # Bundle uses a version-specific object name, so stable + RC bundles coexist downloadable.
           aws s3 cp "dist/Stellar-$V.zip" "s3://$BUCKET/Stellar-$V.zip" --endpoint-url "$S3_ENDPOINT"
           # Publish only the manifests the build produced for this channel:
