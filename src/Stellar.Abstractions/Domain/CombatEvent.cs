@@ -99,8 +99,10 @@ public abstract record CombatEvent(long TimestampMs)
     /// (<see cref="Services.ICombatSnapshot.ServerNowMs"/> at the moment the state was
     /// entered — this transition is a local client event, not parsed off a wire packet,
     /// so there is no server-supplied timestamp to prefer).</param>
-    /// <param name="EntityId">Entity whose state changed (resolved from the state
-    /// controller's <c>Host</c>).</param>
+    /// <param name="TargetId">Entity whose state changed (resolved from the state
+    /// controller's <c>Host</c>) — named to match the <c>TargetId</c>/<c>SourceId</c>/
+    /// <c>SummonerId</c> convention of its siblings above, not <c>EntityId</c> (the
+    /// type it's typed as).</param>
     /// <param name="State">Which state the entity entered.</param>
-    public sealed record EntityStateChanged(long TimestampMs, EntityId EntityId, ActorState State) : CombatEvent(TimestampMs);
+    public sealed record EntityStateChanged(long TimestampMs, EntityId TargetId, ActorState State) : CombatEvent(TimestampMs);
 }

@@ -80,6 +80,27 @@ internal sealed partial class PandaEntityStateProbe
     /// </summary>
     public void Install(HarmonyGameMethodHooker hooker)
     {
+        // 2026-07-28 review fix: this runs synchronously inside
+        // AppDomainHotUpdateWatcher.Observe's AssemblyLoad event handler (via
+        // BootstrapPlugin.OnHotUpdateReady), which has no surrounding try/catch of its own.
+        // GetProperty(name, flags) can throw AmbiguousMatchException (and reflection against a
+        // hot-update type can throw in other unanticipated ways after a game patch reshapes a
+        // type); every OTHER failure path in this file is already null-safe — this is the one
+        // spot that wasn't, so an install-time reflection surprise degrades to "signal off"
+        // (logged) instead of risking whatever an unhandled exception does inside an
+        // AssemblyLoad handler.
+        try
+        {
+            InstallCore(hooker);
+        }
+        catch (System.Exception ex)
+        {
+            _log.Warning($"[EntityState] Install threw {ex.GetType().Name}: {ex.Message}; entity-state signal disabled");
+        }
+    }
+
+    private void InstallCore(HarmonyGameMethodHooker hooker)
+    {
         var entityType = _typeRegistry.FindType(ZEntityTypeName);
         _uuidGetter = entityType?.GetProperty("Uuid", AnyInstance)?.GetGetMethod(nonPublic: true);
         if (entityType is null || _uuidGetter is null)
