@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+_**1.17.0** (minor) — plugins can now learn the instant an enemy actually dies, straight from the game's own logic. Additive; binary-compatible with plugins built against ≤1.16.1._
+### Added
+- Plugins (like the Combat Meter) can now detect a kill — including bosses removed by a scripted takedown instead of a killing blow — the moment the game itself registers the death, instead of guessing from health dropping to zero.
+### Developer notes
+- New `Stellar.Abstractions.Domain.ActorState` enum (`Dead`=9, `Breaking`=23, `Unknown`=0 for any other/future wire value) and `CombatEvent.EntityStateChanged(TimestampMs, EntityId, ActorState)`, riding the existing `ICombatEvents` stream — no service interface gains a member, so STELLAR0005's 8-member ceiling is untouched. Sourced via HarmonyX postfixes on the CONCRETE `Panda.ZGame.EntityCtrlDead.OnEnter` and `Panda.ZGame.ZStateBreaking.OnEnter` (not the virtual base — an override doesn't always chain to it), resolving the entity off the state's inherited `Host` (`Panda.ZGame.ZEntity.Uuid`). Each patch site resolves/installs independently and degrades to "signal off" (logged) rather than throwing if a type/accessor is missing after a future game patch — see `PandaEntityStateProbe`. 2026-07-28 entity-state-death-signal spec; retires the HP-inference gone-timeout for `ArchiveReason.BossKill` on the plugin side (follow-up work, not in this release).
+
 ## [1.16.1] - 2026-07-25
 _**1.16.1** — same code as 1.16.0, re-cut under a fresh bundle filename because a CDN cache mismatch left some 1.16.0 downloads stuck at 100%. Carries the full 1.16.0 patch notes so players updating straight from 1.15.0 see what changed._
 ### Fixed

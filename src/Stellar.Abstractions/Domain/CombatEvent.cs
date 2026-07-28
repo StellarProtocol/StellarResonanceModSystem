@@ -84,4 +84,23 @@ public abstract record CombatEvent(long TimestampMs)
     /// falling back to <c>AttrSummonerId</c> when only that is present).</param>
     /// <param name="SummonId">The summon/pet entity that appeared.</param>
     public sealed record EntitySummonAppeared(long TimestampMs, EntityId SummonerId, EntityId SummonId) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// An entity's client-side actor/controller state machine entered a new state
+    /// Stellar names on <see cref="ActorState"/> (2026-07-28 entity-state-death-signal
+    /// spec). This is the client's OWN death/break signal — read from its state
+    /// machine, not inferred from HP reaching zero or a damage packet's death flag —
+    /// so it fires for scripted kills that never zero the target's HP. Riding this
+    /// existing event channel (rather than a new <c>ICombatLookup</c>/<c>ICombatEvents</c>
+    /// member) is deliberate: it keeps every combat service interface under the
+    /// STELLAR0005 8-member ceiling.
+    /// </summary>
+    /// <param name="TimestampMs">Server epoch timestamp of the event in milliseconds
+    /// (<see cref="Services.ICombatSnapshot.ServerNowMs"/> at the moment the state was
+    /// entered — this transition is a local client event, not parsed off a wire packet,
+    /// so there is no server-supplied timestamp to prefer).</param>
+    /// <param name="EntityId">Entity whose state changed (resolved from the state
+    /// controller's <c>Host</c>).</param>
+    /// <param name="State">Which state the entity entered.</param>
+    public sealed record EntityStateChanged(long TimestampMs, EntityId EntityId, ActorState State) : CombatEvent(TimestampMs);
 }
