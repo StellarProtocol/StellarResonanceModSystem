@@ -24,14 +24,19 @@ public static class FrameworkVersion
     /// the existing <c>ICombatEvents</c> stream — no service interface gains a member, so
     /// the STELLAR0005 8-member ceiling is untouched. Lets plugins (e.g. the CombatMeter's
     /// <c>BossKill</c>) know an entity died without inferring it from HP reaching zero,
-    /// which scripted kills never do. Sourced from Harmony postfixes on
-    /// <c>ZStateMachine.onStateChanged</c>/<c>EnterState</c> (primary — a field run showed
-    /// the originally-spec'd leaf patches, <c>EntityCtrlDead.OnEnter</c> /
-    /// <c>ZStateBreaking.OnEnter</c>, install cleanly but never fire for an ordinary kill;
-    /// see <c>recon/entity-state-death-signal-notes.md</c>), plus <c>ZStateDead.OnEnter</c>
-    /// and the two original leaf sites kept installed as an in-field diagnostic round.
-    /// New enum + new discriminated-union case only — additive, binary-compatible with
-    /// plugins built against ≤1.16.1.
+    /// which scripted kills never do. Field-proven sourcing, after three recon rounds (see
+    /// <c>recon/entity-state-death-signal-notes.md</c>): <c>Panda.ZGame.ZStateDead.OnEnter</c>
+    /// fired for all ten deaths in the owner's confirming run and is the sole installed
+    /// death source; <c>Panda.ZGame.ZStateBreaking.OnEnter</c> (untested, not disproven —
+    /// no break phase occurred in that run) is its kept sibling. The originally-spec'd
+    /// <c>EntityCtrlDead.OnEnter</c> stayed silent across those same ten deaths (disproven)
+    /// and the wider <c>ZStateMachine.onStateChanged</c>/<c>EnterState</c> hooks tried in
+    /// between were dropped for cost, not correctness — <c>EnterState</c> also resolved
+    /// every one of the ten deaths correctly and remains a documented, field-proven fallback
+    /// if <c>ZStateDead</c> is ever removed/renamed, just not installed by default because it
+    /// fires on every actor's every transition rather than only the one that matters. New
+    /// enum + new discriminated-union case only — additive, binary-compatible with plugins
+    /// built against ≤1.16.1.
     /// 1.15.0 adds <c>IPluginServices.Data</c> — an
     /// <c>IPluginDataStore</c> giving each plugin its own binary file storage
     /// (<c>Write</c>/<c>Read</c>/<c>Delete</c>/<c>List</c>, never-throws, path-traversal-safe)
