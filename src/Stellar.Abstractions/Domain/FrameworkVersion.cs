@@ -20,13 +20,18 @@ public static class FrameworkVersion
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy. 1.17.0 adds <c>ActorState</c> and
     /// <c>CombatEvent.EntityStateChanged</c> (2026-07-28 entity-state-death-signal spec):
-    /// the client's own entity state-machine transitions (death, break phase), read from
-    /// a Harmony patch on <c>EntityCtrlDead.OnEnter</c> / <c>ZStateBreaking.OnEnter</c>,
-    /// surfaced on the existing <c>ICombatEvents</c> stream — no service interface gains
-    /// a member, so the STELLAR0005 8-member ceiling is untouched. Lets plugins (e.g. the
-    /// CombatMeter's <c>BossKill</c>) know an entity died without inferring it from HP
-    /// reaching zero, which scripted kills never do. New enum + new discriminated-union
-    /// case only — additive, binary-compatible with plugins built against ≤1.16.1.
+    /// the client's own entity state-machine transitions (death, break phase), surfaced on
+    /// the existing <c>ICombatEvents</c> stream — no service interface gains a member, so
+    /// the STELLAR0005 8-member ceiling is untouched. Lets plugins (e.g. the CombatMeter's
+    /// <c>BossKill</c>) know an entity died without inferring it from HP reaching zero,
+    /// which scripted kills never do. Sourced from Harmony postfixes on
+    /// <c>ZStateMachine.onStateChanged</c>/<c>EnterState</c> (primary — a field run showed
+    /// the originally-spec'd leaf patches, <c>EntityCtrlDead.OnEnter</c> /
+    /// <c>ZStateBreaking.OnEnter</c>, install cleanly but never fire for an ordinary kill;
+    /// see <c>recon/entity-state-death-signal-notes.md</c>), plus <c>ZStateDead.OnEnter</c>
+    /// and the two original leaf sites kept installed as an in-field diagnostic round.
+    /// New enum + new discriminated-union case only — additive, binary-compatible with
+    /// plugins built against ≤1.16.1.
     /// 1.15.0 adds <c>IPluginServices.Data</c> — an
     /// <c>IPluginDataStore</c> giving each plugin its own binary file storage
     /// (<c>Write</c>/<c>Read</c>/<c>Delete</c>/<c>List</c>, never-throws, path-traversal-safe)

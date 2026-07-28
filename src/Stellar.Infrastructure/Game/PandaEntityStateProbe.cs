@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
@@ -7,8 +8,8 @@ using Stellar.Infrastructure.Hooks;
 
 namespace Stellar.Infrastructure.Game;
 
-// Diagnostics live in PandaEntityStateProbe.Diagnostics.cs (ungated first-N-per-kind lines +
-// per-event StellarDiagnostics-gated logging).
+// Diagnostics live in PandaEntityStateProbe.Diagnostics.cs (ungated first-N-per-kind lines,
+// ungated first-N-per-site unfiltered raw transitions, and StellarDiagnostics-gated detail).
 
 /// <summary>
 /// Surfaces the client's own entity state-machine transitions as a
@@ -20,15 +21,32 @@ namespace Stellar.Infrastructure.Game;
 /// <c>SyncDamageInfo.IsDead</c> never fires.
 ///
 /// <para>
-/// Patches the CONCRETE state's <c>OnEnter</c> — <c>Panda.ZGame.EntityCtrlDead</c> for
-/// death, <c>Panda.ZGame.ZStateBreaking</c> for break phase — not the virtual base
-/// (<c>StateCtrlBase</c> / <c>ZState</c>), because HarmonyX patching the base method
-/// would miss overrides that don't chain to it. Confirmed via
-/// <c>tools/dump-types.py</c> against <c>recon/cpp2il-out/Panda.Script.dll</c>: both
-/// concrete types declare their own <c>OnEnter</c>, and both inherit <c>Host</c>
-/// (<c>get_Host</c> / <c>host_</c>) typed <c>Panda.ZGame.ZEntity</c> from their
-/// respective bases (<c>StateCtrlBase</c> for the former, <c>ZState</c> for the
-/// latter) — same host-resolution shape on both, so one probe covers both sites.
+/// <b>2026-07-28 field result — the leaf patches installed cleanly and never fired.</b>
+/// The owner cleared three dungeons with mob kills; <c>EntityCtrlDead.OnEnter</c> and
+/// <c>ZStateBreaking.OnEnter</c> produced zero observations and zero soft-fail warnings —
+/// both types resolved and patched, they simply are not what runs when a monster dies on
+/// this build. Fresh <c>dnfile</c> recon against <c>Panda.ZGame.ZStateMachine</c>
+/// (<c>recon/entity-state-death-signal-notes.md</c>) shows the machine itself is the
+/// funnel: <c>onStateChanged(fromState, toState)</c> and <c>EnterState(targetState)</c>
+/// fire on every transition and hand the state value directly as an argument, with no
+/// dependency on which leaf state class ends up entered. These are now the PRIMARY
+/// patch sites. The leaf sites (<c>EntityCtrlDead.OnEnter</c>, <c>ZStateBreaking.OnEnter</c>,
+/// and the newly-added <c>ZStateDead.OnEnter</c> — the spec's named alternative, absent
+/// from the FIRST round entirely) stay installed as a diagnostic round: we don't yet know
+/// if ANY of them ever fire for anything, and finding out costs nothing once the machine
+/// hooks already carry the real signal.
+/// </para>
+///
+/// <para>
+/// <b>Hot-path discipline is the governing constraint for the machine hooks.</b>
+/// <c>onStateChanged</c>/<c>EnterState</c> fire for every actor's every transition — moves,
+/// jumps, skills — not just death/break, so in an 18-player raid this is orders of
+/// magnitude hotter than a death leaf ever was. The callbacks below unbox the state
+/// argument to a raw <see langword="int"/> (via <see cref="Convert.ToInt32(object)"/> — a
+/// BCL numeric conversion, NOT reflection) and run it through
+/// <see cref="ActorStateMapper.MapWireValue"/> FIRST; only a Dead/Breaking match reaches
+/// the reflected <c>Host</c> → <c>Uuid</c> getters. No reflected getter is invoked before
+/// that filter passes.
 /// </para>
 ///
 /// <para>
@@ -36,10 +54,19 @@ namespace Stellar.Infrastructure.Game;
 /// <c>BootstrapPlugin.OnHotUpdateReady</c>, after all 8 Panda hot-update assemblies —
 /// including <c>Panda.Script</c>, which carries every type this probe needs — are
 /// confirmed loaded; see <c>docs/il2cpp-probing-safety.md</c> and the
-/// <c>HotkeyKeyBlockPatch</c> / <c>PandaWorldAttrProbe</c> precedents for the
-/// soft-fail idiom). Each of the two patch sites resolves and installs independently:
-/// a missing type or accessor degrades ONLY that one signal to "feature off" (logged),
-/// never throws, and never blocks the other site.
+/// <c>HotkeyKeyBlockPatch</c> / <c>PandaWorldAttrProbe</c> precedents for the soft-fail
+/// idiom). Every patch site resolves and installs independently: a missing type or
+/// accessor degrades ONLY that one site to "feature off" (logged), never throws, and
+/// never blocks any other site.
+/// </para>
+///
+/// <para>
+/// <b>De-duplication:</b> several sites can plausibly fire for the SAME real transition
+/// (a controller-side state entry and a machine-side one, for the same death, close in
+/// real time). <see cref="ShouldRaise"/> keys on (entity, state) with a short wall-clock
+/// window so the plugin never sees the same logical transition raised twice, without
+/// requiring us to already know which site is "the" live one — that's exactly what this
+/// diagnostic round is for.
 /// </para>
 /// </summary>
 internal sealed partial class PandaEntityStateProbe
@@ -48,8 +75,29 @@ internal sealed partial class PandaEntityStateProbe
 
     private const string EntityCtrlDeadTypeName = "Panda.ZGame.EntityCtrlDead";
     private const string ZStateBreakingTypeName = "Panda.ZGame.ZStateBreaking";
+    private const string ZStateDeadTypeName     = "Panda.ZGame.ZStateDead";
+    private const string ZStateMachineTypeName  = "Panda.ZGame.ZStateMachine";
     private const string ZEntityTypeName        = "Panda.ZGame.ZEntity";
-    private const string OnEnterMethodName      = "OnEnter";
+
+    private const string OnEnterMethodName        = "OnEnter";
+    private const string OnStateChangedMethodName = "onStateChanged";
+    private const string EnterStateMethodName     = "EnterState";
+
+    // Site-attribution labels — every ungated observation line names one of these, so a
+    // single run tells us which sites are actually live (2026-07-28 field-result review).
+    private const string SiteOnStateChanged = "onStateChanged";
+    private const string SiteEnterState     = "EnterState";
+    private const string SiteZStateDead     = "ZStateDead";
+    private const string SiteEntityCtrlDead = "EntityCtrlDead";
+    private const string SiteZStateBreaking = "ZStateBreaking";
+
+    // De-dup window: sites firing for the SAME real transition should land within the same
+    // frame/call-stack, not seconds apart. 500ms comfortably covers same-instant multi-site
+    // firing while still letting a genuine SECOND real transition of the same kind (e.g. a
+    // boss re-entering Breaking a few seconds later) through. Wall-clock (TickCount64), not
+    // ServerNowMs — this is about real elapsed time between postfix invocations, not the
+    // server-time timestamp attached to the raised event.
+    private const long DedupWindowMs = 500;
 
     private static readonly object?[] EmptyArgs = Array.Empty<object?>();
 
@@ -63,8 +111,15 @@ internal sealed partial class PandaEntityStateProbe
     // load is already confirmed complete, so a miss here means the type/member genuinely
     // isn't there (a game-patch shape change), not a load-order race.
     private MethodInfo? _uuidGetter;
-    private MethodInfo? _deadHostGetter;
-    private MethodInfo? _breakingHostGetter;
+    private MethodInfo? _machineHostGetter;    // ZStateMachine.Host
+    private MethodInfo? _zStateDeadHostGetter; // ZStateDead.Host (inherited from ZState)
+    private MethodInfo? _deadHostGetter;       // EntityCtrlDead.Host (inherited from StateCtrlBase)
+    private MethodInfo? _breakingHostGetter;   // ZStateBreaking.Host (inherited from ZState)
+
+    // (entity uuid, state) -> last-raised wall-clock tick. Cleared per scene alongside the
+    // diagnostics budget (ResetObservationBudget) — dedup only needs to span one transition
+    // burst, never across a scene boundary, so this bounds its growth over a long session.
+    private readonly Dictionary<(long Uuid, ActorState State), long> _recentlyRaised = new();
 
     public PandaEntityStateProbe(IGameTypeRegistry typeRegistry, ICombatEventSink sink, ICombatSnapshot combat, IPluginLog log)
     {
@@ -75,25 +130,24 @@ internal sealed partial class PandaEntityStateProbe
     }
 
     /// <summary>
-    /// Resolves both patch sites and installs whichever ones resolve. Safe to call
+    /// Resolves every patch site and installs whichever ones resolve. Safe to call
     /// exactly once; call after hot-update assemblies are confirmed loaded.
     /// </summary>
     public void Install(HarmonyGameMethodHooker hooker)
     {
-        // 2026-07-28 review fix: this runs synchronously inside
-        // AppDomainHotUpdateWatcher.Observe's AssemblyLoad event handler (via
-        // BootstrapPlugin.OnHotUpdateReady), which has no surrounding try/catch of its own.
-        // GetProperty(name, flags) can throw AmbiguousMatchException (and reflection against a
-        // hot-update type can throw in other unanticipated ways after a game patch reshapes a
-        // type); every OTHER failure path in this file is already null-safe — this is the one
-        // spot that wasn't, so an install-time reflection surprise degrades to "signal off"
-        // (logged) instead of risking whatever an unhandled exception does inside an
-        // AssemblyLoad handler.
+        // This runs synchronously inside AppDomainHotUpdateWatcher.Observe's AssemblyLoad
+        // event handler (via BootstrapPlugin.OnHotUpdateReady), which has no surrounding
+        // try/catch of its own. GetProperty(name, flags) can throw AmbiguousMatchException
+        // (and reflection against a hot-update type can throw in other unanticipated ways
+        // after a game patch reshapes a type); every OTHER failure path in this file is
+        // already null-safe — this is the one spot that wasn't, so an install-time
+        // reflection surprise degrades to "signal off" (logged) instead of risking whatever
+        // an unhandled exception does inside an AssemblyLoad handler.
         try
         {
             InstallCore(hooker);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             _log.Warning($"[EntityState] Install threw {ex.GetType().Name}: {ex.Message}; entity-state signal disabled");
         }
@@ -105,55 +159,108 @@ internal sealed partial class PandaEntityStateProbe
         _uuidGetter = entityType?.GetProperty("Uuid", AnyInstance)?.GetGetMethod(nonPublic: true);
         if (entityType is null || _uuidGetter is null)
         {
-            // Without ZEntity.Uuid neither signal can resolve an EntityId — both sites off.
+            // Without ZEntity.Uuid no signal can resolve an EntityId — every site off.
             _log.Warning($"[EntityState] {ZEntityTypeName}.Uuid not found; entity-state signal disabled");
             return;
         }
 
-        InstallDeadPatch(hooker);
-        InstallBreakingPatch(hooker);
+        InstallMachinePatches(hooker);
+        InstallZStateDeadPatch(hooker);
+        InstallEntityCtrlDeadPatch(hooker);   // 2026-07-28: diagnostic round — never fired in round 1
+        InstallZStateBreakingPatch(hooker);   // 2026-07-28: diagnostic round — never fired in round 1
     }
 
-    private void InstallDeadPatch(HarmonyGameMethodHooker hooker)
+    // Resolves <typeName>'s inherited Host property. Logs+returns null on any miss so the
+    // caller can skip installing that one site without touching any other.
+    private MethodInfo? ResolveHostGetter(string typeName, string siteLabel, out Type? resolvedType)
     {
-        var deadType = _typeRegistry.FindType(EntityCtrlDeadTypeName);
-        _deadHostGetter = deadType?.GetProperty("Host", AnyInstance)?.GetGetMethod(nonPublic: true);
-        if (deadType is null || _deadHostGetter is null)
+        resolvedType = _typeRegistry.FindType(typeName);
+        var getter = resolvedType?.GetProperty("Host", AnyInstance)?.GetGetMethod(nonPublic: true);
+        if (resolvedType is null || getter is null)
         {
-            _log.Warning($"[EntityState] {EntityCtrlDeadTypeName}.Host not found; Dead signal disabled");
-            return;
+            _log.Warning($"[EntityState] {typeName}.Host not found; {siteLabel} signal disabled");
         }
-        hooker.PostfixAllOverloads(deadType, OnEnterMethodName, OnEntityCtrlDeadEnter);
+        return getter;
     }
 
-    private void InstallBreakingPatch(HarmonyGameMethodHooker hooker)
+    private void InstallMachinePatches(HarmonyGameMethodHooker hooker)
     {
-        var breakingType = _typeRegistry.FindType(ZStateBreakingTypeName);
-        _breakingHostGetter = breakingType?.GetProperty("Host", AnyInstance)?.GetGetMethod(nonPublic: true);
-        if (breakingType is null || _breakingHostGetter is null)
-        {
-            _log.Warning($"[EntityState] {ZStateBreakingTypeName}.Host not found; Breaking signal disabled");
-            return;
-        }
-        hooker.PostfixAllOverloads(breakingType, OnEnterMethodName, OnZStateBreakingEnter);
+        _machineHostGetter = ResolveHostGetter(ZStateMachineTypeName, "machine-level (onStateChanged/EnterState)", out var t);
+        if (t is null || _machineHostGetter is null) return;
+        hooker.PostfixAllOverloads(t, OnStateChangedMethodName, OnMachineStateChanged);
+        hooker.PostfixAllOverloads(t, EnterStateMethodName, OnMachineEnterState);
     }
 
-    // HarmonyGameMethodHooker.Callbacks signature: (instance, args). Runs on whatever thread
-    // invoked OnEnter — the game's own state-machine tick, i.e. the Unity main thread for
-    // every entity's controller/state update (docs/coding-standards.md § Threading).
+    private void InstallZStateDeadPatch(HarmonyGameMethodHooker hooker)
+    {
+        _zStateDeadHostGetter = ResolveHostGetter(ZStateDeadTypeName, SiteZStateDead, out var t);
+        if (t is null || _zStateDeadHostGetter is null) return;
+        hooker.PostfixAllOverloads(t, OnEnterMethodName, OnZStateDeadEnter);
+    }
+
+    private void InstallEntityCtrlDeadPatch(HarmonyGameMethodHooker hooker)
+    {
+        _deadHostGetter = ResolveHostGetter(EntityCtrlDeadTypeName, SiteEntityCtrlDead, out var t);
+        if (t is null || _deadHostGetter is null) return;
+        hooker.PostfixAllOverloads(t, OnEnterMethodName, OnEntityCtrlDeadEnter);
+    }
+
+    private void InstallZStateBreakingPatch(HarmonyGameMethodHooker hooker)
+    {
+        _breakingHostGetter = ResolveHostGetter(ZStateBreakingTypeName, SiteZStateBreaking, out var t);
+        if (t is null || _breakingHostGetter is null) return;
+        hooker.PostfixAllOverloads(t, OnEnterMethodName, OnZStateBreakingEnter);
+    }
+
+    // ---- Machine-level callbacks (PRIMARY signal; hot path — see class remarks) ----
+
+    // onStateChanged(fromState, toState): args[0]=fromState, args[1]=toState. toState is
+    // what the entity is transitioning INTO — the value the Dead/Breaking filter needs.
+    private void OnMachineStateChanged(object? instance, object?[] args)
+    {
+        if (args.Length < 2 || !TryUnboxInt(args[1], out var toRaw)) return;
+        var fromRaw = args.Length > 0 && TryUnboxInt(args[0], out var f) ? (int?)f : null;
+        DiagUnfilteredTransition(SiteOnStateChanged, fromRaw, toRaw);
+
+        var mapped = ActorStateMapper.MapWireValue(toRaw);
+        if (mapped == ActorState.Unknown) return;   // fast exit — no reflection above this line
+        RaiseIfHostResolves(instance, _machineHostGetter, mapped, SiteOnStateChanged);
+    }
+
+    // EnterState(targetState): args[0]=targetState — no fromState available at this site.
+    private void OnMachineEnterState(object? instance, object?[] args)
+    {
+        if (args.Length < 1 || !TryUnboxInt(args[0], out var targetRaw)) return;
+        DiagUnfilteredTransition(SiteEnterState, null, targetRaw);
+
+        var mapped = ActorStateMapper.MapWireValue(targetRaw);
+        if (mapped == ActorState.Unknown) return;
+        RaiseIfHostResolves(instance, _machineHostGetter, mapped, SiteEnterState);
+    }
+
+    // ---- Leaf callbacks (diagnostic round — see class remarks) ----
+    // The leaf OnEnter(fromState) argument is the state being LEFT, not entered (confirmed
+    // via signature-blob decode, recon/entity-state-death-signal-notes.md) — so unlike the
+    // machine hooks above, these hardcode the state implied by WHICH concrete type fired;
+    // reading args here would read the wrong value, not a defensive cross-check.
+
+    private void OnZStateDeadEnter(object? instance, object?[] args)
+        => RaiseIfHostResolves(instance, _zStateDeadHostGetter, ActorState.Dead, SiteZStateDead);
+
     private void OnEntityCtrlDeadEnter(object? instance, object?[] args)
-        => TryRaise(instance, args, ActorState.Dead, _deadHostGetter);
+        => RaiseIfHostResolves(instance, _deadHostGetter, ActorState.Dead, SiteEntityCtrlDead);
 
     private void OnZStateBreakingEnter(object? instance, object?[] args)
-        => TryRaise(instance, args, ActorState.Breaking, _breakingHostGetter);
+        => RaiseIfHostResolves(instance, _breakingHostGetter, ActorState.Breaking, SiteZStateBreaking);
 
-    // Reads Host off the state instance that JUST executed OnEnter (synchronous, same call
-    // frame — not a later poll of an arbitrary id), so this does not fall into the TOCTOU
-    // live-object class docs/il2cpp-probing-safety.md warns about. Still defensive: any
-    // reflection/marshal failure is swallowed (this is a HarmonyX postfix trust boundary —
-    // HarmonyGameMethodHooker.Trampoline already catches everything, but failing fast here
-    // keeps the intent local) and simply skips this one transition.
-    private void TryRaise(object? instance, object?[] args, ActorState patchedState, MethodInfo? hostGetter)
+    // ---- Shared resolve + raise + de-dup ----
+
+    // Reads Host off the instance that JUST executed the patched method (synchronous, same
+    // call frame — not a later poll of an arbitrary id), so this does not fall into the
+    // TOCTOU live-object class docs/il2cpp-probing-safety.md warns about. Only reached after
+    // the caller's raw-int filter has already matched Dead/Breaking (machine sites) or by
+    // construction (leaf sites) — never on every transition.
+    private void RaiseIfHostResolves(object? instance, MethodInfo? hostGetter, ActorState state, string site)
     {
         if (instance is null || hostGetter is null || _uuidGetter is null) return;
         try
@@ -162,37 +269,51 @@ internal sealed partial class PandaEntityStateProbe
             if (host is null) return;
             if (_uuidGetter.Invoke(host, EmptyArgs) is not long uuid || uuid == 0) return;
 
-            var state = ResolveState(args, patchedState);
             var entityId = new EntityId(uuid);
+            if (!ShouldRaise(uuid, state))
+            {
+                DiagDuplicateSuppressed(site, state, entityId);
+                return;
+            }
             _sink.EnqueueEvent(new CombatEvent.EntityStateChanged(_combat.ServerNowMs, entityId, state));
-            DiagFirstObserved(state, entityId);
+            DiagFirstObserved(site, state, entityId);
         }
         catch (Exception ex)
         {
-            DiagRaiseFailed(patchedState, ex);
+            DiagRaiseFailed(site, state, ex);
         }
     }
 
-    // Prefers the game's own EActorState argument (confirms the wire taxonomy matches what
-    // this patch site assumed); falls back to the value implied by WHICH concrete OnEnter
-    // fired when the argument can't be read/mapped. That fact alone is already conclusive —
-    // EntityCtrlDead.OnEnter only ever means Dead — so a marshal failure on the argument
-    // never costs the signal, only the cross-check.
-    private static ActorState ResolveState(object?[] args, ActorState patchedState)
+    // See DedupWindowMs for the window rationale. Only called after a Dead/Breaking match
+    // and successful host/uuid resolution — never on the machine hooks' hot per-transition
+    // path, so a Dictionary touch here costs nothing measurable.
+    private bool ShouldRaise(long uuid, ActorState state)
     {
-        if (args.Length > 0 && args[0] is not null)
+        var now = Environment.TickCount64;
+        var key = (uuid, state);
+        if (_recentlyRaised.TryGetValue(key, out var lastMs) && now - lastMs < DedupWindowMs)
         {
-            try
-            {
-                var mapped = ActorStateMapper.MapWireValue(Convert.ToInt32(args[0]));
-                if (mapped != ActorState.Unknown) return mapped;
-            }
-            catch
-            {
-                // Unexpected boxed shape for the EActorState arg — fall through to the
-                // patch-site literal; ResolveState never throws into TryRaise's caller.
-            }
+            return false;
         }
-        return patchedState;
+        _recentlyRaised[key] = now;
+        return true;
+    }
+
+    // Convert.ToInt32 is a BCL numeric conversion (dispatches via the boxed value's built-in
+    // IConvertible), NOT reflection — safe to call unconditionally on the machine hooks' hot
+    // path. Returns false (never throws) for null or an unexpected boxed shape.
+    private static bool TryUnboxInt(object? boxed, out int value)
+    {
+        value = 0;
+        if (boxed is null) return false;
+        try
+        {
+            value = Convert.ToInt32(boxed);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

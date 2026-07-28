@@ -4,33 +4,37 @@ using Stellar.Abstractions.Domain;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Diagnostics for <see cref="PandaEntityStateProbe"/>. The first
-/// <see cref="FirstObservedLogCapPerScene"/> observations of EACH kind (Dead / Breaking) are
-/// logged UNGATED per framework policy (boot/one-shot lines always fire) — verification
-/// without a raid (2026-07-28 spec § 4): a single trash-mob death in a short dungeon
-/// already proves the plumbing, and the owner's NEXT raid answers "does a scripted-kill
-/// boss reach Dead" from one plain log line with no scheduled test.
+/// Diagnostics for <see cref="PandaEntityStateProbe"/>. Two UNGATED, bounded-per-scene
+/// instruments (framework policy: boot/one-shot lines always fire), added/kept after the
+/// 2026-07-28 field result (leaf patches installed cleanly and never fired — a silent
+/// no-op that cost the owner a run, so this round must not repeat that silently):
+///
+/// <list type="number">
+/// <item><b>Site-attributed first-observed lines</b> — every logged Dead/Breaking
+/// observation names which patch site produced it (<c>onStateChanged</c> / <c>EnterState</c>
+/// / <c>ZStateDead</c> / <c>EntityCtrlDead</c> / <c>ZStateBreaking</c>), so one run tells us
+/// which sites are actually live.</item>
+/// <item><b>Unfiltered raw-transition lines</b> — the first
+/// <see cref="UnfilteredTransitionLogCapPerScene"/> transitions per scene at EACH machine
+/// hook (<c>onStateChanged</c>/<c>EnterState</c>), logged with their RAW integer state
+/// values regardless of whether they match Dead/Breaking. This is what makes the
+/// <c>EActorState</c> numbering (Dead=9, Breaking=23, from
+/// <c>enum_e_actor_state.proto</c>) a confirmed FACT instead of an assumption that fails
+/// silently if the runtime enum ever differs — exactly the failure class that produced
+/// the empty-log field result this round is fixing.</item>
+/// </list>
 ///
 /// <para>
-/// <b>2026-07-28 review fix — budget is PER SCENE, not per session.</b> A session-lifetime
-/// counter (the first cut of this file, modelled on <c>PandaCombatStubProbe.DamageLogCap</c>)
-/// is the wrong shape here: that cap answers "is the wire live", a check that fires many
-/// times a second, so burning it in seconds is fine. Deaths are orders of magnitude rarer —
-/// ten ordinary mob deaths earlier in the SAME session (any dungeon run before the one that
-/// matters) would silently spend the whole budget before the owner's raid even starts, and
-/// the only fallback (<c>STELLAR_DIAGNOSTICS</c>) needs an env var AND a restart set up
-/// BEFORE the raid — exactly the scheduled test this design exists to avoid. Resetting on
-/// every <c>OnEnterScene</c> (<see cref="ResetObservationBudget"/>, called from
-/// <c>BootstrapPlugin.OnEnterScene</c>) gives every dungeon/raid instance — including one
-/// started an hour into a session — its own fresh allowance.
+/// Both budgets are PER SCENE (<see cref="ResetObservationBudget"/>, called from
+/// <c>BootstrapPlugin.OnEnterScene</c>) — not per session — per the prior review fix: a
+/// session-lifetime counter would let ordinary earlier-session play spend the budget
+/// before the raid that matters even starts. Reaching either cap is ALSO logged ungated,
+/// once per scene per counter, so silence is never ambiguous.
 /// </para>
 ///
 /// <para>
-/// Every observation beyond the per-scene cap (and the raise-failure trace) is gated on
-/// <see cref="StellarDiagnostics.IsEnabled"/>. Reaching the cap itself is ALSO logged
-/// ungated, once per scene per kind, so silence is never ambiguous — a raid that hits an
-/// exhausted budget still tells the owner why nothing more is printing, without them having
-/// to already suspect a cap exists.
+/// Per-event detail beyond the caps, duplicate-suppressed traces, and raise-failure traces
+/// are all gated on <see cref="StellarDiagnostics.IsEnabled"/>.
 /// </para>
 /// </summary>
 internal sealed partial class PandaEntityStateProbe
@@ -41,8 +45,14 @@ internal sealed partial class PandaEntityStateProbe
     private bool _breakingCapLoggedThisScene;
     private const int FirstObservedLogCapPerScene = 10;
 
+    private int _unfilteredOnStateChangedCountThisScene;
+    private int _unfilteredEnterStateCountThisScene;
+    private bool _unfilteredOnStateChangedCapLoggedThisScene;
+    private bool _unfilteredEnterStateCapLoggedThisScene;
+    private const int UnfilteredTransitionLogCapPerScene = 12;
+
     /// <summary>
-    /// Clears both per-kind counters and their cap-reached latches. Called once per
+    /// Clears every per-scene counter/latch and the de-dup map. Called once per
     /// <c>OnEnterScene</c> so every dungeon/raid instance gets a fresh ungated allowance —
     /// see the type-level remarks above for why a session-lifetime budget was wrong.
     /// </summary>
@@ -52,28 +62,64 @@ internal sealed partial class PandaEntityStateProbe
         _breakingLogCountThisScene = 0;
         _deadCapLoggedThisScene = false;
         _breakingCapLoggedThisScene = false;
+        _unfilteredOnStateChangedCountThisScene = 0;
+        _unfilteredEnterStateCountThisScene = 0;
+        _unfilteredOnStateChangedCapLoggedThisScene = false;
+        _unfilteredEnterStateCapLoggedThisScene = false;
+        _recentlyRaised.Clear();
     }
 
-    private void DiagFirstObserved(ActorState state, EntityId entityId)
+    // ---- Instrument 2: unfiltered raw transitions (proves the enum numbering) ----
+
+    private void DiagUnfilteredTransition(string site, int? fromRaw, int toRaw)
+    {
+        if (site == SiteOnStateChanged)
+        {
+            LogUnfilteredOrCapReached(site, fromRaw, toRaw, ref _unfilteredOnStateChangedCountThisScene, ref _unfilteredOnStateChangedCapLoggedThisScene);
+        }
+        else if (site == SiteEnterState)
+        {
+            LogUnfilteredOrCapReached(site, fromRaw, toRaw, ref _unfilteredEnterStateCountThisScene, ref _unfilteredEnterStateCapLoggedThisScene);
+        }
+    }
+
+    private void LogUnfilteredOrCapReached(string site, int? fromRaw, int toRaw, ref int countThisScene, ref bool capLogged)
+    {
+        if (countThisScene < UnfilteredTransitionLogCapPerScene)
+        {
+            countThisScene++;
+            var fromText = fromRaw.HasValue ? fromRaw.Value.ToString() : "?";
+            _log.Info($"[EntityStateRaw] site={site} from={fromText} to={toRaw} (#{countThisScene}/{UnfilteredTransitionLogCapPerScene} this scene, unfiltered)");
+            return;
+        }
+        if (capLogged) return;
+        capLogged = true;
+        _log.Info($"[EntityStateRaw] site={site} unfiltered-transition budget spent for this scene " +
+                  $"({UnfilteredTransitionLogCapPerScene} logged); further raw transitions are silent. Resets on the next scene/dungeon entry.");
+    }
+
+    // ---- Instrument 1: site-attributed first-observed Dead/Breaking (post-dedup) ----
+
+    private void DiagFirstObserved(string site, ActorState state, EntityId entityId)
     {
         switch (state)
         {
             case ActorState.Dead:
-                LogFirstObservedOrCapReached(entityId, "Dead", ref _deadLogCountThisScene, ref _deadCapLoggedThisScene);
+                LogFirstObservedOrCapReached(site, entityId, "Dead", ref _deadLogCountThisScene, ref _deadCapLoggedThisScene);
                 break;
             case ActorState.Breaking:
-                LogFirstObservedOrCapReached(entityId, "Breaking", ref _breakingLogCountThisScene, ref _breakingCapLoggedThisScene);
+                LogFirstObservedOrCapReached(site, entityId, "Breaking", ref _breakingLogCountThisScene, ref _breakingCapLoggedThisScene);
                 break;
         }
-        DiagPerEvent(state, entityId);
+        DiagPerEvent(site, state, entityId);
     }
 
-    private void LogFirstObservedOrCapReached(EntityId entityId, string label, ref int countThisScene, ref bool capLogged)
+    private void LogFirstObservedOrCapReached(string site, EntityId entityId, string label, ref int countThisScene, ref bool capLogged)
     {
         if (countThisScene < FirstObservedLogCapPerScene)
         {
             countThisScene++;
-            _log.Info($"[EntityState] entity {entityId.Value} entered {label} (#{countThisScene}/{FirstObservedLogCapPerScene} this scene)");
+            _log.Info($"[EntityState] site={site} entity={entityId.Value} entered {label} (#{countThisScene}/{FirstObservedLogCapPerScene} this scene)");
             return;
         }
         if (capLogged) return;
@@ -82,18 +128,29 @@ internal sealed partial class PandaEntityStateProbe
                   "further observations are silent unless StellarDiagnostics is enabled. Resets on the next scene/dungeon entry.");
     }
 
-    private void DiagPerEvent(ActorState state, EntityId entityId)
+    // ---- Gated detail ----
+
+    private void DiagPerEvent(string site, ActorState state, EntityId entityId)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[EntityStateDbg] entity={entityId.Value} state={state}");
+        _log.Info($"[EntityStateDbg] site={site} entity={entityId.Value} state={state}");
+    }
+
+    // A duplicate means a SECOND site fired for a transition a FIRST site already raised —
+    // informative for judging "which sites are live", but not one of the two ungated
+    // instruments the review specifically asked for, so this stays gated.
+    private void DiagDuplicateSuppressed(string site, ActorState state, EntityId entityId)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[EntityStateDbg] site={site} entity={entityId.Value} DUPLICATE {state} suppressed (already raised for this transition)");
     }
 
     // Gated (not ungated) — a marshal/reflection failure on a hot per-transition path could
     // repeat every time this entity re-enters the state; an ungated log here risks the exact
-    // spam the per-scene cap above exists to avoid on the success path.
-    private void DiagRaiseFailed(ActorState patchedState, System.Exception ex)
+    // spam the per-scene caps above exist to avoid on the success path.
+    private void DiagRaiseFailed(string site, ActorState state, System.Exception ex)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Warning($"[EntityStateDbg] raise failed for {patchedState}: {ex.GetType().Name}: {ex.Message}");
+        _log.Warning($"[EntityStateDbg] site={site} raise failed for {state}: {ex.GetType().Name}: {ex.Message}");
     }
 }
