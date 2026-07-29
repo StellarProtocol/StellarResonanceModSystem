@@ -13,8 +13,9 @@ internal sealed class ClientStateService : IClientState
     public event Action? Logout;
     public event Action<string?>? SceneChanged;
 
-    // Client phase — boot state is TitleScreen. Driven by the Host (RaisePhase at the OnEnterScene
-    // gate-clear and at OnLogout); it is a signal the framework gates nothing on.
+    // Client phase — boot state is TitleScreen. Driven by the Host: TitleScreen→CharSelect on the game's
+    // OnLogin (char-select appears), CharSelect→World at the OnEnterScene gate-clear, and →TitleScreen on
+    // OnLogout (from either World or CharSelect). It is a signal the framework gates nothing on.
     public GamePhase Phase { get; private set; } = GamePhase.TitleScreen;
     public event Action<PhaseChange>? PhaseChanged;
 
@@ -61,9 +62,9 @@ internal sealed class ClientStateService : IClientState
     /// <summary>Host/probe-driven: replace the informational UI flags (fed by PandaMenuStateProbe each in-world tick).</summary>
     internal void SetUiState(GameUIState state) => UiState = state;
 
-    /// <summary>Host-driven transition. Fires <see cref="PhaseChanged"/> only on an actual change. Leaving
-    /// <see cref="GamePhase.World"/> for <see cref="GamePhase.TitleScreen"/> clears <see cref="UiState"/> to
-    /// <see cref="GameUIState.None"/> (there is no in-world UI at the title screen).</summary>
+    /// <summary>Host-driven transition. Fires <see cref="PhaseChanged"/> only on an actual change. Any phase
+    /// other than <see cref="GamePhase.World"/> clears <see cref="UiState"/> to <see cref="GameUIState.None"/>
+    /// — there is no in-world UI at the title or character-select screens.</summary>
     internal void RaisePhase(GamePhase next)
     {
         var prev = Phase;
@@ -72,7 +73,7 @@ internal sealed class ClientStateService : IClientState
             return;
         }
         Phase = next;
-        if (next == GamePhase.TitleScreen)
+        if (next != GamePhase.World)
         {
             UiState = GameUIState.None;
         }

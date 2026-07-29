@@ -106,7 +106,11 @@ public sealed partial class BootstrapPlugin
         {
             // Capture the Game instance here (NOT from a per-frame Update hook) for the resolver probe.
             ["Init"]         = (inst, _) => { _gameInstance ??= inst; log.Info("[boot] *** Game.Init complete ***"); },
-            ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin();  _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
+            // OnLogin fires when the CHARACTER-SELECT screen appears (empirically confirmed in-game:
+            // IsLoggedIn flips true here, NOT at world-connect). Drive TitleScreen→CharSelect, guarded on
+            // the current phase being TitleScreen so a stray re-fire can't bounce World→CharSelect (RaiseLogin
+            // is already idempotent, but RaisePhase is not phase-aware on its own).
+            ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin(); if (_clientState!.Phase == Stellar.Abstractions.Domain.GamePhase.TitleScreen) { _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.CharSelect); } _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
             ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
             // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to

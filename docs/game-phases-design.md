@@ -6,6 +6,15 @@
   stays `World`; logout returns `Phase→TitleScreen`; `GameUIState` bits map correctly for FullScreenMenu /
   MainMenu / Dialogue / Cutscene / Loading / Matchmaking (LineSelector overlay case not yet spot-checked).
   Not merged. Remaining: remove the throwaway phase-diag overlay; migrate external plugins (lockstep).
+- **Update 2026-07-29:** added a third phase **`CharSelect`** (`GamePhase { TitleScreen, CharSelect, World }`,
+  inserted in lifecycle order — the enum is a runtime-only signal, nothing persists/serializes/wires it).
+  Empirical basis (live diagnostic overlay): the game's `OnLogin` fires when the **character-select screen
+  appears** (`IsLoggedIn` → true there, not at world-connect); the Unity scene name does **not** change
+  between title and char-select (so scene name can't distinguish them — `Phase` is the only signal that
+  does); cancelling char-select back to title fires `OnLogout`. Transitions: `OnLogin` drives
+  `TitleScreen→CharSelect` (guarded on `Phase==TitleScreen`); the `IsWorldActive` rising edge now drives
+  `CharSelect→World`; `OnLogout` returns to `TitleScreen` from either `World` or `CharSelect`. A login-screen
+  tool can now target `TitleScreen` alone (no longer shows over char-select).
 - **Date:** 2026-07-29
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Host`, `Stellar.Infrastructure`
 - **Baseline:** branch `enhance/game-phases`, cut from `origin/main` @ `ab1e17b` (framework `1.16.1`).
@@ -42,7 +51,7 @@ window-visibility policy entirely into the plugin via a single `ShouldRender()` 
 
 ## 2. Goals
 
-- A first-class, framework-owned **`GamePhase`** signal (`TitleScreen`, `World`).
+- A first-class, framework-owned **`GamePhase`** signal (`TitleScreen`, `CharSelect`, `World`).
 - Run UI/input work every phase; keep game-state work gated on the world-connect-safe predicate.
 - **Plugins own window-visibility policy** through one `ShouldRender()` function; the framework only enacts.
 - Expose **`GameUIState`** as informational flags a plugin's `ShouldRender()` can read.
@@ -50,7 +59,7 @@ window-visibility policy entirely into the plugin via a single `ShouldRender()` 
 ## 3. Non-goals
 
 - Back-compat. Members are removed outright where cleaner.
-- Finer phases now (`CharSelect`, …) — the enum is append-friendly for later.
+- Finer phases beyond `TitleScreen`/`CharSelect`/`World` — the enum is extension-friendly for later.
 - Per-plugin `Update` scheduling changes.
 
 ## 4. Decisions (settled)
@@ -80,7 +89,7 @@ The only protective gate is `IsWorldActive`, self-gated by each game-state unit 
 ```csharp
 namespace Stellar.Abstractions.Domain;
 
-public enum GamePhase { TitleScreen, World }   // plain enum (single-value signal); append-friendly
+public enum GamePhase { TitleScreen, CharSelect, World }   // lifecycle order; runtime-only signal, safe to re-order
 ```
 
 ```csharp
@@ -109,13 +118,20 @@ public interface IClientState
 }
 ```
 
-- `ClientStateService` owns `Phase` (boot = `TitleScreen`). Transitions:
-  - **`TitleScreen → World`** on the **rising edge of `IsWorldActive`** (the tick gate clearing at the first
-    in-world `OnEnterScene` while logged in) — *not* on `Game.OnLogin`. This means "World" = actually in
-    a world scene, so character-select stays `TitleScreen` regardless of when `Game.OnLogin` fires.
-  - **`World → TitleScreen`** on **`Game.OnLogout`** — *not* the falling edge of `IsWorldActive`. `IsWorldActive`
-    dips false on every in-world zone load (`OnLeaveScene`); the phase must stay `World` through those and
-    only drop on actual logout/return-to-char-select. So the phase is steady across zone transitions.
+- `ClientStateService` owns `Phase` (boot = `TitleScreen`). It is a **dumb transition sink** — the edge
+  decisions live in the Host. Transitions (edge → phase), empirically confirmed in-game 2026-07-29:
+
+  | Edge (game event) | Transition | Notes |
+  |---|---|---|
+  | `Game.OnLogin` | `TitleScreen → CharSelect` | OnLogin fires when the **character-select screen appears** (`IsLoggedIn` → true there, **not** at world-connect). **Guarded** on `Phase == TitleScreen` so a stray re-fire can't bounce `World → CharSelect`. |
+  | rising edge of `IsWorldActive` (first in-world `OnEnterScene` while logged in) | `CharSelect → World` | "World" = actually in a world scene. No-op if already `World`, so in-world zone loads don't re-fire it. |
+  | `Game.OnLogout` | `World → TitleScreen` **and** `CharSelect → TitleScreen` | Covers both a world logout and a char-select **cancel** (cancel fires `OnLogout`). *Not* the falling edge of `IsWorldActive` — that dips false on every in-world zone load, and the phase must stay `World` through those. |
+
+  - **Why `CharSelect` is a distinct phase, not `TitleScreen`:** the Unity scene name
+    (`CurrentSceneName`) does **not** change between title and char-select, so scene name can't distinguish
+    them — `Phase` is the only signal that does. A login-screen tool (account switcher, server picker)
+    targets `TitleScreen` alone; without `CharSelect` it would also show over char-select.
+  - The phase is steady `World` across in-world zone transitions (`IsWorldActive` dips, `Phase` does not).
 - `ClientStateService` fires `PhaseChanged(new PhaseChange(previous, next))` on each transition. A plugin
   reads `Phase` for its initial state (e.g. in its ctor) and subscribes to `PhaseChanged` for transitions,
   unsubscribing in `Dispose` — the same hygiene it already uses for `Framework.Update`.
@@ -159,7 +175,7 @@ sets `IsWorldActive` at the same two spots it flips the scene-transition flag (`
 
 | Signal | Use for | Across an in-world zone load |
 |---|---|---|
-| `Phase` (`TitleScreen`/`World`) | **visibility** (`ShouldRender`) | stays `World` — window stays up |
+| `Phase` (`TitleScreen`/`CharSelect`/`World`) | **visibility** (`ShouldRender`) | stays `World` — window stays up |
 | `IsWorldActive` (bool) | **game-state access** (in `Update`) | dips `false` during the handshake — skip the read |
 
 **Gating is opt-in, per what a unit does — not universal.** A plugin that only draws UI, does HTTP, or
@@ -223,9 +239,10 @@ ShouldRender = () => _services.ClientState.Phase == GamePhase.World    // gamepl
 Purely informational: the framework **detects and exposes** it; it **never gates** on it. A plugin's
 `ShouldRender()` optionally reads it.
 
-**Scope:** `GameUIState` describes *in-world* UI and is `None` while `Phase == TitleScreen` (there is no
-in-game HUD/menu at the title / login / character-select screens). Use `Phase` for "at the login
-screen," not a `GameUIState` value.
+**Scope:** `GameUIState` describes *in-world* UI and is `None` at **both** `TitleScreen` **and** `CharSelect`
+(there is no in-game HUD/menu at the title / login / character-select screens). `RaisePhase` clears `UiState`
+to `None` on entering any non-`World` phase. Use `Phase` for "at the login screen" (`TitleScreen`) or "at
+character select" (`CharSelect`), not a `GameUIState` value.
 
 ```csharp
 [Flags]
@@ -363,7 +380,7 @@ sits nested inside a game-state method today); self-gating sidesteps that entire
 
 ```csharp
 namespace Stellar.Abstractions.Domain;
-public enum GamePhase { TitleScreen, World }
+public enum GamePhase { TitleScreen, CharSelect, World }
 [Flags] public enum GameUIState { None=0, GameHud=1<<0, FullScreenMenu=1<<1, MainMenu=1<<2,
     LineSelector=1<<3, Dialogue=1<<4, Cutscene=1<<5, Loading=1<<6, Matchmaking=1<<7,
     GameHudHidden = FullScreenMenu|Cutscene|Loading, AnyMenu = FullScreenMenu|MainMenu|LineSelector,

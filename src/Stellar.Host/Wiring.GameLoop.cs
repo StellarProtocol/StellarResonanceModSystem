@@ -36,7 +36,9 @@ public sealed partial class BootstrapPlugin
         _gameInstance ??= instance;   // capture for the resolver probe (no per-frame Update hook)
         // Clear the gate ONLY once logged in — so game-state work stays silent through boot/title/char-select
         // (where it corrupts the later world connect) and resumes only in-world. This rising edge of
-        // IsWorldActive while logged in is also the TitleScreen→World phase transition.
+        // IsWorldActive while logged in is also the CharSelect→World phase transition (Phase is CharSelect
+        // here — IsLoggedIn/OnLogin already moved it off TitleScreen at char-select). RaisePhase is a no-op
+        // if already World, so in-world zone loads don't re-fire it.
         if (_loggedIn && _sceneTransitioning)
         {
             _sceneTransitioning = false;
