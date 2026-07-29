@@ -18,7 +18,14 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.17.0 adds <c>ActorState</c> and
+    /// BepInEx chainloader happy. 1.18.0 adds <c>SliderElement.SquareHandle</c>, an OPT-IN knob that is
+    /// exactly <c>HandleSize</c> square. Unity's <c>Slider</c> drives the handle's cross-axis anchors to
+    /// full stretch every frame, so by default <c>HandleSize</c> ADDS to the row height instead of setting
+    /// the knob's height — a 13px handle in a 16px row draws a 13×29 capsule (measured 2026-07-30). The
+    /// stretched shape stays the default on purpose: every existing slider already renders that way, and
+    /// correcting it globally would restyle every plugin's sliders at once. Additive only — no existing
+    /// slider changes appearance, and drag behaviour is identical (the value maps from the container's
+    /// width, which is untouched). 1.17.0 adds <c>ActorState</c> and
     /// <c>CombatEvent.EntityStateChanged</c> (2026-07-28 entity-state-death-signal spec):
     /// the client's own entity state-machine transitions (death, break phase), surfaced on
     /// the existing <c>ICombatEvents</c> stream — no service interface gains a member, so
@@ -99,5 +106,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.17.0";
+    public const string Value = "1.18.0";
 }
