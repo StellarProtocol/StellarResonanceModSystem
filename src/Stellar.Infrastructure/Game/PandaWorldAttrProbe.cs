@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using Stellar.Wire;
@@ -30,6 +31,7 @@ internal sealed partial class PandaWorldAttrProbe
     private readonly IDungeonStateSink _sink;
     private readonly IDungeonState _state;
     private readonly IPluginLog _log;
+    private readonly IClientState _clientState;
 
     private bool _disabled;                 // permanent: type/method missing or a read faulted
     private Type? _zworldType;
@@ -43,11 +45,12 @@ internal sealed partial class PandaWorldAttrProbe
     private PropertyInfo? _pointerProp;      // Il2CppObjectBase.Pointer (off the returned attr)
     private int _lastDefeated = -1;
 
-    public PandaWorldAttrProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log)
+    public PandaWorldAttrProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log, IClientState clientState)
     {
         _sink  = sink  ?? throw new ArgumentNullException(nameof(sink));
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _log   = log   ?? throw new ArgumentNullException(nameof(log));
+        _clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
     }
 
     /// <summary>
@@ -55,8 +58,10 @@ internal sealed partial class PandaWorldAttrProbe
     /// World <c>AttrDeathCount</c> (348) and latches it as the Defeated count. No-op in town, before
     /// the type/Instance resolve, or on any failure.
     /// </summary>
+    [WorldGated]
     public void Tick()
     {
+        if (!_clientState.IsWorldActive) return; // never touch the live IL2CPP world during the connect handshake
         if (_disabled) return;
         if (_state.CurrentRunId == 0) return;   // only inside a dungeon/instanced run
 

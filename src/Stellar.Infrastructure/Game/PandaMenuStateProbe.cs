@@ -1,3 +1,4 @@
+using Stellar.Abstractions.Domain;
 using Stellar.Application.Abstractions;
 using UnityEngine;
 
@@ -52,15 +53,21 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private const string DramaBottomLayerName = "UILayerDramaBottom";  // NPC dialogue
     private const string DramaVideoLayerName  = "UILayerDramaVideo";   // story cutscene video
     private const string DramaTopLayerName    = "UILayerDramaTop";     // story top overlay
+    private const string GameHudPrefix        = "main_main_pc";        // permanent gameplay HUD under UILayerMain
 
     // ~10 Hz at 60 fps. Menu open/close detection does not need per-frame latency.
     private const int CheckIntervalTicks = 6;
 
-    private bool _open;
+    private GameUIState _state;
     private int _ticksUntilCheck;
     private Transform? _zuiroot;   // cached persistent UI root; Unity '== null' detects scene-change destruction
 
-    public bool IsFullScreenMenuOpen => _open;
+    /// <summary>Legacy collapsed signal — any covering menu / full-screen surface is open.</summary>
+    public bool IsFullScreenMenuOpen => (_state & GameUIState.GameHudHidden) != 0
+        || (_state & (GameUIState.MainMenu | GameUIState.Dialogue | GameUIState.Matchmaking)) != 0;
+
+    /// <summary>Un-collapsed per-layer UI state as flags (fed to ClientStateService.UiState).</summary>
+    public GameUIState UiState => _state;
 
     public void Tick()
     {
@@ -73,18 +80,28 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         {
             var root = GameObject.Find(RootName);
             _zuiroot = root != null ? root.transform : null;
-            if (_zuiroot == null) { _open = false; return; }
+            if (_zuiroot == null) { _state = GameUIState.None; return; }
         }
 
-        _open = NamedWindowActive(_zuiroot, MainMenuRelPath)
-             || PrefixChildActive(_zuiroot, MainLayerName, LineWindowPrefix)
-             || LoadingScreenActive(_zuiroot)
-             || MatchConfirmActive(_zuiroot)
-             || AnyChildActive(_zuiroot, FuncLayerName)
-             || AnyChildActive(_zuiroot, FuncPopupLayerName)
-             || AnyChildActive(_zuiroot, DramaBottomLayerName)
-             || AnyChildActive(_zuiroot, DramaVideoLayerName)
-             || AnyChildActive(_zuiroot, DramaTopLayerName);
+        _state = Detect(_zuiroot);
+    }
+
+    // Un-collapse each detected layer into its own flag bit. Provisional cover-vs-overlay membership lives in
+    // GameUIState's preset masks (see Knowledge Base/GameMenuState.md; verify in-game per design §7).
+    private static GameUIState Detect(Transform root)
+    {
+        var s = GameUIState.None;
+        if (PrefixChildActive(root, MainLayerName, GameHudPrefix)) s |= GameUIState.GameHud;
+        if (NamedWindowActive(root, MainMenuRelPath))              s |= GameUIState.MainMenu;
+        if (PrefixChildActive(root, MainLayerName, LineWindowPrefix)) s |= GameUIState.LineSelector;
+        if (LoadingScreenActive(root))                            s |= GameUIState.Loading;
+        if (MatchConfirmActive(root))                             s |= GameUIState.Matchmaking;
+        if (AnyChildActive(root, FuncLayerName) || AnyChildActive(root, FuncPopupLayerName))
+            s |= GameUIState.FullScreenMenu;
+        if (AnyChildActive(root, DramaBottomLayerName))           s |= GameUIState.Dialogue;
+        if (AnyChildActive(root, DramaVideoLayerName) || AnyChildActive(root, DramaTopLayerName))
+            s |= GameUIState.Cutscene;
+        return s;
     }
 
     // Transform.Find walks the relative path only (cheap) and sees inactive objects —
