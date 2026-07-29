@@ -1,6 +1,11 @@
 # Design: Game Phases, Tick Split, and Plugin-Owned Window Visibility
 
-- **Status:** Implemented on `enhance/game-phases` (builds green; **in-game validation per §7 still pending**, not merged)
+- **Status:** Implemented + **in-game validated (§7 PASSED)** on `enhance/game-phases`. Confirmed 2026-07-29:
+  world-connect survives the per-unit `IsWorldActive` self-gates (no `[50000]`/`[50011]`); title-screen
+  window renders + drags + hotkey fires pre-login; `IsWorldActive` dips false on zone load while `Phase`
+  stays `World`; logout returns `Phase→TitleScreen`; `GameUIState` bits map correctly for FullScreenMenu /
+  MainMenu / Dialogue / Cutscene / Loading / Matchmaking (LineSelector overlay case not yet spot-checked).
+  Not merged. Remaining: remove the throwaway phase-diag overlay; migrate external plugins (lockstep).
 - **Date:** 2026-07-29
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Host`, `Stellar.Infrastructure`
 - **Baseline:** branch `enhance/game-phases`, cut from `origin/main` @ `ab1e17b` (framework `1.16.1`).
