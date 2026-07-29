@@ -49,5 +49,5 @@ public sealed partial class BootstrapPlugin
         // Full/vertical, a LEFT strip in horizontal). AutoSizeWidth tracks the active mode. Keeps the
         // "settings.hub" id so the saved drag POSITION carries over. Draggable (whole frame); the body draws ✕.
         => new WindowSpec("settings.hub", "", new WindowRect(2071, 1225, 420, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
+            { ShouldRender = () => true, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
 }

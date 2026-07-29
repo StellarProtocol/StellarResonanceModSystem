@@ -43,7 +43,7 @@ internal sealed partial class LayoutEditorOverlay
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect((res.Width - w) / 2f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { StartVisible = false, ShowTitleBar = false, Draggable = true };
+            { ShouldRender = () => true, StartVisible = false, ShowTitleBar = false, Draggable = true };
             _toolbarWindow = _windows.Register(new WindowRegistration(spec, BuildToolbarRoot()));
         }
         _toolbarWindow?.SetVisible(true);

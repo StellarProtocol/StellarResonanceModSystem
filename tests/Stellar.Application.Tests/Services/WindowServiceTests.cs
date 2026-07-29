@@ -24,24 +24,23 @@ public class WindowServiceTests
     }
 
     private static WindowRegistration Reg(string id) =>
-        new(new WindowSpec(id, id, new WindowRect(0, 0, 300, 200), WindowCategory.Tools, WindowPanelStyle.GlassMenu),
-            new TextElement(() => "hi"));
+        new(new WindowSpec(id, id, new WindowRect(0, 0, 300, 200), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
+            { ShouldRender = () => true }, new TextElement(() => "hi"));
 
     private static (WindowService svc, FakeRenderer r) New()
-    { var r = new FakeRenderer(); return (new WindowService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true }), r); }
+    { var r = new FakeRenderer(); return (new WindowService(r, new NullLog()), r); }
 
-    private static WindowRegistration RegHud(string id) =>
-        new(new WindowSpec(id, id, new WindowRect(0, 0, 300, 200), WindowCategory.HUD, WindowPanelStyle.Borderless)
-            { AutoHideBehindGameMenus = true }, new TextElement(() => "hi"));
-
-    [Fact] public void AutoHidesBehindFullScreenMenu()
+    [Fact] public void HidesWhenShouldRenderIsFalse()
     {
-        var r = new FakeRenderer(); var menu = new StubMenuState();
-        var svc = new WindowService(r, new NullLog(), menu, new StubClientState { IsLoggedIn = true });
-        svc.Register(RegHud("h"));
-        svc.Tick(0.2f); Assert.False(r.LastHide);              // menu closed → shown
-        menu.IsFullScreenMenuOpen = true; svc.Tick(0.2f);
-        Assert.True(r.LastHide);                                // menu open → hidden
+        var r = new FakeRenderer();
+        var draw = true;   // plugin-owned visibility predicate
+        var svc = new WindowService(r, new NullLog());
+        svc.Register(new WindowRegistration(
+            new WindowSpec("h", "h", new WindowRect(0, 0, 300, 200), WindowCategory.HUD, WindowPanelStyle.Borderless)
+            { ShouldRender = () => draw }, new TextElement(() => "hi")));
+        svc.Tick(0.2f); Assert.False(r.LastHide);   // predicate true → shown
+        draw = false; svc.Tick(0.2f);
+        Assert.True(r.LastHide);                     // predicate false → hidden
     }
 
     [Fact]
@@ -60,7 +59,7 @@ public class WindowServiceTests
         var (svc, _) = New();
         svc.Register(new WindowRegistration(
             new WindowSpec("w.main", "W", new WindowRect(10, 20, 200, 100), WindowCategory.HUD, WindowPanelStyle.Borderless)
-            { EditModeDragOnly = true }, new TextElement(() => "x")));
+            { ShouldRender = () => true, EditModeDragOnly = true }, new TextElement(() => "x")));
         svc.Tick(0.2f);                                          // mount
 
         svc.SetVisiblePersist("w.main", false); svc.Tick(0.2f);  // hide → destroy

@@ -37,7 +37,7 @@ internal sealed class PerfOverlayWindow
     {
         var spec = new WindowSpec("stellar.perf-overlay", "Stellar Perf",
             new WindowRect(1621f, 275f, 460f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-        { StartVisible = PerfProbe.IsEnabled, Draggable = true };
+        { ShouldRender = () => true, StartVisible = PerfProbe.IsEnabled, Draggable = true };
 
         var readout = new ColumnElement(new HudElement[]
         {

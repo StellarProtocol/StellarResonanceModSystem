@@ -12,24 +12,24 @@ public sealed class HudServiceTests
 {
     private const float Step = 0.2f;   // > the 0.1s (10Hz) apply interval, so one Tick crosses it
 
-    private static HudSpec Spec(string id) => new(id, HudAnchor.FreeOverlay, new TextElement(() => "x"));
+    private static HudSpec Spec(string id) => new(id, HudAnchor.FreeOverlay, new TextElement(() => "x")) { ShouldRender = () => true };
 
     [Fact] public void MountsWhenAnchorAvailable()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         svc.Register(Spec("a")); svc.Tick(Step); Assert.Equal(1, r.MountCount);
     }
 
     [Fact] public void DoesNotMountWhileAnchorAbsent_ThenMounts()
     {
-        var r = new FakeRenderer { AnchorUp = false }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = false }; var svc = new HudService(r, new NullLog());
         svc.Register(Spec("a")); svc.Tick(Step); Assert.Equal(0, r.MountCount);
         r.AnchorUp = true; svc.Tick(Step); Assert.Equal(1, r.MountCount);
     }
 
     [Fact] public void Applies_OncePerInterval_NotEveryTick()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         svc.Register(Spec("a")); svc.Tick(Step);          // mount + first apply
         r.ApplyCount = 0;
         svc.Tick(0.05f);                                   // < interval → no apply
@@ -40,14 +40,14 @@ public sealed class HudServiceTests
 
     [Fact] public void MarkDirty_AppliesImmediately_BeforeNextInterval()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         var h = svc.Register(Spec("a")); svc.Tick(Step); r.ApplyCount = 0;
         h.MarkDirty(); svc.Tick(0.001f); Assert.Equal(1, r.ApplyCount);
     }
 
     [Fact] public void SetVisibleFalse_DestroysAndIsNotShown()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         var h = svc.Register(Spec("a")); svc.Tick(Step);
         h.SetVisible(false); svc.Tick(Step);
         Assert.Equal(1, r.DestroyCount); Assert.False(h.IsShown);
@@ -55,7 +55,7 @@ public sealed class HudServiceTests
 
     [Fact] public void Remove_DestroysAndDoesNotRemount()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         var h = svc.Register(Spec("a")); svc.Tick(Step);
         h.Remove(); svc.Tick(Step); Assert.Equal(1, r.DestroyCount);
         r.MountCount = 0; svc.Tick(Step); Assert.Equal(0, r.MountCount);
@@ -63,14 +63,14 @@ public sealed class HudServiceTests
 
     [Fact] public void SelfHeals_WhenElementDiesUnexpectedly()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         svc.Register(Spec("a")); svc.Tick(Step); r.Kill(); svc.Tick(Step);
         Assert.Equal(2, r.MountCount);
     }
 
     [Fact] public void AnchorLostAfterMount_GoesUnmounted_NoRemount()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         var h = svc.Register(Spec("a")); svc.Tick(Step);   // mounts
         var mountsBefore = r.MountCount;
         r.AnchorUp = false; r.Kill();                       // anchor gone + element dead
@@ -81,7 +81,7 @@ public sealed class HudServiceTests
 
     [Fact] public void DuplicateId_SecondRegister_ReturnsInertHandle()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var r = new FakeRenderer { AnchorUp = true }; var svc = new HudService(r, new NullLog());
         svc.Register(Spec("a"));
         var dup = svc.Register(Spec("a")); svc.Tick(Step);
         Assert.False(dup.IsShown);
@@ -92,14 +92,14 @@ public sealed class HudServiceTests
     {
         var r = new FakeRenderer { AnchorUp = true }; var st = NewStorage(); var res = new Resolution(1920,1080);
         st.Save(st.ActiveSlot, "a", res, new WindowRect(500,300,200,40), true);
-        var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true }); svc.AttachLayout(st, () => res);
+        var svc = new HudService(r, new NullLog()); svc.AttachLayout(st, () => res);
         svc.Register(Spec("a")); svc.Tick(Step);
         Assert.Equal(new WindowRect(500,300,200,40), r.LastSetRect);
     }
     [Fact] public void CommitRect_Persists()
     {
         var r = new FakeRenderer { AnchorUp = true }; var st = NewStorage(); var res = new Resolution(1920,1080);
-        var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true }); svc.AttachLayout(st, () => res);
+        var svc = new HudService(r, new NullLog()); svc.AttachLayout(st, () => res);
         svc.Register(Spec("a")); svc.Tick(Step);
         svc.BeginDrag("a"); svc.SetRect("a", new WindowRect(800,600,200,40)); svc.CommitRect("a");
         var (rect,_) = st.Get(st.ActiveSlot, "a", res, new WindowRect(0,0,1,1));
@@ -109,27 +109,28 @@ public sealed class HudServiceTests
     {
         var r = new FakeRenderer { AnchorUp = true }; var st = NewStorage(); var res = new Resolution(1920,1080);
         st.Save(st.ActiveSlot, "a", res, new WindowRect(10,10,200,40), true);
-        var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true }); svc.AttachLayout(st, () => res);
+        var svc = new HudService(r, new NullLog()); svc.AttachLayout(st, () => res);
         svc.Register(Spec("a")); svc.Tick(Step);
         svc.BeginDrag("a"); r.Kill(); r.LastSetRect = default; svc.Tick(Step);   // re-mount mid-drag
         Assert.NotEqual(new WindowRect(10,10,200,40), r.LastSetRect);                   // saved rect NOT re-applied
         svc.EndDrag("a");
     }
-    [Fact] public void AutoHidesBehindFullScreenMenu()
+    [Fact] public void HidesWhenShouldRenderIsFalse()
     {
-        var r = new FakeRenderer { AnchorUp = true }; var menu = new StubMenuState();
-        var svc = new HudService(r, new NullLog(), menu, new StubClientState { IsLoggedIn = true });
-        svc.Register(Spec("a"));                       // HudSpec default AutoHideBehindGameMenus = true
-        svc.Tick(Step); Assert.False(r.LastHide);      // menu closed → shown
-        menu.IsFullScreenMenuOpen = true; svc.Tick(Step);
-        Assert.True(r.LastHide);                       // menu open → hidden
+        var r = new FakeRenderer { AnchorUp = true };
+        var draw = true;   // plugin-owned visibility predicate (e.g. reads UiState to hide when covered)
+        var svc = new HudService(r, new NullLog());
+        svc.Register(new HudSpec("a", HudAnchor.FreeOverlay, new TextElement(() => "x")) { ShouldRender = () => draw });
+        svc.Tick(Step); Assert.False(r.LastHide);      // predicate true → shown
+        draw = false; svc.Tick(Step);
+        Assert.True(r.LastHide);                       // predicate false → hidden
     }
 
     [Fact] // Hidden HUD is still enumerated as editable, with Visible=false and its last-known rect.
     public void EditableElements_IncludesHidden_WithLastRect()
     {
         var r = new FakeRenderer { AnchorUp = true };
-        var svc = new HudService(r, new NullLog(), new StubMenuState(), new StubClientState { IsLoggedIn = true });
+        var svc = new HudService(r, new NullLog());
         svc.AttachLayout(NewStorage(), () => new Resolution(1920, 1080));
         svc.Register(Spec("a")); svc.Tick(Step);                 // mount + apply; LastShownRect cached (100x40)
 
