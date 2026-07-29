@@ -21,7 +21,7 @@ public sealed partial class BootstrapPlugin
         _harmonyBridge = new HarmonyEventBridge();
         _messagePipeBridge = new MessagePipeContainerBridge(log, typeRegistry);
         _gameEvents = new GameEventsService(log);
-        _playerState = new PlayerStateService();
+        _playerState = new PlayerStateService(_clientState);
         // CombatEntityTracker is shared between CombatService (writes) and
         // GameDataWorldService (reads attr-10 for GetMonsterByEntity). Stored on
         // BootstrapPlugin so the two construction sites can reference the same instance.

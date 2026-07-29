@@ -18,7 +18,7 @@ public sealed partial class BootstrapPlugin
         // WirePhase9Ui once the layout deps are confirmed live. The theme-switch hook
         // rebakes the sprites + re-mounts every HUD on the next tick.
         _hudRenderer = new HudRenderer(log, _themeRenderer!.Colors);
-        _hudService = new HudService(_hudRenderer, log, _menuState!, _clientState!);
+        _hudService = new HudService(_hudRenderer, log);
         _namedTheme!.ActiveChanged += _hudRenderer.InvalidateTheme;
     }
 }

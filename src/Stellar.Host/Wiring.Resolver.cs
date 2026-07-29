@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Diagnostics;
 
 namespace Stellar.Host;
 
@@ -15,8 +16,10 @@ public sealed partial class BootstrapPlugin
     // tick fires before Game.GameRoot.Container is populated, so a one-shot
     // probe captured null and never retried. We now retry EVERY tick until a
     // non-null resolver is found, then latch.
+    [WorldGated]
     private void ProbeGameRootOnce(object? instance)
     {
+        if (!_clientState!.IsWorldActive) return;   // resolves the live VContainer off Game.GameRoot
         if (_gameRootProbed) return;
 
         try

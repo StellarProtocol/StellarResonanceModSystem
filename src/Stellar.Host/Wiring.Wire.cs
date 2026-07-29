@@ -74,7 +74,7 @@ public sealed partial class BootstrapPlugin
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
         // Defeated count rides ZWorld's AttrDeathCount (348), NOT the wire — read on the main-thread
         // framework tick (PandaWorldAttrProbe.Tick from RunGlobalRateWork), not this dispatcher.
-        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log);
+        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log, _clientState!);
         _worldNtfDispatcher.Install(PluginGuid);
     }
 
@@ -107,7 +107,7 @@ public sealed partial class BootstrapPlugin
             // Capture the Game instance here (NOT from a per-frame Update hook) for the resolver probe.
             ["Init"]         = (inst, _) => { _gameInstance ??= inst; log.Info("[boot] *** Game.Init complete ***"); },
             ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin();  _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
-            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
+            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
             // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to
             // town before the plugin archives/uploads the just-finished run, so the latched

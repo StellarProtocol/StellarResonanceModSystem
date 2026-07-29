@@ -31,7 +31,10 @@ public sealed partial class BootstrapPlugin
         _uguiInjection = uguiInjection;
         _framework!.Update += dt => uguiInjection.Tick(dt);
         _framework!.Update += _ => uguiAdapter.TickGlow();   // per-frame rail-glow pulse
-        _framework!.Update += _ => _menuState?.Tick();
+        // Menu-state probe: tick it, then push the un-collapsed GameUIState into ClientStateService so a plugin's
+        // ShouldRender can read UiState. Runs inside _framework.Tick, which is IsWorldActive-gated, so UiState only
+        // updates in-world (it is reset to None on the World→TitleScreen transition).
+        _framework!.Update += _ => { _menuState?.Tick(); if (_menuState != null) _clientState!.SetUiState(_menuState.UiState); };
     }
 
     /// <summary>
@@ -96,7 +99,7 @@ public sealed partial class BootstrapPlugin
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
-        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
+        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
         _partyControlService = new PartyControlService(_teamControlProbe);

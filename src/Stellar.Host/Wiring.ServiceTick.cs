@@ -48,8 +48,10 @@ public sealed partial class BootstrapPlugin
     {
         MaybeApplyPerfExperiment();
 
-        // Don't touch game state during a scene switch / world-connection handshake (disrupts the switch).
-        if (IsTickGatedBySceneTransition()) return;
+        // The tick is a DUMB DISPATCHER — it runs every phase and gates nothing (so window draw, input, and
+        // hotkeys work at the title screen). Correctness moved to a one-line `if (!IsWorldActive) return;` at
+        // the top of each game-state unit (services self-gate; the Host plumbing below self-gates too). See
+        // docs/game-phases-design.md §5.2 / §9.
 
         // Time the whole per-tick Update path (plugin Updates + service refreshes). No-op unless PERFHUD.
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
@@ -86,7 +88,9 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.MarkDrawFrame();
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
-        _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)
+        // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
+        // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.
+        if (_clientState!.IsWorldActive) _framework!.Tick(globalDt);   // (plugins use _scheduler, not this)
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:internal");
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:gamedata");
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
@@ -182,8 +186,10 @@ public sealed partial class BootstrapPlugin
     // Band 3 — global-rate cadence (these probes have no latency-sensitive consumer; keeping them at the
     // global rate avoids 8× Lua-read / allocation cost during a rate ramp). Both probes touch the
     // game's main-thread-only Lua VM, so this runs on the Update tick.
+    [Stellar.Abstractions.Diagnostics.WorldGated]
     private void DrainEquipAndLoadout()
     {
+        if (!_clientState!.IsWorldActive) return;   // equip/loadout probes touch the game's main-thread Lua VM
         try { _moduleEquipProbe!.DrainPendingCompletions(); }
         catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
 

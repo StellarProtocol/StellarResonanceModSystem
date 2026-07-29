@@ -17,7 +17,7 @@ public sealed partial class BootstrapPlugin
         // InventoryService serves it through IInventory.GetSelfGear.
         var selfGearCache = new SelfGearCache();
         _inventoryProbe = new PandaInventoryProbe(log, typeRegistry, selfGearCache);
-        _inventoryService = new InventoryService(_inventoryProbe, selfGearCache, log);
+        _inventoryService = new InventoryService(_inventoryProbe, selfGearCache, log, _clientState!);
 
         // Self equipped Battle Imagines — the same probe (IResonanceProbe) reads
         // CharSerialize.resonance (field 28) off the same latched CharSerialize.
