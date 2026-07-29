@@ -35,6 +35,9 @@ public sealed partial class BootstrapPlugin
         // _windowService exists; _perfOverlay was constructed in Phase 8 alongside its hotkey.
         if (_perfOverlay != null) _perfOverlayControl = _windowService.Register(_perfOverlay.BuildRegistration());
 
+        // DIAGNOSTIC — remove before merge. Throwaway Game-Phases signal readout (Shift+PageUp).
+        if (_phaseDiag != null) _phaseDiagControl = _windowService.Register(_phaseDiag.BuildRegistration());
+
         _railButtonHandle = _uguiInjection!.Register(new MenuButtonSpec(
             NativeUiAnchor.MainMenuRail, "Stellar", IconKey: null,
             Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
