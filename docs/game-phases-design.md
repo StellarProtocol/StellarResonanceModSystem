@@ -1,6 +1,6 @@
 # Design: Game Phases, Tick Split, and Plugin-Owned Window Visibility
 
-- **Status:** Proposed
+- **Status:** Implemented on `enhance/game-phases` (builds green; **in-game validation per §7 still pending**, not merged)
 - **Date:** 2026-07-29
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Host`, `Stellar.Infrastructure`
 - **Baseline:** branch `enhance/game-phases`, cut from `origin/main` @ `ab1e17b` (framework `1.16.1`).
