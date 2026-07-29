@@ -6,6 +6,17 @@
   stays `World`; logout returns `Phase→TitleScreen`; `GameUIState` bits map correctly for FullScreenMenu /
   MainMenu / Dialogue / Cutscene / Loading / Matchmaking (LineSelector overlay case not yet spot-checked).
   Not merged. Remaining: remove the throwaway phase-diag overlay; migrate external plugins (lockstep).
+- **Update 2026-07-29 (b):** added a pre-login **`Startup`** phase as the new INITIAL value
+  (`GamePhase { Startup, TitleScreen, CharSelect, World }`). Rationale: `TitleScreen` used to span boot→login,
+  so a login-screen tool gating `ShouldRender = Phase == TitleScreen` showed during the pre-login boot/splash
+  (before the login UI exists). Now `Startup` = boot/loading before the login UI exists (the initial phase);
+  `TitleScreen` = the login view (`login_main`) is actually up — entered (and **latched**, never flickering back
+  to `Startup`) when the Host's login-view probe detects it. The probe runs in the Host's **un-gated** per-tick
+  path (`RunGlobalRateWork`, NOT `_framework.Tick`, which is `IsWorldActive`-gated) because it must fire in
+  `Startup` where `IsWorldActive` is false; reading a GameObject's active-state is a pure UI read, safe every
+  phase like the draw services. `CharSelect`/`World`/logout transitions unchanged (logout still lands on
+  `TitleScreen`). The enum is a runtime-only signal (nothing persists/serializes/casts it), so the insertion is
+  non-breaking; the account-switcher's `ShouldRender = Phase == TitleScreen` now means "login screen visible".
 - **Update 2026-07-29:** added a third phase **`CharSelect`** (`GamePhase { TitleScreen, CharSelect, World }`,
   inserted in lifecycle order — the enum is a runtime-only signal, nothing persists/serializes/wires it).
   Empirical basis (live diagnostic overlay): the game's `OnLogin` fires when the **character-select screen
@@ -51,7 +62,7 @@ window-visibility policy entirely into the plugin via a single `ShouldRender()` 
 
 ## 2. Goals
 
-- A first-class, framework-owned **`GamePhase`** signal (`TitleScreen`, `CharSelect`, `World`).
+- A first-class, framework-owned **`GamePhase`** signal (`Startup`, `TitleScreen`, `CharSelect`, `World`).
 - Run UI/input work every phase; keep game-state work gated on the world-connect-safe predicate.
 - **Plugins own window-visibility policy** through one `ShouldRender()` function; the framework only enacts.
 - Expose **`GameUIState`** as informational flags a plugin's `ShouldRender()` can read.
@@ -59,7 +70,7 @@ window-visibility policy entirely into the plugin via a single `ShouldRender()` 
 ## 3. Non-goals
 
 - Back-compat. Members are removed outright where cleaner.
-- Finer phases beyond `TitleScreen`/`CharSelect`/`World` — the enum is extension-friendly for later.
+- Finer phases beyond `Startup`/`TitleScreen`/`CharSelect`/`World` — the enum is extension-friendly for later.
 - Per-plugin `Update` scheduling changes.
 
 ## 4. Decisions (settled)
@@ -89,7 +100,7 @@ The only protective gate is `IsWorldActive`, self-gated by each game-state unit 
 ```csharp
 namespace Stellar.Abstractions.Domain;
 
-public enum GamePhase { TitleScreen, CharSelect, World }   // lifecycle order; runtime-only signal, safe to re-order
+public enum GamePhase { Startup, TitleScreen, CharSelect, World }   // lifecycle order; runtime-only signal, safe to re-order
 ```
 
 ```csharp
@@ -118,14 +129,15 @@ public interface IClientState
 }
 ```
 
-- `ClientStateService` owns `Phase` (boot = `TitleScreen`). It is a **dumb transition sink** — the edge
+- `ClientStateService` owns `Phase` (boot = `Startup`). It is a **dumb transition sink** — the edge
   decisions live in the Host. Transitions (edge → phase), empirically confirmed in-game 2026-07-29:
 
-  | Edge (game event) | Transition | Notes |
+  | Edge (game event / probe signal) | Transition | Notes |
   |---|---|---|
+  | login-view probe reports `login_main` active | `Startup → TitleScreen` | **`Startup`** = boot/loading before the login UI exists (the INITIAL phase). **`TitleScreen`** = the login screen is actually up. The Host's login-view probe (`GameObject.Find("zuiroot")` → an active `UILayerMain/login_main` descendant) runs **un-gated every phase** — it must fire while `IsWorldActive` is false. **Latched**: the transition is guarded on `Phase == Startup`, so a later `login_main` flicker can't bounce `World → TitleScreen`. |
   | `Game.OnLogin` | `TitleScreen → CharSelect` | OnLogin fires when the **character-select screen appears** (`IsLoggedIn` → true there, **not** at world-connect). **Guarded** on `Phase == TitleScreen` so a stray re-fire can't bounce `World → CharSelect`. |
   | rising edge of `IsWorldActive` (first in-world `OnEnterScene` while logged in) | `CharSelect → World` | "World" = actually in a world scene. No-op if already `World`, so in-world zone loads don't re-fire it. |
-  | `Game.OnLogout` | `World → TitleScreen` **and** `CharSelect → TitleScreen` | Covers both a world logout and a char-select **cancel** (cancel fires `OnLogout`). *Not* the falling edge of `IsWorldActive` — that dips false on every in-world zone load, and the phase must stay `World` through those. |
+  | `Game.OnLogout` | `World → TitleScreen` **and** `CharSelect → TitleScreen` | Covers both a world logout and a char-select **cancel** (cancel fires `OnLogout`). Lands on `TitleScreen` (the login screen reappears on logout), *not* `Startup`. *Not* the falling edge of `IsWorldActive` — that dips false on every in-world zone load, and the phase must stay `World` through those. |
 
   - **Why `CharSelect` is a distinct phase, not `TitleScreen`:** the Unity scene name
     (`CurrentSceneName`) does **not** change between title and char-select, so scene name can't distinguish
@@ -380,7 +392,7 @@ sits nested inside a game-state method today); self-gating sidesteps that entire
 
 ```csharp
 namespace Stellar.Abstractions.Domain;
-public enum GamePhase { TitleScreen, CharSelect, World }
+public enum GamePhase { Startup, TitleScreen, CharSelect, World }   // Startup = boot/loading before the login UI exists
 [Flags] public enum GameUIState { None=0, GameHud=1<<0, FullScreenMenu=1<<1, MainMenu=1<<2,
     LineSelector=1<<3, Dialogue=1<<4, Cutscene=1<<5, Loading=1<<6, Matchmaking=1<<7,
     GameHudHidden = FullScreenMenu|Cutscene|Loading, AnyMenu = FullScreenMenu|MainMenu|LineSelector,

@@ -6,15 +6,22 @@ namespace Stellar.Abstractions.Domain;
 /// window visibility (via <see cref="IRenderGated.ShouldRender"/>), e.g. a gameplay window that
 /// only draws in <see cref="World"/>, or a login-screen tool that draws in <see cref="TitleScreen"/>.
 ///
-/// <para>Ordered by lifecycle (<see cref="TitleScreen"/> → <see cref="CharSelect"/> → <see cref="World"/>).
-/// The values are a runtime signal only — nothing persists, serializes, or wires them, so the members may be
-/// re-ordered or inserted without a compatibility break. The framework <b>gates nothing</b> on this value; it
-/// is a signal a plugin reads. The only protective gate is <see cref="Services.IClientState.IsWorldActive"/>.</para>
+/// <para>Ordered by lifecycle (<see cref="Startup"/> → <see cref="TitleScreen"/> → <see cref="CharSelect"/>
+/// → <see cref="World"/>). The values are a runtime signal only — nothing persists, serializes, or wires them,
+/// so the members may be re-ordered or inserted without a compatibility break. The framework <b>gates
+/// nothing</b> on this value; it is a signal a plugin reads. The only protective gate is
+/// <see cref="Services.IClientState.IsWorldActive"/>.</para>
 /// </summary>
 public enum GamePhase
 {
-    /// <summary>Boot, title, and login — before the game's <c>OnLogin</c> fires. A login-screen tool
-    /// (account switcher, server picker) targets this phase alone.</summary>
+    /// <summary>Boot / loading, before the login UI exists — the INITIAL phase at process start. A
+    /// login-screen tool must NOT draw here (the login view isn't up yet). The framework latches
+    /// <see cref="Startup"/> → <see cref="TitleScreen"/> once it detects the game's login view active.</summary>
+    Startup,
+
+    /// <summary>The login screen is actually up (the game's <c>login_main</c> view is active). Entered —
+    /// and <b>latched</b> (never flickers back to <see cref="Startup"/>) — when the framework detects that
+    /// view. A login-screen tool (account switcher, server picker) targets this phase alone.</summary>
     TitleScreen,
 
     /// <summary>The character-select screen. Entered on the game's <c>OnLogin</c> event (which

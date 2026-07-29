@@ -14,6 +14,10 @@ public sealed partial class BootstrapPlugin
     private LayoutStorage? _layoutStorage;
     private LayoutEditorService? _layoutEditor;
     private LayoutEditorOverlay? _layoutOverlay;
+    // Login-view probe: detects the game's login_main view active to latch Startup→TitleScreen. Ticked from
+    // the Host's UN-gated per-tick path (RunGlobalRateWork), NOT _framework.Tick — it must run in Startup
+    // where IsWorldActive is false. A pure UI active-state read, safe every phase (like the draw services).
+    private Stellar.Infrastructure.Game.PandaLoginViewProbe? _loginViewProbe;
 
     private void BuildInputAndLayoutServices(BepInExPluginLog log)
     {
@@ -31,6 +35,7 @@ public sealed partial class BootstrapPlugin
         _layoutEditor  = new LayoutEditorService(_layoutStorage, log);
 
         _menuState = new Stellar.Infrastructure.Game.PandaMenuStateProbe();
+        _loginViewProbe = new Stellar.Infrastructure.Game.PandaLoginViewProbe();
         // Perf harness: route PerfProbe's periodic summary lines to the framework
         // log so the numbers are readable headlessly (scenario runs / log tail),
         // not only on the on-screen overlay. No-op unless STELLAR_PERFHUD=1.

@@ -87,6 +87,11 @@ public sealed partial class BootstrapPlugin
     {
         Stellar.Abstractions.Diagnostics.PerfProbe.MarkDrawFrame();
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+        // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
+        // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
+        // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.
+        _loginViewProbe?.Tick();
+        if (_loginViewProbe?.IsLoginViewActive == true) _clientState!.NotifyLoginViewActive();
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
         // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.

@@ -7,19 +7,24 @@ using Xunit;
 namespace Stellar.Application.Tests.Services;
 
 /// <summary>
-/// Pins the 3-phase client-lifecycle model (<see cref="GamePhase.TitleScreen"/> →
-/// <see cref="GamePhase.CharSelect"/> → <see cref="GamePhase.World"/>) that <see cref="ClientStateService"/>
-/// enacts. The service is a dumb transition sink; the edge decisions (which game event drives which
-/// transition, and the TitleScreen-guard on OnLogin) live in the Host. The <c>Sim*</c> helpers below
-/// replay those Host edges so the whole model is covered here.
+/// Pins the 4-phase client-lifecycle model (<see cref="GamePhase.Startup"/> →
+/// <see cref="GamePhase.TitleScreen"/> → <see cref="GamePhase.CharSelect"/> → <see cref="GamePhase.World"/>)
+/// that <see cref="ClientStateService"/> enacts. The service is a dumb transition sink; the edge decisions
+/// (which game event / probe signal drives which transition, and the Startup/TitleScreen guards) live in the
+/// Host. The <c>Sim*</c> helpers below replay those Host edges so the whole model is covered here.
 ///
 /// Empirical ground truth (live diagnostic overlay, 2026-07-29): the game's OnLogin fires when the
 /// character-select screen appears (IsLoggedIn → true there, NOT at world-connect); the Unity scene name
 /// does not change between title and char-select; cancelling char-select back to title fires OnLogout.
+/// Startup is the boot/loading phase before the login UI exists — it latches to TitleScreen when the Host's
+/// login-view probe reports login_main active.
 /// </summary>
 public sealed class ClientStateServiceTests
 {
-    // --- Host edge replays (mirror Wiring.Wire.cs / Wiring.GameLoop.cs) ---
+    // --- Host edge replays (mirror Wiring.Wire.cs / Wiring.GameLoop.cs / Wiring.ServiceTick.cs) ---
+
+    // Login-view probe reports login_main active: latches Startup→TitleScreen exactly once (guard in service).
+    private static void SimLoginViewActive(ClientStateService s) => s.NotifyLoginViewActive();
 
     // OnLogin: char-select appears. Guarded so only TitleScreen→CharSelect (a stray re-fire can't bounce
     // World→CharSelect, since RaisePhase itself is not phase-aware).
@@ -46,6 +51,7 @@ public sealed class ClientStateServiceTests
         s.RaisePhase(GamePhase.TitleScreen);
     }
 
+    // Fresh service at boot — phase is Startup, change log empty.
     private static (ClientStateService svc, List<PhaseChange> changes) Build()
     {
         var svc = new ClientStateService();
@@ -54,17 +60,59 @@ public sealed class ClientStateServiceTests
         return (svc, changes);
     }
 
+    // Service advanced to the login screen (Startup→TitleScreen) with the change log cleared — the common
+    // starting point for the OnLogin/world/logout coverage below (which asserts changes from TitleScreen on).
+    private static (ClientStateService svc, List<PhaseChange> changes) BuildAtTitleScreen()
+    {
+        var (svc, changes) = Build();
+        SimLoginViewActive(svc);
+        changes.Clear();
+        return (svc, changes);
+    }
+
     [Fact]
-    public void Boot_phase_is_TitleScreen()
+    public void Boot_phase_is_Startup()
     {
         var (svc, _) = Build();
+        Assert.Equal(GamePhase.Startup, svc.Phase);
+    }
+
+    [Fact]
+    public void LoginView_active_moves_Startup_to_TitleScreen()
+    {
+        var (svc, changes) = Build();
+
+        SimLoginViewActive(svc);
+
         Assert.Equal(GamePhase.TitleScreen, svc.Phase);
+        Assert.False(svc.IsLoggedIn);
+        Assert.Single(changes);
+        Assert.Equal(new PhaseChange(GamePhase.Startup, GamePhase.TitleScreen), changes[0]);
+    }
+
+    [Fact]
+    public void LoginView_active_is_latched_fires_once_and_never_bounces_World()
+    {
+        var (svc, changes) = BuildAtTitleScreen();
+
+        // A repeat login-view signal at TitleScreen is a no-op (already latched off Startup).
+        SimLoginViewActive(svc);
+        Assert.Equal(GamePhase.TitleScreen, svc.Phase);
+        Assert.Empty(changes);
+
+        // Once in-world, a lingering login_main flicker must NOT bounce World→TitleScreen (guard is Startup-only).
+        SimOnLogin(svc);
+        SimEnterWorld(svc);
+        changes.Clear();
+        SimLoginViewActive(svc);
+        Assert.Equal(GamePhase.World, svc.Phase);
+        Assert.Empty(changes);
     }
 
     [Fact]
     public void OnLogin_moves_TitleScreen_to_CharSelect()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
 
         SimOnLogin(svc);
 
@@ -77,7 +125,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void Full_login_sequence_walks_TitleScreen_CharSelect_World()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
 
         SimOnLogin(svc);      // char-select appears
         SimEnterWorld(svc);   // player picks a character, world connects
@@ -96,7 +144,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void CharSelect_cancel_returns_to_TitleScreen()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
 
         SimOnLogin(svc);    // at char-select
         SimOnLogout(svc);   // cancel back to title (game fires OnLogout)
@@ -115,7 +163,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void World_logout_returns_to_TitleScreen()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
 
         SimOnLogin(svc);
         SimEnterWorld(svc);
@@ -131,7 +179,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void Stray_OnLogin_in_World_does_not_bounce_to_CharSelect()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
         SimOnLogin(svc);
         SimEnterWorld(svc);
         changes.Clear();
@@ -146,7 +194,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void EnterWorld_is_noop_across_in_world_zone_loads()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
         SimOnLogin(svc);
         SimEnterWorld(svc);
         changes.Clear();
@@ -161,7 +209,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void RaisePhase_to_same_phase_is_noop_and_raises_no_event()
     {
-        var (svc, changes) = Build();
+        var (svc, changes) = BuildAtTitleScreen();
 
         svc.RaisePhase(GamePhase.TitleScreen);   // already TitleScreen
 
@@ -172,7 +220,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void Leaving_World_clears_UiState_to_None()
     {
-        var (svc, _) = Build();
+        var (svc, _) = BuildAtTitleScreen();
         SimOnLogin(svc);
         SimEnterWorld(svc);
         svc.SetUiState(GameUIState.FullScreenMenu | GameUIState.GameHud);
@@ -185,7 +233,7 @@ public sealed class ClientStateServiceTests
     [Fact]
     public void UiState_is_None_at_CharSelect()
     {
-        var (svc, _) = Build();
+        var (svc, _) = BuildAtTitleScreen();
 
         SimOnLogin(svc);
 
