@@ -24,6 +24,11 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
 
+    // Char-record identity source. Optional: null in builds where Host wires no
+    // inventory probe, in which case identity stays unavailable and behaviour is
+    // unchanged. See PandaPlayerStateProbe.Identity.cs.
+    private readonly PandaCharIdentityReader? _charIdentityReader;
+
     // Lazily-resolved cached reflection handles.
     private Type? _zEntityMgrType;
     private Type? _zEntityType;
@@ -82,10 +87,14 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
     // successful read we lock in the right type for that key.
     private readonly Dictionary<object, bool> _attrPrefersLong = new();
 
-    public PandaPlayerStateProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
+    public PandaPlayerStateProbe(
+        IPluginLog log,
+        IGameTypeRegistry typeRegistry,
+        PandaCharIdentityReader? charIdentityReader = null)
     {
         _log = log;
         _typeRegistry = typeRegistry;
+        _charIdentityReader = charIdentityReader;
     }
 
     public bool TrySample(out PlayerStateSnapshot snapshot)
