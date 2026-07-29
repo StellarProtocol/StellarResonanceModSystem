@@ -48,6 +48,8 @@ internal sealed class PhaseDiagWindow
             new TextElement(() => $"Phase         {_clientState.Phase}"),
             new TextElement(() => $"IsWorldActive {_clientState.IsWorldActive}"),
             new TextElement(() => $"UiState       {DescribeUiState(_clientState.UiState)}"),
+            new TextElement(() => $"Scene         {_clientState.CurrentSceneName ?? "(null)"}"),
+            new TextElement(() => $"IsLoggedIn    {_clientState.IsLoggedIn}"),
         }, Gap: 4f);
         return new WindowRegistration(spec, root);
     }
