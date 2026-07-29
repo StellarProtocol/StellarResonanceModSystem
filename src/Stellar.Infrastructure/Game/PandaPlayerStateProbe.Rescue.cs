@@ -58,6 +58,22 @@ internal sealed partial class PandaPlayerStateProbe
     private const int MaxTransitionsLogged = 12;
 
     /// <summary>
+    /// The entity THIS tick's <see cref="TrySample"/> read successfully — the raw
+    /// <c>playerEnt_</c> when healthy, or the validated rescue when it went dark.
+    /// Handed to sibling probes via <c>GetLocalPlayerEntity</c>.
+    ///
+    /// <para><b>Same-tick only, by design.</b> It is cleared at the top of every
+    /// <see cref="TrySample"/> and set only on success, so it never survives into
+    /// a later tick. Holding an IL2CPP entity reference ACROSS ticks would risk
+    /// handing out an object the game has since destroyed — an uncatchable
+    /// native access violation, not a catchable exception (see
+    /// <c>docs/il2cpp-probing-safety.md</c>). The handoff is safe because Host
+    /// refreshes player-state and player-stats back-to-back in one synchronous
+    /// tick (<c>Wiring.ServiceTick.cs</c>), so no scene teardown can intervene.</para>
+    /// </summary>
+    private object? _tickGoodEntity;
+
+    /// <summary>
     /// Attempts to produce a usable snapshot from a re-looked-up local-player
     /// entity. Returns false when neither route yields a validated entity with
     /// readable attributes.
@@ -113,6 +129,7 @@ internal sealed partial class PandaPlayerStateProbe
             return false;
         }
         snapshot = candidate;
+        _tickGoodEntity = found;   // same-tick handoff for sibling probes
         return true;
     }
 

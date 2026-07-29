@@ -101,6 +101,10 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
     {
         snapshot = default;
 
+        // Drop last tick's entity BEFORE anything else — sibling probes must never
+        // receive a reference the game may have destroyed since. See _tickGoodEntity.
+        _tickGoodEntity = null;
+
         if (!EnsureBootstrap())
         {
             return false;
@@ -126,6 +130,7 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
         if (IsUseful(candidate))
         {
             NoteUsefulness(mgr, entity, useful: true, via: "MainEntity");
+            _tickGoodEntity = entity;   // same-tick handoff for sibling probes
             snapshot = candidate;
             LogFirstSuccess(snapshot);
             return true;
