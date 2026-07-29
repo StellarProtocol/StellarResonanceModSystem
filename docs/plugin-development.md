@@ -53,7 +53,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 |---|---|
 | `Log` (`IPluginLog`) | `Info` / `Warning` / `Error` / `Debug` into `BepInEx/LogOutput.log`. Tag your lines `[MyMod]`. |
 | `Framework` (`IFramework`) | `Update` event (fires at *your plugin's* update rate, `float deltaTime`) + `FrameCount` + `EffectiveUpdateRateHz` + `RequestUpdateRate(hz)`. See [Update rate](#update-rate). |
-| `ClientState` (`IClientState`) | `IsLoggedIn`, `CurrentSceneName`, and `Login` / `Logout` / `SceneChanged` events. |
+| `ClientState` (`IClientState`) | Session state (`IsLoggedIn`, `CurrentSceneName`, `Login` / `Logout` / `SceneChanged`) **plus** the client-phase and world/UI signals: `Phase` (+ `PhaseChanged`), `IsWorldActive`, `UiState`. See [Phases and window visibility](#phases-and-window-visibility). |
 | `GameEvents` (`IGameEvents`) | Low-level escape hatch: `Subscribe(fullTypeName, handler)` returning an `IDisposable`. |
 | `PlayerState` (`IPlayerState`) | Polled local-player snapshot: `IsAvailable`, `Name`, `Level`, `Profession`, `Health`/`MaxHealth`, `Stamina`/`MaxStamina`, `Position`. |
 | `PlayerStats` (`IPlayerStats`) | Live character attribute snapshot (ATK, DEF, crit, etc.). |
@@ -126,8 +126,12 @@ private void BuildHud()
                                () => $"{_snap.Health} / {_snap.MaxHealth}", Prefix: "HP"),
                 new TextElement(() => $"Pos {_snap.Position.X:0.0}, {_snap.Position.Z:0.0}"),
             }, Gap: 4f),
-            Else: new TextElement(() => "Player not loaded")),
-        HideUntilInWorld: true));
+            Else: new TextElement(() => "Player not loaded")))
+        {
+            // Required. Draw only in a gameplay world, and hide while a menu covers the HUD.
+            ShouldRender = () => _services.ClientState.Phase == GamePhase.World
+                              && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0,
+        });
 }
 
 private void OnUpdate(float dt)
@@ -162,7 +166,8 @@ private void BuildWindow()
         {
             Closable = true,
             Draggable = true,
-            HideUntilInWorld = true,
+            // Required. Draw only in a gameplay world (use `() => true` for a login-screen tool).
+            ShouldRender = () => _services.ClientState.Phase == GamePhase.World,
         },
         Root: new ColumnElement(new HudElement[]
         {
@@ -179,6 +184,60 @@ private void BuildWindow()
 ```
 
 `IWindowControl` lets you manage the live window: `SetVisible(bool)`, `IsShown`, `MarkDirty()`, `SetRect(...)` / `Rect`, and `Remove()`. Wire `OnClose` to `SetVisible(false)` (as above) so the ✕ and any hotkey/rail toggle stay agreed about visibility. Canonical reference: `Stellar.ChatTools` — a multi-section window with a scrolling log, a channel selector, an input composer, and a conditional sub-panel.
+
+## Phases and window visibility
+
+Every `WindowSpec` and `HudSpec` carries a compiler-**`required`** `Func<bool> ShouldRender` — the single source of truth for whether the element draws. The framework evaluates it each apply (~10 Hz) and enacts `hide = !ShouldRender()`; a hidden element skips its value pull entirely (zero `Func` cost while hidden). It is a **pull**, so it is always current — you do not push a visibility flag. Because it is `required`, omitting it **fails the build** (no default that would spam windows over the login screen).
+
+You read whatever you want inside the predicate, via your captured `_services`. The three signals that matter live on `IClientState`:
+
+| Signal | Type | Use it for | Across an in-world zone load |
+|---|---|---|---|
+| `Phase` | `GamePhase` (`TitleScreen`/`CharSelect`/`World`) | **visibility** — what to draw in `ShouldRender` | stays `World` (window stays up) |
+| `IsWorldActive` | `bool` | **game-state access** — guard raw reads in your `Update` | dips `false` during the handshake — skip the read |
+| `UiState` | `[Flags] GameUIState` | in-world UI detail (menu covering the HUD, cutscene, loading) | `None` at title/char-select |
+
+`Phase` is a signal the framework gates nothing on; it coexists with session state (`IsLoggedIn`/`Login`/`Logout`) and answers a different question ("which client screen"). Read `Phase` for the initial state (e.g. in your ctor) and subscribe to `PhaseChanged` (`event Action<PhaseChange>`, where `PhaseChange` is a `readonly record struct(From, To)`) for transitions — unsubscribe in `Dispose`, same hygiene as `Framework.Update`.
+
+Typical `ShouldRender` values:
+
+```csharp
+// A login-screen tool (account switcher, server picker) — always visible, incl. the title screen:
+ShouldRender = () => true;
+
+// A gameplay window — only in a world scene:
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World;
+
+// A gameplay HUD — in-world, and hidden while a full-screen menu covers the HUD:
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World
+                  && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0;
+```
+
+`GameUIState` is flat co-occurring flags (`GameHud`, `FullScreenMenu`, `MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`) plus preset masks (`GameHudHidden`, `AnyMenu`, `Blocking`) so you don't memorize bits — prefer the masks. It is informational only.
+
+### Do you need to gate your `Update`?
+
+Only if your plugin does **raw game reads**. The framework tick now runs UI/input every phase (that is what lets a window render at the title screen), but anything reading **live game state** must self-gate on `IsWorldActive`, because those reads corrupt the world-connect handshake while a scene transition is in flight:
+
+```csharp
+private void OnUpdate(float dt)
+{
+    if (!_services.ClientState.IsWorldActive) return;   // raw game-state read below
+    // ... snapshot PlayerState / combat / inventory into your fields ...
+}
+```
+
+A plugin that only **draws UI, does HTTP, or reads framework-cached data** touches no live game state and **needs no gate** — it just runs every phase. Gate on `IsWorldActive`, never on `Phase`/`IsLoggedIn` (both are true mid-transition, which is exactly when a raw read is unsafe).
+
+### Migrating to SDK 2.0.0
+
+SDK 2.0.0 is a **breaking** release. For each existing plugin:
+
+1. Bump every `Stellar.*` reference (`Stellar.Abstractions`, and the other `Stellar.*` SDK packages you use) to **`2.0.0`**.
+2. Add a `ShouldRender` to **every** `WindowSpec` and `HudSpec` — the build fails until you do. For a window that used to be always-on, `ShouldRender = () => true`; for one that used `HideUntilInWorld`, `ShouldRender = () => _services.ClientState.Phase == GamePhase.World`.
+3. **Delete** `HideUntilInWorld` and `AutoHideBehindGameMenus` — both are removed. Fold the "hide behind a menu" behaviour into `ShouldRender` via `UiState` (see the gameplay-HUD example above).
+
+Non-UI plugins (no `WindowSpec`/`HudSpec`) only need the version bump.
 
 ## Convenience APIs
 
@@ -302,7 +361,7 @@ Every plugin MUST implement `Dispose()` correctly. The **Settings → Plugins** 
 
 **Release everything you acquired in the constructor:**
 
-- `-=` every event handler you `+=` (`Framework.Update`, `ClientState.Login/Logout/SceneChanged`, `Chat.MessageReceived`, `CombatEvents.CombatEventOccurred`, `Inventory.InventoryChanged`, `Config.SectionChanged`, …). **Capture handlers in fields** — inline lambdas (`X += () => ...;`) leak because `-=` can't find the same delegate instance later.
+- `-=` every event handler you `+=` (`Framework.Update`, `ClientState.Login/Logout/SceneChanged/PhaseChanged`, `Chat.MessageReceived`, `CombatEvents.CombatEventOccurred`, `Inventory.InventoryChanged`, `Config.SectionChanged`, …). **Capture handlers in fields** — inline lambdas (`X += () => ...;`) leak because `-=` can't find the same delegate instance later.
 - `Remove()` every `IHudHandle` and `IWindowControl`.
 - `Dispose()` every `IColorSlot` and every `IHotkeyAction`.
 - `Dispose()` every token returned by `IGameEvents.Subscribe(...)` and `ILauncher.Register(...)`.
