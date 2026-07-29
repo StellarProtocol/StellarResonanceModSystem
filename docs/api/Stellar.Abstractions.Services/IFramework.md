@@ -10,8 +10,12 @@ public interface IFramework
 
 | name | description |
 | --- | --- |
+| [EffectiveUpdateRateHz](IFramework/EffectiveUpdateRateHz.md) { get; } | The rate this plugin is currently ticking at (Hz). Reflects the user's per-plugin config plus any dynamic ramp this plugin is currently holding. |
 | [FrameCount](IFramework/FrameCount.md) { get; } | Monotonic frame counter incremented before each [`Update`](./IFramework/Update.md) dispatch. |
+| [ScreenHeight](IFramework/ScreenHeight.md) { get; } | Current display height in pixels. Updated once per frame before [`Update`](./IFramework/Update.md) fires. |
+| [ScreenWidth](IFramework/ScreenWidth.md) { get; } | Current display width in pixels. Updated once per frame before [`Update`](./IFramework/Update.md) fires. |
 | event [Update](IFramework/Update.md) | Fired once per game frame. Argument is deltaTime in seconds. |
+| [RequestUpdateRate](IFramework/RequestUpdateRate.md)(…) | Ask the framework to tick THIS plugin at no less than *hz* until the returned scope is disposed. Requests stack (the maximum wins). The value is clamped to the supported range. Returns an inert (no-op) scope unless the user granted this plugin rate-control permission, so calling it is always safe. |
 
 ## See Also
 

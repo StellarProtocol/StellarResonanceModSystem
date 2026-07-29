@@ -1,10 +1,47 @@
-# TextElement constructor
+# TextElement constructor (1 of 3)
 
-Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.
+Backwards-compatible overload for plugins compiled against the pre-FontSize signature.
+
+```csharp
+public TextElement(Func<string> text, Func<ColorRgba?>? color, bool emphasis, float width, 
+    TextAlign align, bool shadow)
+```
+
+## See Also
+
+* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
+* enum [TextAlign](../TextAlign.md)
+* record [TextElement](../TextElement.md)
+* namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
+
+---
+
+# TextElement constructor (2 of 3)
+
+Backwards-compatible overload for plugins compiled against the pre-ShadowDistance signature.
+
+```csharp
+public TextElement(Func<string> text, Func<ColorRgba?>? color, bool emphasis, float width, 
+    TextAlign align, bool shadow, int fontSize)
+```
+
+## See Also
+
+* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
+* enum [TextAlign](../TextAlign.md)
+* record [TextElement](../TextElement.md)
+* namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
+
+---
+
+# TextElement constructor (3 of 3)
+
+Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds. *ShadowDistance* controls the pixel offset of the shadow (default 1). Increase for large font sizes where a 1-pixel shadow is invisible. *NoWrap* keeps the text on a single line (any overflow spills/clips at the cell edge rather than wrapping to multiple lines) — use in a fixed-width pane where a long label (e.g. a map name) must read as one row, not a 5-line block.
 
 ```csharp
 public TextElement(Func<string> Text, Func<ColorRgba?>? Color = null, bool Emphasis = false, 
-    float Width = 0, TextAlign Align = TextAlign.Left, bool Shadow = false)
+    float Width = 0, TextAlign Align = TextAlign.Left, bool Shadow = false, int FontSize = 0, 
+    int ShadowDistance = 1, bool NoWrap = false)
 ```
 
 ## See Also

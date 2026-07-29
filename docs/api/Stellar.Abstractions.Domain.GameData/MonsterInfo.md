@@ -22,8 +22,11 @@ public struct MonsterInfo : IEquatable<MonsterInfo>
 | [FactionId](MonsterInfo/FactionId.md) { get; set; } | Faction id this monster belongs to. |
 | [IconPath](MonsterInfo/IconPath.md) { get; set; } | Addressable path for the monster's icon sprite. |
 | [Id](MonsterInfo/Id.md) { get; set; } | Game-table monster id. |
+| [IsBoss](MonsterInfo/IsBoss.md) { get; set; } | `true` when [`MonsterType`](./MonsterInfo/MonsterType.md) equals [`MonsterTypeBoss`](./MonsterInfo/MonsterTypeBoss.md) (2). Derived at load time from the table row. Confirmed by recon on the Ancient Purifier run: attr-10 → MonsterTable[33301].MonsterType == 2. |
 | [Level](MonsterInfo/Level.md) { get; set; } | Base level of this monster type. |
+| [MonsterType](MonsterInfo/MonsterType.md) { get; set; } | Numeric monster classification (0=Monster, 1=Elite, 2=Boss). Mirrors `EMonsterType` from the zproto enum. `MonsterRank` is empty for all table rows and must not be used for classification — use this field instead. |
 | [Name](MonsterInfo/Name.md) { get; set; } | Localised monster display name. |
+| const [MonsterTypeBoss](MonsterInfo/MonsterTypeBoss.md) | The `MonsterType` value that identifies a boss — `EMonsterType.Boss = 2` (confirmed by recon 2026-07-02). |
 
 ## See Also
 

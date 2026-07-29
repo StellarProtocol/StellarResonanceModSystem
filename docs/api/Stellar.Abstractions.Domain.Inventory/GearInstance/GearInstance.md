@@ -4,7 +4,7 @@ One equipped gear piece of the LOCAL player, decoded from the container sync —
 
 ```csharp
 public GearInstance(int Slot, long ItemUuid, int ConfigId, int Quality, int RefineLevel, 
-    GearPerfection Perfection, GearAttrRolls Attrs, GearEnchant? Enchant)
+    GearPerfection Perfection, GearAttrRolls Attrs, GearEnchant? Enchant, int BreakThroughTime = 0)
 ```
 
 | parameter | description |
@@ -17,6 +17,7 @@ public GearInstance(int Slot, long ItemUuid, int ConfigId, int Quality, int Refi
 | Perfection | Perfection value/max/level of the piece. |
 | Attrs | The four rolled-attribute groups; never null. |
 | Enchant | Socketed enchant, or null when the piece carries none. |
+| BreakThroughTime | Breakthrough stage (wire `EquipAttr.break_through_time`); raid gear's displayed item level is the stage's `EquipBreakThroughTable.EquipGs`. |
 
 ## See Also
 

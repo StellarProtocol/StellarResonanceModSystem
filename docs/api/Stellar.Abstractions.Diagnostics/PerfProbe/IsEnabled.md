@@ -1,6 +1,6 @@
 # PerfProbe.IsEnabled property
 
-`true` when `STELLAR_PERFHUD=1` (or `=true`) at startup.
+`true` when `STELLAR_PERFHUD=1` was set in the environment, or a `PERFHUD` line is present in `stellar_perf.flags`, at startup.
 
 ```csharp
 public static bool IsEnabled { get; }

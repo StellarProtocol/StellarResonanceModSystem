@@ -12,6 +12,7 @@ public record GearInstance
 | --- | --- |
 | [GearInstance](GearInstance/GearInstance.md)(…) | One equipped gear piece of the LOCAL player, decoded from the container sync — per-piece ACTUAL rolls (other players only expose table ranges via the equip tables). |
 | [Attrs](GearInstance/Attrs.md) { get; set; } | The four rolled-attribute groups; never null. |
+| [BreakThroughTime](GearInstance/BreakThroughTime.md) { get; set; } | Breakthrough stage (wire `EquipAttr.break_through_time`); raid gear's displayed item level is the stage's `EquipBreakThroughTable.EquipGs`. |
 | [ConfigId](GearInstance/ConfigId.md) { get; set; } | Item/equip config id (joins [`ItemInfo`](../Stellar.Abstractions.Domain.GameData/ItemInfo.md) / [`EquipRowInfo`](../Stellar.Abstractions.Domain.GameData/EquipRowInfo.md) for name, icon, and roll-space context). |
 | [Enchant](GearInstance/Enchant.md) { get; set; } | Socketed enchant, or null when the piece carries none. |
 | [ItemUuid](GearInstance/ItemUuid.md) { get; set; } | Item-instance uuid (joins the enchant/recast maps). |

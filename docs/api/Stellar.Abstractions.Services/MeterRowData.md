@@ -14,6 +14,7 @@ public struct MeterRowData
 | [BarFraction](MeterRowData/BarFraction.md) | Metric bar fill fraction in [0..1] normalised to the top-row value. |
 | [ClassName](MeterRowData/ClassName.md) | Optional base-class line (e.g. "Frost Mage"); shown between name and spec when ShowClassName. |
 | [CrestTexture](MeterRowData/CrestTexture.md) | Opaque icon handle; MUST be a UnityEngine.Texture2D. Passed through to the uGUI image binding; a non-Texture2D silently renders nothing. |
+| [CrestTint](MeterRowData/CrestTint.md) | Tint multiplier for the class crest image. `default` (alpha 0) means no tint (white). Used e.g. to colour the crest by team-voice mic status: red=muted, blue=speaker, green=talking. |
 | [CrestUv](MeterRowData/CrestUv.md) | Atlas sub-rect for the class crest icon (normalised UV, bottom-left origin). |
 | [Dead](MeterRowData/Dead.md) | True when this entity is dead (HP known and zero) — drives the dead treatment. |
 | [HpColor](MeterRowData/HpColor.md) | HP spine fill colour (green/yellow/red by health fraction). |
@@ -26,11 +27,14 @@ public struct MeterRowData
 | [IsLeader](MeterRowData/IsLeader.md) | True when this row represents the party leader — draws a small flag marker before the name. |
 | [IsSelf](MeterRowData/IsSelf.md) | True when this row represents the local player — draws the self-highlight tint. |
 | [Name](MeterRowData/Name.md) | Character display name (e.g. "Momoko"). |
+| [NameColor](MeterRowData/NameColor.md) | Optional override for the name-text colour (e.g. a ready-check vote: blue=pending, green=ready, red=declined). When alpha is 0 (the default) the row uses the framework's standard name colour. The [`Dead`](./MeterRowData/Dead.md) treatment still takes precedence. |
 | [Offline](MeterRowData/Offline.md) | True when this party member is offline — draws a dimmed scrim over the row. |
 | [PrimaryValue](MeterRowData/PrimaryValue.md) | Primary metric string drawn on the left of the bar (e.g. per-second DPS). |
 | [Rank](MeterRowData/Rank.md) | Rank label rendered before the leader flag (e.g. "1."). |
 | [RoleColor](MeterRowData/RoleColor.md) | Role-colour fill for the metric bar (DPS=red, Tank=blue, Healer=green). |
+| [RowBorder](MeterRowData/RowBorder.md) | Optional colored box border around the whole row (e.g. green while a member is talking). `default` (alpha 0) = no border. |
 | [SecondaryValue](MeterRowData/SecondaryValue.md) | Secondary metric string drawn on the right of the bar (e.g. total damage). |
+| [SelfAccent](MeterRowData/SelfAccent.md) | Self-row highlight colour (background tint + a brighter border), used only when [`IsSelf`](./MeterRowData/IsSelf.md). Supplied by the meter so the highlight is a configurable colour slot rather than a fixed framework teal. |
 | [SharePercent](MeterRowData/SharePercent.md) | Share-of-total percentage string (e.g. "14%"). |
 | [ShowAbilityScore](MeterRowData/ShowAbilityScore.md) | When true the ability-score pill is shown (off until the wire field exists). |
 | [ShowClassName](MeterRowData/ShowClassName.md) | When true the optional class-name line is shown. |
@@ -44,7 +48,11 @@ public struct MeterRowData
 | [ShowSecondary](MeterRowData/ShowSecondary.md) | Width-driven collapse flag: when false the secondary metric value is hidden. |
 | [ShowShare](MeterRowData/ShowShare.md) | Width-driven collapse flag: when false the share-percent label is hidden. |
 | [ShowSpec](MeterRowData/ShowSpec.md) | Width-driven collapse flag: when false the Spec label is hidden to save horizontal space. |
+| [ShowVoiceIcon](MeterRowData/ShowVoiceIcon.md) | When true the [`VoiceIcon`](./MeterRowData/VoiceIcon.md) cell is shown (user toggle). |
 | [Spec](MeterRowData/Spec.md) | Sub-profession label; may be empty when the spec is unknown or hidden. |
+| [SpineWidth](MeterRowData/SpineWidth.md) | Width of the vertical spine bar in pixels. 0 = use the renderer default (3 px). |
+| [VoiceIcon](MeterRowData/VoiceIcon.md) | Optional small status icon shown on the name line (e.g. team-voice mic/headphone/muted). MUST be a UnityEngine.Texture2D; a non-Texture2D renders nothing. Hidden unless [`ShowVoiceIcon`](./MeterRowData/ShowVoiceIcon.md). |
+| [VoiceIconTint](MeterRowData/VoiceIconTint.md) | Tint for [`VoiceIcon`](./MeterRowData/VoiceIcon.md) (e.g. green while talking). `default` (alpha 0) = white. |
 
 ## See Also
 

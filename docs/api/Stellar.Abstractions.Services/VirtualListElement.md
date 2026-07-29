@@ -15,6 +15,7 @@ public record VirtualListElement : IEquatable<HudElement>
 | [Height](VirtualListElement/Height.md) { get; set; } |  |
 | [OnWindow](VirtualListElement/OnWindow.md) { get; set; } |  |
 | [Pool](VirtualListElement/Pool.md) { get; set; } |  |
+| [ResetScroll](VirtualListElement/ResetScroll.md) { get; set; } | When non-null, polled each refresh — returning true resets the scroll offset to the top. |
 | [RowHeight](VirtualListElement/RowHeight.md) { get; set; } |  |
 
 ## See Also

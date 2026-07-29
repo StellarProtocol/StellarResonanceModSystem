@@ -11,7 +11,7 @@ public struct SceneInfo : IEquatable<SceneInfo>
 | Id | Game-table scene id (also used as [`CurrentSceneName`](../Stellar.Abstractions.Services/IClientState/CurrentSceneName.md)). |
 | Name | Localised scene display name. |
 | MapId | Map id this scene belongs to. |
-| SceneKind | Scene type integer from the game table (e.g. world, dungeon, lobby). |
+| SceneKind | The scene table's `SceneType` value (e.g. world/town/field = 1, instanced dungeon/raid content = 2). |
 
 ## Public Members
 
@@ -21,7 +21,7 @@ public struct SceneInfo : IEquatable<SceneInfo>
 | [Id](SceneInfo/Id.md) { get; set; } | Game-table scene id (also used as [`CurrentSceneName`](../Stellar.Abstractions.Services/IClientState/CurrentSceneName.md)). |
 | [MapId](SceneInfo/MapId.md) { get; set; } | Map id this scene belongs to. |
 | [Name](SceneInfo/Name.md) { get; set; } | Localised scene display name. |
-| [SceneKind](SceneInfo/SceneKind.md) { get; set; } | Scene type integer from the game table (e.g. world, dungeon, lobby). |
+| [SceneKind](SceneInfo/SceneKind.md) { get; set; } | The scene table's `SceneType` value (e.g. world/town/field = 1, instanced dungeon/raid content = 2). |
 
 ## See Also
 

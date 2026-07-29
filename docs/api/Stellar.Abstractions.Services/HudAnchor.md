@@ -11,6 +11,9 @@ public enum HudAnchor
 | name | value | description |
 | --- | --- | --- |
 | FreeOverlay | `0` | The draggable, position-persisted Stellar HUD canvas layer. |
+| ScreenCenterX | `1` | Centers the HUD horizontally at runtime using Unity's RectTransform anchor system. Works at any screen resolution without hardcoded pixel math. The X component of [`DefaultRect`](./HudSpec/DefaultRect.md) is ignored; only Y (distance from top) is applied. |
+| ScreenCenterY | `2` | Centers the HUD vertically at runtime. The Y component of [`DefaultRect`](./HudSpec/DefaultRect.md) is ignored; only X (distance from left) is applied. |
+| ScreenCenter | `3` | Centers the HUD both horizontally and vertically. Both X and Y components of [`DefaultRect`](./HudSpec/DefaultRect.md) are ignored. |
 
 ## See Also
 

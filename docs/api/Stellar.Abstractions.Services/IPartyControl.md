@@ -11,8 +11,12 @@ public interface IPartyControl
 | name | description |
 | --- | --- |
 | [IsAvailable](IPartyControl/IsAvailable.md) { get; } | True once the game-side team bridge has resolved and a request can be issued. |
+| [InviteToTeam](IPartyControl/InviteToTeam.md)(…) | Invite *charId* to the party via the game's own `AsyncInviteToTeam` dispatcher. Any member may invite; the game enforces party-full and cooldown constraints. No-op when the team bridge is unresolved. |
+| [KickMember](IPartyControl/KickMember.md)(…) | Kick *charId* from the party via the game's own `AsyncTickOut` dispatcher. Leader-only; validated game-side. No-op when not leader or when the team bridge is unresolved. |
+| [LeaveParty](IPartyControl/LeaveParty.md)() | Leave the current party via the game's own `AsyncQuitTeam` dispatcher. No-op when the team bridge is unresolved. The game handles server notification and clears team state. |
 | [MoveMember](IPartyControl/MoveMember.md)(…) | Moves *charId* to raid *group* (1–4) at *slot* (0–4) via the game's own `AsyncUpdateTeamGroup` dispatcher — never a hand-built packet. Must be called on the main thread from a user-initiated command. Leader-only and 20-player-raid-only; the game validates and may silently reject. No-op when the team bridge is unresolved. The result is observed via the party roster's group/slot once the server broadcasts it. |
 | [SetMemberType](IPartyControl/SetMemberType.md)(…) | Requests the game switch the current party between 5-player (Regular5) and 20-player raid (Raid20). Must be called on the main thread, from a user-initiated command. No-op for Solo, when the requested size already matches, or when not the party leader. The party's activity target is preserved. The result is observed via [`PartyType`](./IPartySnapshot/PartyType.md) once the server broadcasts it. |
+| [TransferLeader](IPartyControl/TransferLeader.md)(…) | Transfer party leadership to *charId* via the game's own `AsyncTransferLeader` dispatcher. Leader-only; validated game-side. No-op when not leader or when the team bridge is unresolved. |
 
 ## See Also
 

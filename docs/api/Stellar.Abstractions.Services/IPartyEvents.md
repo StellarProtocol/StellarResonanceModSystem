@@ -14,6 +14,8 @@ public interface IPartyEvents
 | event [MemberLeft](IPartyEvents/MemberLeft.md) | Fires when a member leaves. The [`PartyMember`](../Stellar.Abstractions.Domain/PartyMember.md) argument carries last-known state at the time of leave. |
 | event [MemberUpdated](IPartyEvents/MemberUpdated.md) | Fires when any field of a member changes (HP, scene, online, profession, group, etc.). Multiple field changes from one wire delivery are coalesced into a single event. |
 | event [PartyDissolved](IPartyEvents/PartyDissolved.md) | Fires when the party disbands. After firing, the roster is empty. |
+| event [ReadyCheckPhaseChanged](IPartyEvents/ReadyCheckPhaseChanged.md) | Fires when the ready-check window opens (`true`) or closes (`false`) via `WorldNtf.NotifyAllMemberReady` (method 70). NOTE: the party LEADER who initiates the check does NOT receive this packet — only non-leader members do. Leaders should track open/close from their own initiation + the prepare window timer. |
+| event [ReadyCheckResponded](IPartyEvents/ReadyCheckResponded.md) | Fires when a member responds to a dungeon ready-check (`WorldNtf.NotifyCaptainReady`, method 71) — carries who responded and whether they readied or declined. Every client in the party receives this, including the leader. Use it to drive a live ready-check panel. |
 
 ## See Also
 

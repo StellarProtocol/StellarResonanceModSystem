@@ -6,6 +6,12 @@ Declarative panel child widgets.
 public abstract record PanelWidget
 ```
 
+## Protected Members
+
+| name | description |
+| --- | --- |
+| [PanelWidget](PanelWidget/PanelWidget.md)() | The default constructor. |
+
 ## See Also
 
 * namespace [Stellar.Abstractions.Services](../Stellar.Abstractions.md)

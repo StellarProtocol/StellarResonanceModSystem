@@ -15,10 +15,12 @@ public record SocialSnapshot
 | [Fashion](SocialSnapshot/Fashion.md) { get; set; } | Worn cosmetics from `fashion_data`; never null. |
 | [FightPoint](SocialSnapshot/FightPoint.md) { get; set; } | Ability score (int64) from `user_attr_data.fight_point`. |
 | [Gear](SocialSnapshot/Gear.md) { get; set; } | Equipped items by slot from `equip_data.equip_infos`; never null. |
+| [HalfBodyUrl](SocialSnapshot/HalfBodyUrl.md) { get; set; } | HTTPS URL of the player's half-body ID-card picture on the game's CDN (`avatar_info.half_body.url`); empty when the player has none or the section was absent. |
 | [Identity](SocialSnapshot/Identity.md) { get; set; } | Guild/party/master-score/title extras; [`None`](./SocialIdentity/None.md) when the reply's mask excluded those sections. |
 | [Level](SocialSnapshot/Level.md) { get; set; } | Character level from `basic_data`. |
 | [Name](SocialSnapshot/Name.md) { get; set; } | Display name from `basic_data`; empty if absent. |
 | [ProfessionId](SocialSnapshot/ProfessionId.md) { get; set; } | Profession id from `profession_data`. |
+| [ProfileUrl](SocialSnapshot/ProfileUrl.md) { get; set; } | HTTPS URL of the player's square profile picture on the game's CDN (`avatar_info.profile.url`); empty when the player has none or the section was absent. |
 
 ## See Also
 

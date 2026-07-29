@@ -1,6 +1,6 @@
 # IInventory.GetEquipped method
 
-Currently equipped module UUIDs by slot (1..4). Slots with no module are absent from the returned dictionary.
+Currently equipped module UUIDs by slot (1..`ModSlotMaxCount`; 4 before patch 3.7, 5 since). Slots with no module are absent from the returned dictionary.
 
 ```csharp
 public EquippedSet? GetEquipped()

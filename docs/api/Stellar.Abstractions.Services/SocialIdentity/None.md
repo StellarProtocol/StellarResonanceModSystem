@@ -1,6 +1,6 @@
 # SocialIdentity.None property
 
-Empty identity — no guild/party/score/title parsed.
+Empty identity — no guild/party/score/title/collect-point data parsed.
 
 ```csharp
 public static SocialIdentity None { get; }

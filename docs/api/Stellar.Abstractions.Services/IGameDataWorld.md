@@ -12,6 +12,7 @@ public interface IGameDataWorld
 | --- | --- |
 | [GetMap](IGameDataWorld/GetMap.md)(…) | Returns the map row for *id*, or null if unknown. |
 | [GetMonster](IGameDataWorld/GetMonster.md)(…) | Returns the monster row for *id*, or null if unknown. |
+| [GetMonsterByEntity](IGameDataWorld/GetMonsterByEntity.md)(…) | Resolves the [`MonsterInfo`](../Stellar.Abstractions.Domain.GameData/MonsterInfo.md) for a live entity by reading the entity's config/template id from the cached combat-wire attribute (attr id 10 = `AttrTypeIds.AttrId`), then looking up the monster table. Returns `null` when the entity has no cached attr-10 value, when the config id is absent from the monster table, or when the monster table has not yet been loaded. |
 | [GetNpc](IGameDataWorld/GetNpc.md)(…) | Returns the NPC row for *id*, or null if unknown. |
 | [GetScene](IGameDataWorld/GetScene.md)(…) | Returns the scene row for *id*, or null if unknown. |
 

@@ -1,6 +1,6 @@
 # SceneInfo.SceneKind property
 
-Scene type integer from the game table (e.g. world, dungeon, lobby).
+The scene table's `SceneType` value (e.g. world/town/field = 1, instanced dungeon/raid content = 2).
 
 ```csharp
 public int SceneKind { get; set; }

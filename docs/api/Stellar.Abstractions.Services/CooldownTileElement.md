@@ -16,6 +16,7 @@ public record CooldownTileElement : IEquatable<HudElement>
 | [Fill01](CooldownTileElement/Fill01.md) { get; set; } | Foot fill-bar fraction (0..1) — typically cooldown/​debuff completion. |
 | [Icon](CooldownTileElement/Icon.md) { get; set; } | Supplies the boxed `UnityEngine.Texture` for the tile art (null = neutral box). |
 | [IsImagine](CooldownTileElement/IsImagine.md) { get; set; } | When true, a ★ corner badge marks an Imagine-lockout tile. |
+| [OnClick](CooldownTileElement/OnClick.md) { get; set; } | When non-null, clicking anywhere on the tile calls this action. |
 | [Seconds](CooldownTileElement/Seconds.md) { get; set; } | Remaining-time caption shown below the icon. |
 | [Uv](CooldownTileElement/Uv.md) { get; set; } | The atlas UV sub-rect for the art (0..1, bottom-left origin). |
 

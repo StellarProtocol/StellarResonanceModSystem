@@ -11,6 +11,8 @@ public interface IPartyRoster
 | name | description |
 | --- | --- |
 | [Members](IPartyRoster/Members.md) { get; } | All party members including self. Sorted with self first, then by join order. Empty when solo. The reference is stable for the frame; the snapshot is rebuilt lazily when state changes. |
+| [GetMicStatus](IPartyRoster/GetMicStatus.md)(…) | The member's team-voice microphone mode (`voice_is_open` base, refined by GrpcTeamNtf method 25). Returns Opened for an unknown member. |
+| [IsSpeaking](IPartyRoster/IsSpeaking.md)(…) | Whether the member is currently talking (GrpcTeamNtf method 26). `false` for an unknown member. |
 
 ## See Also
 

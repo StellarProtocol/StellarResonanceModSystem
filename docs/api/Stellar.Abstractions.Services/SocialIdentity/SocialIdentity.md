@@ -3,7 +3,8 @@
 Affiliation/prestige extras from a full-mask social reply (the ID-card fetch requests mask 0 = all sections). Thin-mask replies (nameplate/avatar queries carry identity only) leave these at defaults — values are best-effort, last-reply-wins via the cache.
 
 ```csharp
-public SocialIdentity(string Guild, int PartySize, int MasterScore, int TitleId)
+public SocialIdentity(string Guild, int PartySize, int MasterScore, int TitleId, 
+    int FashionCollect = 0, int RideCollect = 0, int WeaponSkinCollect = 0)
 ```
 
 | parameter | description |
@@ -12,6 +13,9 @@ public SocialIdentity(string Guild, int PartySize, int MasterScore, int TitleId)
 | PartySize | Member count of the player's party from `team_data.team_num`; 0 when solo or absent. |
 | MasterScore | Master-mode season score from `master_mode_dungeon_data.season_score`; 0 when absent or player-hidden (the wire's `is_show` flag is inverted — truthy renders "Hidden" on the game's own card, and we follow the native privacy behaviour). |
 | TitleId | Equipped title id from `personal_zone.title_id`; 0 when none. Resolving the display name requires the dungeon-title game table (deferred). |
+| FashionCollect | Fashion collection-point count from `personal_zone.fashion_collect_point`; 0 when absent. Candidate source for the ID-card "collection points" badge (unconfirmed). |
+| RideCollect | Ride collection-point count from `personal_zone.ride_collect_point`; 0 when absent. |
+| WeaponSkinCollect | Weapon-skin collection-point count from `personal_zone.weapon_skin_collect_point`; 0 when absent. |
 
 ## See Also
 

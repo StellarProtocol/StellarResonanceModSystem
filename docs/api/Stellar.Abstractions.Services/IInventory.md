@@ -12,7 +12,7 @@ public interface IInventory
 | --- | --- |
 | [IsAvailable](IInventory/IsAvailable.md) { get; } | True after the first successful probe sample. False during character select / loading / before HybridCLR finishes. |
 | event [InventoryChanged](IInventory/InventoryChanged.md) | Fires once when the snapshot or equipped set diffs the previous tick. Polling cadence is 1Hz so the event fires at most once per second. |
-| [GetEquipped](IInventory/GetEquipped.md)() | Currently equipped module UUIDs by slot (1..4). Slots with no module are absent from the returned dictionary. |
+| [GetEquipped](IInventory/GetEquipped.md)() | Currently equipped module UUIDs by slot (1..`ModSlotMaxCount`; 4 before patch 3.7, 5 since). Slots with no module are absent from the returned dictionary. |
 | [GetModules](IInventory/GetModules.md)() | Current module inventory snapshot, or null until the first sample lands. |
 | [GetSelfGear](IInventory/GetSelfGear.md)() | The LOCAL player's currently equipped gear instances with their per-piece rolled attributes, ordered by slot. Empty (never null) until the first full container sync lands. Staleness contract: the list is refreshed on full container syncs (login / map change); mid-session refines or re-rolls may be stale until the next full sync (method-22 incremental deltas are not decoded for gear). Thread-safe lock-free read, like the other getters. |
 

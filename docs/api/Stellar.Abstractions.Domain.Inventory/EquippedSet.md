@@ -1,6 +1,6 @@
 # EquippedSet record
 
-Currently equipped module UUIDs keyed by 1-based slot index. The game uses 1..`ModSlotMaxCount` = 1..4 (see `lua/ui/model/mod_define.lua`). Empty slots are ABSENT from the dictionary — callers should check `ModuleUuidsBySlot.ContainsKey(slot)` rather than expect a nullable value.
+Currently equipped module UUIDs keyed by 1-based slot index. The game uses 1..`ModSlotMaxCount` (see `lua/ui/model/mod_define.lua`; 4 before patch 3.7, 5 since). Empty slots are ABSENT from the dictionary — callers should check `ModuleUuidsBySlot.ContainsKey(slot)` rather than expect a nullable value.
 
 ```csharp
 public record EquippedSet
@@ -10,7 +10,7 @@ public record EquippedSet
 
 | name | description |
 | --- | --- |
-| [EquippedSet](EquippedSet/EquippedSet.md)(…) | Currently equipped module UUIDs keyed by 1-based slot index. The game uses 1..`ModSlotMaxCount` = 1..4 (see `lua/ui/model/mod_define.lua`). Empty slots are ABSENT from the dictionary — callers should check `ModuleUuidsBySlot.ContainsKey(slot)` rather than expect a nullable value. |
+| [EquippedSet](EquippedSet/EquippedSet.md)(…) | Currently equipped module UUIDs keyed by 1-based slot index. The game uses 1..`ModSlotMaxCount` (see `lua/ui/model/mod_define.lua`; 4 before patch 3.7, 5 since). Empty slots are ABSENT from the dictionary — callers should check `ModuleUuidsBySlot.ContainsKey(slot)` rather than expect a nullable value. |
 | [ModuleUuidsBySlot](EquippedSet/ModuleUuidsBySlot.md) { get; set; } |  |
 
 ## See Also

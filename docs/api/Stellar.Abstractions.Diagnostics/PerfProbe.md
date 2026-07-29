@@ -1,6 +1,6 @@
 # PerfProbe class
 
-Per-frame timing accumulator for the overlay perf harness. Gated by `STELLAR_PERFHUD=1` (mirrors [`StellarDiagnostics`](./StellarDiagnostics.md)): when disabled every method early-returns on a single cached field read so production pays nothing.
+Per-frame timing accumulator for the overlay perf harness. Gated by `STELLAR_PERFHUD=1` OR a `PERFHUD` line in `game_mini/stellar_perf.flags` (mirrors [`StellarDiagnostics`](./StellarDiagnostics.md)'s flags-file gate via [`Flag`](./PerfControls/Flag.md), so Task 4's measured session can be armed by the deploy-script flags file without a Heroic env edit): when disabled every method early-returns on a single cached field read so production pays nothing.
 
 Frame model.`OnGUI` fires multiple times per rendered Unity frame (Layout, Repaint, input events). [`BeginDraw`](./PerfProbe/BeginDraw.md)/ [`EndDraw`](./PerfProbe/EndDraw.md) and [`BeginWindow`](./PerfProbe/BeginWindow.md)/[`EndWindow`](./PerfProbe/EndWindow.md)accumulate into the current frame's running totals across every pass; [`RecordFrame`](./PerfProbe/RecordFrame.md) is called exactly once per Unity frame (from the Host OnGUI sink's once-per-frame block) to (a) store the frame time, (b) commit the accumulated totals to the published [`Snapshot`](./PerfProbe/Snapshot.md), (c) reset the per-frame accumulators, and (d) bump [`FrameCounter`](./PerfProbe/FrameCounter.md).
 
@@ -15,7 +15,7 @@ public static class PerfProbe
 | name | description |
 | --- | --- |
 | static [FrameCounter](PerfProbe/FrameCounter.md) { get; } | Monotonic Unity-frame counter; bumped by [`RecordFrame`](./PerfProbe/RecordFrame.md). |
-| static [IsEnabled](PerfProbe/IsEnabled.md) { get; } | `true` when `STELLAR_PERFHUD=1` (or `=true`) at startup. |
+| static [IsEnabled](PerfProbe/IsEnabled.md) { get; } | `true` when `STELLAR_PERFHUD=1` was set in the environment, or a `PERFHUD` line is present in `stellar_perf.flags`, at startup. |
 | static [LogSink](PerfProbe/LogSink.md) | Optional log sink set by the host at boot; when non-null a per-interval summary line is written to the BepInEx log. |
 | static [BeginDraw](PerfProbe/BeginDraw.md)() | Mark the start of the OnGUI draw pass for the current frame. |
 | static [BeginSeg](PerfProbe/BeginSeg.md)(…) | Start timing a named segment within the Update path (identifies per-plugin cost). |
@@ -28,7 +28,9 @@ public static class PerfProbe
 | static [HookBegin](PerfProbe/HookBegin.md)() | Returns a start timestamp (ticks) for a hook, or 0 when disabled. |
 | static [HookBeginAlloc](PerfProbe/HookBeginAlloc.md)() | Per-thread allocated-bytes baseline for a hook (call on the hook's thread). |
 | static [HookEndCombat](PerfProbe/HookEndCombat.md)(…) | Accumulate one combat-hook invocation's wall-time + this-thread allocation. |
+| static [HookEndRewired](PerfProbe/HookEndRewired.md)(…) | Accumulate one Rewired keyboard-prefix invocation's wall-time (diagnostic counter for the render-frame-rate key-block hook; no allocation sampling so the counter stays near-free). |
 | static [HookEndWire](PerfProbe/HookEndWire.md)(…) | Accumulate one wire-tap (TCP/UDP recv) invocation's time + this-thread allocation. |
+| static [MarkDrawFrame](PerfProbe/MarkDrawFrame.md)() | Marks that the global-rate draw band ran this tick. Per-window/draw timings only refresh on these frames; on the faster master ticks between draws the last published values are held (otherwise they'd be wiped to empty and the overlay would freeze). No-op unless the harness is enabled. |
 | static [RecordFrame](PerfProbe/RecordFrame.md)(…) | Commit the frame being built and start a fresh one. |
 | static [Snapshot](PerfProbe/Snapshot.md)() | Immutable view of the last committed frame for the overlay. |
 
