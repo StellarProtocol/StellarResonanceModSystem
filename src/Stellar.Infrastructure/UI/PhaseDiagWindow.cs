@@ -14,8 +14,11 @@ using Stellar.Abstractions.Services;
 namespace Stellar.Infrastructure.UI;
 
 /// <summary>DIAGNOSTIC — remove before merge. Live readout of <see cref="IClientState.Phase"/>,
-/// <see cref="IClientState.IsWorldActive"/> and <see cref="IClientState.UiState"/>.</summary>
-internal sealed class PhaseDiagWindow
+/// <see cref="IClientState.IsWorldActive"/>, <see cref="IClientState.UiState"/>,
+/// <see cref="IClientState.CurrentSceneName"/> and <see cref="IClientState.IsLoggedIn"/>, plus fire-counters
+/// for the <see cref="IClientState.Login"/>/<see cref="IClientState.Logout"/> lifecycle events. Subscribes in
+/// the ctor and unsubscribes on <see cref="Dispose"/> (event hygiene — Host calls it from DisposePhase9).</summary>
+internal sealed class PhaseDiagWindow : IDisposable
 {
     // Single-bit flags of GameUIState, enumerated so the readout shows the exact bits set (avoids the
     // preset-mask aliasing that enum.ToString() would print, e.g. "GameHudHidden" for a bit combo) —
@@ -34,7 +37,26 @@ internal sealed class PhaseDiagWindow
 
     private readonly IClientState _clientState;
 
-    public PhaseDiagWindow(IClientState clientState) => _clientState = clientState;
+    // Login/Logout are events, not state — surface them as fire-counters incremented by the subscribed handlers.
+    private int _loginCount;
+    private int _logoutCount;
+
+    public PhaseDiagWindow(IClientState clientState)
+    {
+        _clientState = clientState;
+        _clientState.Login += OnLogin;
+        _clientState.Logout += OnLogout;
+    }
+
+    private void OnLogin() => _loginCount++;
+    private void OnLogout() => _logoutCount++;
+
+    /// <summary>Unsubscribe from the lifecycle events so the handler doesn't outlive the window.</summary>
+    public void Dispose()
+    {
+        _clientState.Login -= OnLogin;
+        _clientState.Logout -= OnLogout;
+    }
 
     public WindowRegistration BuildRegistration()
     {
@@ -50,6 +72,8 @@ internal sealed class PhaseDiagWindow
             new TextElement(() => $"UiState       {DescribeUiState(_clientState.UiState)}"),
             new TextElement(() => $"Scene         {_clientState.CurrentSceneName ?? "(null)"}"),
             new TextElement(() => $"IsLoggedIn    {_clientState.IsLoggedIn}"),
+            new TextElement(() => $"Login         x{_loginCount}"),
+            new TextElement(() => $"Logout        x{_logoutCount}"),
         }, Gap: 4f);
         return new WindowRegistration(spec, root);
     }

@@ -33,5 +33,7 @@ public sealed partial class BootstrapPlugin
         if (_toastRenderer != null && _namedTheme != null) _namedTheme.ActiveChanged -= _toastRenderer.InvalidateTheme;
         _toastRenderer?.Shutdown();
         if (_keyboardGate != null) { _keyboardGate.Dispose(); _keyboardGate = null; }
+        // DIAGNOSTIC — remove before merge. Unsubscribe the phase-diag overlay's Login/Logout handlers.
+        _phaseDiag?.Dispose();
     }
 }
