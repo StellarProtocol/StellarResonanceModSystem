@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Reflection;
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 
 namespace Stellar.Application.Services;
@@ -8,17 +9,25 @@ namespace Stellar.Application.Services;
 public sealed class NoticeTipService : INoticeTips
 {
     private readonly Action<string> _log;
+    private readonly IClientState _clientState;
     private readonly ConcurrentQueue<string> _pending = new();
     private object? _luaState;
     private MethodInfo? _luaDoString;
 
-    public NoticeTipService(Action<string> log) => _log = log;
+    public NoticeTipService(Action<string> log, IClientState clientState)
+    {
+        _log = log;
+        _clientState = clientState;
+    }
 
     public INoticeTipBuilder Create(NoticeTipType type) => new LuaNoticeTipBuilder(this, type);
 
-    // Called from the Unity main thread each frame — safe to invoke LuaState.DoString here.
+    // Called from the Unity main thread each frame — runs game Lua (DoString), so it must NOT touch the
+    // game during the world-connect handshake. Self-gates on IsWorldActive.
+    [WorldGated]
     public void Tick()
     {
+        if (!_clientState.IsWorldActive) return;
         if (_pending.IsEmpty) return;
         EnsureLuaState();
         if (_luaDoString is null) return;

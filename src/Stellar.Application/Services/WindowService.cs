@@ -16,13 +16,11 @@ internal sealed partial class WindowService : IWindowHost
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IPluginLog _log;
-    private readonly IGameMenuState _menuState;
-    private readonly IClientState _clientState;
     private readonly Dictionary<string, Entry> _windows = new();
     private float _accum;
 
-    public WindowService(IWindowRenderer renderer, IPluginLog log, IGameMenuState menuState, IClientState clientState)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _menuState = menuState; _clientState = clientState; }
+    public WindowService(IWindowRenderer renderer, IPluginLog log)
+    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; }
 
     public IWindowControl Register(WindowRegistration reg)
     {
@@ -114,11 +112,11 @@ internal sealed partial class WindowService : IWindowHost
     { try { return _renderer.Mount(e.Reg); } catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; } }
     private void SafeApply(Entry e)
     {
-        // Auto-hide gate: suppress the window's draw while a full-screen game menu is open
-        // (AutoHideBehindGameMenus) or before login (HideUntilInWorld). The renderer deactivates the root and
-        // skips the value pull when hidden — the perf win the IMGUI path got via WindowGatingPolicy. Recomputed
-        // each apply (~10 Hz), so it responds within ≤100 ms of a menu opening/closing.
-        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec, _menuState.IsFullScreenMenuOpen, _clientState.IsLoggedIn);
+        // Visibility gate: the plugin-owned ShouldRender() predicate is the single source of truth
+        // (hide = !ShouldRender()). The renderer deactivates the root and skips the value pull when hidden
+        // (the perf win — a hidden window runs zero value funcs). Recomputed each apply (~10 Hz), so it
+        // responds within ≤100 ms of the predicate flipping. (MasterHudKill is layered on in the renderer.)
+        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec);
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }

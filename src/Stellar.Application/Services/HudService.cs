@@ -15,13 +15,11 @@ internal sealed partial class HudService : IHudHost
     private const float ApplyInterval = 0.1f;   // ~10 Hz value refresh; the animator smooths bars per-frame
     private readonly IHudRenderer _renderer;
     private readonly IPluginLog _log;
-    private readonly IGameMenuState _menuState;
-    private readonly IClientState _clientState;
     private readonly Dictionary<string, Entry> _huds = new();
     private float _accum;
 
-    public HudService(IHudRenderer renderer, IPluginLog log, IGameMenuState menuState, IClientState clientState)
-    { _renderer = renderer; _log = log; _menuState = menuState; _clientState = clientState; }
+    public HudService(IHudRenderer renderer, IPluginLog log)
+    { _renderer = renderer; _log = log; }
 
     public IHudHandle Register(HudSpec spec)
     {
@@ -69,11 +67,11 @@ internal sealed partial class HudService : IHudHost
     { try { return _renderer.Mount(e.Spec); } catch (Exception ex) { _log.Warning($"[Hud/{e.Spec.Id}] mount: {ex.Message}"); return null; } }
     private void SafeApply(Entry e)
     {
-        // Auto-hide gate: gameplay HUDs (cooldowns, meter, stats) should not draw over a full-screen game menu.
-        // The renderer deactivates the root + skips the value pull when hidden (perf win). Recomputed each apply
-        // (~10 Hz) → responds within ≤100 ms of a menu opening/closing.
-        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Spec.AutoHideBehindGameMenus, e.Spec.HideUntilInWorld,
-            _menuState.IsFullScreenMenuOpen, _clientState.IsLoggedIn);
+        // Visibility gate: the plugin-owned ShouldRender() predicate is the single source of truth
+        // (hide = !ShouldRender()). A gameplay HUD hides itself when covered by reading UiState in that
+        // predicate. The renderer deactivates the root + skips the value pull when hidden (perf win).
+        // Recomputed each apply (~10 Hz) → responds within ≤100 ms of the predicate flipping.
+        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Spec);
         var id = "hud:" + e.Spec.Id;
         PerfProbe.BeginWindow(id);
         try { _renderer.ApplyValues(e.Token, e.Spec, hide); }

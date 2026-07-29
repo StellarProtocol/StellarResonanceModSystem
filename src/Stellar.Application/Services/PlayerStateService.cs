@@ -1,3 +1,4 @@
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -11,8 +12,11 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed class PlayerStateService : IPlayerState
 {
+    private readonly IClientState _clientState;
     private PlayerStateSnapshot _snapshot;
     private bool _isAvailable;
+
+    public PlayerStateService(IClientState clientState) => _clientState = clientState;
 
     public bool IsAvailable => _isAvailable;
 
@@ -31,8 +35,10 @@ internal sealed class PlayerStateService : IPlayerState
     /// <c>false</c> so consumers stop trusting stale values across logout / scene
     /// teardown.
     /// </summary>
+    [WorldGated]
     internal void Refresh(IPlayerStateProbe probe)
     {
+        if (!_clientState.IsWorldActive) return;
         if (probe.TrySample(out var snapshot))
         {
             _snapshot = snapshot;
