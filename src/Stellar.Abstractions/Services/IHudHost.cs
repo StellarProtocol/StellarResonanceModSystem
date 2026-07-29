@@ -20,14 +20,19 @@ public enum HudAnchor
     ScreenCenter = 3,
 }
 
-/// <summary>A plugin's HUD: stable id, anchor, and the root element to render. <paramref name="AutoHideBehindGameMenus"/>
-/// (default true) hides the HUD while a full-screen game menu is open — gameplay HUDs (cooldowns, meter, stats) should
-/// not draw over the inventory/menu. <paramref name="HideUntilInWorld"/> keeps it hidden until the player is logged in.
+/// <summary>A plugin's HUD: stable id, anchor, and the root element to render. Visibility is owned entirely by
+/// <see cref="ShouldRender"/> (the single source of truth — <c>hide = !ShouldRender()</c>); a gameplay HUD hides
+/// itself when covered by reading <c>UiState</c> in that predicate.
 /// <paramref name="DefaultRect"/> is the spawn position used on first run / when no layout is saved for the current
 /// resolution (clamped on-screen by the layout layer); null falls back to the renderer's initial placement (top-left).</summary>
-public sealed record HudSpec(string Id, HudAnchor Anchor, HudElement Root,
-    bool AutoHideBehindGameMenus = true, bool HideUntilInWorld = false, WindowRect? DefaultRect = null)
+public sealed record HudSpec(string Id, HudAnchor Anchor, HudElement Root, WindowRect? DefaultRect = null) : Stellar.Abstractions.Domain.IRenderGated
 {
+    /// <summary>The single source of visibility truth (<c>hide = !ShouldRender()</c>, evaluated each apply ~10 Hz).
+    /// Compiler-<c>required</c>: every <see cref="HudSpec"/> MUST set it or the build fails. A gameplay HUD typically
+    /// uses <c>() =&gt; _services.ClientState.Phase == GamePhase.World &amp;&amp;
+    /// (_services.ClientState.UiState &amp; GameUIState.GameHudHidden) == 0</c>.</summary>
+    public required Func<bool> ShouldRender { get; init; }
+
     /// <summary>When set, evaluated at mount/reset time to compute the spawn position, overriding
     /// <see cref="DefaultRect"/>. Use with <see cref="IFramework.ScreenHeight"/> to scale the
     /// initial position with screen resolution.</summary>

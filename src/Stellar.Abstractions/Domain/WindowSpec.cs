@@ -9,8 +9,15 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="DefaultRect">Initial position and size applied on first run (before user adjustments are persisted).</param>
 /// <param name="Category">Logical category that determines which group this window appears in within the layout editor.</param>
 /// <param name="Style">Visual chrome style applied to the window frame.</param>
-public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect, WindowCategory Category, WindowPanelStyle Style)
+public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect, WindowCategory Category, WindowPanelStyle Style) : IRenderGated
 {
+    /// <summary>The single source of visibility truth (<c>hide = !ShouldRender()</c>, evaluated each apply ~10 Hz).
+    /// Compiler-<c>required</c>: every <see cref="WindowSpec"/> MUST set it or the build fails. Read whatever you
+    /// want — <c>Phase</c>, <c>UiState</c>, your own state — via the plugin's captured services. Use
+    /// <c>() =&gt; true</c> for always-on chrome, <c>() =&gt; _services.ClientState.Phase == GamePhase.World</c>
+    /// for a gameplay window.</summary>
+    public required Func<bool> ShouldRender { get; init; }
+
     /// <summary>Whether the window is visible on first run (before user toggles via hotkey).</summary>
     public bool StartVisible { get; init; } = true;
 
@@ -29,23 +36,6 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// so a window can be draggable without a close button (e.g. the Settings hub).
     /// </summary>
     public bool Closable { get; init; }
-
-    /// <summary>
-    /// When true the framework stops DRAWING this window while a full-screen game
-    /// menu is open (it reappears on close), so combat HUDs behave like the native
-    /// HUD instead of floating over menus. Does NOT change the user's Show/Hide
-    /// state — purely a draw-time suppression. Defaults false.
-    /// </summary>
-    public bool AutoHideBehindGameMenus { get; init; }
-
-    /// <summary>
-    /// When true the framework stops DRAWING this window until the player is logged
-    /// in / in-world, so gameplay HUDs don't float over the title / character-select
-    /// screens. Reappears once logged in. Purely draw-time suppression (does NOT
-    /// change Show/Hide state). Defaults false — debug tools (DebugInfo, AutoNav)
-    /// leave it off so they stay visible pre-login.
-    /// </summary>
-    public bool HideUntilInWorld { get; init; }
 
     /// <summary>
     /// Content-size the window WIDTH to its body instead of fixing it to <see cref="DefaultRect"/>.Width.
