@@ -116,7 +116,11 @@ internal sealed partial class WindowService : IWindowHost
         // (hide = !ShouldRender()). The renderer deactivates the root and skips the value pull when hidden
         // (the perf win — a hidden window runs zero value funcs). Recomputed each apply (~10 Hz), so it
         // responds within ≤100 ms of the predicate flipping. (MasterHudKill is layered on in the renderer.)
-        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec);
+        // A ShouldRender that throws (a buggy plugin predicate) fails SAFE — window hidden, warned once per
+        // apply — instead of the NRE bubbling out of the tick. (A null predicate is handled in the policy.)
+        bool hide;
+        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
+        catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }

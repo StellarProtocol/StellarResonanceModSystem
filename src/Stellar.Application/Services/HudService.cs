@@ -71,7 +71,11 @@ internal sealed partial class HudService : IHudHost
         // (hide = !ShouldRender()). A gameplay HUD hides itself when covered by reading UiState in that
         // predicate. The renderer deactivates the root + skips the value pull when hidden (perf win).
         // Recomputed each apply (~10 Hz) → responds within ≤100 ms of the predicate flipping.
-        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Spec);
+        // A ShouldRender that throws fails SAFE — HUD hidden, warned — instead of the NRE bubbling out of
+        // the tick. (A null predicate — a stale plugin binary — is handled in the policy.)
+        bool hide;
+        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Spec); }
+        catch (Exception ex) { hide = true; _log.Warning($"[Hud/{e.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         var id = "hud:" + e.Spec.Id;
         PerfProbe.BeginWindow(id);
         try { _renderer.ApplyValues(e.Token, e.Spec, hide); }
