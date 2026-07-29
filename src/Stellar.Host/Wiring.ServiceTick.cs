@@ -92,6 +92,12 @@ public sealed partial class BootstrapPlugin
         // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.
         _loginViewProbe?.Tick();
         if (_loginViewProbe?.IsLoginViewActive == true) _clientState!.NotifyLoginViewActive();
+        // Loading-screen detection — ALSO un-gated, for the same reason: the loading screen is up precisely
+        // while IsWorldActive is false (the zone-load handshake), so the gated menu-state probe below is frozen
+        // and can't own the Loading bit. This pure active-state read is the SOLE owner of GameUIState.Loading,
+        // set every phase; the gated menu-state probe no longer touches that bit (SetUiState strips it).
+        _loadingScreenProbe?.Tick();
+        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
         // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.

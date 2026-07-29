@@ -240,4 +240,78 @@ public sealed class ClientStateServiceTests
         // No in-world UI at char-select — UiState never leaves None.
         Assert.Equal(GameUIState.None, svc.UiState);
     }
+
+    // --- GameUIState.Loading: owned SOLELY by the un-gated loading probe (SetLoadingActive), composed with the
+    // gated menu-state probe's bits (SetUiState) so neither stomps the other. Mirrors Host wiring in
+    // Wiring.ServiceTick.cs (loading probe ticked un-gated; menu-state probe gated on IsWorldActive). ---
+
+    [Fact]
+    public void Loading_bit_is_driven_by_the_loading_probe()
+    {
+        var (svc, _) = BuildAtTitleScreen();
+        SimOnLogin(svc);
+        SimEnterWorld(svc);
+
+        svc.SetLoadingActive(true);
+        Assert.True((svc.UiState & GameUIState.Loading) != 0);
+
+        svc.SetLoadingActive(false);
+        Assert.True((svc.UiState & GameUIState.Loading) == 0);   // no stuck bit
+    }
+
+    [Fact]
+    public void Loading_bit_survives_an_in_world_menu_recompute()
+    {
+        // The anti-stomp guarantee: the gated menu-state probe recomputing UiState (SetUiState) must never
+        // clear a live Loading bit set by the un-gated loading probe.
+        var (svc, _) = BuildAtTitleScreen();
+        SimOnLogin(svc);
+        SimEnterWorld(svc);
+
+        svc.SetLoadingActive(true);                       // un-gated probe: loading screen up
+        svc.SetUiState(GameUIState.GameHud);              // gated probe recompute (no Loading in its result)
+
+        Assert.Equal(GameUIState.GameHud | GameUIState.Loading, svc.UiState);
+    }
+
+    [Fact]
+    public void SetUiState_can_neither_set_nor_clear_the_Loading_bit()
+    {
+        var (svc, _) = BuildAtTitleScreen();
+        SimOnLogin(svc);
+        SimEnterWorld(svc);
+
+        // A menu-state result that (erroneously) carries Loading cannot set it — the probe is the sole owner.
+        svc.SetLoadingActive(false);
+        svc.SetUiState(GameUIState.Loading | GameUIState.GameHud);
+        Assert.Equal(GameUIState.GameHud, svc.UiState);   // Loading stripped, none live
+
+        // ...and a menu recompute of None cannot clear a live loading screen.
+        svc.SetLoadingActive(true);
+        svc.SetUiState(GameUIState.None);
+        Assert.Equal(GameUIState.Loading, svc.UiState);
+    }
+
+    [Fact]
+    public void Loading_stays_set_across_an_in_world_zone_load()
+    {
+        // Real scenario: in-world zone load. IsWorldActive dips false → the gated menu-state probe is frozen
+        // (no SetUiState), while the un-gated loading probe keeps reporting. Phase stays World throughout.
+        var (svc, changes) = BuildAtTitleScreen();
+        SimOnLogin(svc);
+        SimEnterWorld(svc);
+        svc.SetUiState(GameUIState.GameHud);              // stable world HUD
+        changes.Clear();
+
+        // Zone load begins: loading screen up (gated probe would be frozen — SetUiState not called).
+        svc.SetLoadingActive(true);
+        Assert.Equal(GameUIState.GameHud | GameUIState.Loading, svc.UiState);
+        Assert.Equal(GamePhase.World, svc.Phase);         // phase steady across the load
+
+        // Load ends: loading screen closes, gated probe resumes and recomputes.
+        svc.SetLoadingActive(false);
+        svc.SetUiState(GameUIState.GameHud);
+        Assert.Equal(GameUIState.GameHud, svc.UiState);   // Loading OFF in stable world
+        Assert.Empty(changes);                            // no phase churn
+    }
 }

@@ -18,6 +18,9 @@ public sealed partial class BootstrapPlugin
     // the Host's UN-gated per-tick path (RunGlobalRateWork), NOT _framework.Tick — it must run in Startup
     // where IsWorldActive is false. A pure UI active-state read, safe every phase (like the draw services).
     private Stellar.Infrastructure.Game.PandaLoginViewProbe? _loginViewProbe;
+    // Loading-screen probe: sole owner of GameUIState.Loading. Also ticked UN-gated (RunGlobalRateWork) because
+    // the loading screen is up exactly while IsWorldActive is false, when the gated menu-state probe is frozen.
+    private Stellar.Infrastructure.Game.PandaLoadingScreenProbe? _loadingScreenProbe;
 
     private void BuildInputAndLayoutServices(BepInExPluginLog log)
     {
@@ -36,6 +39,7 @@ public sealed partial class BootstrapPlugin
 
         _menuState = new Stellar.Infrastructure.Game.PandaMenuStateProbe();
         _loginViewProbe = new Stellar.Infrastructure.Game.PandaLoginViewProbe();
+        _loadingScreenProbe = new Stellar.Infrastructure.Game.PandaLoadingScreenProbe();
         // Perf harness: route PerfProbe's periodic summary lines to the framework
         // log so the numbers are readable headlessly (scenario runs / log tail),
         // not only on the on-screen overlay. No-op unless STELLAR_PERFHUD=1.

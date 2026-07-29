@@ -14,9 +14,11 @@ namespace Stellar.Infrastructure.Game;
 /// <item>Any child of zuiroot/UILayerDramaBottom is active (NPC talk_main, talk_dialog_window, talk_option_window, …).</item>
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
-/// <item>The loading screen (zuiroot/UILayerSystemTip/loading_window) is active.</item>
 /// <item>The dungeon/world-boss queue-pop confirm (common_matching / world_boss_matching) is active under zuiroot/UILayerTop.</item>
 /// </list>
+/// The loading screen (zuiroot/UILayerSystemTip/loading_window) is intentionally NOT detected here: it is up
+/// exactly while <c>IsWorldActive</c> is false, when this probe (ticked inside the gated <c>_framework.Tick</c>)
+/// is frozen. The <see cref="GameUIState.Loading"/> bit is owned by the un-gated <see cref="PandaLoadingScreenProbe"/>.
 /// UILayerFunc is the game's dedicated layer for full-screen functional windows — each
 /// created+activated on open and gone when closed, so "any active child" is a robust,
 /// menu-agnostic signal. The three Drama layers cover NPC dialogue and story cutscenes;
@@ -43,8 +45,6 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private const string MainLayerName       = "UILayerMain";
     private const string MainMenuRelPath     = "UILayerMain/main_funcs_list_window_pc(Clone)";
     private const string LineWindowPrefix    = "main_line_window";     // line selector panel (SwitchLine)
-    private const string SystemTipLayerName  = "UILayerSystemTip";
-    private const string LoadingWindowPrefix = "loading_window";       // matches loading_window_pc(Clone) etc.
     private const string TopLayerName        = "UILayerTop";
     private const string MatchConfirmPrefix  = "common_matching";      // dungeon queue-pop confirm; IsFullScreen=true
     private const string BossMatchPrefix     = "world_boss_matching";  // world-boss queue confirm
@@ -94,7 +94,8 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         if (PrefixChildActive(root, MainLayerName, GameHudPrefix)) s |= GameUIState.GameHud;
         if (NamedWindowActive(root, MainMenuRelPath))              s |= GameUIState.MainMenu;
         if (PrefixChildActive(root, MainLayerName, LineWindowPrefix)) s |= GameUIState.LineSelector;
-        if (LoadingScreenActive(root))                            s |= GameUIState.Loading;
+        // NOTE: GameUIState.Loading is NOT set here — it is owned by the un-gated PandaLoadingScreenProbe
+        // (this menu-state probe is frozen during a load, when IsWorldActive is false). See that probe.
         if (MatchConfirmActive(root))                             s |= GameUIState.Matchmaking;
         if (AnyChildActive(root, FuncLayerName) || AnyChildActive(root, FuncPopupLayerName))
             s |= GameUIState.FullScreenMenu;
@@ -111,12 +112,6 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         var t = root.Find(relPath);
         return t != null && t.gameObject.activeInHierarchy;
     }
-
-    // UILayerSystemTip also hosts tips_broadcast/sys_dialog (active during normal play),
-    // so we can't use AnyChildActive. Scan by name prefix to match both
-    // "loading_window" and "loading_window_pc(Clone)" regardless of Instantiate suffix.
-    private static bool LoadingScreenActive(Transform root)
-        => PrefixChildActive(root, SystemTipLayerName, LoadingWindowPrefix);
 
     // common_matching and world_boss_matching: Lua-configured on UILayerTop, IsFullScreen=true.
     private static bool MatchConfirmActive(Transform root)
