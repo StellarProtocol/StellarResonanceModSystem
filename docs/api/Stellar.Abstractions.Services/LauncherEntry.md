@@ -15,6 +15,7 @@ public record LauncherEntry
 | [IconKey](LauncherEntry/IconKey.md) { get; set; } |  |
 | [IconPng](LauncherEntry/IconPng.md) { get; set; } |  |
 | [OnOpen](LauncherEntry/OnOpen.md) { get; set; } |  |
+| [ShouldShow](LauncherEntry/ShouldShow.md) { get; set; } | Optional phase/state gate for the tile's visibility in the launcher menu, evaluated live each time the menu draws (a pull, like [`ShouldRender`](../Stellar.Abstractions.Domain/IRenderGated/ShouldRender.md)). `null` (the default) means the tile is shown in every phase. Return `false` to hide it — e.g. `ShouldShow = () => services.ClientState.Phase == GamePhase.World` for a gameplay-only tool. Applies only to the plugin tile; the framework's own ⚙ Settings entry is always shown. |
 | [Title](LauncherEntry/Title.md) { get; set; } |  |
 
 ## See Also

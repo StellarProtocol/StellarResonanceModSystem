@@ -2,7 +2,7 @@
 
 Coarse client lifecycle phase — a first-class, framework-owned signal distinct from session state ([`IsLoggedIn`](../Stellar.Abstractions.Services/IClientState/IsLoggedIn.md)). A plugin reads it to decide window visibility (via [`ShouldRender`](./IRenderGated/ShouldRender.md)), e.g. a gameplay window that only draws in World, or a login-screen tool that draws in TitleScreen.
 
-Ordered by lifecycle (TitleScreen → CharSelect → World). The values are a runtime signal only — nothing persists, serializes, or wires them, so the members may be re-ordered or inserted without a compatibility break. The framework gates nothing on this value; it is a signal a plugin reads. The only protective gate is [`IsWorldActive`](../Stellar.Abstractions.Services/IClientState/IsWorldActive.md).
+Ordered by lifecycle (Startup → TitleScreen → CharSelect → World). The values are a runtime signal only — nothing persists, serializes, or wires them, so the members may be re-ordered or inserted without a compatibility break. The framework gates nothing on this value; it is a signal a plugin reads. The only protective gate is [`IsWorldActive`](../Stellar.Abstractions.Services/IClientState/IsWorldActive.md).
 
 ```csharp
 public enum GamePhase
@@ -12,9 +12,10 @@ public enum GamePhase
 
 | name | value | description |
 | --- | --- | --- |
-| TitleScreen | `0` | Boot, title, and login — before the game's `OnLogin` fires. A login-screen tool (account switcher, server picker) targets this phase alone. |
-| CharSelect | `1` | The character-select screen. Entered on the game's `OnLogin` event (which empirically fires when char-select appears — [`IsLoggedIn`](../Stellar.Abstractions.Services/IClientState/IsLoggedIn.md) becomes true there, NOT at world-connect). The Unity scene name does not change between title and char-select, so this phase is the only signal that distinguishes them. Cancelling back to title fires `OnLogout` (TitleScreen). |
-| World | `2` | The player is in a world scene. Stays World across in-world zone loads (unlike [`IsWorldActive`](../Stellar.Abstractions.Services/IClientState/IsWorldActive.md), which dips false mid-transition). |
+| Startup | `0` | Boot / loading, before the login UI exists — the INITIAL phase at process start. A login-screen tool must NOT draw here (the login view isn't up yet). The framework latches Startup → TitleScreen once it detects the game's login view active. |
+| TitleScreen | `1` | The login screen is actually up (the game's `login_main` view is active). Entered — and latched (never flickers back to Startup) — when the framework detects that view. A login-screen tool (account switcher, server picker) targets this phase alone. |
+| CharSelect | `2` | The character-select screen. Entered on the game's `OnLogin` event (which empirically fires when char-select appears — [`IsLoggedIn`](../Stellar.Abstractions.Services/IClientState/IsLoggedIn.md) becomes true there, NOT at world-connect). The Unity scene name does not change between title and char-select, so this phase is the only signal that distinguishes them. Cancelling back to title fires `OnLogout` (TitleScreen). |
+| World | `3` | The player is in a world scene. Stays World across in-world zone loads (unlike [`IsWorldActive`](../Stellar.Abstractions.Services/IClientState/IsWorldActive.md), which dips false mid-transition). |
 
 ## See Also
 

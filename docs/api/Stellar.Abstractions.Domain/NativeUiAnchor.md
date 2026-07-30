@@ -12,6 +12,7 @@ public enum NativeUiAnchor
 | --- | --- | --- |
 | MainMenuRail | `0` | The Main Menu vertical side-rail (Settings/Friends/Mail…). |
 | HudTopRight | `1` | An always-on HUD container in the top-right of the world HUD. |
+| LoginSidebar | `2` | The title-screen login sidebar (the vertical button column next to Settings/Switch-account). Only exists while the login view is up, so injecting here is inherently title-screen-only. |
 
 ## See Also
 

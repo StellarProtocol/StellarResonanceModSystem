@@ -11,7 +11,9 @@ public interface IHotkeyAction : IDisposable
 | name | description |
 | --- | --- |
 | [CurrentBinding](IHotkeyAction/CurrentBinding.md) { get; } | The currently active user binding, or null when no binding is set. |
+| [Description](IHotkeyAction/Description.md) { get; } | The human-readable label from [`Description`](./HotkeyAction/Description.md). Never null (empty when undeclared). |
 | [Id](IHotkeyAction/Id.md) { get; } | The stable id this action was registered with. |
+| [PluginId](IHotkeyAction/PluginId.md) { get; } | Guid of the plugin that declared this action, or null for framework-declared actions (those go straight to the shared hotkey service, not through a per-plugin `IHotkeys`). Lets the Settings → Hotkeys panel group by real plugin identity instead of guessing it from the id prefix. |
 
 ## See Also
 

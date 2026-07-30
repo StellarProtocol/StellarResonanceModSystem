@@ -43,6 +43,8 @@ public interface IStellarPlugin : IDisposable
 }
 ```
 
+`Name` is **user-visible UI text**, not a log string: the framework adopts it as your plugin's display name the first time it constructs you, and shows it in **Settings → Plugins**, the per-plugin rate rows in **Settings → Performance**, and as the group header for your hotkeys in **Settings → Hotkeys**. Give it a human-readable name (`"Mahiru Utility"`, not `"StellarMahiruUtilityPlugin"`); keep it short, since those columns are fixed-width and clip. Return empty and the framework falls back to your assembly's short name.
+
 The framework constructs your plugin once via constructor injection of `IPluginServices`, and calls `Dispose()` on shutdown or when the user disables the plugin in **Settings → Plugins**. Everything you do — registering windows/HUDs, subscribing to events, declaring hotkeys, owning colours — happens in the constructor; everything you registered must be released in `Dispose()`.
 
 ## What's in the toolbox: `IPluginServices`
