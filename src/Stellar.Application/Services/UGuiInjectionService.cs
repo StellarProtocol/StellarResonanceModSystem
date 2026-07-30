@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 
@@ -22,13 +23,28 @@ internal sealed class UGuiInjectionService : INativeUiHost
     private const float IntervalSeconds = 0.2f; // ~5 Hz probe + refresh cadence
 
     private readonly IUGuiCanvasAdapter _adapter;
+    private readonly IClientState _clientState;
     private readonly List<Registration> _regs = new();
     private float _sinceTick;
 
-    public UGuiInjectionService(IUGuiCanvasAdapter adapter)
+    public UGuiInjectionService(IUGuiCanvasAdapter adapter, IClientState clientState)
     {
         _adapter = adapter;
+        _clientState = clientState;
     }
+
+    // Each anchor's host container only exists in certain client phases; probing it elsewhere is pure waste
+    // (the service now ticks in EVERY phase from its un-gated call site, so without this the LoginSidebar
+    // anchor would GameObject.Find in-world and the in-world anchors would probe at the title screen). Skipping
+    // out-of-phase needs no manual teardown — the game destroys the injected element when its parent view is
+    // torn down; we simply stop re-probing until the phase returns.
+    private static bool IsAnchorRelevant(NativeUiAnchor anchor, GamePhase phase) => anchor switch
+    {
+        NativeUiAnchor.LoginSidebar => phase == GamePhase.TitleScreen,   // login view exists only at the title screen
+        NativeUiAnchor.MainMenuRail => phase == GamePhase.World,         // ESC main-menu rail is in-world only
+        NativeUiAnchor.HudTopRight  => phase == GamePhase.World,         // world HUD is in-world only
+        _                           => true,                            // unknown anchors: probe every phase
+    };
 
     public INativeUiElementHandle Register(NativeUiElementSpec spec)
     {
@@ -43,9 +59,13 @@ internal sealed class UGuiInjectionService : INativeUiHost
         if (_sinceTick < IntervalSeconds) return;
         _sinceTick = 0f;
 
+        var phase = _clientState.Phase;
         foreach (var reg in _regs)
         {
             if (reg.Removed) continue;
+            // Skip the resolve/inject entirely when the anchor's host can't exist in this phase — zero probing
+            // cost out-of-phase (before any GameObject.Find / ResolveParent work).
+            if (!IsAnchorRelevant(reg.Spec.Anchor, phase)) continue;
             if (!_adapter.IsAlive(reg.ElementRef))
             {
                 reg.ElementRef = null;

@@ -27,7 +27,7 @@ public sealed partial class BootstrapPlugin
         // Phase 9d: declarative mod-uGUI injection into game canvases. The adapter
         // resolves anchors lazily at Tick, so it's safe to build this early.
         var uguiAdapter = new Stellar.Infrastructure.Game.PandaUGuiAdapter(log, _themeRenderer!);
-        var uguiInjection = new Stellar.Application.Services.UGuiInjectionService(uguiAdapter);
+        var uguiInjection = new Stellar.Application.Services.UGuiInjectionService(uguiAdapter, _clientState!);
         _uguiInjection = uguiInjection;
         // NOTE: uguiInjection.Tick is NOT subscribed to _framework.Update — that path fires inside
         // _framework.Tick, which is IsWorldActive-gated, so it would freeze at the title screen and the
