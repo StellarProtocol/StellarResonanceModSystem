@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Hosting;
 using Stellar.Application.Services;
 using Xunit;
 
@@ -195,6 +196,48 @@ public sealed class HotkeyServiceTests
         // Duplicate declarations should be a logged warning, not a crash; the
         // second registration replaces the callback but reuses the handle.
         Assert.Same(h1, h2);
+    }
+
+    // ---- owner tagging (Settings → Hotkeys groups on PluginId, labels rows with Description) ----
+
+    [Fact]
+    public void DeclareAction_ViaPublicInterface_IsFrameworkOwnedAndKeepsDescription()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+
+        var handle = svc.DeclareAction(new HotkeyAction("framework.settings-toggle", "Toggle Stellar Settings", null), () => { });
+
+        Assert.Null(handle.PluginId);   // null PluginId is what makes the panel's "framework" fallback fire
+        Assert.Equal("Toggle Stellar Settings", handle.Description);
+    }
+
+    [Fact]
+    public void PerPluginHotkeys_TagsDeclarationWithOwningPluginGuid()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+        var scoped = new PerPluginHotkeys("stellarmahiruutilityplugin", svc);
+
+        var handle = scoped.DeclareAction(new HotkeyAction("mahiru.toggle", "Toggle Mahiru", null), () => { });
+
+        Assert.Equal("stellarmahiruutilityplugin", handle.PluginId);
+        Assert.Equal("Toggle Mahiru", handle.Description);
+        Assert.Same(handle, Assert.Single(((IHotkeyDirectory)svc).Actions));
+    }
+
+    [Fact]
+    public void PerPluginHotkeys_DuplicateId_ReplacesCallbackAndKeepsFirstOwner()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+        var first  = new PerPluginHotkeys("plugin.a", svc);
+        var second = new PerPluginHotkeys("plugin.b", svc);
+
+        var a = first.DeclareAction(new HotkeyAction("dup", "A", new KeyBinding(StellarKeyCode.F9)), () => { });
+        var b = second.DeclareAction(new HotkeyAction("dup", "B", null), () => { });
+
+        Assert.Same(a, b);                       // existing "declared twice; replacing callback" behaviour
+        Assert.Equal("plugin.a", a.PluginId);    // owner (and Description) belong to the first declaration
+        Assert.Equal("A", a.Description);
+        Assert.Single(((IHotkeyDirectory)svc).Actions);
     }
 
     // Test doubles

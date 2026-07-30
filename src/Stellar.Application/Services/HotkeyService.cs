@@ -7,7 +7,7 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
-internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDirectory
+internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDirectory, IHotkeyOwnedDeclarations
 {
     private const string UnboundSentinel = "_unbound_";
     private static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(30);
@@ -92,7 +92,17 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
 
     bool IHotkeyBlockDirectory.GetBlockAllFromGame() => _blockAllFromGame;
 
+    /// <summary>Plugin-facing declare. Anything reaching this overload declared without an owner
+    /// (the framework's own actions), so it registers with a null PluginId.</summary>
     public IHotkeyAction DeclareAction(HotkeyAction action, Action callback)
+        => Declare(action, callback, pluginId: null);
+
+    /// <summary>Owner-tagged declare, used by <c>PerPluginHotkeys</c> so the Hotkeys panel can
+    /// group rows by real plugin identity rather than by the action id's prefix.</summary>
+    IHotkeyAction IHotkeyOwnedDeclarations.DeclareAction(HotkeyAction action, Action callback, string? pluginId)
+        => Declare(action, callback, pluginId);
+
+    private IHotkeyAction Declare(HotkeyAction action, Action callback, string? pluginId)
     {
         if (_actions.TryGetValue(action.Id, out var existing))
         {
@@ -103,7 +113,13 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
 
         _suggestedDefaults[action.Id] = action.SuggestedDefault;
         var resolved = ResolveBinding(action);
-        var registered = new RegisteredAction(action.Id, resolved, callback, _actions, InvalidateActionsCache);
+        // PluginId/Description are init properties, not ctor args — RegisteredAction's ctor is
+        // already at 5 params and two more would trip the STELLAR0004 ctor-dependency gate.
+        var registered = new RegisteredAction(action.Id, resolved, callback, _actions, InvalidateActionsCache)
+        {
+            PluginId = pluginId,
+            Description = action.Description ?? string.Empty,
+        };
         _actions[action.Id] = registered;
         _cachedActionsList = null;   // invalidate the snapshot served to IHotkeyDirectory consumers
         SyncBlockedKeys();
@@ -301,6 +317,8 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
         public string      Id              { get; }
         public KeyBinding? CurrentBinding  { get; internal set; }
         public Action      Callback        { get; internal set; }
+        public string?     PluginId        { get; init; }
+        public string      Description     { get; init; } = "";
 
         public void Dispose()
         {

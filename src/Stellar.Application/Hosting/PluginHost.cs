@@ -102,7 +102,7 @@ internal sealed class PluginHost : IDisposable
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
-        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData);
+        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid));
 
         Func<IPluginServices, object> factory = sharedServices =>
             BuildAndInvoke(ctor, bindContext, frameworkCell, sharedServices);
@@ -112,6 +112,18 @@ internal sealed class PluginHost : IDisposable
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
     }
+
+    /// <summary>
+    /// The plugin's own <see cref="IHotkeys"/> — every action it declares gets tagged with
+    /// <paramref name="pluginGuid"/> so Settings → Hotkeys can group by real plugin identity
+    /// instead of guessing the owner from the action id's prefix.
+    /// Resolved lazily (not in the ctor) because the shared services bag is fully wired by the
+    /// time LoadFrom runs. Returns null when the shared service doesn't expose the internal
+    /// declaration sink, in which case PerPluginServices falls back to the untagged shared one.
+    /// Extracted from RegisterOne to keep it under the 50-LoC gate (STELLAR0002).
+    /// </summary>
+    private IHotkeys? ScopedHotkeys(string pluginGuid)
+        => _services.Hotkeys is IHotkeyOwnedDeclarations sink ? new PerPluginHotkeys(pluginGuid, sink) : null;
 
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
     // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
@@ -125,7 +137,8 @@ internal sealed class PluginHost : IDisposable
     {
         var perPluginFramework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
         frameworkCell.Value = perPluginFramework;
-        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework, bind.PerPluginData);
+        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework,
+                                                     bind.PerPluginData, bind.PerPluginHotkeys);
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -139,8 +152,10 @@ internal sealed class PluginHost : IDisposable
 
     // Bundles per-plugin bind inputs so BuildAndInvoke's parameter list stays
     // within the STELLAR0003 cap (>5 params = error) as A4 adds perPluginData
-    // alongside the existing pluginGuid + perPluginConfig.
-    private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig, IPluginDataStore PerPluginData);
+    // alongside the existing pluginGuid + perPluginConfig. PerPluginHotkeys rides
+    // along here for the same reason — BuildAndInvoke is already at the cap.
+    private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig,
+                                                    IPluginDataStore PerPluginData, IHotkeys? PerPluginHotkeys);
 
     public void Dispose()
     {
