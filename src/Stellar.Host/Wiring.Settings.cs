@@ -36,7 +36,7 @@ public sealed partial class BootstrapPlugin
         var panels = new SettingsPanelSet
         {
             Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled),
-            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer),   // _pluginRegistry = IPluginInventory (group-header names)
+            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
             Themes  = new ThemesPanel(_namedTheme, _namedTheme, _themeRenderer, _colorRegistry!, _customThemes!),
             Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer),
             GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log),

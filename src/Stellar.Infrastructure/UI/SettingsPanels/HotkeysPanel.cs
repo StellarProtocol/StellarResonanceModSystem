@@ -24,6 +24,10 @@ internal sealed partial class HotkeysPanel
     private readonly IHotkeyBlockDirectory _blockDirectory;
     private readonly IPluginInventory _inventory;
     private readonly ITheme _theme;
+    // Header text for the framework's own hotkey group. Injected because the string's single source of
+    // truth is BootstrapPlugin.PluginName in Stellar.Host, and Infrastructure cannot reference Host
+    // (the dependency runs Host -> Infrastructure only). Wiring.Settings passes it down.
+    private readonly string _frameworkGroupLabel;
     private Filter _filter = Filter.All;
     private string? _capturingActionId;
     // Last drawn screen rect of the [ … ] cell that initiated the active
@@ -43,12 +47,14 @@ internal sealed partial class HotkeysPanel
     private HudElement FilterChip(string label, Filter f)
         => new ButtonElement(() => label, () => { _filter = f; }, null, null, Active: () => _filter == f);
 
-    public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, IPluginInventory inventory, ITheme theme)
+    public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, IPluginInventory inventory,
+                        ITheme theme, string frameworkGroupLabel)
     {
         _directory = directory;
         _blockDirectory = blockDirectory;
         _inventory = inventory;
         _theme = theme;
+        _frameworkGroupLabel = frameworkGroupLabel;
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
         _directory.BindingChanged += OnBindingChanged;
@@ -204,10 +210,22 @@ internal sealed partial class HotkeysPanel
     private static string GroupKeyOf(IHotkeyAction a)
         => string.IsNullOrEmpty(a.PluginId) ? GroupOf(a.Id) : a.PluginId!;
 
-    /// <summary>Header text for a group: the plugin's own declared name, else the id prefix
-    /// (which is what framework actions and any not-yet-inventoried plugin resolve to).</summary>
-    private static string GroupLabelOf(IHotkeyAction a, Dictionary<string, string> names)
-        => names.TryGetValue(GroupKeyOf(a), out var n) ? n : GroupOf(a.Id);
+    /// <summary>The framework owns an action when its id is <c>framework.*</c>. Deliberately NOT
+    /// <c>PluginId is null</c>: an untagged plugin action also has a null PluginId and must keep
+    /// falling back to its own id prefix rather than being mislabelled as framework-owned.
+    /// This is the single predicate behind the group label, the sort, and the filter chips.</summary>
+    private static bool IsFrameworkAction(IHotkeyAction a)
+        => a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
+
+    /// <summary>Header text for a group: the framework's product name for its own actions, else the
+    /// plugin's declared name, else the id prefix (a plugin absent from the inventory, or one whose
+    /// actions were declared without an owner). LABEL ONLY — GroupKey is untouched, so this changes
+    /// neither the collapse state nor the sort position of the framework group.</summary>
+    private string GroupLabelOf(IHotkeyAction a, Dictionary<string, string> names)
+    {
+        if (IsFrameworkAction(a)) return _frameworkGroupLabel;
+        return names.TryGetValue(GroupKeyOf(a), out var n) ? n : GroupOf(a.Id);
+    }
 
     /// <summary>Row text: the declared human-readable description, falling back to the
     /// prefix-stripped id for actions that shipped without one.</summary>
@@ -277,8 +295,8 @@ internal sealed partial class HotkeysPanel
             var list = new List<IHotkeyAction>(live);
             list.Sort((a, b) =>
             {
-                var aFw = a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
-                var bFw = b.Id.StartsWith("framework.", System.StringComparison.Ordinal);
+                var aFw = IsFrameworkAction(a);
+                var bFw = IsFrameworkAction(b);
                 if (aFw != bFw) return aFw ? 1 : -1;   // framework actions always sort last
                 // GroupKey before Id: RebuildDisplay starts a new header whenever the key
                 // changes, so same-group rows MUST be adjacent. Sorting on Id alone was only
@@ -295,7 +313,7 @@ internal sealed partial class HotkeysPanel
         _filteredScratch.Clear();
         foreach (var a in _sortedActionsCache)
         {
-            var isFw = a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
+            var isFw = IsFrameworkAction(a);
             if (_filter == Filter.Plugins && isFw) continue;
             if (_filter == Filter.Framework && !isFw) continue;
             _filteredScratch.Add(a);
