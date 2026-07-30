@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
+using Stellar.Abstractions.Plugins;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 
@@ -144,6 +145,15 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
         {
             slot.Instance = slot.Factory(_services);
             slot.Info = slot.Info with { IsEnabled = true, IsErrored = false, LastErrorMessage = null };
+            // Adopt the plugin's OWN declared name now that an instance exists.
+            // PluginHost can only seed DisplayName from the assembly short name
+            // ("StellarMahiruUtilityPlugin") because IStellarPlugin.Name requires
+            // construction — this is the first moment the real name ("Mahiru Utility")
+            // is readable. Instance is typed object (the factory returns object), so
+            // the `is` pattern is required. The non-empty guard stops a plugin that
+            // returns "" from blanking its row in the Plugins / Performance panels.
+            if (slot.Instance is IStellarPlugin p && !string.IsNullOrWhiteSpace(p.Name))
+                slot.Info = slot.Info with { DisplayName = p.Name };
             _disabledIds.Remove(slot.Info.Id);
             // Distinguish first construction from a soft-cycle reconstruction
             // so post-mortem log diffs can tell the two apart. The slot's
