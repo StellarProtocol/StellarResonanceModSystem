@@ -240,7 +240,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     // the uGUI theme assets (WindowThemeAssets / HudThemeAssets) bake themselves on demand.
     private void SetupPerfOverlay()
     {
-        _perfOverlay = new PerfOverlayWindow();   // registered as a uGUI window in Phase 9 (needs _windowService)
+        _perfOverlay = new PerfOverlayWindow(_clientState!);   // registered as a uGUI window in Phase 9 (needs _windowService)
         _hotkeyService?.DeclareAction(
             new HotkeyAction(
                 Id: "framework.perf-toggle",

@@ -33,11 +33,15 @@ internal sealed class PerfOverlayWindow
     private bool _sortDesc = true;
     private void SetSort(SortKey k) { if (_sortKey == k) _sortDesc = !_sortDesc; else { _sortKey = k; _sortDesc = k != SortKey.Name; } }
 
+    private readonly IClientState _clientState;
+    public PerfOverlayWindow(IClientState clientState) => _clientState = clientState;
+
     public WindowRegistration BuildRegistration()
     {
         var spec = new WindowSpec("stellar.perf-overlay", "Stellar Perf",
             new WindowRect(1621f, 275f, 460f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-        { ShouldRender = () => true, StartVisible = PerfProbe.IsEnabled, Draggable = true };
+        // Framework chrome (dev-only) — hide over the loading screen; otherwise shown in every phase.
+        { ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0, StartVisible = PerfProbe.IsEnabled, Draggable = true };
 
         var readout = new ColumnElement(new HudElement[]
         {

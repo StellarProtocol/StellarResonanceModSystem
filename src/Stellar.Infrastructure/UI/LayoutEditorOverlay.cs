@@ -43,6 +43,7 @@ internal sealed partial class LayoutEditorOverlay
     private readonly LayoutStorage _storage;
     private readonly ITheme _theme;
     private readonly IPluginLog _log;
+    private readonly IClientState _clientState;   // for the toolbar window's loading-screen ShouldRender gate
     private NativeUiService? _nativeUi;   // bound late via SetNativeUi (Phase 9a)
     private HudService? _hud;             // bound late via SetHud (Task 6)
 
@@ -63,13 +64,14 @@ internal sealed partial class LayoutEditorOverlay
     private readonly UGuiInputBlocker _editInputBlocker = new(EditBlockerSortingOrder);
 
     public LayoutEditorOverlay(LayoutEditorService editor, IInputGateway input,
-                                LayoutStorage storage, ITheme theme, IPluginLog log)
+                                LayoutStorage storage, ITheme theme, IPluginLog log, IClientState clientState)
     {
         _editor = editor;
         _input = input;
         _storage = storage;
         _theme = theme;
         _log = log;
+        _clientState = clientState;
     }
 
     /// <summary>True while layout edit-mode is active — its chrome draws through OnGUI,

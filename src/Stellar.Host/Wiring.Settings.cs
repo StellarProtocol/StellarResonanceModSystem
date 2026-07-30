@@ -88,7 +88,8 @@ public sealed partial class BootstrapPlugin
         var tab = 0;
         var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
             new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
-        { ShouldRender = () => true, Closable = true, Draggable = true, StartVisible = false };
+        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
+        { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, Closable = true, Draggable = true, StartVisible = false };
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
         // Colour editor: coalesce ColorPicker-drag edits to one persist+rebake on mouse-release.

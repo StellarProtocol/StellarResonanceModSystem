@@ -44,7 +44,7 @@ public sealed partial class BootstrapPlugin
         // log so the numbers are readable headlessly (scenario runs / log tail),
         // not only on the on-screen overlay. No-op unless STELLAR_PERFHUD=1.
         Stellar.Abstractions.Diagnostics.PerfProbe.LogSink = log.Info;
-        _layoutOverlay = new LayoutEditorOverlay(_layoutEditor, _inputGateway, _layoutStorage, _themeRenderer!, log);
+        _layoutOverlay = new LayoutEditorOverlay(_layoutEditor, _inputGateway, _layoutStorage, _themeRenderer!, log, _clientState!);
 
         // Framework-level edit-mode hotkey (Shift+` toggles layout edit mode).
         // Previously tried Shift+F12, Ctrl+F1, and Shift+F1 — all failed to fire
