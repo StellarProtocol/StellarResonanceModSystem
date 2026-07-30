@@ -74,6 +74,20 @@ internal sealed partial class HotkeysPanel
     public bool IsCapturing => _capturingActionId is not null;
 
     private const int MaxRows = 64;
+    // Fixed width for the action-row label. Rows show the plugin-authored HotkeyAction.Description,
+    // which runs to ~40 chars ("Cycle CombatMeter metric (DPS/HPS/Taken)") and WRAPPED to two lines,
+    // making row heights uneven inside the 260f scroll. Width + NoWrap clips instead (a fixed-width
+    // NoWrap TextElement gets its own RectMask2D, so it truncates inside its own cell rather than
+    // spilling onto the binding cell) — see WindowBuilder-Patterns.md.
+    //
+    // 315f is the HARD ceiling, measured not guessed: 567f usable row width (600f hub − 24f GlassMenu
+    // body padding − 9f scroll viewport inset for the scrollbar) − 18f indent − 210f binding cell −
+    // 3 × 8f row gaps. Two traps in that sum: RowElement's gap DEFAULTS to 8f (the builder maps
+    // Gap: 0f → RowGap, so a zero gap is not expressible), and a Width > 0 TextElement is pinned
+    // (minWidth == preferredWidth, flexibleWidth 0) so it CANNOT be squeezed — go over 315f and the
+    // summed minWidths overflow the viewport and the mask clips the binding cell instead.
+    // 300f leaves ~15f of visible spacer so the row still reads label-left / cell-right.
+    private const float RowLabelWidth = 300f;
     // Flattened display list rebuilt once per apply (in the list's outer Conditional When, which runs before the
     // slot Funcs): one HEADER row per plugin group + an action row per binding (omitted when the group is
     // collapsed). Lets the list track hotkeys DECLARED AFTER the hub is built (plugins load post-wiring) AND
@@ -221,12 +235,12 @@ internal sealed partial class HotkeysPanel
                     }),
                     // Collapse state keys on GroupKey — the label is display-only and mutates.
                     OnClick: () => ToggleGroup(Row().GroupKey))),
-            // Action row — indented short name + binding cell.
+            // Action row — indented description (clipped to one line) + binding cell.
             new ConditionalElement(() => idx < _display.Count && !_display[idx].IsHeader,
                 new RowElement(new HudElement[]
                 {
                     new SpacerElement(Width: 18f),
-                    new TextElement(() => RowLabel(Row().Action)),
+                    new TextElement(() => RowLabel(Row().Action), Width: RowLabelWidth, NoWrap: true),
                     new SpacerElement(),
                     new ButtonElement(
                         // While capturing, the cell hints the keys: Del clears the binding (unbind), Esc cancels.

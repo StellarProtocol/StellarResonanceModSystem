@@ -123,7 +123,16 @@ internal sealed class PluginHost : IDisposable
     /// Extracted from RegisterOne to keep it under the 50-LoC gate (STELLAR0002).
     /// </summary>
     private IHotkeys? ScopedHotkeys(string pluginGuid)
-        => _services.Hotkeys is IHotkeyOwnedDeclarations sink ? new PerPluginHotkeys(pluginGuid, sink) : null;
+    {
+        if (_services.Hotkeys is IHotkeyOwnedDeclarations sink) return new PerPluginHotkeys(pluginGuid, sink);
+        // Unreachable today (HotkeyService implements the sink). Reachable if anyone later wraps the
+        // shared IHotkeys in a decorator without forwarding the sink — and the symptom would be
+        // invisible: every action silently falls back to PluginId == null, so the Hotkeys panel
+        // groups by id prefix, which looks exactly like working correctly. Log it so it isn't silent.
+        _log.Warning($"[PluginHost] shared IHotkeys ({_services.Hotkeys.GetType().Name}) does not expose " +
+                     $"owner-tagged declarations; '{pluginGuid}' hotkeys will group by id prefix, not plugin identity.");
+        return null;
+    }
 
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
     // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
