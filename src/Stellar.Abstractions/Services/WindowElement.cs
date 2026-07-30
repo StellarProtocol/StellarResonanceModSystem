@@ -49,6 +49,21 @@ public sealed record SliderElement(
 
     /// <summary>Handle (knob) size in px; 0 → the theme default handle size.</summary>
     public float HandleSize { get; init; }
+
+    /// <summary>
+    /// Opt in to a knob that is exactly <see cref="HandleSize"/> square, instead of one stretched to the
+    /// height of its row.
+    /// <para>Unity's <c>Slider.UpdateVisuals</c> drives the handle's anchors every frame — full stretch,
+    /// with only the AXIS component pinned to the value — so on the cross axis <c>HandleSize</c> acts as an
+    /// ADDITION to the row height, not as the knob's height. A 13px handle in a 16px row therefore draws a
+    /// 13×29 capsule (measured 2026-07-30; predicted and confirmed at <c>HandleSize=7</c> → 7×29−6=7×23).
+    /// </para>
+    /// <para>That stretched look is what every existing slider already renders, so it stays the DEFAULT:
+    /// correcting it globally would silently restyle every plugin's sliders at once. New UI that wants a
+    /// round knob opts in here. Drag behaviour is identical either way — the value is mapped from the
+    /// container's WIDTH, which this does not touch.</para>
+    /// </summary>
+    public bool SquareHandle { get; init; }
 }
 
 /// <summary>Single-line text field (wraps the proven UGuiTextInput: Enter submits without opening chat,

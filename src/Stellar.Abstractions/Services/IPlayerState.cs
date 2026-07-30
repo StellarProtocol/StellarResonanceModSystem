@@ -10,20 +10,35 @@ namespace Stellar.Abstractions.Services;
 /// Identity and availability facet of the local player's state.
 /// </summary>
 /// <remarks>
-/// <see cref="IsAvailable"/> gates all other properties: when it is
-/// <c>false</c> (title / character select / loading screens) the remaining
-/// properties return defaults (empty string, zero).
+/// <para><see cref="IsAvailable"/> reflects whether the live world entity is
+/// readable, and it gates the <see cref="IPlayerVitals"/> and
+/// <see cref="IPlayerLocation"/> facets: when it is <c>false</c> (title /
+/// character select / loading screens) those return defaults (zero,
+/// <see cref="Position3D.Zero"/>).</para>
+///
+/// <para><b>The three identity properties below are deliberately NOT gated by
+/// <see cref="IsAvailable"/>.</b> They fall back to the character record, so
+/// they can be populated while <see cref="IsAvailable"/> is <c>false</c> — the
+/// client knows who the player is even in states where the world entity's
+/// attribute bag reads empty (e.g. after relaunching while mounted). Check the
+/// individual property for null/zero rather than gating identity reads on
+/// <see cref="IsAvailable"/>.</para>
 /// </remarks>
 public interface IPlayerIdentity
 {
-    /// <summary>True when a character is loaded and the snapshot fields are meaningful.</summary>
+    /// <summary>
+    /// True when the live world entity is readable and the
+    /// <see cref="IPlayerVitals"/> / <see cref="IPlayerLocation"/> fields are
+    /// meaningful. Identity (<see cref="Name"/> / <see cref="Level"/> /
+    /// <see cref="Profession"/>) may be available even when this is <c>false</c>.
+    /// </summary>
     bool IsAvailable { get; }
 
-    /// <summary>Character display name; null when not yet loaded.</summary>
+    /// <summary>Character display name; null when not yet known. May be set while <see cref="IsAvailable"/> is <c>false</c>.</summary>
     string? Name { get; }
-    /// <summary>Character level; zero when not yet loaded.</summary>
+    /// <summary>Character level; zero when not yet known. May be set while <see cref="IsAvailable"/> is <c>false</c>.</summary>
     int Level { get; }
-    /// <summary>Primary profession id; zero when not yet loaded.</summary>
+    /// <summary>Current profession id; zero when not yet known. May be set while <see cref="IsAvailable"/> is <c>false</c>.</summary>
     int Profession { get; }
 }
 
@@ -68,8 +83,10 @@ public interface IPlayerLocation
 /// <summary>
 /// Read-only view of the local player's basic state. All properties are
 /// safe to read at any time; when <see cref="IPlayerIdentity.IsAvailable"/> is <c>false</c>
-/// (e.g. on title / character select / loading screens) the other
-/// properties return defaults (empty string, zero, <see cref="Position3D.Zero"/>).
+/// (e.g. on title / character select / loading screens) the vitals and position
+/// return defaults (zero, <see cref="Position3D.Zero"/>). Identity — name,
+/// level, profession — is served from the character record and can be populated
+/// independently of <see cref="IPlayerIdentity.IsAvailable"/>.
 /// </summary>
 /// <remarks>
 /// The service is polled — the framework refreshes the snapshot once per

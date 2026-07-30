@@ -18,7 +18,33 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.15.0 adds <c>IPluginServices.Data</c> — an
+    /// BepInEx chainloader happy. 1.18.0 adds <c>SliderElement.SquareHandle</c>, an OPT-IN knob that is
+    /// exactly <c>HandleSize</c> square. Unity's <c>Slider</c> drives the handle's cross-axis anchors to
+    /// full stretch every frame, so by default <c>HandleSize</c> ADDS to the row height instead of setting
+    /// the knob's height — a 13px handle in a 16px row draws a 13×29 capsule (measured 2026-07-30). The
+    /// stretched shape stays the default on purpose: every existing slider already renders that way, and
+    /// correcting it globally would restyle every plugin's sliders at once. Additive only — no existing
+    /// slider changes appearance, and drag behaviour is identical (the value maps from the container's
+    /// width, which is untouched). 1.17.0 adds <c>ActorState</c> and
+    /// <c>CombatEvent.EntityStateChanged</c> (2026-07-28 entity-state-death-signal spec):
+    /// the client's own entity state-machine transitions (death, break phase), surfaced on
+    /// the existing <c>ICombatEvents</c> stream — no service interface gains a member, so
+    /// the STELLAR0005 8-member ceiling is untouched. Lets plugins (e.g. the CombatMeter's
+    /// <c>BossKill</c>) know an entity died without inferring it from HP reaching zero,
+    /// which scripted kills never do. Field-proven sourcing, after three recon rounds (see
+    /// <c>recon/entity-state-death-signal-notes.md</c>): <c>Panda.ZGame.ZStateDead.OnEnter</c>
+    /// fired for all ten deaths in the owner's confirming run and is the sole installed
+    /// death source; <c>Panda.ZGame.ZStateBreaking.OnEnter</c> (untested, not disproven —
+    /// no break phase occurred in that run) is its kept sibling. The originally-spec'd
+    /// <c>EntityCtrlDead.OnEnter</c> stayed silent across those same ten deaths (disproven)
+    /// and the wider <c>ZStateMachine.onStateChanged</c>/<c>EnterState</c> hooks tried in
+    /// between were dropped for cost, not correctness — <c>EnterState</c> also resolved
+    /// every one of the ten deaths correctly and remains a documented, field-proven fallback
+    /// if <c>ZStateDead</c> is ever removed/renamed, just not installed by default because it
+    /// fires on every actor's every transition rather than only the one that matters. New
+    /// enum + new discriminated-union case only — additive, binary-compatible with plugins
+    /// built against ≤1.16.1.
+    /// 1.15.0 adds <c>IPluginServices.Data</c> — an
     /// <c>IPluginDataStore</c> giving each plugin its own binary file storage
     /// (<c>Write</c>/<c>Read</c>/<c>Delete</c>/<c>List</c>, never-throws, path-traversal-safe)
     /// for data too large/opaque for <c>IConfigSection</c>; rooted OUTSIDE the plugin-scan
@@ -80,5 +106,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.16.1";
+    public const string Value = "1.18.0";
 }

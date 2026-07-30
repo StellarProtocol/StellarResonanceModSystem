@@ -131,4 +131,13 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
     /// </summary>
     internal IReadOnlyDictionary<int, long>? GetEquippedSlotsForEquipPolling()
         => _pullReader.GetEquippedSlotsForEquipPolling();
+
+    /// <summary>
+    /// Returns the live <c>CharSerialize</c> record (or null before resolution /
+    /// first sync). Forwarded to the pull-read collaborator, which already owns
+    /// the resolved accessor. Consumed by <see cref="PandaCharIdentityReader"/>
+    /// so the player-state probe can serve identity that survives a world-entity
+    /// attribute blackout.
+    /// </summary>
+    internal object? TryGetLiveCharSerialize() => _pullReader.TryGetLiveCharSerialize();
 }

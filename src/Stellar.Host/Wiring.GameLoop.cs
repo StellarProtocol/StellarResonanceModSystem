@@ -44,6 +44,10 @@ public sealed partial class BootstrapPlugin
         // full speed instead of sitting in the long post-boot backoff.
         _inventoryProbe!.OnLifecycleAdvanced();
         _harmonyBridge!.Publish("Panda.Core.OnEnterSceneEvent", sceneName);
+        // Fresh ungated diagnostics allowance for whichever dungeon/raid this scene turns out to
+        // be — see PandaEntityStateProbe.Diagnostics.cs for why a session-lifetime budget was
+        // wrong (2026-07-28 review fix). Null until hot-update-ready wiring constructs it.
+        _entityStateProbe?.ResetObservationBudget();
 
         // Phase 9a Task 17 — auto-recon for the native UI allowlist. Gated by
         // STELLAR_NATIVEUI_RECON=1; one-shot per process. Fires on the first
