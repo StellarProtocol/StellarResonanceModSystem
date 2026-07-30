@@ -1,3 +1,4 @@
+using System.Text;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 using UnityEngine.Events;
@@ -17,6 +18,62 @@ internal sealed partial class PandaUGuiAdapter
     // Shared black AA disc for login-sidebar buttons. Generated once; HideAndDontSave so a scene load's
     // UnloadUnusedAssets sweep doesn't blank it (same discipline as the icon cache). Recreated if destroyed.
     private Texture2D? _circleTex;
+
+    // One-time subtree dump guard (name recon — see DumpLoginSubtreeOnce).
+    private bool _loginSubtreeDumped;
+
+    // Resolve the login view by NAME-CONTAINS "login_main" among UILayerMain's children, guarded on
+    // activeInHierarchy (so availability == login screen up). The exact runtime name isn't guaranteed —
+    // login_main(Clone) / a _pc variant — so an exact Transform.Find can miss (per Login-Screen-UI-Injection.md).
+    private Transform? ResolveLoginView(Transform zuiroot)
+    {
+        var layer = zuiroot.Find("UILayerMain");
+        if (layer == null) return null;
+        for (int i = 0; i < layer.childCount; i++)
+        {
+            var c = layer.GetChild(i);
+            if (c != null && c.gameObject.activeInHierarchy && c.name.Contains("login_main"))
+            {
+                DumpLoginSubtreeOnce(c);
+                return c;
+            }
+        }
+        return null;
+    }
+
+    // First active descendant of parent whose name CONTAINS substr (case-insensitive), excluding our own
+    // injected buttons. The KB fallback for the btn_setting template when the exact name differs.
+    private static Transform? FindLiveByNameContains(string substr, Transform parent)
+    {
+        foreach (var t in parent.GetComponentsInChildren<Transform>(includeInactive: false))
+        {
+            if (t == null || t.name.StartsWith("StellarBtn_")) continue;
+            if (t.name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0) return t;
+        }
+        return null;
+    }
+
+    // One-time diagnostic: dump login_main's subtree (name + activeSelf, indented by depth) to the framework
+    // log the first time we locate it, so if the template/container names still differ we can read the real
+    // ones (per Login-Screen-UI-Injection.md). Bounded to ~500 nodes / depth 10 so it can't flood the log.
+    private void DumpLoginSubtreeOnce(Transform root)
+    {
+        if (_loginSubtreeDumped) return;
+        _loginSubtreeDumped = true;
+        var sb = new StringBuilder();
+        sb.Append("[uGUI] login_main subtree (name / activeSelf):\n");
+        var count = 0;
+        DumpNode(root, 0, sb, ref count);
+        _log.Info(sb.ToString());
+    }
+
+    private static void DumpNode(Transform t, int depth, StringBuilder sb, ref int count)
+    {
+        if (t == null || count >= 500 || depth > 10) return;
+        count++;
+        sb.Append(' ', depth * 2).Append(t.name).Append("  active=").Append(t.gameObject.activeSelf).Append('\n');
+        for (int i = 0; i < t.childCount; i++) DumpNode(t.GetChild(i), depth + 1, sb, ref count);
+    }
 
     private Texture2D CircleTex() => _circleTex != null ? _circleTex : (_circleTex = MakeAaDisc(64));
 

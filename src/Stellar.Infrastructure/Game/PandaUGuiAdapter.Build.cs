@@ -75,6 +75,10 @@ internal sealed partial class PandaUGuiAdapter
         // template is briefly pooled-inactive, build nothing this tick and retry.
         var parent = ResolveParent(anchor);
         var template = parent != null ? FindLiveByName(e.TemplateChildName, parent) : null;
+        // KB fallback: if the exact template name differs on this build, match by name-CONTAINS "setting"
+        // (login sidebar only — the container is still btn_setting.parent, resolved below).
+        if (template == null && anchor == NativeUiAnchor.LoginSidebar && parent != null)
+            template = FindLiveByNameContains("setting", parent);
         if (template == null || template.parent == null)
         {
             if (!_railTemplateMissLogged)

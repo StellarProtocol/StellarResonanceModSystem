@@ -74,6 +74,9 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
             _zuiroot = root != null ? root.transform : null;
             if (_zuiroot == null) return null;
         }
+        // Login sidebar: resolve the login view by NAME-CONTAINS "login_main" (the exact runtime name isn't
+        // guaranteed — _pc / (Clone) variants — so an exact Transform.Find can miss). See .LoginButton partial.
+        if (anchor == NativeUiAnchor.LoginSidebar) return ResolveLoginView(_zuiroot);
         var rel = ToZuiRelativePath(entry.InsertionParentPath);
         if (rel == null)
         {

@@ -29,8 +29,11 @@ public sealed partial class BootstrapPlugin
         var uguiAdapter = new Stellar.Infrastructure.Game.PandaUGuiAdapter(log, _themeRenderer!);
         var uguiInjection = new Stellar.Application.Services.UGuiInjectionService(uguiAdapter);
         _uguiInjection = uguiInjection;
-        _framework!.Update += dt => uguiInjection.Tick(dt);
-        _framework!.Update += _ => uguiAdapter.TickGlow();   // per-frame rail-glow pulse
+        // NOTE: uguiInjection.Tick is NOT subscribed to _framework.Update — that path fires inside
+        // _framework.Tick, which is IsWorldActive-gated, so it would freeze at the title screen and the
+        // LoginSidebar anchor could never inject. It is called UN-gated from RunGlobalRateWork instead (a pure
+        // UI operation — reads GameObject active-state + builds uGUI, no game-state touch — safe every phase).
+        _framework!.Update += _ => uguiAdapter.TickGlow();   // per-frame rail-glow pulse (in-world rail visuals only)
         // Menu-state probe: tick it, then push the un-collapsed GameUIState into ClientStateService so a plugin's
         // ShouldRender can read UiState. Runs inside _framework.Tick, which is IsWorldActive-gated, so UiState only
         // updates in-world (it is reset to None on the World→TitleScreen transition).
