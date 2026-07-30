@@ -28,8 +28,8 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
 
     public PandaUGuiAdapter(IPluginLog log, ITheme theme) { _log = log; _theme = theme; }
 
-    /// <summary>Destroys the rail-button icon textures on framework teardown (no leak on soft reload).</summary>
-    public void Dispose() => _iconCache.Dispose();
+    /// <summary>Destroys the rail-button icon textures + login-circle texture on framework teardown (no leak on soft reload).</summary>
+    public void Dispose() { _iconCache.Dispose(); DestroyCircleTex(); }
 
     public bool IsAnchorAvailable(NativeUiAnchor anchor) => ResolveParent(anchor) != null;
 

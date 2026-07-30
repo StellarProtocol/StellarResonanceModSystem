@@ -95,6 +95,11 @@ internal sealed partial class PandaUGuiAdapter
             rt.anchorMin = tmplRt.anchorMin; rt.anchorMax = tmplRt.anchorMax; rt.pivot = tmplRt.pivot;
             rt.anchoredPosition = tmplRt.anchoredPosition;
         }
+        // Title-screen login sidebar: dark-circle + white-glyph styling to match the native login buttons,
+        // and VerticalLayoutGroup-aware placement (built in the .LoginButton partial).
+        if (anchor == NativeUiAnchor.LoginSidebar)
+            return BuildLoginSidebarButton(go, spec, size, template);
+
         _pendingGlow = null; _pendingStar = null;
         var hasPng = AddRailButtonContent(go, spec, size, template);
         AttachAndPlaceButton(go, spec, template, hasPng);

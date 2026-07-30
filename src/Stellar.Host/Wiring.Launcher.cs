@@ -13,6 +13,7 @@ public sealed partial class BootstrapPlugin
     private LauncherView? _launcherView;
     private IWindowControl? _launcherControl;
     private INativeUiElementHandle? _railButtonHandle;
+    private INativeUiElementHandle? _loginSidebarButtonHandle;
 
     private void BuildLauncherServices()
     {
@@ -42,7 +43,15 @@ public sealed partial class BootstrapPlugin
             NativeUiAnchor.MainMenuRail, "Stellar", IconKey: null,
             Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
             IconPng: LauncherIcons.Get("stellar")));
-        log.Info("[Launcher] uGUI launcher + Stellar rail button registered");
+
+        // Same Stellar icon injected into the TITLE-SCREEN login sidebar (dark-circle styling applied by the
+        // adapter for this anchor). login_main only exists at the login screen, so the injection service's
+        // ~5 Hz availability probe injects it there only and self-heals if the game destroys the view.
+        _loginSidebarButtonHandle = _uguiInjection!.Register(new MenuButtonSpec(
+            NativeUiAnchor.LoginSidebar, "Stellar", IconKey: null,
+            Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
+            IconPng: LauncherIcons.Get("stellar")));
+        log.Info("[Launcher] uGUI launcher + Stellar rail button + login-sidebar button registered");
     }
 
     private static void Toggle(IWindowControl? c) { if (c != null) c.SetVisible(!c.IsShown); }

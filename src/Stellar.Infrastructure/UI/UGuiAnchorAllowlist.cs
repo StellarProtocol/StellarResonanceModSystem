@@ -32,6 +32,17 @@ internal static class UGuiAnchorAllowlist
             [NativeUiAnchor.HudTopRight] = new(
                 "zuiroot/UILayerMain/main_main_pc(Clone)/anim/node_main/node_upper_right",
                 null),
+
+            // Title-screen login sidebar. InsertionParentPath = the login view itself, which exists ONLY at
+            // the login screen — so anchor-availability doubles as the title-screen phase gate (the injection
+            // service only builds/re-heals while it's active). The actual clone target (btn_setting, the
+            // always-present Settings button) is found by a live descendant search under this parent, then the
+            // fresh button is parented under btn_setting's own parent (the sidebar's VerticalLayoutGroup
+            // container). See Knowledge Base/Login-Screen-UI-Injection.md. NOTE: login_main(Clone) + btn_setting
+            // are the KB-documented runtime names (release_3.7) — best-guess-confirmed; one may need an in-game
+            // name correction like login_main itself did.
+            [NativeUiAnchor.LoginSidebar] = new(
+                "zuiroot/UILayerMain/login_main(Clone)", "btn_setting"),
         };
 
     public static bool TryGet(NativeUiAnchor anchor, out UGuiAnchorEntry entry)
