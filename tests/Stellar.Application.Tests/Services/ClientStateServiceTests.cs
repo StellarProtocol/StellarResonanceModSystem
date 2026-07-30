@@ -44,11 +44,16 @@ public sealed class ClientStateServiceTests
         s.RaisePhase(GamePhase.World);
     }
 
-    // OnLogout: from either World or CharSelect back to the title screen.
+    // OnLogout: CHAR-SELECT cancel goes directly back to TitleScreen; a WORLD logout DEFERS the phase (stays
+    // World) — TitleScreen fires later, when the login-view probe detects login_main (SimLoginViewActive). This
+    // mirrors the Host's Wiring.Wire.cs OnLogout handler (only CharSelect calls RaisePhase(TitleScreen)).
     private static void SimOnLogout(ClientStateService s)
     {
         s.RaiseLogout();
-        s.RaisePhase(GamePhase.TitleScreen);
+        if (s.Phase == GamePhase.CharSelect)
+        {
+            s.RaisePhase(GamePhase.TitleScreen);
+        }
     }
 
     // Fresh service at boot — phase is Startup, change log empty.
@@ -91,21 +96,47 @@ public sealed class ClientStateServiceTests
     }
 
     [Fact]
-    public void LoginView_active_is_latched_fires_once_and_never_bounces_World()
+    public void LoginView_active_at_TitleScreen_is_a_noop()
     {
         var (svc, changes) = BuildAtTitleScreen();
 
-        // A repeat login-view signal at TitleScreen is a no-op (already latched off Startup).
+        // A repeat login-view signal at TitleScreen is a no-op (already there).
         SimLoginViewActive(svc);
+
         Assert.Equal(GamePhase.TitleScreen, svc.Phase);
         Assert.Empty(changes);
+    }
 
-        // Once in-world, a lingering login_main flicker must NOT bounce World→TitleScreen (guard is Startup-only).
+    [Fact]
+    public void LoginView_active_promotes_World_to_TitleScreen()
+    {
+        // The post-logout mechanism: after a World logout the phase stays World (deferred); when login_main is
+        // detected, the login-view signal promotes World→TitleScreen. login_main only exists in the login scene,
+        // so this is never fired during normal in-world play.
+        var (svc, changes) = BuildAtTitleScreen();
         SimOnLogin(svc);
         SimEnterWorld(svc);
         changes.Clear();
+
         SimLoginViewActive(svc);
-        Assert.Equal(GamePhase.World, svc.Phase);
+
+        Assert.Equal(GamePhase.TitleScreen, svc.Phase);
+        Assert.Single(changes);
+        Assert.Equal(new PhaseChange(GamePhase.World, GamePhase.TitleScreen), changes[0]);
+    }
+
+    [Fact]
+    public void LoginView_active_does_not_promote_CharSelect()
+    {
+        // The guard excludes CharSelect — a char-select cancel is handled by the Host's direct OnLogout call,
+        // and login_main may be active at char-select, so promoting here could wrongly flip CharSelect→TitleScreen.
+        var (svc, changes) = BuildAtTitleScreen();
+        SimOnLogin(svc);   // now at CharSelect
+        changes.Clear();
+
+        SimLoginViewActive(svc);
+
+        Assert.Equal(GamePhase.CharSelect, svc.Phase);
         Assert.Empty(changes);
     }
 
@@ -161,7 +192,7 @@ public sealed class ClientStateServiceTests
     }
 
     [Fact]
-    public void World_logout_returns_to_TitleScreen()
+    public void World_logout_defers_TitleScreen_until_login_view_appears()
     {
         var (svc, changes) = BuildAtTitleScreen();
 
@@ -169,8 +200,15 @@ public sealed class ClientStateServiceTests
         SimEnterWorld(svc);
         changes.Clear();
 
+        // World logout: phase STAYS World (the login screen isn't up yet — raising TitleScreen now would let
+        // login-screen windows flash). No phase event fires.
         SimOnLogout(svc);
+        Assert.Equal(GamePhase.World, svc.Phase);
+        Assert.False(svc.IsLoggedIn);
+        Assert.Empty(changes);
 
+        // When login_main actually appears, the login-view signal promotes World→TitleScreen.
+        SimLoginViewActive(svc);
         Assert.Equal(GamePhase.TitleScreen, svc.Phase);
         Assert.Single(changes);
         Assert.Equal(new PhaseChange(GamePhase.World, GamePhase.TitleScreen), changes[0]);
@@ -225,8 +263,12 @@ public sealed class ClientStateServiceTests
         SimEnterWorld(svc);
         svc.SetUiState(GameUIState.FullScreenMenu | GameUIState.GameHud);
 
+        // World logout defers the phase (stays World), so the menu bits are NOT cleared yet...
         SimOnLogout(svc);
+        Assert.Equal(GameUIState.FullScreenMenu | GameUIState.GameHud, svc.UiState);
 
+        // ...they clear when the login-view signal promotes World→TitleScreen (a non-World phase).
+        SimLoginViewActive(svc);
         Assert.Equal(GameUIState.None, svc.UiState);
     }
 

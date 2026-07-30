@@ -77,14 +77,20 @@ internal sealed class ClientStateService : IClientState
     /// <see cref="IsWorldActive"/> is false and the gated menu-state probe is frozen.</summary>
     internal void SetLoadingActive(bool active) => _loadingActive = active;
 
-    /// <summary>Host-driven: the game's login view was detected active this tick. Latches
-    /// <see cref="GamePhase.Startup"/> → <see cref="GamePhase.TitleScreen"/> exactly once. The guard on
-    /// <see cref="GamePhase.Startup"/> makes it one-way — a later flicker of the login view (e.g. its clone
-    /// still lingering after world-connect) can never bounce <see cref="GamePhase.World"/> back to the title.
-    /// Runs in every phase (the detection is an un-gated UI read), so the guard is what keeps it safe.</summary>
+    /// <summary>Host-driven: the game's login view (<c>login_main</c>) was detected active this tick. Promotes
+    /// <see cref="GamePhase.Startup"/> → <see cref="GamePhase.TitleScreen"/> (boot) AND
+    /// <see cref="GamePhase.World"/> → <see cref="GamePhase.TitleScreen"/> (post-logout) — so
+    /// <see cref="GamePhase.TitleScreen"/> always means "the login screen is actually visible".
+    /// <para>The <c>World</c> case is safe because <c>login_main</c> only exists in the login scene, never
+    /// in-world, so this is never called during normal play — only after a logout when the login view reappears.
+    /// On logout the Host deliberately leaves the phase at <c>World</c> (it does NOT raise <c>TitleScreen</c>
+    /// itself); this promotion fires when the login screen is genuinely up, avoiding the early-<c>TitleScreen</c>
+    /// flash. <see cref="GamePhase.CharSelect"/> is intentionally excluded — a char-select cancel is handled by
+    /// the Host's direct <c>OnLogout</c> call, and <c>login_main</c> may be active at char-select, so promoting
+    /// from <c>CharSelect</c> here could wrongly flip it.</para></summary>
     internal void NotifyLoginViewActive()
     {
-        if (Phase == GamePhase.Startup)
+        if (Phase == GamePhase.Startup || Phase == GamePhase.World)
         {
             RaisePhase(GamePhase.TitleScreen);
         }

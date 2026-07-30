@@ -111,7 +111,13 @@ public sealed partial class BootstrapPlugin
             // the current phase being TitleScreen so a stray re-fire can't bounce World→CharSelect (RaiseLogin
             // is already idempotent, but RaisePhase is not phase-aware on its own).
             ["OnLogin"]      = (_, _) => { _loggedIn = true; BeginSceneTransition(); _clientState!.RaiseLogin(); if (_clientState!.Phase == Stellar.Abstractions.Domain.GamePhase.TitleScreen) { _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.CharSelect); } _inventoryProbe!.OnLifecycleAdvanced(); _harmonyBridge!.Publish("Panda.Core.LoginEvent", null); },
-            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen); _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
+            // OnLogout: keep RaiseLogout (session state). For the PHASE, only CHAR-SELECT cancels transition
+            // directly to TitleScreen (no flash there; login_main may already be up so the probe can't be
+            // relied on). A WORLD logout does NOT raise TitleScreen here — the login screen isn't up yet, so an
+            // early TitleScreen would let login-screen windows flash. Instead the phase stays World (IsWorldActive
+            // false + Loading true → every plugin gated off) until PandaLoginViewProbe detects login_main and
+            // NotifyLoginViewActive promotes World→TitleScreen. See docs/game-phases-design.md §5.1.
+            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); if (_clientState!.Phase == Stellar.Abstractions.Domain.GamePhase.CharSelect) { _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen); } _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
             ["OnEnterScene"] = OnEnterScene,
             // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to
             // town before the plugin archives/uploads the just-finished run, so the latched
