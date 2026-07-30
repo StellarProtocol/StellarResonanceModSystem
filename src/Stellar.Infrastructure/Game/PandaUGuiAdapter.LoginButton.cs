@@ -8,10 +8,10 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// Login-sidebar (title-screen) button styling for <see cref="PandaUGuiAdapter"/> — kept in a sibling partial.
-/// The native login buttons (Settings / Switch-account / …) are a dark translucent CIRCLE behind a white
-/// mono glyph, unlike the in-world Main-Menu rail (accent-tinted glowing star). This partial recreates that
-/// look for the injected Stellar button, and places it via the sidebar's VerticalLayoutGroup. See
-/// Knowledge Base/Login-Screen-UI-Injection.md.
+/// The native login buttons (Settings / Switch-account / …) are a dark translucent CIRCLE; the Stellar button
+/// wears that circle (sized to the btn_setting template) but fills it with the SAME accent-tinted glowing star
+/// as the in-world Main-Menu rail — registered in <c>_railVisuals</c> so <see cref="TickGlow"/> animates it at
+/// the title screen too. Placed via the sidebar's VerticalLayoutGroup. See Knowledge Base/Login-Screen-UI-Injection.md.
 /// </summary>
 internal sealed partial class PandaUGuiAdapter
 {
@@ -105,20 +105,26 @@ internal sealed partial class PandaUGuiAdapter
         _circleTex = null;
     }
 
-    // Builds the login-sidebar button: transparent click surface + black ~50% circle + a WHITE-drawn icon
-    // (the stellar art is monochrome, so a white RawImage tint renders it as a white glyph — matching the
-    // native sidebar buttons). Built fresh (never cloned — a clone drags the game's data-binder), under the
-    // sidebar 'layout' container that owns a VerticalLayoutGroup.
+    // Builds the login-sidebar button: transparent click surface + a dark translucent circle FILLING the
+    // button rect (native diameter, sized from the btn_setting template) + the SAME accent glowing star as the
+    // in-world rail. Built fresh (never cloned — a clone drags the game's data-binder), under the sidebar
+    // 'layout' container that owns a VerticalLayoutGroup.
     private GameObject BuildLoginSidebarButton(GameObject go, MenuButtonSpec spec, Vector2 size, Transform template)
     {
         AddSolid(go, new Color(0f, 0f, 0f, 0f));   // 0-alpha surface still raycasts → owns the click
 
-        float disc = Mathf.Min(size.x, size.y) * 0.86f;
-        AddRawImage(go.transform, CircleTex(), disc, 0.5f, new Color(0f, 0f, 0f, 0.5f));   // dark translucent circle
+        // Dark translucent circle, STRETCHED to fill the button rect (minus a 2px hairline) — so the circle's
+        // diameter tracks the button/template size (matching the native login buttons), whatever final size the
+        // sidebar's VerticalLayoutGroup hands the button. (The old fixed 0.86× inset read too small.)
+        AddStretchRawImage(go.transform, CircleTex(), new Color(0f, 0f, 0f, 0.5f), inset: 2f);
 
+        // SAME icon as the in-world MainMenuRail: an accent-tinted glowing star (colored + animated), not a flat
+        // white glyph. AddGlowingRailIcon stashes the created glow/star in _pendingGlow/_pendingStar for the
+        // RailVisual below. Centred in the circle (centerY 0.5 — no label beneath, unlike the rail's 0.66).
+        _pendingGlow = null; _pendingStar = null;
         var iconTex = _iconCache.Get(spec.IconPng);
         if (iconTex != null)
-            AddRawImage(go.transform, iconTex, disc * 0.58f, 0.5f, Color.white);           // white glyph, centred
+            AddGlowingRailIcon(go.transform, iconTex, Mathf.Min(size.x, size.y) * 0.5f, 0.5f);
         else
         {
             var glyph = Glyph(spec.IconKey);
@@ -129,11 +135,36 @@ internal sealed partial class PandaUGuiAdapter
         btn.transition = Selectable.Transition.None;   // InputSystem doesn't dispatch hover → no auto-tint
         btn.onClick.AddListener((UnityAction)(() => { SafeInvoke(spec.OnClick); ClearRailSelection(); }));
 
+        // Register for the glow animation (same pool as the rail) so the star pulses + hover-scales at the title
+        // screen. TickGlow runs UN-gated (RunGlobalRateWork), so this animates in every phase.
+        var rt = go.GetComponent<RectTransform>();
+        _railVisuals.Add(new RailVisual
+        {
+            Glow = _pendingGlow, Star = _pendingStar,
+            Surface = go.GetComponent<Image>(), Rect = rt, Canvas = rt.GetComponentInParent<Canvas>(),
+        });
+
         // The 'layout' container has a VerticalLayoutGroup that drives child positions — so DON'T set
         // anchoredPosition (it would be overridden). Just sit right after the template so we land in the
         // button column as a true sibling (same active container, same coordinate space, same layout driver).
         if (template.parent != null) go.transform.SetSiblingIndex(template.GetSiblingIndex() + 1);
         _log.Info($"[uGUI] built login-sidebar button '{spec.Label}' under '{template.parent?.name}'");
         return go;
+    }
+
+    // A RawImage stretched to fill the parent rect (minus a uniform inset), tinted by colour; doesn't raycast
+    // (the surface owns the click). Used for the login circle so its diameter fills the button at native size.
+    private static RawImage AddStretchRawImage(Transform parent, Texture tex, Color colour, float inset)
+    {
+        var go = new GameObject("Circle");
+        go.AddComponent<CanvasRenderer>();
+        var img = go.AddComponent<RawImage>();
+        img.texture = tex; img.color = colour; img.raycastTarget = false;
+        go.transform.SetParent(parent, worldPositionStays: false);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = new Vector2(inset, inset); rt.offsetMax = new Vector2(-inset, -inset);
+        rt.localScale = Vector3.one;
+        return img;
     }
 }

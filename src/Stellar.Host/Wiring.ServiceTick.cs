@@ -102,6 +102,7 @@ public sealed partial class BootstrapPlugin
         // GameObject active-state + builds uGUI buttons (no game-state/network touch), safe every phase like the
         // probes above. In-world anchors (MainMenuRail/HudTopRight) simply won't resolve until their parents exist.
         _uguiInjection?.Tick(globalDt);
+        _uguiAdapter?.TickGlow();   // un-gated too, so the login-sidebar glow star animates at the title screen
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
         // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.

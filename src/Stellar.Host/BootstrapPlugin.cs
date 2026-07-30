@@ -121,6 +121,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private Stellar.Infrastructure.Game.ReflectionGameTypeRegistry? _gameTypeRegistry;
     private KeyboardInputGate? _keyboardGate;
     private UGuiInjectionService? _uguiInjection;
+    // The uGUI canvas adapter — kept so its per-frame glow animation (TickGlow) can be driven UN-gated from
+    // RunGlobalRateWork (so the login-sidebar star animates at the title screen, not only in-world).
+    private Stellar.Infrastructure.Game.PandaUGuiAdapter? _uguiAdapter;
 
     // ── Perf overlay (constructed in SetupPerfOverlay) ──────────────────────
     private PerfOverlayWindow? _perfOverlay;
