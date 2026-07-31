@@ -29,6 +29,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     private readonly IChromeStyle _chrome;          // supplies the active theme's per-preset window opacity
     private readonly WindowThemeAssets _assets = new();
     private GameObject? _canvas;
+    private Canvas? _canvasComp;
     private Transform? _canvasRoot;
     private WindowBuilder? _builder;
     private WindowInteractionTicker? _ticker;
@@ -186,14 +187,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
     // Width/Height; substitute the live RectTransform size so we never clamp against size 0 (which would treat the
     // window as 0px wide and let its left edge pin anywhere). Returns the clamped top-left in WindowRect space.
-    private static WindowRect ClampToScreen(WindowToken t, WindowRect rect)
+    private WindowRect ClampToScreen(WindowToken t, WindowRect rect)
     {
         var size = t.Rect!.rect.size;
         var w = rect.Width  > 0f ? rect.Width  : size.x;
         var h = rect.Height > 0f ? rect.Height : size.y;
+        var s = _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
         return Stellar.Application.Services.LayoutStorage.ClampVisible(
             new WindowRect(rect.X, rect.Y, w, h),
-            new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
+            new Stellar.Abstractions.Domain.Resolution(
+                Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
     }
 
     public WindowRect GetRect(object? token)
@@ -256,12 +259,18 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.pixelPerfect = true;
             canvas.sortingOrder = WindowSortingOrder;
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(2560f, 1440f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
             // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
             go.AddComponent<GraphicRaycaster>();
             RegisterInjectedTypes();
             _ticker = go.AddComponent<WindowInteractionTicker>();
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
+            _canvasComp = canvas;
             _canvasRoot = go.transform;
             _assets.EnsureBaked(_colors);
             _assets.OpacityProvider = () => _chrome.WindowOpacity;     // live frame-alpha tint (no rebake/flicker)

@@ -56,6 +56,16 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private RectTransform? _ghostRt;           // cached ghost transform (avoids per-held-frame GetComponent)
     private Vector2 _lastMouse;
     private int _throwLogged;
+    private Canvas? _canvasComp;
+    private float Scale
+    {
+        get
+        {
+            if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
+            var s = _canvasComp != null ? _canvasComp.scaleFactor : 1f;
+            return s > 0f ? s : 1f;
+        }
+    }
 
     internal void Prune()
     {
@@ -162,7 +172,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (_activeWinDrag != null)
         {
             var m = (Vector2)Input.mousePosition;
-            _activeWinDrag.anchoredPosition += m - _lastMouse;   // top-left anchor: screen delta maps 1:1
+            _activeWinDrag.anchoredPosition += (m - _lastMouse) / Scale;   // screen delta → canvas units
             ClampWinDragOnScreen();                              // never let a drag fling the window off-screen (lost forever)
             _lastMouse = m;
         }
@@ -178,8 +188,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         var ap = _activeWinDrag.anchoredPosition;
         var size = _activeWinDrag.rect.size;
         var rect = new Stellar.Abstractions.Domain.WindowRect(ap.x, -ap.y, size.x, size.y);
+        var s = Scale;
         var clamped = Stellar.Application.Services.LayoutStorage.ClampVisible(
-            rect, new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
+            rect, new Stellar.Abstractions.Domain.Resolution(
+                Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
         _activeWinDrag.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
     }
 
@@ -204,7 +216,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         var (_, target, min, max) = DragResizers[_activeResize];
         if (target == null) return;
         var m = (Vector2)Input.mousePosition;
-        var d = m - _lastMouse;   // grow right with +x; grow down (screen y decreases) with -y
+        var d = (m - _lastMouse) / Scale;   // screen delta → canvas units (sizeDelta is canvas units)
         var s = target.sizeDelta;
         target.sizeDelta = new Vector2(
             Mathf.Clamp(s.x + d.x, min.x, max.x),
