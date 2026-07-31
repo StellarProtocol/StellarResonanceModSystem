@@ -141,7 +141,18 @@ Original list, for reference:
   branches in lockstep. Commit the 3 non-git plugins (AccountSwitcher/Maestro/Position) from real clones;
   reconcile Mahiru's synthetic history; handle Experiment's WIP.
 - **Remove** the throwaway phase-diag overlay (`stellar.diag.phase`, Shift+PageUp) before merge.
-- In-game visual confirm still owed: the login-sidebar Stellar icon glow/size after `bd15f7f`.
+- ~~In-game visual confirm owed: the login-sidebar Stellar icon glow/size after `bd15f7f`.~~
+  ✅ **confirmed in-game 2026-07-31** — the icon glows. `bd15f7f` is done, nothing owed.
+
+## 7. Closed topics (do not reopen without reading these first)
+
+- **UI crispness / design-space units — CLOSED 2026-07-31, analysis only, no code written.**
+  `docs/ui-crispness-plan.md` (the live diagnosis) and `docs/design-space-units-plan.md` (superseded by it)
+  are both marked CLOSED in-file. Headline: **text was never the problem** (dynamic fonts re-rasterise at
+  `fontSize × scaleFactor`, so TMP is not a crispness fix) — softness comes from **9-slice sprites** baked at
+  a fixed `pixelsPerUnit: 100` against an unset `Canvas.referencePixelsPerUnit`, magnified/minified with
+  `mipChain: false`. Condensed into `Knowledge Base\WindowBuilder-Patterns.md`. ⚠️ `design-space-units-plan`
+  §10 orders a KB rewrite on the basis of four rules "reversing" — that is void; the KB rules stand.
 
 ## 6. Background agents (this session, resumable by name/id)
 Framework: `a2b03c999d40e4fff`. AccountSwitcher: `af149f5105d7d2cfc`. Each plugin has its own porting agent
