@@ -20,11 +20,16 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     private const string ScrollbarStyleKey = "scrollbarStyle";
     private const float  MinFontScale = 0.8f;
     private const float  MaxFontScale = 1.4f;
+    private const string UiScaleKey = "uiscale";
+    private const float  MinUiScale = 0.75f;
+    private const float  MaxUiScale = 1.5f;
 
     private readonly IConfigSection _config;
     private readonly IPluginLog _log;
     private ThemePreset _active;
     private float _fontScale;
+    private float _uiScale;
+    private float? _uiScalePreview;
     private string? _activeCustomName;
     private MenuButtonStyle _buttonStyle;
     private MenuScrollbarStyle _scrollbarStyle;
@@ -35,6 +40,7 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
         _log = log;
         _active = ResolveInitialPreset();
         _fontScale = ClampScale(_config.Get(FontScaleKey, 1.0f));
+        _uiScale = ClampUiScale(_config.Get(UiScaleKey, 1.0f));
         _activeCustomName = _config.Get<string?>(CustomNameKey, null);
         if (!string.IsNullOrEmpty(_activeCustomName))
             _active = ParsePreset(_config.Get(CustomBaseKey, "Default") ?? "Default");
@@ -70,6 +76,10 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     // FontScaleProvider) resize live; it's cleared + the final value persisted on mouse-release (SetFontScale).
     private float? _fontScalePreview;
     public float       FontScale => _fontScalePreview ?? _fontScale;
+    // UI scale (window-canvas CanvasScaler multiplier) — concrete-only (NOT on IChromeStyle/INamedTheme). Applied
+    // by WindowInteractionTicker's per-frame poll (referenceResolution = 2560/u,1440/u), NOT via ActiveChanged.
+    // The getter prefers the live drag preview so the ticker resizes the canvas in real time.
+    public float       UiScale => _uiScalePreview ?? _uiScale;
     public event Action? ActiveChanged;
 
     public string? ActiveCustomName => _activeCustomName;
@@ -134,6 +144,26 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     }
 
     private static float ClampScale(float v) => Math.Clamp(v, MinFontScale, MaxFontScale);
+
+    // Live (un-persisted) UI scale during a slider DRAG — quantised to the 5% grid. Stored as preview only; NO
+    // event fires (the ticker polls UiScale each frame and applies via the CanvasScaler). Persisted on release.
+    public void SetUiScalePreview(float scale)
+        => _uiScalePreview = ClampUiScale((float)(Math.Round(scale / 0.05) * 0.05));
+
+    // Mouse-release commit: drop the preview, persist the final value. NO ActiveChanged (no sprite rebake — the
+    // CanvasScaler applies via the canvas transform, driven by the ticker poll).
+    public void SetUiScale(float scale)
+    {
+        var clamped = ClampUiScale(scale);
+        _uiScalePreview = null;
+        if (Math.Abs(clamped - _uiScale) < 0.001f) return;
+        _uiScale = clamped;
+        _config.Set(UiScaleKey, clamped);
+        _config.Save();
+        _log.Info($"[NamedTheme] UI scale → {clamped:0.00}");
+    }
+
+    private static float ClampUiScale(float v) => Math.Clamp(v, MinUiScale, MaxUiScale);
 
     private static ThemePreset ParsePreset(string s)
         => Enum.TryParse<ThemePreset>(s, ignoreCase: true, out var v) ? v : ThemePreset.Default;

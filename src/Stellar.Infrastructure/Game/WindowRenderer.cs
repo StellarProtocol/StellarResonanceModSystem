@@ -24,6 +24,12 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
 
+    // Single source of the UI-scale → CanvasScaler formula. Dividing BOTH reference dimensions by the user factor
+    // u multiplies the resulting scaleFactor by exactly u, so the whole window canvas scales by u. Used on first
+    // mount (EnsureCanvas, avoids a 1-frame pop) and by the ticker's per-frame poll (WindowInteractionTicker).
+    internal static Vector2 UiRefResolution(float uiScale)
+        => new Vector2(2560f / uiScale, 1440f / uiScale);
+
     private readonly IPluginLog _log;
     private readonly IThemeMenuColors _colors;
     private readonly IChromeStyle _chrome;          // supplies the active theme's per-preset window opacity
@@ -261,13 +267,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
             canvas.sortingOrder = WindowSortingOrder;
             var scaler = go.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(2560f, 1440f);
+            scaler.referenceResolution = UiRefResolution(
+                Mathf.Clamp((_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f, 0.75f, 1.5f));
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
             // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
             go.AddComponent<GraphicRaycaster>();
             RegisterInjectedTypes();
             _ticker = go.AddComponent<WindowInteractionTicker>();
+            // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
+            _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
             _canvasComp = canvas;

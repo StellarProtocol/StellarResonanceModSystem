@@ -57,6 +57,11 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private Vector2 _lastMouse;
     private int _throwLogged;
     private Canvas? _canvasComp;
+    // UI-scale poll: WindowRenderer wires UiScaleProvider to NamedThemeService.UiScale; SyncUiScale (per frame)
+    // multiplies the CanvasScaler by driving referenceResolution = (2560/u, 1440/u). No-op when unchanged.
+    internal System.Func<float>? UiScaleProvider;
+    private CanvasScaler? _scaler;
+    private float _appliedUiScale = -1f;
     private float Scale
     {
         get
@@ -108,8 +113,35 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         }
     }
 
+    private void SyncUiScale()
+    {
+        if (UiScaleProvider == null) return;
+        if (_scaler == null) _scaler = GetComponent<CanvasScaler>();
+        if (_scaler == null) return;
+        var u = Mathf.Clamp(UiScaleProvider(), 0.75f, 1.5f);
+        u = Mathf.Round(u / 0.05f) * 0.05f;   // 5% grid: font atlas repacks only at boundaries during a drag
+        if (Mathf.Abs(u - _appliedUiScale) < 0.001f) return;
+        _appliedUiScale = u;
+        _scaler.referenceResolution = Stellar.Infrastructure.Game.WindowRenderer.UiRefResolution(u);
+    }
+
+    // pixelPerfect snaps graphics to the physical pixel grid — crisp at an INTEGER scaleFactor (native 1.0x),
+    // but at a fractional scaleFactor it re-snaps every frame and makes a dragged window's contents shift by
+    // ±1px. So enable it only when the effective scaleFactor is integral; disable it (smooth, slightly softer)
+    // otherwise. Guarded so the canvas rebuild only happens when the state actually flips.
+    private void SyncPixelPerfect()
+    {
+        if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
+        if (_canvasComp == null) return;
+        var sf = _canvasComp.scaleFactor;
+        var integral = Mathf.Abs(sf - Mathf.Round(sf)) < 0.01f;
+        if (_canvasComp.pixelPerfect != integral) _canvasComp.pixelPerfect = integral;
+    }
+
     private void Update()
     {
+        SyncUiScale();
+        SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {
             try { Fields[i].Tick(); }
