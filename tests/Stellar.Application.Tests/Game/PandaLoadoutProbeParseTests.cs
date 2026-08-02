@@ -31,6 +31,24 @@ public sealed class PandaLoadoutProbeParseTests
     }
 
     [Fact]
+    public void ParsesTalentNodeIdsFromFiveColumnRows()
+    {
+        var (_, entries) = PandaLoadoutProbe.ParseLoadoutData(
+            "CUR=3\n3\tAttack/Frost Mage\t2\t104\t233002,5205,222011");
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(new[] { 233002, 5205, 222011 }, entry.TalentNodes);
+    }
+
+    [Fact]
+    public void FiveColumnRowWithEmptyNodeListLeavesTalentNodesNull()
+    {
+        var (_, entries) = PandaLoadoutProbe.ParseLoadoutData("CUR=3\n3\tAttack\t2\t104\t");
+
+        Assert.Null(Assert.Single(entries).TalentNodes);
+    }
+
+    [Fact]
     public void TolerantOfTheOldTwoColumnRowForm()
     {
         var (current, entries) = PandaLoadoutProbe.ParseLoadoutData("CUR=1\n1\tIci-LF");

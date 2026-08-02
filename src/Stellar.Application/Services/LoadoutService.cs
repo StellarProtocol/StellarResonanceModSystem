@@ -48,7 +48,7 @@ internal sealed class LoadoutService : ILoadout
         var slots = new List<LoadoutSlot>(entries.Count);
         foreach (var e in entries)
         {
-            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current, e.ProfessionId, e.TalentStageId));
+            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current, e.ProfessionId, e.TalentStageId, e.TalentNodes));
         }
         _slots = slots;
         LoadoutsChanged?.Invoke();

@@ -201,20 +201,28 @@ internal sealed partial class PandaLoadoutProbe
 
     // Refresh chunk: fire SyncProjectList (AsyncGetRolePlanData) to populate
     // weapon_data, then serialize CurPlanId + each plan's id/name/professionId/
-    // currentTalentStageCfgId into the data global. Run inside the canonical
-    // coroutine wrapper (the RPC yields). No external text is interpolated — no
+    // currentTalentStageCfgId/talentNodeIds into the data global. The allocated node ids
+    // come from the CONFIRMED per-profession container path used by the game's own
+    // talent_skill_vm.GetWeaponActiveTalentTreeNode:
+    // Z.ContainerMgr.CharSerialize.professionList.talentList[professionId].talentNodeIds
+    // (repeated uint32) — read nil-safely so a missing container just yields an empty node
+    // list (the site then shows the recommended build, never a crash). Run inside the
+    // canonical coroutine wrapper (the RPC yields). No external text is interpolated — no
     // Lua-injection surface.
     private const string RefreshChunk =
         "(Z.CoroUtil.create_coro_xpcall(function()" +
         " local token=(ZUtil.ZCancelSource).NeverCancelToken" +
         " Z.VMMgr.GetVM(\"weapon\").AsyncGetRolePlanData(token)" +
         " local wd=Z.DataMgr.Get(\"weapon_data\") local d=wd.rolePlanServerData_" +
+        " local tl=(((Z.ContainerMgr).CharSerialize).professionList).talentList" +
         " local out=\"CUR=\"..tostring(d.CurPlanId)" +
         " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
         "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
         "  local prof=(pd and pd.professionId) or 0" +
         "  local stage=(pd and pd.currentTalentStageCfgId) or 0" +
-        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage) end end" +
+        "  local nodes=\"\"" +
+        "  if tl and tl[prof] and tl[prof].talentNodeIds then for _,nid in ipairs(tl[prof].talentNodeIds) do nodes=(nodes==\"\" and tostring(nid)) or (nodes..\",\"..tostring(nid)) end end" +
+        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes end end" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

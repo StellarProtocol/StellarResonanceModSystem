@@ -186,9 +186,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
     // Pure row parser — internal (not private) so it's directly unit-testable without
     // the Lua bridge. First line is "CUR=<int>"; each subsequent row is
-    // "<planId>\t<name>\t<professionId>\t<talentStageId>". Tolerates the OLD
-    // 2-column "<planId>\t<name>" form (a stale in-flight read from before this
-    // enrichment shipped) — the two extra columns simply default to 0, never throw.
+    // "<planId>\t<name>\t<professionId>\t<talentStageId>\t<talentNodeIds csv>". Tolerates the
+    // OLD 2/4-column forms (a stale in-flight read from before an enrichment shipped) — the
+    // missing columns simply default to 0/empty, never throw.
     internal static (int? Current, List<LoadoutEntry> Entries) ParseLoadoutData(string raw)
     {
         int? current = null;
@@ -213,8 +213,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
                 && int.TryParse(cols[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prof) ? prof : 0;
             var talentStageId = cols.Length > 3
                 && int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stage) ? stage : 0;
+            var talentNodes = cols.Length > 4 ? ParseNodeCsv(cols[4]) : null;
 
-            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name, professionId, talentStageId));
+            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name, professionId, talentStageId, talentNodes));
         }
 
         // Sort by planId so hotkey N → a deterministic loadout. PlanDataDict is a Lua
@@ -222,6 +223,23 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // so without this the hotkey→loadout mapping is unstable across sessions.
         entries.Sort(static (a, b) => a.Index.CompareTo(b.Index));
         return (current, entries);
+    }
+
+    // Parse a comma-separated node-id list ("233002,5205,...") into ints; returns null when the
+    // field is empty (no allocation captured) so LoadoutEntry.TalentNodes stays null rather than
+    // an empty list. Non-numeric parts are skipped, never thrown.
+    private static List<int>? ParseNodeCsv(string csv)
+    {
+        if (string.IsNullOrEmpty(csv)) return null;
+        List<int>? nodes = null;
+        foreach (var part in csv.Split(','))
+        {
+            if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+            {
+                (nodes ??= new List<int>()).Add(n);
+            }
+        }
+        return nodes;
     }
 
     private void DrainPendingDispatches()

@@ -28,4 +28,6 @@ internal interface ILoadoutProbe
 /// (e.g. a stale in-flight read still carrying the pre-enrichment 2-column form).</param>
 /// <param name="TalentStageId">The project's active talent-stage config id, or 0 if
 /// unresolved.</param>
-internal readonly record struct LoadoutEntry(int Index, string Name, int ProfessionId = 0, int TalentStageId = 0);
+/// <param name="TalentNodes">The profession's actual allocated talent-tree node ids, or null
+/// if unresolved (old 4-column read / no nodes).</param>
+internal readonly record struct LoadoutEntry(int Index, string Name, int ProfessionId = 0, int TalentStageId = 0, System.Collections.Generic.IReadOnlyList<int>? TalentNodes = null);
