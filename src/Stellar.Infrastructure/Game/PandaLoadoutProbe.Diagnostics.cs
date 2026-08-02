@@ -14,6 +14,22 @@ internal sealed partial class PandaLoadoutProbe
     private int _failedResolutionAttempts;
     private const int ResolutionFailureLogEvery = 60;
 
+    private bool _equipProbeLogged;
+
+    // Per-class gear RE (2026-08-03): run the equip-structure ProbeChunk ONCE and log the dumped
+    // runtime shape (CharSerialize equip containers + each plan's equip reference), so the project ->
+    // equip-set mapping can be nailed and the per-class gear decoded framework-side. Diagnostics-gated;
+    // called from ParseLoadoutData once the role-plan data is confirmed populated (so rolePlanServerData_
+    // / CharSerialize are non-empty). Read-only probe.
+    private void LogEquipProbe()
+    {
+        if (!StellarDiagnostics.IsEnabled || _equipProbeLogged) return;
+        _equipProbeLogged = true;
+        InvokeChunk(ProbeChunk);
+        var dump = ReadLuaGlobalString(EquipProbeGlobal);
+        _log.Info("[EquipProbe]\n" + (string.IsNullOrEmpty(dump) ? "(empty — no equip fields resolved)" : dump));
+    }
+
     // Always-on one-shot: proves the Lua-bridge reflection targets resolved.
     private void OnResolutionSucceeded()
     {

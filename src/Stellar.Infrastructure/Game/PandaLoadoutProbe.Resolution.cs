@@ -249,6 +249,40 @@ internal sealed partial class PandaLoadoutProbe
     // Clears the switch result global before a dispatch so a stale value isn't read.
     private const string ClearSwitchGlobalChunk = "rawset(_G,\"" + SwitchGlobal + "\", nil)";
 
+    // Diagnostic-only global written by ProbeChunk (per-class gear RE, 2026-08-03).
+    private const string EquipProbeGlobal = "_StellarEquipProbe";
+
+    // EQUIP-STRUCTURE PROBE (diagnostics only): the per-class gear is NOT on the live wire (proven by
+    // [ClassGearDiag]) — it lives in CharSerialize's equip containers. This dumps the ACTUAL runtime
+    // shape so we can map project -> equip set: for each plan pd, tries candidate equip-reference field
+    // names (proto casing is mixed — EquipList vs equipList, EquipNameGroupId vs equipNameGroupId — so
+    // both are probed nil-safely via pcall); then lists the keys of each candidate CharSerialize equip
+    // container (equipList/professionList) and drills one equipList entry to reveal its EquipNine
+    // slot->item shape. Read-only, no interpolation, coroutine-wrapped like RefreshChunk.
+    private const string ProbeChunk =
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local d=(Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_" +
+        " local cs=(Z.ContainerMgr).CharSerialize" +
+        " local out=\"\"" +
+        " local function ty(v) local t=type(v) if t==\"userdata\" then return \"obj\" end return t end" +
+        " if d and d.PlanDataDict then local n=0 for pid,pd in pairs(d.PlanDataDict) do" +
+        "  out=out..\"PLAN \"..tostring(pid)..\" prof=\"..tostring(pd.professionId)" +
+        "  for _,fn in ipairs({\"equipNameGroupId\",\"EquipNameGroupId\",\"curEquipNameGroupId\",\"CurEquipNameGroupId\",\"equipList\",\"EquipList\",\"equipNine\",\"EquipNine\",\"equipGroupId\",\"projectId\"}) do" +
+        "   local ok,v=pcall(function() return pd[fn] end)" +
+        "   if ok and v~=nil then out=out..\" \"..fn..\"=\"..tostring(v)..\"(\"..ty(v)..\")\" end end" +
+        "  out=out..\"\\n\" n=n+1 if n>=8 then break end end end" +
+        " for _,fn in ipairs({\"equipList\",\"EquipList\",\"equipNineList\",\"EquipNineList\",\"professionList\"}) do" +
+        "  local ok,v=pcall(function() return cs[fn] end)" +
+        "  if ok and v~=nil then out=out..\"cs.\"..fn..\"(\"..ty(v)..\") keys=[\"" +
+        "   pcall(function() local m=0 for k,vv in pairs(v) do out=out..tostring(k)..\":\"..ty(vv)..\",\" m=m+1 if m>=12 then break end end end)" +
+        "   out=out..\"]\\n\" end end" +
+        " pcall(function() local el=cs.equipList or cs.EquipList" +
+        "  if el then for k,v in pairs(el) do out=out..\"equipList[\"..tostring(k)..\"]{\"" +
+        "   pcall(function() for kk,vv in pairs(v) do out=out..tostring(kk)..\"=\"..tostring(vv)..\"(\"..ty(vv)..\"),\" end end)" +
+        "   out=out..\"}\\n\" break end end end)" +
+        " rawset(_G,\"" + EquipProbeGlobal + "\", out)" +
+        " end))()";
+
     private static Type? FindTypeByShortName(string shortName)
     {
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())

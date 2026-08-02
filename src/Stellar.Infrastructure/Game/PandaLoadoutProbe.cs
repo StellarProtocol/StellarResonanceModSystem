@@ -182,6 +182,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         var (current, entries) = ParseLoadoutData(raw!);
         _currentId = current;
         _loadouts = entries;
+        LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
     }
 
     // Pure row parser — internal (not private) so it's directly unit-testable without
