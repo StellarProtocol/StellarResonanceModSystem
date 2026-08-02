@@ -22,4 +22,10 @@ internal interface ILoadoutProbe
 }
 
 /// <summary>A raw saved-loadout entry read from the game.</summary>
-internal readonly record struct LoadoutEntry(int Index, string Name);
+/// <param name="Index">The game's loadout/project id.</param>
+/// <param name="Name">Display name as shown in the in-game dropdown.</param>
+/// <param name="ProfessionId">The project's class/profession id, or 0 if unresolved
+/// (e.g. a stale in-flight read still carrying the pre-enrichment 2-column form).</param>
+/// <param name="TalentStageId">The project's active talent-stage config id, or 0 if
+/// unresolved.</param>
+internal readonly record struct LoadoutEntry(int Index, string Name, int ProfessionId = 0, int TalentStageId = 0);

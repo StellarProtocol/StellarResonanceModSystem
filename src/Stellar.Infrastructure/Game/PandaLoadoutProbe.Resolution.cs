@@ -200,9 +200,10 @@ internal sealed partial class PandaLoadoutProbe
     // ── Chunk builders ─────────────────────────────────────────────────────────
 
     // Refresh chunk: fire SyncProjectList (AsyncGetRolePlanData) to populate
-    // weapon_data, then serialize CurPlanId + each plan's id/name into the data
-    // global. Run inside the canonical coroutine wrapper (the RPC yields). No
-    // external text is interpolated — no Lua-injection surface.
+    // weapon_data, then serialize CurPlanId + each plan's id/name/professionId/
+    // currentTalentStageCfgId into the data global. Run inside the canonical
+    // coroutine wrapper (the RPC yields). No external text is interpolated — no
+    // Lua-injection surface.
     private const string RefreshChunk =
         "(Z.CoroUtil.create_coro_xpcall(function()" +
         " local token=(ZUtil.ZCancelSource).NeverCancelToken" +
@@ -211,7 +212,9 @@ internal sealed partial class PandaLoadoutProbe
         " local out=\"CUR=\"..tostring(d.CurPlanId)" +
         " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
         "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
-        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm end end" +
+        "  local prof=(pd and pd.professionId) or 0" +
+        "  local stage=(pd and pd.currentTalentStageCfgId) or 0" +
+        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage) end end" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

@@ -4,4 +4,6 @@ namespace Stellar.Abstractions.Domain.Loadout;
 /// <param name="Index">Stable game-defined identifier passed to <see cref="Stellar.Abstractions.Services.ILoadout.ApplyAsync"/>. This is the game's loadout/project id, not necessarily a positional index; see the loadout recon findings.</param>
 /// <param name="Name">Display name as shown in the in-game dropdown (e.g. "Ici-LF"), or a fallback like "Loadout N" if unresolved.</param>
 /// <param name="IsCurrent">True if this loadout is the one currently applied.</param>
-public sealed record LoadoutSlot(int Index, string Name, bool IsCurrent);
+/// <param name="ProfessionId">The loadout's class/profession id, or 0 if unresolved.</param>
+/// <param name="TalentStageId">The loadout's active talent-stage config id, or 0 if unresolved.</param>
+public sealed record LoadoutSlot(int Index, string Name, bool IsCurrent, int ProfessionId = 0, int TalentStageId = 0);

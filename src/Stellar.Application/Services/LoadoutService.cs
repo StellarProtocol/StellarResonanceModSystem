@@ -48,7 +48,7 @@ internal sealed class LoadoutService : ILoadout
         var slots = new List<LoadoutSlot>(entries.Count);
         foreach (var e in entries)
         {
-            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current));
+            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current, e.ProfessionId, e.TalentStageId));
         }
         _slots = slots;
         LoadoutsChanged?.Invoke();
@@ -60,7 +60,11 @@ internal sealed class LoadoutService : ILoadout
         sb.Append(current?.ToString() ?? "-").Append('|');
         foreach (var e in entries)
         {
-            sb.Append(e.Index).Append(':').Append(e.Name).Append(';');
+            // ProfessionId/TalentStageId are included so a class remap or talent
+            // respec (list + selection otherwise unchanged) still re-fires
+            // LoadoutsChanged.
+            sb.Append(e.Index).Append(':').Append(e.Name).Append(':')
+              .Append(e.ProfessionId).Append(':').Append(e.TalentStageId).Append(';');
         }
         return sb.ToString();
     }

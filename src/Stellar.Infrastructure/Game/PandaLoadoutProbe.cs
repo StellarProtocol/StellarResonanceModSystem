@@ -172,17 +172,28 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     }
 
     // Read + parse the data global written by the refresh chunk. Skips reparse when
-    // the raw string is unchanged. First line is "CUR=<int>"; each subsequent
-    // "<planId>\t<name>" line is a LoadoutEntry.
+    // the raw string is unchanged.
     private void ParseLoadoutData()
     {
         var raw = ReadLuaGlobalString(DataGlobal);
         if (string.IsNullOrEmpty(raw) || raw == _lastDataRaw) return;
         _lastDataRaw = raw;
 
+        var (current, entries) = ParseLoadoutData(raw!);
+        _currentId = current;
+        _loadouts = entries;
+    }
+
+    // Pure row parser — internal (not private) so it's directly unit-testable without
+    // the Lua bridge. First line is "CUR=<int>"; each subsequent row is
+    // "<planId>\t<name>\t<professionId>\t<talentStageId>". Tolerates the OLD
+    // 2-column "<planId>\t<name>" form (a stale in-flight read from before this
+    // enrichment shipped) — the two extra columns simply default to 0, never throw.
+    internal static (int? Current, List<LoadoutEntry> Entries) ParseLoadoutData(string raw)
+    {
         int? current = null;
         var entries = new List<LoadoutEntry>();
-        foreach (var line in raw!.Split('\n'))
+        foreach (var line in raw.Split('\n'))
         {
             if (line.StartsWith("CUR=", StringComparison.Ordinal))
             {
@@ -192,20 +203,25 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
                 }
                 continue;
             }
-            var tab = line.IndexOf('\t');
-            if (tab <= 0) continue;
-            if (!int.TryParse(line.AsSpan(0, tab), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) continue;
-            var name = line.Substring(tab + 1);
-            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name));
+
+            var cols = line.Split('\t');
+            if (cols.Length < 2) continue;
+            if (!int.TryParse(cols[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) continue;
+
+            var name = cols[1];
+            var professionId = cols.Length > 2
+                && int.TryParse(cols[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prof) ? prof : 0;
+            var talentStageId = cols.Length > 3
+                && int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stage) ? stage : 0;
+
+            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name, professionId, talentStageId));
         }
 
         // Sort by planId so hotkey N → a deterministic loadout. PlanDataDict is a Lua
         // map (pairs order is unspecified, and planIds go sparse after delete/recreate),
         // so without this the hotkey→loadout mapping is unstable across sessions.
         entries.Sort(static (a, b) => a.Index.CompareTo(b.Index));
-
-        _currentId = current;
-        _loadouts = entries;
+        return (current, entries);
     }
 
     private void DrainPendingDispatches()
