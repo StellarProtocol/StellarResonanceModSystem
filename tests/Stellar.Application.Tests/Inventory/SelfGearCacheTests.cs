@@ -68,4 +68,17 @@ public class SelfGearCacheTests
 
         Assert.Empty(cache.Current);
     }
+
+    [Fact]
+    public void OnGearSync_Raises_Changed_OnEverySync()
+    {
+        var cache = new SelfGearCache();
+        var fires = 0;
+        cache.Changed += () => fires++;
+
+        cache.OnGearSync(new[] { Gear(200, 11, 990001) });
+        cache.OnGearSync(System.Array.Empty<GearInstance>());   // even a wipe/re-sync signals a change
+
+        Assert.Equal(2, fires);
+    }
 }

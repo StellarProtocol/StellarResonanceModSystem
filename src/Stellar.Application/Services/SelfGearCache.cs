@@ -19,9 +19,16 @@ internal sealed class SelfGearCache : IGearInstanceSink
 {
     private IReadOnlyList<GearInstance> _gear = Array.Empty<GearInstance>();
 
+    /// <summary>Raised on the network/sync thread AFTER a full sync replaces the cache —
+    /// forwarded by <see cref="InventoryService"/> as <c>IInventory.SelfGearChanged</c>.</summary>
+    public event Action? Changed;
+
     /// <summary>Current self-gear list; empty until the first full sync.</summary>
     public IReadOnlyList<GearInstance> Current => Volatile.Read(ref _gear);
 
     public void OnGearSync(IReadOnlyList<GearInstance> gear)
-        => Volatile.Write(ref _gear, gear ?? Array.Empty<GearInstance>());
+    {
+        Volatile.Write(ref _gear, gear ?? Array.Empty<GearInstance>());
+        Changed?.Invoke();
+    }
 }

@@ -27,6 +27,7 @@ internal sealed class InventoryService : IInventory
         _probe = probe;
         _selfGear = selfGear;
         _log = log;
+        _selfGear.Changed += RaiseSelfGearChanged;
     }
 
     public bool IsAvailable => Volatile.Read(ref _modules) is not null;
@@ -40,6 +41,22 @@ internal sealed class InventoryService : IInventory
     public IReadOnlyList<GearInstance> GetSelfGear() => _selfGear.Current;
 
     public event Action? InventoryChanged;
+
+    public event Action? SelfGearChanged;
+
+    // Forwards SelfGearCache.Changed (network/sync thread) to plugin subscribers. Swallows subscriber
+    // exceptions like the InventoryChanged path so one bad handler can't tear down the sync thread.
+    private void RaiseSelfGearChanged()
+    {
+        try
+        {
+            SelfGearChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Stellar][Inventory] self-gear subscriber threw: {ex.Message}");
+        }
+    }
 
     /// <summary>Called at 1Hz from BootstrapPlugin. Reads from the probe,
     /// computes a hash of the inventory + equipped state, fires the event

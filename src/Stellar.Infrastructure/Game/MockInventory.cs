@@ -105,6 +105,13 @@ internal sealed class MockInventory : IInventory
         remove { /* intentional no-op */ }
     }
 
+    // Static fixture — self-gear never re-syncs, so this never fires either.
+    public event Action? SelfGearChanged
+    {
+        add { /* intentional no-op */ }
+        remove { /* intentional no-op */ }
+    }
+
     private static ModulePart P(int attrId, string label, int value) =>
         new ModulePart(attrId, label, value);
 
