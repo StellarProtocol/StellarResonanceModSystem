@@ -203,6 +203,15 @@ Main agent designs/reviews/does git; `mod-implementer` writes C#; `build-deploy`
 
 ---
 
+## 6b. Known gaps (evidence-driven — extend when ≥2 consumers hit them)
+
+- **`StellarInterop` collection walk covers int-indexed only** (ZList: `Count`+`Item(int)`). The Mahiru pilot
+  surfaced two sites it does NOT cover: an **enum/object-keyed `ZDictionary` indexer** (`["Item", EnumKey]`) and
+  an **enumerator-only `Values`** walk (`GetEnumerator`/`MoveNext`/`Current`, no int indexer). Mahiru handles
+  these locally (`WalkIl2Cpp`), left untouched (behavior-preserving). **Deferred** — extend `StellarInterop`
+  with `Item(object, object key)` + an enumerator-fallback `Enumerate` only once a 2nd/3rd plugin needs it, so
+  the surface stays proven. Not a defect in the shipped floor; ZList (the common case) is fully served.
+
 ## 7. Risks
 
 - **NuGet cache staleness** — re-packing `2.0.0` in place (§4, DECIDED) *will* serve stale cache unless the
