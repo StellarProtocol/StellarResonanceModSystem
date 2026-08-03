@@ -134,7 +134,11 @@ internal sealed partial class PandaInventoryPullReader
             _itemConfigIdProperty = itemType.GetProperty("ConfigId", AnyInstance);
             _itemQualityProperty = itemType.GetProperty("Quality", AnyInstance);
             _itemModNewAttrProperty = itemType.GetProperty("ModNewAttr", AnyInstance);
+            _itemEquipAttrProperty = itemType.GetProperty("EquipAttr", AnyInstance);   // per-class gear rolls (PerClassLoadout partial)
         }
+
+        // Per-class gear roll decode (PerClassLoadout partial) — EquipAttr/EquipAttrSet sub-handles.
+        ResolveEquipAttrProperties();
 
         var modNewAttrType = _typeRegistry.FindType("Zproto.ModNewAttr") ?? FindTypeByShortName("ModNewAttr");
         if (modNewAttrType is not null)

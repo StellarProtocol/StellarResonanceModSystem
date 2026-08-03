@@ -48,7 +48,7 @@ internal sealed class LoadoutService : ILoadout
         var slots = new List<LoadoutSlot>(entries.Count);
         foreach (var e in entries)
         {
-            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current, e.ProfessionId, e.TalentStageId, e.TalentNodes));
+            slots.Add(new LoadoutSlot(e.Index, e.Name, e.Index == current, e.ProfessionId, e.TalentStageId, e.TalentNodes, e.Gear, e.Modules));
         }
         _slots = slots;
         LoadoutsChanged?.Invoke();
@@ -62,9 +62,13 @@ internal sealed class LoadoutService : ILoadout
         {
             // ProfessionId/TalentStageId are included so a class remap or talent
             // respec (list + selection otherwise unchanged) still re-fires
-            // LoadoutsChanged.
+            // LoadoutsChanged. Gear/Modules counts are folded in because per-class
+            // gear/modules resolve a beat AFTER the base fields (they need the item
+            // container): without this the base signature is unchanged when they land,
+            // so _slots would keep the null-gear snapshot and never surface the gear.
             sb.Append(e.Index).Append(':').Append(e.Name).Append(':')
-              .Append(e.ProfessionId).Append(':').Append(e.TalentStageId).Append(';');
+              .Append(e.ProfessionId).Append(':').Append(e.TalentStageId).Append(':')
+              .Append(e.Gear?.Count ?? -1).Append(':').Append(e.Modules?.Count ?? -1).Append(';');
         }
         return sb.ToString();
     }

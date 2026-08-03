@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 
 namespace Stellar.Application.Abstractions;
@@ -30,4 +31,11 @@ internal interface ILoadoutProbe
 /// unresolved.</param>
 /// <param name="TalentNodes">The profession's actual allocated talent-tree node ids, or null
 /// if unresolved (old 4-column read / no nodes).</param>
-internal readonly record struct LoadoutEntry(int Index, string Name, int ProfessionId = 0, int TalentStageId = 0, System.Collections.Generic.IReadOnlyList<int>? TalentNodes = null);
+internal readonly record struct LoadoutEntry(
+    int Index,
+    string Name,
+    int ProfessionId = 0,
+    int TalentStageId = 0,
+    IReadOnlyList<int>? TalentNodes = null,
+    IReadOnlyList<GearInstance>? Gear = null,
+    IReadOnlyDictionary<int, ModuleInfo>? Modules = null);

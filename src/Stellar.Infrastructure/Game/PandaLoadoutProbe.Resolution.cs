@@ -222,7 +222,12 @@ internal sealed partial class PandaLoadoutProbe
         "  local stage=(pd and pd.currentTalentStageCfgId) or 0" +
         "  local nodes=\"\"" +
         "  if tl and tl[prof] and tl[prof].talentNodeIds then for _,nid in ipairs(tl[prof].talentNodeIds) do nodes=(nodes==\"\" and tostring(nid)) or (nodes..\",\"..tostring(nid)) end end" +
-        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes end end" +
+        // Per-class gear/modules (2026-08-03): serialize this plan's equipInfoMap + modInfoMap as
+        // "slot:uuid,slot:uuid" (cols 6,7). The maps are pairs-iterable (the game does the same:
+        // equip_vm.IsEquipByOtherPlan). C# resolves each uuid -> full gear/module via itemPackage.
+        "  local eq=\"\" if pd and pd.equipInfoMap then for s,u in pairs(pd.equipInfoMap) do eq=(eq==\"\" and \"\" or eq..\",\")..tostring(s)..\":\"..tostring(u) end end" +
+        "  local md=\"\" if pd and pd.modInfoMap then for s,u in pairs(pd.modInfoMap) do md=(md==\"\" and \"\" or md..\",\")..tostring(s)..\":\"..tostring(u) end end" +
+        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes..\"\\t\"..eq..\"\\t\"..md end end" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

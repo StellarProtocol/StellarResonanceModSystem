@@ -6,11 +6,32 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Stellar.Abstractions.Diagnostics;
+using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.Game;
+
+/// <summary>Resolves EVERY saved loadout's per-class gear + modules from their slot → uuid maps in one
+/// pass. Host wires this to <see cref="PandaInventoryProbe.ResolvePlanLoadouts"/> (which owns the item
+/// container reflection + builds the uuid index once). Returns a same-length all-empty list until the
+/// container is resolved.</summary>
+internal delegate IReadOnlyList<(IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)>
+    PerClassLoadoutResolver(
+        IReadOnlyList<(IReadOnlyDictionary<int, long> Equip, IReadOnlyDictionary<int, long> Mod)> plans);
+
+/// <summary>One parsed loadout row from the Lua data global: the base fields PLUS the plan's
+/// equip/mod slot → uuid maps (from <c>equipInfoMap</c>/<c>modInfoMap</c>), which the per-class
+/// resolver turns into full gear/modules.</summary>
+internal readonly record struct ParsedPlan(
+    int Index,
+    string Name,
+    int ProfessionId,
+    int TalentStageId,
+    IReadOnlyList<int>? TalentNodes,
+    IReadOnlyDictionary<int, long> EquipUuids,
+    IReadOnlyDictionary<int, long> ModUuids);
 
 /// <summary>
 /// Reflection-based <see cref="ILoadoutProbe"/>. Reads + switches the player's active
@@ -58,6 +79,22 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private IReadOnlyList<LoadoutEntry> _loadouts = Array.Empty<LoadoutEntry>();
     private int? _currentId;
     private string? _lastDataRaw;
+
+    // Per-class gear/modules (2026-08-03). The parsed plans carry each plan's equip/mod slot→uuid maps;
+    // _resolveGear (wired by Host to PandaInventoryProbe.ResolvePlanLoadout) turns those uuids into full
+    // GearInstance/ModuleInfo via the item container. Resolution is retried each tick until the container
+    // is ready (any non-empty result), then latched via _detailsResolved until the raw data changes.
+    private List<ParsedPlan> _parsedPlans = new();
+    private bool _detailsResolved;
+    private PerClassLoadoutResolver? _resolveGear;
+
+    /// <summary>Wires the per-class gear/module resolver (Host → <c>PandaInventoryProbe.ResolvePlanLoadout</c>).
+    /// Late-bound because the inventory probe is built after the loadout probe. Safe to call once.</summary>
+    public void AttachGearResolver(PerClassLoadoutResolver resolver)
+    {
+        _resolveGear = resolver;
+        _detailsResolved = false;   // re-resolve now that a resolver is available
+    }
 
     // SyncProjectList is fired ON DEMAND only: once when the bridge first resolves
     // in-world, and again after a successful switch. No recurring timer (an unprompted
@@ -139,6 +176,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
         RefreshIfDue();
         ParseLoadoutData();
+        TryResolvePerClassDetails();
         DrainPendingDispatches();
 
         PendingSwitch? pending;
@@ -179,21 +217,64 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         if (string.IsNullOrEmpty(raw) || raw == _lastDataRaw) return;
         _lastDataRaw = raw;
 
-        var (current, entries) = ParseLoadoutData(raw!);
+        var (current, plans) = ParseLoadoutData(raw!);
         _currentId = current;
-        _loadouts = entries;
+        _parsedPlans = plans;
+        _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
+        _detailsResolved = false;              // new data → re-resolve per-class gear/modules
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
     }
 
+    // Base entries carry class/talent only; per-class Gear/Modules are attached later (they need the
+    // item container, which resolves a beat after the loadout list). Consumers see a valid list
+    // immediately (no gear) and the upgraded one once TryResolvePerClassDetails runs.
+    private static List<LoadoutEntry> BuildBaseEntries(List<ParsedPlan> plans)
+    {
+        var list = new List<LoadoutEntry>(plans.Count);
+        foreach (var p in plans)
+            list.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes));
+        return list;
+    }
+
+    // Resolves each plan's per-class gear + modules from its slot→uuid maps via the injected resolver
+    // (Host → PandaInventoryProbe.ResolvePlanLoadout). Retried every tick until the item container is
+    // ready (any plan yields non-empty gear/modules), then latched. A no-op once resolved or with no
+    // resolver/plans. Cheap after latch (never re-runs until the raw data changes).
+    private void TryResolvePerClassDetails()
+    {
+        if (_detailsResolved || _resolveGear is null || _parsedPlans.Count == 0) return;
+
+        var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count);
+        foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
+
+        var results = _resolveGear(request);   // one pass; builds the item index once
+        var upgraded = new List<LoadoutEntry>(_parsedPlans.Count);
+        var any = false;
+        for (var i = 0; i < _parsedPlans.Count; i++)
+        {
+            var p = _parsedPlans[i];
+            var (gear, modules) = i < results.Count ? results[i] : (Array.Empty<GearInstance>(), (IReadOnlyDictionary<int, ModuleInfo>)EmptyModules);
+            if (gear.Count > 0 || modules.Count > 0) any = true;
+            upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
+        }
+
+        if (!any) return;   // container not resolved yet — keep the base entries, retry next tick
+        _loadouts = upgraded;
+        _detailsResolved = true;
+        LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
+    }
+
+    private static readonly IReadOnlyDictionary<int, ModuleInfo> EmptyModules = new Dictionary<int, ModuleInfo>(0);
+
     // Pure row parser — internal (not private) so it's directly unit-testable without
     // the Lua bridge. First line is "CUR=<int>"; each subsequent row is
-    // "<planId>\t<name>\t<professionId>\t<talentStageId>\t<talentNodeIds csv>". Tolerates the
-    // OLD 2/4-column forms (a stale in-flight read from before an enrichment shipped) — the
-    // missing columns simply default to 0/empty, never throw.
-    internal static (int? Current, List<LoadoutEntry> Entries) ParseLoadoutData(string raw)
+    // "<planId>\t<name>\t<professionId>\t<talentStageId>\t<talentNodeIds csv>\t<equip slot:uuid csv>\t<mod slot:uuid csv>".
+    // Tolerates the OLD 2/4/5-column forms (a stale in-flight read from before an enrichment shipped) —
+    // the missing columns simply default to 0/empty, never throw.
+    internal static (int? Current, List<ParsedPlan> Plans) ParseLoadoutData(string raw)
     {
         int? current = null;
-        var entries = new List<LoadoutEntry>();
+        var plans = new List<ParsedPlan>();
         foreach (var line in raw.Split('\n'))
         {
             if (line.StartsWith("CUR=", StringComparison.Ordinal))
@@ -215,15 +296,39 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             var talentStageId = cols.Length > 3
                 && int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stage) ? stage : 0;
             var talentNodes = cols.Length > 4 ? ParseNodeCsv(cols[4]) : null;
+            var equipUuids = cols.Length > 5 ? ParseUuidMap(cols[5]) : EmptyUuidMap;
+            var modUuids = cols.Length > 6 ? ParseUuidMap(cols[6]) : EmptyUuidMap;
 
-            entries.Add(new LoadoutEntry(id, name.Length == 0 ? $"Loadout {id}" : name, professionId, talentStageId, talentNodes));
+            plans.Add(new ParsedPlan(id, name.Length == 0 ? $"Loadout {id}" : name,
+                professionId, talentStageId, talentNodes, equipUuids, modUuids));
         }
 
         // Sort by planId so hotkey N → a deterministic loadout. PlanDataDict is a Lua
         // map (pairs order is unspecified, and planIds go sparse after delete/recreate),
         // so without this the hotkey→loadout mapping is unstable across sessions.
-        entries.Sort(static (a, b) => a.Index.CompareTo(b.Index));
-        return (current, entries);
+        plans.Sort(static (a, b) => a.Index.CompareTo(b.Index));
+        return (current, plans);
+    }
+
+    private static readonly IReadOnlyDictionary<int, long> EmptyUuidMap = new Dictionary<int, long>(0);
+
+    // Parses a "slot:uuid,slot:uuid" list into a slot→uuid map. Malformed pairs are skipped, never
+    // thrown; an empty/absent field yields the shared empty map (no allocation).
+    private static IReadOnlyDictionary<int, long> ParseUuidMap(string csv)
+    {
+        if (string.IsNullOrEmpty(csv)) return EmptyUuidMap;
+        Dictionary<int, long>? map = null;
+        foreach (var pair in csv.Split(','))
+        {
+            var colon = pair.IndexOf(':');
+            if (colon <= 0 || colon >= pair.Length - 1) continue;
+            if (int.TryParse(pair.AsSpan(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot)
+                && long.TryParse(pair.AsSpan(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var uuid))
+            {
+                (map ??= new Dictionary<int, long>()).Add(slot, uuid);
+            }
+        }
+        return map ?? EmptyUuidMap;
     }
 
     // Parse a comma-separated node-id list ("233002,5205,...") into ints; returns null when the

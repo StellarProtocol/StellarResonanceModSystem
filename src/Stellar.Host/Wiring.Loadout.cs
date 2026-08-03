@@ -22,6 +22,11 @@ public sealed partial class BootstrapPlugin
     private void BuildLoadoutServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
         _loadoutProbe = new PandaLoadoutProbe(log, typeRegistry);
+        // Per-class gear/modules (2026-08-03): the loadout probe reads each saved plan's equip/mod
+        // slot→uuid maps (Lua), then hands them to the inventory probe's item-container resolver to
+        // surface each class's real gear/modules on LoadoutSlot (the live self-gear/module APIs are
+        // class-blind). _inventoryProbe is built first (BootstrapPlugin build order), so it's ready.
+        _loadoutProbe.AttachGearResolver(plans => _inventoryProbe!.ResolvePlanLoadouts(plans));
         _loadoutService = new LoadoutService(_loadoutProbe);
     }
 }
