@@ -77,8 +77,13 @@ internal sealed partial class PandaInventoryPullReader
         ResolvePlanLoadouts(
             IReadOnlyList<(IReadOnlyDictionary<int, long> Equip, IReadOnlyDictionary<int, long> Mod)> plans)
     {
-        if (!EnsureResolved()) return EmptyResults(plans.Count);
-        var charSerialize = _readCharSerialize?.Invoke();
+        // PASSIVE container access — TryGetLiveCharSerialize returns null unless the 1 Hz inventory poll
+        // has ALREADY resolved the container; it never DRIVES EnsureResolved. Calling EnsureResolved from
+        // this (up to 30 Hz) loadout tick is explicitly forbidden: its backoff is tuned for the 1 Hz poll
+        // and shares that counter, so a faster caller burns the fast-attempt budget and re-runs the ~0.5 s
+        // AppDomain scan ~once/sec — the exact world-load freeze the backoff exists to prevent
+        // (PandaInventoryPullReader.cs § TryGetLiveCharSerialize). Resolution stays owned by the 1 Hz poll.
+        var charSerialize = TryGetLiveCharSerialize();
         if (charSerialize is null) return EmptyResults(plans.Count);
 
         var index = BuildUuidIndex(charSerialize);

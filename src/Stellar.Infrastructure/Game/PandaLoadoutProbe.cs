@@ -94,6 +94,8 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     {
         _resolveGear = resolver;
         _detailsResolved = false;   // re-resolve now that a resolver is available
+        _resolveTickGate = 0;
+        _resolveAttempts = 0;
     }
 
     // SyncProjectList is fired ON DEMAND only: once when the bridge first resolves
@@ -222,6 +224,8 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _parsedPlans = plans;
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _detailsResolved = false;              // new data → re-resolve per-class gear/modules
+        _resolveTickGate = 0;
+        _resolveAttempts = 0;                  // fresh attempt budget for this snapshot
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
     }
 
@@ -240,25 +244,38 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     // (Host → PandaInventoryProbe.ResolvePlanLoadout). Retried every tick until the item container is
     // ready (any plan yields non-empty gear/modules), then latched. A no-op once resolved or with no
     // resolver/plans. Cheap after latch (never re-runs until the raw data changes).
+    // The resolve reflects the WHOLE item container (BuildUuidIndex scans every package/item) — the same
+    // expensive scan the sibling inventory refresh deliberately runs at 1 Hz. Throttle this retry to a
+    // similar cadence (NOT the up-to-30 Hz loadout drain) and cap attempts per data snapshot, so a plan
+    // set that never resolves (impossible for real saved loadouts, but guards a container hiccup) can't
+    // scan forever. Both counters reset on a new parse (_lastDataRaw change) and on AttachGearResolver.
+    private int _resolveTickGate;
+    private int _resolveAttempts;
+    private const int ResolveEveryTicks = 30;   // ~1 Hz at the default 30 Hz loadout drain
+    private const int MaxResolveAttempts = 60;  // give up after ~1 min of throttled tries; keep base entries
+
     private void TryResolvePerClassDetails()
     {
         if (_detailsResolved || _resolveGear is null || _parsedPlans.Count == 0) return;
+        if (_resolveTickGate++ % ResolveEveryTicks != 0) return;                              // throttle the scan
+        if (_resolveAttempts++ >= MaxResolveAttempts) { _detailsResolved = true; return; }   // give up; keep base
 
         var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count);
         foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
 
         var results = _resolveGear(request);   // one pass; builds the item index once
+        var ready = false;
+        foreach (var (gear, modules) in results)
+            if (gear.Count > 0 || modules.Count > 0) { ready = true; break; }
+        if (!ready) return;   // container not resolved yet — keep the base entries, retry next throttled tick
+
         var upgraded = new List<LoadoutEntry>(_parsedPlans.Count);
-        var any = false;
         for (var i = 0; i < _parsedPlans.Count; i++)
         {
             var p = _parsedPlans[i];
             var (gear, modules) = i < results.Count ? results[i] : (Array.Empty<GearInstance>(), (IReadOnlyDictionary<int, ModuleInfo>)EmptyModules);
-            if (gear.Count > 0 || modules.Count > 0) any = true;
             upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
         }
-
-        if (!any) return;   // container not resolved yet — keep the base entries, retry next tick
         _loadouts = upgraded;
         _detailsResolved = true;
         LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
