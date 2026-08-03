@@ -222,6 +222,15 @@ Main agent designs/reviews/does git; `mod-implementer` writes C#; `build-deploy`
   churn CooldownBar's history flags as a combat hitch source (demand+visibility-gated, small N → LOW). Fix is
   internal-only (cache the indexer getter per Type; resolve once in `Enumerate`, reuse one arg array) — no API
   change, benefits every consumer. Do in a batched framework-polish pass, not mid-wave.
+- **`ICombatSnapshot.ServerNow` pre-sync fallback is wrong (latent bug).** It returns Unix epoch **1970**
+  until the first `SyncServerTime` notify (`FromUnixTimeMilliseconds(ServerNowMs)` with `ServerNowMs==0`).
+  The `ServerClock` pattern it's meant to replace falls back to **local-now (skew 0)** until synced, and
+  consumers read it ungated — so a drop-in swap renders ~56-year countdowns during the ~5s pre-sync window on
+  every PC. Fix: `ServerNow` should return `UtcNow` (skew 0) while `ServerNowMs==0`, then the interpolated
+  server time once synced. Blocks ExchangeBuyer dropping its `ServerClock.cs` (kept for now). Do in the
+  framework-polish batch, then migrate ExchangeBuyer's 4 `ServerClock` consumers + delete `ServerClock.cs`.
+- **CustomProfileImage's lone hand-rolled `Harmony`** (`InstallLuaReadyTrigger`) left un-migrated (its §5 map
+  scope was StellarInterop+ILua); optional consistency swap to `IHarmonyHost`.
 - **Dead `InputSimPatch.cs`** (Experiment) still hand-rolls Harmony (unreferenced; `_harmony` used as an
   `IsInstalled` flag) and an unused `const BindingFlags SF` in `DitherControl.cs` — optional cleanup, inert.
 - **Nullable warnings** from consuming the nullable-returning `StellarInterop` API (CS8605/CS8601 in Experiment)
