@@ -34,11 +34,20 @@ internal sealed partial class PandaLoadoutProbe
             var cur = e.Index == _currentId;
             sb.Append(cur ? " *p" : " p").Append(e.Index).Append('/').Append(e.ProfessionId)
               .Append(':').Append(e.Gear?.Count ?? 0).Append('g').Append(e.Modules?.Count ?? 0).Append('m');
-            if (cur && e.Gear is { } g)   // the overlaid plan — dump slots so a removal is visible
-            {
-                sb.Append('[');
-                foreach (var gi in g) sb.Append(gi.Slot).Append(',');
-                sb.Append(']');
+            if (cur)   // the overlaid plan — dump slot:configId for gear + modules so a SWAP (same slot, new
+            {          // item) shows too, not only a de-equip (which changes the count)
+                if (e.Gear is { } g)
+                {
+                    sb.Append(" g[");
+                    foreach (var gi in g) sb.Append(gi.Slot).Append(':').Append(gi.ConfigId).Append(',');
+                    sb.Append(']');
+                }
+                if (e.Modules is { } m)
+                {
+                    sb.Append("m[");
+                    foreach (var kv in m) sb.Append(kv.Key).Append(':').Append(kv.Value.ConfigId).Append(',');
+                    sb.Append(']');
+                }
             }
         }
         var sig = sb.ToString();
