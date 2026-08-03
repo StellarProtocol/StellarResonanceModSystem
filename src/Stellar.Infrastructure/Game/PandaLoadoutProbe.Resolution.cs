@@ -252,34 +252,45 @@ internal sealed partial class PandaLoadoutProbe
     // Diagnostic-only global written by ProbeChunk (per-class gear RE, 2026-08-03).
     private const string EquipProbeGlobal = "_StellarEquipProbe";
 
-    // EQUIP-STRUCTURE PROBE (diagnostics only): the per-class gear is NOT on the live wire (proven by
-    // [ClassGearDiag]) — it lives in CharSerialize's equip containers. This dumps the ACTUAL runtime
-    // shape so we can map project -> equip set: for each plan pd, tries candidate equip-reference field
-    // names (proto casing is mixed — EquipList vs equipList, EquipNameGroupId vs equipNameGroupId — so
-    // both are probed nil-safely via pcall); then lists the keys of each candidate CharSerialize equip
-    // container (equipList/professionList) and drills one equipList entry to reveal its EquipNine
-    // slot->item shape. Read-only, no interpolation, coroutine-wrapped like RefreshChunk.
+    // EQUIP/MOD RESOLUTION PROBE (diagnostics only, 2026-08-03 iter 2). The per-class gear+modules are
+    // NOT on the live wire ([ClassGearDiag]-proven) — but the game's OWN Lua (weapon_vm.CheckRolePlanIsChange,
+    // equip_vm.IsEquipByOtherPlan, items_vm.GetItemInfobyItemId) shows the exact paths:
+    //   • per-plan gear   = weapon_data.rolePlanServerData_.PlanDataDict[planId].equipInfoMap[slot] = itemUuid
+    //   • per-plan modules= …PlanDataDict[planId].modInfoMap[slot] = moduleUuid
+    //   • uuid -> detail  = CharSerialize.itemPackage.packages[*].items[uuid] (configId + equipAttr + modNewAttr)
+    // The plan *maps* are pairs-iterable (the game does `for _,u in pairs(planInfo.equipInfoMap)`), so this
+    // dumps slot->uuid per plan reliably. The single empirical unknown §29 must confirm before implementing:
+    // do a NON-ACTIVE plan's uuids RESOLVE in itemPackage (FOUND/NIL)? — plus prove the roll/part carriers
+    // (equipAttr.totalRecastCount/perfectionValue, modNewAttr.modParts) are populated for a non-active item.
+    // The full equipAttr roll-field enumeration is done at implement-time via C# GetProperties (Lua pairs
+    // does NOT enumerate an IL2CPP object's named properties). Read-only, no interpolation, coroutine-wrapped.
     private const string ProbeChunk =
         "(Z.CoroUtil.create_coro_xpcall(function()" +
-        " local d=(Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_" +
+        " local sd=(Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_" +
         " local cs=(Z.ContainerMgr).CharSerialize" +
         " local out=\"\"" +
-        " local function ty(v) local t=type(v) if t==\"userdata\" then return \"obj\" end return t end" +
-        " if d and d.PlanDataDict then local n=0 for pid,pd in pairs(d.PlanDataDict) do" +
-        "  out=out..\"PLAN \"..tostring(pid)..\" prof=\"..tostring(pd.professionId)" +
-        "  for _,fn in ipairs({\"equipNameGroupId\",\"EquipNameGroupId\",\"curEquipNameGroupId\",\"CurEquipNameGroupId\",\"equipList\",\"EquipList\",\"equipNine\",\"EquipNine\",\"equipGroupId\",\"projectId\"}) do" +
-        "   local ok,v=pcall(function() return pd[fn] end)" +
-        "   if ok and v~=nil then out=out..\" \"..fn..\"=\"..tostring(v)..\"(\"..ty(v)..\")\" end end" +
-        "  out=out..\"\\n\" n=n+1 if n>=8 then break end end end" +
-        " for _,fn in ipairs({\"equipList\",\"EquipList\",\"equipNineList\",\"EquipNineList\",\"professionList\"}) do" +
-        "  local ok,v=pcall(function() return cs[fn] end)" +
-        "  if ok and v~=nil then out=out..\"cs.\"..fn..\"(\"..ty(v)..\") keys=[\"" +
-        "   pcall(function() local m=0 for k,vv in pairs(v) do out=out..tostring(k)..\":\"..ty(vv)..\",\" m=m+1 if m>=12 then break end end end)" +
-        "   out=out..\"]\\n\" end end" +
-        " pcall(function() local el=cs.equipList or cs.EquipList" +
-        "  if el then for k,v in pairs(el) do out=out..\"equipList[\"..tostring(k)..\"]{\"" +
-        "   pcall(function() for kk,vv in pairs(v) do out=out..tostring(kk)..\"=\"..tostring(vv)..\"(\"..ty(vv)..\"),\" end end)" +
-        "   out=out..\"}\\n\" break end end end)" +
+        " local function findItem(uuid) local ok,res=pcall(function()" +
+        "   local pkgs=(cs.itemPackage).packages" +
+        "   for _,pkg in pairs(pkgs) do local it=(pkg.items)[uuid] if it~=nil then return it end end end)" +
+        "  if ok then return res end end" +
+        " local cur=sd and sd.CurPlanId" +
+        " out=\"CUR=\"..tostring(cur)..\"\\n\"" +
+        " local se,sm=nil,nil" +
+        " if sd~=nil and sd.PlanDataDict~=nil then local n=0 for pid,pd in pairs(sd.PlanDataDict) do" +
+        "  out=out..\"PLAN \"..tostring(pid)..\" prof=\"..tostring(pd.professionId)..((pid==cur) and \" [CUR]\" or \"\")..\"\\n\"" +
+        "  pcall(function() local ei=pd.equipInfoMap if ei~=nil then local m=0 for slot,uuid in pairs(ei) do out=out..\"  eq[\"..tostring(slot)..\"]=\"..tostring(uuid)..\"\\n\" if pid~=cur and se==nil then se=uuid end m=m+1 if m>=12 then break end end else out=out..\"  equipInfoMap=nil\\n\" end end)" +
+        "  pcall(function() local mi=pd.modInfoMap if mi~=nil then local m=0 for slot,uuid in pairs(mi) do out=out..\"  mod[\"..tostring(slot)..\"]=\"..tostring(uuid)..\"\\n\" if pid~=cur and sm==nil then sm=uuid end m=m+1 if m>=12 then break end end else out=out..\"  modInfoMap=nil\\n\" end end)" +
+        "  n=n+1 if n>=6 then break end end end" +
+        " if se~=nil then local it=findItem(se) out=out..\"RESOLVE eq=\"..tostring(se)..\" -> \"..((it~=nil) and \"FOUND\" or \"NIL\")..\"\\n\"" +
+        "  if it~=nil then pcall(function() out=out..\"  configId=\"..tostring(it.configId) end)" +
+        "   pcall(function() local ea=it.equipAttr out=out..\" equipAttr=\"..((ea~=nil) and \"present\" or \"nil\") if ea~=nil then out=out..\" recast=\"..tostring(ea.totalRecastCount)..\" perfection=\"..tostring(ea.perfectionValue) end end)" +
+        "   out=out..\"\\n\" end" +
+        " else out=out..\"(no non-active eq uuid)\\n\" end" +
+        " if sm~=nil then local it=findItem(sm) out=out..\"RESOLVE mod=\"..tostring(sm)..\" -> \"..((it~=nil) and \"FOUND\" or \"NIL\")..\"\\n\"" +
+        "  if it~=nil then pcall(function() out=out..\"  configId=\"..tostring(it.configId) end)" +
+        "   pcall(function() local mn=it.modNewAttr out=out..\" modNewAttr=\"..((mn~=nil) and \"present\" or \"nil\") if mn~=nil then local mp=mn.modParts if mp~=nil then local c=0 out=out..\" modParts=[\" for _,p in ipairs(mp) do out=out..tostring(p)..\",\" c=c+1 if c>=12 then break end end out=out..\"]#\"..tostring(c) else out=out..\" modParts=nil\" end end end)" +
+        "   out=out..\"\\n\" end" +
+        " else out=out..\"(no non-active mod uuid)\\n\" end" +
         " rawset(_G,\"" + EquipProbeGlobal + "\", out)" +
         " end))()";
 
