@@ -33,22 +33,28 @@ internal sealed partial class GameAssetsService
         return true;
     }
 
-    // One-shot reflection lookup. Returns true if all cached members are non-null.
+    private const int MaxResolveRetries = 5;
+
+    // Bounded, backoff-gated reflection lookup. Caches success permanently; a
+    // failed attempt (e.g. ZResLoader singleton not registered yet during boot)
+    // retries up to MaxResolveRetries times before giving up permanently.
     private bool ResolveOnce()
     {
-        if (_resolveAttempted) return _resolveSucceeded;
-        _resolveAttempted = true;
+        if (_resolveSucceeded) return true;                              // cached success — never re-resolve
+        if (_resolveAttempts >= MaxResolveRetries)
+        {
+            if (!_resolveGaveUpLogged) { _resolveGaveUpLogged = true; _log.Warning("[GameAssets][icon] resolve failed permanently after retries"); }
+            return false;
+        }
+        if (UnityEngine.Time.frameCount < _resolveNextRetryFrame) return false;   // backoff
+        _resolveAttempts++;
+        _resolveNextRetryFrame = UnityEngine.Time.frameCount + RetryBackoffFrames * _resolveAttempts;
 
-        if (!FindRequiredTypes(out var resLoaderType, out var singletonOpenType, out var cancelSourceType))
-            return false;
-        if (!RentCancelSource(cancelSourceType!))
-            return false;
-        if (!ResolveLoaderInstance(resLoaderType!, singletonOpenType!))
-            return false;
-        if (!ResolveLoadAssetMethod(resLoaderType!))
-            return false;
-        if (!ResolveUniTaskReflection(resLoaderType!))
-            return false;
+        if (!FindRequiredTypes(out var resLoaderType, out var singletonOpenType, out var cancelSourceType)) return false;
+        if (!RentCancelSource(cancelSourceType!)) return false;
+        if (!ResolveLoaderInstance(resLoaderType!, singletonOpenType!)) return false;
+        if (!ResolveLoadAssetMethod(resLoaderType!)) return false;
+        if (!ResolveUniTaskReflection(resLoaderType!)) return false;
 
         _resolveSucceeded = true;
         return true;
@@ -90,6 +96,8 @@ internal sealed partial class GameAssetsService
     // plugin (these are long-lived in the game itself).
     private bool RentCancelSource(Type cancelSourceType)
     {
+        // Idempotent: ResolveOnce may retry after a later step fails; don't re-rent (would orphan the prior rent).
+        if (_cancelSourceInstance != null) return true;
         try
         {
             var rentMethod = cancelSourceType.GetMethod(

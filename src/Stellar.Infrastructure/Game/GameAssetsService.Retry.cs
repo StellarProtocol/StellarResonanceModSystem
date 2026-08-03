@@ -8,6 +8,36 @@ namespace Stellar.Infrastructure.Game;
 
 internal sealed partial class GameAssetsService
 {
+    private const int MaxIconRetries = 4;       // reload attempts after a load fault before giving up permanently
+    private const int RetryBackoffFrames = 30;  // backoff = RetryBackoffFrames * attempt (~0.5s, 1s, 1.5s… at 60fps)
+
+    // A Failed slot: re-issue the load up to MaxIconRetries times, backoff-gated, THEN stay Failed permanently.
+    // Only load FAULTS retry (Path retained) — a no-IconPath data gap (Path == null) is a genuine miss, never retried.
+    // Orthogonal to the Item Sprite one-shot (RetriedAlternate): the counter is carried across re-issues so the two
+    // don't loop-guard each other — an Item slot still gets its Sprite fallback AND these bounded reloads.
+    private void TryRetryFailedIcon(Dictionary<int, Slot> slots, int key, Slot slot, IconKind kind)
+    {
+        if (slot.Path is null) return;                       // no-address gap → permanent, never retry
+        if (slot.Attempts >= MaxIconRetries)
+        {
+            if (!slot.RetryExhaustedLogged)
+            {
+                slot.RetryExhaustedLogged = true;
+                _log.Warning($"[GameAssets][icon] giving up {LabelOf(kind)}={key} after {slot.Attempts} attempts");
+            }
+            return;
+        }
+        if (UnityEngine.Time.frameCount < slot.NextRetryFrame) return;   // backoff not elapsed
+
+        var attempts = slot.Attempts + 1;
+        _log.Info($"[GameAssets][icon] requested {LabelOf(kind)}={key} retry attempt {attempts}");
+        var retry = BeginLoad(slot.Path, key, kind);        // re-issue the load (re-resolvable from retained Path)
+        retry.Attempts = attempts;
+        retry.RetriedAlternate = slot.RetriedAlternate;      // preserve the Item Sprite-one-shot state across reloads
+        retry.NextRetryFrame = UnityEngine.Time.frameCount + RetryBackoffFrames * attempts;
+        slots[key] = retry;
+    }
+
     // Poll the UniTask<Sprite> status for a slot that is in Loading state.
     // UniTaskStatus enum values: 0=Pending 1=Succeeded 2=Faulted 3=Canceled.
     // Updates slots[key] on completion or failure; returns the texture

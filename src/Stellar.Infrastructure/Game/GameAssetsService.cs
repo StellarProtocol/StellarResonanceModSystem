@@ -64,10 +64,13 @@ internal sealed partial class GameAssetsService : IGameAssets
     // never collide with profession / imagine / item / skill id spaces.
     private readonly Dictionary<int, Slot> _buffSlots = new();
 
-    // Reflection cache. Populated in ResolveOnce() — null after a failed
-    // resolution attempt so we don't keep paying the lookup cost.
-    private bool _resolveAttempted;
+    // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
+    // failures retry (bounded + backoff-gated) so a boot race self-heals instead
+    // of latching Failed forever.
     private bool _resolveSucceeded;
+    private int _resolveAttempts;
+    private int _resolveNextRetryFrame;
+    private bool _resolveGaveUpLogged;
 
     private object? _loaderInstance;
     private MethodInfo? _loadAssetAsyncString;       // closed over Sprite (profession/item atlas icons)
@@ -200,7 +203,11 @@ internal sealed partial class GameAssetsService : IGameAssets
             uv = slot.Uv;
             return slot.Texture;
         }
-        if (slot.State != LoadState.Loading) return null;
+        if (slot.State != LoadState.Loading)
+        {
+            if (slot.State == LoadState.Failed) TryRetryFailedIcon(slots, key, slot, kind);
+            return null;
+        }
 
         // Still loading — poll the UniTask status.
         var tex = PollLoadingSlot(slots, slot, key, kind);
@@ -314,5 +321,8 @@ internal sealed partial class GameAssetsService : IGameAssets
         // Set after the one-shot Texture2D retry for Item slots so the fallback
         // cannot loop: once true, no further retry is attempted regardless of outcome.
         public bool RetriedAlternate;
+        public int Attempts;               // bounded-retry counter for load faults (NOT the item Sprite one-shot)
+        public int NextRetryFrame;         // Time.frameCount gate for the next retry attempt
+        public bool RetryExhaustedLogged;  // so the give-up message logs exactly once
     }
 }
