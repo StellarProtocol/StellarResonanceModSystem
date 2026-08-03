@@ -141,6 +141,14 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
     /// </summary>
     internal object? TryGetLiveCharSerialize() => _pullReader.TryGetLiveCharSerialize();
 
+    /// <summary>The CURRENT LIVE equipped gear + modules from the game's containers (reflects manual
+    /// equips + class-swap re-equips). Forwarded to the pull-read collaborator.</summary>
+    public EquippedLoadout GetLiveEquipped()
+    {
+        var (gear, modules) = _pullReader.ReadLiveEquipped();
+        return new EquippedLoadout(gear, modules);
+    }
+
     /// <summary>
     /// Resolves EVERY saved loadout's PER-CLASS gear + modules from their slot → uuid maps (the loadout
     /// probe's Lua read of <c>equipInfoMap</c>/<c>modInfoMap</c>), in one pass. Forwarded to the pull-read

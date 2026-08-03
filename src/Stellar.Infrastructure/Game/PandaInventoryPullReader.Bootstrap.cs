@@ -119,6 +119,17 @@ internal sealed partial class PandaInventoryPullReader
         {
             _resonanceInstalledProperty = FindMapLikeProperty(_resonanceProperty.PropertyType, "Installed");
         }
+
+        // Equip (field 12 = EquipList): the LIVE equipped-gear mapping (slot → EquipInfo{ItemUuid,
+        // EquipSlotRefineLevel}) + per-uuid enchant. Source for per-class LIVE gear — reflects manual
+        // edits the stale wire cache misses. OPTIONAL: a miss must NOT fail inventory resolution.
+        _equipProperty = charSerializeType.GetProperty("Equip", AnyInstance);
+        if (_equipProperty is not null)
+        {
+            var equipListType = _equipProperty.PropertyType;
+            _equipListMapProperty = FindMapLikeProperty(equipListType, "EquipList");
+            _equipEnchantMapProperty = FindMapLikeProperty(equipListType, "EquipEnchant");
+        }
         return true;
     }
 
@@ -139,6 +150,20 @@ internal sealed partial class PandaInventoryPullReader
 
         // Per-class gear roll decode (PerClassLoadout partial) — EquipAttr/EquipAttrSet sub-handles.
         ResolveEquipAttrProperties();
+
+        // Live-gear (PerClassLoadout partial): EquipInfo slot entry + EquipEnchantInfo sub-handles.
+        var equipInfoType = _typeRegistry.FindType("Zproto.EquipInfo") ?? FindTypeByShortName("EquipInfo");
+        if (equipInfoType is not null)
+        {
+            _equipInfoUuidProperty = equipInfoType.GetProperty("ItemUuid", AnyInstance);
+            _equipInfoRefineProperty = equipInfoType.GetProperty("EquipSlotRefineLevel", AnyInstance);
+        }
+        var enchantInfoType = _typeRegistry.FindType("Zproto.EquipEnchantInfo") ?? FindTypeByShortName("EquipEnchantInfo");
+        if (enchantInfoType is not null)
+        {
+            _enchantTypeIdProperty = enchantInfoType.GetProperty("EnchantItemTypeId", AnyInstance);
+            _enchantLevelProperty = enchantInfoType.GetProperty("EnchantLevel", AnyInstance);
+        }
 
         var modNewAttrType = _typeRegistry.FindType("Zproto.ModNewAttr") ?? FindTypeByShortName("ModNewAttr");
         if (modNewAttrType is not null)

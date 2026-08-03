@@ -40,6 +40,10 @@ internal sealed class InventoryService : IInventory
     // the 1Hz probe poll — serve it straight off the volatile-swap cache.
     public IReadOnlyList<GearInstance> GetSelfGear() => _selfGear.Current;
 
+    // Live equipped set straight from the containers (reflects manual edits / class-swap re-equips) —
+    // a fresh reflection read, not the 1Hz-polled snapshot. Consumers re-read this on SelfGearChanged.
+    public EquippedLoadout GetLiveEquipped() => _probe.GetLiveEquipped();
+
     public event Action? InventoryChanged;
 
     public event Action? SelfGearChanged;

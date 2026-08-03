@@ -37,6 +37,11 @@ internal sealed class StubInventoryProbe : IInventoryProbe
         return true;
     }
 
+    public EquippedLoadout NextLiveEquipped { get; set; } =
+        new(new List<GearInstance>(), new Dictionary<int, ModuleInfo>());
+
+    public EquippedLoadout GetLiveEquipped() => NextLiveEquipped;
+
     public static ModuleSnapshot SnapshotOf(params (long uuid, int configId)[] modules)
     {
         var list = new List<ModuleInfo>(modules.Length);

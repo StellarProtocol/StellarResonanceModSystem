@@ -29,6 +29,17 @@ internal sealed partial class PandaInventoryPullReader
     // Stellar.Wire/GearInstanceReader.ReadEquipAttr (basic=10, advance=11, recast=12, rare=14,
     // perfection_value=7, perfection_level=13, max_perfection_value=15, equip_attr_set=17, break=18).
     private PropertyInfo? _itemEquipAttrProperty;                         // Item.EquipAttr (proto field 10)
+
+    // LIVE equipped-gear handles (CharSerialize.equip = EquipList, field 12): slot -> EquipInfo{ItemUuid,
+    // EquipSlotRefineLevel} + per-uuid EquipEnchantInfo. Source for per-class LIVE gear (reflects manual
+    // edits the stale wire cache misses). Resolved in Bootstrap; a miss just yields empty live gear.
+    private PropertyInfo? _equipProperty;            // CharSerialize.Equip -> EquipList
+    private PropertyInfo? _equipListMapProperty;     // EquipList.EquipList -> map<int32, EquipInfo>
+    private PropertyInfo? _equipEnchantMapProperty;  // EquipList.EquipEnchant -> map<int64, EquipEnchantInfo>
+    private PropertyInfo? _equipInfoUuidProperty;    // EquipInfo.ItemUuid
+    private PropertyInfo? _equipInfoRefineProperty;  // EquipInfo.EquipSlotRefineLevel
+    private PropertyInfo? _enchantTypeIdProperty;    // EquipEnchantInfo.EnchantItemTypeId
+    private PropertyInfo? _enchantLevelProperty;     // EquipEnchantInfo.EnchantLevel
     private PropertyInfo? _eaBasic, _eaAdvance, _eaRecast, _eaRare;       // top-level roll maps
     private PropertyInfo? _eaSet;                                         // EquipAttrSet (current spec's SCHOOL rolls)
     private PropertyInfo? _eaPerfVal, _eaPerfMax, _eaPerfLevel, _eaBreak; // scalar fields
@@ -155,15 +166,82 @@ internal sealed partial class PandaInventoryPullReader
         return index;
     }
 
-    private GearInstance ReadGearInstanceFromContainer(object entry, int slot, long uuid)
+    private GearInstance ReadGearInstanceFromContainer(object entry, int slot, long uuid, int refine = 0, GearEnchant? enchant = null)
     {
         int configId = TryReadInt32(entry, _itemConfigIdProperty);
         int quality = TryReadInt32(entry, _itemQualityProperty);
         object? equipAttr = SafeGet(_itemEquipAttrProperty, entry);
         var (perfection, attrs, breakThrough) = ReadEquipAttrObject(equipAttr);
-        // Refine + enchant are equip-slot state (CharSerialize.equip.equipList), current-class only —
-        // not on the item, so unavailable for a non-active plan. Default (documented gap).
-        return new GearInstance(slot, uuid, configId, quality, 0, perfection, attrs, null, breakThrough);
+        // Rolls/perfection/breakthrough are item-intrinsic; refine + enchant come from the equip-slot view
+        // (EquipList) — supplied by the live reader, 0/null for the (now-dormant) saved-plan path.
+        return new GearInstance(slot, uuid, configId, quality, refine, perfection, attrs, enchant, breakThrough);
+    }
+
+    /// <summary>
+    /// Reads the LOCAL player's CURRENT LIVE equipped gear + modules from the containers
+    /// (<c>CharSerialize.equip.equipList</c> / <c>CharSerialize.mod.modSlots</c>) — which reflect manual
+    /// equips, refines, and class-swap re-equips (unlike the stale method-21 wire cache). Gear carries full
+    /// rolls (from the item) PLUS refine + enchant (from the equip-slot view). Returns empties until the
+    /// container resolves. Passive container access (never drives EnsureResolved).
+    /// </summary>
+    internal (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules) ReadLiveEquipped()
+    {
+        var charSerialize = TryGetLiveCharSerialize();
+        if (charSerialize is null) return (Array.Empty<GearInstance>(), EmptyModuleDict);
+        var index = BuildUuidIndex(charSerialize);
+        if (index.Count == 0) return (Array.Empty<GearInstance>(), EmptyModuleDict);
+        return (ReadLiveGear(charSerialize, index), ReadLiveModules(charSerialize, index));
+    }
+
+    private List<GearInstance> ReadLiveGear(object charSerialize, Dictionary<long, object> index)
+    {
+        var gear = new List<GearInstance>(12);
+        object? equip = SafeGet(_equipProperty, charSerialize);
+        object? equipListMap = SafeGet(_equipListMapProperty, equip);   // slot -> EquipInfo
+        if (equipListMap is null) return gear;
+        var enchants = ReadEnchants(equip);
+        foreach (var (slotKey, info) in EnumerateMapEntries(equipListMap))
+        {
+            if (info is null) continue;
+            long uuid = TryReadInt64(info, _equipInfoUuidProperty);
+            if (uuid == 0 || !index.TryGetValue(uuid, out var entry)) continue;
+            int slot = AsInt32(slotKey);
+            int refine = TryReadInt32(info, _equipInfoRefineProperty);
+            var enchant = enchants.TryGetValue(uuid, out var e) ? e : (GearEnchant?)null;
+            gear.Add(ReadGearInstanceFromContainer(entry, slot, uuid, refine, enchant));
+        }
+        gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
+        return gear;
+    }
+
+    private Dictionary<long, GearEnchant> ReadEnchants(object? equip)
+    {
+        var map = new Dictionary<long, GearEnchant>();
+        object? enchantMap = SafeGet(_equipEnchantMapProperty, equip);   // uuid -> EquipEnchantInfo
+        if (enchantMap is null) return map;
+        foreach (var (uuidKey, info) in EnumerateMapEntries(enchantMap))
+        {
+            if (info is null) continue;
+            int typeId = TryReadInt32(info, _enchantTypeIdProperty);
+            long uuid = AsInt64(uuidKey);
+            if (uuid == 0 || typeId == 0) continue;
+            map[uuid] = new GearEnchant(typeId, TryReadInt32(info, _enchantLevelProperty));
+        }
+        return map;
+    }
+
+    private Dictionary<int, ModuleInfo> ReadLiveModules(object charSerialize, Dictionary<long, object> index)
+    {
+        var slots = ReadEquippedSlots(charSerialize);   // cs.mod.modSlots (slot -> uuid), reflects manual edits
+        var modInfosByUuid = ReadModInfosByUuid(charSerialize);
+        var modules = new Dictionary<int, ModuleInfo>(slots.Count);
+        foreach (var (slot, uuid) in slots)
+        {
+            if (uuid == 0 || !index.TryGetValue(uuid, out var entry)) continue;
+            var m = BuildModuleInfoOrNull(entry, modInfosByUuid);
+            if (m is not null) modules[slot] = m;
+        }
+        return modules;
     }
 
     private (GearPerfection Perfection, GearAttrRolls Attrs, int BreakThrough) ReadEquipAttrObject(object? equipAttr)

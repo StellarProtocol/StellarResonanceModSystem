@@ -31,4 +31,9 @@ internal sealed class SelfGearCache : IGearInstanceSink
         Volatile.Write(ref _gear, gear ?? Array.Empty<GearInstance>());
         Changed?.Invoke();
     }
+
+    // Method-22 dirty delta (manual equip / refine / class-swap re-equip): the wire capture doesn't decode
+    // gear from the delta, so leave the full-sync cache as-is and just fire Changed — consumers re-read the
+    // LIVE container (GetLiveEquipped), which already reflects the change.
+    public void OnGearMaybeChanged() => Changed?.Invoke();
 }

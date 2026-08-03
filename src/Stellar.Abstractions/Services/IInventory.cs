@@ -43,6 +43,13 @@ public interface IInventory
     /// lock-free read, like the other getters.</summary>
     IReadOnlyList<GearInstance> GetSelfGear();
 
+    /// <summary>The LOCAL player's CURRENT LIVE equipped gear + modules, read from the game's live
+    /// equip/mod containers — so it reflects manual equips, refines, and class-swap re-equips (unlike
+    /// <see cref="GetSelfGear"/>, which is a stale method-21 full-sync cache). Gear carries rolls +
+    /// refine + enchant; modules carry rolled parts keyed by slot. Empty lists until the container
+    /// resolves. Re-read on <see cref="SelfGearChanged"/> to capture a change as it happens.</summary>
+    EquippedLoadout GetLiveEquipped();
+
     /// <summary>Fires once when the snapshot or equipped set diffs the
     /// previous tick. Polling cadence is 1Hz so the event fires at most
     /// once per second.</summary>

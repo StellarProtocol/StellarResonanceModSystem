@@ -176,10 +176,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         TryResolveBridgeIfDue();
         if (!_bridgeResolved) return;
 
-        TickLiveGearDiag();   // measure-first live-container trace — no-op unless STELLAR_DIAGNOSTICS
         RefreshIfDue();
         ParseLoadoutData();
-        TryResolvePerClassDetails();
+        // NOTE: per-class gear/modules are now captured LIVE + event-driven by the plugin
+        // (IInventory.GetLiveEquipped on SelfGearChanged), NOT resolved from saved plans here. The
+        // saved-plan resolver (TryResolvePerClassDetails) is intentionally no longer called — the
+        // interval-polling it did is replaced by the wire-event path. (Dormant code slated for cleanup.)
         DrainPendingDispatches();
 
         PendingSwitch? pending;
