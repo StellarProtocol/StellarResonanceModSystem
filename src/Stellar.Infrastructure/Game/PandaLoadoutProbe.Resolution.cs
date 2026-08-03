@@ -214,7 +214,8 @@ internal sealed partial class PandaLoadoutProbe
         " local token=(ZUtil.ZCancelSource).NeverCancelToken" +
         " Z.VMMgr.GetVM(\"weapon\").AsyncGetRolePlanData(token)" +
         " local wd=Z.DataMgr.Get(\"weapon_data\") local d=wd.rolePlanServerData_" +
-        " local tl=(((Z.ContainerMgr).CharSerialize).professionList).talentList" +
+        " local cs=(Z.ContainerMgr).CharSerialize" +
+        " local tl=(cs.professionList).talentList" +
         " local out=\"CUR=\"..tostring(d.CurPlanId)" +
         " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
         "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
@@ -228,6 +229,13 @@ internal sealed partial class PandaLoadoutProbe
         "  local eq=\"\" if pd and pd.equipInfoMap then for s,u in pairs(pd.equipInfoMap) do eq=(eq==\"\" and \"\" or eq..\",\")..tostring(s)..\":\"..tostring(u) end end" +
         "  local md=\"\" if pd and pd.modInfoMap then for s,u in pairs(pd.modInfoMap) do md=(md==\"\" and \"\" or md..\",\")..tostring(s)..\":\"..tostring(u) end end" +
         "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes..\"\\t\"..eq..\"\\t\"..md end end" +
+        // Live overlay: the CURRENT class's actually-equipped set — cs.equip.equipList[slot].itemUuid +
+        // cs.mod.modSlots[slot]. This is the LIVE container (reflects manual equips/refines/removals) —
+        // NOT the method-21 capture latch the C# reader was stuck on. C# overlays this onto the CURRENT
+        // plan's saved-loadout gear/modules. "LIVE\t<eq slot:uuid,...>\t<mod slot:uuid,...>".
+        " local le=\"\" pcall(function() local el=(cs.equip).equipList if el~=nil then for s,info in pairs(el) do if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end end end end)" +
+        " local lm=\"\" pcall(function() local ms=(cs.mod).modSlots if ms~=nil then for s,u in pairs(ms) do lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
+        " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

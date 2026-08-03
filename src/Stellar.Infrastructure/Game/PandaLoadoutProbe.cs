@@ -98,6 +98,14 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _resolveAttempts = 0;
     }
 
+    // Live overlay freshness: set on IInventory.SelfGearChanged (network thread — flag only, no game read).
+    // A gear/module change or a loadout switch re-reads the live equipped set on the next tick.
+    private volatile bool _gearChangedPending;
+
+    /// <summary>Signals a gear/module change (or loadout switch) so the CURRENT class's live overlay is
+    /// re-read next tick. Host wires this to <c>IInventory.SelfGearChanged</c>. Thread-safe (flag only).</summary>
+    public void OnGearChanged() => _gearChangedPending = true;
+
     // SyncProjectList is fired ON DEMAND only: once when the bridge first resolves
     // in-world, and again after a successful switch. No recurring timer (an unprompted
     // recurring RPC is a policy violation). _refreshPending is set on first resolve +
@@ -176,6 +184,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         TryResolveBridgeIfDue();
         if (!_bridgeResolved) return;
 
+        // A gear/module change (manual equip/refine/removal OR a loadout switch — both fire SelfGearChanged
+        // via the method-22 field-12 delta) re-reads the live equipped set + current plan id, so the
+        // CURRENT class's overlay stays fresh. Event-driven: the flag is set on the network thread; consumed
+        // here on the tick (re-fires the on-demand refresh, which re-reads the live container).
+        if (_gearChangedPending) { _gearChangedPending = false; _refreshPending = true; }
+
         RefreshIfDue();
         ParseLoadoutData();
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
@@ -199,18 +213,28 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     // Fire the SyncProjectList refresh chunk ON DEMAND only: once the first time the
     // bridge is resolved in-world (so weapon_data.rolePlanServerData_ populates), and
     // again whenever a switch flags a refresh (post-success). No recurring timer.
+    // Coalesce refresh re-fires: a loadout switch emits a BURST of gear deltas (each sets _refreshPending
+    // via OnGearChanged), and the refresh fires a SyncProjectList RPC — firing it every tick through a burst
+    // would spam RPCs. After a refresh, wait this many ticks before the next; _refreshPending stays set
+    // meanwhile, so exactly one refresh fires per window (which re-reads the fresh current plan + live set).
+    private int _refreshCooldown;
+    private const int RefreshCooldownTicks = 20;   // ~0.66 s at the 30 Hz loadout drain
+
     private void RefreshIfDue()
     {
+        if (_refreshCooldown > 0) _refreshCooldown--;
         if (!_refreshedOnce)
         {
             _refreshedOnce = true;
             _refreshPending = false;
+            _refreshCooldown = RefreshCooldownTicks;
             InvokeChunk(RefreshChunk);
             return;
         }
-        if (_refreshPending)
+        if (_refreshPending && _refreshCooldown == 0)
         {
             _refreshPending = false;
+            _refreshCooldown = RefreshCooldownTicks;
             InvokeChunk(RefreshChunk);
         }
     }
@@ -226,11 +250,33 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         var (current, plans) = ParseLoadoutData(raw!);
         _currentId = current;
         _parsedPlans = plans;
+        ParseLiveLine(raw!);                   // CURRENT class's live equipped set (overlay source)
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _detailsResolved = false;              // new data → re-resolve per-class gear/modules
         _resolveTickGate = 0;
         _resolveAttempts = 0;                  // fresh attempt budget for this snapshot
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
+    }
+
+    // The CURRENT class's LIVE equipped set (from cs.equip.equipList / cs.mod.modSlots via the Lua bridge —
+    // the working live source, not the stale C# latch). Overlays the current plan's saved-loadout gear so a
+    // manual equip/refine/removal shows. Empty when absent. Parsed from the "LIVE\t<eq>\t<mod>" row; the
+    // static plan parser skips that row (its "LIVE" first column fails the int-parse), so tests are unaffected.
+    private IReadOnlyDictionary<int, long> _liveEquipUuids = EmptyUuidMap;
+    private IReadOnlyDictionary<int, long> _liveModUuids = EmptyUuidMap;
+
+    private void ParseLiveLine(string raw)
+    {
+        _liveEquipUuids = EmptyUuidMap;
+        _liveModUuids = EmptyUuidMap;
+        foreach (var line in raw.Split('\n'))
+        {
+            if (!line.StartsWith("LIVE\t", StringComparison.Ordinal)) continue;
+            var cols = line.Split('\t');
+            if (cols.Length > 1) _liveEquipUuids = ParseUuidMap(cols[1]);
+            if (cols.Length > 2) _liveModUuids = ParseUuidMap(cols[2]);
+            return;
+        }
     }
 
     // Base entries carry class/talent only; per-class Gear/Modules are attached later (they need the
@@ -264,8 +310,11 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         if (_resolveTickGate++ % ResolveEveryTicks != 0) return;                              // throttle the scan
         if (_resolveAttempts++ >= MaxResolveAttempts) { _detailsResolved = true; return; }   // give up; keep base
 
-        var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count);
+        var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count + 1);
         foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
+        // Append the CURRENT class's LIVE set as the LAST entry so it resolves in the SAME item-index pass.
+        var hasLive = _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
+        if (hasLive) request.Add((_liveEquipUuids, _liveModUuids));
 
         var results = _resolveGear(request);   // one pass; builds the item index once
         var ready = false;
@@ -273,11 +322,19 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             if (gear.Count > 0 || modules.Count > 0) { ready = true; break; }
         if (!ready) return;   // container not resolved yet — keep the base entries, retry next throttled tick
 
+        // The live overlay result (last entry), if it resolved to anything.
+        (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live =
+            hasLive && results.Count > _parsedPlans.Count ? results[_parsedPlans.Count] : null;
+
         var upgraded = new List<LoadoutEntry>(_parsedPlans.Count);
         for (var i = 0; i < _parsedPlans.Count; i++)
         {
             var p = _parsedPlans[i];
             var (gear, modules) = i < results.Count ? results[i] : (Array.Empty<GearInstance>(), (IReadOnlyDictionary<int, ModuleInfo>)EmptyModules);
+            // Overlay: the CURRENT plan uses its LIVE equipped set (reflects manual edits) when the live
+            // resolve produced anything; other plans keep their saved-loadout gear/modules.
+            if (p.Index == _currentId && live is { } lv && (lv.Gear.Count > 0 || lv.Modules.Count > 0))
+                (gear, modules) = lv;
             upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
         }
         _loadouts = upgraded;
@@ -286,88 +343,6 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     }
 
     private static readonly IReadOnlyDictionary<int, ModuleInfo> EmptyModules = new Dictionary<int, ModuleInfo>(0);
-
-    // Pure row parser — internal (not private) so it's directly unit-testable without
-    // the Lua bridge. First line is "CUR=<int>"; each subsequent row is
-    // "<planId>\t<name>\t<professionId>\t<talentStageId>\t<talentNodeIds csv>\t<equip slot:uuid csv>\t<mod slot:uuid csv>".
-    // Tolerates the OLD 2/4/5-column forms (a stale in-flight read from before an enrichment shipped) —
-    // the missing columns simply default to 0/empty, never throw.
-    internal static (int? Current, List<ParsedPlan> Plans) ParseLoadoutData(string raw)
-    {
-        int? current = null;
-        var plans = new List<ParsedPlan>();
-        foreach (var line in raw.Split('\n'))
-        {
-            if (line.StartsWith("CUR=", StringComparison.Ordinal))
-            {
-                if (int.TryParse(line.AsSpan(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c))
-                {
-                    current = c;
-                }
-                continue;
-            }
-
-            var cols = line.Split('\t');
-            if (cols.Length < 2) continue;
-            if (!int.TryParse(cols[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)) continue;
-
-            var name = cols[1];
-            var professionId = cols.Length > 2
-                && int.TryParse(cols[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prof) ? prof : 0;
-            var talentStageId = cols.Length > 3
-                && int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stage) ? stage : 0;
-            var talentNodes = cols.Length > 4 ? ParseNodeCsv(cols[4]) : null;
-            var equipUuids = cols.Length > 5 ? ParseUuidMap(cols[5]) : EmptyUuidMap;
-            var modUuids = cols.Length > 6 ? ParseUuidMap(cols[6]) : EmptyUuidMap;
-
-            plans.Add(new ParsedPlan(id, name.Length == 0 ? $"Loadout {id}" : name,
-                professionId, talentStageId, talentNodes, equipUuids, modUuids));
-        }
-
-        // Sort by planId so hotkey N → a deterministic loadout. PlanDataDict is a Lua
-        // map (pairs order is unspecified, and planIds go sparse after delete/recreate),
-        // so without this the hotkey→loadout mapping is unstable across sessions.
-        plans.Sort(static (a, b) => a.Index.CompareTo(b.Index));
-        return (current, plans);
-    }
-
-    private static readonly IReadOnlyDictionary<int, long> EmptyUuidMap = new Dictionary<int, long>(0);
-
-    // Parses a "slot:uuid,slot:uuid" list into a slot→uuid map. Malformed pairs are skipped, never
-    // thrown; an empty/absent field yields the shared empty map (no allocation).
-    private static IReadOnlyDictionary<int, long> ParseUuidMap(string csv)
-    {
-        if (string.IsNullOrEmpty(csv)) return EmptyUuidMap;
-        Dictionary<int, long>? map = null;
-        foreach (var pair in csv.Split(','))
-        {
-            var colon = pair.IndexOf(':');
-            if (colon <= 0 || colon >= pair.Length - 1) continue;
-            if (int.TryParse(pair.AsSpan(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot)
-                && long.TryParse(pair.AsSpan(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var uuid))
-            {
-                (map ??= new Dictionary<int, long>()).Add(slot, uuid);
-            }
-        }
-        return map ?? EmptyUuidMap;
-    }
-
-    // Parse a comma-separated node-id list ("233002,5205,...") into ints; returns null when the
-    // field is empty (no allocation captured) so LoadoutEntry.TalentNodes stays null rather than
-    // an empty list. Non-numeric parts are skipped, never thrown.
-    private static List<int>? ParseNodeCsv(string csv)
-    {
-        if (string.IsNullOrEmpty(csv)) return null;
-        List<int>? nodes = null;
-        foreach (var part in csv.Split(','))
-        {
-            if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
-            {
-                (nodes ??= new List<int>()).Add(n);
-            }
-        }
-        return nodes;
-    }
 
     private void DrainPendingDispatches()
     {

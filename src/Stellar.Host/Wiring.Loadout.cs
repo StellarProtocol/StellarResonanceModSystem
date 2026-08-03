@@ -27,6 +27,10 @@ public sealed partial class BootstrapPlugin
         // surface each class's real gear/modules on LoadoutSlot (the live self-gear/module APIs are
         // class-blind). _inventoryProbe is built first (BootstrapPlugin build order), so it's ready.
         _loadoutProbe.AttachGearResolver(plans => _inventoryProbe!.ResolvePlanLoadouts(plans));
+        // Live-overlay freshness: a gear/module change or a loadout switch fires SelfGearChanged (method-22
+        // field-12/57 delta) → re-read the CURRENT class's live equipped set so a manual edit shows. The
+        // handler only flips a flag (network-thread-safe). _inventoryService is built before this.
+        _inventoryService!.SelfGearChanged += _loadoutProbe.OnGearChanged;
         _loadoutService = new LoadoutService(_loadoutProbe);
     }
 }
