@@ -49,5 +49,6 @@ internal sealed class MockCombatSnapshot : ICombatSnapshot
     public IReadOnlyList<SkillCooldown> LocalCooldowns => Fixture;
     public IReadOnlyList<ActiveBuff> LocalBuffs => Array.Empty<ActiveBuff>();
     public long ServerNowMs => FixedServerNow;
+    public DateTimeOffset ServerNow => DateTimeOffset.FromUnixTimeMilliseconds(FixedServerNow);
     public IReadOnlyList<CombatEvent> RecentEvents => Array.Empty<CombatEvent>();
 }

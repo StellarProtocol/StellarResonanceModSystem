@@ -11,4 +11,9 @@ internal sealed class InMemoryConfigSection : IConfigSection
     public void Set<T>(string key, T value) => Values[key] = value;
     public void Save() { }
     public void SaveQuiet() { }
+    public void RemoveByPrefix(string prefix)
+    {
+        foreach (var k in new List<string>(Values.Keys))
+            if (k.StartsWith(prefix, System.StringComparison.Ordinal)) Values.Remove(k);
+    }
 }

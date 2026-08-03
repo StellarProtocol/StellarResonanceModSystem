@@ -260,6 +260,11 @@ public sealed class LayoutStorageTests
         public void Set<T>(string key, T value) => _store[key] = value;
         public void Save() { /* no-op for tests */ }
         public void SaveQuiet() { /* no-op for tests */ }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(_store.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _store.Remove(k);
+        }
     }
 
     private sealed class NullLog : IPluginLog

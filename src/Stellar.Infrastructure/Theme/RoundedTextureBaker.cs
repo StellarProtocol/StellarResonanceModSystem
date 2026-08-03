@@ -24,10 +24,10 @@ internal static class RoundedTextureBaker
     internal static Texture2D Rounded(int size, int radius, ColorRgba colour)
     {
         const int SS = 4;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
         {
             hideFlags  = HideFlags.HideAndDontSave,
-            filterMode = FilterMode.Bilinear,
+            filterMode = FilterMode.Trilinear,
             wrapMode   = TextureWrapMode.Clamp,
         };
         var c = new Color(colour.R, colour.G, colour.B, colour.A);
@@ -48,7 +48,7 @@ internal static class RoundedTextureBaker
             pixels[py * size + px] = new Color(c.r, c.g, c.b, c.a * alpha);
         }
         tex.SetPixels(pixels);
-        tex.Apply(updateMipmaps: false);
+        tex.Apply(updateMipmaps: true);
         return tex;
     }
 
@@ -65,10 +65,10 @@ internal static class RoundedTextureBaker
     internal static Texture2D RoundedLeft(int size, int radius, ColorRgba colour)
     {
         const int SS = 4;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
         {
             hideFlags  = HideFlags.HideAndDontSave,
-            filterMode = FilterMode.Bilinear,
+            filterMode = FilterMode.Trilinear,
             wrapMode   = TextureWrapMode.Clamp,
         };
         var c = new Color(colour.R, colour.G, colour.B, colour.A);
@@ -89,7 +89,7 @@ internal static class RoundedTextureBaker
             pixels[py * size + px] = new Color(c.r, c.g, c.b, c.a * alpha);
         }
         tex.SetPixels(pixels);
-        tex.Apply(updateMipmaps: false);
+        tex.Apply(updateMipmaps: true);
         return tex;
     }
 
@@ -103,10 +103,10 @@ internal static class RoundedTextureBaker
     /// </summary>
     internal static Texture2D RoundedBordered(int size, int radius, int borderPx, ColorRgba fill, ColorRgba border)
     {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
         {
             hideFlags = HideFlags.HideAndDontSave,
-            filterMode = FilterMode.Bilinear,
+            filterMode = FilterMode.Trilinear,
             wrapMode = TextureWrapMode.Clamp,
         };
         const int SS = 4; // supersample (match Rounded)
@@ -136,7 +136,7 @@ internal static class RoundedTextureBaker
             px[y * size + x] = new Color(r, g, b, Mathf.Clamp01(a));
         }
         tex.SetPixels(px);
-        tex.Apply(false);
+        tex.Apply(true);
         return tex;
     }
 

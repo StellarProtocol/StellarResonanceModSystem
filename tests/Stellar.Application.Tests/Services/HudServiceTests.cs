@@ -181,6 +181,11 @@ public sealed class HudServiceTests
         public void Set<T>(string key, T value) => _store[key] = value;
         public void Save() { }
         public void SaveQuiet() { }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(_store.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _store.Remove(k);
+        }
     }
     private sealed class NullLog : IPluginLog
     { public void Info(string m){} public void Warning(string m){} public void Error(string m){} public void Debug(string m){} }

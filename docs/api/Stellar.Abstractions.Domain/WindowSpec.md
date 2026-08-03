@@ -10,6 +10,7 @@ public record WindowSpec : IRenderGated
 
 | name | description |
 | --- | --- |
+| [Anchor](WindowSpec/Anchor.md) { get; set; } | Anchor for the initial placement of [`DefaultRect`](./WindowSpec/DefaultRect.md) on the (possibly scaled) window canvas. Defaults to TopLeft = legacy absolute top-left. Use Center etc. to center/corner-anchor without computing the UI scale yourself; DefaultRect.X/Y then act as a canvas-unit offset from the anchor. A user's saved drag still overrides this. |
 | [AutoSizeWidth](WindowSpec/AutoSizeWidth.md) { get; set; } | Content-size the window WIDTH to its body instead of fixing it to [`DefaultRect`](./WindowSpec/DefaultRect.md).Width. Only safe for windows without wrapping text (e.g. the launcher's fixed-width icon tiles) — the in-world clip bug that forced fixed width was a wrapping-text problem the launcher does not have. Defaults false. |
 | [BackgroundOpacity](WindowSpec/BackgroundOpacity.md) { get; set; } | Borderless windows only: poll-diffed black background opacity (0 = transparent, 1 = fully black). Applied to the root's existing click-blocker Image so the background fills the entire window rect and expands when the user resizes height — no separate child GO needed. Null = no background (default). |
 | [Category](WindowSpec/Category.md) { get; set; } | Logical category that determines which group this window appears in within the layout editor. |

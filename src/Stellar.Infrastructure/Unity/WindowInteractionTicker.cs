@@ -135,7 +135,12 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (_canvasComp == null) return;
         var sf = _canvasComp.scaleFactor;
         var integral = Mathf.Abs(sf - Mathf.Round(sf)) < 0.01f;
-        if (_canvasComp.pixelPerfect != integral) _canvasComp.pixelPerfect = integral;
+        // pixelPerfect ON keeps glyphs/graphics on whole pixels (crisp text). At a fractional scaleFactor it re-snaps
+        // every frame, which makes a MOVING window's contents jitter — so turn it off ONLY while a window is being
+        // dragged or resized at fractional scale. Static UI (incl. non-1440p resolutions) then stays crisp.
+        var moving = _activeWinDrag != null || _activeResize >= 0;
+        var want = integral || !moving;
+        if (_canvasComp.pixelPerfect != want) _canvasComp.pixelPerfect = want;
     }
 
     private void Update()

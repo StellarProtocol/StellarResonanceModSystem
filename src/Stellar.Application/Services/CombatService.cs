@@ -181,6 +181,13 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         }
     }
 
+    /// <summary>
+    /// <see cref="ServerNowMs"/> as a wall-clock <see cref="DateTimeOffset"/> in the server time domain.
+    /// Interpolation already lives in <see cref="ServerNowMs"/>; this just projects it. Returns the Unix epoch
+    /// until the first anchor is set (ServerNowMs == 0), preserving the "no server time yet" contract.
+    /// </summary>
+    public DateTimeOffset ServerNow => DateTimeOffset.FromUnixTimeMilliseconds(ServerNowMs);
+
     public IReadOnlyList<CombatEvent> RecentEvents
     {
         get

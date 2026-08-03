@@ -113,6 +113,29 @@ public sealed class NativeUiServiceTests
         Assert.Equal(setRectAtReset, adapter.SetRectCount); // no longer modified => not re-asserted
     }
 
+    [Fact] // Reset drops the saved override for EVERY resolution (not just the current one) — matching how a mod
+           // window's reset removes its LayoutStorage entry screen-wide — so every resolution falls back to default.
+    public void Reset_RemovesOverride_ForAllResolutions()
+    {
+        var (svc, _, cfg, _) = New();
+        var other = new Resolution(2560, 1440);
+
+        svc.Tick(5f, Res);                                          // resolve at 1920x1080
+        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));
+        svc.Commit("gameui.test");                                  // persist under 1920x1080
+        svc.Tick(5f, other);                                        // re-tick so _lastResolution = 2560x1440
+        svc.SetRect("gameui.test", new WindowRect(300, 400, 50, 40));
+        svc.Commit("gameui.test");                                  // persist under 2560x1440
+        Assert.Contains("slot0.gameui.test.1920x1080.x", cfg.Keys);
+        Assert.Contains("slot0.gameui.test.2560x1440.x", cfg.Keys);
+
+        svc.ResetToOriginal("gameui.test");
+
+        // Both resolutions' overrides are gone — every resolution now falls back to the game default.
+        Assert.DoesNotContain("slot0.gameui.test.1920x1080.x", cfg.Keys);
+        Assert.DoesNotContain("slot0.gameui.test.2560x1440.x", cfg.Keys);
+    }
+
     [Fact] // Scene change destroys + rebuilds the game HUD: a stale (no-longer-alive) entry must re-resolve and
            // re-apply its saved override to the new element (else the move is lost on scene change — bug #4).
     public void SceneChange_ReResolves_AndReappliesSavedOverride()
@@ -214,6 +237,11 @@ public sealed class NativeUiServiceTests
         public void Set<T>(string key, T value) => _v[key] = value;
         public void Save() { }
         public void SaveQuiet() { }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(_v.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _v.Remove(k);
+        }
     }
 
     private sealed class NullLog : IPluginLog

@@ -25,8 +25,8 @@ internal sealed class ThemesPanel
     // re-skins windows in place) and persisted ONCE on mouse-release (PollEditorUgui → SetFontScale). The garble
     // that previously made this unsafe is mitigated by WindowRenderer's Font.textureRebuilt → RefreshFontTexture.
     private float? _pendingFontScale;
-    // Pending UI Scale while dragging — drives the knob + "x" label; applied LIVE via SetUiScalePreview (a poll
-    // the ticker reads to resize the CanvasScaler, no rebake) and persisted ONCE on mouse-release (SetUiScale).
+    // Pending UI Scale while dragging — drives the knob + "x" label only; the canvas is NOT rescaled during the
+    // drag. The final value is applied + persisted ONCE on mouse-release (PollEditorUgui → SetUiScale).
     private float? _pendingUiScale;
     // UiScale getter/setter are concrete-only (not on INamedTheme), so reach them via the runtime instance.
     private NamedThemeService? Nts => _namedTheme as NamedThemeService;
@@ -144,12 +144,8 @@ internal sealed class ThemesPanel
         (_namedTheme as NamedThemeService)?.SetFontScalePreview(v);
     }
 
-    // UI Scale drag: track the pending value AND apply it live (un-persisted) via the concrete service, which the
-    // ticker's per-frame poll reads to resize the window CanvasScaler. Persisted on release by PollEditorUgui.
-    private void ApplyUiScalePreview(float v)
-    {
-        _pendingUiScale = v;
-        Nts?.SetUiScalePreview(v);
-    }
+    // UI Scale applies on RELEASE (PollEditorUgui → SetUiScale). During the drag we only track the pending
+    // value so the knob + label move; the canvas is not rescaled until release (avoids per-step repacks).
+    private void ApplyUiScalePreview(float v) => _pendingUiScale = v;
 
 }

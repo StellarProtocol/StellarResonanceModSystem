@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -204,6 +204,14 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
             new Stellar.Abstractions.Domain.Resolution(
                 Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
     }
+
+    // Screen px per canvas unit. GetRect/SetRect speak canvas units (the CanvasScaler applies this factor); the
+    // layout editor is uniformly screen-px, so WindowService scales editor rects by this. Mirrors the ClampToScreen guard.
+    public float CanvasScale => _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
+
+    // The UI-Scale slider value (concrete-only getter on NamedThemeService, which _chrome IS at runtime). Default
+    // window positions divide by this so the slider grows windows in place instead of drifting them (bottom-right).
+    public float UiScale => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
 
     public WindowRect GetRect(object? token)
     {

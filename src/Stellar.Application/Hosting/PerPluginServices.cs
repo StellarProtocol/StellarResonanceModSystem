@@ -22,15 +22,20 @@ internal sealed class PerPluginServices : IPluginServices
     // sink (a bare IHotkeys, e.g. in a test host). Falls back to the shared service,
     // and those actions group by id prefix exactly as they did before.
     private readonly IHotkeys? _hotkeys;
+    // Per-plugin Harmony host (id-namespaced to this plugin, auto-unpatched on dispose). Null in a bare test
+    // host that supplies no per-plugin host — falls back to the shared bag's host.
+    private readonly IHarmonyHost? _harmony;
 
     public PerPluginServices(IPluginServices shared, IPluginConfig perPluginConfig, IFramework perPluginFramework,
-                             IPluginDataStore perPluginData, IHotkeys? perPluginHotkeys = null)
+                             IPluginDataStore perPluginData, IHotkeys? perPluginHotkeys = null,
+                             IHarmonyHost? perPluginHarmony = null)
     {
         _shared = shared;
         Config = perPluginConfig;
         _framework = perPluginFramework;
         Data = perPluginData;
         _hotkeys = perPluginHotkeys;
+        _harmony = perPluginHarmony;
     }
 
     public IPluginConfig Config { get; }
@@ -76,4 +81,6 @@ internal sealed class PerPluginServices : IPluginServices
     public IDungeonState Dungeon => _shared.Dungeon;
     public IEntityTransforms EntityTransforms => _shared.EntityTransforms;
     public IGameEnvironment GameEnvironment => _shared.GameEnvironment;
+    public ILua Lua => _shared.Lua;
+    public IHarmonyHost Harmony => _harmony ?? _shared.Harmony;
 }

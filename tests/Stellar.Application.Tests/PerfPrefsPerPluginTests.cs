@@ -15,6 +15,11 @@ public sealed class PerfPrefsPerPluginTests
         public void Set<T>(string key, T value) => Store[key] = value;
         public void Save() { }
         public void SaveQuiet() { }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(Store.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) Store.Remove(k);
+        }
     }
 
     [Fact]

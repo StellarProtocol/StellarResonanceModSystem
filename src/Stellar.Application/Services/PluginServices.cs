@@ -47,6 +47,8 @@ internal sealed class PluginServices : IPluginServices
     public IDungeonState Dungeon { get; }
     public IEntityTransforms EntityTransforms { get; }
     public IGameEnvironment GameEnvironment { get; }
+    public ILua Lua { get; }
+    public IHarmonyHost Harmony { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -90,7 +92,9 @@ internal sealed class PluginServices : IPluginServices
         IDungeonState dungeon,
         IEntityTransforms entityTransforms,
         IGameEnvironment gameEnvironment,
-        IPluginDataStore data)
+        IPluginDataStore data,
+        ILua lua,
+        IHarmonyHost harmony)
     {
         Log = log;
         Framework = framework;
@@ -134,5 +138,7 @@ internal sealed class PluginServices : IPluginServices
         EntityTransforms = entityTransforms;
         GameEnvironment = gameEnvironment;
         Data = data;
+        Lua = lua;
+        Harmony = harmony;
     }
 }

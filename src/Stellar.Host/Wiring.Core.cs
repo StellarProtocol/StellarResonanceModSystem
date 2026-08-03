@@ -13,6 +13,9 @@ public sealed partial class BootstrapPlugin
     private void BuildCoreServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
         _framework = new FrameworkService();
+        // Shared ILua bridge (game's tolua# mainState) + factory that mints one IHarmonyHost per loaded plugin.
+        _luaService = new LuaService(log.Info);
+        _harmonyHostFactory = new Stellar.Infrastructure.Game.HarmonyHostFactory(log.Info);
         _scheduler = new Stellar.Application.Services.TickScheduler(
             maxHoldSeconds: 10.0,
             log: m => log.Info(m));

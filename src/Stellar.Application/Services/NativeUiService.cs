@@ -124,7 +124,13 @@ internal sealed class NativeUiService
         e.Rect = e.Handle.OriginalRect;
         e.Visible = true;
         e.IsModified = false;
-        Persist(e);
+        // Reset = drop the saved override entirely (matches LayoutStorage.Remove for
+        // mod windows), NOT re-persist the original pose. Remove every persisted key
+        // for this id under the active slot across ALL resolutions (prefix has a
+        // trailing dot, so it can't collide with a longer id that shares this stem),
+        // so every resolution now falls back to the game's own default.
+        _config.RemoveByPrefix($"slot{_activeSlot()}.{id}.");
+        _config.Save();
     }
 
     public void ResetAll()
@@ -138,29 +144,40 @@ internal sealed class NativeUiService
     /// already-resolved entry. Called on slot-switch (LayoutEditorOverlay) so a
     /// layout slot restores the game HUD arrangement alongside the mod windows.
     /// Entries with no override in the new slot snap back to the game's original
-    /// pose.
+    /// pose. applyVisibility=true (slot-switch) also applies saved/forced show-hide;
+    /// false (resolution change) applies position only and leaves current visibility.
     /// </summary>
-    public void ReapplyForActiveSlot(Resolution res)
+    public void ReapplyForActiveSlot(Resolution res, bool applyVisibility = true)
     {
         _lastResolution = res;
         var slot = _activeSlot();
         foreach (var e in _entries.Values)
         {
             if (!e.IsResolved) continue;
-            _adapter.RestoreOriginal(e.Handle);
-            e.IsModified = false;
             if (TryLoadFor(slot, e.Descriptor.Id, res, out var rect, out var visible))
             {
                 _adapter.SetRect(e.Handle, rect);
-                _adapter.SetVisible(e.Handle, visible);
                 e.Rect = rect;
-                e.Visible = visible;
                 e.IsModified = true;
+                if (applyVisibility) { _adapter.SetVisible(e.Handle, visible); e.Visible = visible; }
             }
             else
             {
-                e.Rect = e.Handle.OriginalRect;
-                e.Visible = true;
+                e.IsModified = false;
+                if (applyVisibility)
+                {
+                    // Slot-switch (same resolution): an un-overridden element snaps back to the game original.
+                    // OriginalRect is valid here because the resolution isn't changing.
+                    _adapter.RestoreOriginal(e.Handle);
+                    e.Rect = e.Handle.OriginalRect;
+                    e.Visible = true;
+                }
+                else
+                {
+                    // Resolution change: do NOT RestoreOriginal — OriginalRect was captured at the old resolution
+                    // and would mis-place the element. Leave it where the game placed it for the new resolution.
+                    e.Rect = GetLiveRect(e);
+                }
             }
         }
     }

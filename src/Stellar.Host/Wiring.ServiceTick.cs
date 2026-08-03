@@ -11,6 +11,13 @@ public sealed partial class BootstrapPlugin
     private Stellar.Infrastructure.Unity.UnityTickHost? _tickHost;
     private Stellar.Application.Services.TickScheduler? _scheduler;
     private readonly Stellar.Application.Services.RateGate _globalGate = new();
+    // Last resolution observed by the global tick, for the layout re-clamp on a resolution change. Default
+    // (0×0) until the first observation, so the very first beat only records the baseline (no spurious reclamp).
+    private Stellar.Abstractions.Domain.Resolution _lastLayoutRes;
+    // scaleFactor observed on the previous beat. We reapply on a CHANGE to it (see
+    // ReclampLayoutOnResolutionChange) — the CanvasScaler settles a beat or two AFTER a resolution change, so
+    // its change is what tells us the correct factor is finally live. -1 = never observed (skip first beat).
+    private float _lastLayoutScale = -1f;
 
     // Reconciles the live runtime to the Performance settings (PerfControls), which are driven by the
     // Settings → Performance panel and seeded from config at boot. Runs every tick BEFORE the scene
@@ -87,6 +94,8 @@ public sealed partial class BootstrapPlugin
     {
         Stellar.Abstractions.Diagnostics.PerfProbe.MarkDrawFrame();
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+        _framework!.SetCanvasScale(_windowService?.CanvasScale ?? 1f);   // canvas-unit dims for IFramework.CanvasWidth/Height
+        ReclampLayoutOnResolutionChange();   // pull windows/HUD back on-screen when the resolution changes
         // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
         // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
         // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.
@@ -129,6 +138,32 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:layout");
         _layoutOverlay?.TickInput();
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:layout");
+    }
+
+    // Nothing re-clamps layout on a resolution change — placement/clamp happens only on mount — so a window
+    // or HUD near the bottom/right edge falls off-screen when the user drops to a smaller resolution. Detect
+    // the change here (two int compares, every global beat) and re-clamp every mounted element IN PLACE: keep
+    // its current position, just pull it back on-screen if now off. Idempotent when nothing is off-screen.
+    // NB: this is a clamp, NOT a slot reload — the user's arrangement is preserved, only tucked back in bounds.
+    private void ReclampLayoutOnResolutionChange()
+    {
+        var curRes = _inputGateway?.CurrentResolution ?? default;
+        var curScale = _windowService?.CanvasScale ?? 1f;
+        var resChanged = curRes.Width != _lastLayoutRes.Width || curRes.Height != _lastLayoutRes.Height;
+        var scaleChanged = _lastLayoutScale >= 0f && System.Math.Abs(curScale - _lastLayoutScale) > 0.001f;
+        if (!resChanged && !scaleChanged) return;
+
+        var firstObservation = _lastLayoutRes.Width == 0;
+        _lastLayoutRes = curRes;
+        _lastLayoutScale = curScale;
+        if (firstObservation || curRes.Width <= 0) return;   // never reapply on the first-ever observation
+
+        // Re-apply on resolution OR scaleFactor change. The scaleFactor path is the key fix: after a resolution
+        // change the CanvasScaler updates scaleFactor a beat or two LATER, and Get's canvas-unit clamp needs the
+        // CORRECT factor — so when scaleFactor finally changes, this fires a corrective reapply with the right value.
+        _windowService?.ReapplyLayout();          // position-only after Part 1
+        _hudService?.ReapplyLayout();             // position-only after Part 2
+        _nativeUi?.ReapplyForActiveSlot(curRes, applyVisibility: false);   // reposition, never toggle show/hide
     }
 
     // Band 1 — drained EVERY master beat so a ramped plugin's exchange RPC round-trips complete

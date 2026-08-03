@@ -15,6 +15,7 @@ public interface ICombatSnapshot
 | [LocalCooldowns](ICombatSnapshot/LocalCooldowns.md) { get; } | Local player's current skill cooldowns. Empty out of combat / pre-login. |
 | [LocalEntityId](ICombatSnapshot/LocalEntityId.md) { get; } | Local player's entity UUID. [`None`](../Stellar.Abstractions.Domain/EntityId/None.md) until first SyncToMeDeltaInfo. |
 | [RecentEvents](ICombatSnapshot/RecentEvents.md) { get; } | Ring buffer of recent events (capacity 500). |
+| [ServerNow](ICombatSnapshot/ServerNow.md) { get; } | The same interpolated server clock as [`ServerNowMs`](./ICombatSnapshot/ServerNowMs.md) exposed as a wall-clock DateTimeOffset in the server time domain (server epoch mapped onto local monotonic time, so it advances smoothly between the ~5 s SyncServerTime anchors). Reads the Unix epoch (1970) until the first server-time observation, matching the `ServerNowMs == 0` "no server time yet" contract. |
 | [ServerNowMs](ICombatSnapshot/ServerNowMs.md) { get; } | Latest server epoch (ms) seen on the SyncServerTime notify. Zero until first observation. |
 
 ## See Also

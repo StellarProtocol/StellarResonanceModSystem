@@ -119,6 +119,11 @@ public sealed class LayoutEditorServiceTests
         public void Set<T>(string k, T v) => _s[k] = v;
         public void Save() { }
         public void SaveQuiet() { }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(_s.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _s.Remove(k);
+        }
     }
     private sealed class NullLog : IPluginLog
     {

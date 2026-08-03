@@ -50,6 +50,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
 
     // ── Core services (Wiring.Core.cs) ──────────────────────────────────────
     private FrameworkService? _framework;
+    private LuaService? _luaService;                                        // shared ILua bridge (tolua# mainState)
+    private Stellar.Infrastructure.Game.HarmonyHostFactory? _harmonyHostFactory;   // mints per-plugin IHarmonyHost
     private ClientStateService? _clientState;
     // Shared between CombatService (writes) and GameDataWorldService (reads attr-10 for GetMonsterByEntity).
     private CombatEntityTracker? _entityTracker;

@@ -29,7 +29,6 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     private ThemePreset _active;
     private float _fontScale;
     private float _uiScale;
-    private float? _uiScalePreview;
     private string? _activeCustomName;
     private MenuButtonStyle _buttonStyle;
     private MenuScrollbarStyle _scrollbarStyle;
@@ -78,8 +77,8 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     public float       FontScale => _fontScalePreview ?? _fontScale;
     // UI scale (window-canvas CanvasScaler multiplier) — concrete-only (NOT on IChromeStyle/INamedTheme). Applied
     // by WindowInteractionTicker's per-frame poll (referenceResolution = 2560/u,1440/u), NOT via ActiveChanged.
-    // The getter prefers the live drag preview so the ticker resizes the canvas in real time.
-    public float       UiScale => _uiScalePreview ?? _uiScale;
+    // Committed only on mouse-release (SetUiScale); the drag knob/label track a pending value in ThemesPanel.
+    public float       UiScale => _uiScale;
     public event Action? ActiveChanged;
 
     public string? ActiveCustomName => _activeCustomName;
@@ -145,17 +144,11 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
 
     private static float ClampScale(float v) => Math.Clamp(v, MinFontScale, MaxFontScale);
 
-    // Live (un-persisted) UI scale during a slider DRAG — quantised to the 5% grid. Stored as preview only; NO
-    // event fires (the ticker polls UiScale each frame and applies via the CanvasScaler). Persisted on release.
-    public void SetUiScalePreview(float scale)
-        => _uiScalePreview = ClampUiScale((float)(Math.Round(scale / 0.05) * 0.05));
-
-    // Mouse-release commit: drop the preview, persist the final value. NO ActiveChanged (no sprite rebake — the
-    // CanvasScaler applies via the canvas transform, driven by the ticker poll).
+    // Mouse-release commit: persist the final value. NO ActiveChanged (no sprite rebake — the CanvasScaler
+    // applies via the canvas transform, driven by the ticker poll).
     public void SetUiScale(float scale)
     {
         var clamped = ClampUiScale(scale);
-        _uiScalePreview = null;
         if (Math.Abs(clamped - _uiScale) < 0.001f) return;
         _uiScale = clamped;
         _config.Set(UiScaleKey, clamped);

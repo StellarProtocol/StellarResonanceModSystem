@@ -82,7 +82,11 @@ public sealed partial class BootstrapPlugin
             _dungeonStateService!,
             entityTransforms,
             _gameEnvironment!,
-            _pluginDataStoreFactory!.Create(PluginGuid));
+            _pluginDataStoreFactory!.Create(PluginGuid),
+            _luaService!,
+            // Shared aggregator's Harmony host (framework-scoped id); plugins receive a per-plugin host that
+            // overrides this via PerPluginServices, so this instance is never used by a plugin.
+            _harmonyHostFactory!.Create("stellar.framework"));
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 
@@ -91,7 +95,7 @@ public sealed partial class BootstrapPlugin
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
 
-        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!);
+        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!, _harmonyHostFactory!);
     }
 
     /// <summary>

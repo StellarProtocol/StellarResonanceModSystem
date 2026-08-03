@@ -103,6 +103,27 @@ internal sealed class PluginConfigService : IPluginConfig
         }
     }
 
+    private void RemoveByPrefixValue(string sectionName, string prefix)
+    {
+        lock (_lock)
+        {
+            var section = GetOrCreateSectionNodeLocked(sectionName);
+            // Snapshot matching keys first — JsonObject can't be mutated while enumerated.
+            var toRemove = new List<string>();
+            foreach (var kv in section)
+            {
+                if (kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    toRemove.Add(kv.Key);
+                }
+            }
+            foreach (var key in toRemove)
+            {
+                section.Remove(key);
+            }
+        }
+    }
+
     private void SaveSection(string sectionName)
     {
         JsonObject clone;
@@ -224,5 +245,6 @@ internal sealed class PluginConfigService : IPluginConfig
 
         public void Save() => _owner.SaveSection(_name);
         public void SaveQuiet() => _owner.SaveSectionQuiet(_name);
+        public void RemoveByPrefix(string prefix) => _owner.RemoveByPrefixValue(_name, prefix);
     }
 }

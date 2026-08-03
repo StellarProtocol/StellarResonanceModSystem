@@ -199,8 +199,8 @@ internal sealed class WindowThemeAssets
     // Unity Texture2D y=0 is the bottom row, so "top" corners are the high-y rows.
     private Texture2D BakeTopRounded(int size, int r)
     {
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
-        { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: true)
+        { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Trilinear, wrapMode = TextureWrapMode.Clamp };
         const int SS = 4;
         var px = new Color[size * size];
         for (var y = 0; y < size; y++)
@@ -218,7 +218,7 @@ internal sealed class WindowThemeAssets
                     }
                 px[y * size + x] = new Color(1f, 1f, 1f, cov / (SS * SS));
             }
-        tex.SetPixels(px); tex.Apply(false);
+        tex.SetPixels(px); tex.Apply(true);
         return tex;
     }
 

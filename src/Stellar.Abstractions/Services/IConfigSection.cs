@@ -39,4 +39,13 @@ public interface IConfigSection
     /// <summary>Persists the section without raising <see cref="IPluginConfig.SectionChanged"/> — for echo-suppression
     /// when the writer is reacting to its own change.</summary>
     void SaveQuiet();
+
+    /// <summary>
+    /// Removes every key in this section whose name begins with
+    /// <paramref name="prefix"/> (ordinal comparison). Use this to drop a whole
+    /// group of related keys at once — e.g. all per-resolution sub-keys of one
+    /// entry. Does NOT write to disk — caller must invoke <see cref="Save"/>.
+    /// Keys that don't match are left untouched; never throws.
+    /// </summary>
+    void RemoveByPrefix(string prefix);
 }

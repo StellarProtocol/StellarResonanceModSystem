@@ -21,6 +21,12 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// <summary>Whether the window is visible on first run (before user toggles via hotkey).</summary>
     public bool StartVisible { get; init; } = true;
 
+    /// <summary>Anchor for the initial placement of <see cref="DefaultRect"/> on the (possibly scaled) window
+    /// canvas. Defaults to <see cref="WindowAnchor.TopLeft"/> = legacy absolute top-left. Use
+    /// <see cref="WindowAnchor.Center"/> etc. to center/corner-anchor without computing the UI scale yourself;
+    /// DefaultRect.X/Y then act as a canvas-unit offset from the anchor. A user's saved drag still overrides this.</summary>
+    public WindowAnchor Anchor { get; init; } = WindowAnchor.TopLeft;
+
     /// <summary>
     /// When true the window is a movable dialog: drag-by-title-bar (the post-drag rect is
     /// committed + persisted) and excluded from the Shift+` Layout editor (it owns its own

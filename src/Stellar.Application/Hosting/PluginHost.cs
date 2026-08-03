@@ -27,8 +27,9 @@ internal sealed class PluginHost : IDisposable
     private readonly PluginRegistry _registry;
     private readonly IPluginLog _log;
     private readonly TickScheduler _scheduler;
+    private readonly IHarmonyHostFactory _harmonyFactory;
 
-    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler)
+    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler, IHarmonyHostFactory harmonyFactory)
     {
         _services = services;
         _configFactory = configFactory;
@@ -36,6 +37,7 @@ internal sealed class PluginHost : IDisposable
         _registry = registry;
         _log = services.Log;
         _scheduler = scheduler;
+        _harmonyFactory = harmonyFactory;
     }
 
     public void LoadFrom(string directory)
@@ -98,17 +100,19 @@ internal sealed class PluginHost : IDisposable
         // Shared mutable cell: both the factory lambda (writer) and the onDispose
         // lambda (reader) capture the same StrongBox so each soft-cycle enable
         // updates the reference that onDispose will unregister.
+        // frameworkCell → scheduler unregister; harmonyCell → unpatch every instance the plugin created.
         var frameworkCell = new StrongBox<PerPluginFramework?>();
+        var harmonyCell = new StrongBox<IHarmonyHost?>();
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
         var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid));
 
         Func<IPluginServices, object> factory = sharedServices =>
-            BuildAndInvoke(ctor, bindContext, frameworkCell, sharedServices);
+            BuildAndInvoke(ctor, bindContext, frameworkCell, harmonyCell, sharedServices);
 
         _registry.Register(pluginGuid, displayName, version, factory,
-            onDispose: () => frameworkCell.Value?.Unregister());
+            onDispose: () => { frameworkCell.Value?.Unregister(); (harmonyCell.Value as IDisposable)?.Dispose(); });
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
     }
@@ -142,12 +146,15 @@ internal sealed class PluginHost : IDisposable
         ConstructorInfo ctor,
         PluginBindContext bind,
         StrongBox<PerPluginFramework?> frameworkCell,
+        StrongBox<IHarmonyHost?> harmonyCell,
         IPluginServices sharedServices)
     {
         var perPluginFramework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
         frameworkCell.Value = perPluginFramework;
+        var perPluginHarmony = _harmonyFactory.Create(bind.PluginGuid);
+        harmonyCell.Value = perPluginHarmony;
         var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework,
-                                                     bind.PerPluginData, bind.PerPluginHotkeys);
+                                                     bind.PerPluginData, bind.PerPluginHotkeys, perPluginHarmony);
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -155,6 +162,7 @@ internal sealed class PluginHost : IDisposable
         catch
         {
             perPluginFramework.Unregister();
+            (perPluginHarmony as IDisposable)?.Dispose();
             throw;
         }
     }

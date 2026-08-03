@@ -95,9 +95,30 @@ internal sealed class UnityInputGateway : IInputGateway
     {
         get
         {
-            try { return new AbsResolution(Screen.width, Screen.height); }
+            try { return Canonicalize(Screen.width, Screen.height); }
             catch { return new AbsResolution(1920, 1080); }
         }
+    }
+
+    // Common display resolutions. A reported size within SnapTolerance px (both axes) of one snaps to it, so a
+    // few px of jitter between fullscreen and borderless/windowed (e.g. 2566x1423, 2544x1401 -> 2560x1440) doesn't
+    // fragment the per-resolution layout. Real resolution changes (>= ~360px on an axis) never collide with these.
+    private const int SnapTolerance = 48;
+    private static readonly (int W, int H)[] CommonResolutions =
+    {
+        (1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160),
+        (1280, 800), (1440, 900), (1680, 1050), (1920, 1200), (2560, 1600),
+        (2560, 1080), (3440, 1440), (3840, 1600),
+    };
+
+    // Pure, deterministic: the same raw (w,h) always yields the same canonical resolution, with no session
+    // state — so a layout key survives fullscreen<->borderless jitter round-trips.
+    private static AbsResolution Canonicalize(int w, int h)
+    {
+        foreach (var (cw, ch) in CommonResolutions)
+            if (System.Math.Abs(w - cw) <= SnapTolerance && System.Math.Abs(h - ch) <= SnapTolerance)
+                return new AbsResolution(cw, ch);
+        return new AbsResolution(w, h);
     }
 
     public (float X, float Y) PointerPosition

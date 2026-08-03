@@ -114,6 +114,7 @@ internal sealed partial class LayoutEditorOverlay
     // and push it to the uGUI overlay. Runs each tick AFTER ProcessInput so outlines track an in-progress drag.
     private void SyncChrome()
     {
+        CenterToolbar();   // re-centre before pushing chrome, so a res / UI-scale change since registration re-lands centred
         _chromeItems.Clear();
         if (ShouldOutlineStellar && _windows != null) AddWindowServiceItems(_chromeItems);
         if (_hud != null) AddHudItems(_chromeItems);

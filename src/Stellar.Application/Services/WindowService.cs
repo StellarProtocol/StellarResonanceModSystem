@@ -22,6 +22,10 @@ internal sealed partial class WindowService : IWindowHost
     public WindowService(IWindowRenderer renderer, IPluginLog log)
     { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; }
 
+    /// <summary>Editor-facing: the window overlay canvas's CanvasScaler factor (1 when unscaled). The editor
+    /// layer (LayoutEditorOverlay) uses it to convert its screen-px geometry into canvas units.</summary>
+    internal float CanvasScale => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScale ?? 1f;
+
     public IWindowControl Register(WindowRegistration reg)
     {
         if (_windows.TryGetValue(reg.Spec.Id, out var existing))
@@ -60,15 +64,22 @@ internal sealed partial class WindowService : IWindowHost
     /// (A Party-chromed free-drag dialog like CombatMeter History is excluded — only EditModeDragOnly windows.)</summary>
     internal IEnumerable<EditableElement> EditableElements()
     {
+        var sf = CanvasScale;
         foreach (var kv in _windows)
         {
             var e = kv.Value;
             if (e.Removed || !e.Reg.Spec.EditModeDragOnly) continue;
             var rect = e.Token != null ? _renderer.GetRect(e.Token)
-                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : e.Reg.Spec.DefaultRect;
-            yield return new EditableElement(kv.Key, rect, e.Visible, CanHide: true);
+                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
+            yield return new EditableElement(kv.Key, ScaleRect(rect, sf), e.Visible, CanHide: true);
         }
     }
+
+    // Canvas units → screen px for the editor (which is uniformly screen-px). All three rect sources above are
+    // canvas units: GetRect returns anchoredPosition; LastSavedRect was persisted from GetRect; and DefaultRect
+    // is consumed through SetRect as canvas units too (the window renders it × scaleFactor). So scale uniformly.
+    private static WindowRect ScaleRect(WindowRect r, float sf)
+        => sf == 1f ? r : new WindowRect(r.X * sf, r.Y * sf, r.Width * sf, r.Height * sf);
 
     /// <summary>True if any mounted window holds keyboard focus in a text field — drives the keyboard gate
     /// (the Host OR-combines this into InputCaptureService / KeyboardInputGate each frame). Cheap per-frame.</summary>
@@ -159,7 +170,7 @@ internal sealed partial class WindowService : IWindowHost
             if (Token != null) Owner._order?.BringToFront(Token);
             else BringToFrontPending = true;   // window not yet mounted — apply on next mount
         }
-        public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Reg.Spec.DefaultRect;
+        public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Owner.ResolveAnchoredDefault(Reg.Spec);
         public void SetRect(WindowRect rect)
         {
             if (Token == null) return;

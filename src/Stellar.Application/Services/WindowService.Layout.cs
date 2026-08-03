@@ -41,26 +41,74 @@ internal sealed partial class WindowService
         if (_storage != null && _resolution != null)
         {
             var rect = e.Token != null ? _renderer.GetRect(e.Token)
-                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : e.Reg.Spec.DefaultRect;
+                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
             _storage.Save(_storage.ActiveSlot, id, _resolution(), rect, visible);
         }
     }
 
-    // Restore the saved rect (or DefaultRect) right after a successful mount.
-    private void ApplySavedRect(Entry e)
+    // Reload the saved layout for the CURRENT resolution for every mounted window (called on a resolution change).
+    // ApplySavedRect reads _resolution() + _storage.Get, so it picks up the new resolution's bucket (or the
+    // anchor-resolved DefaultRect fallback) and SetRect clamps it on-screen.
+    internal void ReapplyLayout()
+    {
+        foreach (var kv in _windows)
+        {
+            var e = kv.Value;
+            if (e.Removed || e.Token == null) continue;
+            ApplySavedRect(e, applyVisibility: false);   // res change repositions but never toggles show/hide
+        }
+    }
+
+    // Resolve a spec's DefaultRect against its Anchor into a top-left WindowRect in CANVAS UNITS. TopLeft returns
+    // DefaultRect unchanged (legacy). Other anchors place the window's matching point at the canvas's anchor point,
+    // with DefaultRect.X/Y as an offset. Canvas dims = Screen ÷ scaleFactor. Guards to DefaultRect if dims unknown.
+    private WindowRect ResolveAnchoredDefault(WindowSpec spec)
+    {
+        var d = spec.DefaultRect;
+        // Make the OFFSET/absolute position UI-scale-independent: dividing by the slider u cancels the slider term
+        // folded into the canvas scaleFactor, so the rendered position = design pos × resolutionScale (NOT × u) and
+        // the slider grows the window IN PLACE. Size (d.Width/d.Height) is NEVER divided — it stays canvas units so
+        // it scales with the slider. The anchor BASE ((cw-w)/2, cw-w, …) is already UI-scale-independent. No-op at u=1.
+        var u = (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.UiScale ?? 1f;
+        if (u <= 0f) u = 1f;
+        var ox = d.X / u;
+        var oy = d.Y / u;
+        if (spec.Anchor == WindowAnchor.TopLeft) return new WindowRect(ox, oy, d.Width, d.Height);
+        var sf = CanvasScale;
+        var res = _resolution?.Invoke() ?? default;
+        if (sf <= 0f || res.Width <= 0 || res.Height <= 0) return new WindowRect(ox, oy, d.Width, d.Height);
+        float cw = res.Width / sf, ch = res.Height / sf;   // canvas-unit screen dims
+        float x = spec.Anchor switch
+        {
+            WindowAnchor.Left or WindowAnchor.TopLeft or WindowAnchor.BottomLeft => ox,
+            WindowAnchor.Center or WindowAnchor.Top or WindowAnchor.Bottom => (cw - d.Width) / 2f + ox,
+            _ => cw - d.Width + ox,   // Right / TopRight / BottomRight
+        };
+        float y = spec.Anchor switch
+        {
+            WindowAnchor.Top or WindowAnchor.TopLeft or WindowAnchor.TopRight => oy,
+            WindowAnchor.Center or WindowAnchor.Left or WindowAnchor.Right => (ch - d.Height) / 2f + oy,
+            _ => ch - d.Height + oy,  // Bottom / BottomLeft / BottomRight
+        };
+        return new WindowRect(x, y, d.Width, d.Height);
+    }
+
+    // Restore the saved rect (or DefaultRect) right after a successful mount. applyVisibility=true (mount/reset)
+    // also honours a persisted hide; false (resolution change) repositions only and leaves current visibility.
+    private void ApplySavedRect(Entry e, bool applyVisibility = true)
     {
         if (e.Token is null) return;
-        var fallback = e.Reg.Spec.DefaultRect;
+        var fallback = ResolveAnchoredDefault(e.Reg.Spec);
         if (_storage is null || _resolution is null)
         {
             _renderer.SetRect(e.Token, fallback);
             e.LastRect = e.LastSavedRect = fallback;
             return;
         }
-        var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Reg.Spec.Id, _resolution(), fallback);
+        var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Reg.Spec.Id, _resolution(), fallback, CanvasScale);
         _renderer.SetRect(e.Token, rect);
         e.LastRect = e.LastSavedRect = rect;
-        if (!visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
+        if (applyVisibility && !visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
     }
 
     // Persist once after a drag settles: the rect is unchanged since last tick (drag stopped) AND differs

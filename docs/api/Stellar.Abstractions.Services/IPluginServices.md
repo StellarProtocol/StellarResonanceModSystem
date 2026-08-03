@@ -29,12 +29,14 @@ public interface IPluginServices
 | [GameData](IPluginServices/GameData.md) { get; } | Read-only lookup over the game's static table data (skills, buffs, items, etc.). |
 | [GameEnvironment](IPluginServices/GameEnvironment.md) { get; } | Region + version identity of the running game install (SEA / JP), detected once at boot. |
 | [GameEvents](IPluginServices/GameEvents.md) { get; } | Game lifecycle events (scene load / unload, hot-update ready). |
+| [Harmony](IPluginServices/Harmony.md) { get; } | Per-plugin Harmony host — create id-namespaced Harmony instances that are auto-unpatched when the plugin is disposed. |
 | [Hotkeys](IPluginServices/Hotkeys.md) { get; } | Bindable keyboard-action registration. |
 | [Hud](IPluginServices/Hud.md) { get; } | uGUI HUD toolkit. |
 | [Inventory](IPluginServices/Inventory.md) { get; } | Player inventory — item stacks and currency. |
 | [Launcher](IPluginServices/Launcher.md) { get; } | Register a tile in the Stellar launcher menu (Phase B). |
 | [Loadout](IPluginServices/Loadout.md) { get; } | Read and apply the player's saved in-game loadouts (class + gear + spec + modules). |
 | [Log](IPluginServices/Log.md) { get; } | Plugin-scoped log sink; output is routed to the BepInEx log with the plugin name as prefix. |
+| [Lua](IPluginServices/Lua.md) { get; } | Bridge to the game's live tolua# Lua state (run chunks, read simple globals back). Main-thread only. |
 | [Market](IPluginServices/Market.md) { get; } | The in-game player exchange/marketplace: query listings/care-list/notice items and buy through the game's own trade system. (Named `Market` because [`Exchange`](./IPluginServices/Exchange.md) is the inter-plugin channel.) |
 | [ModuleEquip](IPluginServices/ModuleEquip.md) { get; } | Module equip actions (install / uninstall equipment modules). |
 | [NamedTheme](IPluginServices/NamedTheme.md) { get; } | Theme preset selector and global font scale. |

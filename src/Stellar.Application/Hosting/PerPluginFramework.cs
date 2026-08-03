@@ -15,13 +15,16 @@ internal sealed class PerPluginFramework : IFramework
     private readonly string _guid;
     private readonly TickScheduler _scheduler;
     private readonly IFramework _shared;
+    // Per-plugin Post()/Every() store, drained on THIS plugin's scheduler beat (main thread, at the plugin's
+    // own rate) — so a plugin's posted work and downsampled timers respect its tick rate, not the shared one.
+    private readonly FrameDispatch _dispatch = new();
 
     public PerPluginFramework(string guid, TickScheduler scheduler, IFramework shared)
     {
         _guid = guid;
         _scheduler = scheduler;
         _shared = shared;
-        _scheduler.RegisterPlugin(_guid, dt => Update?.Invoke(dt));
+        _scheduler.RegisterPlugin(_guid, dt => { _dispatch.Drain(dt); Update?.Invoke(dt); });
     }
 
     public event Action<float>? Update;
@@ -29,6 +32,12 @@ internal sealed class PerPluginFramework : IFramework
     public long FrameCount => _shared.FrameCount;
     public int ScreenWidth => _shared.ScreenWidth;
     public int ScreenHeight => _shared.ScreenHeight;
+    public int CanvasWidth => _shared.CanvasWidth;
+    public int CanvasHeight => _shared.CanvasHeight;
+
+    public void Post(Action action) => _dispatch.Post(action);
+    public IDisposable Every(TimeSpan interval, Action action) => _dispatch.Every(interval, action);
+    public float TimeNow => _shared.TimeNow;
 
     public int EffectiveUpdateRateHz => _scheduler.EffectiveRateFor(_guid);
     public IUpdateRateScope RequestUpdateRate(int hz) => _scheduler.RequestDynamicRate(_guid, hz);

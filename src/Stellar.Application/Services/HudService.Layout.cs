@@ -40,6 +40,19 @@ internal sealed partial class HudService
             _storage.Save(_storage.ActiveSlot, e.Spec.Id, _resolution(), RectForPersist(e), visible);
     }
 
+    // Reload the saved layout for the CURRENT resolution for every mounted HUD (called on a resolution change).
+    // ApplySavedRect reads _resolution() + _storage.Get, so it picks up the new resolution's bucket (or the
+    // spec DefaultRect fallback). NOT a clamp-in-place — the per-resolution bucket is the authoritative pose.
+    internal void ReapplyLayout()
+    {
+        foreach (var kv in _huds)
+        {
+            var e = kv.Value;
+            if (e.Removed || e.Token == null) continue;
+            ApplySavedRect(e, applyVisibility: false);   // res change repositions but never toggles show/hide
+        }
+    }
+
     /// <summary>Editor enumeration — all registered HUDs incl. hidden, with live rect when shown else last-known
     /// (or the spec default). Mod HUDs are always hideable.</summary>
     public IEnumerable<EditableElement> EditableElements()
@@ -67,14 +80,15 @@ internal sealed partial class HudService
     }
 
     // Called after a successful mount (Task 4 TickEntry). Restores saved position — unless a drag is
-    // active for this id (so a mid-drag self-heal re-mount doesn't discard the live drag).
-    private void ApplySavedRect(Entry e)
+    // active for this id (so a mid-drag self-heal re-mount doesn't discard the live drag). applyVisibility=true
+    // (mount/reset) also honours a persisted hide; false (resolution change) repositions only, visibility untouched.
+    private void ApplySavedRect(Entry e, bool applyVisibility = true)
     {
         if (_storage is null || _resolution is null || e.Token is null || _dragging.Contains(e.Spec.Id)) return;
         // Fall back to the spec's DefaultRect (spawn position) when set, else the renderer's initial placement.
         var fallback = e.Spec.DynamicDefaultRect?.Invoke() ?? e.Spec.DefaultRect ?? _renderer.GetRect(e.Token);
         var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Spec.Id, _resolution(), fallback);
         _renderer.SetRect(e.Token, rect);
-        if (!visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
+        if (applyVisibility && !visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
     }
 }

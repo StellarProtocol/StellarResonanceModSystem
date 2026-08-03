@@ -36,18 +36,34 @@ internal sealed partial class LayoutEditorOverlay
         if (_toolbarWindow == null && _windows != null)
         {
             // GlassMenu chrome (ShowTitleBar=false) = frosted rounded panel, no title bar (Borderless is
-            // self-framed → no bg). Fixed width, centred on the current resolution; flexible spacers centre
-            // the content within the panel.
+            // self-framed → no bg). Fixed width, top-centred on the current resolution (scale-aware, see
+            // ToolbarRect); flexible spacers centre the content within the panel.
             const float w = 1180f;
-            var res = _input.CurrentResolution;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
-                new WindowRect((res.Width - w) / 2f, 12f, w, 0f),
+                ToolbarRect(w),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            // Framework chrome — hide over the loading screen; otherwise available in every phase.
-            { ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0, StartVisible = false, ShowTitleBar = false, Draggable = true };
+            // Framework chrome — hide over the loading screen; otherwise available in every phase. Not draggable:
+            // it's auto-centred chrome, so leaving it draggable would fight the per-tick re-center (CenterToolbar).
+            { ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0, StartVisible = false, ShowTitleBar = false, Draggable = false };
             _toolbarWindow = _windows.Register(new WindowRegistration(spec, BuildToolbarRoot()));
         }
         _toolbarWindow?.SetVisible(true);
+    }
+
+    // Top-centre the toolbar in CANVAS UNITS: the window canvas is (res.Width / sf) units wide (sf = the
+    // CanvasScaler factor), and the bar is w canvas units. At sf==1 this is (res.Width - w)/2, unchanged.
+    private WindowRect ToolbarRect(float w)
+    {
+        var res = _input.CurrentResolution;
+        var sf = _windows?.CanvasScale ?? 1f;
+        return new WindowRect((res.Width / sf - w) / 2f, 12f, w, 0f);
+    }
+
+    // Re-centre each edit tick so a resolution or UI-scale change after registration still lands centred
+    // (windows are destroyed-on-hide + re-placed from the registration-time DefaultRect, which can go stale).
+    private void CenterToolbar()
+    {
+        if (_toolbarWindow is { IsShown: true } tw) tw.SetRect(ToolbarRect(1180f));
     }
 
     private void HideToolbar() => _toolbarWindow?.SetVisible(false);

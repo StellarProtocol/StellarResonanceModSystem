@@ -11,6 +11,7 @@ public interface IConfigSection
 | name | description |
 | --- | --- |
 | [Get&lt;T&gt;](IConfigSection/Get.md)(…) | Returns the value stored at *key*, or *defaultValue* if the key is absent or the stored value can't be coerced to *T*. Never throws. |
+| [RemoveByPrefix](IConfigSection/RemoveByPrefix.md)(…) | Removes every key in this section whose name begins with *prefix* (ordinal comparison). Use this to drop a whole group of related keys at once — e.g. all per-resolution sub-keys of one entry. Does NOT write to disk — caller must invoke [`Save`](./IConfigSection/Save.md). Keys that don't match are left untouched; never throws. |
 | [Save](IConfigSection/Save.md)() | Flushes the in-memory cache for this section to disk, then fires [`SectionChanged`](./IPluginConfig/SectionChanged.md). Cross-process / external-edit detection is handled by the framework — plugins don't poll the file. |
 | [SaveQuiet](IConfigSection/SaveQuiet.md)() | Persists the section without raising [`SectionChanged`](./IPluginConfig/SectionChanged.md) — for echo-suppression when the writer is reacting to its own change. |
 | [Set&lt;T&gt;](IConfigSection/Set.md)(…) | Stores *value* at *key* in the in-memory cache. Does NOT write to disk — caller must invoke [`Save`](./IConfigSection/Save.md) when batch of edits is complete. |

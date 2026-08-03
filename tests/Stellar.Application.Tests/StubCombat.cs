@@ -18,6 +18,7 @@ internal sealed class StubCombat : ICombatSnapshot, ICombatLookup, ICombatEvents
     public IReadOnlyList<SkillCooldown> LocalCooldowns { get; set; } = Array.Empty<SkillCooldown>();
     public IReadOnlyList<ActiveBuff> LocalBuffs { get; set; } = Array.Empty<ActiveBuff>();
     public long ServerNowMs { get; set; }
+    public DateTimeOffset ServerNow => DateTimeOffset.FromUnixTimeMilliseconds(ServerNowMs);
     public IReadOnlyList<CombatEvent> RecentEvents { get; set; } = Array.Empty<CombatEvent>();
 
     public event Action<CombatEvent>? CombatEventOccurred;
