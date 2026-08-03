@@ -19,4 +19,8 @@ internal interface IInventoryProbe
     bool TryReadModules(out ModuleSnapshot snapshot);
 
     bool TryReadEquipped(out EquippedSet equipped);
+
+    /// <summary>The CURRENT LIVE equipped gear + modules from the game's containers (reflects manual
+    /// equips / class-swap re-equips). Empty lists until the container resolves — treated as "not ready".</summary>
+    EquippedLoadout GetLiveEquipped();
 }

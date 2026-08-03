@@ -96,10 +96,21 @@ internal sealed class MockInventory : IInventory
     // shape the production surface presents before the first full sync.
     public IReadOnlyList<GearInstance> GetSelfGear() => Array.Empty<GearInstance>();
 
+    private static readonly EquippedLoadout EmptyLiveEquipped =
+        new(Array.Empty<GearInstance>(), new Dictionary<int, ModuleInfo>(0));
+    public EquippedLoadout GetLiveEquipped() => EmptyLiveEquipped;
+
     // Static fixture — InventoryChanged never fires. Add/remove are no-ops so
     // plugins that subscribe (e.g. ModuleOptimizer's Targets watcher) still
     // compile and behave correctly.
     public event Action? InventoryChanged
+    {
+        add { /* intentional no-op */ }
+        remove { /* intentional no-op */ }
+    }
+
+    // Static fixture — self-gear never re-syncs, so this never fires either.
+    public event Action? SelfGearChanged
     {
         add { /* intentional no-op */ }
         remove { /* intentional no-op */ }

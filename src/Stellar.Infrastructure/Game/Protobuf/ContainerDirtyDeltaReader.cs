@@ -60,6 +60,7 @@ internal static partial class ContainerDirtyDeltaReader
 {
     private const int FieldMod = 57;        // CharSerialize.mod
     private const int FieldModSlots = 1;    // Mod.mod_slots (map<int32,int64>)
+    private const int FieldEquip = 12;      // CharSerialize.equip (EquipList) — the equipped-gear mapping
 
     private const int TagBegin = -2;
     private const int TagEnd = -3;
@@ -88,6 +89,32 @@ internal static partial class ContainerDirtyDeltaReader
         }
 
         return WalkCharSerializeFields(ref reader);
+    }
+
+    /// <summary>
+    /// True when the delta touches the equip container (CharSerialize field 12 = <c>EquipList</c>) — i.e.
+    /// a gear equip / refine / class-swap re-equip (confirmed on the live wire 2026-08-03: gear edits carry
+    /// field 12). A read-only top-level field scan, DELIBERATELY separate from <see cref="Read"/> so the
+    /// mod-slot decode path is untouched. Never throws — any malformed input returns false.
+    /// </summary>
+    public static bool TouchesEquip(byte[]? buffer)
+    {
+        if (buffer is null || buffer.Length < 8) return false;
+        try
+        {
+            var reader = new BlobReader(buffer);
+            if (!TryEnterContainer(ref reader, "CharSerialize")) return false;
+            var index = reader.ReadInt32();
+            while (index > 0)
+            {
+                if (index == FieldEquip) return true;
+                if (!TrySkipUnknownField(ref reader)) return false;
+                if (reader.Remaining < 4) break;
+                index = reader.ReadInt32();
+            }
+        }
+        catch { /* never throw on the network thread */ }
+        return false;
     }
 
     // Walks the top-level CharSerialize field entries, descending into field 57
