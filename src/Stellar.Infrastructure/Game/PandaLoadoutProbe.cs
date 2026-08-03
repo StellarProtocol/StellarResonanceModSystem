@@ -178,10 +178,11 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
         RefreshIfDue();
         ParseLoadoutData();
-        // NOTE: per-class gear/modules are now captured LIVE + event-driven by the plugin
-        // (IInventory.GetLiveEquipped on SelfGearChanged), NOT resolved from saved plans here. The
-        // saved-plan resolver (TryResolvePerClassDetails) is intentionally no longer called — the
-        // interval-polling it did is replaced by the wire-event path. (Dormant code slated for cleanup.)
+        // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
+        // container (distinct per class — correct for loadout switching). Resolves once when the loadout
+        // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The
+        // CURRENT class is overlaid with its LIVE equipped set (manual edits) inside this call.
+        TryResolvePerClassDetails();
         DrainPendingDispatches();
 
         PendingSwitch? pending;
