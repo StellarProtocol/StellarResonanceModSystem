@@ -2,7 +2,10 @@
 
 - **Status:** Phase 1 (framework surface) **DONE + committed** `384aa18` on `framework-v2` — built clean,
   code-reviewed (GO), hardened (F1/F3/F4), packed `2.0.0` to local feed, cache cleared. Phase 2 (plugin
-  migration) IN PROGRESS: pilot = Mahiru. NOT deployed in-game yet (game was running); NOT pushed.
+  migration) IN PROGRESS. **Wave A DONE** (each compile-PASS + code-reviewed GO, committed on its own
+  `feature/framework-v2`): Mahiru `24bd72f` (−134), CombatMeter `f5b060f` (−97, +tests fix), CooldownBar
+  `3c31fe1` (−30), Experiment `329083e` (−300, overlay untouched). Wave B next. NOT deployed in-game yet
+  (game was running); NOT pushed.
 - **Date:** 2026-08-03
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Infrastructure` (+ per-plugin migration)
 - **Baseline:** framework branch `framework-v2` (SDK **2.0.0**, local-feed); plugins on `feature/framework-v2`.
@@ -211,6 +214,18 @@ Main agent designs/reviews/does git; `mod-implementer` writes C#; `build-deploy`
   these locally (`WalkIl2Cpp`), left untouched (behavior-preserving). **Deferred** — extend `StellarInterop`
   with `Item(object, object key)` + an enumerator-fallback `Enumerate` only once a 2nd/3rd plugin needs it, so
   the surface stays proven. Not a defect in the shipped floor; ZList (the common case) is fully served.
+
+## 6c. Framework-polish follow-ups (deferred, non-blocking)
+
+- **`StellarInterop.Item`/`Enumerate` allocate + re-resolve per element per call** (fresh `object[1]` + a
+  `FindPropertyUp("Item")`/`GetGetMethod` each iteration, no caching). Reintroduces the per-item reflection/GC
+  churn CooldownBar's history flags as a combat hitch source (demand+visibility-gated, small N → LOW). Fix is
+  internal-only (cache the indexer getter per Type; resolve once in `Enumerate`, reuse one arg array) — no API
+  change, benefits every consumer. Do in a batched framework-polish pass, not mid-wave.
+- **Dead `InputSimPatch.cs`** (Experiment) still hand-rolls Harmony (unreferenced; `_harmony` used as an
+  `IsInstalled` flag) and an unused `const BindingFlags SF` in `DitherControl.cs` — optional cleanup, inert.
+- **Nullable warnings** from consuming the nullable-returning `StellarInterop` API (CS8605/CS8601 in Experiment)
+  — cosmetic; no `TreatWarningsAsErrors`.
 
 ## 7. Risks
 
