@@ -1,11 +1,19 @@
 # Design + Plan: Plugin Interop Foundation (framework v2.1)
 
-- **Status:** Phase 1 (framework surface) **DONE + committed** `384aa18` on `framework-v2` — built clean,
-  code-reviewed (GO), hardened (F1/F3/F4), packed `2.0.0` to local feed, cache cleared. Phase 2 (plugin
-  migration) IN PROGRESS. **Wave A DONE** (each compile-PASS + code-reviewed GO, committed on its own
-  `feature/framework-v2`): Mahiru `24bd72f` (−134), CombatMeter `f5b060f` (−97, +tests fix), CooldownBar
-  `3c31fe1` (−30), Experiment `329083e` (−300, overlay untouched). Wave B next. NOT deployed in-game yet
-  (game was running); NOT pushed.
+- **Status:** Phase 1 (framework surface) **DONE + committed** `384aa18` on `framework-v2`. Phase 2 (plugin
+  migration) **DONE** — 14 plugins, each compile-PASS + code-reviewed GO, committed on its own branch.
+  **NOT deployed in-game yet** (game was running throughout; every "compile PASS" excludes the deploy-copy
+  step) — in-game validation still owed. NOT pushed. Deferred framework-polish items in §6c remain open.
+  - **Wave A** (`feature/framework-v2`): Mahiru `24bd72f` (−134), CombatMeter `f5b060f` (−97, +tests fix),
+    CooldownBar `3c31fe1` (−30), Experiment `329083e` (−300, overlay untouched).
+  - **Wave B** (`feature/framework-v2`): ModuleOptimizer `c49b445` (−5), CustomProfileImage `72a5d9b` (−73),
+    AutoFishing `49c4c5e` (−214), StatInspector `33ae1a4` (−5), EntityInspector `37db264` (−25),
+    MinimalNameplate `20a675d` (−22), ExchangeBuyer `80bd98b` (−7, Post only; ServerClock kept).
+  - **Wave C**: Position `0637d92` (−9, `main`, new repo), AccountSwitcher `03f78a0` (−92, `main`),
+    Maestro `965d6df` (−124, `main`, new repo). Maestro/Position: fresh local git (baseline `8da3ab5`/`d9d38d8`).
+  - **No migration needed** (already service-only, grep-confirmed zero interop plumbing): ChatTools,
+    LoadoutSwitcher, PlayerHUD, RaidManager. **Excluded**: EntitlementService (not a plugin).
+  - Total plumbing deleted: **~850+ LoC** across 14 plugins.
 - **Date:** 2026-08-03
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Infrastructure` (+ per-plugin migration)
 - **Baseline:** framework branch `framework-v2` (SDK **2.0.0**, local-feed); plugins on `feature/framework-v2`.
@@ -231,6 +239,15 @@ Main agent designs/reviews/does git; `mod-implementer` writes C#; `build-deploy`
   framework-polish batch, then migrate ExchangeBuyer's 4 `ServerClock` consumers + delete `ServerClock.cs`.
 - **CustomProfileImage's lone hand-rolled `Harmony`** (`InstallLuaReadyTrigger`) left un-migrated (its §5 map
   scope was StellarInterop+ILua); optional consistency swap to `IHarmonyHost`.
+- **Consumed-Lua-return "park-and-read" is hand-rolled in 3 plugins** (CustomProfileImage, AccountSwitcher,
+  Maestro): `ILua.DoString` is void + swallows Lua errors, so a plugin that needs the error/result wraps the
+  chunk in `pcall`, parks the outcome into a global, and reads it back with `ReadGlobal*`. Candidate framework
+  method `string? ILua.Run(chunk)` (or `bool TryRun(chunk, out error)`) that does pcall+park+read internally —
+  would delete the boilerplate AND fix the one latent gap: today the `err=nil` clear lives *inside* the wrapped
+  chunk, so a Lua **compile** error skips the clear and reads a stale error global (unreachable with static
+  chunks, but real). A framework method would clear in a separate `DoString` first.
+- **`ILua` can't read a Lua *function* global back** (only bool/number/string). Maestro's `__maestro_ens_h`
+  self-heal worked around it by parking a boolean existence sentinel. Fine as-is; note if more consumers need it.
 - **Dead `InputSimPatch.cs`** (Experiment) still hand-rolls Harmony (unreferenced; `_harmony` used as an
   `IsInstalled` flag) and an unused `const BindingFlags SF` in `DitherControl.cs` — optional cleanup, inert.
 - **Nullable warnings** from consuming the nullable-returning `StellarInterop` API (CS8605/CS8601 in Experiment)
