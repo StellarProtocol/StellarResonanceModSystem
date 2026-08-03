@@ -1,6 +1,8 @@
 # Design + Plan: Plugin Interop Foundation (framework v2.1)
 
-- **Status:** PROPOSED — design only, no code written. Awaiting go on §4 version decision.
+- **Status:** Phase 1 (framework surface) **DONE + committed** `384aa18` on `framework-v2` — built clean,
+  code-reviewed (GO), hardened (F1/F3/F4), packed `2.0.0` to local feed, cache cleared. Phase 2 (plugin
+  migration) IN PROGRESS: pilot = Mahiru. NOT deployed in-game yet (game was running); NOT pushed.
 - **Date:** 2026-08-03
 - **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Infrastructure` (+ per-plugin migration)
 - **Baseline:** framework branch `framework-v2` (SDK **2.0.0**, local-feed); plugins on `feature/framework-v2`.
