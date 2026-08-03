@@ -176,6 +176,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         TryResolveBridgeIfDue();
         if (!_bridgeResolved) return;
 
+        TickLiveGearDiag();   // measure-first live-container trace — no-op unless STELLAR_DIAGNOSTICS
         RefreshIfDue();
         ParseLoadoutData();
         TryResolvePerClassDetails();

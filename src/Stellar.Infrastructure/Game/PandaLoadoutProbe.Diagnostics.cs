@@ -20,6 +20,25 @@ internal sealed partial class PandaLoadoutProbe
     private bool _equipProbeLogged;
     private bool _perClassResolvedLogged;
 
+    private int _liveGearTick;
+    private string? _lastLiveGear;
+    private const int LiveGearEveryTicks = 15;   // ~2 Hz at the 30 Hz loadout drain — enough to catch a swap/edit
+
+    // Measure-first (2026-08-03): trace the LIVE equip/mod containers so a class swap + a manual gear/module
+    // swap each produce exactly one [LiveGearDiag] transition. Confirms whether cs.equip.equipList /
+    // cs.mod.modSlots track the current class + manual edits (owner requirement) — vs the class-blind wire
+    // caches. Throttled + diff-based; no-op unless STELLAR_DIAGNOSTICS.
+    private void TickLiveGearDiag()
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        if (_liveGearTick++ % LiveGearEveryTicks != 0) return;
+        InvokeChunk(LiveGearDiagChunk);
+        var dump = ReadLuaGlobalString(LiveGearGlobal);
+        if (string.IsNullOrEmpty(dump) || dump == _lastLiveGear) return;
+        _lastLiveGear = dump;
+        _log.Info("[LiveGearDiag] " + dump);
+    }
+
     // Per-class gear/module resolution result (2026-08-03): logs each plan's decoded gear/module counts
     // + the first gear piece's roll counts, so the owner's verification run also confirms the decode
     // (empty rolls ⇒ an EquipAttr property-name mismatch to fix; distinct counts ⇒ per-class working).

@@ -299,6 +299,23 @@ internal sealed partial class PandaLoadoutProbe
         " rawset(_G,\"" + EquipProbeGlobal + "\", out)" +
         " end))()";
 
+    // Diagnostic-only global written by the live-container trace (measure-first, 2026-08-03).
+    private const string LiveGearGlobal = "_StellarLiveGear";
+
+    // LIVE-CONTAINER TRACE (diagnostics only): dumps the game's LIVE equipped set — cs.equip.equipList
+    // (slot -> itemUuid) + cs.mod.modSlots (slot -> uuid) + the current plan id — to measure whether the
+    // live containers TRACK the current class + reflect a manual gear/module swap (owner requirement:
+    // per-class gear must reflect manual class + equipment changes, not just saved loadouts). These are the
+    // exact accessors the game's own weapon_vm.CheckRolePlanIsChange reads. Pure container reads — NO RPC,
+    // so no coroutine wrapper. Read-only, no interpolation. Paired with a diff in TickLiveGearDiag so a
+    // static state logs once and each swap/edit logs exactly one transition.
+    private const string LiveGearDiagChunk =
+        "local cs=(Z.ContainerMgr).CharSerialize local out=\"\"" +
+        " pcall(function() out=\"CUR=\"..tostring(((Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_).CurPlanId) end)" +
+        " pcall(function() local el=(cs.equip).equipList if el~=nil then out=out..\" EQ:\" for s,info in pairs(el) do out=out..tostring(s)..\":\"..tostring(info.itemUuid)..\",\" end end end)" +
+        " pcall(function() local ms=(cs.mod).modSlots if ms~=nil then out=out..\" MOD:\" for s,u in pairs(ms) do out=out..tostring(s)..\":\"..tostring(u)..\",\" end end end)" +
+        " rawset(_G,\"" + LiveGearGlobal + "\", out)";
+
     private static Type? FindTypeByShortName(string shortName)
     {
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
