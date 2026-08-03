@@ -81,30 +81,33 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private string? _lastDataRaw;
 
     // Per-class gear/modules (2026-08-03). The parsed plans carry each plan's equip/mod slot→uuid maps;
-    // _resolveGear (wired by Host to PandaInventoryProbe.ResolvePlanLoadout) turns those uuids into full
-    // GearInstance/ModuleInfo via the item container. Resolution is retried each tick until the container
-    // is ready (any non-empty result), then latched via _detailsResolved until the raw data changes.
+    // _resolveGear (wired by Host to PandaInventoryProbe.ResolvePlanLoadouts) turns those uuids into full
+    // GearInstance/ModuleInfo via the item container. Resolution is EVENT-DRIVEN (see _resolvePending +
+    // TryResolvePerClassDetails): it runs on a new parse and on the container-sync/gear-change event.
     private List<ParsedPlan> _parsedPlans = new();
-    private bool _detailsResolved;
     private PerClassLoadoutResolver? _resolveGear;
 
-    /// <summary>Wires the per-class gear/module resolver (Host → <c>PandaInventoryProbe.ResolvePlanLoadout</c>).
+    /// <summary>Wires the per-class gear/module resolver (Host → <c>PandaInventoryProbe.ResolvePlanLoadouts</c>).
     /// Late-bound because the inventory probe is built after the loadout probe. Safe to call once.</summary>
     public void AttachGearResolver(PerClassLoadoutResolver resolver)
     {
         _resolveGear = resolver;
-        _detailsResolved = false;   // re-resolve now that a resolver is available
-        _resolveTickGate = 0;
-        _resolveAttempts = 0;
+        _resolvePending = true;   // resolve now that a resolver is available
     }
 
     // Live overlay freshness: set on IInventory.SelfGearChanged (network thread — flag only, no game read).
-    // A gear/module change or a loadout switch re-reads the live equipped set on the next tick.
+    // A gear/module change or a loadout switch re-reads the live equipped set + re-resolves on the next tick.
     private volatile bool _gearChangedPending;
 
-    /// <summary>Signals a gear/module change (or loadout switch) so the CURRENT class's live overlay is
-    /// re-read next tick. Host wires this to <c>IInventory.SelfGearChanged</c>. Thread-safe (flag only).</summary>
-    public void OnGearChanged() => _gearChangedPending = true;
+    /// <summary>Signals a gear/module change, a loadout switch, OR the item container becoming ready — all
+    /// arrive as <c>IInventory.SelfGearChanged</c> (method-21 full sync latches the container; method-22
+    /// deltas are edits/switches). Re-reads the live overlay AND re-arms the per-class resolve. Host wires
+    /// this to SelfGearChanged. Thread-safe (flags only; no game/IL2CPP read here).</summary>
+    public void OnGearChanged()
+    {
+        _gearChangedPending = true;
+        _resolvePending = true;
+    }
 
     // SyncProjectList is fired ON DEMAND only: once when the bridge first resolves
     // in-world, and again after a successful switch. No recurring timer (an unprompted
@@ -252,9 +255,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _parsedPlans = plans;
         ParseLiveLine(raw!);                   // CURRENT class's live equipped set (overlay source)
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
-        _detailsResolved = false;              // new data → re-resolve per-class gear/modules
-        _resolveTickGate = 0;
-        _resolveAttempts = 0;                  // fresh attempt budget for this snapshot
+        _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
     }
 
@@ -290,25 +291,19 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         return list;
     }
 
-    // Resolves each plan's per-class gear + modules from its slot→uuid maps via the injected resolver
-    // (Host → PandaInventoryProbe.ResolvePlanLoadout). Retried every tick until the item container is
-    // ready (any plan yields non-empty gear/modules), then latched. A no-op once resolved or with no
-    // resolver/plans. Cheap after latch (never re-runs until the raw data changes).
-    // The resolve reflects the WHOLE item container (BuildUuidIndex scans every package/item) — the same
-    // expensive scan the sibling inventory refresh deliberately runs at 1 Hz. Throttle this retry to a
-    // similar cadence (NOT the up-to-30 Hz loadout drain) and cap attempts per data snapshot, so a plan
-    // set that never resolves (impossible for real saved loadouts, but guards a container hiccup) can't
-    // scan forever. Both counters reset on a new parse (_lastDataRaw change) and on AttachGearResolver.
-    private int _resolveTickGate;
-    private int _resolveAttempts;
-    private const int ResolveEveryTicks = 30;   // ~1 Hz at the default 30 Hz loadout drain
-    private const int MaxResolveAttempts = 60;  // give up after ~1 min of throttled tries; keep base entries
+    // Resolves each plan's per-class gear + modules from its slot→uuid maps via the injected resolver, and
+    // overlays the CURRENT class with its live equipped set. FULLY EVENT-DRIVEN — no polling: runs only when
+    // _resolvePending is set, which happens on a new parse and on OnGearChanged (fired from SelfGearChanged =
+    // the container-sync / dirty-delta event). The FIRST container sync (method-21, which latches the item
+    // container this resolve reads) fires that SAME event — so a resolve that ran before the container was
+    // ready simply re-runs when the sync lands. No retry loop, no per-tick scan: the flag gates the one
+    // (whole-item-container) scan to exactly the events that change its inputs.
+    private bool _resolvePending;
 
     private void TryResolvePerClassDetails()
     {
-        if (_detailsResolved || _resolveGear is null || _parsedPlans.Count == 0) return;
-        if (_resolveTickGate++ % ResolveEveryTicks != 0) return;                              // throttle the scan
-        if (_resolveAttempts++ >= MaxResolveAttempts) { _detailsResolved = true; return; }   // give up; keep base
+        if (!_resolvePending || _resolveGear is null || _parsedPlans.Count == 0) return;
+        _resolvePending = false;   // one attempt per event; if the container isn't ready, the next sync re-arms it
 
         var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count + 1);
         foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
@@ -320,7 +315,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         var ready = false;
         foreach (var (gear, modules) in results)
             if (gear.Count > 0 || modules.Count > 0) { ready = true; break; }
-        if (!ready) return;   // container not resolved yet — keep the base entries, retry next throttled tick
+        if (!ready) return;   // container not synced yet — keep base entries; the container-sync event re-arms us
 
         // The live overlay result (last entry), if it resolved to anything.
         (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live =
@@ -338,7 +333,6 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
         }
         _loadouts = upgraded;
-        _detailsResolved = true;
         LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
     }
 
