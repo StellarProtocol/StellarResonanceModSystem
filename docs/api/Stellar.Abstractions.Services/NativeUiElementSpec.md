@@ -12,12 +12,6 @@ public abstract record NativeUiElementSpec
 | --- | --- |
 | [Anchor](NativeUiElementSpec/Anchor.md) { get; set; } |  |
 
-## Protected Members
-
-| name | description |
-| --- | --- |
-| [NativeUiElementSpec](NativeUiElementSpec/NativeUiElementSpec.md)(…) | Base for a declarative mod-uGUI element. Unity-free so it lives in Abstractions. |
-
 ## See Also
 
 * namespace [Stellar.Abstractions.Services](../Stellar.Abstractions.md)

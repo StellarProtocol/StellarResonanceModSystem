@@ -17,6 +17,7 @@ public record SliderElement : IEquatable<HudElement>
 | [Max](SliderElement/Max.md) { get; set; } |  |
 | [Min](SliderElement/Min.md) { get; set; } |  |
 | [Set](SliderElement/Set.md) { get; set; } |  |
+| [SquareHandle](SliderElement/SquareHandle.md) { get; set; } | Opt in to a knob that is exactly [`HandleSize`](./SliderElement/HandleSize.md) square, instead of one stretched to the height of its row. |
 | [Width](SliderElement/Width.md) { get; set; } | Fixed track width in px; 0 → elastic (the track expands to fill its Row cell). |
 
 ## See Also

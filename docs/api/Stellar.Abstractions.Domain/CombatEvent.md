@@ -13,14 +13,9 @@ public abstract record CombatEvent
 | [TimestampMs](CombatEvent/TimestampMs.md) { get; set; } |  |
 | record [BuffChanged](CombatEvent.BuffChanged.md) | A buff on an entity was applied, refreshed, or removed. |
 | record [DamageDealt](CombatEvent.DamageDealt.md) | Damage or healing was dealt between two entities. |
+| record [EntityStateChanged](CombatEvent.EntityStateChanged.md) | An entity's client-side actor/controller state machine entered a new state Stellar names on [`ActorState`](./ActorState.md) (2026-07-28 entity-state-death-signal spec). This is the client's OWN death/break signal — read from its state machine, not inferred from HP reaching zero or a damage packet's death flag — so it fires for scripted kills that never zero the target's HP. Riding this existing event channel (rather than a new `ICombatLookup`/`ICombatEvents` member) is deliberate: it keeps every combat service interface under the STELLAR0005 8-member ceiling. |
 | record [EntitySummonAppeared](CombatEvent.EntitySummonAppeared.md) | A summon/pet entity entered AOI (`SyncNearEntities.appear`) carrying a resolvable owner attribution. Fired once per appear, only when the entity's `AttrCollection` carries `AttrTopSummonerId` or `AttrSummonerId` — most appearing entities (players, unowned mobs) carry neither and never raise this event. Useful as an early, wind-up-free timestamp anchor for a caster's summon-based action (e.g. a Battle Imagine cast) that is otherwise only observable once the summon lands its first hit. |
 | record [SkillUsed](CombatEvent.SkillUsed.md) | A skill was cast or progressed through a phase by the identified caster. |
-
-## Protected Members
-
-| name | description |
-| --- | --- |
-| [CombatEvent](CombatEvent/CombatEvent.md)(…) | Discriminated event raised by [`ICombatEvents`](../Stellar.Abstractions.Services/ICombatEvents.md). Always fires on the main (Unity) thread. |
 
 ## See Also
 

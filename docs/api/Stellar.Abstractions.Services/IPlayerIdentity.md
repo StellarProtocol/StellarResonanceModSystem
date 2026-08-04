@@ -10,14 +10,16 @@ public interface IPlayerIdentity
 
 | name | description |
 | --- | --- |
-| [IsAvailable](IPlayerIdentity/IsAvailable.md) { get; } | True when a character is loaded and the snapshot fields are meaningful. |
-| [Level](IPlayerIdentity/Level.md) { get; } | Character level; zero when not yet loaded. |
-| [Name](IPlayerIdentity/Name.md) { get; } | Character display name; null when not yet loaded. |
-| [Profession](IPlayerIdentity/Profession.md) { get; } | Primary profession id; zero when not yet loaded. |
+| [IsAvailable](IPlayerIdentity/IsAvailable.md) { get; } | True when the live world entity is readable and the [`IPlayerVitals`](./IPlayerVitals.md) / [`IPlayerLocation`](./IPlayerLocation.md) fields are meaningful. Identity ([`Name`](./IPlayerIdentity/Name.md) / [`Level`](./IPlayerIdentity/Level.md) / [`Profession`](./IPlayerIdentity/Profession.md)) may be available even when this is `false`. |
+| [Level](IPlayerIdentity/Level.md) { get; } | Character level; zero when not yet known. May be set while [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false`. |
+| [Name](IPlayerIdentity/Name.md) { get; } | Character display name; null when not yet known. May be set while [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false`. |
+| [Profession](IPlayerIdentity/Profession.md) { get; } | Current profession id; zero when not yet known. May be set while [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false`. |
 
 ## Remarks
 
-[`IsAvailable`](./IPlayerIdentity/IsAvailable.md) gates all other properties: when it is `false` (title / character select / loading screens) the remaining properties return defaults (empty string, zero).
+[`IsAvailable`](./IPlayerIdentity/IsAvailable.md) reflects whether the live world entity is readable, and it gates the [`IPlayerVitals`](./IPlayerVitals.md) and [`IPlayerLocation`](./IPlayerLocation.md) facets: when it is `false` (title / character select / loading screens) those return defaults (zero, [`Zero`](../Stellar.Abstractions.Domain/Position3D/Zero.md)).
+
+The three identity properties below are deliberately NOT gated by [`IsAvailable`](./IPlayerIdentity/IsAvailable.md). They fall back to the character record, so they can be populated while [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false` — the client knows who the player is even in states where the world entity's attribute bag reads empty (e.g. after relaunching while mounted). Check the individual property for null/zero rather than gating identity reads on [`IsAvailable`](./IPlayerIdentity/IsAvailable.md).
 
 ## See Also
 

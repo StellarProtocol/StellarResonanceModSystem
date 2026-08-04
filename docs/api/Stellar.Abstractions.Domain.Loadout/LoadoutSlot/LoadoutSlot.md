@@ -3,7 +3,9 @@
 A saved in-game loadout entry: its identifier, display name, and whether it is currently active.
 
 ```csharp
-public LoadoutSlot(int Index, string Name, bool IsCurrent)
+public LoadoutSlot(int Index, string Name, bool IsCurrent, int ProfessionId = 0, 
+    int TalentStageId = 0, IReadOnlyList<int>? TalentNodes = null, 
+    IReadOnlyList<GearInstance>? Gear = null, IReadOnlyDictionary<int, ModuleInfo>? Modules = null)
 ```
 
 | parameter | description |
@@ -11,9 +13,16 @@ public LoadoutSlot(int Index, string Name, bool IsCurrent)
 | Index | Stable game-defined identifier passed to [`ApplyAsync`](../../Stellar.Abstractions.Services/ILoadout/ApplyAsync.md). This is the game's loadout/project id, not necessarily a positional index; see the loadout recon findings. |
 | Name | Display name as shown in the in-game dropdown (e.g. "Ici-LF"), or a fallback like "Loadout N" if unresolved. |
 | IsCurrent | True if this loadout is the one currently applied. |
+| ProfessionId | The loadout's class/profession id, or 0 if unresolved. |
+| TalentStageId | The loadout's active talent-stage config id, or 0 if unresolved. |
+| TalentNodes | The actual allocated talent-tree node ids for this loadout's profession (from `professionList.talentList[professionId].talentNodeIds`), or null if unresolved. |
+| Gear | This loadout's PER-CLASS equipped gear pieces (self-only) with full rolls, resolved from the saved plan's `equipInfoMap` (slot→uuid) via the item container — NOT the class-blind live gear. Each [`GearInstance`](../../Stellar.Abstractions.Domain.Inventory/GearInstance.md) carries its own slot. Null until the item container resolves. |
+| Modules | This loadout's PER-CLASS equipped modules (self-only) with rolled parts, keyed by 1-based module slot, resolved from the saved plan's `modInfoMap` (slot→uuid) via the item container. Null until resolved. |
 
 ## See Also
 
+* record [GearInstance](../../Stellar.Abstractions.Domain.Inventory/GearInstance.md)
+* record [ModuleInfo](../../Stellar.Abstractions.Domain.Inventory/ModuleInfo.md)
 * record [LoadoutSlot](../LoadoutSlot.md)
 * namespace [Stellar.Abstractions.Domain.Loadout](../../Stellar.Abstractions.md)
 

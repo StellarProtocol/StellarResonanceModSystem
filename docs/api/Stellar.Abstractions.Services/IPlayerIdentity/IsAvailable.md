@@ -1,6 +1,6 @@
 # IPlayerIdentity.IsAvailable property
 
-True when a character is loaded and the snapshot fields are meaningful.
+True when the live world entity is readable and the [`IPlayerVitals`](../IPlayerVitals.md) / [`IPlayerLocation`](../IPlayerLocation.md) fields are meaningful. Identity ([`Name`](./Name.md) / [`Level`](./Level.md) / [`Profession`](./Profession.md)) may be available even when this is `false`.
 
 ```csharp
 public bool IsAvailable { get; }

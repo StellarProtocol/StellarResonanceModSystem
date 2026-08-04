@@ -6,12 +6,6 @@ A node in a HUD's declarative element tree. Plugins compose these; the framework
 public abstract record HudElement
 ```
 
-## Protected Members
-
-| name | description |
-| --- | --- |
-| [HudElement](HudElement/HudElement.md)() | The default constructor. |
-
 ## See Also
 
 * namespace [Stellar.Abstractions.Services](../Stellar.Abstractions.md)
