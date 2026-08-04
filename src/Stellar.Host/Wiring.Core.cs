@@ -31,8 +31,25 @@ public sealed partial class BootstrapPlugin
         _entityTracker = new CombatEntityTracker();
         _gameDataService = new GameDataService(_entityTracker);
         _playerStatsService = new PlayerStatsService();
-        _playerStateProbe = new PandaPlayerStateProbe(log, typeRegistry);
+        // Identity source for the player-state probe. Reads name / level / current
+        // profession off the live CharSerialize record so identity survives a
+        // world-entity attribute blackout (relaunch-while-mounted). The lambda is
+        // deferred on purpose: _inventoryProbe is built later in
+        // BuildInventoryServices, and its own accessor resolves lazily after the
+        // first container sync, so this returns null until both are ready.
+        var charIdentityReader = new PandaCharIdentityReader(
+            log, () => _inventoryProbe?.TryGetLiveCharSerialize());
+        _playerStateProbe = new PandaPlayerStateProbe(log, typeRegistry, charIdentityReader);
         _playerStatsProbe = new PandaPlayerStatsProbe(log, _playerStateProbe);
+        BuildCombatSocialServices(log, typeRegistry);
+    }
+
+    // Chat / social-data / combat / party / dungeon / frame-limiter cluster. Split out
+    // of BuildCoreServices to keep both methods under the STELLAR0002 50-LoC cap. Runs
+    // after the entity tracker + client state are built (both referenced below), and the
+    // construction order here is preserved exactly as it was inline.
+    private void BuildCombatSocialServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
+    {
         _chatService = new ChatService(log);
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap

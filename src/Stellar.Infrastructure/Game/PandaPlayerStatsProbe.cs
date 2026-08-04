@@ -82,7 +82,11 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
             return false;
         }
 
-        var entity = _stateProbe.GetMainEntity(mgr);
+        // Same-tick handoff from the state probe (Host refreshes player-state
+        // immediately before player-stats). Using this instead of the manager's raw
+        // playerEnt_ means the mounted-blackout rescue applies here too — reading
+        // playerEnt_ directly blanked every stat while mounted.
+        var entity = _stateProbe.GetLocalPlayerEntity(mgr);
         if (entity is null)
         {
             values = EmptyDict;

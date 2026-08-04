@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 
 namespace Stellar.Application.Abstractions;
@@ -22,4 +23,19 @@ internal interface ILoadoutProbe
 }
 
 /// <summary>A raw saved-loadout entry read from the game.</summary>
-internal readonly record struct LoadoutEntry(int Index, string Name);
+/// <param name="Index">The game's loadout/project id.</param>
+/// <param name="Name">Display name as shown in the in-game dropdown.</param>
+/// <param name="ProfessionId">The project's class/profession id, or 0 if unresolved
+/// (e.g. a stale in-flight read still carrying the pre-enrichment 2-column form).</param>
+/// <param name="TalentStageId">The project's active talent-stage config id, or 0 if
+/// unresolved.</param>
+/// <param name="TalentNodes">The profession's actual allocated talent-tree node ids, or null
+/// if unresolved (old 4-column read / no nodes).</param>
+internal readonly record struct LoadoutEntry(
+    int Index,
+    string Name,
+    int ProfessionId = 0,
+    int TalentStageId = 0,
+    IReadOnlyList<int>? TalentNodes = null,
+    IReadOnlyList<GearInstance>? Gear = null,
+    IReadOnlyDictionary<int, ModuleInfo>? Modules = null);

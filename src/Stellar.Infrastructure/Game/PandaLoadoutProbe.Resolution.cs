@@ -200,18 +200,42 @@ internal sealed partial class PandaLoadoutProbe
     // ── Chunk builders ─────────────────────────────────────────────────────────
 
     // Refresh chunk: fire SyncProjectList (AsyncGetRolePlanData) to populate
-    // weapon_data, then serialize CurPlanId + each plan's id/name into the data
-    // global. Run inside the canonical coroutine wrapper (the RPC yields). No
-    // external text is interpolated — no Lua-injection surface.
+    // weapon_data, then serialize CurPlanId + each plan's id/name/professionId/
+    // currentTalentStageCfgId/talentNodeIds into the data global. The allocated node ids
+    // come from the CONFIRMED per-profession container path used by the game's own
+    // talent_skill_vm.GetWeaponActiveTalentTreeNode:
+    // Z.ContainerMgr.CharSerialize.professionList.talentList[professionId].talentNodeIds
+    // (repeated uint32) — read nil-safely so a missing container just yields an empty node
+    // list (the site then shows the recommended build, never a crash). Run inside the
+    // canonical coroutine wrapper (the RPC yields). No external text is interpolated — no
+    // Lua-injection surface.
     private const string RefreshChunk =
         "(Z.CoroUtil.create_coro_xpcall(function()" +
         " local token=(ZUtil.ZCancelSource).NeverCancelToken" +
         " Z.VMMgr.GetVM(\"weapon\").AsyncGetRolePlanData(token)" +
         " local wd=Z.DataMgr.Get(\"weapon_data\") local d=wd.rolePlanServerData_" +
+        " local cs=(Z.ContainerMgr).CharSerialize" +
+        " local tl=(cs.professionList).talentList" +
         " local out=\"CUR=\"..tostring(d.CurPlanId)" +
         " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
         "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
-        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm end end" +
+        "  local prof=(pd and pd.professionId) or 0" +
+        "  local stage=(pd and pd.currentTalentStageCfgId) or 0" +
+        "  local nodes=\"\"" +
+        "  if tl and tl[prof] and tl[prof].talentNodeIds then for _,nid in ipairs(tl[prof].talentNodeIds) do nodes=(nodes==\"\" and tostring(nid)) or (nodes..\",\"..tostring(nid)) end end" +
+        // Per-class gear/modules (2026-08-03): serialize this plan's equipInfoMap + modInfoMap as
+        // "slot:uuid,slot:uuid" (cols 6,7). The maps are pairs-iterable (the game does the same:
+        // equip_vm.IsEquipByOtherPlan). C# resolves each uuid -> full gear/module via itemPackage.
+        "  local eq=\"\" if pd and pd.equipInfoMap then for s,u in pairs(pd.equipInfoMap) do eq=(eq==\"\" and \"\" or eq..\",\")..tostring(s)..\":\"..tostring(u) end end" +
+        "  local md=\"\" if pd and pd.modInfoMap then for s,u in pairs(pd.modInfoMap) do md=(md==\"\" and \"\" or md..\",\")..tostring(s)..\":\"..tostring(u) end end" +
+        "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes..\"\\t\"..eq..\"\\t\"..md end end" +
+        // Live overlay: the CURRENT class's actually-equipped set — cs.equip.equipList[slot].itemUuid +
+        // cs.mod.modSlots[slot]. This is the LIVE container (reflects manual equips/refines/removals) —
+        // NOT the method-21 capture latch the C# reader was stuck on. C# overlays this onto the CURRENT
+        // plan's saved-loadout gear/modules. "LIVE\t<eq slot:uuid,...>\t<mod slot:uuid,...>".
+        " local le=\"\" pcall(function() local el=(cs.equip).equipList if el~=nil then for s,info in pairs(el) do if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end end end end)" +
+        " local lm=\"\" pcall(function() local ms=(cs.mod).modSlots if ms~=nil then for s,u in pairs(ms) do lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
+        " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 
@@ -237,6 +261,51 @@ internal sealed partial class PandaLoadoutProbe
 
     // Clears the switch result global before a dispatch so a stale value isn't read.
     private const string ClearSwitchGlobalChunk = "rawset(_G,\"" + SwitchGlobal + "\", nil)";
+
+    // Diagnostic-only global written by ProbeChunk (per-class gear RE, 2026-08-03).
+    private const string EquipProbeGlobal = "_StellarEquipProbe";
+
+    // EQUIP/MOD RESOLUTION PROBE (diagnostics only, 2026-08-03 iter 2). The per-class gear+modules are
+    // NOT on the live wire ([ClassGearDiag]-proven) — but the game's OWN Lua (weapon_vm.CheckRolePlanIsChange,
+    // equip_vm.IsEquipByOtherPlan, items_vm.GetItemInfobyItemId) shows the exact paths:
+    //   • per-plan gear   = weapon_data.rolePlanServerData_.PlanDataDict[planId].equipInfoMap[slot] = itemUuid
+    //   • per-plan modules= …PlanDataDict[planId].modInfoMap[slot] = moduleUuid
+    //   • uuid -> detail  = CharSerialize.itemPackage.packages[*].items[uuid] (configId + equipAttr + modNewAttr)
+    // The plan *maps* are pairs-iterable (the game does `for _,u in pairs(planInfo.equipInfoMap)`), so this
+    // dumps slot->uuid per plan reliably. The single empirical unknown §29 must confirm before implementing:
+    // do a NON-ACTIVE plan's uuids RESOLVE in itemPackage (FOUND/NIL)? — plus prove the roll/part carriers
+    // (equipAttr.totalRecastCount/perfectionValue, modNewAttr.modParts) are populated for a non-active item.
+    // The full equipAttr roll-field enumeration is done at implement-time via C# GetProperties (Lua pairs
+    // does NOT enumerate an IL2CPP object's named properties). Read-only, no interpolation, coroutine-wrapped.
+    private const string ProbeChunk =
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local sd=(Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_" +
+        " local cs=(Z.ContainerMgr).CharSerialize" +
+        " local out=\"\"" +
+        " local function findItem(uuid) local ok,res=pcall(function()" +
+        "   local pkgs=(cs.itemPackage).packages" +
+        "   for _,pkg in pairs(pkgs) do local it=(pkg.items)[uuid] if it~=nil then return it end end end)" +
+        "  if ok then return res end end" +
+        " local cur=sd and sd.CurPlanId" +
+        " out=\"CUR=\"..tostring(cur)..\"\\n\"" +
+        " local se,sm=nil,nil" +
+        " if sd~=nil and sd.PlanDataDict~=nil then local n=0 for pid,pd in pairs(sd.PlanDataDict) do" +
+        "  out=out..\"PLAN \"..tostring(pid)..\" prof=\"..tostring(pd.professionId)..((pid==cur) and \" [CUR]\" or \"\")..\"\\n\"" +
+        "  pcall(function() local ei=pd.equipInfoMap if ei~=nil then local m=0 for slot,uuid in pairs(ei) do out=out..\"  eq[\"..tostring(slot)..\"]=\"..tostring(uuid)..\"\\n\" if pid~=cur and se==nil then se=uuid end m=m+1 if m>=12 then break end end else out=out..\"  equipInfoMap=nil\\n\" end end)" +
+        "  pcall(function() local mi=pd.modInfoMap if mi~=nil then local m=0 for slot,uuid in pairs(mi) do out=out..\"  mod[\"..tostring(slot)..\"]=\"..tostring(uuid)..\"\\n\" if pid~=cur and sm==nil then sm=uuid end m=m+1 if m>=12 then break end end else out=out..\"  modInfoMap=nil\\n\" end end)" +
+        "  n=n+1 if n>=6 then break end end end" +
+        " if se~=nil then local it=findItem(se) out=out..\"RESOLVE eq=\"..tostring(se)..\" -> \"..((it~=nil) and \"FOUND\" or \"NIL\")..\"\\n\"" +
+        "  if it~=nil then pcall(function() out=out..\"  configId=\"..tostring(it.configId) end)" +
+        "   pcall(function() local ea=it.equipAttr out=out..\" equipAttr=\"..((ea~=nil) and \"present\" or \"nil\") if ea~=nil then out=out..\" recast=\"..tostring(ea.totalRecastCount)..\" perfection=\"..tostring(ea.perfectionValue) end end)" +
+        "   out=out..\"\\n\" end" +
+        " else out=out..\"(no non-active eq uuid)\\n\" end" +
+        " if sm~=nil then local it=findItem(sm) out=out..\"RESOLVE mod=\"..tostring(sm)..\" -> \"..((it~=nil) and \"FOUND\" or \"NIL\")..\"\\n\"" +
+        "  if it~=nil then pcall(function() out=out..\"  configId=\"..tostring(it.configId) end)" +
+        "   pcall(function() local mn=it.modNewAttr out=out..\" modNewAttr=\"..((mn~=nil) and \"present\" or \"nil\") if mn~=nil then local mp=mn.modParts if mp~=nil then local c=0 out=out..\" modParts=[\" for _,p in ipairs(mp) do out=out..tostring(p)..\",\" c=c+1 if c>=12 then break end end out=out..\"]#\"..tostring(c) else out=out..\" modParts=nil\" end end end)" +
+        "   out=out..\"\\n\" end" +
+        " else out=out..\"(no non-active mod uuid)\\n\" end" +
+        " rawset(_G,\"" + EquipProbeGlobal + "\", out)" +
+        " end))()";
 
     private static Type? FindTypeByShortName(string shortName)
     {

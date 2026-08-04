@@ -15,4 +15,10 @@ internal interface IGearInstanceSink
     /// <summary>Replace (never merge) the cached self-gear list with the
     /// freshly decoded full-sync result. Full syncs are authoritative.</summary>
     void OnGearSync(IReadOnlyList<GearInstance> gear);
+
+    /// <summary>Signals the equipped set changed via a method-22 dirty delta (a manual gear/module equip,
+    /// refine, or a class-swap re-equip) WITHOUT decoding new gear here — raises the change event so a
+    /// consumer can re-read the LIVE container. Distinct from <see cref="OnGearSync"/> (which replaces the
+    /// full-sync cache). Same threading contract: network/sync thread.</summary>
+    void OnGearMaybeChanged();
 }

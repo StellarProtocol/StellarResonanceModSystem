@@ -24,6 +24,11 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
 
+    // Char-record identity source. Optional: null in builds where Host wires no
+    // inventory probe, in which case identity stays unavailable and behaviour is
+    // unchanged. See PandaPlayerStateProbe.Identity.cs.
+    private readonly PandaCharIdentityReader? _charIdentityReader;
+
     // Lazily-resolved cached reflection handles.
     private Type? _zEntityMgrType;
     private Type? _zEntityType;
@@ -82,15 +87,23 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
     // successful read we lock in the right type for that key.
     private readonly Dictionary<object, bool> _attrPrefersLong = new();
 
-    public PandaPlayerStateProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
+    public PandaPlayerStateProbe(
+        IPluginLog log,
+        IGameTypeRegistry typeRegistry,
+        PandaCharIdentityReader? charIdentityReader = null)
     {
         _log = log;
         _typeRegistry = typeRegistry;
+        _charIdentityReader = charIdentityReader;
     }
 
     public bool TrySample(out PlayerStateSnapshot snapshot)
     {
         snapshot = default;
+
+        // Drop last tick's entity BEFORE anything else — sibling probes must never
+        // receive a reference the game may have destroyed since. See _tickGoodEntity.
+        _tickGoodEntity = null;
 
         if (!EnsureBootstrap())
         {
@@ -114,26 +127,56 @@ internal sealed partial class PandaPlayerStateProbe : IPlayerStateProbe
         // Consider the probe "succeeded" once we have at least *something* meaningful
         // beyond defaults — otherwise a half-loaded entity (no attrs yet) would
         // flap IsAvailable=true with all-zeros and confuse plugins.
-        var anyUseful = candidate.MaxHealth > 0 || candidate.Level > 0 || !string.IsNullOrEmpty(candidate.Name);
-        if (!anyUseful)
+        if (IsUseful(candidate))
         {
-            if (!_firstFailureLogged)
-            {
-                _firstFailureLogged = true;
-                _log.Info($"[PlayerState] probe found entity {entity.GetType().FullName} but no useful attrs yet (hp={candidate.Health}, stamina={candidate.Stamina}, lvl={candidate.Level}, name='{candidate.Name}')");
-                DumpDiagnostics(entity);
-            }
-            return false;
+            NoteUsefulness(mgr, entity, useful: true, via: "MainEntity");
+            _tickGoodEntity = entity;   // same-tick handoff for sibling probes
+            snapshot = candidate;
+            LogFirstSuccess(snapshot);
+            return true;
         }
 
-        snapshot = candidate;
+        return TrySampleAfterBlackout(mgr, entity, candidate, out snapshot);
+    }
 
-        if (!_firstSuccessLogged)
+    // The manager's single playerEnt_ field went dark — reproduced by simply
+    // MOUNTING (owner toggle 2026-07-29: mounted => hp 0, dismount => hp back).
+    // Re-look-up the local player by uuid / char id and accept a replacement ONLY
+    // if it validates as us. Strictly additive: a healthy entity never reaches
+    // here, so position/replay behaviour on the normal path is unchanged.
+    private bool TrySampleAfterBlackout(
+        object mgr, object entity, in PlayerStateSnapshot dark, out PlayerStateSnapshot snapshot)
+    {
+        snapshot = default;
+
+        if (TryRescueSample(mgr, out var rescued, out var via))
         {
-            _firstSuccessLogged = true;
-            _log.Info($"[PlayerState] first sample: name='{snapshot.Name}' lvl={snapshot.Level} prof={snapshot.Profession} hp={snapshot.Health}/{snapshot.MaxHealth} stamina={snapshot.Stamina}/{snapshot.MaxStamina} pos=({snapshot.Position.X:0.0},{snapshot.Position.Y:0.0},{snapshot.Position.Z:0.0})");
+            NoteUsefulness(mgr, entity, useful: true, via: via);
+            snapshot = rescued;
+            LogFirstSuccess(snapshot);
+            return true;
         }
-        return true;
+
+        NoteUsefulness(mgr, entity, useful: false, via: "none");
+        if (!_firstFailureLogged)
+        {
+            _firstFailureLogged = true;
+            _log.Info($"[PlayerState] probe found entity {entity.GetType().FullName} but no useful attrs yet (hp={dark.Health}, stamina={dark.Stamina}, lvl={dark.Level}, name='{dark.Name}')");
+            DumpDiagnostics(entity);
+        }
+        return false;
+    }
+
+    // Shared usefulness predicate — the probe's definition of "this entity is
+    // readable". Extracted so the rescue path applies the identical bar.
+    private static bool IsUseful(in PlayerStateSnapshot s)
+        => s.MaxHealth > 0 || s.Level > 0 || !string.IsNullOrEmpty(s.Name);
+
+    private void LogFirstSuccess(in PlayerStateSnapshot snapshot)
+    {
+        if (_firstSuccessLogged) return;
+        _firstSuccessLogged = true;
+        _log.Info($"[PlayerState] first sample: name='{snapshot.Name}' lvl={snapshot.Level} prof={snapshot.Profession} hp={snapshot.Health}/{snapshot.MaxHealth} stamina={snapshot.Stamina}/{snapshot.MaxStamina} pos=({snapshot.Position.X:0.0},{snapshot.Position.Y:0.0},{snapshot.Position.Z:0.0})");
     }
 
     private PlayerStateSnapshot CaptureSnapshot(object entity)

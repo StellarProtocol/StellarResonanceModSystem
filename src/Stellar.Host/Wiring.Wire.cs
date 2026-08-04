@@ -135,4 +135,15 @@ public sealed partial class BootstrapPlugin
             hooker.PostfixAllOverloads(gameType, methodName, callback);
         }
     }
+
+    // EntityCtrlDead.OnEnter / ZStateBreaking.OnEnter → CombatEvent.EntityStateChanged. Reuses the
+    // shared HarmonyGameMethodHooker (same Harmony id as the lifecycle patches above) rather than
+    // owning a dedicated Harmony instance — both patch sites are simple "postfix every OnEnter
+    // overload" installs, exactly what PostfixAllOverloads already does. _combatService implements
+    // both ICombatEventSink (the event sink) and ICombatSnapshot (ServerNowMs for the timestamp).
+    private void HookEntityStateSignals(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry, HarmonyGameMethodHooker hooker)
+    {
+        _entityStateProbe = new PandaEntityStateProbe(typeRegistry, _combatService!, _combatService!, log);
+        _entityStateProbe.Install(hooker);
+    }
 }

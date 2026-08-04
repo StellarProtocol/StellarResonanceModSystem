@@ -194,6 +194,34 @@ internal sealed partial class PandaInventoryPullReader
         ClearProbeLogDedup();
     }
 
+    /// <summary>
+    /// Returns the live <c>CharSerialize</c> instance, or <c>null</c> when
+    /// resolution hasn't completed / no sync has landed yet. Exposed so
+    /// <see cref="PandaCharIdentityReader"/> can read the local player's identity
+    /// off the same already-resolved accessor instead of duplicating the
+    /// candidate-probing resolver. Read-only — callers must not mutate the proto.
+    ///
+    /// <para><b>PASSIVE ON PURPOSE — do not add an <c>EnsureResolved()</c> call
+    /// here.</b> That method's backoff is ATTEMPT-counted
+    /// (<see cref="ResolutionFastAttempts"/> quick tries, then one retry every
+    /// <see cref="ResolutionBackoffEvery"/> calls) and is tuned for the 1 Hz
+    /// inventory poll. The identity reader runs on the per-tick service refresh
+    /// (~30 Hz), so driving resolution from here would burn the fast-attempt
+    /// budget ~30x sooner — before the character is even loaded, the very failure
+    /// <see cref="OnLifecycleAdvanced"/> exists to undo — and re-run the ~0.5 s
+    /// AppDomain scan roughly once a second, which is precisely what froze
+    /// world-load before the backoff was added. Resolution stays owned by the
+    /// 1 Hz poll; this method only serves what that poll has already resolved.</para>
+    /// </summary>
+    internal object? TryGetLiveCharSerialize()
+    {
+        if (!_resolutionSucceeded)
+        {
+            return null;
+        }
+        return _readCharSerialize?.Invoke();
+    }
+
     public bool TryReadModules(out ModuleSnapshot snapshot)
     {
         snapshot = EmptySnapshot;

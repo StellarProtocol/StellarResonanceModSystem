@@ -18,6 +18,19 @@ public class InventoryServiceTests
     }
 
     [Fact]
+    public void SelfGearChanged_Forwards_CacheSync()
+    {
+        var cache = new SelfGearCache();
+        var svc = new InventoryService(new StubInventoryProbe(), cache, new StubLog(), new StubClientState());
+        var fires = 0;
+        svc.SelfGearChanged += () => fires++;
+
+        cache.OnGearSync(new[] { SelfGearCacheTests.Gear(200, 11, 990001) });
+
+        Assert.Equal(1, fires);   // a full container sync (class swap / gear edit) surfaces to plugins
+    }
+
+    [Fact]
     public void Refresh_SetsAvailable_AndFiresEvent_OnFirstSample()
     {
         var probe = new StubInventoryProbe

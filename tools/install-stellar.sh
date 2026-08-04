@@ -142,11 +142,38 @@ for dll in "${FRAMEWORK_DLLS[@]}"; do
     cp -v "$dll" "$FW_DIR/"
 done
 
-# User plugin folders live outside BepInEx/plugins to keep concerns separate.
+# Where evicted shadow copies go. Defined here because the user-plugin loop below already needs it;
+# the later shadow-copy guard reuses the same stash (`:=` keeps ONE timestamp for the whole run).
+: "${SHADOW_STASH:=$GAME/stellar-backups/evicted-$(date +%Y%m%d-%H%M%S)}"
+
+# A slot dir differing only in CASE is a second live copy of the same plugin id. The framework scans
+# with Directory.GetFiles(..., SearchOption.AllDirectories), finds both, and PluginRegistry keeps
+# whichever it reached FIRST — logging `duplicate plugin id '<id>'; second registration ignored.` —
+# so which build actually runs is ARBITRARY. Owner incident 2026-07-30: the launcher's `combatmeter/`
+# and this script's `CombatMeter/` coexisted, leaving a deployed fix untestable (nothing on disk
+# revealed which one loaded). The *.bak* glob below cannot catch this; match case-insensitively.
+evacuate_case_variants() {  # $1 = scan dir, $2 = canonical (lowercase) slot name
+    local scan="$1" slot="$2" d base
+    for d in "$scan"/*; do
+        [ -d "$d" ] || continue
+        base="${d##*/}"
+        [ "$base" = "$slot" ] && continue                                   # the canonical target itself
+        [ "$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')" = "$slot" ] || continue
+        mkdir -p "$SHADOW_STASH"
+        mv "$d" "$SHADOW_STASH/" \
+            && echo "SHADOW GUARD: case-variant slot '$base' evacuated -> $SHADOW_STASH/ (canonical is '$slot')"
+    done
+}
+
+# User plugin folders live outside BepInEx/plugins to keep concerns separate. The slot dir is
+# LOWERCASE — the launcher's canonical slot per CLAUDE.md § Game install reference. Only the
+# DIRECTORY is lowercased; the DLL keeps its own casing (Stellar.<Subdir>.dll).
 for entry in "${USER_PLUGINS[@]}"; do
     subdir="${entry%%|*}"   # first field only (entry = subdir|mode|path)
     dll="$(plugin_dll "$entry")"
-    PLUGIN_DIR="$GAME/stellar/plugins/$subdir"
+    slot="$(printf '%s' "$subdir" | tr '[:upper:]' '[:lower:]')"
+    evacuate_case_variants "$GAME/stellar/plugins" "$slot"  # BEFORE writing, else the stale copy shadows it
+    PLUGIN_DIR="$GAME/stellar/plugins/$slot"
     mkdir -p "$PLUGIN_DIR"
     cp -v "$dll" "$PLUGIN_DIR/"
 done
@@ -164,7 +191,7 @@ fi
 # nobody's client while the sha1 on disk "proves" it is deployed. This hid the wire-position
 # fallback for a whole owner session (run WkOzO9KMOY). Evacuate every shadow copy OUT of both
 # scan paths. Moves, never deletes — backups survive, just outside the scan path.
-SHADOW_STASH="$GAME/stellar-backups/evicted-$(date +%Y%m%d-%H%M%S)"
+: "${SHADOW_STASH:=$GAME/stellar-backups/evicted-$(date +%Y%m%d-%H%M%S)}"   # set above; keep one stash per run
 evacuate_shadows() {
     for d in "$1"/$2; do
         [ -d "$d" ] || continue          # unmatched glob stays literal / non-dir → skip

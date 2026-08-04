@@ -30,6 +30,7 @@ internal sealed class InventoryService : IInventory
         _selfGear = selfGear;
         _log = log;
         _clientState = clientState;
+        _selfGear.Changed += RaiseSelfGearChanged;
     }
 
     public bool IsAvailable => Volatile.Read(ref _modules) is not null;
@@ -42,7 +43,27 @@ internal sealed class InventoryService : IInventory
     // the 1Hz probe poll — serve it straight off the volatile-swap cache.
     public IReadOnlyList<GearInstance> GetSelfGear() => _selfGear.Current;
 
+    // Live equipped set straight from the containers (reflects manual edits / class-swap re-equips) —
+    // a fresh reflection read, not the 1Hz-polled snapshot. Consumers re-read this on SelfGearChanged.
+    public EquippedLoadout GetLiveEquipped() => _probe.GetLiveEquipped();
+
     public event Action? InventoryChanged;
+
+    public event Action? SelfGearChanged;
+
+    // Forwards SelfGearCache.Changed (network/sync thread) to plugin subscribers. Swallows subscriber
+    // exceptions like the InventoryChanged path so one bad handler can't tear down the sync thread.
+    private void RaiseSelfGearChanged()
+    {
+        try
+        {
+            SelfGearChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Stellar][Inventory] self-gear subscriber threw: {ex.Message}");
+        }
+    }
 
     /// <summary>Called at 1Hz from BootstrapPlugin. Reads from the probe,
     /// computes a hash of the inventory + equipped state, fires the event

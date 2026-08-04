@@ -222,18 +222,56 @@ internal sealed partial class WindowBuilder
         var fimg = fillGo.AddComponent<Image>(); fimg.sprite = _assets.Capsule; fimg.type = Image.Type.Sliced; fimg.color = _assets.MenuAccent; fimg.raycastTarget = false;
         token.ReskinActions.Add(() => { if (fimg != null) fimg.color = _assets.MenuAccent; });   // accent follows theme
 
-        var handle = s.HandleSize > 0f ? s.HandleSize : 13f;   // per-slider knob size (default 13)
-        var handleArea = UGuiPrimitives.NewChild("HandleArea", go.transform);
-        var hart = handleArea.GetComponent<RectTransform>(); hart.anchorMin = Vector2.zero; hart.anchorMax = Vector2.one; hart.sizeDelta = new Vector2(-handle, 0f); hart.anchoredPosition = Vector2.zero;
-        var handleGo = UGuiPrimitives.NewChild("Handle", handleArea.transform);
-        var hrt = handleGo.GetComponent<RectTransform>(); hrt.sizeDelta = new Vector2(handle, handle);
-        var himg = handleGo.AddComponent<Image>(); himg.sprite = _assets.Capsule; himg.type = Image.Type.Sliced; himg.color = new Color(0.81f, 0.88f, 0.95f, 1f);
+        var hrt = BuildSliderHandle(s, go.transform);
 
-        slider.fillRect = fillrt; slider.handleRect = hrt; slider.targetGraphic = himg;
+        slider.fillRect = fillrt; slider.handleRect = hrt; slider.targetGraphic = hrt.GetComponent<Image>();
         slider.SetValueWithoutNotify(s.Get());
         var set = s.Set;
         slider.onValueChanged.AddListener((UnityAction<float>)(v => set(v)));
         token.Sliders.Add(new SliderBinding { S = slider, Get = s.Get, EnabledFn = s.Enabled });
+    }
+
+    /// <summary>
+    /// Builds the slider's handle container + knob and returns the knob's <see cref="RectTransform"/>.
+    ///
+    /// <para>Unity's <c>Slider.UpdateVisuals</c> DRIVES <c>handleRect</c>'s anchors every frame: full
+    /// stretch, with only the AXIS component pinned to the value. On the CROSS axis a handle
+    /// <c>sizeDelta.y</c> is therefore an ADDITION to the container's height rather than the knob's height —
+    /// <c>(handle, handle)</c> draws a 13×29 vertical capsule in a 16px row, not a 13×13 knob (measured
+    /// 2026-07-30; predicted <c>HandleSize=7</c> → 7×23 and confirmed).</para>
+    ///
+    /// <para>That stretched shape is what every EXISTING slider renders, so it stays the default here:
+    /// correcting it unconditionally would restyle every plugin's sliders at once, which is not this
+    /// renderer's call to make. <see cref="SliderElement.SquareHandle"/> opts in per slider, by constraining
+    /// the CONTAINER to a handle-tall centred band so the driven stretch spans exactly <c>handle</c>.
+    /// Fighting it on <c>handleRect</c> itself is futile — the tracker overwrites those anchors. The
+    /// container's WIDTH still maps the value and is untouched either way, so drag behaviour is identical.
+    /// </para>
+    /// </summary>
+    private RectTransform BuildSliderHandle(SliderElement s, Transform parent)
+    {
+        var handle = s.HandleSize > 0f ? s.HandleSize : 13f;   // per-slider knob size (default 13)
+        var handleArea = UGuiPrimitives.NewChild("HandleArea", parent);
+        var hart = handleArea.GetComponent<RectTransform>();
+        if (s.SquareHandle)
+        {
+            hart.anchorMin = new Vector2(0f, 0.5f); hart.anchorMax = new Vector2(1f, 0.5f);
+            hart.sizeDelta = new Vector2(-handle, handle);
+        }
+        else
+        {
+            hart.anchorMin = Vector2.zero; hart.anchorMax = Vector2.one;
+            hart.sizeDelta = new Vector2(-handle, 0f);
+        }
+        hart.anchoredPosition = Vector2.zero;
+
+        var handleGo = UGuiPrimitives.NewChild("Handle", handleArea.transform);
+        var hrt = handleGo.GetComponent<RectTransform>();
+        hrt.sizeDelta = new Vector2(handle, s.SquareHandle ? 0f : handle);
+        var himg = handleGo.AddComponent<Image>();
+        himg.sprite = _assets.Capsule; himg.type = Image.Type.Sliced;
+        himg.color = new Color(0.81f, 0.88f, 0.95f, 1f);
+        return hrt;
     }
 
     // Input: the proven UGuiTextInput (Enter-no-chat / Esc / cursor). Seeded from Get(); registered for

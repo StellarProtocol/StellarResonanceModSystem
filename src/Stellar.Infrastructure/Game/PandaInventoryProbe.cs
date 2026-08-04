@@ -131,4 +131,33 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
     /// </summary>
     internal IReadOnlyDictionary<int, long>? GetEquippedSlotsForEquipPolling()
         => _pullReader.GetEquippedSlotsForEquipPolling();
+
+    /// <summary>
+    /// Returns the live <c>CharSerialize</c> record (or null before resolution /
+    /// first sync). Forwarded to the pull-read collaborator, which already owns
+    /// the resolved accessor. Consumed by <see cref="PandaCharIdentityReader"/>
+    /// so the player-state probe can serve identity that survives a world-entity
+    /// attribute blackout.
+    /// </summary>
+    internal object? TryGetLiveCharSerialize() => _pullReader.TryGetLiveCharSerialize();
+
+    /// <summary>The CURRENT LIVE equipped gear + modules from the game's containers (reflects manual
+    /// equips + class-swap re-equips). Forwarded to the pull-read collaborator.</summary>
+    public EquippedLoadout GetLiveEquipped()
+    {
+        var (gear, modules) = _pullReader.ReadLiveEquipped();
+        return new EquippedLoadout(gear, modules);
+    }
+
+    /// <summary>
+    /// Resolves EVERY saved loadout's PER-CLASS gear + modules from their slot → uuid maps (the loadout
+    /// probe's Lua read of <c>equipInfoMap</c>/<c>modInfoMap</c>), in one pass. Forwarded to the pull-read
+    /// collaborator, which owns the <c>itemPackage</c> reflection. Lets the loadout probe surface each
+    /// class's real gear/modules — the live self-gear/module APIs are class-blind (a class swap never
+    /// re-broadcasts them; <c>recon/loadout-switch-findings.md</c> § Phase 0).
+    /// </summary>
+    internal IReadOnlyList<(IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)>
+        ResolvePlanLoadouts(
+            IReadOnlyList<(IReadOnlyDictionary<int, long> Equip, IReadOnlyDictionary<int, long> Mod)> plans)
+        => _pullReader.ResolvePlanLoadouts(plans);
 }

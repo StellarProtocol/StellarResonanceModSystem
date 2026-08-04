@@ -108,6 +108,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
     private PandaDungeonProbe? _dungeonProbe;
     private PandaWorldAttrProbe? _worldAttrProbe;   // main-thread tick: reads ZWorld AttrDeathCount(348) → Defeated
+    // EntityCtrlDead.OnEnter / ZStateBreaking.OnEnter → CombatEvent.EntityStateChanged (2026-07-28
+    // entity-state-death-signal spec) — the client's own death/break signal, not an HP-zero inference.
+    private PandaEntityStateProbe? _entityStateProbe;
     private WorldNtfLuaStubDispatcher? _worldNtfLuaDispatcher;
     private GrpcTeamNtfStubDispatcher? _grpcTeamNtfDispatcher;
     // Injects the registered profile-card action buttons (IProfileCardActionSource) into the game's
@@ -272,6 +275,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     {
         InstallWireAndStubProbes(log, typeRegistry);
         HookGameLifecycleMethods(log, hooker, gameType);
+        HookEntityStateSignals(log, typeRegistry, hooker);
     }
 
     /// <summary>

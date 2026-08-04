@@ -16,7 +16,8 @@ namespace Stellar.Abstractions.Services;
 /// Threading: <see cref="GetModules"/> and <see cref="GetEquipped"/> are
 /// thread-safe lock-free reads (Volatile under the hood). The
 /// <see cref="InventoryChanged"/> event raises on the framework Update
-/// thread; subscribers can call IMGUI from the handler.
+/// thread; subscribers can call IMGUI from the handler. <see cref="SelfGearChanged"/>
+/// is different — it raises on the network/sync thread (see its remarks).
 /// </summary>
 public interface IInventory
 {
@@ -42,8 +43,27 @@ public interface IInventory
     /// lock-free read, like the other getters.</summary>
     IReadOnlyList<GearInstance> GetSelfGear();
 
+    /// <summary>The LOCAL player's CURRENT LIVE equipped gear + modules, read from the game's live
+    /// equip/mod containers — so it reflects manual equips, refines, and class-swap re-equips (unlike
+    /// <see cref="GetSelfGear"/>, which is a stale method-21 full-sync cache). Gear carries rolls +
+    /// refine + enchant; modules carry rolled parts keyed by slot. Empty lists until the container
+    /// resolves. Re-read on <see cref="SelfGearChanged"/> to capture a change as it happens.</summary>
+    EquippedLoadout GetLiveEquipped();
+
     /// <summary>Fires once when the snapshot or equipped set diffs the
     /// previous tick. Polling cadence is 1Hz so the event fires at most
     /// once per second.</summary>
     event Action? InventoryChanged;
+
+    /// <summary>Fires when the LOCAL player's self-gear is (re)synced — i.e. a full
+    /// container sync landed and <see cref="GetSelfGear"/> now returns fresh data.
+    /// This is the ONLY signal for a self-gear change: <see cref="InventoryChanged"/>
+    /// deliberately excludes self-gear (it is push-fed, not part of the 1Hz probe hash).
+    /// A class swap re-syncs the new class's gear a moment after the profession flips,
+    /// so consumers that snapshot per-class gear should re-read on this event rather than
+    /// at the profession-change instant (the gear is stale then).
+    /// <para><b>Threading:</b> raised on the NETWORK/SYNC thread, NOT the game Update
+    /// thread. Handlers MUST be minimal and thread-safe (e.g. set a volatile flag) and
+    /// MUST NOT read game state (IL2CPP) from the handler — defer that to the game tick.</para></summary>
+    event Action? SelfGearChanged;
 }

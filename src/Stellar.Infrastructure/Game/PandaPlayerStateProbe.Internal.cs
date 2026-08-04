@@ -26,11 +26,36 @@ internal sealed partial class PandaPlayerStateProbe
     internal object? GetSingletonInstance() => ReadSingletonInstance();
 
     /// <summary>
-    /// Returns the live local-player entity from the manager (MainEntity /
-    /// PlayerEntity / MainEnt / PlayerEnt — whichever resolved at bootstrap).
-    /// Null when no character is loaded.
+    /// Returns the local-player entity that THIS tick's <see cref="TrySample"/>
+    /// read successfully — the manager's own <c>playerEnt_</c> when healthy, or
+    /// the validated blackout rescue when it went dark. Falls back to the raw
+    /// manager read when this tick produced nothing (identical to the old
+    /// behaviour). Null when no character is loaded.
+    ///
+    /// <para>This REPLACED a raw <c>GetMainEntity(mgr)</c> accessor. Reading
+    /// <c>playerEnt_</c> directly is the bug: it stops yielding attributes for as
+    /// long as the player is MOUNTED (owner toggle 2026-07-29), which blanked
+    /// <c>IPlayerStats</c> — and therefore StatInspector — exactly like it blanked
+    /// <c>IPlayerState</c>. Use this seam, not <c>ReadEntity</c>, so every consumer
+    /// inherits the rescue. See <c>PandaPlayerStateProbe.Rescue.cs</c>.</para>
+    ///
+    /// <para><b>Consume-once handoff.</b> Reading it CLEARS it, so the same
+    /// reference can never be served on a later tick even if
+    /// <c>PlayerStateService.Refresh</c> threw before <see cref="TrySample"/> ran.
+    /// That matters because a stale IL2CPP entity is an uncatchable native access
+    /// violation, not an exception (<c>docs/il2cpp-probing-safety.md</c>); falling
+    /// back to the raw manager read is always safe because that field is current
+    /// by construction. Host refreshes player-state then player-stats
+    /// back-to-back synchronously (<c>Wiring.ServiceTick.cs</c>), so the single
+    /// consumer gets the rescued entity; a hypothetical second consumer in the
+    /// same tick would just get the raw read — degraded, never unsafe.</para>
     /// </summary>
-    internal object? GetMainEntity(object mgr) => ReadEntity(mgr);
+    internal object? GetLocalPlayerEntity(object mgr)
+    {
+        var handoff = _tickGoodEntity;
+        _tickGoodEntity = null;
+        return handoff ?? ReadEntity(mgr);
+    }
 
     /// <summary>
     /// Resolves a <c>Zproto.EAttrType</c> enum value from its integer code via
