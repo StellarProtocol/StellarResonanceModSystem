@@ -92,6 +92,19 @@ internal sealed class InventoryService : IInventory
         }
     }
 
+    /// <summary>Clear account/character-scoped inventory state on logout. Nulls the polled
+    /// module/equipped snapshots (so <see cref="IsAvailable"/> reads false) and empties the self-gear
+    /// cache. <see cref="Refresh"/> is <c>[WorldGated]</c> so it will NOT self-clear once the world
+    /// goes inactive. Does NOT fire InventoryChanged / SelfGearChanged — a logout is teardown, not a
+    /// live inventory edit. Called by the Host OnLogout dispatcher.</summary>
+    internal void ClearSession()
+    {
+        Volatile.Write(ref _modules, null);
+        Volatile.Write(ref _equipped, null);
+        _lastHash = 0;
+        _selfGear.ClearSession();
+    }
+
     // Order-invariant cheap hash: each (uuid, configId) for inventory;
     // (slot, uuid) for equipped. Sufficient to detect any meaningful diff
     // at 1Hz cadence.

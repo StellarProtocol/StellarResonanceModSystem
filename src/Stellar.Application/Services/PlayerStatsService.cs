@@ -52,6 +52,15 @@ internal sealed class PlayerStatsService : IPlayerStats
         }
     }
 
+    /// <summary>Clear account/character-scoped stat values on logout. Leaves the plugin subscription
+    /// set (<see cref="_subscribed"/>) intact — that's plugin state, not account data. Called by the
+    /// Host OnLogout dispatcher.</summary>
+    internal void ClearSession()
+    {
+        Volatile.Write(ref _values, EmptyDict);
+        Volatile.Write(ref _isAvailable, false);
+    }
+
     private static readonly IReadOnlyDictionary<int, long> EmptyDict
         = new Dictionary<int, long>(0);
 }

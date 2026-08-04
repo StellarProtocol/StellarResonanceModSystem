@@ -117,7 +117,7 @@ public sealed partial class BootstrapPlugin
             // early TitleScreen would let login-screen windows flash. Instead the phase stays World (IsWorldActive
             // false + Loading true → every plugin gated off) until PandaLoginViewProbe detects login_main and
             // NotifyLoginViewActive promotes World→TitleScreen. See docs/game-phases-design.md §5.1.
-            ["OnLogout"]     = (_, _) => { _loggedIn = false; BeginSceneTransition(); _clientState!.RaiseLogout(); if (_clientState!.Phase == Stellar.Abstractions.Domain.GamePhase.CharSelect) { _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen); } _dungeonProbe?.OnLeaveOrLogout(); _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null); },
+            ["OnLogout"]     = OnLogout,
             ["OnEnterScene"] = OnEnterScene,
             // NOTE: do NOT reset the dungeon run id on leave-scene — the player returns to
             // town before the plugin archives/uploads the just-finished run, so the latched
@@ -134,6 +134,35 @@ public sealed partial class BootstrapPlugin
             }
             hooker.PostfixAllOverloads(gameType, methodName, callback);
         }
+    }
+
+    // OnLogout postfix — see the dispatcher entry above for the phase rationale. Extracted from the
+    // dispatcher lambda so HookGameLifecycleMethods stays under the LoC gate.
+    private void OnLogout(object? _, object?[] __)
+    {
+        _loggedIn = false;
+        BeginSceneTransition();
+        _clientState!.RaiseLogout();
+        if (_clientState!.Phase == Stellar.Abstractions.Domain.GamePhase.CharSelect)
+        {
+            _clientState!.RaisePhase(Stellar.Abstractions.Domain.GamePhase.TitleScreen);
+        }
+        _dungeonProbe?.OnLeaveOrLogout();
+        // Clear account/character-scoped session data on logout — mirrors the dungeon reset above.
+        // The player-state / inventory / stats Refresh paths are [WorldGated] and will NOT self-clear
+        // once the world goes inactive, so the previous account's name / level / class / gear / party
+        // would otherwise persist into the next login. Runs on the Unity main thread and fires no
+        // plugin events (teardown, not a live edit).
+        _playerState?.ClearSession();
+        _playerStatsService?.ClearSession();
+        _inventoryService?.ClearSession();        // also empties the self-gear cache
+        _resonanceService?.ClearSession();
+        _loadoutService?.ClearSession();
+        _socialDataCache?.ClearSession();
+        _partyService?.ClearSession();
+        _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns
+        _combatStubProbe?.ResetLocalEntityId();
+        _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null);
     }
 
     // EntityCtrlDead.OnEnter / ZStateBreaking.OnEnter → CombatEvent.EntityStateChanged. Reuses the

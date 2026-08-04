@@ -60,6 +60,11 @@ internal sealed partial class PandaCombatStubProbe
         _log         = log         ?? throw new ArgumentNullException(nameof(log));
     }
 
+    /// <summary>Clear the cached local entity uuid on logout so the next account doesn't inherit the
+    /// previous player's self-uuid (used by <see cref="OnNearDelta"/> to suppress duplicate self buff
+    /// diffs). Mirrors the CombatService session reset; called by the Host OnLogout dispatcher.</summary>
+    internal void ResetLocalEntityId() => _localEntityIdValue = 0;
+
     /// <summary>
     /// Subscribes the four wired WorldNtf method IDs to the shared dispatcher.
     /// Must be called before <see cref="WorldNtfStubDispatcher.Install"/>.

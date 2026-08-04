@@ -54,6 +54,17 @@ internal sealed class LoadoutService : ILoadout
         LoadoutsChanged?.Invoke();
     }
 
+    /// <summary>Reset the loadout snapshot on logout (account/character-scoped session data). Does
+    /// NOT fire <see cref="LoadoutsChanged"/> — a logout is teardown, not a live loadout edit. The
+    /// sentinel signature guarantees the next <see cref="Tick"/> after login rebuilds and re-fires
+    /// normally.</summary>
+    internal void ClearSession()
+    {
+        _slots = Array.Empty<LoadoutSlot>();
+        _currentIndex = null;
+        _signature = "\0";
+    }
+
     private static string BuildSignature(IReadOnlyList<LoadoutEntry> entries, int? current)
     {
         var sb = new StringBuilder();

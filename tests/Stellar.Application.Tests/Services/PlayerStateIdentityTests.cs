@@ -164,6 +164,33 @@ public sealed class PlayerStateIdentityTests
     }
 
     [Fact]
+    public void ClearSessionWipesIdentityAndAvailability()
+    {
+        // A live session establishes both the sticky identity and IsAvailable.
+        var probe = new FakeProbe
+        {
+            IdentityOk = true,
+            Identity = Revette(),
+            SampleOk = true,
+            Sample = new PlayerStateSnapshot { Name = "Revette", Level = 60, Profession = 2, MaxHealth = 15000 },
+        };
+        var service = new PlayerStateService(new StubClientState());
+        service.Refresh(probe);
+        Assert.True(service.IsAvailable);
+        Assert.Equal("Revette", service.Name);
+
+        // Logout must drop everything — the next account can't inherit this identity.
+        // (Refresh is [WorldGated], so it would NOT self-clear; the explicit reset is required.)
+        service.ClearSession();
+
+        Assert.False(service.IsAvailable);
+        Assert.Null(service.Name);
+        Assert.Equal(0, service.Level);
+        Assert.Equal(0, service.Profession);
+        Assert.Equal(0, service.Health);
+    }
+
+    [Fact]
     public void IdentityStaysUnavailableWhenTheProbeHasNoRecordSource()
     {
         // Host may wire no char-record source at all; behaviour must then be
