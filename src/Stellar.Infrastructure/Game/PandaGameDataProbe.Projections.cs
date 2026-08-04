@@ -95,7 +95,7 @@ internal sealed partial class PandaGameDataProbe
     /// </summary>
     private IReadOnlyDictionary<int, ProfessionInfo> LoadProfessions()
     {
-        var nameByProfessionId = BuildProfessionNameLookup();
+        var nameByProfessionId = BuildProfessionSystemLookups(out var iconFallbackByProfessionId);
         var firstLogged = false;
 
         return LoadEagerTable<ProfessionInfo>(
@@ -108,6 +108,15 @@ internal sealed partial class PandaGameDataProbe
                 if (id == 0) return (0, default);
 
                 var iconPath = ReadString(row, rowType, "ProfessionIcon");
+                // ProfessionTableBase.ProfessionIcon is empty for some real classes (id 10 in config; id 11
+                // in the live client) → the crest renders blank. Fall back to the sibling
+                // ProfessionSystemTableBase.Icon, reshaped into the HUD-atlas crest form (see
+                // BuildProfessionSystemLookups). Classes with a populated ProfessionIcon are unchanged.
+                if (string.IsNullOrEmpty(iconPath) && iconFallbackByProfessionId.TryGetValue(id, out var iconFallback))
+                {
+                    iconPath = iconFallback;
+                    _log.Info($"[Stellar][GameData] profession {id}: ProfessionIcon empty → System.Icon fallback '{iconPath}'");
+                }
                 var hasSecondary = ReadBool(row, rowType, "HasSecondary");
                 var commonSkillIds = ReadInt32Array(row, rowType, "CommonSkillIds");
                 nameByProfessionId.TryGetValue(id, out var name);
@@ -128,9 +137,20 @@ internal sealed partial class PandaGameDataProbe
             });
     }
 
-    private Dictionary<int, string> BuildProfessionNameLookup()
+    /// <summary>
+    /// Single-pass reader over <c>Bokura.ProfessionSystemTableBase</c> that builds two
+    /// lookups keyed by <c>ProfessionId</c>: the returned class-name map, and (via
+    /// <paramref name="iconFallbackByProfessionId"/>) a crest-icon fallback used when
+    /// <c>ProfessionTableBase.ProfessionIcon</c> is empty. The System table's <c>Icon</c>
+    /// (e.g. <c>ui/atlas/profession/profession_horizontal_07</c>) is reshaped into the
+    /// HUD-atlas form the icon loader expects (<c>ui/atlas/hud/profession/profession_horizontal_hud07</c>)
+    /// by <see cref="TryBuildHudProfessionIcon"/>. On any failure logs once and returns
+    /// empty lookups — never throws.
+    /// </summary>
+    private Dictionary<int, string> BuildProfessionSystemLookups(out Dictionary<int, string> iconFallbackByProfessionId)
     {
         var lookup = new Dictionary<int, string>(capacity: 16);
+        iconFallbackByProfessionId = new Dictionary<int, string>(capacity: 16);
 
         var systemType = _typeRegistry.FindType("Bokura.ProfessionSystemTableBase");
         if (systemType is null)
@@ -152,16 +172,51 @@ internal sealed partial class PandaGameDataProbe
             var rowType = row.GetType();
             var professionId = ReadInt(row, rowType, "ProfessionId");
             if (professionId == 0) continue;
-            if (lookup.ContainsKey(professionId)) continue;
 
-            var nameRaw = ReadStringOrMlString(row, rowType, "Name");
-            if (!string.IsNullOrEmpty(nameRaw))
+            if (!lookup.ContainsKey(professionId))
             {
-                lookup[professionId] = nameRaw;
+                var nameRaw = ReadStringOrMlString(row, rowType, "Name");
+                if (!string.IsNullOrEmpty(nameRaw))
+                {
+                    lookup[professionId] = nameRaw;
+                }
+            }
+
+            if (!iconFallbackByProfessionId.ContainsKey(professionId))
+            {
+                var iconRaw = ReadString(row, rowType, "Icon");
+                if (!string.IsNullOrEmpty(iconRaw) && TryBuildHudProfessionIcon(iconRaw, out var hudIcon))
+                {
+                    iconFallbackByProfessionId[professionId] = hudIcon;
+                }
             }
         }
 
         return lookup;
+    }
+
+    /// <summary>
+    /// Reshape a <c>ProfessionSystemTableBase.Icon</c> path into the HUD-atlas crest form the
+    /// icon loader consumes. Takes the trailing numeric token after the last <c>_</c>
+    /// (leading zeros preserved, e.g. <c>07</c>) and rebuilds
+    /// <c>ui/atlas/hud/profession/profession_horizontal_hud&lt;NN&gt;</c> — exactly the
+    /// <c>…hud07</c> that config says ProfessionIcon(11) should carry. Returns false when the
+    /// icon lacks an all-digit trailing token.
+    /// </summary>
+    private static bool TryBuildHudProfessionIcon(string icon, out string hudPath)
+    {
+        hudPath = string.Empty;
+        var underscore = icon.LastIndexOf('_');
+        if (underscore < 0 || underscore == icon.Length - 1) return false;
+
+        var token = icon.Substring(underscore + 1);
+        foreach (var c in token)
+        {
+            if (c < '0' || c > '9') return false;
+        }
+
+        hudPath = "ui/atlas/hud/profession/profession_horizontal_hud" + token;
+        return true;
     }
 
     // ===== Skill ==========================================================
