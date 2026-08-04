@@ -100,8 +100,11 @@ internal sealed partial class GameAssetsService : IGameAssets
     {
         uv = new UvRect(0f, 0f, 1f, 1f);
         if (professionId <= 0) return null;
-        var address = _combatData.GetProfession(professionId)?.IconPath;
-        return LoadIcon(_slots, professionId, address, IconKind.Profession, out uv);
+        if (_slots.ContainsKey(professionId))                       // existing slot: don't re-hit the table
+            return LoadIcon(_slots, professionId, address: null, IconKind.Profession, out uv);
+        var prof = _combatData.GetProfession(professionId);
+        if (prof is null) return null;                              // table not ready → poll again, NO Failed slot
+        return LoadIcon(_slots, professionId, prof.Value.IconPath, IconKind.Profession, out uv);
     }
 
     /// <inheritdoc/>
