@@ -18,6 +18,8 @@ internal sealed partial class PandaLoadoutProbe
     private const int ResolutionFailureLogEvery = 60;
 
     private bool _equipProbeLogged;
+    private int _liveProbeCount;
+    private const int LiveProbeMaxDumps = 4;
     private string? _lastPerClassSig;
 
     // Per-class resolution result (2026-08-03): a CONCISE per-plan gear/module summary logged each time the
@@ -68,6 +70,22 @@ internal sealed partial class PandaLoadoutProbe
         InvokeChunk(ProbeChunk);
         var dump = ReadLuaGlobalString(EquipProbeGlobal);
         _log.Info("[EquipProbe]\n" + (string.IsNullOrEmpty(dump) ? "(empty — no equip fields resolved)" : dump));
+    }
+
+    // Partial-account modules/talents RE (2026-08-05): dump the game's OWN live talent + module containers
+    // (indexed by the CURRENT profession, the shape the game itself uses) so a NEW/PARTIAL account's empty
+    // upload can be root-caused from real data — "genuinely empty" vs "populated but the production read path
+    // never reached it". Diagnostics-gated; fired from ParseLoadoutData on each new distinct parse, capped at
+    // LiveProbeMaxDumps so a pre-sync (containers not yet full-synced) first frame can't masquerade as empty —
+    // a later dump shows them settled. Read-only probe; owner runs it once on the broken account (§ 31).
+    private void LogLiveContainerProbe()
+    {
+        if (!StellarDiagnostics.IsEnabled || _liveProbeCount >= LiveProbeMaxDumps) return;
+        _liveProbeCount++;
+        InvokeChunk(LiveProbeChunk);
+        var dump = ReadLuaGlobalString(LiveProbeGlobal);
+        _log.Info($"[LiveLoadoutProbe #{_liveProbeCount}]\n" +
+                  (string.IsNullOrEmpty(dump) ? "(empty — no live containers resolved)" : dump));
     }
 
     // Always-on one-shot: proves the Lua-bridge reflection targets resolved.

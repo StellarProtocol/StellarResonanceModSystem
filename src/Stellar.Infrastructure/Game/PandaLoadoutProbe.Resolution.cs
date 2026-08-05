@@ -230,12 +230,19 @@ internal sealed partial class PandaLoadoutProbe
         "  local md=\"\" if pd and pd.modInfoMap then for s,u in pairs(pd.modInfoMap) do md=(md==\"\" and \"\" or md..\",\")..tostring(s)..\":\"..tostring(u) end end" +
         "  out=out..\"\\n\"..tostring(pid)..\"\\t\"..nm..\"\\t\"..tostring(prof)..\"\\t\"..tostring(stage)..\"\\t\"..nodes..\"\\t\"..eq..\"\\t\"..md end end" +
         // Live overlay: the CURRENT class's actually-equipped set — cs.equip.equipList[slot].itemUuid +
-        // cs.mod.modSlots[slot]. This is the LIVE container (reflects manual equips/refines/removals) —
+        // cs.mod.modSlots[slot] — PLUS its profession id + allocated talents from
+        // cs.professionList.talentList[curProfessionId] (the exact container the game's own
+        // talent_skill_vm reads). This is the LIVE container (reflects manual equips/refines/removals) —
         // NOT the method-21 capture latch the C# reader was stuck on. C# overlays this onto the CURRENT
-        // plan's saved-loadout gear/modules. "LIVE\t<eq slot:uuid,...>\t<mod slot:uuid,...>".
+        // plan's saved-loadout gear/modules AND, when the current class has NO saved plan, uses it as the
+        // sole source of that class's loadout (owner requirement 2026-08-05 — capture live-current, not the
+        // saved loadout). "LIVE\t<eq slot:uuid,...>\t<mod slot:uuid,...>\t<curProf>\t<talentStage>\t<talentNodes csv>".
         " local le=\"\" pcall(function() local el=(cs.equip).equipList if el~=nil then for s,info in pairs(el) do if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end end end end)" +
         " local lm=\"\" pcall(function() local ms=(cs.mod).modSlots if ms~=nil then for s,u in pairs(ms) do lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
-        " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm" +
+        " local lp=(cs.professionList).curProfessionId" +
+        " local lstage=0 local lnodes=\"\"" +
+        " pcall(function() local ti=((cs.professionList).talentList)[lp] if ti~=nil then lstage=ti.talentStageCfgId or 0 if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do lnodes=(lnodes==\"\" and tostring(nid)) or (lnodes..\",\"..tostring(nid)) end end end end)" +
+        " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm..\"\\t\"..tostring(lp)..\"\\t\"..tostring(lstage)..\"\\t\"..lnodes" +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 
@@ -264,6 +271,74 @@ internal sealed partial class PandaLoadoutProbe
 
     // Diagnostic-only global written by ProbeChunk (per-class gear RE, 2026-08-03).
     private const string EquipProbeGlobal = "_StellarEquipProbe";
+
+    // Diagnostic-only global written by LiveProbeChunk (partial-account modules/talents RE, 2026-08-05).
+    private const string LiveProbeGlobal = "_StellarLiveProbe";
+
+    // LIVE-CONTAINER PROBE (diagnostics only, 2026-08-05). A NEW/PARTIAL account (owner's alt Ribery, no
+    // saved role-plans) uploads modules=0 gear=0 talentStageId=None talentNodes=null even though the game
+    // plainly shows 20/36 allocated talent nodes and configured module presets. The production RefreshChunk
+    // reads talents ONLY inside the plan loop (tl[pd.professionId]) — so with zero plans it never touches the
+    // talent container — and reads live modules from cs.mod.modSlots (empty). This probe dumps the game's OWN
+    // authoritative live containers, indexed by the CURRENT profession the game itself uses
+    // (cs.professionList.curProfessionId — what weapon_vm.GetCurWeapon returns), to distinguish "genuinely
+    // empty" from "populated but our read path never reached it / pairs does not enumerate an IL2CPP dict":
+    //   • Talents  = cs.professionList.talentList[prof]{talentNodeIds, talentStageCfgId, usedTalentPoints}
+    //                — the EXACT path talent_skill_vm.GetWeaponActiveTalentTreeNode / CheckTalentIsActive use.
+    //                Dumped for EVERY prof key present AND direct-indexed by curProfessionId (the game does
+    //                talentList[professionId] directly; pairs may not enumerate an IL2CPP map).
+    //   • Modules  = cs.mod.modSlots (equipped-per-slot: counted BOTH via pairs AND a numeric [1..14] index
+    //                scan, because mod_vm reads it as modSlots[i]) + cs.mod.modInfos (owned-module inventory,
+    //                keyed by uuid — may hold the "configured but not equipped" set the owner described).
+    //   • Context  = curProfessionId, CurPlanId, PlanDataDict count.
+    // Read-only, no interpolation (no injection surface), every risky access pcall-guarded so one nil section
+    // never aborts the dump, coroutine-wrapped like the production chunks. Owner runs it ONCE on the broken
+    // account; the fix follows from the real data (docs/agent-process-rules.md § 31 — probe, do not guess).
+    private const string LiveProbeChunk =
+        "(Z.CoroUtil.create_coro_xpcall(function()" +
+        " local cs=(Z.ContainerMgr).CharSerialize" +
+        " local out=\"\"" +
+        " local pl=cs.professionList" +
+        " local curProf=pl and pl.curProfessionId" +
+        " out=\"CURPROF=\"..tostring(curProf)..\"\\n\"" +
+        // Talent container — every profession key present.
+        " local tl=pl and pl.talentList" +
+        " if tl~=nil then local tc=0" +
+        "  pcall(function() for prof,ti in pairs(tl) do tc=tc+1" +
+        "   local nn=0 local nl=\"\"" +
+        "   pcall(function() if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do nn=nn+1 if nn<=24 then nl=(nl==\"\" and tostring(nid)) or (nl..\",\"..tostring(nid)) end end end end)" +
+        "   out=out..\"talentList[\"..tostring(prof)..\"] nodes#\"..tostring(nn)..\" stage=\"..tostring(ti.talentStageCfgId)..\" used=\"..tostring(ti.usedTalentPoints)..\" [\"..nl..\"]\\n\" end end)" +
+        "  out=out..\"talentList.pairsCount#\"..tostring(tc)..\"\\n\"" +
+        // Direct index by the current profession (the game's own access shape) — proves whether the
+        // container exists for curProf even if pairs did not enumerate it.
+        "  pcall(function() local ti=tl[curProf] if ti~=nil then local nn=0" +
+        "   pcall(function() if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do nn=nn+1 end end end)" +
+        "   out=out..\"talentList[CURPROF] present nodes#\"..tostring(nn)..\" stage=\"..tostring(ti.talentStageCfgId)..\" used=\"..tostring(ti.usedTalentPoints)..\"\\n\"" +
+        "  else out=out..\"talentList[CURPROF] NIL\\n\" end end)" +
+        " else out=out..\"professionList.talentList=nil\\n\" end" +
+        // Module container — equipped slots (pairs + numeric scan) and owned inventory.
+        " local mod=cs.mod" +
+        " if mod~=nil then" +
+        "  local ms=mod.modSlots" +
+        "  if ms~=nil then local pc=0 local pcl=\"\"" +
+        "   pcall(function() for s,u in pairs(ms) do pc=pc+1 if pc<=16 then pcl=(pcl==\"\" and \"\" or pcl..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
+        "   out=out..\"modSlots.pairs#\"..tostring(pc)..\" [\"..pcl..\"]\\n\"" +
+        "   local ic=0 local icl=\"\"" +
+        "   pcall(function() for i=1,14 do local u=ms[i] if u~=nil then ic=ic+1 icl=(icl==\"\" and \"\" or icl..\",\")..tostring(i)..\":\"..tostring(u) end end end)" +
+        "   out=out..\"modSlots.index1_14#\"..tostring(ic)..\" [\"..icl..\"]\\n\"" +
+        "  else out=out..\"mod.modSlots=nil\\n\" end" +
+        "  local mi=mod.modInfos" +
+        "  if mi~=nil then local c=0 local il=\"\"" +
+        "   pcall(function() for uuid,info in pairs(mi) do c=c+1 if c<=16 then il=(il==\"\" and \"\" or il..\",\")..tostring(uuid) end end end)" +
+        "   out=out..\"modInfos.pairs#\"..tostring(c)..\" [\"..il..\"]\\n\"" +
+        "  else out=out..\"mod.modInfos=nil\\n\" end" +
+        " else out=out..\"CharSerialize.mod=nil\\n\" end" +
+        // Plan context (why the production read paths were empty).
+        " pcall(function() local sd=(Z.DataMgr.Get(\"weapon_data\")).rolePlanServerData_" +
+        "  local pdc=0 if sd~=nil and sd.PlanDataDict~=nil then for _ in pairs(sd.PlanDataDict) do pdc=pdc+1 end end" +
+        "  out=out..\"CurPlanId=\"..tostring(sd and sd.CurPlanId)..\" PlanDataDict#\"..tostring(pdc)..\"\\n\" end)" +
+        " rawset(_G,\"" + LiveProbeGlobal + "\", out)" +
+        " end))()";
 
     // EQUIP/MOD RESOLUTION PROBE (diagnostics only, 2026-08-03 iter 2). The per-class gear+modules are
     // NOT on the live wire ([ClassGearDiag]-proven) — but the game's OWN Lua (weapon_vm.CheckRolePlanIsChange,
