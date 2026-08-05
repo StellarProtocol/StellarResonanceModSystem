@@ -183,8 +183,8 @@ internal sealed partial class PandaCombatStubProbe
     // clobbering a valid run from a malformed/partial packet.
     private void LatchDungeonRunId(ReadOnlySpan<byte> span)
     {
-        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
-            _runIdResolver.OnWireSceneUuid(sceneUuid);
+        if (EnterSceneReader.TryReadSceneIds(span, out var sceneUuid, out var sceneBasicId))
+            _runIdResolver.OnWireEnterScene(sceneUuid, sceneBasicId);
     }
 
     private void OnNearDelta(ReadOnlyMemory<byte> payload)

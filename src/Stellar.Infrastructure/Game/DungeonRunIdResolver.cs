@@ -7,21 +7,18 @@ using Stellar.Application.Abstractions;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Resolves the dungeon run id from TWO signals that arrive at different times and on
-/// different threads, then writes it to <see cref="IDungeonStateSink.SetCurrentRun"/>:
-/// <list type="bullet">
-/// <item>the per-instance <c>AttrSceneUuid</c> latched from the enter-scene WIRE packet
-/// (<see cref="OnWireSceneUuid"/>, network receive thread) — the run-id VALUE; and</item>
-/// <item>the scene id the GAME publishes via <c>OnEnterScene</c>
-/// (<see cref="IClientState.CurrentSceneName"/> / <see cref="IClientState.SceneChanged"/>,
-/// main thread) — which classifies the scene through <c>IGameDataWorld.GetScene(id).SceneKind</c>.</item>
-/// </list>
-/// The wire uuid arrives FIRST (the scene id is still the previous scene at that instant),
-/// so the run id is re-resolved on BOTH signals and the settled value is order-independent.
-/// Classification (<see cref="DungeonRunIdGate"/>) beats the magnitude heuristic when the
-/// scene kind is known — the fix for ranked content whose per-instance uuid falls below the
-/// 2^53 floor (e.g. Mistveil Hunting Ground); the magnitude gate remains only as the fallback
-/// for scenes not yet in the loaded table.
+/// Resolves the dungeon run id from the enter-scene WIRE packet and writes it to
+/// <see cref="IDungeonStateSink.SetCurrentRun"/>. The packet carries BOTH the per-instance
+/// <c>AttrSceneUuid</c> (342 — the run-id VALUE) and the scene TEMPLATE id <c>AttrSceneBasicId</c>
+/// (341), so the scene is classified through the game scene table
+/// (<c>IGameDataWorld.GetScene(basicId).SceneKind</c>) at zone-in — an instanced scene keeps its uuid
+/// as the run id even below the 2^53 magnitude floor (the 3.7 "No run id" fix), town/field resolve to
+/// 0 (the run-identity collision fix). Doing this EARLY — before the game's own OnEnterScene and
+/// before the first dungeon flow delivery — is what keeps the dungeon-state "new run" clear ahead of
+/// the flow, so the flow-state version is never reset mid-run (which otherwise breaks the archive
+/// engine's stage/boss-segment tracking). <see cref="IClientState.SceneChanged"/> is a FALLBACK: it
+/// re-resolves when the wire carried no basic id, or the scene table had not loaded yet at zone-in.
+/// The magnitude gate remains the last-resort fallback when the scene kind is unknown at both.
 /// </summary>
 internal sealed class DungeonRunIdResolver
 {
@@ -29,8 +26,9 @@ internal sealed class DungeonRunIdResolver
     private readonly IGameDataWorld _gameData;
     private readonly IClientState _clientState;
 
-    // The last per-instance scene uuid from the wire; read on both threads via Interlocked.
+    // Latest wire enter-scene identities; read on both the network-receive and main threads.
     private long _pendingSceneUuid;
+    private int _pendingSceneBasicId;
 
     public DungeonRunIdResolver(IDungeonStateSink sink, IGameDataWorld gameData, IClientState clientState)
     {
@@ -40,25 +38,30 @@ internal sealed class DungeonRunIdResolver
         _clientState.SceneChanged += OnSceneChanged;
     }
 
-    /// <summary>Latch the enter-scene wire uuid and re-resolve (network receive thread).</summary>
-    public void OnWireSceneUuid(long sceneUuid)
+    /// <summary>Latch the enter-scene wire identities and resolve the run id (network receive thread).</summary>
+    public void OnWireEnterScene(long sceneUuid, int sceneBasicId)
     {
         Interlocked.Exchange(ref _pendingSceneUuid, sceneUuid);
+        Interlocked.Exchange(ref _pendingSceneBasicId, sceneBasicId);
         Reresolve();
     }
 
-    // The game entered/left a scene: CurrentSceneName is now current — re-classify (main thread).
+    // Fallback re-resolve when the game publishes the scene id (main thread) — only changes anything
+    // if the wire basic id was absent/unclassifiable at zone-in; otherwise it re-computes the same value.
     private void OnSceneChanged(string? sceneName) => Reresolve();
 
-    // Recompute CurrentRunId from the latest wire uuid + the active scene's kind. Idempotent, so
-    // whichever of the two signals arrives last produces the settled run id.
     private void Reresolve()
         => _sink.SetCurrentRun(DungeonRunIdGate.Resolve(Interlocked.Read(ref _pendingSceneUuid), CurrentSceneKind()));
 
-    // The active scene's SceneTable SceneType, or null when CurrentSceneName isn't a numeric scene
-    // id or the scene isn't in the loaded table — null makes the gate fall back to its magnitude test.
+    // The active scene's SceneTable SceneType: prefer the wire basic id (authoritative, available at
+    // zone-in); fall back to the game-published CurrentSceneName; null (→ magnitude gate) when neither
+    // resolves to a scene in the loaded table.
     private int? CurrentSceneKind()
-        => int.TryParse(_clientState.CurrentSceneName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
-            ? _gameData.GetScene(id)?.SceneKind
-            : null;
+    {
+        int basicId = Volatile.Read(ref _pendingSceneBasicId);
+        if (basicId != 0 && _gameData.GetScene(basicId) is { } byBasic) return byBasic.SceneKind;
+        if (int.TryParse(_clientState.CurrentSceneName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var nameId)
+            && _gameData.GetScene(nameId) is { } byName) return byName.SceneKind;
+        return null;
+    }
 }
