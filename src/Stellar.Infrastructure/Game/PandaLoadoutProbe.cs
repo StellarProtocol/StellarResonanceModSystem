@@ -253,31 +253,33 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         var (current, plans) = ParseLoadoutData(raw!);
         _currentId = current;
         _parsedPlans = plans;
-        ParseLiveLine(raw!);                   // CURRENT class's live equipped set (overlay source)
+        ReadLiveLine(raw!);                    // CURRENT class's live equipped set + talents (overlay + no-plan source)
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
+        LogLiveContainerProbe();   // partial-account modules/talents RE (2026-08-05) — no-op unless diagnostics
     }
 
-    // The CURRENT class's LIVE equipped set (from cs.equip.equipList / cs.mod.modSlots via the Lua bridge —
-    // the working live source, not the stale C# latch). Overlays the current plan's saved-loadout gear so a
-    // manual equip/refine/removal shows. Empty when absent. Parsed from the "LIVE\t<eq>\t<mod>" row; the
-    // static plan parser skips that row (its "LIVE" first column fails the int-parse), so tests are unaffected.
+    // The CURRENT class's LIVE equipped set + talents (from cs.equip.equipList / cs.mod.modSlots /
+    // cs.professionList.talentList[curProf] via the Lua bridge — the working live source, not the stale C#
+    // latch). Overlays the current plan's saved-loadout gear so a manual equip/refine/removal shows, AND is
+    // the sole source of the current class's loadout when that class has NO saved plan. Parsed from the
+    // "LIVE\t<eq>\t<mod>\t<curProf>\t<stage>\t<nodes>" row; the static plan parser skips that row (its "LIVE"
+    // first column fails the int-parse), so the plan-parse tests are unaffected.
     private IReadOnlyDictionary<int, long> _liveEquipUuids = EmptyUuidMap;
     private IReadOnlyDictionary<int, long> _liveModUuids = EmptyUuidMap;
+    private int _liveProfessionId;
+    private int _liveTalentStageId;
+    private IReadOnlyList<int>? _liveTalentNodes;
 
-    private void ParseLiveLine(string raw)
+    private void ReadLiveLine(string raw)
     {
-        _liveEquipUuids = EmptyUuidMap;
-        _liveModUuids = EmptyUuidMap;
-        foreach (var line in raw.Split('\n'))
-        {
-            if (!line.StartsWith("LIVE\t", StringComparison.Ordinal)) continue;
-            var cols = line.Split('\t');
-            if (cols.Length > 1) _liveEquipUuids = ParseUuidMap(cols[1]);
-            if (cols.Length > 2) _liveModUuids = ParseUuidMap(cols[2]);
-            return;
-        }
+        var live = ParseLiveLine(raw);   // pure static parser (unit-tested in PandaLoadoutProbeParseTests)
+        _liveEquipUuids = live.Equip;
+        _liveModUuids = live.Mod;
+        _liveProfessionId = live.ProfessionId;
+        _liveTalentStageId = live.TalentStageId;
+        _liveTalentNodes = live.TalentNodes;
     }
 
     // Base entries carry class/talent only; per-class Gear/Modules are attached later (they need the
@@ -300,15 +302,23 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     // (whole-item-container) scan to exactly the events that change its inputs.
     private bool _resolvePending;
 
+    // Sentinel identity for the synthesized current-class entry: the class the player is actively using
+    // when it has NO saved loadout plan. A negative index cannot collide with a real (positive) planId, and
+    // it is never a switch target (there is no server-side plan to switch to). Owner requirement 2026-08-05:
+    // the current class must always reflect the live equipped set, saved loadout or not.
+    private const int LiveCurrentIndex = -1;
+    private const string LiveCurrentName = "Current";
+
     private void TryResolvePerClassDetails()
     {
-        if (!_resolvePending || _resolveGear is null || _parsedPlans.Count == 0) return;
+        if (!_resolvePending || _resolveGear is null) return;
+        var hasLive = _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
+        if (_parsedPlans.Count == 0 && !hasLive) return;   // nothing saved and nothing equipped — nothing to resolve
         _resolvePending = false;   // one attempt per event; if the container isn't ready, the next sync re-arms it
 
         var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count + 1);
         foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
         // Append the CURRENT class's LIVE set as the LAST entry so it resolves in the SAME item-index pass.
-        var hasLive = _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
         if (hasLive) request.Add((_liveEquipUuids, _liveModUuids));
 
         var results = _resolveGear(request);   // one pass; builds the item index once
@@ -317,11 +327,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             if (gear.Count > 0 || modules.Count > 0) { ready = true; break; }
         if (!ready) return;   // container not synced yet — keep base entries; the container-sync event re-arms us
 
-        // The live overlay result (last entry), if it resolved to anything.
+        // The live equipped result (last request entry), if it resolved to anything.
         (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live =
             hasLive && results.Count > _parsedPlans.Count ? results[_parsedPlans.Count] : null;
 
-        var upgraded = new List<LoadoutEntry>(_parsedPlans.Count);
+        var upgraded = new List<LoadoutEntry>(_parsedPlans.Count + 1);
+        var currentClassCovered = false;
         for (var i = 0; i < _parsedPlans.Count; i++)
         {
             var p = _parsedPlans[i];
@@ -330,8 +341,22 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             // resolve produced anything; other plans keep their saved-loadout gear/modules.
             if (p.Index == _currentId && live is { } lv && (lv.Gear.Count > 0 || lv.Modules.Count > 0))
                 (gear, modules) = lv;
+            if (p.ProfessionId == _liveProfessionId && _liveProfessionId != 0) currentClassCovered = true;
             upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
         }
+
+        // Owner requirement (2026-08-05): when the CURRENT class has NO saved plan, the capture must still
+        // carry what the player is actually using — so synthesize a current-class entry straight from the
+        // live equipped gear/modules + live talents. Without this, a class with no saved loadout produced no
+        // entry at all, and the plugin uploaded gear=0 modules=0 talentNodes=null.
+        if (!currentClassCovered && _liveProfessionId != 0
+            && live is { } lc && (lc.Gear.Count > 0 || lc.Modules.Count > 0))
+        {
+            upgraded.Add(new LoadoutEntry(
+                LiveCurrentIndex, LiveCurrentName, _liveProfessionId, _liveTalentStageId, _liveTalentNodes,
+                lc.Gear, lc.Modules));
+        }
+
         _loadouts = upgraded;
         LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
     }

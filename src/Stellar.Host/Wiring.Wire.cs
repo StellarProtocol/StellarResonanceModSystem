@@ -32,8 +32,14 @@ public sealed partial class BootstrapPlugin
         // (method 3) it already parses carries the stable per-instance scene uuid
         // (EnterSceneInfo.SceneAttrs → AttrSceneUuid=342), which it pushes into the
         // dungeon-state sink. The dungeon probe (method 23) owns only the settlement.
+        // The run-id resolver classifies each enter-scene via the scene table (SceneType) and writes
+        // the run id to the dungeon sink — instanced scenes keep their per-instance uuid even below the
+        // magnitude floor (the 3.7 "No run id" fix), town/field resolve to 0. It re-resolves on the game's
+        // OnEnterScene (IClientState.SceneChanged) because the scene id lands after the wire uuid.
+        var runIdResolver = new Stellar.Infrastructure.Game.DungeonRunIdResolver(
+            _dungeonStateService!, _gameDataService!.World, _clientState!);
         _combatStubProbe = new PandaCombatStubProbe(
-            _combatService!, _dungeonStateService!, _wirePositions, log);
+            _combatService!, runIdResolver, _wirePositions, log);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six

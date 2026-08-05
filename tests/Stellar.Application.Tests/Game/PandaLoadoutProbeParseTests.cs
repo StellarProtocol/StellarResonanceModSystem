@@ -112,4 +112,62 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Equal(2, plan.ProfessionId);
         Assert.Equal(104, plan.TalentStageId);
     }
+
+    // ── LIVE line (current class's live equipped set + talents) ───────────────────────────────
+    // The refresh chunk appends a "LIVE\t<equip>\t<mod>\t<curProf>\t<talentStage>\t<talentNodes>" row
+    // carrying the CURRENT class's live equipped set. Parsed by the pure static ParseLiveLine; the plan
+    // parser skips it (its "LIVE" first column fails the int-parse). This row is the ONLY source of the
+    // current class's loadout when the player has NO saved plan (owner requirement 2026-08-05).
+
+    [Fact]
+    public void ParsesLiveLineEquipModProfessionStageAndTalents()
+    {
+        var live = PandaLoadoutProbe.ParseLiveLine(
+            "CUR=1\n1\tAtk\t4\t106\t\t\t\nLIVE\t200:2000835,201:2010937\t3:122,4:115,5:221\t4\t106\t69126,10442,1497");
+
+        Assert.Equal(2, live.Equip.Count);
+        Assert.Equal(2000835L, live.Equip[200]);
+        Assert.Equal(3, live.Mod.Count);
+        Assert.Equal(221L, live.Mod[5]);
+        Assert.Equal(4, live.ProfessionId);
+        Assert.Equal(106, live.TalentStageId);
+        Assert.Equal(new[] { 69126, 10442, 1497 }, live.TalentNodes);
+    }
+
+    [Fact]
+    public void ParsesLiveLineWithEmptyModulesButPopulatedTalents()
+    {
+        // A partial account can have gear + talents but zero equipped modules — the exact Ribery state.
+        var live = PandaLoadoutProbe.ParseLiveLine("LIVE\t200:2000835\t\t4\t106\t69126,10442");
+
+        Assert.Single(live.Equip);
+        Assert.Empty(live.Mod);
+        Assert.Equal(4, live.ProfessionId);
+        Assert.Equal(new[] { 69126, 10442 }, live.TalentNodes);
+    }
+
+    [Fact]
+    public void ToleratesTheOldThreeColumnLiveLineForm()
+    {
+        // A stale in-flight read can still carry the pre-talent 3-column "LIVE\t<eq>\t<mod>" form —
+        // profession/stage/nodes must default to 0/0/null rather than throw or drop.
+        var live = PandaLoadoutProbe.ParseLiveLine("LIVE\t200:2000835\t1:99");
+
+        Assert.Single(live.Equip);
+        Assert.Single(live.Mod);
+        Assert.Equal(0, live.ProfessionId);
+        Assert.Equal(0, live.TalentStageId);
+        Assert.Null(live.TalentNodes);
+    }
+
+    [Fact]
+    public void AbsentLiveLineYieldsEmptyLiveLoadout()
+    {
+        var live = PandaLoadoutProbe.ParseLiveLine("CUR=1\n1\tAtk\t4\t106");
+
+        Assert.Empty(live.Equip);
+        Assert.Empty(live.Mod);
+        Assert.Equal(0, live.ProfessionId);
+        Assert.Null(live.TalentNodes);
+    }
 }

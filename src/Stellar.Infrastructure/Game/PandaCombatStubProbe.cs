@@ -26,7 +26,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaCombatStubProbe
 {
     private readonly ICombatEventSink      _sink;
-    private readonly IDungeonStateSink     _dungeonSink;
+    private readonly DungeonRunIdResolver  _runIdResolver;
     private readonly WireEntityPositions   _positions;
     private readonly IPluginLog            _log;
 
@@ -50,14 +50,14 @@ internal sealed partial class PandaCombatStubProbe
 
     public PandaCombatStubProbe(
         ICombatEventSink sink,
-        IDungeonStateSink dungeonSink,
+        DungeonRunIdResolver runIdResolver,
         WireEntityPositions positions,
         IPluginLog log)
     {
-        _sink        = sink        ?? throw new ArgumentNullException(nameof(sink));
-        _dungeonSink = dungeonSink ?? throw new ArgumentNullException(nameof(dungeonSink));
-        _positions   = positions   ?? throw new ArgumentNullException(nameof(positions));
-        _log         = log         ?? throw new ArgumentNullException(nameof(log));
+        _sink          = sink          ?? throw new ArgumentNullException(nameof(sink));
+        _runIdResolver = runIdResolver ?? throw new ArgumentNullException(nameof(runIdResolver));
+        _positions     = positions     ?? throw new ArgumentNullException(nameof(positions));
+        _log           = log           ?? throw new ArgumentNullException(nameof(log));
     }
 
     /// <summary>Clear the cached local entity uuid on logout so the next account doesn't inherit the

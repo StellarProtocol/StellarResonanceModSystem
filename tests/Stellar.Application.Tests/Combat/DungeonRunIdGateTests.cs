@@ -39,4 +39,51 @@ public sealed class DungeonRunIdGateTests
             DungeonRunIdGate.DungeonInstanceUuidFloor + 1,
             DungeonRunIdGate.Resolve(DungeonRunIdGate.DungeonInstanceUuidFloor + 1));
     }
+
+    // -------------------------------------------------------------------------
+    // Scene-KIND classification (SceneTable.SceneType via IGameDataWorld.GetScene):
+    // 1 = world/town/field, 2 = instanced dungeon/raid. When the scene kind is KNOWN
+    // it wins over the magnitude heuristic — the fix for ranked content (Mistveil
+    // Hunting Ground) whose per-instance scene uuid sometimes lands BELOW the 2^53
+    // floor and was wrongly zeroed. Unknown kind (game-data not loaded / scene not
+    // in the table) falls back to the magnitude gate so behaviour never regresses.
+    // -------------------------------------------------------------------------
+    private const int SceneKindField     = 1; // world/town/field
+    private const int SceneKindInstanced = 2; // instanced dungeon/raid
+
+    // The real Mistveil Hunting Ground per-instance uuids the owner hit — BELOW 2^53.
+    private const long MistveilBelowFloorUuid1 = 6220542868717568L; // 6.2e15
+    private const long MistveilBelowFloorUuid2 = 5094642961874944L; // 5.1e15
+
+    [Theory]
+    [InlineData(MistveilBelowFloorUuid1)]
+    [InlineData(MistveilBelowFloorUuid2)]
+    public void Resolve_InstancedByKind_BelowFloor_ReturnsUuid(long sceneUuid)
+        // THE FIX: a below-floor uuid on an instanced (kind 2) scene is still the run id.
+        => Assert.Equal(sceneUuid, DungeonRunIdGate.Resolve(sceneUuid, SceneKindInstanced));
+
+    [Fact]
+    public void Resolve_InstancedByKind_AboveFloor_ReturnsUuid()
+        => Assert.Equal(DungeonInstanceUuid, DungeonRunIdGate.Resolve(DungeonInstanceUuid, SceneKindInstanced));
+
+    [Theory]
+    [InlineData(OpenWorldFieldUuid)]
+    [InlineData(TownUuid)]
+    [InlineData(MistveilBelowFloorUuid1)]                              // even a large uuid, if the scene is field, is not a run
+    [InlineData(DungeonRunIdGate.DungeonInstanceUuidFloor + 1)]        // fixes the "field scene exceeds floor" failure mode too
+    public void Resolve_FieldByKind_AlwaysZero(long sceneUuid)
+        => Assert.Equal(0L, DungeonRunIdGate.Resolve(sceneUuid, SceneKindField));
+
+    [Fact]
+    public void Resolve_UnknownKind_FallsBackToMagnitudeGate()
+    {
+        // null kind = game-data not loaded / scene missing from table → magnitude gate, unchanged.
+        Assert.Equal(0L, DungeonRunIdGate.Resolve(MistveilBelowFloorUuid1, null));
+        Assert.Equal(DungeonInstanceUuid, DungeonRunIdGate.Resolve(DungeonInstanceUuid, null));
+    }
+
+    [Fact]
+    public void Resolve_KnownNonInstancedNonField_IsZero()
+        // Any known kind that is not "instanced" (e.g. 0 = login/memory) is not a run.
+        => Assert.Equal(0L, DungeonRunIdGate.Resolve(DungeonInstanceUuid, 0));
 }

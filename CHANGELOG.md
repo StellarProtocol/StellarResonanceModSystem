@@ -15,10 +15,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [Unreleased]
-_**1.17.0** (minor) — plugins can now learn the instant an enemy actually dies, straight from the game's own logic. Additive; binary-compatible with plugins built against ≤1.16.1._
+
+## [1.17.0] - 2026-08-05
+_**1.17.0** (minor) — kill detection from the game's own logic, a run-id fix for instanced dungeons, per-class equipped-loadout capture, and a mounted-state stats-survival fix. Additive; binary-compatible with plugins built against ≤1.16.1._
 ### Added
-- Plugins (like the Combat Meter) can now detect a kill — including bosses removed by a scripted takedown instead of a killing blow — the moment the game itself registers the death, instead of guessing from health dropping to zero.
+- The Combat Meter can now tell exactly when an enemy dies — including bosses finished off by a cutscene or scripted move, not just a normal killing blow — so fights are timed and scored correctly.
+- The logs website can now show the gear, modules, and talents you currently have equipped, for each class you play.
+### Fixed
+- Some dungeon runs weren't being saved to the logs website — they're recorded correctly now.
+- Your character's stats and info no longer disappear while you're mounted.
 ### Developer notes
+- Run-id: 3.7 instanced/Mistveil scenes whose scene uuid is below 2^53 were misclassified by magnitude; now classified by SceneType and early at the wire via AttrSceneBasicId (341). Fixes "No run id" (ranked runs not uploading). Commits 4683d8d, 9cb72c8.
+- LIVE per-class loadout: parse the refresh chunk's LIVE row (`_StellarLiveProbe`) so a played class exposes its currently-equipped gear/modules/talents, and it is the sole source when a class has no saved plan. Commit ba74dd3 (+ the per-class gear/modules/talents series a513b29..c1a9d65).
+- Player-state: rescue the local player entity when it goes dark while mounted so PlayerStats/identity survive mounting; identity served from the char record, not the world entity. Commits 1107646, 615042d, 7a40e28.
 - New `Stellar.Abstractions.Domain.ActorState` enum (`Dead`=9, `Breaking`=23, `Unknown`=0 for any other/future wire value) and `CombatEvent.EntityStateChanged(TimestampMs, TargetId, ActorState)`, riding the existing `ICombatEvents` stream — no service interface gains a member, so STELLAR0005's 8-member ceiling is untouched. Field-proven after three recon rounds — see `recon/entity-state-death-signal-notes.md`. Round 1's spec'd leaf, `Panda.ZGame.EntityCtrlDead.OnEnter`, installed cleanly but stayed silent across all ten deaths in the owner's confirming run: disproven. Round 2 tried the wider `Panda.ZGame.ZStateMachine.onStateChanged`/`EnterState` hooks on top; `onStateChanged` never fired (a real negative result), but `EnterState` fired correctly for every one of the ten deaths and resolved `Dead` correctly — it was not broken, just costlier (it fires on every actor's every transition, not just the one we care about), so round 3 drops it in favour of the cheaper leaf and keeps it on record as a field-proven fallback if `ZStateDead` is ever removed/renamed. The shipped design patches exactly two sites: `Panda.ZGame.ZStateDead.OnEnter` (PROVEN — all ten deaths) and `Panda.ZGame.ZStateBreaking.OnEnter` (untested, not disproven; kept as the direct sibling of the proven hook, and as a timestamp source for an open frametime-spike investigation). Each site resolves/installs independently and degrades to "signal off" (logged) rather than throwing if a type/accessor is missing after a future game patch — see `PandaEntityStateProbe`. The site-attributed, per-scene-budgeted ungated observation line survives the cut-down unchanged. 2026-07-28 entity-state-death-signal spec; retires the HP-inference gone-timeout for `ArchiveReason.BossKill` on the plugin side (follow-up work, not in this release).
 
 ## [1.16.1] - 2026-07-25

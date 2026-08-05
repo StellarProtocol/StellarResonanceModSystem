@@ -66,6 +66,30 @@ internal static class EnterSceneReader
     }
 
     /// <summary>
+    /// Reads BOTH scene identities from <c>EnterScene.EnterSceneInfo(1).SceneAttrs(1)</c> in one pass:
+    /// the per-run <c>AttrSceneUuid</c> (342, the run-id VALUE) and the persistent
+    /// <c>AttrSceneBasicId</c> (341, the scene TEMPLATE id used to classify the scene via the game
+    /// scene table — confirmed present at the wire, e.g. 6541 for Mistveil Hunting Ground). Lets the
+    /// run-id resolver classify the run at zone-in, BEFORE the game's later OnEnterScene, so the
+    /// dungeon-state clear fires ahead of the first flow delivery. <paramref name="sceneBasicId"/> is
+    /// 0 when the 341 row is absent. Returns <see langword="false"/> (both 0) when there is no
+    /// readable <c>AttrSceneUuid</c>.
+    /// </summary>
+    public static bool TryReadSceneIds(ReadOnlySpan<byte> payload, out long sceneUuid, out int sceneBasicId)
+    {
+        sceneUuid = 0;
+        sceneBasicId = 0;
+        if (!TryReadSceneAttrs(payload, out var sceneAttrs, out _)) return false;
+        for (int i = 0; i < sceneAttrs.Items.Count; i++)
+        {
+            var attr = sceneAttrs.Items[i];
+            if (attr.Id == AttrTypeIds.AttrSceneUuid) sceneUuid = attr.DecodedLong;
+            else if (attr.Id == AttrTypeIds.AttrSceneBasicId) sceneBasicId = (int)attr.DecodedLong;
+        }
+        return sceneUuid != 0;
+    }
+
+    /// <summary>
     /// Decode <c>EnterScene.EnterSceneInfo(1)</c> into its scene-level
     /// <c>SceneAttrs(1)</c> <see cref="AttrCollectionMsg"/> plus the
     /// <c>SceneGuid(3)</c> string. Exposed for the one-shot enter-scene

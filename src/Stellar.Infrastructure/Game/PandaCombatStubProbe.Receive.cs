@@ -170,21 +170,21 @@ internal sealed partial class PandaCombatStubProbe
     // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
     // EnterSceneInfo.SceneAttrs. It is the STABLE per-run id (shared by everyone in the
     // run, identical across the run). Every enter-scene fires here — instanced content
-    // (dungeon / instanced world-boss / raid) AND town/open-world — so we route the uuid
-    // through DungeonRunIdGate: an instanced snowflake becomes the run id; a town/field
-    // scene resolves to 0. Setting 0 on a non-instanced scene is deliberate — it clears
-    // the previous run's id so it CANNOT linger and get stamped onto a later open-world
-    // run (the run-identity collision fix). The plugin latches _lastRunId at combat start
-    // and reads LastSettlement at archive, so the dungeon->town archive window still
-    // uploads correctly under the dungeon id even though CurrentRunId has dropped to 0.
+    // (dungeon / instanced world-boss / raid) AND town/open-world. We hand the uuid to the
+    // DungeonRunIdResolver, which classifies the scene (SceneType via IGameDataWorld) and
+    // writes the run id to the sink — instanced scenes keep the uuid as their run id (even
+    // when it's below the magnitude floor, e.g. Mistveil Hunting Ground), town/field scenes
+    // resolve to 0 (the run-identity collision fix). The resolver ALSO re-resolves when the
+    // game's OnEnterScene publishes the scene id a moment later, because at THIS instant the
+    // scene id is still the previous scene (the wire packet precedes the game hook).
     //
     // When the enter-scene carries no readable scene id (TryReadSceneId == false: absent
     // SceneAttrs or an explicit 0), we leave the current run id untouched rather than
     // clobbering a valid run from a malformed/partial packet.
     private void LatchDungeonRunId(ReadOnlySpan<byte> span)
     {
-        if (EnterSceneReader.TryReadSceneId(span, out var sceneUuid))
-            _dungeonSink.SetCurrentRun(DungeonRunIdGate.Resolve(sceneUuid));
+        if (EnterSceneReader.TryReadSceneIds(span, out var sceneUuid, out var sceneBasicId))
+            _runIdResolver.OnWireEnterScene(sceneUuid, sceneBasicId);
     }
 
     private void OnNearDelta(ReadOnlyMemory<byte> payload)
