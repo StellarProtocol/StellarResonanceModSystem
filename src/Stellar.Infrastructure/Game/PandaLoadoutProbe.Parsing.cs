@@ -57,6 +57,41 @@ internal sealed partial class PandaLoadoutProbe
         return (current, plans);
     }
 
+    /// <summary>The CURRENT class's live equipped set + talents, parsed from the refresh chunk's
+    /// "LIVE\t&lt;equip&gt;\t&lt;mod&gt;\t&lt;curProf&gt;\t&lt;talentStage&gt;\t&lt;talentNodes&gt;" row. This is the
+    /// live source for the class the player is actively using — and, when that class has NO saved plan,
+    /// the ONLY source of its loadout (owner requirement 2026-08-05: capture what's currently equipped,
+    /// not the saved loadout).</summary>
+    internal readonly record struct LiveLoadout(
+        IReadOnlyDictionary<int, long> Equip,
+        IReadOnlyDictionary<int, long> Mod,
+        int ProfessionId,
+        int TalentStageId,
+        IReadOnlyList<int>? TalentNodes);
+
+    // Pure LIVE-row parser — internal (not private) so it's directly unit-testable without the Lua bridge.
+    // Finds the "LIVE\t…" row and splits it into the current class's equip/mod slot→uuid maps + its
+    // profession/talent-stage/talent-node-ids. Tolerates the OLD 3-column "LIVE\t<eq>\t<mod>" form (a stale
+    // in-flight read from before the talent enrichment shipped): the missing columns default to 0/0/null.
+    // No LIVE row → an all-empty LiveLoadout (Equip/Mod = the shared empty map, ProfessionId 0, nodes null).
+    internal static LiveLoadout ParseLiveLine(string raw)
+    {
+        foreach (var line in raw.Split('\n'))
+        {
+            if (!line.StartsWith("LIVE\t", StringComparison.Ordinal)) continue;
+            var cols = line.Split('\t');
+            var equip = cols.Length > 1 ? ParseUuidMap(cols[1]) : EmptyUuidMap;
+            var mod = cols.Length > 2 ? ParseUuidMap(cols[2]) : EmptyUuidMap;
+            var professionId = cols.Length > 3
+                && int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var prof) ? prof : 0;
+            var talentStageId = cols.Length > 4
+                && int.TryParse(cols[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var stage) ? stage : 0;
+            var talentNodes = cols.Length > 5 ? ParseNodeCsv(cols[5]) : null;
+            return new LiveLoadout(equip, mod, professionId, talentStageId, talentNodes);
+        }
+        return new LiveLoadout(EmptyUuidMap, EmptyUuidMap, 0, 0, null);
+    }
+
     private static readonly IReadOnlyDictionary<int, long> EmptyUuidMap = new Dictionary<int, long>(0);
 
     // Parses a "slot:uuid,slot:uuid" list into a slot→uuid map. Malformed pairs are skipped, never
