@@ -26,6 +26,15 @@ internal sealed partial class WindowService : IWindowHost
     /// layer (LayoutEditorOverlay) uses it to convert its screen-px geometry into canvas units.</summary>
     internal float CanvasScale => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScale ?? 1f;
 
+    /// <summary>True once the window canvas's CanvasScaler has settled a real scaleFactor since the last (re)create.
+    /// The layout defer (ApplySavedRect) and the Host's generation-triggered reapply both gate on this so a
+    /// scene-change remount never clamps against the transient default 1.0. Defaults true when the renderer
+    /// exposes no metrics (test fakes) — the ready-gate is then a no-op.</summary>
+    internal bool CanvasScaleReady => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScaleReady ?? true;
+
+    /// <summary>Canvas (re)create counter — the Host fires one settled reapply when it changes. 0 when unavailable.</summary>
+    internal int CanvasGeneration => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasGeneration ?? 0;
+
     public IWindowControl Register(WindowRegistration reg)
     {
         if (_windows.TryGetValue(reg.Spec.Id, out var existing))
@@ -111,10 +120,14 @@ internal sealed partial class WindowService : IWindowHost
             e.Token = SafeMount(e);
             if (e.Token is null) return;
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
-            ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout
+            ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
             SafeApply(e);
             e.Dirty = false; return;
         }
+        // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
+        // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
+        // that scale is live so the saved rect clamps against the correct canvas-unit bound.
+        if (e.ApplyPending && CanvasScaleReady) ApplySavedRect(e, e.PendingApplyVisibility);
         if (applyNow || e.Dirty) { SafeApply(e); e.Dirty = false; }
         if (applyNow) PersistIfSettled(e);   // save the rect once a titlebar drag settles
     }
@@ -155,6 +168,9 @@ internal sealed partial class WindowService : IWindowHost
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
         public bool BringToFrontPending;
+        // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);
+        // TickEntry re-applies once CanvasScaleReady. PendingApplyVisibility carries the deferred call's flag.
+        public bool ApplyPending; public bool PendingApplyVisibility = true;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
         public bool IsShown => Token != null && Visible;

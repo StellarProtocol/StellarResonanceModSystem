@@ -106,6 +106,41 @@ public class WindowServiceTests
         Assert.Equal(2, r.Mounts);  // remounted
     }
 
+    // Renderer that also exposes canvas metrics, with a toggleable "scale settled" signal, and records SetRect
+    // calls — so we can assert the layout apply is DEFERRED while the CanvasScaler is unsettled (scene-change bug).
+    private sealed class MetricsRenderer : IWindowRenderer, IWindowCanvasMetrics
+    {
+        public bool Ready; public int Mounts;
+        public readonly System.Collections.Generic.List<WindowRect> SetRects = new();
+        public bool IsCanvasAvailable() => true;
+        public object? Mount(WindowRegistration reg) { Mounts++; return 1; }
+        public bool IsAlive(object? token) => token != null;
+        public void ApplyValues(object? token, WindowRegistration reg, bool hide) { }
+        public void SetRect(object? token, WindowRect rect) => SetRects.Add(rect);
+        public WindowRect GetRect(object? token) => default;
+        public bool HasFocusedField(object? token) => false;
+        public void Destroy(object? token) { }
+        public float CanvasScale => 1f;
+        public float UiScale => 1f;
+        public bool CanvasScaleReady => Ready;
+        public int CanvasGeneration => 1;
+    }
+
+    [Fact] // Scene-change bug guard: mount while the CanvasScaler is unsettled must PARK the layout apply (no clamp
+           // against the transient default scale), then place it once scale is live.
+    public void ApplySavedRect_defers_until_canvas_scale_ready()
+    {
+        var r = new MetricsRenderer { Ready = false };
+        var svc = new WindowService(r, new NullLog());
+        svc.Register(Reg("w"));
+        svc.Tick(0.2f);                 // mount while scale NOT settled → apply parked
+        Assert.Equal(1, r.Mounts);
+        Assert.Empty(r.SetRects);       // deferred: nothing positioned against the shrunk (default-scale) bound
+        r.Ready = true;
+        svc.Tick(0.2f);                 // scaler settled → the parked apply runs
+        Assert.NotEmpty(r.SetRects);    // window placed only once scale is live
+    }
+
     [Fact]
     public void Duplicate_id_is_ignored()
     {

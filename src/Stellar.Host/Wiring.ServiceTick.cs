@@ -18,6 +18,11 @@ public sealed partial class BootstrapPlugin
     // ReclampLayoutOnResolutionChange) — the CanvasScaler settles a beat or two AFTER a resolution change, so
     // its change is what tells us the correct factor is finally live. -1 = never observed (skip first beat).
     private float _lastLayoutScale = -1f;
+    // Last window-canvas generation seen. A bump = the canvas was destroyed+rebuilt (scene change), so every window
+    // remounted and parked its layout (the fresh CanvasScaler still reported the default 1.0). We latch a ONE-shot
+    // corrective reapply, deferred until the scaler settles, so it clamps against the real bound. -1 = never observed.
+    private int _lastCanvasGen = -1;
+    private bool _pendingCanvasReapply;
 
     // Reconciles the live runtime to the Performance settings (PerfControls), which are driven by the
     // Settings → Performance panel and seeded from config at boot. Runs every tick BEFORE the scene
@@ -149,18 +154,28 @@ public sealed partial class BootstrapPlugin
     {
         var curRes = _inputGateway?.CurrentResolution ?? default;
         var curScale = _windowService?.CanvasScale ?? 1f;
+        var curGen = _windowService?.CanvasGeneration ?? 0;
+        var scaleReady = _windowService?.CanvasScaleReady ?? true;
         var resChanged = curRes.Width != _lastLayoutRes.Width || curRes.Height != _lastLayoutRes.Height;
         var scaleChanged = _lastLayoutScale >= 0f && System.Math.Abs(curScale - _lastLayoutScale) > 0.001f;
-        if (!resChanged && !scaleChanged) return;
+
+        // Canvas recreate (scene change destroyed + WindowRenderer rebuilt the canvas): latch a one-shot corrective
+        // reapply, but hold it until the CanvasScaler settles — reapplying against the transient default 1.0 would
+        // re-introduce the very snap bug. Belt to WindowService.Layout's per-window defer (suspenders).
+        if (_lastCanvasGen >= 0 && curGen != _lastCanvasGen) _pendingCanvasReapply = true;
+        _lastCanvasGen = curGen;
+        var genReapply = _pendingCanvasReapply && scaleReady;
+        if (!resChanged && !scaleChanged && !genReapply) return;
 
         var firstObservation = _lastLayoutRes.Width == 0;
         _lastLayoutRes = curRes;
         _lastLayoutScale = curScale;
         if (firstObservation || curRes.Width <= 0) return;   // never reapply on the first-ever observation
 
-        // Re-apply on resolution OR scaleFactor change. The scaleFactor path is the key fix: after a resolution
-        // change the CanvasScaler updates scaleFactor a beat or two LATER, and Get's canvas-unit clamp needs the
-        // CORRECT factor — so when scaleFactor finally changes, this fires a corrective reapply with the right value.
+        // Re-apply on resolution OR scaleFactor change OR a settled canvas recreate. The scale/recreate paths are the
+        // key fix: the CanvasScaler settles scaleFactor a beat or two LATER, and Get's canvas-unit clamp needs the
+        // CORRECT factor — so we reapply only once the right value is live. ReapplyLayout self-gates on ready too.
+        if (genReapply) _pendingCanvasReapply = false;   // consume the one-shot
         _windowService?.ReapplyLayout();          // position-only after Part 1
         _hudService?.ReapplyLayout();             // position-only after Part 2
         _nativeUi?.ReapplyForActiveSlot(curRes, applyVisibility: false);   // reposition, never toggle show/hide

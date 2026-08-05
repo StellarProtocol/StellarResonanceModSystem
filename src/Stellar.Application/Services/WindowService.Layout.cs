@@ -98,6 +98,19 @@ internal sealed partial class WindowService
     private void ApplySavedRect(Entry e, bool applyVisibility = true)
     {
         if (e.Token is null) return;
+        // The saved-rect clamp (LayoutStorage.Get → ClampVisible) is scale-dependent: the on-screen bound is
+        // resolution ÷ CanvasScale. On a canvas (re)create (boot / scene change) the freshly-added CanvasScaler
+        // still reports the DEFAULT scaleFactor 1.0, so the bound is too small and a right/bottom window snaps
+        // toward the origin. PARK the apply until the scaler settles (CanvasScaleReady) — TickEntry re-runs it then.
+        // Meanwhile hold the last-known-good pose (it survives on the Entry across the remount), so no visible jump.
+        if (!CanvasScaleReady)
+        {
+            e.ApplyPending = true;
+            e.PendingApplyVisibility = applyVisibility;
+            if (e.LastSavedRect.Width > 0f) _renderer.SetRect(e.Token, e.LastSavedRect);
+            return;
+        }
+        e.ApplyPending = false;
         var fallback = ResolveAnchoredDefault(e.Reg.Spec);
         if (_storage is null || _resolution is null)
         {
@@ -115,8 +128,8 @@ internal sealed partial class WindowService
     // from what's saved. Avoids a disk write every frame during the drag.
     private void PersistIfSettled(Entry e)
     {
-        if (_storage is null || _resolution is null || e.Token is null
-            || !(e.Reg.Spec.Draggable || e.Reg.Spec.Resizable)) return;
+        if (_storage is null || _resolution is null || e.Token is null || e.ApplyPending
+            || !(e.Reg.Spec.Draggable || e.Reg.Spec.Resizable)) return;   // never persist an interim/parked pose
         var cur = _renderer.GetRect(e.Token);
         if (RectClose(cur, e.LastRect) && !RectClose(cur, e.LastSavedRect))
         {

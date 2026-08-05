@@ -46,6 +46,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
     private int _zseq;    // monotonic mount counter — drives ZSeq (stable tiebreak within same ZFront tier)
     private int _zfront;  // monotonic BringToFront counter — drives ZFront (overrides ZCat/ZSeq when non-zero)
+    private int _canvasGeneration;         // bumps on every canvas (re)create — Host fires a settled reapply on change
+    private int _canvasCreatedFrame = -1;  // Time.frameCount at the last (re)create; scale settles a FRAME later
 
     // The shared OS dynamic font repacks its glyph atlas when a text-heavy panel requests many glyphs; that
     // strands earlier/hidden Text with stale UVs (garbled glyphs). Refresh every window's text on rebuild.
@@ -209,6 +211,15 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     // layout editor is uniformly screen-px, so WindowService scales editor rects by this. Mirrors the ClampToScreen guard.
     public float CanvasScale => _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
 
+    // A freshly-added CanvasScaler reports the DEFAULT scaleFactor (1.0) on its create frame; the real value lands
+    // after willRenderCanvases runs (end of frame). So "settled" iff at least one frame boundary has passed since
+    // the (re)create — a frame-elapsed test, NOT a value test (a genuine 1.0 is indistinguishable from the default).
+    public bool CanvasScaleReady => _canvasComp != null && Time.frameCount > _canvasCreatedFrame;
+
+    // Monotonic canvas (re)create counter. The Host watches this to fire ONE corrective layout reapply after a
+    // scene-change canvas rebuild, once CanvasScaleReady (belt to WindowService.Layout's per-window defer).
+    public int CanvasGeneration => _canvasGeneration;
+
     // The UI-Scale slider value (concrete-only getter on NamedThemeService, which _chrome IS at runtime). Default
     // window positions divide by this so the slider grows windows in place instead of drifting them (bottom-right).
     public float UiScale => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
@@ -289,6 +300,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             _canvas = go;
             _canvasComp = canvas;
             _canvasRoot = go.transform;
+            _canvasGeneration++;                   // recreate detector (Host reapply trigger)
+            _canvasCreatedFrame = Time.frameCount; // scale-ready gate: the scaler settles a frame LATER
             _assets.EnsureBaked(_colors);
             _assets.OpacityProvider = () => _chrome.WindowOpacity;     // live frame-alpha tint (no rebake/flicker)
             _assets.FontScaleProvider = () => _chrome.FontScale;        // live uGUI text scaling
