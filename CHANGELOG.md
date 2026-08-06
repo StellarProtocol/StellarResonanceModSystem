@@ -16,6 +16,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-08-06
+_**1.18.0** (minor) — one additive loadout fix on top of 1.17.0: the talent specialization shown for a saved build is now read consistently with that build's own talent nodes. Binary-compatible with plugins built against ≤1.16.1._
+### Fixed
+- Your saved talent build now shows the correct specialization on the logs website, instead of sometimes showing a different one than the talents you actually picked.
+### Developer notes
+- PandaLoadoutProbe.Resolution now sources a saved plan's talent stage from the live per-profession container (talentList[prof].talentStageCfgId) so the stage id agrees with the plan's own talent nodes — fixes a stale talentStageCfgId that mislabeled the spec (e.g. run sea/ZEEJjddKHN). Single-file change to PandaLoadoutProbe.Resolution.cs; cherry-picked from e73b99b. The exploratory NotifyShowTips (m42) win-tip tap from the same session was dropped as inert — vaults do send a real settlement message, so the actual vault fix lives plugin-side (CombatMeter 1.6.1). The SquareHandle slider knob referenced in FrameworkVersion already shipped in the 1.17.0 tree and is unchanged here.
+
 ## [1.17.0] - 2026-08-05
 _**1.17.0** (minor) — kill detection from the game's own logic, a run-id fix for instanced dungeons, per-class equipped-loadout capture, and a mounted-state stats-survival fix. Additive; binary-compatible with plugins built against ≤1.16.1._
 ### Added
