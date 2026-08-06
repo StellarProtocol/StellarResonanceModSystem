@@ -201,12 +201,17 @@ internal sealed partial class PandaLoadoutProbe
 
     // Refresh chunk: fire SyncProjectList (AsyncGetRolePlanData) to populate
     // weapon_data, then serialize CurPlanId + each plan's id/name/professionId/
-    // currentTalentStageCfgId/talentNodeIds into the data global. The allocated node ids
-    // come from the CONFIRMED per-profession container path used by the game's own
-    // talent_skill_vm.GetWeaponActiveTalentTreeNode:
-    // Z.ContainerMgr.CharSerialize.professionList.talentList[professionId].talentNodeIds
-    // (repeated uint32) — read nil-safely so a missing container just yields an empty node
-    // list (the site then shows the recommended build, never a crash). Run inside the
+    // talentStageCfgId/talentNodeIds into the data global. BOTH the talent stage AND the
+    // allocated node ids come from the SAME per-profession container object —
+    // Z.ContainerMgr.CharSerialize.professionList.talentList[professionId]. The node-read path
+    // (talentNodeIds) is the one CONFIRMED against the game's own
+    // talent_skill_vm.GetWeaponActiveTalentTreeNode; talentStageCfgId lives alongside it in that
+    // same entry, so reading both from it keeps the uploaded stage matching the tree its nodes
+    // populate. (The
+    // saved plan's pd.currentTalentStageCfgId is a STALE latch — it drifts from the live nodes,
+    // which surfaced as a wrong spec on the site, run sea/ZEEJjddKHN; kept only as a nil-safe
+    // fallback.) All read nil-safely so a missing container just yields an empty node list (the
+    // site then shows the recommended build, never a crash). Run inside the
     // canonical coroutine wrapper (the RPC yields). No external text is interpolated — no
     // Lua-injection surface.
     private const string RefreshChunk =
@@ -220,7 +225,7 @@ internal sealed partial class PandaLoadoutProbe
         " if d.PlanDataDict then for pid,pd in pairs(d.PlanDataDict) do" +
         "  local nm=(pd and pd.projectName~=nil and pd.projectName~=\"\") and pd.projectName or (\"Loadout \"..tostring(pid))" +
         "  local prof=(pd and pd.professionId) or 0" +
-        "  local stage=(pd and pd.currentTalentStageCfgId) or 0" +
+        "  local stage=(tl and tl[prof] and tl[prof].talentStageCfgId) or ((pd and pd.currentTalentStageCfgId) or 0)" +
         "  local nodes=\"\"" +
         "  if tl and tl[prof] and tl[prof].talentNodeIds then for _,nid in ipairs(tl[prof].talentNodeIds) do nodes=(nodes==\"\" and tostring(nid)) or (nodes..\",\"..tostring(nid)) end end" +
         // Per-class gear/modules (2026-08-03): serialize this plan's equipInfoMap + modInfoMap as
