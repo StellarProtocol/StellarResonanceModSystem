@@ -31,7 +31,6 @@ public interface IPluginServices
 | [GameEvents](IPluginServices/GameEvents.md) { get; } | Game lifecycle events (scene load / unload, hot-update ready). |
 | [Harmony](IPluginServices/Harmony.md) { get; } | Per-plugin Harmony host — create id-namespaced Harmony instances that are auto-unpatched when the plugin is disposed. |
 | [Hotkeys](IPluginServices/Hotkeys.md) { get; } | Bindable keyboard-action registration. |
-| [Hud](IPluginServices/Hud.md) { get; } | uGUI HUD toolkit. |
 | [Inventory](IPluginServices/Inventory.md) { get; } | Player inventory — item stacks and currency. |
 | [Launcher](IPluginServices/Launcher.md) { get; } | Register a tile in the Stellar launcher menu (Phase B). |
 | [Loadout](IPluginServices/Loadout.md) { get; } | Read and apply the player's saved in-game loadouts (class + gear + spec + modules). |

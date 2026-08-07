@@ -32,11 +32,11 @@ Compared to a typical IL2CPP game where everything is native AOT and you fight I
 | Loader / process injection | **BepInEx 6 IL2CPP (be.755)** | Most mature for Unity 2022 LTS IL2CPP. Loads before HybridCLR initializes, so we can sequence our framework startup to wait for hot-update load. |
 | Native interop | **Il2CppInterop** | Only needed for the Unity engine surface (UnityEngine.*) and AOT stubs — most game logic doesn't need it. |
 | Method patching | **HarmonyX** | Works directly on HybridCLR-loaded managed assemblies. Same library Dalamud uses. |
-| Overlay | **Native Unity uGUI** — a canvas hierarchy driven by `HudService` + `WindowService` | Renders through the game's own Canvas/UI system with zero native hooks. (The original v0.2 shipping path used Unity IMGUI via an injected `OverlayBehaviour.OnGUI`; that was deleted in Phase E because the per-frame `OnGUI` crossing cost ~13 fps.) |
+| Overlay | **Native Unity uGUI** — a canvas hierarchy driven by `WindowService` | Renders through the game's own Canvas/UI system with zero native hooks. (The original v0.2 shipping path used Unity IMGUI via an injected `OverlayBehaviour.OnGUI`; that was deleted in Phase E because the per-frame `OnGUI` crossing cost ~13 fps.) |
 | Plugin DI | Custom service locator (`IPluginServices`) | Game uses VContainer internally; we expose a small, explicit surface rather than wrapping the container directly. |
 | Event bus to plugins | Composed `IGameEventBridge` strategy: MessagePipe (preferred, currently disabled) → HarmonyX fallback | Plugins use the same `IGameEvents.Subscribe(typeName, handler)` API regardless of which bridge is active. |
 
-The overlay is built from native uGUI: plugins register windows via `IWindowHost` (backed by `WindowService`) and HUD elements via `IHudHost` (backed by `HudService`), composing element trees rather than issuing immediate-mode draw calls.
+The overlay is built from native uGUI: plugins register windows via `IWindowHost` (backed by `WindowService`), composing element trees rather than issuing immediate-mode draw calls. On-screen HUD overlays are the same windows registered borderless with `Surface = SurfaceStyle.HudOverlay` — there is no separate HUD service.
 
 ## Component layout
 
@@ -116,7 +116,7 @@ SDK 2.0 splits those two concerns and drives everything off **two independent si
 phase. Correctness moved to a per-unit self-gate: each thing that touches **live game state** early-returns on
 `if (!_clientState.IsWorldActive) return;` — framework probes/services (`PlayerState`, `Inventory`, world-attr,
 equip/loadout), notice-tips (which run game Lua), and the Host's own plumbing (`_framework.Tick`, game-data
-load, `ProbeGameRootOnce`). **Draw services (`Window`/`Hud`) and UI/input do not gate** — they are inherently
+load, `ProbeGameRootOnce`). **The draw service (`Window`) and UI/input do not gate** — they are inherently
 safe and run in every phase, which is what lets a window appear at the title screen. Gating is opt-in per what
 a unit *does*: a plugin that only draws UI, does HTTP, or reads *framework-cached* data needs no gate; only a
 unit doing **raw** game reads self-gates.
@@ -124,8 +124,8 @@ unit doing **raw** game reads self-gates.
 **Two signals, two jobs:** use `Phase` for **visibility**, `IsWorldActive` for **game-state access** — never
 gate game-state on `Phase`/`IsLoggedIn` (both are true mid-transition).
 
-**Window/HUD visibility is plugin-owned.** A single compiler-`required` predicate `Func<bool> ShouldRender`
-(the `IRenderGated` contract, on `WindowSpec`/`HudSpec`) is the sole source of visibility truth; the framework
+**Window visibility is plugin-owned.** A single compiler-`required` predicate `Func<bool> ShouldRender`
+(the `IRenderGated` contract, on `WindowSpec` — HUD overlays are windows too) is the sole source of visibility truth; the framework
 only enacts `hide = !ShouldRender()`, evaluated each apply (~10 Hz) — a pull, never a stored flag. The plugin
 reads whatever it wants inside the predicate (`Phase`, `UiState`, its own state). The old
 `AutoHideBehindGameMenus` / `HideUntilInWorld` bools are **removed**; `MasterHudKill` stays as an explicit dev

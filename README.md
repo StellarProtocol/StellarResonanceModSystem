@@ -52,8 +52,7 @@ Deeper detail: [`docs/architecture.md`](docs/architecture.md).
 - **Plugins as C# DLLs.** Drop a `.dll` into `<game_mini>/stellar/plugins/<your-plugin>/` and it loads at startup. A plugin is a single class implementing `IStellarPlugin` with a constructor that takes `IPluginServices` — no other boilerplate.
 - **A broad, read-only service surface** via `IPluginServices`: framework lifecycle and per-frame tick (`IFramework`), session and scene state (`IClientState`), game events (`IGameEvents`), live player state and stats (`IPlayerState`, `IPlayerStats`), inventory and module equip (`IInventory`, `IModuleEquip`), chat (`IChat`), combat snapshots/events/lookup (`ICombatSnapshot`, `ICombatEvents`, `ICombatLookup`), party roster/snapshot/events, static game tables (`IGameData`), persistent config (`IPluginConfig`), theming (`ITheme`, `INamedTheme`), hotkeys (`IHotkeys`), game assets (`IGameAssets`), and the UI toolkits below.
 - **A uGUI UI toolkit.** Plugins describe their UI declaratively as a `HudElement` tree, and the framework renders it as native Unity uGUI:
-  - `IHudHost` — register non-interactive HUD overlays (HP bars, meters, status strips).
-  - `IWindowHost` — register draggable, interactive windows with title bars and close buttons.
+  - `IWindowHost` — register draggable, interactive windows with title bars and close buttons. On-screen HUD overlays (HP bars, meters, status strips) are the same windows, registered borderless with `Surface = SurfaceStyle.HudOverlay` — there is no separate HUD toolkit.
   - `INativeUiHost` — inject mod UI (menu buttons, indicators, panels) into the game's own UI anchors.
   - `ILauncher` — register a tile in the Stellar launcher menu.
 - **Lifecycle integration.** Login / logout / scene-change and per-frame `Update` callbacks are delivered to your plugin from the game's own `Panda.Core.Game.*` methods via HarmonyX patches.

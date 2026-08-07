@@ -1,5 +1,12 @@
 # Design: Game Phases, Tick Split, and Plugin-Owned Window Visibility
 
+> **Superseded (SDK 2.0.0):** the separate HUD toolkit (`IHudHost` / `HudSpec` / `IHudHandle` / `HudAnchor`)
+> referenced throughout this dated design record was **removed** and folded into the window path. On-screen HUD
+> overlays are now borderless windows (`WindowSpec` with `WindowPanelStyle.Borderless` +
+> `Surface = SurfaceStyle.HudOverlay`); `IRenderGated`/`ShouldRender` is carried by `WindowSpec` alone. Treat the
+> `HudSpec` mentions below as historical — the design intent (plugin-owned `ShouldRender` visibility) is
+> unchanged, only the type it lives on. See `docs/plugin-development.md` for the current single UI path.
+
 - **Status:** Implemented + **in-game validated (§7 PASSED)** on `enhance/game-phases`. Confirmed 2026-07-29:
   world-connect survives the per-unit `IsWorldActive` self-gates (no `[50000]`/`[50011]`); title-screen
   window renders + drags + hotkey fires pre-login; `IsWorldActive` dips false on zone load while `Phase`

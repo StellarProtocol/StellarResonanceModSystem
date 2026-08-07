@@ -1,6 +1,6 @@
 # IRenderGated interface
 
-The single source of truth for whether a window/HUD should draw. The framework enacts `hide = !ShouldRender()` each apply (~10 Hz) — a pull, not a stored flag — so the plugin owns the decision and the framework only flips `SetActive`. Implemented by [`WindowSpec`](./WindowSpec.md) and [`HudSpec`](../Stellar.Abstractions.Services/HudSpec.md), each carrying a compiler-`required`[`ShouldRender`](./IRenderGated/ShouldRender.md) so omitting it fails the build (the interface just declares the getter; `required` lives on each record).
+The single source of truth for whether a window should draw. The framework enacts `hide = !ShouldRender()` each apply (~10 Hz) — a pull, not a stored flag — so the plugin owns the decision and the framework only flips `SetActive`. Implemented by [`WindowSpec`](./WindowSpec.md), carrying a compiler-`required`[`ShouldRender`](./IRenderGated/ShouldRender.md) so omitting it fails the build (the interface just declares the getter; `required` lives on the record).
 
 ```csharp
 public interface IRenderGated

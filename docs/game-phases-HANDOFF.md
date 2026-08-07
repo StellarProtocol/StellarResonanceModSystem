@@ -2,6 +2,11 @@
 
 _Written end of session 2026-07-29. Two parallel threads; the framework design is the active one._
 
+> **Superseded (SDK 2.0.0):** the `HudSpec` / `IHudHost` HUD toolkit named in this dated handoff was later
+> removed and unified into the window path — HUD overlays are now borderless windows
+> (`Surface = SurfaceStyle.HudOverlay`) and `ShouldRender`/`IRenderGated` lives on `WindowSpec` alone. Historical
+> reference only; see `docs/plugin-development.md` for the current API.
+
 ---
 
 ## Thread A — Game Phases framework design (ACTIVE)
