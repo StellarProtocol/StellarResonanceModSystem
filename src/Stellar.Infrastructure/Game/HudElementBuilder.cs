@@ -257,6 +257,9 @@ internal sealed class HudElementBuilder
     // is the visible win); the animator smooths fillAmount per-frame.
     private void BuildBar(BarElement b, Transform parent, HudToken token)
     {
+        float h = b.Height > 0f ? b.Height : BarHeight;
+        int ls = b.LabelFontSize > 0 ? b.LabelFontSize : BarLabelSize;
+
         var row = UGuiPrimitives.NewChild("Bar", parent);
         var lg = row.AddComponent<HorizontalLayoutGroup>();
         lg.spacing = 6f;
@@ -266,14 +269,16 @@ internal sealed class HudElementBuilder
 
         if (b.Prefix != null)
         {
-            var (pslot, pfg, pshadow) = MakeShadowedText(row.transform, BarLabelSize, TextAnchor.MiddleLeft, bold: true);
+            var (pslot, pfg, pshadow) = MakeShadowedText(row.transform, ls, TextAnchor.MiddleLeft, bold: true);
             pslot.AddComponent<LayoutElement>().preferredWidth = BarPrefixWidth;
             pfg.text = b.Prefix; pshadow.text = b.Prefix;   // static caption — no binding needed
         }
 
         var track = UGuiPrimitives.NewChild("Track", row.transform);
         var tle = track.AddComponent<LayoutElement>();
-        tle.preferredWidth = BarTrackWidth; tle.preferredHeight = BarHeight; tle.flexibleWidth = 0f;
+        if (b.FillWidth) { tle.flexibleWidth = 1f; tle.preferredWidth = 0f; }
+        else { tle.preferredWidth = b.Width > 0f ? b.Width : BarTrackWidth; tle.flexibleWidth = 0f; }
+        tle.preferredHeight = h;
         var trackImg = track.AddComponent<Image>();
         trackImg.sprite = _assets.BarBg; trackImg.type = Image.Type.Sliced; trackImg.raycastTarget = false;
 
@@ -289,13 +294,27 @@ internal sealed class HudElementBuilder
         _registerBar?.Invoke(fill, b.Fraction01);
 
         Text? label = null, labelShadow = null;
-        if (b.Label != null)
-        {
-            var (slot, fg, shadow) = MakeShadowedText(row.transform, BarLabelSize, TextAnchor.MiddleRight, bold: false);
-            slot.AddComponent<LayoutElement>().preferredWidth = BarNumericWidth;
-            label = fg; labelShadow = shadow;
-        }
+        if (b.Label != null) (label, labelShadow) = BuildBarLabel(b, row, track, ls);
         token.Bars.Add(new BarBinding { Label = label, LabelShadow = labelShadow, LabelFn = b.Label });
+    }
+
+    // Bar label: either the fixed-width right-aligned side slot (today's behaviour) or, when
+    // LabelInside, an overlay stretched centred over the track. The overlay slot is added after
+    // the fill (later sibling → drawn on top) with no width LayoutElement, so it isn't laid out
+    // beside the bar; its own HorizontalLayoutGroup (MiddleCenter) centres the foreground and the
+    // ignore-layout shadow twin. Non-interactive.
+    private (Text Fg, Text Shadow) BuildBarLabel(BarElement b, GameObject row, GameObject track, int ls)
+    {
+        if (b.LabelInside)
+        {
+            var (slot, fg, shadow) = MakeShadowedText(track.transform, ls, TextAnchor.MiddleCenter, bold: false);
+            UGuiPrimitives.Stretch(slot);
+            fg.raycastTarget = false; shadow.raycastTarget = false;
+            return (fg, shadow);
+        }
+        var (sslot, sfg, sshadow) = MakeShadowedText(row.transform, ls, TextAnchor.MiddleRight, bold: false);
+        sslot.AddComponent<LayoutElement>().preferredWidth = BarNumericWidth;
+        return (sfg, sshadow);
     }
 
     // Pill chip composition (matches IMGUI HudLevelPill*): 12/4 padding, 13 px bold.

@@ -93,7 +93,24 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
 /// semantic colour (from its colour slot). Optional right-aligned numeric <paramref name="Label"/> and
 /// optional fixed-width left <paramref name="Prefix"/> caption (e.g. "HP" / "Stamina") so stacked bars
 /// align in a column.</summary>
-public sealed record BarElement(Func<float> Fraction01, ColorRgba Fill, Func<string>? Label = null, string? Prefix = null) : HudElement;
+/// <param name="Fraction01">Fill fraction 0..1, re-pulled each refresh.</param>
+/// <param name="Fill">Semantic fill colour (from the plugin's colour slot).</param>
+/// <param name="Label">Optional numeric/status text; right-aligned beside the bar, or centred on it when <see cref="LabelInside"/> is true.</param>
+/// <param name="Prefix">Optional fixed-width left caption (e.g. "HP") so stacked bars align in a column.</param>
+public sealed record BarElement(
+    Func<float> Fraction01, ColorRgba Fill, Func<string>? Label = null, string? Prefix = null) : HudElement
+{
+    /// <summary>Bar thickness in px; 0 = framework default (14).</summary>
+    public float Height        { get; init; }
+    /// <summary>Fixed track width in px; 0 = framework default (150). Ignored when <see cref="FillWidth"/> is true.</summary>
+    public float Width         { get; init; }
+    /// <summary>When true, the track flexes to fill the row width (overrides <see cref="Width"/>).</summary>
+    public bool  FillWidth     { get; init; }
+    /// <summary>Label/prefix font size in px; 0 = framework default (12).</summary>
+    public int   LabelFontSize { get; init; }
+    /// <summary>When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout.</summary>
+    public bool  LabelInside   { get; init; }
+}
 
 /// <summary>Rounded pill badge with dynamic text and optional tint colour. Suitable for short status labels (e.g. "Offline", rank numbers).</summary>
 /// <param name="Text">Dynamic text displayed inside the pill; re-pulled each refresh.</param>

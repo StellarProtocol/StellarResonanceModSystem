@@ -15,6 +15,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [Unreleased]
+### Added
+- HUD bars can now be made taller and wider (or stretched to fill their row), given a larger label, and can show that label centred right on top of the bar — so plugins can build a big, prominent bar like a target's HP bar.
+### Developer notes
+- `BarElement` gains five optional geometry fields (`Height`, `Width`, `FillWidth`, `LabelFontSize`, `LabelInside`) as `init`-only properties. The original four-argument positional constructor (`Fraction01`, `Fill`, `Label`, `Prefix`) is unchanged, so this is **fully backward-compatible — source AND binary**: existing compiled plugins that call `new BarElement(f, color[, label[, prefix]])` keep working with no rebuild and render identically (unset fields default to 0/false, which the renderer maps to the `BarHeight`/`BarTrackWidth`/`BarLabelSize` constants). New callers set the extras via object-initializer syntax: `new BarElement(f, color, label) { Height = 28f, FillWidth = true, LabelFontSize = 18, LabelInside = true }`. Renderer (`HudElementBuilder.BuildBar`) honours the new geometry unchanged; `LabelInside` overlays the shadowed label stretched-and-centred over the track instead of in the side slot.
 
 ## [1.17.0] - 2026-08-05
 _**1.17.0** (minor) — kill detection from the game's own logic, a run-id fix for instanced dungeons, per-class equipped-loadout capture, and a mounted-state stats-survival fix. Additive; binary-compatible with plugins built against ≤1.16.1._
