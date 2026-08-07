@@ -32,8 +32,14 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     private readonly IPluginLog _log;
     private readonly IThemeMenuColors _colors;
+    private readonly IThemeHudColors _hudColors;    // HUD palette — baked into _hudAssets for SurfaceStyle.HudOverlay windows
     private readonly IChromeStyle _chrome;          // supplies the active theme's per-preset window opacity
     private readonly WindowThemeAssets _assets = new();
+    // HUD sprite/colour set (rounded pill + bar 9-slice, shadowed HudText), baked from the SAME IThemeHudColors
+    // as HudRenderer's copy and re-baked on the SAME ActiveChanged signal. Threaded into WindowBuilder so a
+    // window declaring SurfaceStyle.HudOverlay reproduces the native HUD look byte-for-byte. Distinct object from
+    // HudRenderer's — the two renderers own separate canvases; HudThemeAssets is NOT deleted, it lives on here too.
+    private readonly HudThemeAssets _hudAssets = new();
     private GameObject? _canvas;
     private Canvas? _canvasComp;
     private Transform? _canvasRoot;
@@ -57,8 +63,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         for (var i = 0; i < _tokens.Count; i++) _tokens[i].RefreshFontTexture();
     }
 
-    public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IChromeStyle chrome)
-    { _log = log; _colors = colors; _chrome = chrome; }
+    public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IThemeHudColors hudColors, IChromeStyle chrome)
+    { _log = log; _colors = colors; _hudColors = hudColors; _chrome = chrome; }
 
     /// <summary>Active-theme switch: rebake the window sprites + RE-SKIN every mounted window IN PLACE (new
     /// sprites/colours/sizes onto the existing GameObjects). No canvas drop → no 1-frame flicker, and the
@@ -67,6 +73,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     {
         if (_canvas == null) return;   // nothing mounted yet — the next mount bakes fresh
         _assets.Rebake(_colors);
+        // Rebake the HUD sprite set too (destroys the prior sprites), then the per-window Reskin() below re-points
+        // every HudOverlay leaf's sprite/colour to the fresh ones IN PLACE — mirroring how HudRenderer rebakes on
+        // the same signal (it drops its canvas + remounts; we reskin, since the window path never drops on theme change).
+        _hudAssets.Rebake(_hudColors);
         for (var i = 0; i < _tokens.Count; i++)
         {
             var t = _tokens[i];
@@ -80,6 +90,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         if (_fontRebuildHooked && _onFontRebuilt != null) { Font.textureRebuilt -= _onFontRebuilt; _fontRebuildHooked = false; }
         DropCanvas();
         _assets.DestroyAll();
+        _hudAssets.DestroyAll();
     }
 
     private void DropCanvas()
@@ -303,6 +314,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             _canvasGeneration++;                   // recreate detector (Host reapply trigger)
             _canvasCreatedFrame = Time.frameCount; // scale-ready gate: the scaler settles a frame LATER
             _assets.EnsureBaked(_colors);
+            _hudAssets.EnsureBaked(_hudColors);                        // HUD pill/bar 9-slice sprites + shadowed HudText (HudOverlay windows)
             _assets.OpacityProvider = () => _chrome.WindowOpacity;     // live frame-alpha tint (no rebake/flicker)
             _assets.FontScaleProvider = () => _chrome.FontScale;        // live uGUI text scaling
             _assets.ButtonStyleProvider = () => _chrome.ButtonStyle;    // global Button style → window buttons
@@ -326,6 +338,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private void WireBuilderHooks()
     {
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };

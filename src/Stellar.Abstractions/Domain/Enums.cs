@@ -49,6 +49,27 @@ public enum WindowPanelStyle
     PillStatus = 7,
 }
 
+/// <summary>
+/// Render surface style for a window's leaf elements (Text / Bar / Pill), selected via
+/// <see cref="WindowSpec.Surface"/>. Independent of <see cref="WindowPanelStyle"/> chrome: it controls how the
+/// window RENDERER draws those three leaf types, not the frame drawn around them.
+/// </summary>
+public enum SurfaceStyle
+{
+    /// <summary>Default. Leaves render with the window theme chrome — themed <see cref="Stellar.Abstractions.Services.TextElement"/>,
+    /// a rounded menu bar track with a numeric column, and an accent pill chip — exactly as every existing
+    /// window does. Unchanged behaviour.</summary>
+    Menu = 0,
+
+    /// <summary>Reproduces the borderless HUD look for Text / Bar / Pill: shadowed offset-twin text over the
+    /// world (honouring FontSize / DynamicFontSize / ShadowDistance), a rounded 9-slice HP-bar track with a
+    /// per-frame smoothed fill and a shadowed label / prefix, and a transparent 9-slice pill chip with shadowed
+    /// centred text — byte-identical to the native HUD renderer (<c>HudElementBuilder</c>). Lets a HUD-path
+    /// plugin migrate onto the window path with pixel-exact fidelity. Only these three leaf types are affected;
+    /// every other widget renders identically to <see cref="Menu"/>.</summary>
+    HudOverlay = 1,
+}
+
 /// <summary>Logical category for a plugin window, used to group windows in the Settings layout editor.</summary>
 public enum WindowCategory
 {

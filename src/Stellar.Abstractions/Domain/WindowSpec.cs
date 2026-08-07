@@ -27,6 +27,15 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// DefaultRect.X/Y then act as a canvas-unit offset from the anchor. A user's saved drag still overrides this.</summary>
     public WindowAnchor Anchor { get; init; } = WindowAnchor.TopLeft;
 
+    /// <summary>Which render surface the window's <c>Text</c> / <c>Bar</c> (Default style) / <c>Pill</c> leaves
+    /// use. Defaults to <see cref="SurfaceStyle.Menu"/> = the window theme chrome (unchanged — every existing
+    /// window keeps rendering exactly as before). Set <see cref="SurfaceStyle.HudOverlay"/> to reproduce the
+    /// borderless HUD look for those leaves: shadowed text over the world, rounded HP-bar chrome, and a
+    /// transparent pill chip — byte-identical to the native HUD renderer, so a HUD-path plugin can migrate onto
+    /// the window path with pixel-exact fidelity. Only those three leaf types are affected; all other widgets
+    /// render identically either way. The positional constructor is unchanged, so this is non-breaking.</summary>
+    public SurfaceStyle Surface { get; init; } = SurfaceStyle.Menu;
+
     /// <summary>
     /// When true the window is a movable dialog: drag-by-title-bar (the post-drag rect is
     /// committed + persisted) and excluded from the Shift+` Layout editor (it owns its own

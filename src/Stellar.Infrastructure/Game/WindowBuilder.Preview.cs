@@ -40,6 +40,7 @@ internal sealed partial class WindowBuilder
     // BuildPill). Uses the accent button sprite as the chip background.
     private void BuildPill(PillElement p, Transform parent, WindowToken token)
     {
+        if (_surface == SurfaceStyle.HudOverlay) { BuildPillHud(p, parent, token); return; }   // .HudOverlay.cs
         var go = UGuiPrimitives.NewChild("Pill", parent);
         var lg = go.AddComponent<HorizontalLayoutGroup>();
         lg.padding = new RectOffset(11, 11, 3, 3);
@@ -71,6 +72,7 @@ internal sealed partial class WindowBuilder
     private void BuildBar(BarElement b, Transform parent, WindowToken token)
     {
         if (b.Style == BarStyle.Modern) { BuildBarModernWindow(b, parent, token); return; }
+        if (_surface == SurfaceStyle.HudOverlay) { BuildBarHud(b, parent, token); return; }   // .HudOverlay.cs (Default-style HUD bar)
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 12;
 
         var row = BuildBarRow(parent);
