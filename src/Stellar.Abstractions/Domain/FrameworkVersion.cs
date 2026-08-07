@@ -18,7 +18,12 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.18.0 adds <c>SliderElement.SquareHandle</c>, an OPT-IN knob that is
+    /// BepInEx chainloader happy. 1.18.1 is a fix: game-region detection matches the running
+    /// executable by name PREFIX (<c>StarSEA</c> = SEA, <c>StarASIA</c> = JP) rather than exact
+    /// filename, so the Steam build's <c>StarSEA_STEAM.exe</c> resolves to SEA instead of Unknown
+    /// (which had made upload plugins withhold every run). Detection-logic only — no API change,
+    /// binary-compatible with all existing plugins.
+    /// 1.18.0 adds <c>SliderElement.SquareHandle</c>, an OPT-IN knob that is
     /// exactly <c>HandleSize</c> square. Unity's <c>Slider</c> drives the handle's cross-axis anchors to
     /// full stretch every frame, so by default <c>HandleSize</c> ADDS to the row height instead of setting
     /// the knob's height — a 13px handle in a 16px row draws a 13×29 capsule (measured 2026-07-30). The
@@ -106,5 +111,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "1.18.0";
+    public const string Value = "1.18.1";
 }
