@@ -1,14 +1,13 @@
-# BarElement.Fill property
+# BarElement.Height property
 
-Semantic fill colour (from the plugin's colour slot).
+Bar thickness in px; 0 = framework default (14).
 
 ```csharp
-public ColorRgba Fill { get; set; }
+public float Height { get; set; }
 ```
 
 ## See Also
 
-* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
 * record [BarElement](../BarElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

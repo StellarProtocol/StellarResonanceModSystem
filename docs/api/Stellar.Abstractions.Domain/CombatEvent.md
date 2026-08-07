@@ -17,6 +17,12 @@ public abstract record CombatEvent
 | record [EntitySummonAppeared](CombatEvent.EntitySummonAppeared.md) | A summon/pet entity entered AOI (`SyncNearEntities.appear`) carrying a resolvable owner attribution. Fired once per appear, only when the entity's `AttrCollection` carries `AttrTopSummonerId` or `AttrSummonerId` — most appearing entities (players, unowned mobs) carry neither and never raise this event. Useful as an early, wind-up-free timestamp anchor for a caster's summon-based action (e.g. a Battle Imagine cast) that is otherwise only observable once the summon lands its first hit. |
 | record [SkillUsed](CombatEvent.SkillUsed.md) | A skill was cast or progressed through a phase by the identified caster. |
 
+## Protected Members
+
+| name | description |
+| --- | --- |
+| [CombatEvent](CombatEvent/CombatEvent.md)(…) | Discriminated event raised by [`ICombatEvents`](../Stellar.Abstractions.Services/ICombatEvents.md). Always fires on the main (Unity) thread. |
+
 ## See Also
 
 * namespace [Stellar.Abstractions.Domain](../Stellar.Abstractions.md)

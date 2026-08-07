@@ -7,6 +7,13 @@ public BarElement(Func<float> Fraction01, ColorRgba Fill, Func<string>? Label = 
     string? Prefix = null)
 ```
 
+| parameter | description |
+| --- | --- |
+| Fraction01 | Fill fraction 0..1, re-pulled each refresh. |
+| Fill | Semantic fill colour (from the plugin's colour slot). |
+| Label | Optional numeric/status text; right-aligned beside the bar, or centred on it when [`LabelInside`](./LabelInside.md) is true. |
+| Prefix | Optional fixed-width left caption (e.g. "HP") so stacked bars align in a column. |
+
 ## See Also
 
 * struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)

@@ -1,14 +1,13 @@
-# BarElement.Fill property
+# BarElement.Width property
 
-Semantic fill colour (from the plugin's colour slot).
+Fixed track width in px; 0 = framework default (150). Ignored when [`FillWidth`](./FillWidth.md) is true.
 
 ```csharp
-public ColorRgba Fill { get; set; }
+public float Width { get; set; }
 ```
 
 ## See Also
 
-* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
 * record [BarElement](../BarElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

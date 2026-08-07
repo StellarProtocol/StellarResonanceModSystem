@@ -1,14 +1,13 @@
-# BarElement.Fill property
+# BarElement.LabelFontSize property
 
-Semantic fill colour (from the plugin's colour slot).
+Label/prefix font size in px; 0 = framework default (12).
 
 ```csharp
-public ColorRgba Fill { get; set; }
+public int LabelFontSize { get; set; }
 ```
 
 ## See Also
 
-* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
 * record [BarElement](../BarElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

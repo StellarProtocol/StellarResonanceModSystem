@@ -1,14 +1,13 @@
-# BarElement.Fill property
+# BarElement.FillWidth property
 
-Semantic fill colour (from the plugin's colour slot).
+When true, the track flexes to fill the row width (overrides [`Width`](./Width.md)).
 
 ```csharp
-public ColorRgba Fill { get; set; }
+public bool FillWidth { get; set; }
 ```
 
 ## See Also
 
-* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
 * record [BarElement](../BarElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

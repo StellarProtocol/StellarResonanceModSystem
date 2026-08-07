@@ -1,5 +1,7 @@
 # BarElement.Fraction01 property
 
+Fill fraction 0..1, re-pulled each refresh.
+
 ```csharp
 public Func<float> Fraction01 { get; set; }
 ```

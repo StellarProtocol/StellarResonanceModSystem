@@ -1,14 +1,13 @@
-# BarElement.Fill property
+# BarElement.LabelInside property
 
-Semantic fill colour (from the plugin's colour slot).
+When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout.
 
 ```csharp
-public ColorRgba Fill { get; set; }
+public bool LabelInside { get; set; }
 ```
 
 ## See Also
 
-* struct [ColorRgba](../../Stellar.Abstractions.Domain/ColorRgba.md)
 * record [BarElement](../BarElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

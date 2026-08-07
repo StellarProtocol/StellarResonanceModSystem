@@ -11,10 +11,15 @@ public record BarElement : IEquatable<HudElement>
 | name | description |
 | --- | --- |
 | [BarElement](BarElement/BarElement.md)(…) | Graphical fill bar (0..1). Chrome framework-themed; *Fill* is the plugin's semantic colour (from its colour slot). Optional right-aligned numeric *Label* and optional fixed-width left *Prefix* caption (e.g. "HP" / "Stamina") so stacked bars align in a column. |
-| [Fill](BarElement/Fill.md) { get; set; } |  |
-| [Fraction01](BarElement/Fraction01.md) { get; set; } |  |
-| [Label](BarElement/Label.md) { get; set; } |  |
-| [Prefix](BarElement/Prefix.md) { get; set; } |  |
+| [Fill](BarElement/Fill.md) { get; set; } | Semantic fill colour (from the plugin's colour slot). |
+| [FillWidth](BarElement/FillWidth.md) { get; set; } | When true, the track flexes to fill the row width (overrides [`Width`](./BarElement/Width.md)). |
+| [Fraction01](BarElement/Fraction01.md) { get; set; } | Fill fraction 0..1, re-pulled each refresh. |
+| [Height](BarElement/Height.md) { get; set; } | Bar thickness in px; 0 = framework default (14). |
+| [Label](BarElement/Label.md) { get; set; } | Optional numeric/status text; right-aligned beside the bar, or centred on it when [`LabelInside`](./BarElement/LabelInside.md) is true. |
+| [LabelFontSize](BarElement/LabelFontSize.md) { get; set; } | Label/prefix font size in px; 0 = framework default (12). |
+| [LabelInside](BarElement/LabelInside.md) { get; set; } | When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout. |
+| [Prefix](BarElement/Prefix.md) { get; set; } | Optional fixed-width left caption (e.g. "HP") so stacked bars align in a column. |
+| [Width](BarElement/Width.md) { get; set; } | Fixed track width in px; 0 = framework default (150). Ignored when [`FillWidth`](./BarElement/FillWidth.md) is true. |
 
 ## See Also
 
