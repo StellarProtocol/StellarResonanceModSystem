@@ -150,11 +150,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
     //   3. BuildThemeAndColorStack   — NamedThemeService (B-04 first), ThemeRenderer
     //   4. BuildInputAndLayoutServices — UnityInputGateway, HotkeyService, LayoutStorage
     //   5. BuildNativeUiServices     — PerfPrefs, NativeUiService
-    //   6. BuildHudServices          — HudRenderer, HudService
-    //   7. BuildWindowServices       — WindowRenderer, WindowService
-    //   8. BuildLauncherServices     — LauncherRegistry
-    //   9. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
-    //  10. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
+    //   6. BuildWindowServices       — WindowRenderer, WindowService
+    //   7. BuildLauncherServices     — LauncherRegistry
+    //   8. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
+    //   9. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
     //
     // Wiring call order in OnHotUpdateReady():
     //   1. SetupPerfOverlay
@@ -191,7 +190,6 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildThemeAndColorStack(log);
         BuildInputAndLayoutServices(log);
         BuildNativeUiServices(log);
-        BuildHudServices(log);
         BuildNotificationServices(log);   // toast surface — self-owned animated ToastRenderer canvas
         BuildWindowServices(log);
         BuildLauncherServices();

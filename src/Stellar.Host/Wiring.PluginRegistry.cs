@@ -20,11 +20,6 @@ public sealed partial class BootstrapPlugin
         _uguiInjection?.OnFrameworkDispose();
         // The uGUI launcher tears down with the window canvas (WindowService.DisposeAll below); its icon
         // textures are reclaimed by WindowToken.DisposeNativeTextures on destroy.
-        // uGUI HUD toolkit (Task 6): destroy any mounted HUDs on shutdown, unhook the
-        // theme-switch rebake, then destroy the canvas + baked sprite assets.
-        _hudService?.DisposeAll();
-        if (_hudRenderer != null && _namedTheme != null) _namedTheme.ActiveChanged -= _hudRenderer.InvalidateTheme;
-        _hudRenderer?.Shutdown();
         // uGUI interactive window toolkit (SP1): destroy mounted windows, unhook theme rebake, drop canvas.
         _windowService?.DisposeAll();
         if (_windowRenderer != null && _namedTheme != null) _namedTheme.ActiveChanged -= _windowRenderer.InvalidateTheme;

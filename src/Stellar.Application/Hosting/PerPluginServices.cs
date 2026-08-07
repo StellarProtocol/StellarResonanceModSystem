@@ -66,7 +66,6 @@ internal sealed class PerPluginServices : IPluginServices
     public IHotkeys Hotkeys => _hotkeys ?? _shared.Hotkeys;
     public INamedTheme NamedTheme => _shared.NamedTheme;
     public INativeUiHost NativeUi => _shared.NativeUi;
-    public IHudHost Hud => _shared.Hud;
     public IWindowHost Windows => _shared.Windows;
     public ILauncher Launcher => _shared.Launcher;
     public IGameAssets GameAssets => _shared.GameAssets;

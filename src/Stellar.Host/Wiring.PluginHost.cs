@@ -71,7 +71,7 @@ public sealed partial class BootstrapPlugin
             combatSnapshot, _combatService!, _combatService!, _combatService!,
             _partyService!, _partyService!, _partyService!, _partyControlService!,
             _themeRenderer!, _hotkeyService!,
-            _namedTheme!, _uguiInjection!, _hudService!, _windowService!, _launcher!,
+            _namedTheme!, _uguiInjection!, _windowService!, _launcher!,
             gameAssets, _resonanceService!, _gameDataResonance!,
             _combatService!,
             new Stellar.Application.Services.EntityContextMenuService(),

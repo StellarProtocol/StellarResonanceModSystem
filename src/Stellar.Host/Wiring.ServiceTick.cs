@@ -197,7 +197,6 @@ public sealed partial class BootstrapPlugin
         // CORRECT factor — so we reapply only once the right value is live. ReapplyLayout self-gates on ready too.
         if (genReapply) _pendingCanvasReapply = false;   // consume the one-shot
         _windowService?.ReapplyLayout();          // position-only after Part 1
-        _hudService?.ReapplyLayout();             // position-only after Part 2
         _nativeUi?.ReapplyForActiveSlot(curRes, applyVisibility: false);   // reposition, never toggle show/hide
     }
 
@@ -292,9 +291,6 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:toast");
         TickNotifications(deltaTime);   // animate the toast stack on the framework tick delta
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:toast");
-        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:hud");
-        _hudService?.Tick(deltaTime);
-        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:hud");
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
         _windowService?.Tick(deltaTime);

@@ -61,10 +61,9 @@ public sealed partial class BootstrapPlugin
         // game HUD elements alongside Stellar windows.
         _layoutOverlay.SetNativeUi(_nativeUi);
 
-        // uGUI HUD + window toolkits: bind layout storage + resolution provider (Tick from
-        // RefreshPerTickServices; dispose from DisposePhase9), and hand the HUD to the layout editor.
+        // uGUI window toolkit: bind layout storage + resolution provider (Tick from
+        // RefreshPerTickServices; dispose from DisposePhase9).
         AttachOverlayLayout();
-        _layoutOverlay.SetHud(_hudService!);
         _layoutOverlay.SetWindows(_windowService!);   // edit-mode toolbar registers as a uGUI window
 
         // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
@@ -75,7 +74,6 @@ public sealed partial class BootstrapPlugin
     private void AttachOverlayLayout()
     {
         System.Func<Resolution> res = () => _inputGateway?.CurrentResolution ?? new Resolution(1920, 1080);
-        _hudService?.AttachLayout(_layoutStorage!, res);
         _windowService?.AttachLayout(_layoutStorage!, res);
     }
 

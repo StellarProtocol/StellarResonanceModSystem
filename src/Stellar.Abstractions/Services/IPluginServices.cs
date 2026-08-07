@@ -60,8 +60,6 @@ public interface IPluginServices
     INamedTheme NamedTheme { get; }
     /// <summary>Inject declarative mod uGUI into game-UI anchors (Phase 9d).</summary>
     INativeUiHost NativeUi { get; }
-    /// <summary>uGUI HUD toolkit.</summary>
-    IHudHost Hud { get; }
     /// <summary>uGUI interactive window toolkit (SP1 window shell).</summary>
     IWindowHost Windows { get; }
     /// <summary>Register a tile in the Stellar launcher menu (Phase B).</summary>

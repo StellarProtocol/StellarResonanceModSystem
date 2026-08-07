@@ -3,11 +3,11 @@ using System;
 namespace Stellar.Abstractions.Domain;
 
 /// <summary>
-/// The single source of truth for whether a window/HUD should draw. The framework enacts
+/// The single source of truth for whether a window should draw. The framework enacts
 /// <c>hide = !ShouldRender()</c> each apply (~10 Hz) — a pull, not a stored flag — so the plugin owns the
-/// decision and the framework only flips <c>SetActive</c>. Implemented by <see cref="WindowSpec"/> and
-/// <see cref="Services.HudSpec"/>, each carrying a compiler-<c>required</c> <see cref="ShouldRender"/> so
-/// omitting it fails the build (the interface just declares the getter; <c>required</c> lives on each record).
+/// decision and the framework only flips <c>SetActive</c>. Implemented by <see cref="WindowSpec"/>,
+/// carrying a compiler-<c>required</c> <see cref="ShouldRender"/> so
+/// omitting it fails the build (the interface just declares the getter; <c>required</c> lives on the record).
 /// </summary>
 public interface IRenderGated
 {

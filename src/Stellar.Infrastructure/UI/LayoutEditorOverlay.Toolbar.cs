@@ -126,7 +126,6 @@ internal sealed partial class LayoutEditorOverlay
     private void ResetWindow(string windowId)
     {
         _nativeUi?.ResetToOriginal(windowId);
-        _hud?.ResetRect(windowId);
         _windows?.ResetRect(windowId);
     }
 
@@ -140,7 +139,6 @@ internal sealed partial class LayoutEditorOverlay
             foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
         if (ShouldOutlineStellar)
         {
-            if (_hud is not null)     foreach (var (id, _) in _hud.ShownRects())      ids.Add(id);
             if (_windows is not null) foreach (var (id, _) in _windows.EditableRects()) ids.Add(id);
         }
         foreach (var id in ids) ResetWindow(id);
