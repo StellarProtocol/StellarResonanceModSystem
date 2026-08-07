@@ -110,14 +110,14 @@ public sealed record BarElement(
     public int   LabelFontSize { get; init; }
     /// <summary>When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout.</summary>
     public bool  LabelInside   { get; init; }
-    /// <summary>Visual style. <see cref="BarStyle.Default"/> (0) = today's rounded-pill render; <see cref="BarStyle.Meter"/>
+    /// <summary>Visual style. <see cref="BarStyle.Default"/> (0) = today's rounded-pill render; <see cref="BarStyle.Modern"/>
     /// = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual
     /// left/right overlay text). Existing bars omit it → render unchanged.</summary>
     public BarStyle      Style          { get; init; }
-    /// <summary><see cref="BarStyle.Meter"/> only: right-edge text (e.g. a running total); <see cref="BarElement.Label"/>
+    /// <summary><see cref="BarStyle.Modern"/> only: right-edge text (e.g. a running total); <see cref="BarElement.Label"/>
     /// is then the left/primary text. Ignored in <see cref="BarStyle.Default"/>.</summary>
     public Func<string>? SecondaryLabel { get; init; }
-    /// <summary><see cref="BarStyle.Meter"/> only: an animated soft-white sheen band that sweeps across the fill.
+    /// <summary><see cref="BarStyle.Modern"/> only: an animated soft-white sheen band that sweeps across the fill.
     /// Default false. Ignored in <see cref="BarStyle.Default"/>.</summary>
     public bool          Sheen          { get; init; }
 }
@@ -129,7 +129,7 @@ public enum BarStyle
     Default,
     /// <summary>The CombatMeter metric-bar look: a flat translucent track, a flat role-coloured anchor-clipped fill, and
     /// dual left (<see cref="BarElement.Label"/>) / right (<see cref="BarElement.SecondaryLabel"/>) overlay text.</summary>
-    Meter,
+    Modern,
 }
 
 /// <summary>Rounded pill badge with dynamic text and optional tint colour. Suitable for short status labels (e.g. "Offline", rank numbers).</summary>

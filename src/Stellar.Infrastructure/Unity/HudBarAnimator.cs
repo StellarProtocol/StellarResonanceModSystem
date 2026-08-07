@@ -21,7 +21,7 @@ public sealed class HudBarAnimator : MonoBehaviour
     public HudBarAnimator(IntPtr ptr) : base(ptr) { }
 
     internal readonly System.Collections.Generic.List<(Image Img, Func<float> Target)> Bars = new();
-    // Meter-style sheen sweeps (BarStyle.Meter). Each is called per tick with an elapsed-seconds clock — the
+    // Meter-style sheen sweeps (BarStyle.Modern). Each is called per tick with an elapsed-seconds clock — the
     // renderer threads NO absolute time here (Step only gets dt), so we accumulate it locally. HudRenderer
     // removes a token's pulses on Destroy, keeping the list bounded across mount/unmount.
     internal readonly System.Collections.Generic.List<Action<float>> Pulses = new();

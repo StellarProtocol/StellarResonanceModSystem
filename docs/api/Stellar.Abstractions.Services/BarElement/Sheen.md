@@ -1,6 +1,6 @@
 # BarElement.Sheen property
 
-Meter only: an animated soft-white sheen band that sweeps across the fill. Default false. Ignored in Default.
+Modern only: an animated soft-white sheen band that sweeps across the fill. Default false. Ignored in Default.
 
 ```csharp
 public bool Sheen { get; set; }

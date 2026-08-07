@@ -1,6 +1,6 @@
 # BarElement.SecondaryLabel property
 
-Meter only: right-edge text (e.g. a running total); [`Label`](./Label.md) is then the left/primary text. Ignored in Default.
+Modern only: right-edge text (e.g. a running total); [`Label`](./Label.md) is then the left/primary text. Ignored in Default.
 
 ```csharp
 public Func<string>? SecondaryLabel { get; set; }

@@ -85,7 +85,7 @@ internal sealed partial class HudElementBuilder
         internal HudAnchor Anchor;
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<BarBinding> Bars = new();
-        internal readonly List<MeterBarBinding> MeterBars = new();   // BarStyle.Meter fill-clip + dual-overlay bindings
+        internal readonly List<MeterBarBinding> MeterBars = new();   // BarStyle.Modern fill-clip + dual-overlay bindings
         internal readonly List<CondBinding> Conds = new();
         internal readonly List<ListBinding> Lists = new();
         // Per-frame sheen sweeps (registered with the renderer's animator; removed on Destroy). NOT applied by
@@ -268,7 +268,7 @@ internal sealed partial class HudElementBuilder
     // is the visible win); the animator smooths fillAmount per-frame.
     private void BuildBar(BarElement b, Transform parent, HudToken token)
     {
-        if (b.Style == BarStyle.Meter) { BuildBarMeter(b, parent, token); return; }   // sibling partial (.Meter.cs)
+        if (b.Style == BarStyle.Modern) { BuildBarMeter(b, parent, token); return; }   // sibling partial (.Meter.cs)
         float h = b.Height > 0f ? b.Height : BarHeight;
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : BarLabelSize;
 

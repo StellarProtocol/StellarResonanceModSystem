@@ -11,7 +11,7 @@ public enum BarStyle
 | name | value | description |
 | --- | --- | --- |
 | Default | `0` | Today's rounded 9-slice pill track with a filled-image fill and a single side/inside label (default). |
-| Meter | `1` | The CombatMeter metric-bar look: a flat translucent track, a flat role-coloured anchor-clipped fill, and dual left ([`Label`](./BarElement/Label.md)) / right ([`SecondaryLabel`](./BarElement/SecondaryLabel.md)) overlay text. |
+| Modern | `1` | The CombatMeter metric-bar look: a flat translucent track, a flat role-coloured anchor-clipped fill, and dual left ([`Label`](./BarElement/Label.md)) / right ([`SecondaryLabel`](./BarElement/SecondaryLabel.md)) overlay text. |
 
 ## See Also
 

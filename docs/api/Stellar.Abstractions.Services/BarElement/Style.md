@@ -1,6 +1,6 @@
 # BarElement.Style property
 
-Visual style. Default (0) = today's rounded-pill render; Meter = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual left/right overlay text). Existing bars omit it → render unchanged.
+Visual style. Default (0) = today's rounded-pill render; Modern = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual left/right overlay text). Existing bars omit it → render unchanged.
 
 ```csharp
 public BarStyle Style { get; set; }

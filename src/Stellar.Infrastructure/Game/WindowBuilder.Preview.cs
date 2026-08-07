@@ -66,7 +66,23 @@ internal sealed partial class WindowBuilder
 
     // HP/Stamina-style bar: rounded track + left-anchored coloured fill + right-aligned numeric in a fixed
     // column. Fill fraction + label poll-diffed via BarBinding (no animator — the window tick refreshes).
+    // Honours the BarElement geometry fields (Height/Width/FillWidth/LabelFontSize/LabelInside); BarStyle.Modern
+    // branches to the CombatMeter metric-bar render (BuildBarModernWindow).
     private void BuildBar(BarElement b, Transform parent, WindowToken token)
+    {
+        if (b.Style == BarStyle.Modern) { BuildBarModernWindow(b, parent, token); return; }
+        int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 12;
+
+        var row = BuildBarRow(parent);
+        if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
+
+        var clipRt = BuildBarTrack(row.transform, b);
+        var label = BuildBarLabel(b, row.transform, clipRt, ls, token);
+        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label });
+    }
+
+    // Shared "Bar" row host (HorizontalLayoutGroup, MiddleLeft, 6-px spacing) — reused by both bar styles.
+    private static GameObject BuildBarRow(Transform parent)
     {
         var row = UGuiPrimitives.NewChild("Bar", parent);
         var lg = row.AddComponent<HorizontalLayoutGroup>();
@@ -74,32 +90,46 @@ internal sealed partial class WindowBuilder
         lg.childControlWidth = true; lg.childControlHeight = true;
         lg.childForceExpandWidth = false; lg.childForceExpandHeight = false;
         lg.childAlignment = TextAnchor.MiddleLeft;
+        return row;
+    }
 
-        if (b.Prefix != null)
+    // Fixed-width left caption column (e.g. "HP") so stacked bars align. Shared by both bar styles.
+    private void BuildBarPrefix(BarElement b, Transform row, int ls, WindowToken token)
+    {
+        var pslot = UGuiPrimitives.NewChild("Prefix", row);
+        var ptxt = pslot.AddComponent<Text>();
+        UGuiPrimitives.ConfigureText(ptxt, Scaled(ls), TextAnchor.MiddleLeft, bold: true);
+        ApplyMenuFont(ptxt);
+        ptxt.color = _assets.MenuText; ptxt.text = b.Prefix;
+        pslot.AddComponent<LayoutElement>().preferredWidth = 60f;
+        RegisterTextReskin(token, ptxt, ls);
+    }
+
+    // Default-style label: either the beside-the-bar right-aligned Num slot (today's behaviour), or — when
+    // LabelInside — a muted label overlaid centred ON the track (a later sibling of the fill clip → drawn on
+    // top). Returns the Text for the BarBinding, or null when there is no label.
+    private Text? BuildBarLabel(BarElement b, Transform row, RectTransform clipRt, int ls, WindowToken token)
+    {
+        if (b.Label == null) return null;
+        Text txt;
+        if (b.LabelInside)
         {
-            var pslot = UGuiPrimitives.NewChild("Prefix", row.transform);
-            var ptxt = pslot.AddComponent<Text>();
-            UGuiPrimitives.ConfigureText(ptxt, Scaled(12), TextAnchor.MiddleLeft, bold: true);
-            ApplyMenuFont(ptxt);
-            ptxt.color = _assets.MenuText; ptxt.text = b.Prefix;
-            pslot.AddComponent<LayoutElement>().preferredWidth = 60f;
-            RegisterTextReskin(token, ptxt, 12);
+            var slot = UGuiPrimitives.NewChild("Num", clipRt.parent);   // overlay ON the track, over the fill
+            UGuiPrimitives.Stretch(slot);
+            txt = slot.AddComponent<Text>();
+            UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleCenter, bold: false);
+            txt.raycastTarget = false;
         }
-
-        var clipRt = BuildBarTrack(row.transform, b);
-
-        Text? label = null;
-        if (b.Label != null)
+        else
         {
-            var slot = UGuiPrimitives.NewChild("Num", row.transform);
-            var txt = slot.AddComponent<Text>();
-            UGuiPrimitives.ConfigureText(txt, Scaled(12), TextAnchor.MiddleRight, bold: false);
-            ApplyMenuFont(txt); txt.color = _assets.MenuMuted;
+            var slot = UGuiPrimitives.NewChild("Num", row);
             slot.AddComponent<LayoutElement>().preferredWidth = 84f;
-            RegisterTextReskin(token, txt, 12, muted: true);
-            label = txt;
+            txt = slot.AddComponent<Text>();
+            UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleRight, bold: false);
         }
-        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label });
+        ApplyMenuFont(txt); txt.color = _assets.MenuMuted;
+        RegisterTextReskin(token, txt, ls, muted: true);
+        return txt;
     }
 
     // Gently-rounded (3 px) dark track (matches the PlayerHUD BarBg) + a left-anchored width-clipped fill, and
@@ -107,12 +137,14 @@ internal sealed partial class WindowBuilder
     // via the clip container's anchorMax.x (NOT Image.Type.Filled + fillAmount): a uGUI Image with no sprite
     // ignores fillAmount and draws a FULL quad, so the migrated Filled fill stayed full regardless of the
     // fraction. Anchor-resize needs no sprite (so no rounded-corner stretch artifact) and mirrors how the
-    // MeterRow/AccentRow clip their fill width.
+    // MeterRow/AccentRow clip their fill width. Geometry from Height/Width/FillWidth (defaults 14/150/fixed).
     private RectTransform BuildBarTrack(Transform row, BarElement b)
     {
         var track = UGuiPrimitives.NewChild("Track", row);
         var tle = track.AddComponent<LayoutElement>();
-        tle.preferredWidth = 150f; tle.preferredHeight = 14f; tle.flexibleWidth = 0f;
+        if (b.FillWidth) { tle.flexibleWidth = 1f; tle.preferredWidth = 0f; }
+        else { tle.preferredWidth = b.Width > 0f ? b.Width : 150f; tle.flexibleWidth = 0f; }
+        tle.preferredHeight = b.Height > 0f ? b.Height : 14f;
         var trackImg = track.AddComponent<Image>();
         trackImg.sprite = _assets.SwatchBg; trackImg.type = Image.Type.Sliced;
         trackImg.color = new Color(0f, 0f, 0f, 0.38f); trackImg.raycastTarget = false;
@@ -129,5 +161,69 @@ internal sealed partial class WindowBuilder
         fill.type = Image.Type.Simple; fill.raycastTarget = false;
         fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
         return clipRt;
+    }
+
+    // Modern (BarStyle.Modern) window bar — the CombatMeter metric-bar look, REUSING the WindowBuilder.MeterRow
+    // primitives (MeterTrackBg / MeterBarH / SheenTexture / DriveSheen / AddOverlayText — nothing ported from
+    // HudElementBuilder.Meter.cs, no new pulse/animator/texture code). Visually mirrors the HUD BuildBarMeter
+    // render. Honours Height/Width/FillWidth + Prefix (left caption); LabelInside is meaningless with dual
+    // overlays (ignored, matching the HUD). Fill width driven by BarBinding; overlays by TextBinding.
+    private void BuildBarModernWindow(BarElement b, Transform parent, WindowToken token)
+    {
+        int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 10;
+
+        var row = BuildBarRow(parent);
+        if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
+
+        var (track, clipRt) = BuildModernTrack(b, row.transform);
+        if (b.Sheen) BuildModernSheen(clipRt, token);
+        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 });
+
+        if (b.Label != null)
+            token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label });
+        if (b.SecondaryLabel != null)
+            token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
+    }
+
+    // Flat translucent track + width-anchored RectMask2D clip + flat role-coloured fill. Mirrors
+    // WindowBuilder.MeterRow.BuildMeterBar (MeterRow.cs:322-336), honouring the BarElement geometry. Returns the
+    // track transform (overlay-text parent) and the fill-clip RectTransform (the BarBinding drives its anchorMax.x).
+    private (Transform Track, RectTransform ClipRt) BuildModernTrack(BarElement b, Transform row)
+    {
+        var track = UGuiPrimitives.NewChild("Track", row);
+        var tle = track.AddComponent<LayoutElement>();
+        if (b.FillWidth) { tle.flexibleWidth = 1f; tle.preferredWidth = 0f; }
+        else { tle.preferredWidth = b.Width > 0f ? b.Width : 150f; tle.flexibleWidth = 0f; }
+        tle.preferredHeight = b.Height > 0f ? b.Height : MeterBarH;
+        var trackImg = track.AddComponent<Image>();
+        trackImg.color = MeterTrackBg; trackImg.raycastTarget = false;   // flat, NO sprite
+
+        var clipGo = UGuiPrimitives.NewChild("FillClip", track.transform);
+        var clipRt = clipGo.GetComponent<RectTransform>();
+        clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
+        clipRt.anchorMax = new Vector2(Mathf.Clamp01(b.Fraction01()), 1f);
+        clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
+        clipGo.AddComponent<RectMask2D>();
+
+        var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
+        UGuiPrimitives.Stretch(fillGo);
+        var fill = fillGo.AddComponent<Image>();   // flat, NO sprite, no Image.Type.Filled
+        fill.raycastTarget = false;
+        fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
+        return (track.transform, clipRt);
+    }
+
+    // Sheen: a soft white band scrolled left→right within the clipped fill (per-frame, ticker-driven via the
+    // pulse hook), REUSING the shared SheenTexture/DriveSheen. Registered exactly as MeterRow.cs:340-346.
+    private void BuildModernSheen(RectTransform clipRt, WindowToken token)
+    {
+        var sheenGo = UGuiPrimitives.NewChild("Sheen", clipRt.transform);
+        var sheenRt = sheenGo.GetComponent<RectTransform>();
+        sheenRt.anchorMin = new Vector2(0f, 0f); sheenRt.anchorMax = new Vector2(0f, 1f); sheenRt.pivot = new Vector2(0f, 0.5f);
+        sheenRt.sizeDelta = new Vector2(60f, 0f); sheenRt.anchoredPosition = Vector2.zero;
+        var sheen = sheenGo.AddComponent<RawImage>();
+        sheen.texture = SheenTexture(); sheen.raycastTarget = false; sheen.color = Color.white;
+        System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
+        token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
     }
 }

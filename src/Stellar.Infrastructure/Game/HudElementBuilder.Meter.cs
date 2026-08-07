@@ -6,7 +6,7 @@ using UnityEngine.UI;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// <see cref="HudElementBuilder"/> leaf for the opt-in <see cref="BarStyle.Meter"/> render — the CombatMeter
+/// <see cref="HudElementBuilder"/> leaf for the opt-in <see cref="BarStyle.Modern"/> render — the CombatMeter
 /// metric-bar look reproduced for the HUD toolkit: a flat translucent track, a flat role-coloured fill clipped
 /// to the fraction by a width-anchored <see cref="RectMask2D"/> container (NOT an <c>Image.Type.Filled</c>
 /// fill, so no corner-smoothing/animator), dual left/right overlay texts, and an optional per-frame sheen band

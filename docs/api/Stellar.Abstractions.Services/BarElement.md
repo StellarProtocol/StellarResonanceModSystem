@@ -19,9 +19,9 @@ public record BarElement : IEquatable<HudElement>
 | [LabelFontSize](BarElement/LabelFontSize.md) { get; set; } | Label/prefix font size in px; 0 = framework default (12). |
 | [LabelInside](BarElement/LabelInside.md) { get; set; } | When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout. |
 | [Prefix](BarElement/Prefix.md) { get; set; } | Optional fixed-width left caption (e.g. "HP") so stacked bars align in a column. |
-| [SecondaryLabel](BarElement/SecondaryLabel.md) { get; set; } | Meter only: right-edge text (e.g. a running total); [`Label`](./BarElement/Label.md) is then the left/primary text. Ignored in Default. |
-| [Sheen](BarElement/Sheen.md) { get; set; } | Meter only: an animated soft-white sheen band that sweeps across the fill. Default false. Ignored in Default. |
-| [Style](BarElement/Style.md) { get; set; } | Visual style. Default (0) = today's rounded-pill render; Meter = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual left/right overlay text). Existing bars omit it → render unchanged. |
+| [SecondaryLabel](BarElement/SecondaryLabel.md) { get; set; } | Modern only: right-edge text (e.g. a running total); [`Label`](./BarElement/Label.md) is then the left/primary text. Ignored in Default. |
+| [Sheen](BarElement/Sheen.md) { get; set; } | Modern only: an animated soft-white sheen band that sweeps across the fill. Default false. Ignored in Default. |
+| [Style](BarElement/Style.md) { get; set; } | Visual style. Default (0) = today's rounded-pill render; Modern = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual left/right overlay text). Existing bars omit it → render unchanged. |
 | [Width](BarElement/Width.md) { get; set; } | Fixed track width in px; 0 = framework default (150). Ignored when [`FillWidth`](./BarElement/FillWidth.md) is true. |
 
 ## See Also
