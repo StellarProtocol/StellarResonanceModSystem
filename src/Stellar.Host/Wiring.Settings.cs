@@ -17,9 +17,11 @@ public sealed partial class BootstrapPlugin
     /// <summary>
     /// Wires the Phase 9a UI: instantiates the 7 settings windows, declares
     /// framework.settings-toggle (Shift+Home), runs the lockout safety net,
-    /// auto-shows settings.layout on Shift+`, and ticks NativeUiService each
-    /// frame. Called from <c>OnHotUpdateReady</c> after SetupPerfOverlay; all
-    /// Stellar surfaces are uGUI now (no OnGUI sink).
+    /// and auto-shows settings.layout on Shift+`. Called from
+    /// <c>OnHotUpdateReady</c> after SetupPerfOverlay; all Stellar surfaces are
+    /// uGUI now (no OnGUI sink). NativeUiService.Tick is driven from the
+    /// UN-gated global-rate beat (RunGlobalRateWork), NOT wired here — it must
+    /// run during zone loads (IsWorldActive false) to catch the HUD rebuild.
     /// </summary>
     private void WirePhase9Ui(BepInExPluginLog log)
     {
@@ -65,10 +67,8 @@ public sealed partial class BootstrapPlugin
         _layoutOverlay.SetHud(_hudService!);
         _layoutOverlay.SetWindows(_windowService!);   // edit-mode toolbar registers as a uGUI window
 
-        // Per-frame Tick — NativeUiService re-asserts at 1 Hz, polls for
-        // resolution at 5 Hz. Cheap on idle frames.
-        _framework.Update += dt => _nativeUi.Tick(dt, _inputGateway.CurrentResolution);
-
+        // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
+        // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
         log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (7 tabs) registered");
     }
 

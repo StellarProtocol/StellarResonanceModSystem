@@ -117,6 +117,7 @@ public sealed partial class BootstrapPlugin
         // probes above. In-world anchors (MainMenuRail/HudTopRight) simply won't resolve until their parents exist.
         _uguiInjection?.Tick(globalDt);
         _uguiAdapter?.TickGlow();   // un-gated too, so the login-sidebar glow star animates at the title screen
+        SelfHealNativeUiUngated(globalDt);   // native game-HUD self-heal — MUST run during zone loads (see method + Wiring.Settings)
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
         // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
         // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.
@@ -145,6 +146,16 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:layout");
     }
 
+    // Native game-HUD self-heal, ticked UN-gated (called from the un-gated region of RunGlobalRateWork, NOT
+    // _framework.Update which is IsWorldActive-gated). It MUST run during the zone-load handshake (IsWorldActive
+    // false): that is exactly when the game destroys+rebuilds its HUD at the default layout. A gated tick froze
+    // through the rebuild and only caught up 0-5s later, by which point the game had re-laid-out and kept winning
+    // the frame — the "repositioned game HUD element snaps back on scene change" bug. Pure GameObject reads/writes
+    // via PandaHudAdapter (TryResolve/SetRect), no game-state or network touch — safe every phase like the
+    // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so TryResolveAll no-ops.
+    private void SelfHealNativeUiUngated(float globalDt)
+        => _nativeUi?.Tick(globalDt, _inputGateway?.CurrentResolution ?? default);
+
     // Nothing re-clamps layout on a resolution change — placement/clamp happens only on mount — so a window
     // or HUD near the bottom/right edge falls off-screen when the user drops to a smaller resolution. Detect
     // the change here (two int compares, every global beat) and re-clamp every mounted element IN PLACE: keep
@@ -162,7 +173,16 @@ public sealed partial class BootstrapPlugin
         // Canvas recreate (scene change destroyed + WindowRenderer rebuilt the canvas): latch a one-shot corrective
         // reapply, but hold it until the CanvasScaler settles — reapplying against the transient default 1.0 would
         // re-introduce the very snap bug. Belt to WindowService.Layout's per-window defer (suspenders).
-        if (_lastCanvasGen >= 0 && curGen != _lastCanvasGen) _pendingCanvasReapply = true;
+        if (_lastCanvasGen >= 0 && curGen != _lastCanvasGen)
+        {
+            _pendingCanvasReapply = true;
+            // Native UI uses the generation SIGNAL directly (no scale-ready defer — it clamps in raw Screen pixels,
+            // no scaleFactor transient). The game rebuilt its HUD nodes at defaults and our cached native handles now
+            // point at dead/stale RectTransforms, so ReapplyForActiveSlot below would push to them and no-op. Drop
+            // every entry's IsResolved so the un-gated NativeUiService.Tick re-resolves against the freshly-rebuilt
+            // nodes and re-applies the SAVED pose on the very next Tick (this same beat — the accumulator is armed).
+            _nativeUi?.InvalidateResolvedHandles();
+        }
         _lastCanvasGen = curGen;
         var genReapply = _pendingCanvasReapply && scaleReady;
         if (!resChanged && !scaleChanged && !genReapply) return;

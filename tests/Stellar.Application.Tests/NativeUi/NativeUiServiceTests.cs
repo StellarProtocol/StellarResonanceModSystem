@@ -206,6 +206,54 @@ public sealed class NativeUiServiceTests
         Assert.Equal(500f, cfg.Get("slot1.gameui.test.1920x1080.x", -1f));
     }
 
+    [Fact] // Closest-resolution fallback (parity with the mod-window path): a saved pose under a NEAR-MISS resolution
+           // is recovered, so a transient/changed resolution read during a scene load can't strand the element at the
+           // game default with IsModified=false (which ReassertAll would then skip forever).
+    public void SavedOverride_UnderNearMissResolution_IsRecovered_AndDefended()
+    {
+        var (svc, adapter, cfg, _) = New();
+        const string prefix = "slot0.gameui.test.1920x1080";   // saved only at 1920x1080
+        cfg.Set($"{prefix}.x", 300f);
+        cfg.Set($"{prefix}.y", 150f);
+        cfg.Set($"{prefix}.visible", true);
+
+        var nearMiss = new Resolution(1900, 1060);             // within the 10% delta, but no exact key exists
+        svc.Tick(5f, nearMiss);                                // resolve loads the pose via the closest-res fallback
+        var afterResolve = adapter.SetRectCount;
+        svc.Tick(1f, nearMiss);                                // and keeps defending it (fallback set IsModified)
+
+        Assert.True(afterResolve >= 1, "near-miss saved override should apply on resolve via the closest-res fallback");
+        Assert.True(adapter.SetRectCount > afterResolve, "recovered override should be re-asserted (IsModified true)");
+    }
+
+    [Fact] // The fallback respects the delta cap: a FAR resolution never borrows an unrelated saved pose — the
+           // element stays exactly where the game placed it (unmodified), same as having no override at all.
+    public void SavedOverride_UnderFarResolution_IsNotBorrowed()
+    {
+        var (svc, adapter, cfg, _) = New();
+        const string prefix = "slot0.gameui.test.1920x1080";
+        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
+
+        svc.Tick(5f, new Resolution(800, 600));                // far outside the 10% delta → no fallback match
+        Assert.Equal(0, adapter.SetRectCount);                 // untouched: no exact key, no close-enough key
+    }
+
+    [Fact] // A canvas-generation bump (scene change) invalidates cached handles: the next Tick re-resolves against
+           // the rebuilt nodes and re-applies the saved pose — on the SAME tick, because the accumulator is armed.
+    public void InvalidateResolvedHandles_ForcesReResolve_OnNextTick()
+    {
+        var (svc, adapter, cfg, _) = New();
+        const string prefix = "slot0.gameui.test.1920x1080";
+        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
+
+        svc.Tick(5f, Res);                          // resolve #1 + apply override
+        Assert.Equal(1, adapter.ResolveCount);
+
+        svc.InvalidateResolvedHandles();            // Host calls this on a canvas-generation bump
+        svc.Tick(0.016f, Res);                      // a single ~60fps beat re-resolves (accumulator was armed)
+        Assert.Equal(2, adapter.ResolveCount);      // re-resolved against the rebuilt element
+    }
+
     private sealed class FakeAdapter : INativeUiAdapter
     {
         public int ResolveCount, SetRectCount, SetVisibleCount, RestoreCount;
@@ -229,7 +277,7 @@ public sealed class NativeUiServiceTests
         public void DumpDiagnostics(System.Action<string> log) { }
     }
 
-    private sealed class InMemoryConfig : IConfigSection
+    private sealed class InMemoryConfig : IConfigSection, IConfigKeyReader
     {
         private readonly Dictionary<string, object?> _v = new();
         public System.Collections.Generic.IEnumerable<string> Keys => _v.Keys;
@@ -241,6 +289,11 @@ public sealed class NativeUiServiceTests
         {
             foreach (var k in new List<string>(_v.Keys))
                 if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _v.Remove(k);
+        }
+        public System.Collections.Generic.IEnumerable<string> KeysWithPrefix(string prefix)
+        {
+            foreach (var k in new List<string>(_v.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) yield return k;
         }
     }
 
