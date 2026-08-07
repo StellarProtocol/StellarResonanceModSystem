@@ -16,6 +16,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-08-07
+_**1.18.1** (patch) — Steam client region detection fix so runs from the Steam build upload again. Detection-logic only; no API change, binary-compatible with all existing plugins._
+### Fixed
+- If you play the game through Steam, your dungeon runs now upload to the logs website again. The mod couldn't recognise the Steam version of the game and was holding those runs back.
+### Developer notes
+- GameEnvironmentService now matches the running executable by name PREFIX (StarSEA → SEA, StarASIA → JP) instead of exact filename, so the Steam build's StarSEA_STEAM.exe resolves to SEA instead of Unknown — Unknown made CombatMeter's RegionKnownOrWarn withhold every upload. One row per region covers StarLauncher, Steam, and future store builds. Regression test SteamSeaExecutable_DetectsSea; the existing UnknownExecutable_DetectsUnknown still pins non-matches. The Steam install dir is flat (no release_<ver> segment) so GameVersion reads "unknown" there — cosmetic, not gated on for uploads. Commit 5f976ea.
+
 ## [1.18.0] - 2026-08-06
 _**1.18.0** (minor) — one additive loadout fix on top of 1.17.0: the talent specialization shown for a saved build is now read consistently with that build's own talent nodes. Binary-compatible with plugins built against ≤1.16.1._
 ### Fixed
