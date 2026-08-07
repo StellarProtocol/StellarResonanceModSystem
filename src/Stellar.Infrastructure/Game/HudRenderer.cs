@@ -54,6 +54,7 @@ internal sealed class HudRenderer : IHudRenderer
     private void DropCanvas()
     {
         if (_canvas != null) UnityEngine.Object.Destroy(_canvas);
+        _builder?.DisposeTextures();   // procedural sheen tex (HideAndDontSave — not reclaimed by canvas destroy)
         _canvas = null;
         _canvasComp = null;
         _canvasRoot = null;
@@ -111,7 +112,13 @@ internal sealed class HudRenderer : IHudRenderer
 
     public void Destroy(object? token)
     {
-        if (token is HudToken t && t.Root != null) UnityEngine.Object.Destroy(t.Root);
+        if (token is HudToken t)
+        {
+            // Drop this HUD's per-frame sheen sweeps from the animator so the pulse list stays bounded across
+            // mount/unmount (mirrors WindowRenderer removing a token's pulses from the interaction ticker).
+            if (_animator != null) for (var i = 0; i < t.Pulses.Count; i++) _animator.Pulses.Remove(t.Pulses[i]);
+            if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
+        }
         _animator?.Prune();
     }
 
@@ -141,7 +148,9 @@ internal sealed class HudRenderer : IHudRenderer
             _canvas = go;
             _canvasRoot = go.transform;
             _assets.EnsureBaked(_colors);   // pill/bar 9-slice sprites + HUD text colours
-            _builder = new HudElementBuilder(_assets, (fill, target) => _animator?.Bars.Add((fill, target)));
+            _builder = new HudElementBuilder(_assets,
+                (fill, target) => _animator?.Bars.Add((fill, target)),
+                pulse => _animator?.Pulses.Add(pulse));
             _log.Info("[Hud] Stellar HUD canvas created");
             return true;
         }

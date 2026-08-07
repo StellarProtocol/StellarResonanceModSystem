@@ -21,6 +21,11 @@ public sealed class HudBarAnimator : MonoBehaviour
     public HudBarAnimator(IntPtr ptr) : base(ptr) { }
 
     internal readonly System.Collections.Generic.List<(Image Img, Func<float> Target)> Bars = new();
+    // Meter-style sheen sweeps (BarStyle.Meter). Each is called per tick with an elapsed-seconds clock — the
+    // renderer threads NO absolute time here (Step only gets dt), so we accumulate it locally. HudRenderer
+    // removes a token's pulses on Destroy, keeping the list bounded across mount/unmount.
+    internal readonly System.Collections.Generic.List<Action<float>> Pulses = new();
+    private float _elapsed;
     private const float Speed = 12f;   // lerp rate; tuned in-game
     // Skip the write (snap once) when within this of target: Mathf.Lerp is asymptotic, so writing
     // fillAmount forever keeps the Image dirty → a canvas rebuild every tick even when HP/MP is
@@ -56,6 +61,14 @@ public sealed class HudBarAnimator : MonoBehaviour
                 continue;
             }
             img.fillAmount = Mathf.Lerp(cur, t, k);
+        }
+
+        // Per-frame sheen sweep. Accumulate dt into a local monotonic clock (the same tick delta the bar
+        // smoother uses) rather than reading Time.realtimeSinceStartup — one time source for all per-frame work.
+        if (Pulses.Count > 0)
+        {
+            _elapsed += dt;
+            for (var i = 0; i < Pulses.Count; i++) { try { Pulses[i](_elapsed); } catch { } }
         }
     }
 }

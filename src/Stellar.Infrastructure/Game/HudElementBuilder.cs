@@ -16,15 +16,21 @@ namespace Stellar.Infrastructure.Game;
 /// + shadowed HudText). The bar-fill animator hook is injected so the IL2CPP
 /// <c>HudBarAnimator</c> stays in <see cref="HudRenderer"/>.
 /// </summary>
-internal sealed class HudElementBuilder
+internal sealed partial class HudElementBuilder
 {
     private readonly HudThemeAssets _assets;
     private readonly Action<Image, Func<float>>? _registerBar;
+    // Per-frame pulse hook (mirrors WindowBuilder's): the renderer's animator calls each registered
+    // Action with an elapsed-seconds clock so the Meter-style sheen can sweep. Null in the sandbox →
+    // the sheen renders static at its rest position.
+    private readonly Action<Action<float>>? _registerPulse;
 
-    public HudElementBuilder(HudThemeAssets assets, Action<Image, Func<float>>? registerBar)
+    public HudElementBuilder(HudThemeAssets assets, Action<Image, Func<float>>? registerBar,
+        Action<Action<float>>? registerPulse = null)
     {
         _assets = assets;
         _registerBar = registerBar;
+        _registerPulse = registerPulse;
     }
 
     /// <summary>
@@ -79,8 +85,12 @@ internal sealed class HudElementBuilder
         internal HudAnchor Anchor;
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<BarBinding> Bars = new();
+        internal readonly List<MeterBarBinding> MeterBars = new();   // BarStyle.Meter fill-clip + dual-overlay bindings
         internal readonly List<CondBinding> Conds = new();
         internal readonly List<ListBinding> Lists = new();
+        // Per-frame sheen sweeps (registered with the renderer's animator; removed on Destroy). NOT applied by
+        // Apply() — they run on the per-frame animator tick, not the ~10 Hz value cap.
+        internal readonly List<Action<float>> Pulses = new();
 
         public void Apply()
         {
@@ -88,6 +98,7 @@ internal sealed class HudElementBuilder
             for (var i = 0; i < Lists.Count; i++) Lists[i].Apply();
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
             for (var i = 0; i < Bars.Count; i++) Bars[i].Apply();
+            for (var i = 0; i < MeterBars.Count; i++) MeterBars[i].Apply();
         }
     }
 
@@ -257,6 +268,7 @@ internal sealed class HudElementBuilder
     // is the visible win); the animator smooths fillAmount per-frame.
     private void BuildBar(BarElement b, Transform parent, HudToken token)
     {
+        if (b.Style == BarStyle.Meter) { BuildBarMeter(b, parent, token); return; }   // sibling partial (.Meter.cs)
         float h = b.Height > 0f ? b.Height : BarHeight;
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : BarLabelSize;
 
