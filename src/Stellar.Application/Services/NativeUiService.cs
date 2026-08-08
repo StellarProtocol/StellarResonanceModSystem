@@ -56,7 +56,7 @@ internal sealed class NativeUiService
     {
         foreach (var e in _entries.Values)
             if (e.IsResolved)
-                yield return new EditableElement(e.Descriptor.Id, GetLiveRect(e), e.Visible, e.Descriptor.SafeToHide);
+                yield return new EditableElement(e.Descriptor.Id, GetLiveRect(e), e.Visible, e.Descriptor.SafeToHide, Resizable: false);
     }
 
     public void Tick(float deltaTime, Resolution currentRes)

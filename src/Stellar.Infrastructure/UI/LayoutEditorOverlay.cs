@@ -125,7 +125,7 @@ internal sealed partial class LayoutEditorOverlay
         foreach (var el in _windows!.EditableElements())   // incl. hidden (dimmed re-enable outline)
         {
             var colour = _editor.SelectedWindowId == el.Id ? OutlineSelected : OutlineUnselected;
-            items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide));
+            items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide, el.Resizable));
         }
     }
 

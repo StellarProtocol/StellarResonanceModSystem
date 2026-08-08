@@ -80,7 +80,7 @@ internal sealed partial class WindowService : IWindowHost
             if (e.Removed || !e.Reg.Spec.EditModeDragOnly) continue;
             var rect = e.Token != null ? _renderer.GetRect(e.Token)
                      : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
-            yield return new EditableElement(kv.Key, ScaleRect(rect, sf), e.Visible, CanHide: true);
+            yield return new EditableElement(kv.Key, ScaleRect(rect, sf), e.Visible, CanHide: true, Resizable: e.Reg.Spec.Resizable);
         }
     }
 
