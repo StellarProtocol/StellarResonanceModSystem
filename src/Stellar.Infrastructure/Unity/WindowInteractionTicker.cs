@@ -125,21 +125,19 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         _scaler.referenceResolution = Stellar.Infrastructure.Game.WindowRenderer.UiRefResolution(u);
     }
 
-    // pixelPerfect snaps graphics to the physical pixel grid — crisp at an INTEGER scaleFactor (native 1.0x),
-    // but at a fractional scaleFactor it re-snaps every frame and makes a dragged window's contents shift by
-    // ±1px. So enable it only when the effective scaleFactor is integral; disable it (smooth, slightly softer)
-    // otherwise. Guarded so the canvas rebuild only happens when the state actually flips.
+    // pixelPerfect snaps graphics to the physical pixel grid (crisp text), but it re-snaps every frame — so a
+    // MOVING window's contents step by whole pixels instead of gliding. Turn it off while a window is being
+    // dragged or resized (smooth sub-pixel movement), back on otherwise so static UI stays crisp. Guarded so the
+    // canvas rebuild only happens when the state actually flips.
     private void SyncPixelPerfect()
     {
         if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
         if (_canvasComp == null) return;
-        var sf = _canvasComp.scaleFactor;
-        var integral = Mathf.Abs(sf - Mathf.Round(sf)) < 0.01f;
-        // pixelPerfect ON keeps glyphs/graphics on whole pixels (crisp text). At a fractional scaleFactor it re-snaps
-        // every frame, which makes a MOVING window's contents jitter — so turn it off ONLY while a window is being
-        // dragged or resized at fractional scale. Static UI (incl. non-1440p resolutions) then stays crisp.
+        // pixelPerfect ON keeps glyphs/graphics on whole pixels (crisp text) but re-snaps every frame, which makes
+        // a MOVING window's contents step by whole pixels — so turn it off at ANY scale while a window is being
+        // dragged or resized (smooth sub-pixel drag), then back on so static UI re-crisps on release.
         var moving = _activeWinDrag != null || _activeResize >= 0;
-        var want = integral || !moving;
+        var want = !moving;
         if (_canvasComp.pixelPerfect != want) _canvasComp.pixelPerfect = want;
     }
 
