@@ -48,10 +48,12 @@ internal sealed partial class WindowBuilder
     // Null in the sandbox → the logo renders static at the rest pulse.
     private readonly Action<Action<float>>? _registerPulse;
 
-    // Window resize hook: (grip, window root, min size, max size) → the ticker resizes the root on grip drag.
+    // Window resize hook: (grip, window root, min size, max size, editOnly) → the ticker resizes the root on
+    // grip drag. editOnly = the window's EditModeDragOnly flag: a pinned overlay resizes only in layout edit-mode
+    // (mirrors the move gate); free-drag dialogs resize any time.
     // A settable property (not a ctor param) to stay under the ctor-dependency cap; set by WindowRenderer.
     // Null in the sandbox → the grip renders but doesn't resize.
-    internal Action<RectTransform, RectTransform, Vector2, Vector2>? RegisterResize { get; set; }
+    internal Action<RectTransform, RectTransform, Vector2, Vector2, bool>? RegisterResize { get; set; }
 
     // Drag-to-rearrange hooks (CombatMeter raid grid). RegisterDragSlot: (cell rect, key, canDrag, setHover) →
     // the ticker drives the drag (ghost + hover highlight + drop). SetDragSlotDrop: (fromKey,toKey)→ wired once

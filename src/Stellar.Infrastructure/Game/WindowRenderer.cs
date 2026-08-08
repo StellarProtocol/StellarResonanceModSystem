@@ -339,7 +339,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     {
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
-        _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
+        _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));

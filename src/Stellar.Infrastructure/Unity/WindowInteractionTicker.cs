@@ -25,7 +25,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     internal readonly List<UGuiTextInput> Fields = new();
     internal readonly List<(RectTransform Area, Action<float, float> Pick)> DragAreas = new();
     internal readonly List<(RectTransform Handle, RectTransform Target, bool EditOnly)> DragWindows = new();
-    internal readonly List<(RectTransform Grip, RectTransform Target, Vector2 Min, Vector2 Max)> DragResizers = new();
+    internal readonly List<(RectTransform Grip, RectTransform Target, Vector2 Min, Vector2 Max, bool EditOnly)> DragResizers = new();
     internal readonly List<(RectTransform Cell, Action<bool> SetHover)> Hovers = new();
     internal readonly List<Action<float>> Pulses = new();   // brand-logo glow pulse (driven per frame below)
     // Drag-to-rearrange cells (CombatMeter raid grid). Each is both a drag source and a drop target; CanDrag
@@ -250,7 +250,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
 
     private void TickResize()
     {
-        var (_, target, min, max) = DragResizers[_activeResize];
+        var (_, target, min, max, _) = DragResizers[_activeResize];
         if (target == null) return;
         var m = (Vector2)Input.mousePosition;
         var d = (m - _lastMouse) / Scale;   // screen delta → canvas units (sizeDelta is canvas units)
@@ -350,6 +350,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         for (var i = 0; i < DragResizers.Count; i++)
         {
+            // Edit-only windows (pinned overlays) resize only while layout edit-mode is active — mirrors the
+            // move gate in HitWindowHandle. Free-drag dialogs (EditOnly=false) resize any time. When gated off
+            // the grip isn't hit-testable, so the press falls through to whatever's behind it.
+            if (DragResizers[i].EditOnly && !LayoutEditGate.IsEditing) continue;
             if (DragResizers[i].Grip == null || !DragResizers[i].Grip.gameObject.activeInHierarchy) continue;
             if (!RectTransformUtility.RectangleContainsScreenPoint(DragResizers[i].Grip, mp, null)) continue;
             if (FrontWindowBlocks(mp, DragResizers[i].Target)) continue;

@@ -89,7 +89,7 @@ internal sealed partial class WindowBuilder
             drt.anchoredPosition = new Vector2(-(c * 4f), r * 4f);
             var di = dot.AddComponent<Image>(); di.color = new Color(1f, 1f, 1f, 0.34f); di.raycastTarget = false;
         }
-        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight));
+        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight), spec.EditModeDragOnly);
     }
     // Overlay chromes (Tracker/Party/PillStatus) implemented in WindowBuilder.Chrome.Overlay.cs.
 
