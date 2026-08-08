@@ -165,6 +165,25 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         TickDismissables(openedPopup);
         TickRenderHostZoom();
         TickChartZoom();   // .ChartPan.cs
+        SyncResizeGripVisibility();
+    }
+
+    // Drive each resize grip's VISIBILITY from the same condition as its interaction gate (HitResizeGrip):
+    // an edit-only (pinned HUD) grip resizes only in layout edit-mode, so an inert grip during play is
+    // misleading — hide it. Free-drag grips (EditOnly=false) resize any time → always shown. Diff-guarded
+    // (mirror the pixelPerfect idiom) so SetActive only fires on change. Runs after the Prune cull, so null
+    // grips are already removed; the null guard is belt-and-suspenders. Also corrects any grip mounted while
+    // the state is steady (next frame). A hidden grip is ignoreLayout (no layout effect) and doubly
+    // un-hittable (HitResizeGrip already checks EditOnly + activeInHierarchy).
+    private void SyncResizeGripVisibility()
+    {
+        for (var i = 0; i < DragResizers.Count; i++)
+        {
+            var g = DragResizers[i].Grip;
+            if (g == null) continue;
+            var want = !DragResizers[i].EditOnly || LayoutEditGate.IsEditing;
+            if (g.gameObject.activeSelf != want) g.gameObject.SetActive(want);
+        }
     }
 
     // Mouse-down: pick what the press grabs, in priority order. A draggable card claims the pointer first, so
