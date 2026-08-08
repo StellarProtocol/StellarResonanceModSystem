@@ -183,8 +183,12 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // from LayoutEditorService.IsEditing each tick (LayoutEditorOverlay.TickInput) — the SAME flag the ticker's
         // grip/handle gate reads, so what renders and what's draggable stay consistent. A SetVisible(false) window
         // is unmounted upstream in WindowService.TickEntry and never reaches here, so it stays hidden by design.
+        // Scope: the force-show applies ONLY to EditModeDragOnly overlays (the arrangeable HUDs the layout editor
+        // manages via WindowService.EditableElements). Free-drag Tools dialogs (e.g. the login-screen switcher,
+        // Settings, History) are not edit-managed, so they stay gated by their own ShouldRender even in edit mode —
+        // otherwise they'd render with no outline/handle: visible but not arrangeable.
         var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
-                      && !LayoutEditGate.IsEditing;
+                      && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
         var wasHidden = !t.Root.activeSelf;
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
         // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
