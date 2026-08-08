@@ -46,16 +46,12 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.LogSink = log.Info;
         _layoutOverlay = new LayoutEditorOverlay(_layoutEditor, _inputGateway, _layoutStorage, _themeRenderer!, log, _clientState!);
 
-        // Framework-level edit-mode hotkey (Shift+` toggles layout edit mode).
-        // Previously tried Shift+F12, Ctrl+F1, and Shift+F1 — all failed to fire
-        // in-game. Switching to a non-F key (backtick) to rule out F-key-specific
-        // input swallowing under Wine/IL2CPP. Diagnostic log in
-        // UnityInputGateway.TickPoll will surface what the gateway actually sees.
+        // Framework-level edit-mode hotkey (Alt+E toggles layout edit mode).
         _hotkeyService.DeclareAction(
             new HotkeyAction(
                 Id: "framework.layout-edit",
                 Description: "Toggle layout edit mode",
-                SuggestedDefault: new KeyBinding(StellarKeyCode.BackQuote, ModifierKeys.Shift)),
+                SuggestedDefault: new KeyBinding(StellarKeyCode.E, ModifierKeys.Alt)),
             callback: () => _layoutEditor.ToggleEditMode());
     }
 }

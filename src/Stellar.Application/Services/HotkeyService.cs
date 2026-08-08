@@ -236,8 +236,8 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
 
     private bool LoadStoredBlockAll()
     {
-        if (_config is null) return false;
-        var s = _config.Get("block_all_from_game", "false") ?? "false";
+        if (_config is null) return true;
+        var s = _config.Get("block_all_from_game", "true") ?? "true";
         return string.Equals(s, "true", StringComparison.OrdinalIgnoreCase);
     }
 
