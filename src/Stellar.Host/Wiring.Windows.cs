@@ -16,7 +16,7 @@ public sealed partial class BootstrapPlugin
         // window canvas (+ GraphicRaycaster, riding the game EventSystem). Injected into the
         // PluginServices aggregator below; the theme-switch hook rebakes + re-mounts next tick.
         _windowRenderer = new WindowRenderer(log, _themeRenderer!.Colors, _themeRenderer!.Colors, _namedTheme!);
-        _windowService = new WindowService(_windowRenderer, log);
+        _windowService = new WindowService(_windowRenderer, log, _layoutEditor);
         _namedTheme!.ActiveChanged += _windowRenderer.InvalidateTheme;
     }
 }

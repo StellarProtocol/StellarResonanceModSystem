@@ -16,11 +16,15 @@ internal sealed partial class WindowService : IWindowHost
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IPluginLog _log;
+    private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
     private float _accum;
 
-    public WindowService(IWindowRenderer renderer, IPluginLog log)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; }
+    public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
+    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _layoutEditor = layoutEditor; }
+
+    /// <inheritdoc/>
+    public bool IsLayoutEditing => _layoutEditor?.IsEditing ?? false;
 
     /// <summary>Editor-facing: the window overlay canvas's CanvasScaler factor (1 when unscaled). The editor
     /// layer (LayoutEditorOverlay) uses it to convert its screen-px geometry into canvas units.</summary>
