@@ -174,7 +174,17 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // Combine with the perf-overlay Master HUD kill (dev toggle: hide HUD-category windows only — the perf
         // overlay + Settings are Tools on THIS canvas, so a whole-canvas kill would hide the toggle, a trap).
         // SetActive the root (no remount); skip Apply when hidden.
-        var hideAll = hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD);
+        // Layout edit-mode force-show (transient — mirrors the MasterHudKill layering point): while editing, no
+        // window is draw-suppressed, so every registered overlay renders (root active) and is grabbable / movable /
+        // resizable via its grip + drag handle (which require activeInHierarchy — WindowInteractionTicker 357/404).
+        // This beats BOTH the plugin ShouldRender content-gate AND the MasterHudKill dev toggle. It mutates no
+        // persisted or SetVisible state — exiting edit mode reverts each window to its real gated state on the next
+        // apply (~10 Hz). Inert (byte-identical) when not editing (`&& true`). LayoutEditGate.IsEditing is synced
+        // from LayoutEditorService.IsEditing each tick (LayoutEditorOverlay.TickInput) — the SAME flag the ticker's
+        // grip/handle gate reads, so what renders and what's draggable stay consistent. A SetVisible(false) window
+        // is unmounted upstream in WindowService.TickEntry and never reaches here, so it stays hidden by design.
+        var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
+                      && !LayoutEditGate.IsEditing;
         var wasHidden = !t.Root.activeSelf;
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
         // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
