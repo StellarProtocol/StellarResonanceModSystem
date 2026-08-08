@@ -134,10 +134,6 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PerfOverlayWindow? _perfOverlay;
     private Stellar.Abstractions.Services.IWindowControl? _perfOverlayControl;
 
-    // DIAGNOSTIC — remove before merge. Throwaway Game-Phases signal readout (Phase/IsWorldActive/UiState).
-    private PhaseDiagWindow? _phaseDiag;
-    private Stellar.Abstractions.Services.IWindowControl? _phaseDiagControl;
-
     // ── Menu state probe (Wiring.InputLayout.cs) ────────────────────────────
     private Stellar.Infrastructure.Game.PandaMenuStateProbe? _menuState;
 
@@ -253,16 +249,6 @@ public sealed partial class BootstrapPlugin : BasePlugin
                 Description: "Toggle Perf overlay",
                 SuggestedDefault: new KeyBinding(StellarKeyCode.End, ModifierKeys.Shift)),
             callback: () => { if (_perfOverlayControl != null) _perfOverlayControl.SetVisible(!_perfOverlayControl.IsShown); });
-
-        // DIAGNOSTIC — remove before merge. Live Game-Phases readout; Shift+PageUp toggles it. Registered as a
-        // uGUI window in RegisterLauncher (needs _windowService). Reads the live IClientState signals.
-        _phaseDiag = new PhaseDiagWindow(_clientState!);
-        _hotkeyService?.DeclareAction(
-            new HotkeyAction(
-                Id: "framework.phase-diag-toggle",
-                Description: "Toggle Phase Diag overlay",
-                SuggestedDefault: new KeyBinding(StellarKeyCode.PageUp, ModifierKeys.Shift)),
-            callback: () => { if (_phaseDiagControl != null) _phaseDiagControl.SetVisible(!_phaseDiagControl.IsShown); });
     }
 
     private void ApplyLifecyclePatches(
