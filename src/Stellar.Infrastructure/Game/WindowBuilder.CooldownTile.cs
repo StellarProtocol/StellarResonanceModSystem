@@ -133,23 +133,26 @@ internal sealed partial class WindowBuilder
                 Art.texture = t; Art.enabled = true;
                 Art.color = t == null ? CdLoadBg : Color.white;
                 Art.uvRect = new Rect(uv.X, uv.Y, uv.W, uv.H);
-
-                // Icon null → draw the abbreviation over the empty square; non-null icon hides it (auto on late load).
-                var fb = t == null ? El.FallbackLabel?.Invoke() : null;
-                if (!string.IsNullOrEmpty(fb))
-                {
-                    if (fb != _fallback) { _fallback = fb; Fallback.text = fb; }
-                    Fallback.color = CdCol(El.Accent()); FallbackGo.SetActive(true);
-                }
-                else FallbackGo.SetActive(false);
             }
+
+            // Icon null → draw the abbreviation over the empty square; non-null icon hides it (auto on late load).
+            // Poll-diffed on the resolved string EVERY Apply, independent of the tex/uv guard, so a tile that is
+            // icon-less from its first Apply (and runtime toggles) still shows/hides the label correctly.
+            var fb = tex == null ? (El.FallbackLabel?.Invoke() ?? "") : "";
+            if (fb != _fallback)
+            {
+                _fallback = fb;
+                Fallback.text = fb;
+                FallbackGo.SetActive(fb.Length > 0);
+            }
+            if (fb.Length > 0) Fallback.color = CdCol(El.Accent());
 
             var accent = El.Accent();
             if (!_initAccent || !accent.Equals(_accent))
             {
                 _initAccent = true; _accent = accent;
                 var c = CdCol(accent);
-                Outline.color = c; FillImg.color = c; Secs.color = c; Fallback.color = c;
+                Outline.color = c; FillImg.color = c; Secs.color = c;
             }
 
             var f = El.Fill01(); if (f < 0f) f = 0f; else if (f > 1f) f = 1f;
