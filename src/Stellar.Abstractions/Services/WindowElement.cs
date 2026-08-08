@@ -268,4 +268,7 @@ public sealed record CooldownTileElement(
 {
     /// <summary>When non-null, clicking anywhere on the tile calls this action.</summary>
     public Action? OnClick { get; init; }
+
+    /// <summary>Drawn centered on the tile only when Icon() is null (e.g. a 2-letter abbreviation). Null/empty = nothing.</summary>
+    public Func<string>? FallbackLabel { get; init; }
 }
