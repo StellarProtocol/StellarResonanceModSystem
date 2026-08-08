@@ -101,7 +101,7 @@ internal sealed partial class LayoutEditorOverlay
             Enabled: () => _editor.SelectedWindowId != null));
         items.Add(new ButtonElement(() => "Reset all", ResetAllWindows));
         items.Add(new SpacerElement(10f));
-        items.Add(new TextElement(() => "Shift+` to exit", () => _theme.Colors.MenuMuted, Width: 104f));
+        items.Add(new ButtonElement(() => "Exit", () => _editor.ToggleEditMode()));
         items.Add(new SpacerElement());
         // Column wrap so the Row gets full panel width (childForceExpandWidth) → the flex spacers can centre.
         return new ColumnElement(new HudElement[] { new RowElement(items.ToArray(), Gap: 6f) });

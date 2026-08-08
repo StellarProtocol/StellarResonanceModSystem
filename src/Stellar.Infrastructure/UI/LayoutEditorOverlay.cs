@@ -28,8 +28,8 @@ namespace Stellar.Infrastructure.UI;
 /// <para>
 /// Top-center toolbar (drawn AFTER per-window chrome so it sits on top): mint
 /// "Layout edit mode" label, selected-window readout, slot picker (4 toggle
-/// buttons), [Reset selected] + [Reset all] buttons, and a "Shift+` to exit"
-/// hint. Toolbar rendering lives in <c>LayoutEditorOverlay.Toolbar.cs</c>.
+/// buttons), [Reset selected] + [Reset all] buttons, and an [Exit] button that
+/// leaves edit mode. Toolbar rendering lives in <c>LayoutEditorOverlay.Toolbar.cs</c>.
 /// </para>
 /// </remarks>
 internal sealed partial class LayoutEditorOverlay
