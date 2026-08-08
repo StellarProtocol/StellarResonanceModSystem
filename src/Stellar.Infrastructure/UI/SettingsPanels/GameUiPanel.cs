@@ -34,17 +34,11 @@ internal sealed partial class GameUiPanel
         foreach (var e in _nativeUi.Entries) rows.Add(EntryRow(e));
         return new ColumnElement(new HudElement[]
         {
-            new RowElement(new HudElement[]
-            {
-                new ButtonElement(
-                    () => _layoutEditor.IsEditing ? "Exit layout editing" : "Enter layout editing",
-                    () => _layoutEditor.ToggleEditMode()),
-                new TextElement(() => "Arrange your HUD overlays on screen.", () => _theme.Colors.MenuMuted),
-            }),
             new TextElement(() => "(i) Move or hide game HUD elements."),
             new ScrollElement(new ColumnElement(rows.ToArray()), 220f),
             new RowElement(new HudElement[]
             {
+                new ButtonElement(() => "Enter layout editing", () => { if (!_layoutEditor.IsEditing) _layoutEditor.ToggleEditMode(); }),
                 new ButtonElement(() => "Reset all", () => _nativeUi.ResetAll()),
                 new ButtonElement(() => "Recon paths…", () => ReconWalk()),
             }),
