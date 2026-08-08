@@ -42,6 +42,21 @@ public class GameEnvironmentServiceTests
         Assert.Equal("sea", svc.RegionCode);
     }
 
+    // Regression: the Steam SEA build's process exe is StarSEA_STEAM.exe (confirmed
+    // 2026-08-07 — reported as region Unknown → uploads withheld). Prefix matching on
+    // "StarSEA" resolves it to SEA without a per-channel row. See UnknownExecutable_*
+    // below, which pins that the prefix does NOT over-match an unrelated exe.
+    [Fact]
+    public void SteamSeaExecutable_DetectsSea()
+    {
+        var svc = new GameEnvironmentService(
+            new StubInstallInfo { GameRootPath = SeaRoot, ExecutableName = "StarSEA_STEAM.exe" },
+            new StubConfigSection());
+        Assert.Equal(GameRegion.Sea, svc.Region);
+        Assert.Equal("sea", svc.RegionCode);
+        Assert.Equal("install-marker", svc.RegionSource);
+    }
+
     // Real JP install layout (owner's machine, 2026-07-11): Windows path, same
     // StarLauncher/release_<ver>/game_mini shape as SEA, executable StarASIA.exe.
     private const string JpRoot = @"E:\bpsr\StarLauncher\game\release_2.11\game_mini";

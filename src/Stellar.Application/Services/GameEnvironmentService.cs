@@ -16,18 +16,19 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed class GameEnvironmentService : IGameEnvironment
 {
-    // Install marker table: executable file name → region. Both rows read off real
-    // installs: SEA = Tencent `StarSEA.exe`; JP = `StarASIA.exe` (owner's JP install,
-    // 2026-07-11 — same `StarLauncher/game/release_<ver>/game_mini` layout as SEA, so
-    // the release_<ver> version rule below covers both).
-    // CAVEAT (owner, 2026-07-11): Steam distributions exist and their exe names are
-    // unverified — an unlisted exe detects as Unknown, which fails SAFE (boot log says
-    // so, upload plugins withhold, `environment.region` config overrides). When a Steam
-    // install surfaces, read its exe name off the install dir and add a row here.
-    private static readonly (string ExeName, GameRegion Region)[] ExeMarkers =
+    // Install marker table: executable-name PREFIX → region. Matched with StartsWith so
+    // every distribution channel of a regional client resolves off ONE row: StarLauncher
+    // (`StarSEA.exe` / `StarASIA.exe`) and Steam (`StarSEA_STEAM.exe`, confirmed 2026-08-07 —
+    // SEA client, flat install dir with doorstop/winhttp inject) both match, as would any
+    // future store build (`StarSEA_EPIC.exe`, …). The regional prefix is authoritative:
+    // "StarSEA*" = SEA, "StarASIA*" = JP. An exe matching neither prefix detects as Unknown,
+    // which fails SAFE (boot log says so, upload plugins withhold, `environment.region`
+    // config overrides). NOTE: the Steam build's dir has no `release_<ver>` segment, so
+    // GameVersion parses to "unknown" there — cosmetic only, not gated on for uploads.
+    private static readonly (string ExePrefix, GameRegion Region)[] ExeMarkers =
     {
-        ("StarSEA.exe", GameRegion.Sea),
-        ("StarASIA.exe", GameRegion.Jp),
+        ("StarSEA",  GameRegion.Sea),
+        ("StarASIA", GameRegion.Jp),
     };
 
     public GameRegion Region { get; }
@@ -58,8 +59,8 @@ internal sealed class GameEnvironmentService : IGameEnvironment
         var exe = install.ExecutableName;
         if (exe is not null)
         {
-            foreach (var (name, region) in ExeMarkers)
-                if (string.Equals(exe, name, StringComparison.OrdinalIgnoreCase))
+            foreach (var (prefix, region) in ExeMarkers)
+                if (exe.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                     return (region, "install-marker");
         }
         return (GameRegion.Unknown, "install-marker");
