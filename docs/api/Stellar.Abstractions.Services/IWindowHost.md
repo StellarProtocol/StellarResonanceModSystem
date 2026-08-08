@@ -10,6 +10,7 @@ public interface IWindowHost
 
 | name | description |
 | --- | --- |
+| [IsLayoutEditing](IWindowHost/IsLayoutEditing.md) { get; } | True while the user is in layout edit-mode (Shift+`), when overlays are force-shown for arranging even out of their normal context. A HUD's content Funcs can read this to render example / placeholder values (so the layout is legible while positioning) instead of the empty/zero they'd return out of context — e.g. `() => _services.Windows.IsLayoutEditing ? "1234" : Live()`. Polled each refresh (~10 Hz); flips within ~100 ms of entering/leaving edit-mode. |
 | [Find](IWindowHost/Find.md)(…) | Look up a registered window by id (host-side composition / sibling addressing). |
 | [Register](IWindowHost/Register.md)(…) | Register a window. Built when its canvas is available; returns a handle to manage it. (2 methods) |
 

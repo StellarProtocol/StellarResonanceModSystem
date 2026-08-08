@@ -11,6 +11,7 @@ public record GameTextureElement : IEquatable<HudElement>
 | name | description |
 | --- | --- |
 | [GameTextureElement](GameTextureElement/GameTextureElement.md)(…) | Displays a game-asset texture handle (boxed `UnityEngine.Texture`) at a fixed pixel size, optionally cropped to a UV sub-rect (for atlas icons such as profession crests). The framework re-pulls *Texture* (and *Uv* when set) each frame, so an icon whose async load finishes after the window builds still appears. Renderer-neutral — the handle crosses the boundary as Object. Null texture = an invisible box that keeps its layout slot. The simpler sibling of [`RenderTextureHostElement`](./RenderTextureHostElement.md) (no drag/zoom/pan, no backdrop) and of [`SpriteElement`](./SpriteElement.md) (which takes PNG bytes, not a live texture handle). |
+| [CornerRadius](GameTextureElement/CornerRadius.md) { get; set; } | Corner radius in px for the displayed box. 0 = square (default). Rounds via a stencil Mask. |
 | [Height](GameTextureElement/Height.md) { get; set; } | On-screen height in px. |
 | [Texture](GameTextureElement/Texture.md) { get; set; } | Supplies the boxed texture to display (null while loading / unavailable). |
 | [Uv](GameTextureElement/Uv.md) { get; set; } | Optional dynamic UV sub-rect (0..1, bottom-left origin); null = full texture. Both Funcs are invoked every frame while the element is active in the hierarchy (hidden windows/tabs are skipped; a late-loaded icon binds on its first visible frame) — keep them cheap (cache lookups, no allocation). |
