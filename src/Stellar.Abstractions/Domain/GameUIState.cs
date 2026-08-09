@@ -39,13 +39,15 @@ public enum GameUIState
     Loading        = 1 << 6,
     /// <summary>Match-pop confirm (dungeon / world-boss queue).</summary>
     Matchmaking    = 1 << 7,
+    /// <summary>Generic confirm / OK / system modal dialog (a screen-covering overlay that blocks gameplay attention).</summary>
+    Popup          = 1 << 8,
 
     // ── preset masks (provisional membership — verify cover-vs-overlay in-game) ──
 
     /// <summary>UIs that REPLACE the HUD (not <see cref="LineSelector"/>, which overlays it).</summary>
     GameHudHidden = FullScreenMenu | Cutscene | Loading,
     /// <summary>Any menu-like surface.</summary>
-    AnyMenu       = FullScreenMenu | MainMenu | LineSelector,
+    AnyMenu       = FullScreenMenu | MainMenu | LineSelector | Popup,
     /// <summary>Surfaces that block normal gameplay input/attention.</summary>
-    Blocking      = FullScreenMenu | MainMenu | Dialogue | Cutscene | Loading | Matchmaking,
+    Blocking      = FullScreenMenu | MainMenu | Dialogue | Cutscene | Loading | Matchmaking | Popup,
 }

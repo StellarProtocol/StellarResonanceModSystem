@@ -15,6 +15,7 @@ namespace Stellar.Infrastructure.Game;
 /// <item>Any child of zuiroot/UILayerDramaVideo is active (story cutscene video sequences).</item>
 /// <item>Any child of zuiroot/UILayerDramaTop is active (story top-layer overlay).</item>
 /// <item>The dungeon/world-boss queue-pop confirm (common_matching / world_boss_matching) is active under zuiroot/UILayerTop.</item>
+/// <item>The generic confirm/OK dialog (tips_common_popup) is active under zuiroot/UILayerTop, or the system modal dialog (tips_sys_dialog) is active under zuiroot/UILayerSystemTip.</item>
 /// </list>
 /// The loading screen (zuiroot/UILayerSystemTip/loading_window) is intentionally NOT detected here: it is up
 /// exactly while <c>IsWorldActive</c> is false, when this probe (ticked inside the gated <c>_framework.Tick</c>)
@@ -26,6 +27,9 @@ namespace Stellar.Infrastructure.Game;
 /// and match-confirm popups use targeted prefix scans (not any-child) because their
 /// host layers also contain Permanent views active during normal gameplay
 /// (UILayerSystemTip: tips_broadcast/sys_dialog; UILayerTop: hero_dungeon_key).
+/// The confirm/OK dialog (tips_common_popup on UILayerTop) and system modal dialog
+/// (tips_sys_dialog on UILayerSystemTip) likewise use targeted prefix scans for the
+/// same reason — both host layers hold permanent views, so any-child scanning is unsafe.
 /// Confirmed by Lua vm_scripts_path.lua UI view config. See Knowledge Base/GameMenuState.md.
 ///
 /// <para>
@@ -48,6 +52,13 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
     private const string TopLayerName        = "UILayerTop";
     private const string MatchConfirmPrefix  = "common_matching";      // dungeon queue-pop confirm; IsFullScreen=true
     private const string BossMatchPrefix     = "world_boss_matching";  // world-boss queue confirm
+    // Generic confirm/OK dialog (tips/tips_common_popup) — same view for Cancel/Confirm AND OK-only; on UILayerTop,
+    // IsFullScreen=true, SceneMaskType=Overlay. Runtime root => "tips_common_popup(Clone)".
+    private const string PopupDialogPrefix   = "tips_common_popup";
+    // System modal dialog (tips/tips_sys_dialog) — login error/kickoff/important confirms; on UILayerSystemTip,
+    // IsFullScreen=true. Runtime root => "tips_sys_dialog(Clone)".
+    private const string SysTipLayerName     = "UILayerSystemTip";
+    private const string SysDialogPrefix     = "tips_sys_dialog";
     private const string FuncLayerName       = "UILayerFunc";
     private const string FuncPopupLayerName  = "UILayerFuncPopup";     // full-screen popups: team_enter (team_copy_popup), …
     private const string DramaBottomLayerName = "UILayerDramaBottom";  // NPC dialogue
@@ -97,6 +108,13 @@ internal sealed class PandaMenuStateProbe : IGameMenuState
         // NOTE: GameUIState.Loading is NOT set here — it is owned by the un-gated PandaLoadingScreenProbe
         // (this menu-state probe is frozen during a load, when IsWorldActive is false). See that probe.
         if (MatchConfirmActive(root))                             s |= GameUIState.Matchmaking;
+        // Confirm/OK dialog and system modal dialog: targeted prefix scans (not any-child) because both host
+        // layers hold Permanent views. The (Clone) runtime names are the strong candidates from the Lua ui_config
+        // (tips/tips_common_popup, tips/tips_sys_dialog); if a future dump shows a different runtime root name,
+        // adjust the prefix.
+        if (PrefixChildActive(root, TopLayerName, PopupDialogPrefix)
+         || PrefixChildActive(root, SysTipLayerName, SysDialogPrefix))
+            s |= GameUIState.Popup;
         if (AnyChildActive(root, FuncLayerName) || AnyChildActive(root, FuncPopupLayerName))
             s |= GameUIState.FullScreenMenu;
         if (AnyChildActive(root, DramaBottomLayerName))           s |= GameUIState.Dialogue;
