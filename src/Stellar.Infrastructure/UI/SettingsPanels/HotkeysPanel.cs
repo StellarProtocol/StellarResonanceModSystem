@@ -153,10 +153,10 @@ internal sealed partial class HotkeysPanel
             new RowElement(new HudElement[]
             {
                 new ToggleElement(() => "", Get: () => _blockDirectory.GetBlockAllFromGame(), Set: v => _blockDirectory.SetBlockAllFromGame(v)),
-                // "also" is load-bearing: the annoyance this fixes is BOTH the mod and the game firing on one
-                // press. The old "Block hotkeys from game" named neither the direction nor the benefit.
-                // (Suppression is exact-match on key+modifiers — a blocked Ctrl+F1 leaves bare F1 alone.)
-                new TextElement(() => "Stop the game from also reacting to these keys"),
+                // Direction-first wording: the mod hotkey does NOT pass through to the game (so one press
+                // doesn't fire both). (Suppression is exact-match on key+modifiers — a blocked Ctrl+F1 leaves
+                // bare F1 alone.)
+                new TextElement(() => "Don't pass hotkeys through to the game"),
             }, Gap: 6f),
             new SeparatorElement(),
             new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),

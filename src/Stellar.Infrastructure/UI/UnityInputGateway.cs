@@ -75,6 +75,15 @@ internal sealed class UnityInputGateway : IInputGateway
 
     public IReadOnlyList<StellarKeyCode> PressedKeysThisFrame => _pressedScratch;
 
+    // Level (held) state for a single key — used by hold-to-do hotkeys (e.g. hold-to-hide-HUD). Mirrors the
+    // Input.GetKey usage in TickPoll; main-thread, called from the framework tick. try/catch guards the very
+    // early boot window where the input subsystem is not yet ready.
+    public bool IsKeyHeld(StellarKeyCode key)
+    {
+        try { return Input.GetKey((KeyCode)key); }
+        catch { return false; }
+    }
+
     public ModifierKeys CurrentModifiers
     {
         get

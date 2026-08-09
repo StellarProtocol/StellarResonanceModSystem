@@ -5,6 +5,10 @@ namespace Stellar.Host;
 public sealed partial class BootstrapPlugin
 {
     private bool _perfFlagsLogged;
+    // Hold-to-hide-HUD (framework.hud-hold) edge state. Written ONLY on the press/release edge (see
+    // TickInputAndHotkeys) so it never clobbers the Alt+H toggle or the perf-overlay checkbox during steady state.
+    private bool _hudHoldActive;      // last tick's hold state (edge detect)
+    private bool _hudHoldSavedKill;   // MasterHudKill value captured when the hold began, restored on release
     // Frame-rate uncap delegate — diff-state and Unity writes live in Infrastructure.FrameRateReconciler
     // behind IFrameRateLimiter; injected by Host after all services are constructed.
     private Stellar.Application.Abstractions.IFrameRateLimiter? _frameLimiter;
@@ -215,6 +219,21 @@ public sealed partial class BootstrapPlugin
     {
         _inputGateway?.TickPoll();
         _hotkeyService?.Tick();
+        // Hold-to-hide-HUD: poll the (default-unbound) framework.hud-hold action's LEVEL state right after the
+        // hotkey Tick (so it sees this frame's freshly-polled input). Write MasterHudKill ONLY on the press/release
+        // EDGE — on press, capture the current MasterHudKill and force it true; on release, revert to that captured
+        // value. So it never clobbers the Alt+H toggle or the perf-overlay checkbox during steady state, and a
+        // release restores the pre-hold state (HUD stays hidden if it was toggle-hidden, shows again if it wasn't).
+        if (_hotkeyService is { } hk)
+        {
+            var held = hk.IsActionHeld("framework.hud-hold");
+            if (held != _hudHoldActive)
+            {
+                if (held) { _hudHoldSavedKill = Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill; Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = true; }
+                else      { Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = _hudHoldSavedKill; }
+                _hudHoldActive = held;
+            }
+        }
         _noticeTipService?.Tick();
     }
 

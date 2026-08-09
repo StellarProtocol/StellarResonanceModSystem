@@ -177,6 +177,12 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
         }
     }
 
+    /// <summary>Level (held) query for hold-to-do actions polled each tick. An unbound action (null
+    /// CurrentBinding) always returns false, so a default-unbound hold does nothing until the user binds it.</summary>
+    public bool IsActionHeld(string actionId)
+        => _actions.TryGetValue(actionId, out var a) && a.CurrentBinding is { } b
+           && _input.CurrentModifiers == b.Modifiers && _input.IsKeyHeld(b.Key);
+
     private KeyBinding? ResolveBinding(HotkeyAction action)
     {
         // Persisted user choice trumps SuggestedDefault. "_unbound_" sentinel

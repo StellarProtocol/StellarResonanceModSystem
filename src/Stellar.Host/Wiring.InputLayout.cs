@@ -53,5 +53,36 @@ public sealed partial class BootstrapPlugin
                 Description: "Toggle layout edit mode",
                 SuggestedDefault: new KeyBinding(StellarKeyCode.E, ModifierKeys.Alt)),
             callback: () => _layoutEditor.ToggleEditMode());
+
+        // HUD-visibility hotkeys (Alt+H toggle + unbound hold-to-hide). Extracted to keep
+        // BuildInputAndLayoutServices under the STELLAR0002 50-LoC gate.
+        DeclareHudVisibilityHotkeys();
+    }
+
+    private void DeclareHudVisibilityHotkeys()
+    {
+        // Framework-level HUD-toggle hotkey (Alt+H hides/shows all HUD-category overlays).
+        // Sets PerfControls.MasterHudKill, which WindowRenderer.ApplyValues reads to hide only
+        // HUD-category windows (Tools/Debug/Settings untouched). Runtime static → resets to
+        // false on process restart, so it is intentionally NOT persisted.
+        _hotkeyService!.DeclareAction(
+            new HotkeyAction(
+                Id: "framework.hud-toggle",
+                Description: "Toggle all HUD overlays",
+                SuggestedDefault: new KeyBinding(StellarKeyCode.H, ModifierKeys.Alt)),
+            callback: () => Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill
+                            = !Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill);
+
+        // Framework-level HOLD-to-hide-HUD hotkey (UNBOUND by default — user binds it in Settings → Hotkeys).
+        // Hides all HUD-category overlays WHILE HELD and restores on release. Effect is polled each tick via
+        // HotkeyService.IsActionHeld in TickInputAndHotkeys (edge-detected there), so the callback is a no-op.
+        // Composes with the Alt+H toggle and the perf-overlay "Master HUD kill" checkbox: on release MasterHudKill
+        // reverts to whatever it was before the hold began, not unconditionally false.
+        _hotkeyService!.DeclareAction(
+            new HotkeyAction(
+                Id: "framework.hud-hold",
+                Description: "Hold to hide all HUD overlays",
+                SuggestedDefault: null),          // unbound by default
+            callback: () => { });                  // no press action; effect is polled via IsActionHeld each tick
     }
 }

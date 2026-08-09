@@ -244,8 +244,10 @@ public sealed class HotkeyServiceTests
     private sealed class FakeInputGateway : IInputGateway
     {
         private readonly List<StellarKeyCode> _pressed = new();
+        private readonly HashSet<StellarKeyCode> _held = new();
         public IReadOnlyList<StellarKeyCode> PressedKeysThisFrame => _pressed;
         public ModifierKeys CurrentModifiers { get; private set; }
+        public bool IsKeyHeld(StellarKeyCode key) => _held.Contains(key);
         public Resolution CurrentResolution => new(1920, 1080);
         public (float X, float Y) PointerPosition => (0f, 0f);
         public bool LeftMouseDown => false;
@@ -253,8 +255,10 @@ public sealed class HotkeyServiceTests
         public int CurrentFrame => 1;   // tests don't exercise frame-dedupe — Tick() takes no frame arg
 
         public void Press(StellarKeyCode key) => _pressed.Add(key);
+        public void Hold(StellarKeyCode key) => _held.Add(key);
+        public void Release(StellarKeyCode key) => _held.Remove(key);
         public void SetModifiers(ModifierKeys m) => CurrentModifiers = m;
-        public void Clear() { _pressed.Clear(); CurrentModifiers = ModifierKeys.None; }
+        public void Clear() { _pressed.Clear(); _held.Clear(); CurrentModifiers = ModifierKeys.None; }
     }
 
     private sealed class NullLog : IPluginLog

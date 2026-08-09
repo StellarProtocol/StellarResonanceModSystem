@@ -15,6 +15,9 @@ internal interface IInputGateway
     /// <summary>Modifier flags currently held.</summary>
     ModifierKeys CurrentModifiers { get; }
 
+    /// <summary>Is this key currently held down this frame — level state, not the pressed-this-frame edge.</summary>
+    bool IsKeyHeld(StellarKeyCode key);
+
     /// <summary>Current screen dimensions (Screen.width × Screen.height).</summary>
     Resolution CurrentResolution { get; }
 
