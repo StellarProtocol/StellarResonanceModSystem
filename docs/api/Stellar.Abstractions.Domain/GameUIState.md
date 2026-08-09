@@ -24,9 +24,10 @@ public enum GameUIState
 | Cutscene | `0x20` | Story cutscene video / top overlay. |
 | Loading | `0x40` | Loading screen. |
 | Matchmaking | `0x80` | Match-pop confirm (dungeon / world-boss queue). |
+| Popup | `0x100` | Generic confirm / OK / system modal dialog (a screen-covering overlay that blocks gameplay attention). |
 | GameHudHidden | `0x62` | UIs that REPLACE the HUD (not LineSelector, which overlays it). |
-| AnyMenu | `0xE` | Any menu-like surface. |
-| Blocking | `0xF6` | Surfaces that block normal gameplay input/attention. |
+| AnyMenu | `0x10E` | Any menu-like surface. |
+| Blocking | `0x1F6` | Surfaces that block normal gameplay input/attention. |
 
 ## See Also
 
