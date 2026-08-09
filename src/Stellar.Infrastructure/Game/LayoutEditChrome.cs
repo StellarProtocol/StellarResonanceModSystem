@@ -8,17 +8,8 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>One editable element's edit-mode chrome request: its screen rect (top-left / y-down domain
 /// coords, same as IInputGateway.PointerPosition), the outline/handle colour (orange unselected / yellow
 /// selected / red errored), and the label.</summary>
-internal readonly struct EditChromeItem
-{
-    public readonly WindowRect Rect;
-    public readonly Color Color;
-    public readonly string Label;
-    public readonly string Id;
-    public readonly bool Visible;
-    public readonly bool CanHide;
-    public EditChromeItem(WindowRect rect, Color color, string label, string id, bool visible, bool canHide)
-    { Rect = rect; Color = color; Label = label; Id = id; Visible = visible; CanHide = canHide; }
-}
+internal readonly record struct EditChromeItem(
+    WindowRect Rect, Color Color, string Label, string Id, bool Visible, bool CanHide, bool Resizable);
 
 /// <summary>
 /// uGUI renderer for layout edit-mode chrome — a screen-space overlay canvas with a grow-only pool of
@@ -110,6 +101,10 @@ internal sealed class LayoutEditChrome
         // Dim the whole chrome (outline + handle + label) when hidden, so it reads as a re-enable ghost.
         var a = data.Visible ? 1f : 0.40f;
         it.Border.color = Fade(data.Color, a);
+        // The corner square is a resizability indicator — show it only for resizable windows. Set per-tick (not
+        // just at build) because Items are pooled/reused across the changing editable set, so a reused Item must
+        // pick up the CURRENT element's resizability. When shown it still fades with the rest of the ghost chrome.
+        if (it.Handle.gameObject.activeSelf != data.Resizable) it.Handle.gameObject.SetActive(data.Resizable);
         it.Handle.color = Fade(data.Color, a);
         it.Label.color  = Fade(LabelColor, a);
         it.Label.text   = data.Label;

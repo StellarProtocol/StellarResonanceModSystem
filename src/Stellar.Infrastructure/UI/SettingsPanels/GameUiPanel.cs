@@ -15,12 +15,14 @@ internal sealed partial class GameUiPanel
     private readonly NativeUiService _nativeUi;
     private readonly ITheme _theme;
     private readonly IPluginLog _log;
+    private readonly LayoutEditorService _layoutEditor;
 
-    public GameUiPanel(NativeUiService nativeUi, ITheme theme, IPluginLog log)
+    public GameUiPanel(NativeUiService nativeUi, ITheme theme, IPluginLog log, LayoutEditorService layoutEditor)
     {
         _nativeUi = nativeUi;
         _theme = theme;
         _log = log;
+        _layoutEditor = layoutEditor;
     }
 
     /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration). Per-entry
@@ -36,6 +38,7 @@ internal sealed partial class GameUiPanel
             new ScrollElement(new ColumnElement(rows.ToArray()), 220f),
             new RowElement(new HudElement[]
             {
+                new ButtonElement(() => "Enter layout editing", () => { if (!_layoutEditor.IsEditing) _layoutEditor.ToggleEditMode(); }),
                 new ButtonElement(() => "Reset all", () => _nativeUi.ResetAll()),
                 new ButtonElement(() => "Recon paths…", () => ReconWalk()),
             }),

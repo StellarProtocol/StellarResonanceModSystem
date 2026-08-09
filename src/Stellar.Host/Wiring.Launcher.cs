@@ -13,6 +13,7 @@ public sealed partial class BootstrapPlugin
     private LauncherView? _launcherView;
     private IWindowControl? _launcherControl;
     private INativeUiElementHandle? _railButtonHandle;
+    private INativeUiElementHandle? _loginSidebarButtonHandle;
 
     private void BuildLauncherServices()
     {
@@ -39,15 +40,24 @@ public sealed partial class BootstrapPlugin
             NativeUiAnchor.MainMenuRail, "Stellar", IconKey: null,
             Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
             IconPng: LauncherIcons.Get("stellar")));
-        log.Info("[Launcher] uGUI launcher + Stellar rail button registered");
+
+        // Same Stellar icon injected into the TITLE-SCREEN login sidebar (dark-circle styling applied by the
+        // adapter for this anchor). login_main only exists at the login screen, so the injection service's
+        // ~5 Hz availability probe injects it there only and self-heals if the game destroys the view.
+        _loginSidebarButtonHandle = _uguiInjection!.Register(new MenuButtonSpec(
+            NativeUiAnchor.LoginSidebar, "Stellar", IconKey: null,
+            Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
+            IconPng: LauncherIcons.Get("stellar")));
+        log.Info("[Launcher] uGUI launcher + Stellar rail button + login-sidebar button registered");
     }
 
     private static void Toggle(IWindowControl? c) { if (c != null) c.SetVisible(!c.IsShown); }
 
-    private static WindowSpec LauncherSpec()
+    private WindowSpec LauncherSpec()
         // GlassMenu frosted frame, NO chrome title bar — the launcher self-draws its header in the body (top in
         // Full/vertical, a LEFT strip in horizontal). AutoSizeWidth tracks the active mode. Keeps the
         // "settings.hub" id so the saved drag POSITION carries over. Draggable (whole frame); the body draws ✕.
+        // Framework chrome — shown in every phase (title/menus) EXCEPT hidden over the loading screen.
         => new WindowSpec("settings.hub", "", new WindowRect(2071, 1225, 420, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
+            { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
 }

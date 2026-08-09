@@ -32,7 +32,6 @@ internal sealed class PluginServices : IPluginServices
     public IHotkeys Hotkeys { get; }
     public INamedTheme NamedTheme { get; }
     public INativeUiHost NativeUi { get; }
-    public IHudHost Hud { get; }
     public IWindowHost Windows { get; }
     public ILauncher Launcher { get; }
     public IGameAssets GameAssets { get; }
@@ -47,6 +46,8 @@ internal sealed class PluginServices : IPluginServices
     public IDungeonState Dungeon { get; }
     public IEntityTransforms EntityTransforms { get; }
     public IGameEnvironment GameEnvironment { get; }
+    public ILua Lua { get; }
+    public IHarmonyHost Harmony { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -75,7 +76,6 @@ internal sealed class PluginServices : IPluginServices
         IHotkeys hotkeys,
         INamedTheme namedTheme,
         INativeUiHost nativeUi,
-        IHudHost hud,
         IWindowHost windows,
         ILauncher launcher,
         IGameAssets gameAssets,
@@ -90,7 +90,9 @@ internal sealed class PluginServices : IPluginServices
         IDungeonState dungeon,
         IEntityTransforms entityTransforms,
         IGameEnvironment gameEnvironment,
-        IPluginDataStore data)
+        IPluginDataStore data,
+        ILua lua,
+        IHarmonyHost harmony)
     {
         Log = log;
         Framework = framework;
@@ -118,7 +120,6 @@ internal sealed class PluginServices : IPluginServices
         Hotkeys = hotkeys;
         NamedTheme = namedTheme;
         NativeUi = nativeUi;
-        Hud = hud;
         Windows = windows;
         Launcher = launcher;
         GameAssets = gameAssets;
@@ -134,5 +135,7 @@ internal sealed class PluginServices : IPluginServices
         EntityTransforms = entityTransforms;
         GameEnvironment = gameEnvironment;
         Data = data;
+        Lua = lua;
+        Harmony = harmony;
     }
 }

@@ -1,6 +1,6 @@
 # IPlayerIdentity.Name property
 
-Character display name; null when not yet loaded.
+Character display name; null when not yet known. May be set while [`IsAvailable`](./IsAvailable.md) is `false`.
 
 ```csharp
 public string? Name { get; }

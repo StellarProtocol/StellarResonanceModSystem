@@ -27,8 +27,9 @@ internal sealed class PluginHost : IDisposable
     private readonly PluginRegistry _registry;
     private readonly IPluginLog _log;
     private readonly TickScheduler _scheduler;
+    private readonly IHarmonyHostFactory _harmonyFactory;
 
-    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler)
+    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler, IHarmonyHostFactory harmonyFactory)
     {
         _services = services;
         _configFactory = configFactory;
@@ -36,6 +37,7 @@ internal sealed class PluginHost : IDisposable
         _registry = registry;
         _log = services.Log;
         _scheduler = scheduler;
+        _harmonyFactory = harmonyFactory;
     }
 
     public void LoadFrom(string directory)
@@ -98,19 +100,42 @@ internal sealed class PluginHost : IDisposable
         // Shared mutable cell: both the factory lambda (writer) and the onDispose
         // lambda (reader) capture the same StrongBox so each soft-cycle enable
         // updates the reference that onDispose will unregister.
+        // frameworkCell → scheduler unregister; harmonyCell → unpatch every instance the plugin created.
         var frameworkCell = new StrongBox<PerPluginFramework?>();
+        var harmonyCell = new StrongBox<IHarmonyHost?>();
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
-        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData);
+        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid));
 
         Func<IPluginServices, object> factory = sharedServices =>
-            BuildAndInvoke(ctor, bindContext, frameworkCell, sharedServices);
+            BuildAndInvoke(ctor, bindContext, frameworkCell, harmonyCell, sharedServices);
 
         _registry.Register(pluginGuid, displayName, version, factory,
-            onDispose: () => frameworkCell.Value?.Unregister());
+            onDispose: () => { frameworkCell.Value?.Unregister(); (harmonyCell.Value as IDisposable)?.Dispose(); });
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
+    }
+
+    /// <summary>
+    /// The plugin's own <see cref="IHotkeys"/> — every action it declares gets tagged with
+    /// <paramref name="pluginGuid"/> so Settings → Hotkeys can group by real plugin identity
+    /// instead of guessing the owner from the action id's prefix.
+    /// Resolved lazily (not in the ctor) because the shared services bag is fully wired by the
+    /// time LoadFrom runs. Returns null when the shared service doesn't expose the internal
+    /// declaration sink, in which case PerPluginServices falls back to the untagged shared one.
+    /// Extracted from RegisterOne to keep it under the 50-LoC gate (STELLAR0002).
+    /// </summary>
+    private IHotkeys? ScopedHotkeys(string pluginGuid)
+    {
+        if (_services.Hotkeys is IHotkeyOwnedDeclarations sink) return new PerPluginHotkeys(pluginGuid, sink);
+        // Unreachable today (HotkeyService implements the sink). Reachable if anyone later wraps the
+        // shared IHotkeys in a decorator without forwarding the sink — and the symptom would be
+        // invisible: every action silently falls back to PluginId == null, so the Hotkeys panel
+        // groups by id prefix, which looks exactly like working correctly. Log it so it isn't silent.
+        _log.Warning($"[PluginHost] shared IHotkeys ({_services.Hotkeys.GetType().Name}) does not expose " +
+                     $"owner-tagged declarations; '{pluginGuid}' hotkeys will group by id prefix, not plugin identity.");
+        return null;
     }
 
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
@@ -121,11 +146,15 @@ internal sealed class PluginHost : IDisposable
         ConstructorInfo ctor,
         PluginBindContext bind,
         StrongBox<PerPluginFramework?> frameworkCell,
+        StrongBox<IHarmonyHost?> harmonyCell,
         IPluginServices sharedServices)
     {
         var perPluginFramework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
         frameworkCell.Value = perPluginFramework;
-        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework, bind.PerPluginData);
+        var perPluginHarmony = _harmonyFactory.Create(bind.PluginGuid);
+        harmonyCell.Value = perPluginHarmony;
+        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework,
+                                                     bind.PerPluginData, bind.PerPluginHotkeys, perPluginHarmony);
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -133,14 +162,17 @@ internal sealed class PluginHost : IDisposable
         catch
         {
             perPluginFramework.Unregister();
+            (perPluginHarmony as IDisposable)?.Dispose();
             throw;
         }
     }
 
     // Bundles per-plugin bind inputs so BuildAndInvoke's parameter list stays
     // within the STELLAR0003 cap (>5 params = error) as A4 adds perPluginData
-    // alongside the existing pluginGuid + perPluginConfig.
-    private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig, IPluginDataStore PerPluginData);
+    // alongside the existing pluginGuid + perPluginConfig. PerPluginHotkeys rides
+    // along here for the same reason — BuildAndInvoke is already at the cap.
+    private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig,
+                                                    IPluginDataStore PerPluginData, IHotkeys? PerPluginHotkeys);
 
     public void Dispose()
     {

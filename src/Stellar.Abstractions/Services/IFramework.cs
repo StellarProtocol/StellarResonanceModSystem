@@ -3,9 +3,11 @@ using System;
 namespace Stellar.Abstractions.Services;
 
 /// <summary>
-/// Per-frame callbacks driven by the game's main update loop.
+/// Per-frame callbacks driven by the game's main update loop. Timing / main-thread-marshalling members
+/// (<see cref="IFrameworkTiming.Post"/>, <see cref="IFrameworkTiming.Every"/>,
+/// <see cref="IFrameworkTiming.TimeNow"/>) are inherited from <see cref="IFrameworkTiming"/>.
 /// </summary>
-public interface IFramework
+public interface IFramework : IFrameworkTiming
 {
     /// <summary>Fired once per game frame. Argument is deltaTime in seconds.</summary>
     event Action<float> Update;
@@ -18,6 +20,15 @@ public interface IFramework
 
     /// <summary>Current display height in pixels. Updated once per frame before <see cref="Update"/> fires.</summary>
     int ScreenHeight { get; }
+
+    /// <summary>Width of the window overlay in CANVAS UNITS (design space) = ScreenWidth ÷ UI scaleFactor. Position
+    /// and size windows in these units so they scale with the UI (WindowRect is in canvas units). For HUD sizing
+    /// that must track physical pixels, use <see cref="ScreenWidth"/> instead.</summary>
+    int CanvasWidth { get; }
+
+    /// <summary>Height of the window overlay in CANVAS UNITS (design space) = ScreenHeight ÷ UI scaleFactor.
+    /// See <see cref="CanvasWidth"/>.</summary>
+    int CanvasHeight { get; }
 
     /// <summary>The rate this plugin is currently ticking at (Hz). Reflects the user's per-plugin
     /// config plus any dynamic ramp this plugin is currently holding.</summary>

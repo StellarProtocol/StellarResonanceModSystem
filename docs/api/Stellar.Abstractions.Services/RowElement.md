@@ -10,9 +10,10 @@ public record RowElement : IEquatable<HudElement>
 
 | name | description |
 | --- | --- |
-| [RowElement](RowElement/RowElement.md)(…) | Horizontal layout container: children arranged left-to-right with optional spacing. |
+| [RowElement](RowElement/RowElement.md)(…) | Horizontal layout container: children arranged left-to-right with optional spacing. (2 constructors) |
 | [Children](RowElement/Children.md) { get; set; } | Child elements arranged horizontally. |
 | [Gap](RowElement/Gap.md) { get; set; } | Spacing in pixels between each child. |
+| [Justify](RowElement/Justify.md) { get; set; } | How children are packed horizontally; default Left. |
 
 ## See Also
 

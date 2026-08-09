@@ -5,7 +5,7 @@ One party member's snapshot. Composed from wire deliveries on the `GrpcTeamNtf` 
 ```csharp
 public PartyMember(long CharId, string? Name, int Profession, int Level, long Hp, long MaxHp, 
     int SceneId, Position3D Position, bool IsOnline, bool IsSelf, int GroupId, int Slot = -1, 
-    int Talent = 0)
+    int Talent = 0, string ProfileUrl = "", string HalfBodyUrl = "")
 ```
 
 ## Remarks
@@ -35,6 +35,8 @@ GroupId — `TeamMemData.group_id`. 0 in non-raid parties; meaningful only when 
 Slot — 0-based position WITHIN the group (the member's order in the team's slot list), from `NotifyTeamGroupUpdate` (`TeamMemberGroupInfo.char_ids` ordering). -1 when not yet known. Lets the raid grid place each member at their exact Team×Slot instead of roster order.
 
 DPS aggregation — query `ICombatLookup.GetLiveDps(member.EntityId)` instead of a per-member DPS field. The combat service aggregates per source EntityId for every entity in AOI, so the same call works for party members, mobs, and randoms uniformly.
+
+ProfileUrl / HalfBodyUrl — CDN URLs of the member's 2D profile / half-body pictures from `TeamMemberSocialData.avatar_info`; empty until the first social sync or when the player has none.
 
 ## See Also
 

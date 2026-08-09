@@ -1,5 +1,7 @@
 # BarElement.Prefix property
 
+Optional fixed-width left caption (e.g. "HP") so stacked bars align in a column.
+
 ```csharp
 public string? Prefix { get; set; }
 ```

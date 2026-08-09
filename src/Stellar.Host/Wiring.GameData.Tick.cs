@@ -1,11 +1,14 @@
 using System;
+using Stellar.Abstractions.Diagnostics;
 
 namespace Stellar.Host;
 
 public sealed partial class BootstrapPlugin
 {
+    [WorldGated]
     private void TryLoadGameDataEagerOnce()
     {
+        if (!_clientState!.IsWorldActive) return;   // reads live game tables — never during the connect handshake
         if (_gameDataEagerLoaded || _gameDataProbe is null || _gameDataService is null || _gameDataLog is null)
         {
             return;
@@ -38,8 +41,10 @@ public sealed partial class BootstrapPlugin
         }
     }
 
+    [WorldGated]
     private void DrainGameDataDeferred()
     {
+        if (!_clientState!.IsWorldActive) return;   // reads live game tables — never during the connect handshake
         if (_gameDataAllLoaded || _gameDataProbe is null || _gameDataService is null || _gameDataLog is null)
         {
             return;

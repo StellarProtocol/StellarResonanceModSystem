@@ -1,5 +1,7 @@
 # BarElement.Label property
 
+Optional numeric/status text; right-aligned beside the bar, or centred on it when [`LabelInside`](./LabelInside.md) is true.
+
 ```csharp
 public Func<string>? Label { get; set; }
 ```

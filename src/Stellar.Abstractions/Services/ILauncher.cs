@@ -35,6 +35,13 @@ public sealed record LauncherEntry(string Title, byte[]? IconPng, string? IconKe
 {
     /// <summary>Full-mode section. Plugins default to <see cref="LauncherGroup.Plugin"/>.</summary>
     public LauncherGroup Group { get; init; } = LauncherGroup.Plugin;
+
+    /// <summary>Optional phase/state gate for the tile's visibility in the launcher menu, evaluated live each
+    /// time the menu draws (a <i>pull</i>, like <see cref="Domain.IRenderGated.ShouldRender"/>). <c>null</c>
+    /// (the default) means the tile is shown in every phase. Return <c>false</c> to hide it — e.g.
+    /// <c>ShouldShow = () =&gt; services.ClientState.Phase == GamePhase.World</c> for a gameplay-only tool.
+    /// Applies only to the plugin tile; the framework's own ⚙ Settings entry is always shown.</summary>
+    public Func<bool>? ShouldShow { get; init; }
 }
 
 /// <summary>

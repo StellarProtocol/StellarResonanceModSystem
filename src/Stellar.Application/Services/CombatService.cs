@@ -181,6 +181,13 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         }
     }
 
+    /// <summary>
+    /// <see cref="ServerNowMs"/> as a wall-clock <see cref="DateTimeOffset"/> in the server time domain.
+    /// Interpolation already lives in <see cref="ServerNowMs"/>; this just projects it. Returns the Unix epoch
+    /// until the first anchor is set (ServerNowMs == 0), preserving the "no server time yet" contract.
+    /// </summary>
+    public DateTimeOffset ServerNow => DateTimeOffset.FromUnixTimeMilliseconds(ServerNowMs);
+
     public IReadOnlyList<CombatEvent> RecentEvents
     {
         get
@@ -371,6 +378,39 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         {
             _buffsByEntity.Clear();
             _localBuffs = Array.Empty<ActiveBuff>();
+        }
+    }
+
+    /// <summary>
+    /// Clear account/character-scoped combat session state on logout: drops all per-entity tracker
+    /// state (<see cref="ResetEntities"/> — this resets the shared <see cref="CombatEntityTracker"/>),
+    /// all buffs (<see cref="ClearAllBuffs"/>), the cached local entity id, the local cooldown set,
+    /// the recent-events ring (so <see cref="RecentEvents"/> returns empty) and any events still
+    /// waiting in the wire queue (so they don't fan out on the next login's first <see cref="Drain"/>).
+    /// These have no other clear path, so without this the next account inherits the previous
+    /// player's self-id / cooldown bar / combat history. Called by the Host OnLogout dispatcher.
+    /// </summary>
+    internal void ClearSession()
+    {
+        ResetEntities();
+        ClearAllBuffs();
+        _localEntityId = EntityId.None;
+        lock (_localCooldownsLock)
+        {
+            _localCooldowns.Clear();
+            _cooldownsVersion++;   // force LocalCooldowns to rebuild an empty snapshot
+        }
+        // Discard any wire-thread events still queued from the previous session so
+        // they don't fan out on the next login's first Drain. ConcurrentQueue, same
+        // TryDequeue drain the Drain() consumer uses — just don't fire them out.
+        while (_queue.TryDequeue(out _)) { }
+        // Clear the recent-events ring under _ringLock and bump _ringVersion via
+        // Interlocked (mirroring Drain()'s produce path) so the next RecentEvents
+        // read rebuilds an empty snapshot instead of returning stale history.
+        lock (_ringLock)
+        {
+            _ring.Clear();
+            Interlocked.Increment(ref _ringVersion);
         }
     }
 

@@ -15,3 +15,6 @@ dotnet_diagnostic.STELLAR0002.severity = error
 dotnet_diagnostic.STELLAR0003.severity = error
 dotnet_diagnostic.STELLAR0004.severity = error
 dotnet_diagnostic.STELLAR0005.severity = error
+# STELLAR0006 (StellarSafety): a [WorldGated] framework method that touches live game state must
+# self-gate on IsWorldActive — a missing guard corrupts the world-connect handshake for everyone.
+dotnet_diagnostic.STELLAR0006.severity = error

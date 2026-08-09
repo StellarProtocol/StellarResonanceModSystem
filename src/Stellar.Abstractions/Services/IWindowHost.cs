@@ -29,6 +29,13 @@ public interface IWindowHost
 
     /// <summary>Look up a registered window by id (host-side composition / sibling addressing).</summary>
     IWindowControl? Find(string id);
+
+    /// <summary>True while the user is in layout edit-mode (Shift+`), when overlays are force-shown for
+    /// arranging even out of their normal context. A HUD's content Funcs can read this to render example /
+    /// placeholder values (so the layout is legible while positioning) instead of the empty/zero they'd
+    /// return out of context — e.g. <c>() => _services.Windows.IsLayoutEditing ? "1234" : Live()</c>.
+    /// Polled each refresh (~10 Hz); flips within ~100 ms of entering/leaving edit-mode.</summary>
+    bool IsLayoutEditing { get; }
 }
 
 /// <summary>Handle to a registered interactive uGUI window. Auto-removed on plugin/framework dispose.</summary>

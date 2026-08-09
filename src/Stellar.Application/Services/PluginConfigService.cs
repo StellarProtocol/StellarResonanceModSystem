@@ -103,6 +103,43 @@ internal sealed class PluginConfigService : IPluginConfig
         }
     }
 
+    private void RemoveByPrefixValue(string sectionName, string prefix)
+    {
+        lock (_lock)
+        {
+            var section = GetOrCreateSectionNodeLocked(sectionName);
+            // Snapshot matching keys first — JsonObject can't be mutated while enumerated.
+            var toRemove = new List<string>();
+            foreach (var kv in section)
+            {
+                if (kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    toRemove.Add(kv.Key);
+                }
+            }
+            foreach (var key in toRemove)
+            {
+                section.Remove(key);
+            }
+        }
+    }
+
+    // Read-side mirror of RemoveByPrefixValue: snapshot the section's keys matching a prefix (the
+    // JsonObject can't be enumerated lazily while the caller reads other values). Backs
+    // IConfigKeyReader.KeysWithPrefix (NativeUiService's closest-resolution fallback).
+    private List<string> KeysWithPrefixValue(string sectionName, string prefix)
+    {
+        lock (_lock)
+        {
+            var section = GetOrCreateSectionNodeLocked(sectionName);
+            var matches = new List<string>();
+            foreach (var kv in section)
+                if (kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                    matches.Add(kv.Key);
+            return matches;
+        }
+    }
+
     private void SaveSection(string sectionName)
     {
         JsonObject clone;
@@ -205,7 +242,7 @@ internal sealed class PluginConfigService : IPluginConfig
         return parsed as JsonObject ?? new JsonObject();
     }
 
-    private sealed class ConfigSection : IConfigSection
+    private sealed class ConfigSection : IConfigSection, Stellar.Application.Abstractions.IConfigKeyReader
     {
         private readonly PluginConfigService _owner;
         private readonly string _name;
@@ -224,5 +261,7 @@ internal sealed class PluginConfigService : IPluginConfig
 
         public void Save() => _owner.SaveSection(_name);
         public void SaveQuiet() => _owner.SaveSectionQuiet(_name);
+        public void RemoveByPrefix(string prefix) => _owner.RemoveByPrefixValue(_name, prefix);
+        public IEnumerable<string> KeysWithPrefix(string prefix) => _owner.KeysWithPrefixValue(_name, prefix);
     }
 }

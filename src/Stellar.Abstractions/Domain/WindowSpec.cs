@@ -9,10 +9,32 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="DefaultRect">Initial position and size applied on first run (before user adjustments are persisted).</param>
 /// <param name="Category">Logical category that determines which group this window appears in within the layout editor.</param>
 /// <param name="Style">Visual chrome style applied to the window frame.</param>
-public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect, WindowCategory Category, WindowPanelStyle Style)
+public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect, WindowCategory Category, WindowPanelStyle Style) : IRenderGated
 {
+    /// <summary>The single source of visibility truth (<c>hide = !ShouldRender()</c>, evaluated each apply ~10 Hz).
+    /// Compiler-<c>required</c>: every <see cref="WindowSpec"/> MUST set it or the build fails. Read whatever you
+    /// want — <c>Phase</c>, <c>UiState</c>, your own state — via the plugin's captured services. Use
+    /// <c>() =&gt; true</c> for always-on chrome, <c>() =&gt; _services.ClientState.Phase == GamePhase.World</c>
+    /// for a gameplay window.</summary>
+    public required Func<bool> ShouldRender { get; init; }
+
     /// <summary>Whether the window is visible on first run (before user toggles via hotkey).</summary>
     public bool StartVisible { get; init; } = true;
+
+    /// <summary>Anchor for the initial placement of <see cref="DefaultRect"/> on the (possibly scaled) window
+    /// canvas. Defaults to <see cref="WindowAnchor.TopLeft"/> = legacy absolute top-left. Use
+    /// <see cref="WindowAnchor.Center"/> etc. to center/corner-anchor without computing the UI scale yourself;
+    /// DefaultRect.X/Y then act as a canvas-unit offset from the anchor. A user's saved drag still overrides this.</summary>
+    public WindowAnchor Anchor { get; init; } = WindowAnchor.TopLeft;
+
+    /// <summary>Which render surface the window's <c>Text</c> / <c>Bar</c> (Default style) / <c>Pill</c> leaves
+    /// use. Defaults to <see cref="SurfaceStyle.Menu"/> = the window theme chrome (unchanged — every existing
+    /// window keeps rendering exactly as before). Set <see cref="SurfaceStyle.HudOverlay"/> to reproduce the
+    /// borderless HUD look for those leaves: shadowed text over the world, rounded HP-bar chrome, and a
+    /// transparent pill chip — byte-identical to the native HUD renderer, so a HUD-path plugin can migrate onto
+    /// the window path with pixel-exact fidelity. Only those three leaf types are affected; all other widgets
+    /// render identically either way. The positional constructor is unchanged, so this is non-breaking.</summary>
+    public SurfaceStyle Surface { get; init; } = SurfaceStyle.Menu;
 
     /// <summary>
     /// When true the window is a movable dialog: drag-by-title-bar (the post-drag rect is
@@ -29,23 +51,6 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// so a window can be draggable without a close button (e.g. the Settings hub).
     /// </summary>
     public bool Closable { get; init; }
-
-    /// <summary>
-    /// When true the framework stops DRAWING this window while a full-screen game
-    /// menu is open (it reappears on close), so combat HUDs behave like the native
-    /// HUD instead of floating over menus. Does NOT change the user's Show/Hide
-    /// state — purely a draw-time suppression. Defaults false.
-    /// </summary>
-    public bool AutoHideBehindGameMenus { get; init; }
-
-    /// <summary>
-    /// When true the framework stops DRAWING this window until the player is logged
-    /// in / in-world, so gameplay HUDs don't float over the title / character-select
-    /// screens. Reappears once logged in. Purely draw-time suppression (does NOT
-    /// change Show/Hide state). Defaults false — debug tools (DebugInfo, AutoNav)
-    /// leave it off so they stay visible pre-login.
-    /// </summary>
-    public bool HideUntilInWorld { get; init; }
 
     /// <summary>
     /// Content-size the window WIDTH to its body instead of fixing it to <see cref="DefaultRect"/>.Width.

@@ -15,8 +15,8 @@ public sealed partial class BootstrapPlugin
         // renderer bakes the frosted GlassMenu chrome from the active menu palette + owns the
         // window canvas (+ GraphicRaycaster, riding the game EventSystem). Injected into the
         // PluginServices aggregator below; the theme-switch hook rebakes + re-mounts next tick.
-        _windowRenderer = new WindowRenderer(log, _themeRenderer!.Colors, _namedTheme!);
-        _windowService = new WindowService(_windowRenderer, log, _menuState!, _clientState!);
+        _windowRenderer = new WindowRenderer(log, _themeRenderer!.Colors, _themeRenderer!.Colors, _namedTheme!);
+        _windowService = new WindowService(_windowRenderer, log, _layoutEditor);
         _namedTheme!.ActiveChanged += _windowRenderer.InvalidateTheme;
     }
 }

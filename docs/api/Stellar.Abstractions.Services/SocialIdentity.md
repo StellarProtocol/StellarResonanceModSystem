@@ -12,17 +12,23 @@ public struct SocialIdentity : IEquatable<SocialIdentity>
 | PartySize | Member count of the player's party from `team_data.team_num`; 0 when solo or absent. |
 | MasterScore | Master-mode season score from `master_mode_dungeon_data.season_score`; 0 when absent or player-hidden (the wire's `is_show` flag is inverted — truthy renders "Hidden" on the game's own card, and we follow the native privacy behaviour). |
 | TitleId | Equipped title id from `personal_zone.title_id`; 0 when none. Resolving the display name requires the dungeon-title game table (deferred). |
+| FashionCollect | Fashion collection-point count from `personal_zone.fashion_collect_point`; 0 when absent. Candidate source for the ID-card "collection points" badge (unconfirmed). |
+| RideCollect | Ride collection-point count from `personal_zone.ride_collect_point`; 0 when absent. |
+| WeaponSkinCollect | Weapon-skin collection-point count from `personal_zone.weapon_skin_collect_point`; 0 when absent. |
 
 ## Public Members
 
 | name | description |
 | --- | --- |
 | [SocialIdentity](SocialIdentity/SocialIdentity.md)(…) | Affiliation/prestige extras from a full-mask social reply (the ID-card fetch requests mask 0 = all sections). Thin-mask replies (nameplate/avatar queries carry identity only) leave these at defaults — values are best-effort, last-reply-wins via the cache. |
-| static [None](SocialIdentity/None.md) { get; } | Empty identity — no guild/party/score/title parsed. |
+| static [None](SocialIdentity/None.md) { get; } | Empty identity — no guild/party/score/title/collect-point data parsed. |
+| [FashionCollect](SocialIdentity/FashionCollect.md) { get; set; } | Fashion collection-point count from `personal_zone.fashion_collect_point`; 0 when absent. Candidate source for the ID-card "collection points" badge (unconfirmed). |
 | [Guild](SocialIdentity/Guild.md) { get; set; } | Guild name from `union_data.name`; empty when guildless or section absent. |
 | [MasterScore](SocialIdentity/MasterScore.md) { get; set; } | Master-mode season score from `master_mode_dungeon_data.season_score`; 0 when absent or player-hidden (the wire's `is_show` flag is inverted — truthy renders "Hidden" on the game's own card, and we follow the native privacy behaviour). |
 | [PartySize](SocialIdentity/PartySize.md) { get; set; } | Member count of the player's party from `team_data.team_num`; 0 when solo or absent. |
+| [RideCollect](SocialIdentity/RideCollect.md) { get; set; } | Ride collection-point count from `personal_zone.ride_collect_point`; 0 when absent. |
 | [TitleId](SocialIdentity/TitleId.md) { get; set; } | Equipped title id from `personal_zone.title_id`; 0 when none. Resolving the display name requires the dungeon-title game table (deferred). |
+| [WeaponSkinCollect](SocialIdentity/WeaponSkinCollect.md) { get; set; } | Weapon-skin collection-point count from `personal_zone.weapon_skin_collect_point`; 0 when absent. |
 
 ## See Also
 

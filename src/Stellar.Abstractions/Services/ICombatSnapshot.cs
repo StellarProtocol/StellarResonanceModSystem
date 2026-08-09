@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 
@@ -26,6 +27,12 @@ public interface ICombatSnapshot
 
     /// <summary>Latest server epoch (ms) seen on the SyncServerTime notify. Zero until first observation.</summary>
     long ServerNowMs { get; }
+
+    /// <summary>The same interpolated server clock as <see cref="ServerNowMs"/> exposed as a wall-clock
+    /// <see cref="DateTimeOffset"/> in the server time domain (server epoch mapped onto local monotonic time,
+    /// so it advances smoothly between the ~5 s SyncServerTime anchors). Reads the Unix epoch (1970) until the
+    /// first server-time observation, matching the <c>ServerNowMs == 0</c> "no server time yet" contract.</summary>
+    DateTimeOffset ServerNow { get; }
 
     /// <summary>Ring buffer of recent events (capacity 500).</summary>
     IReadOnlyList<CombatEvent> RecentEvents { get; }

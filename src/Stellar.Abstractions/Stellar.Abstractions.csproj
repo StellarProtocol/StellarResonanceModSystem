@@ -12,7 +12,16 @@
     <PackageProjectUrl>https://github.com/StellarProtocol/StellarResonanceModSystem</PackageProjectUrl>
     <RepositoryUrl>https://github.com/StellarProtocol/StellarResonanceModSystem.git</RepositoryUrl>
   </PropertyGroup>
-  <!-- Intentionally no references: this layer is the dependency-rule sink. -->
+  <!-- Sole external reference: 0Harmony, because IHarmonyHost.Create returns HarmonyLib.Harmony (the plugin-facing
+       patch-lifecycle contract). Bound to the committed API-only stub in refs/ (Private=false) so this layer still
+       builds without a game install — the game provides the real 0Harmony at runtime, and plugins already carry it
+       via the Stellar.Plugin.InteropRefs package. -->
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(MSBuildThisFileDirectory)../../refs/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
   <!-- Test seam: PerfProbe/PerfControls expose internal override hooks so the
        env gate can be forced on/off in unit tests without a real env var. -->
   <ItemGroup>

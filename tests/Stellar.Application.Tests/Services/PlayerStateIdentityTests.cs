@@ -57,7 +57,7 @@ public sealed class PlayerStateIdentityTests
     public void IdentitySurvivesFailedSample()
     {
         var probe = new FakeProbe { SampleOk = false, IdentityOk = true, Identity = Revette() };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
 
         service.Refresh(probe);
 
@@ -73,7 +73,7 @@ public sealed class PlayerStateIdentityTests
     public void VitalsStayGatedWhenSampleFails()
     {
         var probe = new FakeProbe { SampleOk = false, IdentityOk = true, Identity = Revette() };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
 
         service.Refresh(probe);
 
@@ -98,7 +98,7 @@ public sealed class PlayerStateIdentityTests
             // class this session, and the entity tracks that immediately.
             Sample = new PlayerStateSnapshot { Name = "Revette", Level = 60, Profession = 5, MaxHealth = 15000 },
         };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
 
         service.Refresh(probe);
 
@@ -118,7 +118,7 @@ public sealed class PlayerStateIdentityTests
             SampleOk = true,
             Sample = new PlayerStateSnapshot { Name = null, Level = 0, Profession = 0, MaxHealth = 15000 },
         };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
 
         service.Refresh(probe);
 
@@ -132,7 +132,7 @@ public sealed class PlayerStateIdentityTests
     public void IdentityIsNotDowngradedByALaterUnreadableRecord()
     {
         var probe = new FakeProbe { SampleOk = false, IdentityOk = true, Identity = Revette() };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
         service.Refresh(probe);
 
         // The record goes unreadable (scene teardown). A false return means "not
@@ -149,7 +149,7 @@ public sealed class PlayerStateIdentityTests
     public void CharacterSwitchDropsTheStaleIdentity()
     {
         var probe = new FakeProbe { SampleOk = false, IdentityOk = true, Identity = Revette() };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
         service.Refresh(probe);
         Assert.Equal("Revette", service.Name);
 
@@ -164,12 +164,39 @@ public sealed class PlayerStateIdentityTests
     }
 
     [Fact]
+    public void ClearSessionWipesIdentityAndAvailability()
+    {
+        // A live session establishes both the sticky identity and IsAvailable.
+        var probe = new FakeProbe
+        {
+            IdentityOk = true,
+            Identity = Revette(),
+            SampleOk = true,
+            Sample = new PlayerStateSnapshot { Name = "Revette", Level = 60, Profession = 2, MaxHealth = 15000 },
+        };
+        var service = new PlayerStateService(new StubClientState());
+        service.Refresh(probe);
+        Assert.True(service.IsAvailable);
+        Assert.Equal("Revette", service.Name);
+
+        // Logout must drop everything — the next account can't inherit this identity.
+        // (Refresh is [WorldGated], so it would NOT self-clear; the explicit reset is required.)
+        service.ClearSession();
+
+        Assert.False(service.IsAvailable);
+        Assert.Null(service.Name);
+        Assert.Equal(0, service.Level);
+        Assert.Equal(0, service.Profession);
+        Assert.Equal(0, service.Health);
+    }
+
+    [Fact]
     public void IdentityStaysUnavailableWhenTheProbeHasNoRecordSource()
     {
         // Host may wire no char-record source at all; behaviour must then be
         // exactly what it was before the identity path existed.
         var probe = new FakeProbe { SampleOk = false, IdentityOk = false };
-        var service = new PlayerStateService();
+        var service = new PlayerStateService(new StubClientState());
 
         service.Refresh(probe);
 

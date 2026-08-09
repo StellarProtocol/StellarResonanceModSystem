@@ -18,6 +18,7 @@ public struct EntityVitals : IEquatable<EntityVitals>
 | --- | --- |
 | [EntityVitals](EntityVitals/EntityVitals.md)(…) | Live HP snapshot for an entity, sourced from `AttrCollection` observations on the combat wire (`AttrHp`=11310, `AttrMaxHp`=11320). Available for every entity in AOI — players, mobs, NPCs — not just party members. Use [`GetVitals`](../Stellar.Abstractions.Services/ICombatLookup/GetVitals.md) to query. |
 | static readonly [Unknown](EntityVitals/Unknown.md) | Sentinel returned when no observation has been received for this entity yet. |
+| [HasHpObservation](EntityVitals/HasHpObservation.md) { get; set; } | True once a REAL current-HP value has been observed for this entity (an `AttrHp` carrying `hp >= 0`, including 0 = dead). A MaxHp-only observation leaves this `false` while [`IsKnown`](./EntityVitals/IsKnown.md) is already `true` — such an entity is "alive, HP unknown", NOT dead. Death inference (e.g. a meter's dead styling, wipe detection) must require this flag before reading [`Hp`](./EntityVitals/Hp.md) &lt;= 0 as death. Init-only (not a constructor parameter) so plugins compiled against older Abstractions keep binary compatibility. |
 | [Hp](EntityVitals/Hp.md) { get; set; } | Last-known current HP. Zero when the entity has never been observed. |
 | [IsKnown](EntityVitals/IsKnown.md) { get; set; } | True once at least one AttrHp or AttrMaxHp observation has landed. |
 | [MaxHp](EntityVitals/MaxHp.md) { get; set; } | Last-known max HP. Zero when the entity has never been observed or hasn't reported max yet. |

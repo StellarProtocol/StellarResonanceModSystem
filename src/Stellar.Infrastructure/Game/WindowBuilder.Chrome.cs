@@ -72,6 +72,10 @@ internal sealed partial class WindowBuilder
         if (root.GetComponent<VerticalLayoutGroup>() is { } vlg) vlg.childForceExpandHeight = false;
 
         var grip = UGuiPrimitives.NewChild("ResizeGrip", root);
+        // Start hidden for edit-only (pinned HUD) windows — resize is edit-mode-only, so an inert grip during
+        // play is misleading; the ticker shows it when edit-mode is entered. Building it inactive avoids a
+        // one-frame flash on mount before the ticker corrects it. Free-drag windows (!false) stay active.
+        grip.SetActive(!spec.EditModeDragOnly);
         grip.AddComponent<LayoutElement>().ignoreLayout = true;
         var grt = grip.GetComponent<RectTransform>();
         grt.anchorMin = grt.anchorMax = grt.pivot = new Vector2(1f, 0f);   // bottom-right corner
@@ -89,7 +93,7 @@ internal sealed partial class WindowBuilder
             drt.anchoredPosition = new Vector2(-(c * 4f), r * 4f);
             var di = dot.AddComponent<Image>(); di.color = new Color(1f, 1f, 1f, 0.34f); di.raycastTarget = false;
         }
-        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight));
+        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight), spec.EditModeDragOnly);
     }
     // Overlay chromes (Tracker/Party/PillStatus) implemented in WindowBuilder.Chrome.Overlay.cs.
 

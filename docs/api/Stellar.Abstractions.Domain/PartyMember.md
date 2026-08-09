@@ -13,7 +13,9 @@ public struct PartyMember : IEquatable<PartyMember>
 | [PartyMember](PartyMember/PartyMember.md)(…) | One party member's snapshot. Composed from wire deliveries on the `GrpcTeamNtf` service. Immutable; rebuilt by `PartyService` whenever any field changes. |
 | [CharId](PartyMember/CharId.md) { get; set; } |  |
 | [EntityId](PartyMember/EntityId.md) { get; } | Combat entity id derived from [`CharId`](./PartyMember/CharId.md) under the Phase 4 identity assumption (`CharId << 16 | 640`). Use to cross-reference `ICombatEvents` events. |
+| [FastSyncState](PartyMember/FastSyncState.md) { get; set; } | Raw `TeamMemberFastSyncData.state` (field 6) from the member's latest fast-sync — a live per-member status signal the game client itself discards (`TeamData.UpdateFastSyncData` reads only pos/hp/scene). 0 until the first fast-sync. Enum semantics are calibrated empirically (2026-07-17 sync spec, Part A2 — see the calibration notes in the devkit's `docs/recon/`); consumers MUST treat unmapped values as "no signal" and fall back to [`IsOnline`](./PartyMember/IsOnline.md) / HP-based inference rather than assuming a meaning. Init-only so plugins compiled against older Abstractions keep binary compatibility. |
 | [GroupId](PartyMember/GroupId.md) { get; set; } |  |
+| [HalfBodyUrl](PartyMember/HalfBodyUrl.md) { get; set; } |  |
 | [Hp](PartyMember/Hp.md) { get; set; } |  |
 | [IsOnline](PartyMember/IsOnline.md) { get; set; } |  |
 | [IsSelf](PartyMember/IsSelf.md) { get; set; } |  |
@@ -22,6 +24,7 @@ public struct PartyMember : IEquatable<PartyMember>
 | [Name](PartyMember/Name.md) { get; set; } |  |
 | [Position](PartyMember/Position.md) { get; set; } |  |
 | [Profession](PartyMember/Profession.md) { get; set; } |  |
+| [ProfileUrl](PartyMember/ProfileUrl.md) { get; set; } |  |
 | [SceneId](PartyMember/SceneId.md) { get; set; } |  |
 | [Slot](PartyMember/Slot.md) { get; set; } |  |
 | [Talent](PartyMember/Talent.md) { get; set; } |  |
@@ -54,6 +57,8 @@ GroupId — `TeamMemData.group_id`. 0 in non-raid parties; meaningful only when 
 Slot — 0-based position WITHIN the group (the member's order in the team's slot list), from `NotifyTeamGroupUpdate` (`TeamMemberGroupInfo.char_ids` ordering). -1 when not yet known. Lets the raid grid place each member at their exact Team×Slot instead of roster order.
 
 DPS aggregation — query `ICombatLookup.GetLiveDps(member.EntityId)` instead of a per-member DPS field. The combat service aggregates per source EntityId for every entity in AOI, so the same call works for party members, mobs, and randoms uniformly.
+
+ProfileUrl / HalfBodyUrl — CDN URLs of the member's 2D profile / half-body pictures from `TeamMemberSocialData.avatar_info`; empty until the first social sync or when the player has none.
 
 ## See Also
 

@@ -16,6 +16,7 @@ public record ButtonElement : IEquatable<HudElement>
 | [Icon](ButtonElement/Icon.md) { get; set; } |  |
 | [Label](ButtonElement/Label.md) { get; set; } |  |
 | [OnClick](ButtonElement/OnClick.md) { get; set; } |  |
+| [OnClickWithRect](ButtonElement/OnClickWithRect.md) { get; set; } | When non-null, invoked on click with the button's screen rect (top-left origin, same coordinate space as [`Rect`](./IWindowControl/Rect.md)). Use to anchor a popup to the button's actual position. |
 | [Style](ButtonElement/Style.md) { get; set; } |  |
 | [Width](ButtonElement/Width.md) { get; set; } |  |
 

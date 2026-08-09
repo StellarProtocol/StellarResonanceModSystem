@@ -49,8 +49,36 @@ internal sealed class LauncherView
         foreach (var e in _registry.Entries)
             if (e.Group == LauncherGroup.Plugin) { _all.Add(e); if (_registry.IsPinned(e)) _pinned.Add(e); }
     }
-    private int AllCount() { Refresh(); return _all.Count; }
-    private int PinnedCount() { Refresh(); return _pinned.Count; }
+    // Visible = registry snapshot (revision-cached in _all/_pinned) filtered by each entry's live ShouldShow
+    // predicate. The filter is evaluated on every read (each apply, ~10 Hz) — NOT cached in Refresh — so a
+    // phase-gated tile (ShouldShow = () => Phase == World) appears/disappears on the phase change without a
+    // registry-revision bump. Lists are tiny (≤32), so the per-apply scan is negligible.
+    private static bool Shows(LauncherEntry e) => e.ShouldShow?.Invoke() ?? true;
+
+    private int VisibleCount(List<LauncherEntry> list)
+    {
+        Refresh();
+        var n = 0;
+        for (var i = 0; i < list.Count; i++) if (Shows(list[i])) n++;
+        return n;
+    }
+
+    // The idx-th entry that passes ShouldShow (null when out of range) — keeps the tile pool's "read by index"
+    // contract while skipping hidden entries so there are no gaps in the grid/column.
+    private LauncherEntry? VisibleAt(List<LauncherEntry> list, int idx)
+    {
+        Refresh();
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (!Shows(list[i])) continue;
+            if (idx == 0) return list[i];
+            idx--;
+        }
+        return null;
+    }
+
+    private int AllCount() => VisibleCount(_all);
+    private int PinnedCount() => VisibleCount(_pinned);
 
     private static byte[]? Icon(string name) => LauncherIcons.Get(name);
     private bool Full => _registry.Mode == LauncherMode.Full;
@@ -80,7 +108,7 @@ internal sealed class LauncherView
     // A live plugin tile reading the idx-th entry of the all/pinned list each apply (null when out of range).
     private HudElement LivePluginTile(int idx, bool pinnedOnly)
     {
-        LauncherEntry? At() { Refresh(); var list = pinnedOnly ? _pinned : _all; return idx < list.Count ? list[idx] : null; }
+        LauncherEntry? At() => VisibleAt(pinnedOnly ? _pinned : _all, idx);
         return new TileElement(
             () => At()?.IconPng ?? Icon("plugins"), () => At()?.Title ?? "",
             () => { var e = At(); if (e != null) SafeOpen(e); },

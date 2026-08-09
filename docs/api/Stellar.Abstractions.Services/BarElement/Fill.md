@@ -1,5 +1,7 @@
 # BarElement.Fill property
 
+Semantic fill colour (from the plugin's colour slot).
+
 ```csharp
 public ColorRgba Fill { get; set; }
 ```

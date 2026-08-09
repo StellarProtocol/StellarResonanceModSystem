@@ -19,6 +19,9 @@ public sealed class SizeAndShapeAnalyzer : DiagnosticAnalyzer
     private const int MaxCtorDeps = 6;
     private const int MaxInterfaceMembers = 8;
     private const string AggregatorExemptionName = "IPluginServices"; // see coding-standards.md §I
+    // IClientState carries session state + the client-phase + UI-state signals (9 members) by design
+    // (docs/game-phases-design.md §5.1); the members are one cohesive lifecycle surface, not a split candidate.
+    private const string ClientStateExemptionName = "IClientState";
     private const string AggregatorImplName = "PluginServices"; // aggregator impl; see coding-standards.md §I / IPluginServices exemption
 
     internal static readonly DiagnosticDescriptor MethodBlockerRule = DiagnosticIds.Make(
@@ -104,8 +107,9 @@ public sealed class SizeAndShapeAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeInterface(SyntaxNodeAnalysisContext ctx)
     {
         var i = (InterfaceDeclarationSyntax)ctx.Node;
-        // Documented exception: IPluginServices is the aggregator (coding-standards.md §I).
-        if (i.Identifier.Text == AggregatorExemptionName) return;
+        // Documented exceptions: IPluginServices is the aggregator (coding-standards.md §I);
+        // IClientState is the cohesive client-lifecycle surface (game-phases-design.md §5.1).
+        if (i.Identifier.Text == AggregatorExemptionName || i.Identifier.Text == ClientStateExemptionName) return;
         var count = i.Members.Count;
         if (count > MaxInterfaceMembers)
             ctx.ReportDiagnostic(Diagnostic.Create(InterfaceTooWideRule, i.Identifier.GetLocation(), i.Identifier.Text, count));

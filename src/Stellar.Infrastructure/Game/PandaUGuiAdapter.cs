@@ -28,8 +28,8 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
 
     public PandaUGuiAdapter(IPluginLog log, ITheme theme) { _log = log; _theme = theme; }
 
-    /// <summary>Destroys the rail-button icon textures on framework teardown (no leak on soft reload).</summary>
-    public void Dispose() => _iconCache.Dispose();
+    /// <summary>Destroys the rail-button icon textures + login-circle texture on framework teardown (no leak on soft reload).</summary>
+    public void Dispose() { _iconCache.Dispose(); DestroyCircleTex(); }
 
     public bool IsAnchorAvailable(NativeUiAnchor anchor) => ResolveParent(anchor) != null;
 
@@ -74,6 +74,9 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
             _zuiroot = root != null ? root.transform : null;
             if (_zuiroot == null) return null;
         }
+        // Login sidebar: resolve the login view by NAME-CONTAINS "login_main" (the exact runtime name isn't
+        // guaranteed — _pc / (Clone) variants — so an exact Transform.Find can miss). See .LoginButton partial.
+        if (anchor == NativeUiAnchor.LoginSidebar) return ResolveLoginView(_zuiroot);
         var rel = ToZuiRelativePath(entry.InsertionParentPath);
         if (rel == null)
         {

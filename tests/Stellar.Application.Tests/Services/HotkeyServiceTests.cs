@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Hosting;
 using Stellar.Application.Services;
 using Xunit;
 
@@ -197,12 +198,56 @@ public sealed class HotkeyServiceTests
         Assert.Same(h1, h2);
     }
 
+    // ---- owner tagging (Settings → Hotkeys groups on PluginId, labels rows with Description) ----
+
+    [Fact]
+    public void DeclareAction_ViaPublicInterface_IsFrameworkOwnedAndKeepsDescription()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+
+        var handle = svc.DeclareAction(new HotkeyAction("framework.settings-toggle", "Toggle Stellar Settings", null), () => { });
+
+        Assert.Null(handle.PluginId);   // null PluginId is what makes the panel's "framework" fallback fire
+        Assert.Equal("Toggle Stellar Settings", handle.Description);
+    }
+
+    [Fact]
+    public void PerPluginHotkeys_TagsDeclarationWithOwningPluginGuid()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+        var scoped = new PerPluginHotkeys("stellarmahiruutilityplugin", svc);
+
+        var handle = scoped.DeclareAction(new HotkeyAction("mahiru.toggle", "Toggle Mahiru", null), () => { });
+
+        Assert.Equal("stellarmahiruutilityplugin", handle.PluginId);
+        Assert.Equal("Toggle Mahiru", handle.Description);
+        Assert.Same(handle, Assert.Single(((IHotkeyDirectory)svc).Actions));
+    }
+
+    [Fact]
+    public void PerPluginHotkeys_DuplicateId_ReplacesCallbackAndKeepsFirstOwner()
+    {
+        var svc = new HotkeyService(new FakeInputGateway(), new NullLog());
+        var first  = new PerPluginHotkeys("plugin.a", svc);
+        var second = new PerPluginHotkeys("plugin.b", svc);
+
+        var a = first.DeclareAction(new HotkeyAction("dup", "A", new KeyBinding(StellarKeyCode.F9)), () => { });
+        var b = second.DeclareAction(new HotkeyAction("dup", "B", null), () => { });
+
+        Assert.Same(a, b);                       // existing "declared twice; replacing callback" behaviour
+        Assert.Equal("plugin.a", a.PluginId);    // owner (and Description) belong to the first declaration
+        Assert.Equal("A", a.Description);
+        Assert.Single(((IHotkeyDirectory)svc).Actions);
+    }
+
     // Test doubles
     private sealed class FakeInputGateway : IInputGateway
     {
         private readonly List<StellarKeyCode> _pressed = new();
+        private readonly HashSet<StellarKeyCode> _held = new();
         public IReadOnlyList<StellarKeyCode> PressedKeysThisFrame => _pressed;
         public ModifierKeys CurrentModifiers { get; private set; }
+        public bool IsKeyHeld(StellarKeyCode key) => _held.Contains(key);
         public Resolution CurrentResolution => new(1920, 1080);
         public (float X, float Y) PointerPosition => (0f, 0f);
         public bool LeftMouseDown => false;
@@ -210,8 +255,10 @@ public sealed class HotkeyServiceTests
         public int CurrentFrame => 1;   // tests don't exercise frame-dedupe — Tick() takes no frame arg
 
         public void Press(StellarKeyCode key) => _pressed.Add(key);
+        public void Hold(StellarKeyCode key) => _held.Add(key);
+        public void Release(StellarKeyCode key) => _held.Remove(key);
         public void SetModifiers(ModifierKeys m) => CurrentModifiers = m;
-        public void Clear() { _pressed.Clear(); CurrentModifiers = ModifierKeys.None; }
+        public void Clear() { _pressed.Clear(); _held.Clear(); CurrentModifiers = ModifierKeys.None; }
     }
 
     private sealed class NullLog : IPluginLog

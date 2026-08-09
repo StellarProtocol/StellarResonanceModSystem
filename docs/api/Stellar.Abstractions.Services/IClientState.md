@@ -1,6 +1,6 @@
 # IClientState interface
 
-Player session state. Mirrors lifecycle events the game itself publishes.
+Player session state plus the client-phase and UI-state signals. Session state ([`IsLoggedIn`](./IClientState/IsLoggedIn.md)/[`Login`](./IClientState/Login.md)/[`Logout`](./IClientState/Logout.md)) and client phase ([`Phase`](./IClientState/Phase.md)) are distinct concepts that coexist — they correlate today but answer different questions.
 
 ```csharp
 public interface IClientState
@@ -12,8 +12,12 @@ public interface IClientState
 | --- | --- |
 | [CurrentSceneName](IClientState/CurrentSceneName.md) { get; } | Identifier (currently a numeric scene id, not a friendly name) for the active scene. |
 | [IsLoggedIn](IClientState/IsLoggedIn.md) { get; } | True when a character is fully loaded and in-world (same condition as [`IsAvailable`](./IPlayerIdentity/IsAvailable.md)). |
+| [IsWorldActive](IClientState/IsWorldActive.md) { get; } | True in a stable world scene, false mid-transition (the world-connect / scene-switch handshake). Stricter than `Phase == World` — also false during in-world zone loads. This is the ONLY protective gate: every unit that touches live game state self-gates on it. |
+| [Phase](IClientState/Phase.md) { get; } | Current client phase — read for the initial state (e.g. in a plugin ctor) or on demand. A signal: the framework gates nothing on it. Use for window visibility. |
+| [UiState](IClientState/UiState.md) { get; } | Informational in-world UI flags (None while at the title screen). The framework detects and exposes this but never gates on it; a plugin's `ShouldRender` may read it. |
 | event [Login](IClientState/Login.md) | Fired once when the player finishes loading into the world (in-world ready). |
 | event [Logout](IClientState/Logout.md) | Fired once when the player disconnects or returns to character select. |
+| event [PhaseChanged](IClientState/PhaseChanged.md) | Fires on each phase transition; the payload carries both the previous and next phase. |
 | event [SceneChanged](IClientState/SceneChanged.md) | Fired when the active scene changes. Argument is the new scene identifier, or `null` when no scene is active. |
 
 ## See Also

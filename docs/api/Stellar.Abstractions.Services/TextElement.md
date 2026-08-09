@@ -1,6 +1,6 @@
 # TextElement record
 
-Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds.
+Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds. *ShadowDistance* controls the pixel offset of the shadow (default 1). Increase for large font sizes where a 1-pixel shadow is invisible. *NoWrap* keeps the text on a single line (any overflow spills/clips at the cell edge rather than wrapping to multiple lines) — use in a fixed-width pane where a long label (e.g. a map name) must read as one row, not a 5-line block.
 
 ```csharp
 public record TextElement : IEquatable<HudElement>
@@ -10,11 +10,15 @@ public record TextElement : IEquatable<HudElement>
 
 | name | description |
 | --- | --- |
-| [TextElement](TextElement/TextElement.md)(…) | Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds. |
+| [TextElement](TextElement/TextElement.md)(…) | Themed text. *Color* Func null (or returns null) = framework default; a Func lets colour animate per-refresh (e.g. delta-flash). *Width* &gt; 0 fixes the cell width (the text wraps within it) — use to form aligned columns (e.g. a plugin-name column so the version after it starts at a consistent x). *Align* sets horizontal alignment (Right for numeric columns). *Shadow* draws a dark outline behind the glyphs — for chrome-less overlays (a borderless HUD with no background) where light text must stay legible over arbitrary world backgrounds. *ShadowDistance* controls the pixel offset of the shadow (default 1). Increase for large font sizes where a 1-pixel shadow is invisible. *NoWrap* keeps the text on a single line (any overflow spills/clips at the cell edge rather than wrapping to multiple lines) — use in a fixed-width pane where a long label (e.g. a map name) must read as one row, not a 5-line block. (3 constructors) |
 | [Align](TextElement/Align.md) { get; set; } |  |
 | [Color](TextElement/Color.md) { get; set; } |  |
+| [DynamicFontSize](TextElement/DynamicFontSize.md) { get; set; } | When non-null, overrides [`FontSize`](./TextElement/FontSize.md) and is re-evaluated each HUD refresh. Use with [`ScreenHeight`](./IFramework/ScreenHeight.md) to scale text with screen resolution: `DynamicFontSize = () => services.Framework.ScreenHeight / 19`. |
 | [Emphasis](TextElement/Emphasis.md) { get; set; } |  |
+| [FontSize](TextElement/FontSize.md) { get; set; } |  |
+| [NoWrap](TextElement/NoWrap.md) { get; set; } |  |
 | [Shadow](TextElement/Shadow.md) { get; set; } |  |
+| [ShadowDistance](TextElement/ShadowDistance.md) { get; set; } |  |
 | [Text](TextElement/Text.md) { get; set; } |  |
 | [Width](TextElement/Width.md) { get; set; } |  |
 

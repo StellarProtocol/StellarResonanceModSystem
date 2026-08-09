@@ -10,6 +10,11 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 /// next non-modifier <see cref="EventType.KeyDown"/> commits the new binding
 /// (with held modifiers). Esc cancels capture. Filter chips toggle between
 /// All / Plugins / Framework actions.
+///
+/// Rows group by the OWNING plugin (<see cref="IHotkeyAction.PluginId"/>, set by the host's
+/// per-plugin <c>IHotkeys</c>) and the header shows that plugin's <c>PluginInfo.DisplayName</c>.
+/// The id-prefix fallback remains load-bearing for framework actions, whose PluginId is null
+/// because they are declared straight on the shared hotkey service.
 /// </summary>
 internal sealed partial class HotkeysPanel
 {
@@ -17,7 +22,12 @@ internal sealed partial class HotkeysPanel
 
     private readonly IHotkeyDirectory _directory;
     private readonly IHotkeyBlockDirectory _blockDirectory;
+    private readonly IPluginInventory _inventory;
     private readonly ITheme _theme;
+    // Header text for the framework's own hotkey group. Injected because the string's single source of
+    // truth is BootstrapPlugin.PluginName in Stellar.Host, and Infrastructure cannot reference Host
+    // (the dependency runs Host -> Infrastructure only). Wiring.Settings passes it down.
+    private readonly string _frameworkGroupLabel;
     private Filter _filter = Filter.All;
     private string? _capturingActionId;
     // Last drawn screen rect of the [ … ] cell that initiated the active
@@ -37,14 +47,23 @@ internal sealed partial class HotkeysPanel
     private HudElement FilterChip(string label, Filter f)
         => new ButtonElement(() => label, () => { _filter = f; }, null, null, Active: () => _filter == f);
 
-    public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, ITheme theme)
+    public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, IPluginInventory inventory,
+                        ITheme theme, string frameworkGroupLabel)
     {
         _directory = directory;
         _blockDirectory = blockDirectory;
+        _inventory = inventory;
         _theme = theme;
+        _frameworkGroupLabel = frameworkGroupLabel;
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
         _directory.BindingChanged += OnBindingChanged;
+        // Group HEADERS show the plugin's DisplayName, which only becomes the real
+        // declared name ("Mahiru Utility") once the registry enables the plugin —
+        // and plugins load AFTER the hub is built. Without this subscription the
+        // header would keep showing the seeded assembly name until the user happened
+        // to toggle a filter chip (the only other RebuildDisplay trigger).
+        _inventory.StatusChanged += OnPluginStatusChanged;
     }
 
     private void OnBindingChanged(string actionId)
@@ -52,31 +71,77 @@ internal sealed partial class HotkeysPanel
         _bindingLabelCache.Remove(actionId);
     }
 
+    private void OnPluginStatusChanged(PluginInfo _)
+    {
+        _pluginNamesDirty = true;
+        _inventoryVersion++;   // forces RebuildDisplay to re-run so headers pick up the new label
+    }
+
     public bool IsCapturing => _capturingActionId is not null;
 
     private const int MaxRows = 64;
+    // Fixed width for the action-row label. Rows show the plugin-authored HotkeyAction.Description,
+    // which runs to ~40 chars ("Cycle CombatMeter metric (DPS/HPS/Taken)") and WRAPPED to two lines,
+    // making row heights uneven inside the 260f scroll. Width + NoWrap clips instead (a fixed-width
+    // NoWrap TextElement gets its own RectMask2D, so it truncates inside its own cell rather than
+    // spilling onto the binding cell) — see WindowBuilder-Patterns.md.
+    //
+    // 315f is the HARD ceiling, measured not guessed: 567f usable row width (600f hub − 24f GlassMenu
+    // body padding − 9f scroll viewport inset for the scrollbar) − 18f indent − 210f binding cell −
+    // 3 × 8f row gaps. Two traps in that sum: RowElement's gap DEFAULTS to 8f (the builder maps
+    // Gap: 0f → RowGap, so a zero gap is not expressible), and a Width > 0 TextElement is pinned
+    // (minWidth == preferredWidth, flexibleWidth 0) so it CANNOT be squeezed — go over 315f and the
+    // summed minWidths overflow the viewport and the mask clips the binding cell instead.
+    // 300f leaves ~15f of visible spacer so the row still reads label-left / cell-right.
+    private const float RowLabelWidth = 300f;
     // Flattened display list rebuilt once per apply (in the list's outer Conditional When, which runs before the
     // slot Funcs): one HEADER row per plugin group + an action row per binding (omitted when the group is
     // collapsed). Lets the list track hotkeys DECLARED AFTER the hub is built (plugins load post-wiring) AND
     // group them by plugin with collapsible headers instead of a flat "combatmeter.xxx · combatmeter.yyy" list.
     private readonly List<HkRow> _display = new();
+    // Keyed on GroupKey (the stable plugin guid), NEVER GroupLabel — the label mutates at
+    // runtime when a plugin enables after the hub was built, which would orphan the entry
+    // and silently re-expand a group the user collapsed.
     private readonly HashSet<string> _collapsed = new();   // groups the user collapsed (empty = all expanded)
 
     private readonly struct HkRow
     {
         public readonly bool IsHeader;
-        public readonly string Group;
+        /// <summary>Stable identity: the owning plugin's guid, or the id prefix for framework actions.</summary>
+        public readonly string GroupKey;
+        /// <summary>Display text: the plugin's DisplayName when known, else the id prefix.</summary>
+        public readonly string GroupLabel;
         public readonly IHotkeyAction? Action;
         public readonly int Count;   // header only: number of actions in the group
-        public HkRow(bool isHeader, string group, IHotkeyAction? action, int count) { IsHeader = isHeader; Group = group; Action = action; Count = count; }
+        public HkRow(bool isHeader, string groupKey, string groupLabel, IHotkeyAction? action, int count)
+        { IsHeader = isHeader; GroupKey = groupKey; GroupLabel = groupLabel; Action = action; Count = count; }
     }
 
     private readonly Dictionary<string, int> _groupCounts = new();
 
+    // guid → PluginInfo.DisplayName. Rebuilt ONLY when IPluginInventory.StatusChanged fires —
+    // never per row per frame. This panel is deliberately de-allocated (see _sortedActionsCache /
+    // _filteredScratch / _bindingLabelCache): calling _inventory.List() from a row lambda would
+    // put a lookup on every row of every apply pass.
+    private readonly Dictionary<string, string> _pluginNames = new();
+    private bool _pluginNamesDirty = true;
+    private int _inventoryVersion;
+    private int _builtInventoryVersion = -1;
+
+    private Dictionary<string, string> PluginNames()
+    {
+        if (!_pluginNamesDirty) return _pluginNames;
+        _pluginNamesDirty = false;
+        _pluginNames.Clear();
+        foreach (var p in _inventory.List())
+            if (!string.IsNullOrWhiteSpace(p.DisplayName)) _pluginNames[p.Id] = p.DisplayName;
+        return _pluginNames;
+    }
+
     /// <summary>Settings → Hotkeys, GROUPED by plugin with collapsible headers (a LIVE list — the hub is built
     /// before plugins load, so it can't be a build-time snapshot): <see cref="MaxRows"/> slots over a flattened
-    /// header/row list rebuilt each apply. A header toggles its group's collapse; an action row shows the short
-    /// name (plugin prefix stripped) + binding cell. Click a cell to capture; Del clears / Esc cancels
+    /// header/row list rebuilt each apply. A header toggles its group's collapse and shows the plugin's own
+    /// declared name; an action row shows its Description + binding cell. Click a cell to capture; Del clears / Esc cancels
     /// (<see cref="PollCaptureUgui"/>). Filter chips drive <see cref="_filter"/>.</summary>
     public HudElement Describe()
     {
@@ -88,7 +153,10 @@ internal sealed partial class HotkeysPanel
             new RowElement(new HudElement[]
             {
                 new ToggleElement(() => "", Get: () => _blockDirectory.GetBlockAllFromGame(), Set: v => _blockDirectory.SetBlockAllFromGame(v)),
-                new TextElement(() => "Block hotkeys from game"),
+                // Direction-first wording: the mod hotkey does NOT pass through to the game (so one press
+                // doesn't fire both). (Suppression is exact-match on key+modifiers — a blocked Ctrl+F1 leaves
+                // bare F1 alone.)
+                new TextElement(() => "Don't pass hotkeys through to the game"),
             }, Gap: 6f),
             new SeparatorElement(),
             new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),
@@ -100,8 +168,8 @@ internal sealed partial class HotkeysPanel
         });
     }
 
-    // Rebuild the flattened header/row list from the live (sorted + filtered) actions. Same-prefix actions are
-    // adjacent in the sorted order, so a new header starts whenever the group prefix changes.
+    // Rebuild the flattened header/row list from the live (sorted + filtered) actions. OrderedActions sorts by
+    // GroupKey first, so same-group actions are adjacent and a new header starts whenever the key changes.
     private int _lastActionCount = -1;
     private Filter _lastBuiltFilter;
     private int _collapseVersion;       // bumped on every expand/collapse
@@ -113,21 +181,61 @@ internal sealed partial class HotkeysPanel
         // Previously this allocated a list + dict EVERY apply while Settings was open — needless GC churn /
         // frame cost. Binding changes (rebind) don't alter structure (labels are read live), so they don't
         // trip a rebuild.
+        // _inventoryVersion is in the guard because group LABELS are snapshotted into HkRow at
+        // rebuild time; a plugin enabling later changes its DisplayName and must re-flatten.
         var count = _directory.Actions.Count;
-        if (_display.Count > 0 && count == _lastActionCount && _filter == _lastBuiltFilter && _collapseVersion == _builtCollapseVersion) return;
+        if (_display.Count > 0 && count == _lastActionCount && _filter == _lastBuiltFilter
+            && _collapseVersion == _builtCollapseVersion && _inventoryVersion == _builtInventoryVersion) return;
         _lastActionCount = count; _lastBuiltFilter = _filter; _builtCollapseVersion = _collapseVersion;
+        _builtInventoryVersion = _inventoryVersion;
 
         _display.Clear();
         var actions = OrderedActions();
+        var names = PluginNames();
         _groupCounts.Clear();
-        foreach (var a in actions) { var g = GroupOf(a.Id); _groupCounts[g] = _groupCounts.TryGetValue(g, out var c) ? c + 1 : 1; }
+        foreach (var a in actions) { var g = GroupKeyOf(a); _groupCounts[g] = _groupCounts.TryGetValue(g, out var c) ? c + 1 : 1; }
         string? cur = null;
         foreach (var a in actions)
         {
-            var group = GroupOf(a.Id);
-            if (group != cur) { cur = group; _display.Add(new HkRow(true, group, null, _groupCounts[group])); }
-            if (!_collapsed.Contains(group)) _display.Add(new HkRow(false, group, a, 0));
+            var key = GroupKeyOf(a);
+            if (key != cur)
+            {
+                cur = key;
+                _display.Add(new HkRow(true, key, GroupLabelOf(a, names), null, _groupCounts[key]));
+            }
+            if (!_collapsed.Contains(key)) _display.Add(new HkRow(false, key, "", a, 0));
         }
+    }
+
+    /// <summary>Stable group identity. Uses the owning plugin's guid when the action was declared
+    /// through a per-plugin <c>IHotkeys</c>; falls back to the id prefix for framework actions
+    /// (declared straight on the shared service, so PluginId is null).</summary>
+    private static string GroupKeyOf(IHotkeyAction a)
+        => string.IsNullOrEmpty(a.PluginId) ? GroupOf(a.Id) : a.PluginId!;
+
+    /// <summary>The framework owns an action when its id is <c>framework.*</c>. Deliberately NOT
+    /// <c>PluginId is null</c>: an untagged plugin action also has a null PluginId and must keep
+    /// falling back to its own id prefix rather than being mislabelled as framework-owned.
+    /// This is the single predicate behind the group label, the sort, and the filter chips.</summary>
+    private static bool IsFrameworkAction(IHotkeyAction a)
+        => a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
+
+    /// <summary>Header text for a group: the framework's product name for its own actions, else the
+    /// plugin's declared name, else the id prefix (a plugin absent from the inventory, or one whose
+    /// actions were declared without an owner). LABEL ONLY — GroupKey is untouched, so this changes
+    /// neither the collapse state nor the sort position of the framework group.</summary>
+    private string GroupLabelOf(IHotkeyAction a, Dictionary<string, string> names)
+    {
+        if (IsFrameworkAction(a)) return _frameworkGroupLabel;
+        return names.TryGetValue(GroupKeyOf(a), out var n) ? n : GroupOf(a.Id);
+    }
+
+    /// <summary>Row text: the declared human-readable description, falling back to the
+    /// prefix-stripped id for actions that shipped without one.</summary>
+    private static string RowLabel(IHotkeyAction? a)
+    {
+        if (a is null) return "";
+        return string.IsNullOrWhiteSpace(a.Description) ? ShortName(a.Id) : a.Description;
     }
 
     private HudElement BuildHotkeySlot(int idx)
@@ -141,18 +249,19 @@ internal sealed partial class HotkeysPanel
                 new SelectableElement(
                     new RowElement(new HudElement[]
                     {
-                        new TextElement(() => _collapsed.Contains(Row().Group) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
-                        new TextElement(() => Row().Group, Emphasis: true),
+                        new TextElement(() => _collapsed.Contains(Row().GroupKey) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
+                        new TextElement(() => Row().GroupLabel, Emphasis: true),
                         new SpacerElement(),
                         new TextElement(() => $"({Row().Count})", () => _theme.Colors.TextMuted, Align: TextAlign.Right),
                     }),
-                    OnClick: () => ToggleGroup(Row().Group))),
-            // Action row — indented short name + binding cell.
+                    // Collapse state keys on GroupKey — the label is display-only and mutates.
+                    OnClick: () => ToggleGroup(Row().GroupKey))),
+            // Action row — indented description (clipped to one line) + binding cell.
             new ConditionalElement(() => idx < _display.Count && !_display[idx].IsHeader,
                 new RowElement(new HudElement[]
                 {
                     new SpacerElement(Width: 18f),
-                    new TextElement(() => ShortName(Row().Action?.Id)),
+                    new TextElement(() => RowLabel(Row().Action), Width: RowLabelWidth, NoWrap: true),
                     new SpacerElement(),
                     new ButtonElement(
                         // While capturing, the cell hints the keys: Del clears the binding (unbind), Esc cancels.
@@ -189,9 +298,15 @@ internal sealed partial class HotkeysPanel
             var list = new List<IHotkeyAction>(live);
             list.Sort((a, b) =>
             {
-                var aFw = a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
-                var bFw = b.Id.StartsWith("framework.", System.StringComparison.Ordinal);
-                if (aFw != bFw) return aFw ? 1 : -1;
+                var aFw = IsFrameworkAction(a);
+                var bFw = IsFrameworkAction(b);
+                if (aFw != bFw) return aFw ? 1 : -1;   // framework actions always sort last
+                // GroupKey before Id: RebuildDisplay starts a new header whenever the key
+                // changes, so same-group rows MUST be adjacent. Sorting on Id alone was only
+                // adjacent by luck — a plugin declaring two different id prefixes (or two
+                // plugins sharing one) would emit duplicate headers for the same group.
+                var g = string.Compare(GroupKeyOf(a), GroupKeyOf(b), System.StringComparison.Ordinal);
+                if (g != 0) return g;
                 return string.Compare(a.Id, b.Id, System.StringComparison.Ordinal);
             });
             _sortedActionsCache = list;
@@ -201,7 +316,7 @@ internal sealed partial class HotkeysPanel
         _filteredScratch.Clear();
         foreach (var a in _sortedActionsCache)
         {
-            var isFw = a.Id.StartsWith("framework.", System.StringComparison.Ordinal);
+            var isFw = IsFrameworkAction(a);
             if (_filter == Filter.Plugins && isFw) continue;
             if (_filter == Filter.Framework && !isFw) continue;
             _filteredScratch.Add(a);

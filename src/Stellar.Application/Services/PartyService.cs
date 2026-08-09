@@ -382,6 +382,30 @@ internal sealed partial class PartyService : IPartySnapshot, IPartyRoster, IPart
         events.Add(() => PartyDissolved?.Invoke());
     }
 
+    /// <summary>
+    /// Clear all account/character-scoped party state on logout: roster, party identity, local
+    /// char id, matching flag and the cached members snapshot all reset to defaults, and any queued
+    /// deltas drained so a stale packet from the previous account can't repopulate the roster after
+    /// login. Runs on the Unity main thread (Host OnLogout dispatcher, same thread as
+    /// <see cref="Drain"/>), so no locking is needed. Deliberately does NOT fire
+    /// <see cref="PartyDissolved"/>: a logout is a session teardown, not a "team dissolved"
+    /// notification to plugins.
+    /// </summary>
+    internal void ClearSession()
+    {
+        while (_pending.TryDequeue(out _)) { }
+        _slots.Clear();
+        _partyId      = 0;
+        _leaderCharId = 0;
+        _partyType    = PartyType.Solo;
+        _isMatching   = false;
+        _isAvailable  = false;
+        _localCharId  = 0;
+        _membersSnapshot = null;
+        _membersSnapshotVersion = 0;
+        _version++;
+    }
+
     private static PartyLeaveKind MapLeaveKind(int raw) => raw switch
     {
         1 => PartyLeaveKind.Voluntary,

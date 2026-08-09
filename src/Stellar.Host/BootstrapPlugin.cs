@@ -50,6 +50,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
 
     // ── Core services (Wiring.Core.cs) ──────────────────────────────────────
     private FrameworkService? _framework;
+    private LuaService? _luaService;                                        // shared ILua bridge (tolua# mainState)
+    private Stellar.Infrastructure.Game.HarmonyHostFactory? _harmonyHostFactory;   // mints per-plugin IHarmonyHost
     private ClientStateService? _clientState;
     // Shared between CombatService (writes) and GameDataWorldService (reads attr-10 for GetMonsterByEntity).
     private CombatEntityTracker? _entityTracker;
@@ -124,6 +126,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private Stellar.Infrastructure.Game.ReflectionGameTypeRegistry? _gameTypeRegistry;
     private KeyboardInputGate? _keyboardGate;
     private UGuiInjectionService? _uguiInjection;
+    // The uGUI canvas adapter — kept so its per-frame glow animation (TickGlow) can be driven UN-gated from
+    // RunGlobalRateWork (so the login-sidebar star animates at the title screen, not only in-world).
+    private Stellar.Infrastructure.Game.PandaUGuiAdapter? _uguiAdapter;
 
     // ── Perf overlay (constructed in SetupPerfOverlay) ──────────────────────
     private PerfOverlayWindow? _perfOverlay;
@@ -141,11 +146,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
     //   3. BuildThemeAndColorStack   — NamedThemeService (B-04 first), ThemeRenderer
     //   4. BuildInputAndLayoutServices — UnityInputGateway, HotkeyService, LayoutStorage
     //   5. BuildNativeUiServices     — PerfPrefs, NativeUiService
-    //   6. BuildHudServices          — HudRenderer, HudService
-    //   7. BuildWindowServices       — WindowRenderer, WindowService
-    //   8. BuildLauncherServices     — LauncherRegistry
-    //   9. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
-    //  10. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
+    //   6. BuildWindowServices       — WindowRenderer, WindowService
+    //   7. BuildLauncherServices     — LauncherRegistry
+    //   8. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
+    //   9. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
     //
     // Wiring call order in OnHotUpdateReady():
     //   1. SetupPerfOverlay
@@ -182,7 +186,6 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildThemeAndColorStack(log);
         BuildInputAndLayoutServices(log);
         BuildNativeUiServices(log);
-        BuildHudServices(log);
         BuildNotificationServices(log);   // toast surface — self-owned animated ToastRenderer canvas
         BuildWindowServices(log);
         BuildLauncherServices();
@@ -239,7 +242,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     // the uGUI theme assets (WindowThemeAssets / HudThemeAssets) bake themselves on demand.
     private void SetupPerfOverlay()
     {
-        _perfOverlay = new PerfOverlayWindow();   // registered as a uGUI window in Phase 9 (needs _windowService)
+        _perfOverlay = new PerfOverlayWindow(_clientState!);   // registered as a uGUI window in Phase 9 (needs _windowService)
         _hotkeyService?.DeclareAction(
             new HotkeyAction(
                 Id: "framework.perf-toggle",

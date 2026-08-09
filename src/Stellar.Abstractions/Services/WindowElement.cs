@@ -210,7 +210,11 @@ public sealed record RenderTextureHostElement(System.Func<object?> Texture, int 
 /// are skipped; a late-loaded icon binds on its first visible frame) — keep them cheap
 /// (cache lookups, no allocation).</param>
 public sealed record GameTextureElement(Func<object?> Texture, int Width, int Height,
-    Func<UvRect>? Uv = null) : HudElement;
+    Func<UvRect>? Uv = null) : HudElement
+{
+    /// <summary>Corner radius in px for the displayed box. 0 = square (default). Rounds via a stencil Mask.</summary>
+    public int CornerRadius { get; init; }
+}
 
 /// <summary>Sub-rect of a packed atlas PNG — the <c>DrawTextureWithTexCoords</c> analog. <paramref name="Atlas"/> is
 /// the whole packed sheet (loaded once, mipmap-smoothed); <paramref name="Uv"/> is the normalized sub-rect to show
@@ -268,4 +272,7 @@ public sealed record CooldownTileElement(
 {
     /// <summary>When non-null, clicking anywhere on the tile calls this action.</summary>
     public Action? OnClick { get; init; }
+
+    /// <summary>Drawn centered on the tile only when Icon() is null (e.g. a 2-letter abbreviation). Null/empty = nothing.</summary>
+    public Func<string>? FallbackLabel { get; init; }
 }

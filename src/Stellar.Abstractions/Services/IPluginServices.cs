@@ -60,8 +60,6 @@ public interface IPluginServices
     INamedTheme NamedTheme { get; }
     /// <summary>Inject declarative mod uGUI into game-UI anchors (Phase 9d).</summary>
     INativeUiHost NativeUi { get; }
-    /// <summary>uGUI HUD toolkit.</summary>
-    IHudHost Hud { get; }
     /// <summary>uGUI interactive window toolkit (SP1 window shell).</summary>
     IWindowHost Windows { get; }
     /// <summary>Register a tile in the Stellar launcher menu (Phase B).</summary>
@@ -94,4 +92,9 @@ public interface IPluginServices
     IGameEnvironment GameEnvironment { get; }
     /// <summary>Per-plugin binary file storage for data too large/opaque for <see cref="Config"/> (e.g. re-upload payloads).</summary>
     IPluginDataStore Data { get; }
+    /// <summary>Bridge to the game's live tolua# Lua state (run chunks, read simple globals back). Main-thread only.</summary>
+    ILua Lua { get; }
+    /// <summary>Per-plugin Harmony host — create id-namespaced <see cref="HarmonyLib.Harmony"/> instances that are
+    /// auto-unpatched when the plugin is disposed.</summary>
+    IHarmonyHost Harmony { get; }
 }

@@ -1,6 +1,6 @@
 # IWindowControl.SetVisible method
 
-Show or hide the window; persists the user's visibility preference.
+Show or hide the window for this session only. Does NOT persist — the choice is lost on relaunch. For a user-facing toggle whose state should survive a restart, use [`SetVisiblePersist`](./SetVisiblePersist.md).
 
 ```csharp
 public void SetVisible(bool visible)

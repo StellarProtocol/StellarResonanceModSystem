@@ -1,6 +1,6 @@
 # IPlayerIdentity.Level property
 
-Character level; zero when not yet loaded.
+Character level; zero when not yet known. May be set while [`IsAvailable`](./IsAvailable.md) is `false`.
 
 ```csharp
 public int Level { get; }

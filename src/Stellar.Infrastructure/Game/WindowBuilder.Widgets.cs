@@ -103,10 +103,12 @@ internal sealed partial class WindowBuilder
     {
         var rt = go.GetComponent<RectTransform>();
         if (rt == null) return;
+        var sf = rt.GetComponentInParent<Canvas>()?.scaleFactor ?? 1f;
+        if (sf <= 0f) sf = 1f;
         var pos = rt.position;
         var r   = rt.rect;
         cb(new Abstractions.Domain.WindowRect(
-            pos.x + r.xMin, Screen.height - pos.y - r.yMax, r.width, r.height));
+            pos.x + r.xMin * sf, Screen.height - pos.y - r.yMax * sf, r.width * sf, r.height * sf));
     }
 
     // LayoutElement for minHeight floor + optional fixed-width pin.

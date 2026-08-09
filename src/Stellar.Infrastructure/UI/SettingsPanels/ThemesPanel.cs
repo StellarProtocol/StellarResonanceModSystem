@@ -25,6 +25,11 @@ internal sealed class ThemesPanel
     // re-skins windows in place) and persisted ONCE on mouse-release (PollEditorUgui → SetFontScale). The garble
     // that previously made this unsafe is mitigated by WindowRenderer's Font.textureRebuilt → RefreshFontTexture.
     private float? _pendingFontScale;
+    // Pending UI Scale while dragging — drives the knob + "x" label only; the canvas is NOT rescaled during the
+    // drag. The final value is applied + persisted ONCE on mouse-release (PollEditorUgui → SetUiScale).
+    private float? _pendingUiScale;
+    // UiScale getter/setter are concrete-only (not on INamedTheme), so reach them via the runtime instance.
+    private NamedThemeService? Nts => _namedTheme as NamedThemeService;
 
     public ThemesPanel(INamedTheme namedTheme, IChromeStyle chromeStyle, ITheme theme,
                        IThemeOverrides overrides, ICustomThemeStore customThemes)
@@ -69,6 +74,12 @@ internal sealed class ThemesPanel
         {
             new SliderElement(() => _pendingFontScale ?? _namedTheme.FontScale, ApplyFontScalePreview, 0.8f, 1.4f),
             new TextElement(() => $"{(_pendingFontScale ?? _namedTheme.FontScale):0.00}x"),
+        }));
+        items.Add(new TextElement(() => "UI Scale", Emphasis: true));
+        items.Add(new RowElement(new HudElement[]
+        {
+            new SliderElement(() => _pendingUiScale ?? (Nts?.UiScale ?? 1f), ApplyUiScalePreview, 0.75f, 1.5f),
+            new TextElement(() => $"{(_pendingUiScale ?? (Nts?.UiScale ?? 1f)):0.00}x"),
         }));
         items.Add(new TextElement(() => "Window Opacity", Emphasis: true));
         items.Add(new RowElement(new HudElement[]
@@ -121,6 +132,7 @@ internal sealed class ThemesPanel
         _editor.TickUgui();
         if (Input.GetMouseButton(0)) return;   // still dragging — hold the pending value (already applied live)
         if (_pendingFontScale is { } fs) { _namedTheme.SetFontScale(fs); _pendingFontScale = null; }
+        if (_pendingUiScale is { } us) { Nts?.SetUiScale(us); _pendingUiScale = null; }
     }
 
     // Slider drag: track the pending value (knob/label) AND apply it LIVE (un-persisted) so window text resizes
@@ -131,5 +143,9 @@ internal sealed class ThemesPanel
         _pendingFontScale = v;
         (_namedTheme as NamedThemeService)?.SetFontScalePreview(v);
     }
+
+    // UI Scale applies on RELEASE (PollEditorUgui → SetUiScale). During the drag we only track the pending
+    // value so the knob + label move; the canvas is not rescaled until release (avoids per-step repacks).
+    private void ApplyUiScalePreview(float v) => _pendingUiScale = v;
 
 }

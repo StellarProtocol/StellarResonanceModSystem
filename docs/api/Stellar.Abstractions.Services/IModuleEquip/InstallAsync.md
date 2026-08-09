@@ -1,6 +1,6 @@
 # IModuleEquip.InstallAsync method
 
-Invokes `ModVM.AsyncEquipMod(moduleUuid, slotId)`. Slot is 1..4 (game enforces ModSlotMaxCount = 4). The Task completes when the game's `Mod.ModSlots` map reflects the equip or the 6-second timeout elapses.
+Invokes `ModVM.AsyncEquipMod(moduleUuid, slotId)`. Slot is 1..`ModSlotMaxCount` (4 before patch 3.7, 5 since); the framework imposes no cap — the game validates the slot id. The Task completes when the game's `Mod.ModSlots` map reflects the equip or the 6-second timeout elapses.
 
 ```csharp
 public Task<EquipResult> InstallAsync(int slotId, long moduleUuid, CancellationToken ct = default)

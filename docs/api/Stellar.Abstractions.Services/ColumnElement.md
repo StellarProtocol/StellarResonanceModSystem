@@ -13,6 +13,7 @@ public record ColumnElement : IEquatable<HudElement>
 | [ColumnElement](ColumnElement/ColumnElement.md)(…) | Vertical layout container: children stacked top-to-bottom with optional spacing. |
 | [Children](ColumnElement/Children.md) { get; set; } | Child elements stacked vertically. |
 | [Gap](ColumnElement/Gap.md) { get; set; } | Spacing in pixels between each child. |
+| [Padding](ColumnElement/Padding.md) { get; set; } | Uniform inner padding on all four sides in pixels. Adds breathing room between the column boundary and its content — use when a backdrop or explicit border sits at the column edge. |
 
 ## See Also
 

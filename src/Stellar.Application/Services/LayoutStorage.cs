@@ -92,11 +92,16 @@ internal sealed class LayoutStorage
 
     public string GetSlotName(int slot) => InRange(slot) ? _slots[slot].Name : "?";
 
-    public (WindowRect Rect, bool Visible) Get(int slot, string windowId, Resolution resolution, WindowRect defaultRect)
+    public (WindowRect Rect, bool Visible) Get(int slot, string windowId, Resolution resolution, WindowRect defaultRect, float scaleFactor = 1f)
     {
-        if (!InRange(slot)) return (ClampToScreen(defaultRect, resolution), true);
+        // Saved rects are CANVAS units (screen ÷ scaleFactor on a CanvasScaler'd canvas); the clamp bound must be
+        // canvas units too, else a non-1.0 scaleFactor shifts the window on every load. The KEY lookup stays raw.
+        var clampRes = scaleFactor > 0f && System.Math.Abs(scaleFactor - 1f) > 0.001f
+            ? new Resolution((int)System.Math.Round(resolution.Width / scaleFactor), (int)System.Math.Round(resolution.Height / scaleFactor))
+            : resolution;
+        if (!InRange(slot)) return (ClampToScreen(defaultRect, clampRes), true);
         var slotData = _slots[slot];
-        if (!slotData.Windows.TryGetValue(windowId, out var perRes)) return (ClampToScreen(defaultRect, resolution), true);
+        if (!slotData.Windows.TryGetValue(windowId, out var perRes)) return (ClampToScreen(defaultRect, clampRes), true);
 
         // A layout saved for THIS exact resolution is the user's deliberate placement — honour edge-tucking, but
         // a rect dragged FULLY off-screen (0 px visible) is never intentional and was unrecoverable: it persists
@@ -105,17 +110,29 @@ internal sealed class LayoutStorage
         // still allowing a deliberate tuck, so the placement is trusted as far as it can be without losing it.
         if (perRes.TryGetValue(resolution.Key, out var exact))
         {
-            return (ClampVisible(exact.Rect, resolution), exact.Visible);
+            return (ClampVisible(exact.Rect, clampRes), exact.Visible);
         }
 
         // Reused from the closest other resolution within delta — keep it on-screen for this one.
         var closest = FindClosestResolution(perRes.Keys, resolution);
         if (closest is { } closestKey && perRes.TryGetValue(closestKey, out var c))
         {
-            return (ClampToScreen(c.Rect, resolution), c.Visible);
+            return (ClampToScreen(c.Rect, clampRes), c.Visible);
         }
 
-        return (ClampToScreen(defaultRect, resolution), true);
+        return (ClampToScreen(defaultRect, clampRes), true);
+    }
+
+    /// <summary>True iff a saved layout for this window (exact resolution, or the closest within delta) exists AND
+    /// records it HIDDEN. Lets Register seed Visible=false for a user-hidden window without force-showing untouched
+    /// ones (whose Get() default is visible=true).</summary>
+    public bool IsPersistedHidden(int slot, string windowId, Resolution resolution)
+    {
+        if (!InRange(slot)) return false;
+        if (!_slots[slot].Windows.TryGetValue(windowId, out var perRes)) return false;
+        if (perRes.TryGetValue(resolution.Key, out var exact)) return !exact.Visible;
+        var closest = FindClosestResolution(perRes.Keys, resolution);
+        return closest is { } k && perRes.TryGetValue(k, out var c) && !c.Visible;
     }
 
     // Keep a window reachable on the current screen: a DefaultRect tuned for a larger resolution (or a layout

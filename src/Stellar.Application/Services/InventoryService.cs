@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -17,16 +18,18 @@ internal sealed class InventoryService : IInventory
     private readonly IInventoryProbe _probe;
     private readonly SelfGearCache _selfGear;
     private readonly IPluginLog _log;
+    private readonly IClientState _clientState;
 
     private ModuleSnapshot? _modules;
     private EquippedSet? _equipped;
     private long _lastHash;
 
-    public InventoryService(IInventoryProbe probe, SelfGearCache selfGear, IPluginLog log)
+    public InventoryService(IInventoryProbe probe, SelfGearCache selfGear, IPluginLog log, IClientState clientState)
     {
         _probe = probe;
         _selfGear = selfGear;
         _log = log;
+        _clientState = clientState;
         _selfGear.Changed += RaiseSelfGearChanged;
     }
 
@@ -65,8 +68,10 @@ internal sealed class InventoryService : IInventory
     /// <summary>Called at 1Hz from BootstrapPlugin. Reads from the probe,
     /// computes a hash of the inventory + equipped state, fires the event
     /// only when the hash changes.</summary>
+    [WorldGated]
     internal void Refresh()
     {
+        if (!_clientState.IsWorldActive) return;
         if (!_probe.TryReadModules(out var snap)) return;
         if (!_probe.TryReadEquipped(out var eq)) return;
 
@@ -85,6 +90,19 @@ internal sealed class InventoryService : IInventory
         {
             _log.Warning($"[Stellar][Inventory] subscriber threw: {ex.Message}");
         }
+    }
+
+    /// <summary>Clear account/character-scoped inventory state on logout. Nulls the polled
+    /// module/equipped snapshots (so <see cref="IsAvailable"/> reads false) and empties the self-gear
+    /// cache. <see cref="Refresh"/> is <c>[WorldGated]</c> so it will NOT self-clear once the world
+    /// goes inactive. Does NOT fire InventoryChanged / SelfGearChanged — a logout is teardown, not a
+    /// live inventory edit. Called by the Host OnLogout dispatcher.</summary>
+    internal void ClearSession()
+    {
+        Volatile.Write(ref _modules, null);
+        Volatile.Write(ref _equipped, null);
+        _lastHash = 0;
+        _selfGear.ClearSession();
     }
 
     // Order-invariant cheap hash: each (uuid, configId) for inventory;

@@ -10,7 +10,7 @@ public class InventoryServiceTests
     public void IsAvailable_False_BeforeFirstSuccessfulRefresh()
     {
         var probe = new StubInventoryProbe();
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
 
         Assert.False(svc.IsAvailable);
         Assert.Null(svc.GetModules());
@@ -21,7 +21,7 @@ public class InventoryServiceTests
     public void SelfGearChanged_Forwards_CacheSync()
     {
         var cache = new SelfGearCache();
-        var svc = new InventoryService(new StubInventoryProbe(), cache, new StubLog());
+        var svc = new InventoryService(new StubInventoryProbe(), cache, new StubLog(), new StubClientState());
         var fires = 0;
         svc.SelfGearChanged += () => fires++;
 
@@ -38,7 +38,7 @@ public class InventoryServiceTests
             NextModules = StubInventoryProbe.SnapshotOf((1, 100)),
             NextEquipped = StubInventoryProbe.EquippedOf((1, 1)),
         };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         var fires = 0;
         svc.InventoryChanged += () => fires++;
 
@@ -58,7 +58,7 @@ public class InventoryServiceTests
             NextModules = StubInventoryProbe.SnapshotOf((1, 100)),
             NextEquipped = StubInventoryProbe.EquippedOf((1, 1)),
         };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         var fires = 0;
         svc.InventoryChanged += () => fires++;
 
@@ -77,7 +77,7 @@ public class InventoryServiceTests
             NextModules = StubInventoryProbe.SnapshotOf((1, 100), (2, 100)),
             NextEquipped = StubInventoryProbe.EquippedOf((1, 1)),
         };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         var fires = 0;
         svc.InventoryChanged += () => fires++;
 
@@ -97,7 +97,7 @@ public class InventoryServiceTests
             NextModules = StubInventoryProbe.SnapshotOf((1, 100)),
             NextEquipped = StubInventoryProbe.EquippedOf(),
         };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         var fires = 0;
         svc.InventoryChanged += () => fires++;
 
@@ -113,7 +113,7 @@ public class InventoryServiceTests
     public void Refresh_NoCrash_WhenProbeUnreadable()
     {
         var probe = new StubInventoryProbe { ModulesReadable = false };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         var fires = 0;
         svc.InventoryChanged += () => fires++;
 
@@ -127,7 +127,7 @@ public class InventoryServiceTests
     public void GetSelfGear_Empty_BeforeFirstSync_ThenServesCache()
     {
         var cache = new SelfGearCache();
-        var svc = new InventoryService(new StubInventoryProbe(), cache, new StubLog());
+        var svc = new InventoryService(new StubInventoryProbe(), cache, new StubLog(), new StubClientState());
 
         Assert.Empty(svc.GetSelfGear());
 
@@ -145,7 +145,7 @@ public class InventoryServiceTests
             NextModules = StubInventoryProbe.SnapshotOf((1, 100)),
             NextEquipped = StubInventoryProbe.EquippedOf(),
         };
-        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog());
+        var svc = new InventoryService(probe, new SelfGearCache(), new StubLog(), new StubClientState());
         svc.InventoryChanged += () => throw new InvalidOperationException("subscriber boom");
 
         svc.Refresh();

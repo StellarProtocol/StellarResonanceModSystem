@@ -25,7 +25,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     internal readonly List<UGuiTextInput> Fields = new();
     internal readonly List<(RectTransform Area, Action<float, float> Pick)> DragAreas = new();
     internal readonly List<(RectTransform Handle, RectTransform Target, bool EditOnly)> DragWindows = new();
-    internal readonly List<(RectTransform Grip, RectTransform Target, Vector2 Min, Vector2 Max)> DragResizers = new();
+    internal readonly List<(RectTransform Grip, RectTransform Target, Vector2 Min, Vector2 Max, bool EditOnly)> DragResizers = new();
     internal readonly List<(RectTransform Cell, Action<bool> SetHover)> Hovers = new();
     internal readonly List<Action<float>> Pulses = new();   // brand-logo glow pulse (driven per frame below)
     // Drag-to-rearrange cells (CombatMeter raid grid). Each is both a drag source and a drop target; CanDrag
@@ -56,6 +56,21 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private RectTransform? _ghostRt;           // cached ghost transform (avoids per-held-frame GetComponent)
     private Vector2 _lastMouse;
     private int _throwLogged;
+    private Canvas? _canvasComp;
+    // UI-scale poll: WindowRenderer wires UiScaleProvider to NamedThemeService.UiScale; SyncUiScale (per frame)
+    // multiplies the CanvasScaler by driving referenceResolution = (2560/u, 1440/u). No-op when unchanged.
+    internal System.Func<float>? UiScaleProvider;
+    private CanvasScaler? _scaler;
+    private float _appliedUiScale = -1f;
+    private float Scale
+    {
+        get
+        {
+            if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
+            var s = _canvasComp != null ? _canvasComp.scaleFactor : 1f;
+            return s > 0f ? s : 1f;
+        }
+    }
 
     internal void Prune()
     {
@@ -98,8 +113,38 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         }
     }
 
+    private void SyncUiScale()
+    {
+        if (UiScaleProvider == null) return;
+        if (_scaler == null) _scaler = GetComponent<CanvasScaler>();
+        if (_scaler == null) return;
+        var u = Mathf.Clamp(UiScaleProvider(), 0.75f, 1.5f);
+        u = Mathf.Round(u / 0.05f) * 0.05f;   // 5% grid: font atlas repacks only at boundaries during a drag
+        if (Mathf.Abs(u - _appliedUiScale) < 0.001f) return;
+        _appliedUiScale = u;
+        _scaler.referenceResolution = Stellar.Infrastructure.Game.WindowRenderer.UiRefResolution(u);
+    }
+
+    // pixelPerfect snaps graphics to the physical pixel grid (crisp text), but it re-snaps every frame — so a
+    // MOVING window's contents step by whole pixels instead of gliding. Turn it off while a window is being
+    // dragged or resized (smooth sub-pixel movement), back on otherwise so static UI stays crisp. Guarded so the
+    // canvas rebuild only happens when the state actually flips.
+    private void SyncPixelPerfect()
+    {
+        if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
+        if (_canvasComp == null) return;
+        // pixelPerfect ON keeps glyphs/graphics on whole pixels (crisp text) but re-snaps every frame, which makes
+        // a MOVING window's contents step by whole pixels — so turn it off at ANY scale while a window is being
+        // dragged or resized (smooth sub-pixel drag), then back on so static UI re-crisps on release.
+        var moving = _activeWinDrag != null || _activeResize >= 0;
+        var want = !moving;
+        if (_canvasComp.pixelPerfect != want) _canvasComp.pixelPerfect = want;
+    }
+
     private void Update()
     {
+        SyncUiScale();
+        SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {
             try { Fields[i].Tick(); }
@@ -118,6 +163,25 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         TickDismissables(openedPopup);
         TickRenderHostZoom();
         TickChartZoom();   // .ChartPan.cs
+        SyncResizeGripVisibility();
+    }
+
+    // Drive each resize grip's VISIBILITY from the same condition as its interaction gate (HitResizeGrip):
+    // an edit-only (pinned HUD) grip resizes only in layout edit-mode, so an inert grip during play is
+    // misleading — hide it. Free-drag grips (EditOnly=false) resize any time → always shown. Diff-guarded
+    // (mirror the pixelPerfect idiom) so SetActive only fires on change. Runs after the Prune cull, so null
+    // grips are already removed; the null guard is belt-and-suspenders. Also corrects any grip mounted while
+    // the state is steady (next frame). A hidden grip is ignoreLayout (no layout effect) and doubly
+    // un-hittable (HitResizeGrip already checks EditOnly + activeInHierarchy).
+    private void SyncResizeGripVisibility()
+    {
+        for (var i = 0; i < DragResizers.Count; i++)
+        {
+            var g = DragResizers[i].Grip;
+            if (g == null) continue;
+            var want = !DragResizers[i].EditOnly || LayoutEditGate.IsEditing;
+            if (g.gameObject.activeSelf != want) g.gameObject.SetActive(want);
+        }
     }
 
     // Mouse-down: pick what the press grabs, in priority order. A draggable card claims the pointer first, so
@@ -162,7 +226,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (_activeWinDrag != null)
         {
             var m = (Vector2)Input.mousePosition;
-            _activeWinDrag.anchoredPosition += m - _lastMouse;   // top-left anchor: screen delta maps 1:1
+            _activeWinDrag.anchoredPosition += (m - _lastMouse) / Scale;   // screen delta → canvas units
             ClampWinDragOnScreen();                              // never let a drag fling the window off-screen (lost forever)
             _lastMouse = m;
         }
@@ -178,8 +242,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         var ap = _activeWinDrag.anchoredPosition;
         var size = _activeWinDrag.rect.size;
         var rect = new Stellar.Abstractions.Domain.WindowRect(ap.x, -ap.y, size.x, size.y);
+        var s = Scale;
         var clamped = Stellar.Application.Services.LayoutStorage.ClampVisible(
-            rect, new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
+            rect, new Stellar.Abstractions.Domain.Resolution(
+                Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
         _activeWinDrag.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
     }
 
@@ -201,10 +267,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
 
     private void TickResize()
     {
-        var (_, target, min, max) = DragResizers[_activeResize];
+        var (_, target, min, max, _) = DragResizers[_activeResize];
         if (target == null) return;
         var m = (Vector2)Input.mousePosition;
-        var d = m - _lastMouse;   // grow right with +x; grow down (screen y decreases) with -y
+        var d = (m - _lastMouse) / Scale;   // screen delta → canvas units (sizeDelta is canvas units)
         var s = target.sizeDelta;
         target.sizeDelta = new Vector2(
             Mathf.Clamp(s.x + d.x, min.x, max.x),
@@ -301,6 +367,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         for (var i = 0; i < DragResizers.Count; i++)
         {
+            // Edit-only windows (pinned overlays) resize only while layout edit-mode is active — mirrors the
+            // move gate in HitWindowHandle. Free-drag dialogs (EditOnly=false) resize any time. When gated off
+            // the grip isn't hit-testable, so the press falls through to whatever's behind it.
+            if (DragResizers[i].EditOnly && !LayoutEditGate.IsEditing) continue;
             if (DragResizers[i].Grip == null || !DragResizers[i].Grip.gameObject.activeInHierarchy) continue;
             if (!RectTransformUtility.RectangleContainsScreenPoint(DragResizers[i].Grip, mp, null)) continue;
             if (FrontWindowBlocks(mp, DragResizers[i].Target)) continue;

@@ -168,7 +168,9 @@ internal sealed partial class WindowBuilder
     private static void PositionDropdown(RectTransform prt, WindowRect anchor)
     {
         LayoutRebuilder.ForceRebuildLayoutImmediate(prt);
-        var size = prt.rect.size;
+        var sf = prt.GetComponentInParent<Canvas>()?.scaleFactor ?? 1f;
+        if (sf <= 0f) sf = 1f;
+        var size = prt.rect.size * sf;   // canvas units → screen px, to match anchor/Screen space
         var left = Mathf.Clamp(anchor.X, 0f, Mathf.Max(0f, Screen.width - size.x));
         var triggerBottom = Screen.height - anchor.Y - anchor.Height;   // screen Y-up
         var topLeftY = triggerBottom - size.y < 0f

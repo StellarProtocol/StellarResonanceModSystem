@@ -14,6 +14,7 @@ public interface IEntityDetail
 | [GetEquipment](IEntityDetail/GetEquipment.md)(…) | The entity's equipped items (slot + item id); empty if not broadcast. |
 | [GetFashion](IEntityDetail/GetFashion.md)(…) | Worn cosmetics for an entity from the broadcast `AttrFashionData` attribute, with actual dye colours. Empty for entities that never reported fashion / out of AOI. |
 | [GetSocialSnapshot](IEntityDetail/GetSocialSnapshot.md)(…) | The player's last on-demand social-data reply (identity + ability score + profession + gear + wardrobe), or null if none received. Available for any player; the inspector's fallback when the AOI broadcast is absent (far/never-seen players). See [`SocialSnapshot`](./SocialSnapshot.md). |
+| [RefreshSocialSnapshot](IEntityDetail/RefreshSocialSnapshot.md)(…) | Ask the game to re-fetch this player's social data (master score, guild, portraits) by originating its own `Social.GetSocialData` request. Fire-and-forget: the refreshed snapshot arrives asynchronously via the wire-tap and replaces the cached value — poll [`GetSocialSnapshot`](./IEntityDetail/GetSocialSnapshot.md) to observe it. No-op for non-player entities. |
 
 ## See Also
 

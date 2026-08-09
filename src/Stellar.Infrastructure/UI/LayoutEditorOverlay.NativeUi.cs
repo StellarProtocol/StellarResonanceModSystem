@@ -19,7 +19,7 @@ internal sealed partial class LayoutEditorOverlay
             // Live rect (not the resolve-time snapshot) so the outline tracks the element's current size/position.
             items.Add(new Stellar.Infrastructure.Game.EditChromeItem(
                 _nativeUi.GetLiveRect(e), color, $"[Game UI] {e.Descriptor.DisplayName}",
-                e.Descriptor.Id, e.Visible, e.Descriptor.SafeToHide));
+                e.Descriptor.Id, e.Visible, e.Descriptor.SafeToHide, Resizable: false));
         }
     }
 }

@@ -22,6 +22,15 @@ internal sealed partial class WindowBuilder
     internal const string LayoutToolbarWindowId = "framework.layout-toolbar";
 
     private readonly WindowThemeAssets _assets;
+    // HUD sprite/colour set for SurfaceStyle.HudOverlay windows (rounded pill/bar 9-slice + shadowed HudText),
+    // baked + owned by WindowRenderer and re-baked in place on theme change. Null in the sandbox → the HudOverlay
+    // branch falls back to white/black text so it still builds a tree (never hit by Menu windows). Set once by
+    // the renderer (stable object reference; its sprites mutate on rebake, so no re-set needed).
+    internal HudThemeAssets? HudAssets { get; set; }
+    // The surface style of the window CURRENTLY being built — set at the top of Build() from spec.Surface, before
+    // the recursive descent, so every nested Text/Bar/Pill leaf sees it. Menu (default) leaves every existing
+    // window byte-identical; HudOverlay reroutes those three leaf types to the ported HUD renders (.HudOverlay.cs).
+    private SurfaceStyle _surface = SurfaceStyle.Menu;
     // Per-frame field-tick hook (cursor/Esc/debounce). Injected by the renderer (which owns a
     // MonoBehaviour ticker); null in the sandbox (static render needs no tick). Mirrors HudElementBuilder's
     // registerBar animator hook.
@@ -39,10 +48,12 @@ internal sealed partial class WindowBuilder
     // Null in the sandbox → the logo renders static at the rest pulse.
     private readonly Action<Action<float>>? _registerPulse;
 
-    // Window resize hook: (grip, window root, min size, max size) → the ticker resizes the root on grip drag.
+    // Window resize hook: (grip, window root, min size, max size, editOnly) → the ticker resizes the root on
+    // grip drag. editOnly = the window's EditModeDragOnly flag: a pinned overlay resizes only in layout edit-mode
+    // (mirrors the move gate); free-drag dialogs resize any time.
     // A settable property (not a ctor param) to stay under the ctor-dependency cap; set by WindowRenderer.
     // Null in the sandbox → the grip renders but doesn't resize.
-    internal Action<RectTransform, RectTransform, Vector2, Vector2>? RegisterResize { get; set; }
+    internal Action<RectTransform, RectTransform, Vector2, Vector2, bool>? RegisterResize { get; set; }
 
     // Drag-to-rearrange hooks (CombatMeter raid grid). RegisterDragSlot: (cell rect, key, canDrag, setHover) →
     // the ticker drives the drag (ghost + hover highlight + drop). SetDragSlotDrop: (fromKey,toKey)→ wired once
@@ -120,6 +131,7 @@ internal sealed partial class WindowBuilder
     public WindowToken Build(WindowRegistration reg, Transform parent)
     {
         var token = new WindowToken();
+        _surface = reg.Spec.Surface;   // per-window; read by BuildText/BuildBar/BuildPill for the HudOverlay branch
         token.Resizable = reg.Spec.Resizable;
         // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
         // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
@@ -362,6 +374,7 @@ internal sealed partial class WindowBuilder
 
     private void BuildText(TextElement t, Transform parent, WindowToken token)
     {
+        if (_surface == SurfaceStyle.HudOverlay) { BuildTextHud(t, parent, token); return; }   // .HudOverlay.cs
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };

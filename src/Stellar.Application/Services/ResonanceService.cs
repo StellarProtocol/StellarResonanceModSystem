@@ -36,6 +36,10 @@ internal sealed class ResonanceService : IResonanceState
         Volatile.Write(ref _installed, installed);
     }
 
+    /// <summary>Empty the installed-Imagine snapshot on logout (account/character-scoped session
+    /// data). Called by the Host OnLogout dispatcher.</summary>
+    internal void ClearSession() => Volatile.Write(ref _installed, Empty);
+
     private static bool SameAs(IReadOnlyList<int> a, IReadOnlyList<int> b)
     {
         if (a.Count != b.Count) return false;

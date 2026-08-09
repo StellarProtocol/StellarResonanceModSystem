@@ -1,3 +1,4 @@
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -21,8 +22,11 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed class PlayerStateService : IPlayerState
 {
+    private readonly IClientState _clientState;
     private PlayerStateSnapshot _snapshot;
     private bool _isAvailable;
+
+    public PlayerStateService(IClientState clientState) => _clientState = clientState;
 
     // Sticky identity, sourced from the char record rather than the world
     // entity. Held across failed samples on purpose; only ever replaced by a
@@ -79,10 +83,12 @@ internal sealed class PlayerStateService : IPlayerState
     /// scene teardown. Identity is refreshed independently and survives that
     /// drop.
     /// </summary>
+    [WorldGated]
     internal void Refresh(IPlayerStateProbe probe)
     {
         RefreshIdentity(probe);
 
+        if (!_clientState.IsWorldActive) return;
         if (probe.TrySample(out var snapshot))
         {
             _snapshot = snapshot;
@@ -92,6 +98,23 @@ internal sealed class PlayerStateService : IPlayerState
         {
             _isAvailable = false;
         }
+    }
+
+    /// <summary>
+    /// Drop all account/character-scoped session state on logout. <see cref="Refresh"/> is
+    /// <c>[WorldGated]</c>, so it will NOT self-clear once the world goes inactive — without this the
+    /// previous account's sticky name / level / class would persist into the next login (it survives
+    /// an attribute blackout by design). Called by the Host OnLogout dispatcher (mirrors the dungeon
+    /// reset). Runs on the Unity main thread.
+    /// </summary>
+    internal void ClearSession()
+    {
+        _snapshot = default;
+        _isAvailable = false;
+        _identityCharId = 0;
+        _identityName = null;
+        _identityLevel = 0;
+        _identityProfession = 0;
     }
 
     // Merges a char-record identity read into the sticky fields. Never

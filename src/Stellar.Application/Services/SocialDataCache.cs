@@ -18,4 +18,9 @@ public sealed class SocialDataCache : ISocialDataSink
     /// <summary>Latest snapshot for the entity, or null if none received / not a player.</summary>
     public SocialSnapshot? GetSocialSnapshot(EntityId entity)
         => entity.IsPlayer && _byChar.TryGetValue(entity.Value >> 16, out var s) ? s : null;
+
+    /// <summary>Drop every cached per-player social snapshot on logout (account/character-scoped).
+    /// Called by the Host OnLogout dispatcher so the next account can't read the previous session's
+    /// social data.</summary>
+    internal void ClearSession() => _byChar.Clear();
 }

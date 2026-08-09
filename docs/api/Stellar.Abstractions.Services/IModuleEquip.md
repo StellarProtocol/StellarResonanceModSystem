@@ -1,6 +1,6 @@
 # IModuleEquip interface
 
-Game-state mutation primitive: equip / uninstall modules via the game's own RPC dispatcher. Implementations invoke the game's Lua functions `ModVM.AsyncEquipMod` / `ModVM.AsyncUninstallMod` through the `ZLuaFramework` bridge — the plugin supplies inputs, the game's Lua code builds the protobuf and applies its own validation. User-initiated only. Plugins MUST trigger calls from a user action (button press, slash command, hotkey) — not from a timer, scheduled event, or background loop. See CLAUDE.md § "Out of scope". Async: every call polls the game's `Mod.ModSlots` map until it reflects the requested change, or times out at 6 seconds (matching the Lua proxy timeout). Callers must `await` and check the returned [`EquipResult`](../Stellar.Abstractions.Domain.Inventory/EquipResult.md).
+Game-state mutation primitive: equip / uninstall modules via the game's own RPC dispatcher. Implementations invoke the game's Lua functions `ModVM.AsyncEquipMod` / `ModVM.AsyncUninstallMod` through the `ZLuaFramework` bridge — the plugin supplies inputs, the game's Lua code builds the protobuf and applies its own validation. User-initiated only. Plugins MUST trigger calls from a user action (button press, slash command, hotkey) — not from a timer, scheduled event, or background loop. See the project's out-of-scope policy (README). Async: every call polls the game's `Mod.ModSlots` map until it reflects the requested change, or times out at 6 seconds (matching the Lua proxy timeout). Callers must `await` and check the returned [`EquipResult`](../Stellar.Abstractions.Domain.Inventory/EquipResult.md).
 
 ```csharp
 public interface IModuleEquip
@@ -11,7 +11,7 @@ public interface IModuleEquip
 | name | description |
 | --- | --- |
 | [IsAvailable](IModuleEquip/IsAvailable.md) { get; } | True when the game's RPC dispatcher has been resolved AND a real player entity is in-world. False during boot, character select, or zone transition. |
-| [InstallAsync](IModuleEquip/InstallAsync.md)(…) | Invokes `ModVM.AsyncEquipMod(moduleUuid, slotId)`. Slot is 1..4 (game enforces ModSlotMaxCount = 4). The Task completes when the game's `Mod.ModSlots` map reflects the equip or the 6-second timeout elapses. |
+| [InstallAsync](IModuleEquip/InstallAsync.md)(…) | Invokes `ModVM.AsyncEquipMod(moduleUuid, slotId)`. Slot is 1..`ModSlotMaxCount` (4 before patch 3.7, 5 since); the framework imposes no cap — the game validates the slot id. The Task completes when the game's `Mod.ModSlots` map reflects the equip or the 6-second timeout elapses. |
 | [UninstallAsync](IModuleEquip/UninstallAsync.md)(…) | Invokes `ModVM.AsyncUninstallMod(slotId)`. Returns SlotEmpty (not an error) if the slot held no module. |
 
 ## See Also

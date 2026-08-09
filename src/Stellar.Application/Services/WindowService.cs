@@ -16,13 +16,28 @@ internal sealed partial class WindowService : IWindowHost
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IPluginLog _log;
-    private readonly IGameMenuState _menuState;
-    private readonly IClientState _clientState;
+    private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
     private float _accum;
 
-    public WindowService(IWindowRenderer renderer, IPluginLog log, IGameMenuState menuState, IClientState clientState)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _menuState = menuState; _clientState = clientState; }
+    public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
+    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _layoutEditor = layoutEditor; }
+
+    /// <inheritdoc/>
+    public bool IsLayoutEditing => _layoutEditor?.IsEditing ?? false;
+
+    /// <summary>Editor-facing: the window overlay canvas's CanvasScaler factor (1 when unscaled). The editor
+    /// layer (LayoutEditorOverlay) uses it to convert its screen-px geometry into canvas units.</summary>
+    internal float CanvasScale => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScale ?? 1f;
+
+    /// <summary>True once the window canvas's CanvasScaler has settled a real scaleFactor since the last (re)create.
+    /// The layout defer (ApplySavedRect) and the Host's generation-triggered reapply both gate on this so a
+    /// scene-change remount never clamps against the transient default 1.0. Defaults true when the renderer
+    /// exposes no metrics (test fakes) — the ready-gate is then a no-op.</summary>
+    internal bool CanvasScaleReady => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScaleReady ?? true;
+
+    /// <summary>Canvas (re)create counter — the Host fires one settled reapply when it changes. 0 when unavailable.</summary>
+    internal int CanvasGeneration => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasGeneration ?? 0;
 
     public IWindowControl Register(WindowRegistration reg)
     {
@@ -34,7 +49,14 @@ internal sealed partial class WindowService : IWindowHost
             if (!existing.Removed) { _log.Error($"[Window] duplicate id '{reg.Spec.Id}'; ignored."); return new NoOpHandle(); }
             DestroyIfMounted(existing);
         }
-        var e = new Entry(reg) { Owner = this }.Init(reg.Spec.StartVisible); _windows[reg.Spec.Id] = e; return e;
+        // Seed the start-visible from the persisted layout: override StartVisible to hidden ONLY when there is an
+        // actual persisted hide (never force-SHOW a StartVisible=false window). A persisted-hidden window then
+        // starts Visible=false, never mounts, and never enters the fragile one-shot restore race in ApplySavedRect.
+        var start = reg.Spec.StartVisible;
+        if (start && _storage != null && _resolution != null
+            && _storage.IsPersistedHidden(_storage.ActiveSlot, reg.Spec.Id, _resolution()))
+            start = false;
+        var e = new Entry(reg) { Owner = this }.Init(start); _windows[reg.Spec.Id] = e; return e;
     }
 
     public IWindowControl Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys)
@@ -62,15 +84,22 @@ internal sealed partial class WindowService : IWindowHost
     /// (A Party-chromed free-drag dialog like CombatMeter History is excluded — only EditModeDragOnly windows.)</summary>
     internal IEnumerable<EditableElement> EditableElements()
     {
+        var sf = CanvasScale;
         foreach (var kv in _windows)
         {
             var e = kv.Value;
             if (e.Removed || !e.Reg.Spec.EditModeDragOnly) continue;
             var rect = e.Token != null ? _renderer.GetRect(e.Token)
-                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : e.Reg.Spec.DefaultRect;
-            yield return new EditableElement(kv.Key, rect, e.Visible, CanHide: true);
+                     : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
+            yield return new EditableElement(kv.Key, ScaleRect(rect, sf), e.Visible, CanHide: true, Resizable: e.Reg.Spec.Resizable);
         }
     }
+
+    // Canvas units → screen px for the editor (which is uniformly screen-px). All three rect sources above are
+    // canvas units: GetRect returns anchoredPosition; LastSavedRect was persisted from GetRect; and DefaultRect
+    // is consumed through SetRect as canvas units too (the window renders it × scaleFactor). So scale uniformly.
+    private static WindowRect ScaleRect(WindowRect r, float sf)
+        => sf == 1f ? r : new WindowRect(r.X * sf, r.Y * sf, r.Width * sf, r.Height * sf);
 
     /// <summary>True if any mounted window holds keyboard focus in a text field — drives the keyboard gate
     /// (the Host OR-combines this into InputCaptureService / KeyboardInputGate each frame). Cheap per-frame.</summary>
@@ -102,10 +131,14 @@ internal sealed partial class WindowService : IWindowHost
             e.Token = SafeMount(e);
             if (e.Token is null) return;
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
-            ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout
+            ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
             SafeApply(e);
             e.Dirty = false; return;
         }
+        // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
+        // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
+        // that scale is live so the saved rect clamps against the correct canvas-unit bound.
+        if (e.ApplyPending && CanvasScaleReady) ApplySavedRect(e, e.PendingApplyVisibility);
         if (applyNow || e.Dirty) { SafeApply(e); e.Dirty = false; }
         if (applyNow) PersistIfSettled(e);   // save the rect once a titlebar drag settles
     }
@@ -114,11 +147,15 @@ internal sealed partial class WindowService : IWindowHost
     { try { return _renderer.Mount(e.Reg); } catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; } }
     private void SafeApply(Entry e)
     {
-        // Auto-hide gate: suppress the window's draw while a full-screen game menu is open
-        // (AutoHideBehindGameMenus) or before login (HideUntilInWorld). The renderer deactivates the root and
-        // skips the value pull when hidden — the perf win the IMGUI path got via WindowGatingPolicy. Recomputed
-        // each apply (~10 Hz), so it responds within ≤100 ms of a menu opening/closing.
-        var hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec, _menuState.IsFullScreenMenuOpen, _clientState.IsLoggedIn);
+        // Visibility gate: the plugin-owned ShouldRender() predicate is the single source of truth
+        // (hide = !ShouldRender()). The renderer deactivates the root and skips the value pull when hidden
+        // (the perf win — a hidden window runs zero value funcs). Recomputed each apply (~10 Hz), so it
+        // responds within ≤100 ms of the predicate flipping. (MasterHudKill is layered on in the renderer.)
+        // A ShouldRender that throws (a buggy plugin predicate) fails SAFE — window hidden, warned once per
+        // apply — instead of the NRE bubbling out of the tick. (A null predicate is handled in the policy.)
+        bool hide;
+        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
+        catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }
@@ -142,6 +179,9 @@ internal sealed partial class WindowService : IWindowHost
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
         public bool BringToFrontPending;
+        // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);
+        // TickEntry re-applies once CanvasScaleReady. PendingApplyVisibility carries the deferred call's flag.
+        public bool ApplyPending; public bool PendingApplyVisibility = true;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
         public bool IsShown => Token != null && Visible;
@@ -157,7 +197,7 @@ internal sealed partial class WindowService : IWindowHost
             if (Token != null) Owner._order?.BringToFront(Token);
             else BringToFrontPending = true;   // window not yet mounted — apply on next mount
         }
-        public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Reg.Spec.DefaultRect;
+        public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Owner.ResolveAnchoredDefault(Reg.Spec);
         public void SetRect(WindowRect rect)
         {
             if (Token == null) return;

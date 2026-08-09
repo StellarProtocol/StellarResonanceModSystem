@@ -13,6 +13,9 @@ public sealed partial class BootstrapPlugin
     private void BuildCoreServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
         _framework = new FrameworkService();
+        // Shared ILua bridge (game's tolua# mainState) + factory that mints one IHarmonyHost per loaded plugin.
+        _luaService = new LuaService(log.Info);
+        _harmonyHostFactory = new Stellar.Infrastructure.Game.HarmonyHostFactory(log.Info);
         _scheduler = new Stellar.Application.Services.TickScheduler(
             maxHoldSeconds: 10.0,
             log: m => log.Info(m));
@@ -21,7 +24,7 @@ public sealed partial class BootstrapPlugin
         _harmonyBridge = new HarmonyEventBridge();
         _messagePipeBridge = new MessagePipeContainerBridge(log, typeRegistry);
         _gameEvents = new GameEventsService(log);
-        _playerState = new PlayerStateService();
+        _playerState = new PlayerStateService(_clientState);
         // CombatEntityTracker is shared between CombatService (writes) and
         // GameDataWorldService (reads attr-10 for GetMonsterByEntity). Stored on
         // BootstrapPlugin so the two construction sites can reference the same instance.
@@ -38,6 +41,15 @@ public sealed partial class BootstrapPlugin
             log, () => _inventoryProbe?.TryGetLiveCharSerialize());
         _playerStateProbe = new PandaPlayerStateProbe(log, typeRegistry, charIdentityReader);
         _playerStatsProbe = new PandaPlayerStatsProbe(log, _playerStateProbe);
+        BuildCombatSocialServices(log, typeRegistry);
+    }
+
+    // Chat / social-data / combat / party / dungeon / frame-limiter cluster. Split out
+    // of BuildCoreServices to keep both methods under the STELLAR0002 50-LoC cap. Runs
+    // after the entity tracker + client state are built (both referenced below), and the
+    // construction order here is preserved exactly as it was inline.
+    private void BuildCombatSocialServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
+    {
         _chatService = new ChatService(log);
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap

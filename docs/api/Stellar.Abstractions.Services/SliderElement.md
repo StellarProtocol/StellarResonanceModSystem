@@ -13,9 +13,12 @@ public record SliderElement : IEquatable<HudElement>
 | [SliderElement](SliderElement/SliderElement.md)(…) | Drag slider over [*Min*,*Max*]. *Get* reflects external state (poll-diffed); a drag calls *Set*. |
 | [Enabled](SliderElement/Enabled.md) { get; set; } |  |
 | [Get](SliderElement/Get.md) { get; set; } |  |
+| [HandleSize](SliderElement/HandleSize.md) { get; set; } | Handle (knob) size in px; 0 → the theme default handle size. |
 | [Max](SliderElement/Max.md) { get; set; } |  |
 | [Min](SliderElement/Min.md) { get; set; } |  |
 | [Set](SliderElement/Set.md) { get; set; } |  |
+| [SquareHandle](SliderElement/SquareHandle.md) { get; set; } | Opt in to a knob that is exactly [`HandleSize`](./SliderElement/HandleSize.md) square, instead of one stretched to the height of its row. |
+| [Width](SliderElement/Width.md) { get; set; } | Fixed track width in px; 0 → elastic (the track expands to fill its Row cell). |
 
 ## See Also
 

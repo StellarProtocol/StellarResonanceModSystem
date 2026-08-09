@@ -1,6 +1,6 @@
 # IPlayerIdentity.Profession property
 
-Primary profession id; zero when not yet loaded.
+Current profession id; zero when not yet known. May be set while [`IsAvailable`](./IsAvailable.md) is `false`.
 
 ```csharp
 public int Profession { get; }

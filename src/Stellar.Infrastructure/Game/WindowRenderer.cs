@@ -19,16 +19,29 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
 
+    // Single source of the UI-scale → CanvasScaler formula. Dividing BOTH reference dimensions by the user factor
+    // u multiplies the resulting scaleFactor by exactly u, so the whole window canvas scales by u. Used on first
+    // mount (EnsureCanvas, avoids a 1-frame pop) and by the ticker's per-frame poll (WindowInteractionTicker).
+    internal static Vector2 UiRefResolution(float uiScale)
+        => new Vector2(2560f / uiScale, 1440f / uiScale);
+
     private readonly IPluginLog _log;
     private readonly IThemeMenuColors _colors;
+    private readonly IThemeHudColors _hudColors;    // HUD palette — baked into _hudAssets for SurfaceStyle.HudOverlay windows
     private readonly IChromeStyle _chrome;          // supplies the active theme's per-preset window opacity
     private readonly WindowThemeAssets _assets = new();
+    // HUD sprite/colour set (rounded pill + bar 9-slice, shadowed HudText), baked from the SAME IThemeHudColors
+    // as HudRenderer's copy and re-baked on the SAME ActiveChanged signal. Threaded into WindowBuilder so a
+    // window declaring SurfaceStyle.HudOverlay reproduces the native HUD look byte-for-byte. Distinct object from
+    // HudRenderer's — the two renderers own separate canvases; HudThemeAssets is NOT deleted, it lives on here too.
+    private readonly HudThemeAssets _hudAssets = new();
     private GameObject? _canvas;
+    private Canvas? _canvasComp;
     private Transform? _canvasRoot;
     private WindowBuilder? _builder;
     private WindowInteractionTicker? _ticker;
@@ -39,6 +52,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
     private int _zseq;    // monotonic mount counter — drives ZSeq (stable tiebreak within same ZFront tier)
     private int _zfront;  // monotonic BringToFront counter — drives ZFront (overrides ZCat/ZSeq when non-zero)
+    private int _canvasGeneration;         // bumps on every canvas (re)create — Host fires a settled reapply on change
+    private int _canvasCreatedFrame = -1;  // Time.frameCount at the last (re)create; scale settles a FRAME later
 
     // The shared OS dynamic font repacks its glyph atlas when a text-heavy panel requests many glyphs; that
     // strands earlier/hidden Text with stale UVs (garbled glyphs). Refresh every window's text on rebuild.
@@ -48,8 +63,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
         for (var i = 0; i < _tokens.Count; i++) _tokens[i].RefreshFontTexture();
     }
 
-    public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IChromeStyle chrome)
-    { _log = log; _colors = colors; _chrome = chrome; }
+    public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IThemeHudColors hudColors, IChromeStyle chrome)
+    { _log = log; _colors = colors; _hudColors = hudColors; _chrome = chrome; }
 
     /// <summary>Active-theme switch: rebake the window sprites + RE-SKIN every mounted window IN PLACE (new
     /// sprites/colours/sizes onto the existing GameObjects). No canvas drop → no 1-frame flicker, and the
@@ -58,6 +73,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     {
         if (_canvas == null) return;   // nothing mounted yet — the next mount bakes fresh
         _assets.Rebake(_colors);
+        // Rebake the HUD sprite set too (destroys the prior sprites), then the per-window Reskin() below re-points
+        // every HudOverlay leaf's sprite/colour to the fresh ones IN PLACE — mirroring how HudRenderer rebakes on
+        // the same signal (it drops its canvas + remounts; we reskin, since the window path never drops on theme change).
+        _hudAssets.Rebake(_hudColors);
         for (var i = 0; i < _tokens.Count; i++)
         {
             var t = _tokens[i];
@@ -71,6 +90,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
         if (_fontRebuildHooked && _onFontRebuilt != null) { Font.textureRebuilt -= _onFontRebuilt; _fontRebuildHooked = false; }
         DropCanvas();
         _assets.DestroyAll();
+        _hudAssets.DestroyAll();
     }
 
     private void DropCanvas()
@@ -154,7 +174,21 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
         // Combine with the perf-overlay Master HUD kill (dev toggle: hide HUD-category windows only — the perf
         // overlay + Settings are Tools on THIS canvas, so a whole-canvas kill would hide the toggle, a trap).
         // SetActive the root (no remount); skip Apply when hidden.
-        var hideAll = hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD);
+        // Layout edit-mode force-show (transient — mirrors the MasterHudKill layering point): while editing, no
+        // window is draw-suppressed, so every registered overlay renders (root active) and is grabbable / movable /
+        // resizable via its grip + drag handle (which require activeInHierarchy — WindowInteractionTicker 357/404).
+        // This beats BOTH the plugin ShouldRender content-gate AND the MasterHudKill dev toggle. It mutates no
+        // persisted or SetVisible state — exiting edit mode reverts each window to its real gated state on the next
+        // apply (~10 Hz). Inert (byte-identical) when not editing (`&& true`). LayoutEditGate.IsEditing is synced
+        // from LayoutEditorService.IsEditing each tick (LayoutEditorOverlay.TickInput) — the SAME flag the ticker's
+        // grip/handle gate reads, so what renders and what's draggable stay consistent. A SetVisible(false) window
+        // is unmounted upstream in WindowService.TickEntry and never reaches here, so it stays hidden by design.
+        // Scope: the force-show applies ONLY to EditModeDragOnly overlays (the arrangeable HUDs the layout editor
+        // manages via WindowService.EditableElements). Free-drag Tools dialogs (e.g. the login-screen switcher,
+        // Settings, History) are not edit-managed, so they stay gated by their own ShouldRender even in edit mode —
+        // otherwise they'd render with no outline/handle: visible but not arrangeable.
+        var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
+                      && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
         var wasHidden = !t.Root.activeSelf;
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
         // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
@@ -186,15 +220,34 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
     // Width/Height; substitute the live RectTransform size so we never clamp against size 0 (which would treat the
     // window as 0px wide and let its left edge pin anywhere). Returns the clamped top-left in WindowRect space.
-    private static WindowRect ClampToScreen(WindowToken t, WindowRect rect)
+    private WindowRect ClampToScreen(WindowToken t, WindowRect rect)
     {
         var size = t.Rect!.rect.size;
         var w = rect.Width  > 0f ? rect.Width  : size.x;
         var h = rect.Height > 0f ? rect.Height : size.y;
+        var s = _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
         return Stellar.Application.Services.LayoutStorage.ClampVisible(
             new WindowRect(rect.X, rect.Y, w, h),
-            new Stellar.Abstractions.Domain.Resolution(Screen.width, Screen.height));
+            new Stellar.Abstractions.Domain.Resolution(
+                Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
     }
+
+    // Screen px per canvas unit. GetRect/SetRect speak canvas units (the CanvasScaler applies this factor); the
+    // layout editor is uniformly screen-px, so WindowService scales editor rects by this. Mirrors the ClampToScreen guard.
+    public float CanvasScale => _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
+
+    // A freshly-added CanvasScaler reports the DEFAULT scaleFactor (1.0) on its create frame; the real value lands
+    // after willRenderCanvases runs (end of frame). So "settled" iff at least one frame boundary has passed since
+    // the (re)create — a frame-elapsed test, NOT a value test (a genuine 1.0 is indistinguishable from the default).
+    public bool CanvasScaleReady => _canvasComp != null && Time.frameCount > _canvasCreatedFrame;
+
+    // Monotonic canvas (re)create counter. The Host watches this to fire ONE corrective layout reapply after a
+    // scene-change canvas rebuild, once CanvasScaleReady (belt to WindowService.Layout's per-window defer).
+    public int CanvasGeneration => _canvasGeneration;
+
+    // The UI-Scale slider value (concrete-only getter on NamedThemeService, which _chrome IS at runtime). Default
+    // window positions divide by this so the slider grows windows in place instead of drifting them (bottom-right).
+    public float UiScale => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
 
     public WindowRect GetRect(object? token)
     {
@@ -256,14 +309,26 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.pixelPerfect = true;
             canvas.sortingOrder = WindowSortingOrder;
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = UiRefResolution(
+                Mathf.Clamp((_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f, 0.75f, 1.5f));
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
             // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
             go.AddComponent<GraphicRaycaster>();
             RegisterInjectedTypes();
             _ticker = go.AddComponent<WindowInteractionTicker>();
+            // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
+            _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
+            _canvasComp = canvas;
             _canvasRoot = go.transform;
+            _canvasGeneration++;                   // recreate detector (Host reapply trigger)
+            _canvasCreatedFrame = Time.frameCount; // scale-ready gate: the scaler settles a frame LATER
             _assets.EnsureBaked(_colors);
+            _hudAssets.EnsureBaked(_hudColors);                        // HUD pill/bar 9-slice sprites + shadowed HudText (HudOverlay windows)
             _assets.OpacityProvider = () => _chrome.WindowOpacity;     // live frame-alpha tint (no rebake/flicker)
             _assets.FontScaleProvider = () => _chrome.FontScale;        // live uGUI text scaling
             _assets.ButtonStyleProvider = () => _chrome.ButtonStyle;    // global Button style → window buttons
@@ -287,7 +352,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder
     private void WireBuilderHooks()
     {
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
-        _builder.RegisterResize = (grip, target, min, max) => _ticker!.DragResizers.Add((grip, target, min, max));
+        _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
+        _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));

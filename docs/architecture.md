@@ -32,11 +32,11 @@ Compared to a typical IL2CPP game where everything is native AOT and you fight I
 | Loader / process injection | **BepInEx 6 IL2CPP (be.755)** | Most mature for Unity 2022 LTS IL2CPP. Loads before HybridCLR initializes, so we can sequence our framework startup to wait for hot-update load. |
 | Native interop | **Il2CppInterop** | Only needed for the Unity engine surface (UnityEngine.*) and AOT stubs — most game logic doesn't need it. |
 | Method patching | **HarmonyX** | Works directly on HybridCLR-loaded managed assemblies. Same library Dalamud uses. |
-| Overlay | **Native Unity uGUI** — a canvas hierarchy driven by `HudService` + `WindowService` | Renders through the game's own Canvas/UI system with zero native hooks. (The original v0.2 shipping path used Unity IMGUI via an injected `OverlayBehaviour.OnGUI`; that was deleted in Phase E because the per-frame `OnGUI` crossing cost ~13 fps.) |
+| Overlay | **Native Unity uGUI** — a canvas hierarchy driven by `WindowService` | Renders through the game's own Canvas/UI system with zero native hooks. (The original v0.2 shipping path used Unity IMGUI via an injected `OverlayBehaviour.OnGUI`; that was deleted in Phase E because the per-frame `OnGUI` crossing cost ~13 fps.) |
 | Plugin DI | Custom service locator (`IPluginServices`) | Game uses VContainer internally; we expose a small, explicit surface rather than wrapping the container directly. |
 | Event bus to plugins | Composed `IGameEventBridge` strategy: MessagePipe (preferred, currently disabled) → HarmonyX fallback | Plugins use the same `IGameEvents.Subscribe(typeName, handler)` API regardless of which bridge is active. |
 
-The overlay is built from native uGUI: plugins register windows via `IWindowHost` (backed by `WindowService`) and HUD elements via `IHudHost` (backed by `HudService`), composing element trees rather than issuing immediate-mode draw calls.
+The overlay is built from native uGUI: plugins register windows via `IWindowHost` (backed by `WindowService`), composing element trees rather than issuing immediate-mode draw calls. On-screen HUD overlays are the same windows registered borderless with `Surface = SurfaceStyle.HudOverlay` — there is no separate HUD service.
 
 ## Component layout
 
@@ -89,6 +89,62 @@ accumulator (`RateGate`), so consumers tick at their own rate off the shared clo
 Plugins set a persistent per-plugin rate (Settings → Performance) or temporarily ramp via
 `IFramework.RequestUpdateRate` (permission-gated, leak-guarded). Idle (nothing ramped) the clock rests at the
 global rate and behaviour is identical to pre-1.7.0. See [`plugin-development.md`](plugin-development.md#update-rate).
+
+## Game phases, tick gating, and window visibility (SDK 2.0)
+
+Earlier the framework tick was suppressed entirely until the player was in-world: a single blanket gate
+(`if (sceneTransitioning) return;`) short-circuited `RunFrameworkTick`, so **nothing** the framework drives —
+window draw, input poll, hotkeys — ran before world-connect. That made a login-screen tool (account switcher,
+server picker) impossible: its window couldn't render or be interacted with at the title screen. The blanket
+gate existed only because the *corrupting* work (live game-state probing that scrambles the world-connect
+handshake) was never isolated from the *safe* work (drawing UI, polling input).
+
+SDK 2.0 splits those two concerns and drives everything off **two independent signals**, both exposed on
+`IClientState`:
+
+- **`GamePhase Phase`** (`TitleScreen` → `CharSelect` → `World`, in `Stellar.Abstractions.Domain`) — a
+  first-class client-lifecycle **signal**. The framework **gates nothing** on it; it exists purely for plugins
+  to read. It is distinct from session state (`IsLoggedIn`/`Login`/`Logout`) and coexists with it — `Phase`
+  answers "which client screen are we on," session state answers "are we logged in." `Phase` stays steady
+  `World` across in-world zone loads. `PhaseChanged` (`event Action<PhaseChange>`, `PhaseChange` a
+  `readonly record struct(From, To)`) fires on each transition.
+- **`bool IsWorldActive`** — the *only* protective gate. True in a stable world scene, false mid-transition;
+  **stricter than `Phase == World`** because it also dips false during in-world zone loads (the connect /
+  scene-switch handshake), which is exactly when live game-state reads corrupt the connection.
+
+**The tick is now a dumb dispatcher.** The blanket gate is gone; `RunFrameworkTick` calls all its work every
+phase. Correctness moved to a per-unit self-gate: each thing that touches **live game state** early-returns on
+`if (!_clientState.IsWorldActive) return;` — framework probes/services (`PlayerState`, `Inventory`, world-attr,
+equip/loadout), notice-tips (which run game Lua), and the Host's own plumbing (`_framework.Tick`, game-data
+load, `ProbeGameRootOnce`). **The draw service (`Window`) and UI/input do not gate** — they are inherently
+safe and run in every phase, which is what lets a window appear at the title screen. Gating is opt-in per what
+a unit *does*: a plugin that only draws UI, does HTTP, or reads *framework-cached* data needs no gate; only a
+unit doing **raw** game reads self-gates.
+
+**Two signals, two jobs:** use `Phase` for **visibility**, `IsWorldActive` for **game-state access** — never
+gate game-state on `Phase`/`IsLoggedIn` (both are true mid-transition).
+
+**Window visibility is plugin-owned.** A single compiler-`required` predicate `Func<bool> ShouldRender`
+(the `IRenderGated` contract, on `WindowSpec` — HUD overlays are windows too) is the sole source of visibility truth; the framework
+only enacts `hide = !ShouldRender()`, evaluated each apply (~10 Hz) — a pull, never a stored flag. The plugin
+reads whatever it wants inside the predicate (`Phase`, `UiState`, its own state). The old
+`AutoHideBehindGameMenus` / `HideUntilInWorld` bools are **removed**; `MasterHudKill` stays as an explicit dev
+override outside policy. `required` means omitting `ShouldRender` fails the build — no login-screen-spam footgun
+by default.
+
+**`GameUIState`** (`[Flags]`, in `Stellar.Abstractions.Domain`) is an **informational** in-world UI signal the
+framework detects and exposes but never gates on. Flat co-occurring bits (`GameHud`, `FullScreenMenu`,
+`MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`) plus preset masks
+(`GameHudHidden`, `AnyMenu`, `Blocking`); `None` at `TitleScreen`/`CharSelect`. A gameplay HUD's `ShouldRender`
+reads it to hide itself when a menu covers the HUD.
+
+**Safety-net (framework `src/` only):** a framework game-state unit that forgets its `IsWorldActive` guard
+corrupts the world-connect and disconnects *everyone*, whereas a plugin that forgets its own gate harms only
+itself. So a Roslyn analyzer (`Stellar.Analyzers`, **STELLAR0006**) fails the build if a method marked
+`[WorldGated]` lacks the guard. It runs on framework projects only and **never** applies to plugin projects —
+no plugin is ever forced to gate.
+
+Full design, decision table, and the in-game validation record: [`game-phases-design.md`](game-phases-design.md).
 
 ## What's deliberately out of scope
 

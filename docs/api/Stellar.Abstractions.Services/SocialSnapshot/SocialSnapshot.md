@@ -4,7 +4,8 @@ A player's on-demand social-data reply (the game's own `Social.GetSocialData` RP
 
 ```csharp
 public SocialSnapshot(long CharId, string Name, int Level, long FightPoint, int ProfessionId, 
-    IReadOnlyList<GearSlotRef> Gear, IReadOnlyList<FashionEntry> Fashion, SocialIdentity Identity)
+    IReadOnlyList<GearSlotRef> Gear, IReadOnlyList<FashionEntry> Fashion, SocialIdentity Identity, 
+    string ProfileUrl = "", string HalfBodyUrl = "")
 ```
 
 | parameter | description |
@@ -17,6 +18,8 @@ public SocialSnapshot(long CharId, string Name, int Level, long FightPoint, int 
 | Gear | Equipped items by slot from `equip_data.equip_infos`; never null. |
 | Fashion | Worn cosmetics from `fashion_data`; never null. |
 | Identity | Guild/party/master-score/title extras; [`None`](../SocialIdentity/None.md) when the reply's mask excluded those sections. |
+| ProfileUrl | HTTPS URL of the player's square profile picture on the game's CDN (`avatar_info.profile.url`); empty when the player has none or the section was absent. |
+| HalfBodyUrl | HTTPS URL of the player's half-body ID-card picture on the game's CDN (`avatar_info.half_body.url`); empty when the player has none or the section was absent. |
 
 ## See Also
 

@@ -27,11 +27,18 @@ public sealed partial class BootstrapPlugin
         // Phase 9d: declarative mod-uGUI injection into game canvases. The adapter
         // resolves anchors lazily at Tick, so it's safe to build this early.
         var uguiAdapter = new Stellar.Infrastructure.Game.PandaUGuiAdapter(log, _themeRenderer!);
-        var uguiInjection = new Stellar.Application.Services.UGuiInjectionService(uguiAdapter);
+        var uguiInjection = new Stellar.Application.Services.UGuiInjectionService(uguiAdapter, _clientState!);
         _uguiInjection = uguiInjection;
-        _framework!.Update += dt => uguiInjection.Tick(dt);
-        _framework!.Update += _ => uguiAdapter.TickGlow();   // per-frame rail-glow pulse
-        _framework!.Update += _ => _menuState?.Tick();
+        _uguiAdapter = uguiAdapter;
+        // NOTE: neither uguiInjection.Tick NOR uguiAdapter.TickGlow is subscribed to _framework.Update — that
+        // path fires inside _framework.Tick, which is IsWorldActive-gated, so it would freeze at the title
+        // screen (the LoginSidebar anchor could never inject, and its glow star wouldn't animate). Both are
+        // called UN-gated from RunGlobalRateWork instead — pure UI ops (GameObject active-state reads + uGUI
+        // build/animate, no game-state touch), safe every phase.
+        // Menu-state probe: tick it, then push the un-collapsed GameUIState into ClientStateService so a plugin's
+        // ShouldRender can read UiState. Runs inside _framework.Tick, which is IsWorldActive-gated, so UiState only
+        // updates in-world (it is reset to None on the World→TitleScreen transition).
+        _framework!.Update += _ => { _menuState?.Tick(); if (_menuState != null) _clientState!.SetUiState(_menuState.UiState); };
     }
 
     /// <summary>
@@ -64,7 +71,7 @@ public sealed partial class BootstrapPlugin
             combatSnapshot, _combatService!, _combatService!, _combatService!,
             _partyService!, _partyService!, _partyService!, _partyControlService!,
             _themeRenderer!, _hotkeyService!,
-            _namedTheme!, _uguiInjection!, _hudService!, _windowService!, _launcher!,
+            _namedTheme!, _uguiInjection!, _windowService!, _launcher!,
             gameAssets, _resonanceService!, _gameDataResonance!,
             _combatService!,
             new Stellar.Application.Services.EntityContextMenuService(),
@@ -75,7 +82,11 @@ public sealed partial class BootstrapPlugin
             _dungeonStateService!,
             entityTransforms,
             _gameEnvironment!,
-            _pluginDataStoreFactory!.Create(PluginGuid));
+            _pluginDataStoreFactory!.Create(PluginGuid),
+            _luaService!,
+            // Shared aggregator's Harmony host (framework-scoped id); plugins receive a per-plugin host that
+            // overrides this via PerPluginServices, so this instance is never used by a plugin.
+            _harmonyHostFactory!.Create("stellar.framework"));
         _capturedServices = services;
         WireProfileCardActionInjector(log);
 
@@ -84,7 +95,7 @@ public sealed partial class BootstrapPlugin
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
 
-        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!);
+        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!, _harmonyHostFactory!);
     }
 
     /// <summary>
@@ -96,7 +107,7 @@ public sealed partial class BootstrapPlugin
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
-        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info);
+        _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
         _partyControlService = new PartyControlService(_teamControlProbe);

@@ -11,7 +11,7 @@ public SceneInfo(int Id, string Name, int MapId, int SceneKind)
 | Id | Game-table scene id (also used as [`CurrentSceneName`](../../Stellar.Abstractions.Services/IClientState/CurrentSceneName.md)). |
 | Name | Localised scene display name. |
 | MapId | Map id this scene belongs to. |
-| SceneKind | Scene type integer from the game table (e.g. world, dungeon, lobby). |
+| SceneKind | The scene table's `SceneType` value (e.g. world/town/field = 1, instanced dungeon/raid content = 2). |
 
 ## See Also
 

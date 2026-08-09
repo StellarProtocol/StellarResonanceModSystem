@@ -17,9 +17,11 @@ public sealed partial class BootstrapPlugin
     /// <summary>
     /// Wires the Phase 9a UI: instantiates the 7 settings windows, declares
     /// framework.settings-toggle (Shift+Home), runs the lockout safety net,
-    /// auto-shows settings.layout on Shift+`, and ticks NativeUiService each
-    /// frame. Called from <c>OnHotUpdateReady</c> after SetupPerfOverlay; all
-    /// Stellar surfaces are uGUI now (no OnGUI sink).
+    /// and auto-shows settings.layout on Shift+`. Called from
+    /// <c>OnHotUpdateReady</c> after SetupPerfOverlay; all Stellar surfaces are
+    /// uGUI now (no OnGUI sink). NativeUiService.Tick is driven from the
+    /// UN-gated global-rate beat (RunGlobalRateWork), NOT wired here — it must
+    /// run during zone loads (IsWorldActive false) to catch the HUD rebuild.
     /// </summary>
     private void WirePhase9Ui(BepInExPluginLog log)
     {
@@ -36,10 +38,10 @@ public sealed partial class BootstrapPlugin
         var panels = new SettingsPanelSet
         {
             Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled),
-            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _themeRenderer),
+            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
             Themes  = new ThemesPanel(_namedTheme, _namedTheme, _themeRenderer, _colorRegistry!, _customThemes!),
             Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer),
-            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log),
+            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log, _layoutEditor),
             Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor),
             About   = new AboutPanel(_themeRenderer),
         };
@@ -59,23 +61,19 @@ public sealed partial class BootstrapPlugin
         // game HUD elements alongside Stellar windows.
         _layoutOverlay.SetNativeUi(_nativeUi);
 
-        // uGUI HUD + window toolkits: bind layout storage + resolution provider (Tick from
-        // RefreshPerTickServices; dispose from DisposePhase9), and hand the HUD to the layout editor.
+        // uGUI window toolkit: bind layout storage + resolution provider (Tick from
+        // RefreshPerTickServices; dispose from DisposePhase9).
         AttachOverlayLayout();
-        _layoutOverlay.SetHud(_hudService!);
         _layoutOverlay.SetWindows(_windowService!);   // edit-mode toolbar registers as a uGUI window
 
-        // Per-frame Tick — NativeUiService re-asserts at 1 Hz, polls for
-        // resolution at 5 Hz. Cheap on idle frames.
-        _framework.Update += dt => _nativeUi.Tick(dt, _inputGateway.CurrentResolution);
-
+        // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
+        // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
         log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (7 tabs) registered");
     }
 
     private void AttachOverlayLayout()
     {
         System.Func<Resolution> res = () => _inputGateway?.CurrentResolution ?? new Resolution(1920, 1080);
-        _hudService?.AttachLayout(_layoutStorage!, res);
         _windowService?.AttachLayout(_layoutStorage!, res);
     }
 
@@ -88,7 +86,8 @@ public sealed partial class BootstrapPlugin
         var tab = 0;
         var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
             new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
-        { Closable = true, Draggable = true, StartVisible = false };
+        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
+        { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, Closable = true, Draggable = true, StartVisible = false };
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
         // Colour editor: coalesce ColorPicker-drag edits to one persist+rebake on mouse-release.

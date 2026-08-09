@@ -56,7 +56,7 @@ internal sealed class NativeUiService
     {
         foreach (var e in _entries.Values)
             if (e.IsResolved)
-                yield return new EditableElement(e.Descriptor.Id, GetLiveRect(e), e.Visible, e.Descriptor.SafeToHide);
+                yield return new EditableElement(e.Descriptor.Id, GetLiveRect(e), e.Visible, e.Descriptor.SafeToHide, Resizable: false);
     }
 
     public void Tick(float deltaTime, Resolution currentRes)
@@ -124,7 +124,13 @@ internal sealed class NativeUiService
         e.Rect = e.Handle.OriginalRect;
         e.Visible = true;
         e.IsModified = false;
-        Persist(e);
+        // Reset = drop the saved override entirely (matches LayoutStorage.Remove for
+        // mod windows), NOT re-persist the original pose. Remove every persisted key
+        // for this id under the active slot across ALL resolutions (prefix has a
+        // trailing dot, so it can't collide with a longer id that shares this stem),
+        // so every resolution now falls back to the game's own default.
+        _config.RemoveByPrefix($"slot{_activeSlot()}.{id}.");
+        _config.Save();
     }
 
     public void ResetAll()
@@ -138,29 +144,40 @@ internal sealed class NativeUiService
     /// already-resolved entry. Called on slot-switch (LayoutEditorOverlay) so a
     /// layout slot restores the game HUD arrangement alongside the mod windows.
     /// Entries with no override in the new slot snap back to the game's original
-    /// pose.
+    /// pose. applyVisibility=true (slot-switch) also applies saved/forced show-hide;
+    /// false (resolution change) applies position only and leaves current visibility.
     /// </summary>
-    public void ReapplyForActiveSlot(Resolution res)
+    public void ReapplyForActiveSlot(Resolution res, bool applyVisibility = true)
     {
         _lastResolution = res;
         var slot = _activeSlot();
         foreach (var e in _entries.Values)
         {
             if (!e.IsResolved) continue;
-            _adapter.RestoreOriginal(e.Handle);
-            e.IsModified = false;
             if (TryLoadFor(slot, e.Descriptor.Id, res, out var rect, out var visible))
             {
                 _adapter.SetRect(e.Handle, rect);
-                _adapter.SetVisible(e.Handle, visible);
                 e.Rect = rect;
-                e.Visible = visible;
                 e.IsModified = true;
+                if (applyVisibility) { _adapter.SetVisible(e.Handle, visible); e.Visible = visible; }
             }
             else
             {
-                e.Rect = e.Handle.OriginalRect;
-                e.Visible = true;
+                e.IsModified = false;
+                if (applyVisibility)
+                {
+                    // Slot-switch (same resolution): an un-overridden element snaps back to the game original.
+                    // OriginalRect is valid here because the resolution isn't changing.
+                    _adapter.RestoreOriginal(e.Handle);
+                    e.Rect = e.Handle.OriginalRect;
+                    e.Visible = true;
+                }
+                else
+                {
+                    // Resolution change: do NOT RestoreOriginal — OriginalRect was captured at the old resolution
+                    // and would mis-place the element. Leave it where the game placed it for the new resolution.
+                    e.Rect = GetLiveRect(e);
+                }
             }
         }
     }
@@ -180,6 +197,21 @@ internal sealed class NativeUiService
             if (!e.IsResolved) continue;
             _adapter.RestoreOriginal(e.Handle);
         }
+    }
+
+    /// <summary>
+    /// Force every entry to re-resolve on the next <see cref="Tick"/>. Called from the Host on a canvas-generation
+    /// bump (scene change destroyed + rebuilt the game HUD): the game rebuilds these nodes at their DEFAULT pose and
+    /// our cached handles now point at dead/stale RectTransforms, so <see cref="ReapplyForActiveSlot"/> (which pushes
+    /// to those handles) no-ops. Dropping IsResolved makes the next <see cref="TryResolveAll"/> bind the freshly-
+    /// rebuilt nodes and re-apply the SAVED pose, beating the game's default layout for the frame. Arms the resolve
+    /// accumulator so re-resolution runs on the very next Tick (not up to <see cref="ResolveRetrySeconds"/> later).
+    /// </summary>
+    internal void InvalidateResolvedHandles()
+    {
+        foreach (var e in _entries.Values)
+            e.IsResolved = false;
+        _resolveAccumulator = ResolveRetrySeconds;   // next Tick crosses the resolve threshold immediately
     }
 
     private void TryResolveAll(Resolution res)
@@ -256,7 +288,29 @@ internal sealed class NativeUiService
         return keys;
     }
 
+    // 10% of the larger screen axis — the max resolution mismatch we'll reuse a saved pose across. Mirrors
+    // LayoutStorage.ResolutionMatchDeltaFraction so the native-UI path matches the mod-window / HUD path.
+    private const double ResolutionMatchDeltaFraction = 0.10;
+
     private bool TryLoadFor(int slot, string id, Resolution res, out WindowRect rect, out bool visible)
+    {
+        if (TryLoadExact(slot, id, res, out rect, out visible)) return true;
+
+        // Exact-resolution miss — fall back to the CLOSEST saved resolution within delta, mirroring
+        // LayoutStorage.FindClosestResolution for the mod-window path. This closes a permanent-loss edge: a
+        // transient/changed CurrentResolution read during a scene load would otherwise miss the exact key, strand
+        // the element at the game default AND leave IsModified=false — so ReassertAll's !IsModified guard would
+        // skip it forever. With the fallback, a near-miss resolution still recovers the saved pose (IsModified set
+        // by the caller). Requires the config to enumerate keys (IConfigKeyReader); degrades to no-fallback if not.
+        if (_config is IConfigKeyReader reader)
+        {
+            var closest = FindClosestSavedResolution(reader, slot, id, res);
+            if (closest is { } cres && TryLoadExact(slot, id, cres, out rect, out visible)) return true;
+        }
+        rect = default; visible = true; return false;
+    }
+
+    private bool TryLoadExact(int slot, string id, Resolution res, out WindowRect rect, out bool visible)
     {
         var keys = GetConfigKeys(slot, id, res);
         // Sentinel: if "<prefix>.x" doesn't exist (returns sentinel default), no saved state.
@@ -270,6 +324,37 @@ internal sealed class NativeUiService
         // takes effect immediately without a Reset (no stale saved size to mask it).
         rect = new WindowRect(x, y, 0f, 0f);
         visible = _config.Get(keys[4], true);
+        return true;
+    }
+
+    // Nearest saved resolution (within delta) for this (slot × id), or null. Parses the "{W}x{H}" segment out of
+    // the persisted "slot{slot}.{id}.{W}x{H}.{field}" keys — the prefix carries the id's own dots + a trailing
+    // dot, so it can't collide with a longer id sharing this stem (same reasoning as ResetToOriginal's prefix).
+    private static Resolution? FindClosestSavedResolution(IConfigKeyReader reader, int slot, string id, Resolution target)
+    {
+        var prefix = $"slot{slot}.{id}.";
+        Resolution? best = null;
+        var bestDist = double.MaxValue;
+        var maxDelta = Math.Max(target.Width, target.Height) * ResolutionMatchDeltaFraction;
+        foreach (var key in reader.KeysWithPrefix(prefix))
+        {
+            var rest = key.Substring(prefix.Length);          // "{W}x{H}.{field}"
+            var dot = rest.IndexOf('.');
+            if (dot <= 0) continue;
+            if (!TryParseResolution(rest.Substring(0, dot), out var savedRes)) continue;
+            var dist = savedRes.DistanceTo(target);
+            if (dist < bestDist && dist <= maxDelta) { bestDist = dist; best = savedRes; }
+        }
+        return best;
+    }
+
+    private static bool TryParseResolution(string segment, out Resolution res)
+    {
+        res = default;
+        var parts = segment.Split('x');
+        if (parts.Length != 2) return false;
+        if (!int.TryParse(parts[0], out var w) || !int.TryParse(parts[1], out var h)) return false;
+        res = new Resolution(w, h);
         return true;
     }
 

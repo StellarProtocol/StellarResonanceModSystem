@@ -36,4 +36,11 @@ internal sealed class SelfGearCache : IGearInstanceSink
     // gear from the delta, so leave the full-sync cache as-is and just fire Changed — consumers re-read the
     // LIVE container (GetLiveEquipped), which already reflects the change.
     public void OnGearMaybeChanged() => Changed?.Invoke();
+
+    /// <summary>Empty the cache on logout (account/character-scoped session data). Uses the same
+    /// volatile-swap as <see cref="OnGearSync"/> but deliberately does NOT raise <see cref="Changed"/>:
+    /// a logout is a session teardown, not a live gear edit, and firing would push an empty-gear
+    /// notification through InventoryService.SelfGearChanged to plugins mid-teardown. Consumers re-read
+    /// <see cref="Current"/> (now empty) on their next poll.</summary>
+    internal void ClearSession() => Volatile.Write(ref _gear, Array.Empty<GearInstance>());
 }

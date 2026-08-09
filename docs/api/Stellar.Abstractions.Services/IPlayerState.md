@@ -1,6 +1,6 @@
 # IPlayerState interface
 
-Read-only view of the local player's basic state. All properties are safe to read at any time; when [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false` (e.g. on title / character select / loading screens) the other properties return defaults (empty string, zero, [`Zero`](../Stellar.Abstractions.Domain/Position3D/Zero.md)).
+Read-only view of the local player's basic state. All properties are safe to read at any time; when [`IsAvailable`](./IPlayerIdentity/IsAvailable.md) is `false` (e.g. on title / character select / loading screens) the vitals and position return defaults (zero, [`Zero`](../Stellar.Abstractions.Domain/Position3D/Zero.md)). Identity — name, level, profession — is served from the character record and can be populated independently of [`IsAvailable`](./IPlayerIdentity/IsAvailable.md).
 
 ```csharp
 public interface IPlayerState : IPlayerIdentity, IPlayerLocation, IPlayerVitals

@@ -1,19 +1,38 @@
-# RowElement constructor
+# RowElement constructor (1 of 2)
+
+Backwards-compatible overload for plugins compiled against the pre-Justify signature.
+
+```csharp
+public RowElement(IReadOnlyList<HudElement> children, float gap)
+```
+
+## See Also
+
+* record [HudElement](../HudElement.md)
+* record [RowElement](../RowElement.md)
+* namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
+
+---
+
+# RowElement constructor (2 of 2)
 
 Horizontal layout container: children arranged left-to-right with optional spacing.
 
 ```csharp
-public RowElement(IReadOnlyList<HudElement> Children, float Gap = 0)
+public RowElement(IReadOnlyList<HudElement> Children, float Gap = 0, 
+    RowJustify Justify = RowJustify.Left)
 ```
 
 | parameter | description |
 | --- | --- |
 | Children | Child elements arranged horizontally. |
 | Gap | Spacing in pixels between each child. |
+| Justify | How children are packed horizontally; default Left. |
 
 ## See Also
 
 * record [HudElement](../HudElement.md)
+* enum [RowJustify](../RowJustify.md)
 * record [RowElement](../RowElement.md)
 * namespace [Stellar.Abstractions.Services](../../Stellar.Abstractions.md)
 

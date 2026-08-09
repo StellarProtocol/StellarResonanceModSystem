@@ -11,7 +11,7 @@ namespace Stellar.Infrastructure.UI;
 /// <summary>
 /// Renders the edit-mode chrome (per-window outline, top-left label, bottom-right
 /// corner handle, selection-highlight) over every visible editable element (uGUI
-/// windows + HUDs + native game UI) when <see cref="LayoutEditorService.IsEditing"/>
+/// windows + native game UI) when <see cref="LayoutEditorService.IsEditing"/>
 /// is true. Driven from the framework tick (see <see cref="TickInput"/>).
 /// </summary>
 /// <remarks>
@@ -28,8 +28,8 @@ namespace Stellar.Infrastructure.UI;
 /// <para>
 /// Top-center toolbar (drawn AFTER per-window chrome so it sits on top): mint
 /// "Layout edit mode" label, selected-window readout, slot picker (4 toggle
-/// buttons), [Reset selected] + [Reset all] buttons, and a "Shift+` to exit"
-/// hint. Toolbar rendering lives in <c>LayoutEditorOverlay.Toolbar.cs</c>.
+/// buttons), [Reset selected] + [Reset all] buttons, and an [Exit] button that
+/// leaves edit mode. Toolbar rendering lives in <c>LayoutEditorOverlay.Toolbar.cs</c>.
 /// </para>
 /// </remarks>
 internal sealed partial class LayoutEditorOverlay
@@ -43,8 +43,8 @@ internal sealed partial class LayoutEditorOverlay
     private readonly LayoutStorage _storage;
     private readonly ITheme _theme;
     private readonly IPluginLog _log;
+    private readonly IClientState _clientState;   // for the toolbar window's loading-screen ShouldRender gate
     private NativeUiService? _nativeUi;   // bound late via SetNativeUi (Phase 9a)
-    private HudService? _hud;             // bound late via SetHud (Task 6)
 
     // Stage B: per-element outline/handle/label now render on a uGUI overlay canvas (LayoutEditChrome),
     // driven from the tick — not IMGUI GUI.DrawTexture. The toolbar is still IMGUI (Stage C migrates it).
@@ -63,13 +63,14 @@ internal sealed partial class LayoutEditorOverlay
     private readonly UGuiInputBlocker _editInputBlocker = new(EditBlockerSortingOrder);
 
     public LayoutEditorOverlay(LayoutEditorService editor, IInputGateway input,
-                                LayoutStorage storage, ITheme theme, IPluginLog log)
+                                LayoutStorage storage, ITheme theme, IPluginLog log, IClientState clientState)
     {
         _editor = editor;
         _input = input;
         _storage = storage;
         _theme = theme;
         _log = log;
+        _clientState = clientState;
     }
 
     /// <summary>True while layout edit-mode is active — its chrome draws through OnGUI,
@@ -78,9 +79,6 @@ internal sealed partial class LayoutEditorOverlay
 
     /// <summary>Phase 9a: bind the native-UI service so Shift+` also outlines + drags game HUD elements.</summary>
     public void SetNativeUi(NativeUiService nativeUi) => _nativeUi = nativeUi;
-
-    /// <summary>Task 6: bind the uGUI HUD service so edit-mode can manage HUD elements.</summary>
-    public void SetHud(HudService hud) => _hud = hud;
 
     /// <summary>Input half — driven from the framework TICK (not OnGUI), so edit-mode select/drag works at the
     /// throttled tick rate and no longer depends on the IMGUI OnGUI handler firing. Stage A of the layout-editor
@@ -108,13 +106,13 @@ internal sealed partial class LayoutEditorOverlay
         _wasEditing = _editor.IsEditing;
     }
 
-    // Build the live editable-element list (windows + HUDs + native game-UI, respecting filters + selection)
+    // Build the live editable-element list (windows + native game-UI, respecting filters + selection)
     // and push it to the uGUI overlay. Runs each tick AFTER ProcessInput so outlines track an in-progress drag.
     private void SyncChrome()
     {
+        CenterToolbar();   // re-centre before pushing chrome, so a res / UI-scale change since registration re-lands centred
         _chromeItems.Clear();
         if (ShouldOutlineStellar && _windows != null) AddWindowServiceItems(_chromeItems);
-        if (_hud != null) AddHudItems(_chromeItems);
         if (ShouldOutlineGameUi) AddNativeUiItems(_chromeItems);
         _chrome.Sync(_chromeItems);
     }
@@ -127,22 +125,12 @@ internal sealed partial class LayoutEditorOverlay
         foreach (var el in _windows!.EditableElements())   // incl. hidden (dimmed re-enable outline)
         {
             var colour = _editor.SelectedWindowId == el.Id ? OutlineSelected : OutlineUnselected;
-            items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide));
-        }
-    }
-
-    /// <summary>Edit-mode chrome over each uGUI HUD (incl. hidden) so they're discoverable + grabbable + toggleable.</summary>
-    private void AddHudItems(List<Stellar.Infrastructure.Game.EditChromeItem> items)
-    {
-        foreach (var el in _hud!.EditableElements())
-        {
-            var colour = _editor.SelectedWindowId == el.Id ? OutlineSelected : OutlineUnselected;
-            items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide));
+            items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide, el.Resizable));
         }
     }
 
     /// <summary>Source of the currently-dragged element — picks the commit path on mouse-up.</summary>
-    private enum DragKind { None, NativeUi, Hud }
+    private enum DragKind { None, NativeUi }
     private DragKind _dragKind = DragKind.None;
 
     private void ProcessInput()
@@ -189,10 +177,9 @@ internal sealed partial class LayoutEditorOverlay
         if (Stellar.Infrastructure.Unity.EditDragArbiter.WindowDragActive) return;
 
         // Skip the grab when the click is over a uGUI raycast target — the toolbar window (and any draggable
-        // uGUI plugin window) consume their own clicks; HUDs/IMGUI windows aren't raycast targets so stay grabbable.
+        // uGUI plugin window) consume their own clicks; native game UI isn't a raycast target so stays grabbable.
         if (IsPointerOverUgui()) return;
 
-        if (_hud != null && TryGrabHud(px, py)) { Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = true; return; }
         if (ShouldOutlineGameUi && TryGrabNativeUiEntry(px, py)) Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = true;
     }
 
@@ -203,9 +190,6 @@ internal sealed partial class LayoutEditorOverlay
         if (_nativeUi is not null)
             foreach (var el in _nativeUi.EditableElements())
                 if (el.Id == id) { _nativeUi.SetVisible(id, !el.Visible); return; }
-        if (_hud is not null)
-            foreach (var el in _hud.EditableElements())
-                if (el.Id == id) { _hud.SetVisiblePersist(id, !el.Visible); return; }
         if (_windows is not null)
             foreach (var el in _windows.EditableElements())
                 if (el.Id == id) { _windows.SetVisiblePersist(id, !el.Visible); return; }
@@ -221,20 +205,6 @@ internal sealed partial class LayoutEditorOverlay
         {
             if (!rect.Contains(px, py)) continue;
             _editor.SelectWindow(id);
-            return true;
-        }
-        return false;
-    }
-
-    private bool TryGrabHud(float px, float py)
-    {
-        foreach (var (id, rect) in _hud!.ShownRects())
-        {
-            if (!rect.Contains(px, py)) continue;
-            _editor.SelectWindow(id);
-            _editor.BeginDrag(px, py, rect);
-            _hud.BeginDrag(id);
-            _dragKind = DragKind.Hud;
             return true;
         }
         return false;
@@ -265,13 +235,7 @@ internal sealed partial class LayoutEditorOverlay
         var newRect = _editor.UpdateDrag(px, py, others, res.Width, res.Height);
 
         if (_dragKind == DragKind.NativeUi)
-        {
             _nativeUi?.SetRect(selected, newRect);
-        }
-        else if (_dragKind == DragKind.Hud)
-        {
-            _hud?.SetRect(selected, newRect);
-        }
     }
 
     private void HandleDragRelease()
@@ -285,13 +249,6 @@ internal sealed partial class LayoutEditorOverlay
             // Persist only on release (mod-window parity) — SetRect during the
             // drag is in-memory only, so we don't disk-write every frame.
             _nativeUi.Commit(sel);
-        }
-        else if (_dragKind == DragKind.Hud && _hud is not null)
-        {
-            // Persist only on release (mod-window parity); SetRect during the drag is in-memory.
-            _editor.EndDrag(_hud.GetRect(sel), _input.CurrentResolution);
-            _hud.CommitRect(sel);
-            _hud.EndDrag(sel);
         }
         _dragKind = DragKind.None;
     }

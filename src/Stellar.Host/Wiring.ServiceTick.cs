@@ -5,12 +5,28 @@ namespace Stellar.Host;
 public sealed partial class BootstrapPlugin
 {
     private bool _perfFlagsLogged;
+    // Hold-to-hide-HUD (framework.hud-hold) edge state. Written ONLY on the press/release edge (see
+    // TickInputAndHotkeys) so it never clobbers the Alt+H toggle or the perf-overlay checkbox during steady state.
+    private bool _hudHoldActive;      // last tick's hold state (edge detect)
+    private bool _hudHoldSavedKill;   // MasterHudKill value captured when the hold began, restored on release
     // Frame-rate uncap delegate — diff-state and Unity writes live in Infrastructure.FrameRateReconciler
     // behind IFrameRateLimiter; injected by Host after all services are constructed.
     private Stellar.Application.Abstractions.IFrameRateLimiter? _frameLimiter;
     private Stellar.Infrastructure.Unity.UnityTickHost? _tickHost;
     private Stellar.Application.Services.TickScheduler? _scheduler;
     private readonly Stellar.Application.Services.RateGate _globalGate = new();
+    // Last resolution observed by the global tick, for the layout re-clamp on a resolution change. Default
+    // (0×0) until the first observation, so the very first beat only records the baseline (no spurious reclamp).
+    private Stellar.Abstractions.Domain.Resolution _lastLayoutRes;
+    // scaleFactor observed on the previous beat. We reapply on a CHANGE to it (see
+    // ReclampLayoutOnResolutionChange) — the CanvasScaler settles a beat or two AFTER a resolution change, so
+    // its change is what tells us the correct factor is finally live. -1 = never observed (skip first beat).
+    private float _lastLayoutScale = -1f;
+    // Last window-canvas generation seen. A bump = the canvas was destroyed+rebuilt (scene change), so every window
+    // remounted and parked its layout (the fresh CanvasScaler still reported the default 1.0). We latch a ONE-shot
+    // corrective reapply, deferred until the scaler settles, so it clamps against the real bound. -1 = never observed.
+    private int _lastCanvasGen = -1;
+    private bool _pendingCanvasReapply;
 
     // Reconciles the live runtime to the Performance settings (PerfControls), which are driven by the
     // Settings → Performance panel and seeded from config at boot. Runs every tick BEFORE the scene
@@ -48,8 +64,10 @@ public sealed partial class BootstrapPlugin
     {
         MaybeApplyPerfExperiment();
 
-        // Don't touch game state during a scene switch / world-connection handshake (disrupts the switch).
-        if (IsTickGatedBySceneTransition()) return;
+        // The tick is a DUMB DISPATCHER — it runs every phase and gates nothing (so window draw, input, and
+        // hotkeys work at the title screen). Correctness moved to a one-line `if (!IsWorldActive) return;` at
+        // the top of each game-state unit (services self-gate; the Host plumbing below self-gates too). See
+        // docs/game-phases-design.md §5.2 / §9.
 
         // Time the whole per-tick Update path (plugin Updates + service refreshes). No-op unless PERFHUD.
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
@@ -85,8 +103,29 @@ public sealed partial class BootstrapPlugin
     {
         Stellar.Abstractions.Diagnostics.PerfProbe.MarkDrawFrame();
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
+        _framework!.SetCanvasScale(_windowService?.CanvasScale ?? 1f);   // canvas-unit dims for IFramework.CanvasWidth/Height
+        ReclampLayoutOnResolutionChange();   // pull windows/HUD back on-screen when the resolution changes
+        // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
+        // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
+        // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.
+        _loginViewProbe?.Tick();
+        if (_loginViewProbe?.IsLoginViewActive == true) _clientState!.NotifyLoginViewActive();
+        // Loading-screen detection — ALSO un-gated, for the same reason: the loading screen is up precisely
+        // while IsWorldActive is false (the zone-load handshake), so the gated menu-state probe below is frozen
+        // and can't own the Loading bit. This pure active-state read is the SOLE owner of GameUIState.Loading,
+        // set every phase; the gated menu-state probe no longer touches that bit (SetUiState strips it).
+        _loadingScreenProbe?.Tick();
+        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
+        // uGUI native-canvas injection — UN-gated so title-screen anchors (LoginSidebar) inject too. It reads
+        // GameObject active-state + builds uGUI buttons (no game-state/network touch), safe every phase like the
+        // probes above. In-world anchors (MainMenuRail/HudTopRight) simply won't resolve until their parents exist.
+        _uguiInjection?.Tick(globalDt);
+        _uguiAdapter?.TickGlow();   // un-gated too, so the login-sidebar glow star animates at the title screen
+        SelfHealNativeUiUngated(globalDt);   // native game-HUD self-heal — MUST run during zone loads (see method + Wiring.Settings)
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:internal");
-        _framework!.Tick(globalDt);       // fires host-internal Update subscribers (plugins use _scheduler)
+        // Game-state Host plumbing: _framework.Tick fires host-internal Update subscribers (native-UI
+        // injection, menu-state probe, …) that touch the live game — self-gate on IsWorldActive.
+        if (_clientState!.IsWorldActive) _framework!.Tick(globalDt);   // (plugins use _scheduler, not this)
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:internal");
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:gamedata");
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
@@ -111,6 +150,60 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:layout");
     }
 
+    // Native game-HUD self-heal, ticked UN-gated (called from the un-gated region of RunGlobalRateWork, NOT
+    // _framework.Update which is IsWorldActive-gated). It MUST run during the zone-load handshake (IsWorldActive
+    // false): that is exactly when the game destroys+rebuilds its HUD at the default layout. A gated tick froze
+    // through the rebuild and only caught up 0-5s later, by which point the game had re-laid-out and kept winning
+    // the frame — the "repositioned game HUD element snaps back on scene change" bug. Pure GameObject reads/writes
+    // via PandaHudAdapter (TryResolve/SetRect), no game-state or network touch — safe every phase like the
+    // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so TryResolveAll no-ops.
+    private void SelfHealNativeUiUngated(float globalDt)
+        => _nativeUi?.Tick(globalDt, _inputGateway?.CurrentResolution ?? default);
+
+    // Nothing re-clamps layout on a resolution change — placement/clamp happens only on mount — so a window
+    // or HUD near the bottom/right edge falls off-screen when the user drops to a smaller resolution. Detect
+    // the change here (two int compares, every global beat) and re-clamp every mounted element IN PLACE: keep
+    // its current position, just pull it back on-screen if now off. Idempotent when nothing is off-screen.
+    // NB: this is a clamp, NOT a slot reload — the user's arrangement is preserved, only tucked back in bounds.
+    private void ReclampLayoutOnResolutionChange()
+    {
+        var curRes = _inputGateway?.CurrentResolution ?? default;
+        var curScale = _windowService?.CanvasScale ?? 1f;
+        var curGen = _windowService?.CanvasGeneration ?? 0;
+        var scaleReady = _windowService?.CanvasScaleReady ?? true;
+        var resChanged = curRes.Width != _lastLayoutRes.Width || curRes.Height != _lastLayoutRes.Height;
+        var scaleChanged = _lastLayoutScale >= 0f && System.Math.Abs(curScale - _lastLayoutScale) > 0.001f;
+
+        // Canvas recreate (scene change destroyed + WindowRenderer rebuilt the canvas): latch a one-shot corrective
+        // reapply, but hold it until the CanvasScaler settles — reapplying against the transient default 1.0 would
+        // re-introduce the very snap bug. Belt to WindowService.Layout's per-window defer (suspenders).
+        if (_lastCanvasGen >= 0 && curGen != _lastCanvasGen)
+        {
+            _pendingCanvasReapply = true;
+            // Native UI uses the generation SIGNAL directly (no scale-ready defer — it clamps in raw Screen pixels,
+            // no scaleFactor transient). The game rebuilt its HUD nodes at defaults and our cached native handles now
+            // point at dead/stale RectTransforms, so ReapplyForActiveSlot below would push to them and no-op. Drop
+            // every entry's IsResolved so the un-gated NativeUiService.Tick re-resolves against the freshly-rebuilt
+            // nodes and re-applies the SAVED pose on the very next Tick (this same beat — the accumulator is armed).
+            _nativeUi?.InvalidateResolvedHandles();
+        }
+        _lastCanvasGen = curGen;
+        var genReapply = _pendingCanvasReapply && scaleReady;
+        if (!resChanged && !scaleChanged && !genReapply) return;
+
+        var firstObservation = _lastLayoutRes.Width == 0;
+        _lastLayoutRes = curRes;
+        _lastLayoutScale = curScale;
+        if (firstObservation || curRes.Width <= 0) return;   // never reapply on the first-ever observation
+
+        // Re-apply on resolution OR scaleFactor change OR a settled canvas recreate. The scale/recreate paths are the
+        // key fix: the CanvasScaler settles scaleFactor a beat or two LATER, and Get's canvas-unit clamp needs the
+        // CORRECT factor — so we reapply only once the right value is live. ReapplyLayout self-gates on ready too.
+        if (genReapply) _pendingCanvasReapply = false;   // consume the one-shot
+        _windowService?.ReapplyLayout();          // position-only after Part 1
+        _nativeUi?.ReapplyForActiveSlot(curRes, applyVisibility: false);   // reposition, never toggle show/hide
+    }
+
     // Band 1 — drained EVERY master beat so a ramped plugin's exchange RPC round-trips complete
     // proportionally faster. Cheap when idle (empty-queue dequeue + empty active-list loop).
     private void DrainExchangeProbe()
@@ -126,6 +219,21 @@ public sealed partial class BootstrapPlugin
     {
         _inputGateway?.TickPoll();
         _hotkeyService?.Tick();
+        // Hold-to-hide-HUD: poll the (default-unbound) framework.hud-hold action's LEVEL state right after the
+        // hotkey Tick (so it sees this frame's freshly-polled input). Write MasterHudKill ONLY on the press/release
+        // EDGE — on press, capture the current MasterHudKill and force it true; on release, revert to that captured
+        // value. So it never clobbers the Alt+H toggle or the perf-overlay checkbox during steady state, and a
+        // release restores the pre-hold state (HUD stays hidden if it was toggle-hidden, shows again if it wasn't).
+        if (_hotkeyService is { } hk)
+        {
+            var held = hk.IsActionHeld("framework.hud-hold");
+            if (held != _hudHoldActive)
+            {
+                if (held) { _hudHoldSavedKill = Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill; Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = true; }
+                else      { Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = _hudHoldSavedKill; }
+                _hudHoldActive = held;
+            }
+        }
         _noticeTipService?.Tick();
     }
 
@@ -182,8 +290,10 @@ public sealed partial class BootstrapPlugin
     // Band 3 — global-rate cadence (these probes have no latency-sensitive consumer; keeping them at the
     // global rate avoids 8× Lua-read / allocation cost during a rate ramp). Both probes touch the
     // game's main-thread-only Lua VM, so this runs on the Update tick.
+    [Stellar.Abstractions.Diagnostics.WorldGated]
     private void DrainEquipAndLoadout()
     {
+        if (!_clientState!.IsWorldActive) return;   // equip/loadout probes touch the game's main-thread Lua VM
         try { _moduleEquipProbe!.DrainPendingCompletions(); }
         catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
 
@@ -200,9 +310,6 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:toast");
         TickNotifications(deltaTime);   // animate the toast stack on the framework tick delta
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:toast");
-        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:hud");
-        _hudService?.Tick(deltaTime);
-        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:hud");
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
         _windowService?.Tick(deltaTime);

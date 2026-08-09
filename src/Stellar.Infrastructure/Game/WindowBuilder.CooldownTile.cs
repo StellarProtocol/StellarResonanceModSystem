@@ -41,6 +41,9 @@ internal sealed partial class WindowBuilder
         star.color = CdStarCol; star.text = "★"; star.gameObject.SetActive(false);
         var charge = AddOverlayText(token, iconBox.transform, "Chg", TextAnchor.UpperRight, 13);
         charge.color = CdChgCol; charge.gameObject.SetActive(false);
+        // Centred fallback abbreviation, shown by Apply only while the icon texture is null.
+        var fallback = AddOverlayText(token, iconBox.transform, "Fallback", TextAnchor.MiddleCenter, 16);
+        fallback.gameObject.SetActive(false);
 
         var secsGo = UGuiPrimitives.NewChild("Secs", root.transform);
         var secs = secsGo.AddComponent<Text>();
@@ -52,6 +55,7 @@ internal sealed partial class WindowBuilder
         {
             El = ct, Outline = outline, Art = art, FillRt = fillRt, FillImg = fillImg, Secs = secs,
             StarGo = star.gameObject, ChargeGo = charge.gameObject, Charge = charge,
+            FallbackGo = fallback.gameObject, Fallback = fallback,
         });
 
         if (ct.OnClick != null)
@@ -112,8 +116,10 @@ internal sealed partial class WindowBuilder
         public GameObject StarGo = null!;
         public GameObject ChargeGo = null!;
         public Text Charge = null!;
+        public GameObject FallbackGo = null!;
+        public Text Fallback = null!;
 
-        private object? _tex; private UvRect _uv; private float _fill = -1f; private string? _secs;
+        private object? _tex; private UvRect _uv; private float _fill = -1f; private string? _secs; private string? _fallback;
         private ColorRgba _accent; private bool _initAccent; private bool _star; private int _charge = -1;
 
         public void Apply()
@@ -128,6 +134,18 @@ internal sealed partial class WindowBuilder
                 Art.color = t == null ? CdLoadBg : Color.white;
                 Art.uvRect = new Rect(uv.X, uv.Y, uv.W, uv.H);
             }
+
+            // Icon null → draw the abbreviation over the empty square; non-null icon hides it (auto on late load).
+            // Poll-diffed on the resolved string EVERY Apply, independent of the tex/uv guard, so a tile that is
+            // icon-less from its first Apply (and runtime toggles) still shows/hides the label correctly.
+            var fb = tex == null ? (El.FallbackLabel?.Invoke() ?? "") : "";
+            if (fb != _fallback)
+            {
+                _fallback = fb;
+                Fallback.text = fb;
+                FallbackGo.SetActive(fb.Length > 0);
+            }
+            if (fb.Length > 0) Fallback.color = CdCol(El.Accent());
 
             var accent = El.Accent();
             if (!_initAccent || !accent.Equals(_accent))

@@ -1,0 +1,418 @@
+# Design: Game Phases, Tick Split, and Plugin-Owned Window Visibility
+
+> **Superseded (SDK 2.0.0):** the separate HUD toolkit (`IHudHost` / `HudSpec` / `IHudHandle` / `HudAnchor`)
+> referenced throughout this dated design record was **removed** and folded into the window path. On-screen HUD
+> overlays are now borderless windows (`WindowSpec` with `WindowPanelStyle.Borderless` +
+> `Surface = SurfaceStyle.HudOverlay`); `IRenderGated`/`ShouldRender` is carried by `WindowSpec` alone. Treat the
+> `HudSpec` mentions below as historical — the design intent (plugin-owned `ShouldRender` visibility) is
+> unchanged, only the type it lives on. See `docs/plugin-development.md` for the current single UI path.
+
+- **Status:** Implemented + **in-game validated (§7 PASSED)** on `enhance/game-phases`. Confirmed 2026-07-29:
+  world-connect survives the per-unit `IsWorldActive` self-gates (no `[50000]`/`[50011]`); title-screen
+  window renders + drags + hotkey fires pre-login; `IsWorldActive` dips false on zone load while `Phase`
+  stays `World`; logout returns `Phase→TitleScreen`; `GameUIState` bits map correctly for FullScreenMenu /
+  MainMenu / Dialogue / Cutscene / Loading / Matchmaking (LineSelector overlay case not yet spot-checked).
+  Not merged. Remaining: remove the throwaway phase-diag overlay; migrate external plugins (lockstep).
+- **Update 2026-07-29 (b):** added a pre-login **`Startup`** phase as the new INITIAL value
+  (`GamePhase { Startup, TitleScreen, CharSelect, World }`). Rationale: `TitleScreen` used to span boot→login,
+  so a login-screen tool gating `ShouldRender = Phase == TitleScreen` showed during the pre-login boot/splash
+  (before the login UI exists). Now `Startup` = boot/loading before the login UI exists (the initial phase);
+  `TitleScreen` = the login view (`login_main`) is actually up — entered (and **latched**, never flickering back
+  to `Startup`) when the Host's login-view probe detects it. The probe runs in the Host's **un-gated** per-tick
+  path (`RunGlobalRateWork`, NOT `_framework.Tick`, which is `IsWorldActive`-gated) because it must fire in
+  `Startup` where `IsWorldActive` is false; reading a GameObject's active-state is a pure UI read, safe every
+  phase like the draw services. `CharSelect`/`World`/logout transitions unchanged (logout still lands on
+  `TitleScreen`). The enum is a runtime-only signal (nothing persists/serializes/casts it), so the insertion is
+  non-breaking; the account-switcher's `ShouldRender = Phase == TitleScreen` now means "login screen visible".
+- **Update 2026-07-29:** added a third phase **`CharSelect`** (`GamePhase { TitleScreen, CharSelect, World }`,
+  inserted in lifecycle order — the enum is a runtime-only signal, nothing persists/serializes/wires it).
+  Empirical basis (live diagnostic overlay): the game's `OnLogin` fires when the **character-select screen
+  appears** (`IsLoggedIn` → true there, not at world-connect); the Unity scene name does **not** change
+  between title and char-select (so scene name can't distinguish them — `Phase` is the only signal that
+  does); cancelling char-select back to title fires `OnLogout`. Transitions: `OnLogin` drives
+  `TitleScreen→CharSelect` (guarded on `Phase==TitleScreen`); the `IsWorldActive` rising edge now drives
+  `CharSelect→World`; `OnLogout` returns to `TitleScreen` from either `World` or `CharSelect`. A login-screen
+  tool can now target `TitleScreen` alone (no longer shows over char-select).
+- **Date:** 2026-07-29
+- **Area:** `Stellar.Abstractions`, `Stellar.Application`, `Stellar.Host`, `Stellar.Infrastructure`
+- **Baseline:** branch `enhance/game-phases`, cut from `origin/main` @ `ab1e17b` (framework `1.16.1`).
+
+---
+
+## 1. Motivation
+
+The framework's per-tick work is suppressed until the player is in-world. In
+`Stellar.Host/Wiring.ServiceTick.cs`, `RunFrameworkTick` early-returns while a scene transition is in
+progress:
+
+```csharp
+if (IsTickGatedBySceneTransition()) return;   // _sceneTransitioning
+```
+
+`_sceneTransitioning` starts `true` at boot and is cleared **only once logged in**
+(`Wiring.GameLoop.cs:OnEnterScene`), because the tick's game-state probing corrupts the world-connect
+handshake if it runs during boot / title / character-select. Consequences:
+
+- **Nothing the framework drives runs before the player is in-world** — no window draw, no input poll,
+  no hotkey. A tool meant to be usable at the login screen (account switcher, server picker) can't
+  render or be interacted with there.
+- The gate is **blanket** because the corrupting work was never isolated.
+
+The blocker is *not* the render surface: the window canvas is a camera-independent
+`ScreenSpaceOverlay` + `DontDestroyOnLoad`, and window interaction runs on a `WindowInteractionTicker`
+MonoBehaviour driven by Unity's own `Update`. What's missing before the player is in-world is only the framework tick that
+mounts/draws windows and polls input/hotkeys.
+
+This design makes the framework run its UI/input work in every phase (keeping its game-state work
+gated), introduces a first-class client **phase** signal, exposes a **UI-state** signal, and moves
+window-visibility policy entirely into the plugin via a single `ShouldRender()` predicate.
+
+## 2. Goals
+
+- A first-class, framework-owned **`GamePhase`** signal (`Startup`, `TitleScreen`, `CharSelect`, `World`).
+- Run UI/input work every phase; keep game-state work gated on the world-connect-safe predicate.
+- **Plugins own window-visibility policy** through one `ShouldRender()` function; the framework only enacts.
+- Expose **`GameUIState`** as informational flags a plugin's `ShouldRender()` can read.
+
+## 3. Non-goals
+
+- Back-compat. Members are removed outright where cleaner.
+- Finer phases beyond `Startup`/`TitleScreen`/`CharSelect`/`World` — the enum is extension-friendly for later.
+- Per-plugin `Update` scheduling changes.
+
+## 4. Decisions (settled)
+
+| # | Decision | Choice |
+|---|----------|--------|
+| 1 | Keep `GamePhase`? | **Yes** — it's the game *client* phase, a distinct concept from session state; clearer to plugin devs and extensible. |
+| 2 | `GamePhase` vs `IsLoggedIn`/`Login`/`Logout` | **Coexist** — different concepts (client phase vs login/session), not redundant. |
+| 3 | Phase delivery | **`IClientState.PhaseChanged` event + `IClientState.Phase` getter** (event on transition; getter for initial / on-demand read). |
+| 4 | Event shape | **`event Action<PhaseChange>`**, where `PhaseChange` is a `readonly record struct (GamePhase From, GamePhase To)` — carries both ends so a plugin needn't track the previous phase. |
+| 5 | Plugin `Update`s in `TitleScreen` | **Run every phase**; plugins self-gate. |
+| 6 | Game-state gating | **`IsWorldActive`** (exposed on `IClientState`) — each game-state unit self-gates on it; **not** `GamePhase` (too coarse — true mid-transition). |
+| 7 | Who gates | **Every game-state unit self-gates on `IsWorldActive`** (game-state services, Host plumbing, plugin raw reads). Draw services (`Window`/`Hud`) do **not**. The **tick is a dumb dispatcher** — gates nothing. |
+| 8 | Window/HUD visibility | **A single compiler-`required` `ShouldRender : Func<bool>`** (via `IRenderGated`) is the source of truth (`hide = !ShouldRender()`). |
+| 9 | Removed | `AutoHideBehindGameMenus`, `HideUntilInWorld` (and no `WindowSpec.Phases`). |
+| 10 | `MasterHudKill` | **Kept** as an explicit dev override, outside visibility policy. |
+| 11 | `HudSpec` | **Same treatment** — HUDs also gate purely on `ShouldRender()`. |
+| 12 | `GameUIState` | **Flat `[Flags]` (backing `int`) + preset masks; informational only** (framework never gates on it). |
+
+`GamePhase` **gates nothing** in the framework — it and `GameUIState` are *signals* a plugin reads.
+The only protective gate is `IsWorldActive`, self-gated by each game-state unit (services, Host, plugins).
+
+## 5. Design
+
+### 5.1 `GamePhase` — client lifecycle signal (`Stellar.Abstractions`)
+
+```csharp
+namespace Stellar.Abstractions.Domain;
+
+public enum GamePhase { Startup, TitleScreen, CharSelect, World }   // lifecycle order; runtime-only signal, safe to re-order
+```
+
+```csharp
+namespace Stellar.Abstractions.Services;
+
+public readonly record struct PhaseChange(GamePhase From, GamePhase To);
+
+public interface IClientState
+{
+    // existing (session state — KEPT, distinct concept):
+    bool IsLoggedIn { get; }
+    string? CurrentSceneName { get; }
+    event Action Login;
+    event Action Logout;
+    event Action<string?> SceneChanged;
+
+    // new (client phase — distinct from the above):
+    GamePhase Phase { get; }                 // current phase — read initial state (e.g. in ctor) / on demand
+    event Action<PhaseChange> PhaseChanged;  // fires on transition; From and To both supplied
+
+    // new (safe-to-touch-game-state signal — §5.2): true in a stable world scene, false mid-transition
+    bool IsWorldActive { get; }
+
+    // new (UI-state signal — §5.4):
+    GameUIState UiState { get; }
+}
+```
+
+- `ClientStateService` owns `Phase` (boot = `Startup`). It is a **dumb transition sink** — the edge
+  decisions live in the Host. Transitions (edge → phase), empirically confirmed in-game 2026-07-29:
+
+  | Edge (game event / probe signal) | Transition | Notes |
+  |---|---|---|
+  | login-view probe reports `login_main` active | `Startup → TitleScreen` **and** `World → TitleScreen` | **`Startup`** = boot/loading before the login UI exists (the INITIAL phase). **`TitleScreen`** = the login screen is actually up. The Host's login-view probe (`GameObject.Find("zuiroot")` → an active `UILayerMain/login_main` descendant) runs **un-gated every phase** — it must fire while `IsWorldActive` is false. **Guarded** on `Phase == Startup || Phase == World`: it promotes both boot (`Startup`) and **post-logout** (`World`, see the `OnLogout` row) to `TitleScreen`, so `TitleScreen` *always* means "login screen actually visible". `CharSelect` is excluded (that case is the direct `OnLogout` call, and `login_main` may be active at char-select). Safe from `World` because `login_main` only exists in the login scene — never in-world — so this never fires during normal play. |
+  | `Game.OnLogin` | `TitleScreen → CharSelect` | OnLogin fires when the **character-select screen appears** (`IsLoggedIn` → true there, **not** at world-connect). **Guarded** on `Phase == TitleScreen` so a stray re-fire can't bounce `World → CharSelect`. (After a world logout the probe promotes `World → TitleScreen` **before** the next `OnLogin`, since logout returns to the login screen first — so `OnLogin` sees `TitleScreen` as expected.) |
+  | rising edge of `IsWorldActive` (first in-world `OnEnterScene` while logged in) | `CharSelect → World` | "World" = actually in a world scene. No-op if already `World`, so in-world zone loads don't re-fire it. |
+  | `Game.OnLogout` | `CharSelect → TitleScreen` (direct); `World →` **deferred** | **Char-select cancel** (fires `OnLogout`) transitions **directly** to `TitleScreen` — no flash concern, and `login_main` may already be up there so the probe can't be relied on. A **world logout does NOT raise `TitleScreen` here** — the login screen isn't up yet, so an early `TitleScreen` would let login-screen windows flash. The phase **stays `World`** (transient: `IsWorldActive` false + `Loading` true → every plugin gated off) until the login-view probe detects `login_main` and promotes `World → TitleScreen` (row 1). *Not* the falling edge of `IsWorldActive` — that dips false on every in-world zone load, and the phase must stay `World` through those. |
+
+  - **Why `CharSelect` is a distinct phase, not `TitleScreen`:** the Unity scene name
+    (`CurrentSceneName`) does **not** change between title and char-select, so scene name can't distinguish
+    them — `Phase` is the only signal that does. A login-screen tool (account switcher, server picker)
+    targets `TitleScreen` alone; without `CharSelect` it would also show over char-select.
+  - The phase is steady `World` across in-world zone transitions (`IsWorldActive` dips, `Phase` does not).
+- `ClientStateService` fires `PhaseChanged(new PhaseChange(previous, next))` on each transition. A plugin
+  reads `Phase` for its initial state (e.g. in its ctor) and subscribes to `PhaseChanged` for transitions,
+  unsubscribing in `Dispose` — the same hygiene it already uses for `Framework.Update`.
+- **`GamePhase` (client phase) and `IsLoggedIn`/`Login`/`Logout` (session state) coexist** as distinct
+  concepts. They correlate today but answer different questions.
+
+### 5.2 Tick & game-state gating (`Stellar.Host/Wiring.ServiceTick.cs`)
+
+The blanket `if (gated) return;` is removed — `RunFrameworkTick` runs, and ticks everything, in **every
+phase**. The framework no longer decides *which* work is world-only; instead **anything that touches live
+game state self-gates** on a single exposed signal:
+
+```csharp
+// IClientState (plugin-facing): true in a stable world scene, false while mid-transition (= !_sceneTransitioning)
+bool IsWorldActive { get; }
+```
+
+`IsWorldActive` is **stricter than `Phase == World`** — it is also `false` during in-world zone loads (the
+connect / scene-switch handshake), which is exactly when live game-state work corrupts the connection. So
+the gate everyone uses is `IsWorldActive`, never `Phase` / `IsLoggedIn`.
+
+**The tick is a dumb dispatcher** — it calls all its work unconditionally and knows nothing about who's
+world-only:
+
+- **UI / input runs every phase** (inherently safe): `SetScreen`, input poll, hotkeys, **window draw
+  (`_windowService.Tick`) and HUD draw (`_hudService.Tick`)** — both draw services; per-element visibility
+  is `ShouldRender`, and a hidden element skips its value pull — toasts, layout input, exchange drain, and
+  plugin `Update`s.
+- **Game-state work self-gates** — `if (!_clientState.IsWorldActive) return;` at the top of each unit:
+  framework probes/services (`PlayerState`, `Inventory`, world-attr, equip/loadout), **notice-tips
+  (`_noticeTipService.Tick` — runs game Lua)**, the Host's own plumbing (`_framework.Tick`, game-data load,
+  `ProbeGameRootOnce`), and any **plugin** doing raw game reads in its `Update`. One signal, one check,
+  everywhere.
+
+This drops the "tick knows each service's timing" coupling (adding a game-state service = it self-gates;
+the tick is untouched) **and** the method-splitting/hoisting a central gate would need (see §9). The Host
+sets `IsWorldActive` at the same two spots it flips the scene-transition flag (`false` in
+`BeginSceneTransition`, `true` at the `OnEnterScene` gate-clear).
+
+**Two signals, two jobs** (both plugin-facing):
+
+| Signal | Use for | Across an in-world zone load |
+|---|---|---|
+| `Phase` (`TitleScreen`/`CharSelect`/`World`) | **visibility** (`ShouldRender`) | stays `World` — window stays up |
+| `IsWorldActive` (bool) | **game-state access** (in `Update`) | dips `false` during the handshake — skip the read |
+
+**Gating is opt-in, per what a unit does — not universal.** A plugin that only draws UI, does HTTP, or
+reads *framework-cached* data touches no live game state and **needs no gate — it just runs every phase**.
+Only a unit that does **raw** game reads gates.
+
+⚠️ **Blast radius (framework units only):** a *plugin* that forgets its gate harms only itself; a
+*framework game-state unit* that forgets `if (!IsWorldActive) return` corrupts the world-connect —
+everyone disconnects. So the safety-net targets the **framework's** units: a Roslyn analyzer (existing
+`Stellar.Analyzers`) that fails the build if a marked game-state method lacks the guard. It runs on `src/`
+only — it **never** applies to plugin projects, so no plugin is ever forced to gate.
+
+### 5.3 Window & HUD visibility — plugin owns the decision, framework enacts
+
+A single **required** predicate is the only source of visibility truth:
+
+```csharp
+public interface IRenderGated { Func<bool> ShouldRender { get; } }   // the contract the gate consumes
+
+public sealed record WindowSpec(...) : IRenderGated { public required Func<bool> ShouldRender { get; init; } }
+public sealed record HudSpec(...)    : IRenderGated { public required Func<bool> ShouldRender { get; init; } }
+```
+
+Gate:
+
+```csharp
+hide = !spec.ShouldRender();
+```
+
+- **Plugin owns the decision.** `ShouldRender` reads whatever it wants — `Phase`, `UiState`, its own state —
+  via the plugin's captured `_services`, and returns draw/don't. Evaluated each apply (~10 Hz), so it is
+  always current (a *pull*, not a stored flag).
+- **Framework owns the flip.** The renderer `SetActive(false)`s the root and skips the value pull
+  (`t.Apply()`) when hidden — the perf win (a hidden window runs zero value funcs). It never touches the
+  user's Show/Hide state.
+- **`ShouldRender` is `required` (compiler-enforced)** — every `WindowSpec`/`HudSpec` must set it or the
+  **build fails**. `required` lives on each record (interfaces can't carry it); `IRenderGated` just declares
+  the getter. So: shared contract *and* enforcement. No `null` default, no "magic" default, no
+  login-screen-spam footgun by omission. (net6: polyfill `RequiredMemberAttribute` +
+  `CompilerFeatureRequiredAttribute` in `Stellar.Abstractions` — they're net7+ BCL types.)
+- **`GamePhase` / `GameUIState` are inputs to `ShouldRender`, not framework gates.** The framework does not
+  read them to hide a window.
+
+`MasterHudKill` is retained as an explicit **dev override** outside policy:
+
+```csharp
+hideAll = !spec.ShouldRender() || (PerfControls.MasterHudKill && spec.Category == WindowCategory.HUD);
+```
+
+Typical `ShouldRender` values (hand-written; no framework presets):
+
+```csharp
+ShouldRender = () => true;                                             // always (e.g. a login-screen tool)
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World;   // gameplay window
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World    // gameplay HUD, hidden when HUD covered
+            && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0;
+```
+
+### 5.4 `GameUIState` — informational UI flags (`Stellar.Abstractions`)
+
+Purely informational: the framework **detects and exposes** it; it **never gates** on it. A plugin's
+`ShouldRender()` optionally reads it.
+
+**Scope:** `GameUIState` describes *in-world* UI and is `None` at **both** `TitleScreen` **and** `CharSelect`
+(there is no in-game HUD/menu at the title / login / character-select screens). `RaisePhase` clears `UiState`
+to `None` on entering any non-`World` phase. Use `Phase` for "at the login screen" (`TitleScreen`) or "at
+character select" (`CharSelect`), not a `GameUIState` value.
+
+```csharp
+[Flags]
+public enum GameUIState   // backing int → 32-bit headroom
+{
+    None           = 0,
+    GameHud        = 1 << 0,   // gameplay HUD on-screen
+    FullScreenMenu = 1 << 1,   // inventory / map / char / gear / skills — covers the HUD
+    MainMenu       = 1 << 2,   // ESC functions list
+    LineSelector   = 1 << 3,   // SwitchLine panel — OVERLAYS the HUD (co-occurs with GameHud)
+    Dialogue       = 1 << 4,   // NPC talk
+    Cutscene       = 1 << 5,   // story video / top
+    Loading        = 1 << 6,   // loading screen
+    Matchmaking    = 1 << 7,   // match-pop confirm
+
+    // ── preset masks (provisional membership — verify cover-vs-overlay in-game) ──
+    GameHudHidden = FullScreenMenu | Cutscene | Loading,       // UIs that REPLACE the HUD (not LineSelector)
+    AnyMenu       = FullScreenMenu | MainMenu | LineSelector,
+    Blocking      = FullScreenMenu | MainMenu | Dialogue | Cutscene | Loading | Matchmaking,
+}
+```
+
+- **Flat flags** (no base/overlay structure) — the game's UI layers genuinely co-occur (e.g. the line
+  selector stays open over a valid HUD: `GameHud | LineSelector`). A single value can't express that;
+  flags let a plugin ask precisely. Presets encode the cover-vs-overlay knowledge as named masks so
+  plugins don't memorize bits.
+- **Detection** reuses/extends `PandaMenuStateProbe`, which already separately detects these ~9 layers
+  and today collapses them into one `IsFullScreenMenuOpen` bool. The work is to **un-collapse** (set the
+  bits) and **expose** it (lift to `Stellar.Abstractions`, add `IClientState.UiState`); the per-layer
+  detection largely exists.
+- **Extensible:** new bits are append-only and non-breaking (existing `HasFlag` checks unaffected);
+  adding a covering UI means adding it to `GameHudHidden`. Keep backing `int` (32 headroom) and `None = 0`.
+
+## 6. Removed / superseded
+
+`WindowSpec.AutoHideBehindGameMenus`, `WindowSpec.HideUntilInWorld`, `HudSpec.AutoHideBehindGameMenus`,
+`HudSpec.HideUntilInWorld`, and the phase-gating clauses in `WindowGatingPolicy` (its window path
+collapses to `hide = !ShouldRender()`). No `WindowSpec.Phases`, no render-predicate presets, no separate
+title-screen tick path.
+
+## 7. Risk & required validation
+
+Replacing the blanket tick gate with per-unit `IsWorldActive` self-gates (§5.2) must be **verified
+in-game**, not assumed:
+
+1. **World-connect succeeds** — login reaches in-world with no `[50000]`/`[50011]` disconnect, and so do
+   in-world zone loads. This is exactly what the blanket gate protected. If it regresses, a game-state
+   unit is missing its `IsWorldActive` guard (or gates on `Phase`/`IsLoggedIn` instead) — find that unit.
+2. **A `TitleScreen` window** (a window whose `ShouldRender()` returns true in `TitleScreen`) renders and is interactive
+   at the title screen; hotkeys fire there.
+3. **In-world features** unaffected (combat meter, HUD, inventory-driven plugins).
+4. **`GameUIState` cover-vs-overlay** — confirm which UIs replace the HUD vs overlay it, to finalize
+   `GameHudHidden`/`Blocking` membership (the probe knows "active", not "covers").
+
+Keep a copy of the prior `Stellar.Framework` build for rollback.
+
+## 8. Implementation plan
+
+**`Stellar.Abstractions`**
+- Add `Domain/GamePhase.cs`, `Domain/GameUIState.cs`, `Domain/PhaseChange.cs`.
+- `IClientState`: add `Phase`, `IsWorldActive`, `UiState` getters + `PhaseChanged` event (keep `IsLoggedIn`/`Login`/`Logout`/`SceneChanged`).
+- Add `IRenderGated { Func<bool> ShouldRender { get; } }`; `WindowSpec` + `HudSpec` implement it with a
+  **compiler-`required`** `ShouldRender`; remove `AutoHideBehindGameMenus` and `HideUntilInWorld`.
+  (net6: polyfill `RequiredMemberAttribute` + `CompilerFeatureRequiredAttribute` in `Stellar.Abstractions`
+  — they're net7+ BCL types.)
+
+**`Stellar.Application`**
+- `ClientStateService`: track `Phase` (→ `World` on `IsWorldActive`-rising in-world; → `TitleScreen` on
+  logout; raise `PhaseChanged`), `IsWorldActive` (via an internal `SetWorldActive` the Host calls), and `UiState`.
+- **Game-state services** (`PlayerState`, `Inventory`, world-attr, equip/loadout, **notice-tips**): add
+  `if (!_clientState.IsWorldActive) return;` at the top of their `Refresh`/`Tick`. (Draw services —
+  `WindowService`/`HudService` — do **not** self-gate; they run every phase and rely on `ShouldRender`.)
+- `WindowGatingPolicy`: `hide = !gated.ShouldRender()` — one method taking `IRenderGated` (drops the
+  phase/menu clauses **and** the separate HUD overload).
+- `WindowService` / `HudService`: pass their spec as `IRenderGated`.
+
+**`Stellar.Host`**
+- `Wiring.ServiceTick.cs`: **remove the blanket gate** — the tick runs everything every phase (gates
+  nothing). Host plumbing that touches game state (`_framework.Tick` subscribers, game-data load,
+  `ProbeGameRootOnce`) self-gates with `if (!_clientState.IsWorldActive) return;`.
+- `Wiring.GameLoop.cs` / `Wiring.Wire.cs`: at the scene-transition flips call `_clientState.SetWorldActive(…)`;
+  raise `Phase → World` at the `OnEnterScene` gate-clear and `Phase → TitleScreen` at `OnLogout`.
+- Safety-net for the **framework's own** game-state units: a `Stellar.Analyzers` rule that fails the build
+  if a marked (`[WorldGated]`) game-state method lacks the `IsWorldActive` guard. Runs on `src/` only —
+  **not** plugin projects, so plugins are never forced to gate (they opt in only for raw reads).
+
+**`Stellar.Infrastructure`**
+- `PandaMenuStateProbe`: un-collapse into `GameUIState` bits; keep `WindowRenderer.ApplyValues`'s
+  `MasterHudKill` override.
+
+**Validate** per §7.
+
+## 9. Appendix — tick change (illustrative)
+
+```csharp
+// BEFORE — one blanket gate kills the whole tick outside a stable world:
+private void RunFrameworkTick(float masterDt)
+{
+    MaybeApplyPerfExperiment();
+    if (IsTickGatedBySceneTransition()) return;      // ← removed
+    ...  // exchange drain, plugin Updates, UI + service work
+}
+
+// AFTER — the tick runs every phase and gates NOTHING; each game-state unit self-gates.
+private void RunFrameworkTick(float masterDt)
+{
+    MaybeApplyPerfExperiment();
+    ...  // everything called unconditionally, exactly as before — just no blanket gate
+}
+
+// Each game-state SERVICE / method early-returns on the shared signal (the ONLY new line per unit):
+public void Refresh(...)                  // PlayerStateService, InventoryService, NoticeTipService, world-attr, …
+{                                         //   (NOT WindowService/HudService — those are draw services, run always)
+    if (!_clientState.IsWorldActive) return;
+    ...
+}
+private void TryLoadGameDataEagerOnce()   // Host plumbing does the same (_framework.Tick, ProbeGameRoot, …)
+{
+    if (!_clientState.IsWorldActive) return;
+    ...
+}
+
+// The Host sets IsWorldActive where it already flips the scene-transition flag:
+private void BeginSceneTransition() { _sceneTransitioning = true;  _clientState.SetWorldActive(false); ... }
+// OnEnterScene gate-clear:          { _sceneTransitioning = false; _clientState.SetWorldActive(true);  ... }
+```
+
+**Why this is small:** removing the blanket gate makes the tick call everything — so window draw, input,
+and hotkeys now run at the title screen (the goal). Correctness moves to a one-line
+`if (!IsWorldActive) return;` at the top of each game-state unit. No method splitting, no param threading,
+no hoisting — a central `if (IsWorldActive) { … }` block would have needed all three (e.g. `_windowService.Tick`
+sits nested inside a game-state method today); self-gating sidesteps that entirely.
+
+## 10. API surface (summary)
+
+```csharp
+namespace Stellar.Abstractions.Domain;
+public enum GamePhase { Startup, TitleScreen, CharSelect, World }   // Startup = boot/loading before the login UI exists
+[Flags] public enum GameUIState { None=0, GameHud=1<<0, FullScreenMenu=1<<1, MainMenu=1<<2,
+    LineSelector=1<<3, Dialogue=1<<4, Cutscene=1<<5, Loading=1<<6, Matchmaking=1<<7,
+    GameHudHidden = FullScreenMenu|Cutscene|Loading, AnyMenu = FullScreenMenu|MainMenu|LineSelector,
+    Blocking = FullScreenMenu|MainMenu|Dialogue|Cutscene|Loading|Matchmaking }
+
+namespace Stellar.Abstractions.Services;
+public readonly record struct PhaseChange(GamePhase From, GamePhase To);
+public interface IClientState { /* IsLoggedIn, Login, Logout, SceneChanged, CurrentSceneName; */
+    GamePhase Phase { get; } event Action<PhaseChange> PhaseChanged;
+    bool IsWorldActive { get; } GameUIState UiState { get; } }
+
+namespace Stellar.Abstractions.Domain;
+public interface IRenderGated { Func<bool> ShouldRender { get; } }
+public sealed record WindowSpec(/* ... */) : IRenderGated { public required Func<bool> ShouldRender { get; init; } }
+public sealed record HudSpec(/* ... */)    : IRenderGated { public required Func<bool> ShouldRender { get; init; } }
+```

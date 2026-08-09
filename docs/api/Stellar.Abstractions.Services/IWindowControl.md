@@ -12,10 +12,12 @@ public interface IWindowControl
 | --- | --- |
 | [IsShown](IWindowControl/IsShown.md) { get; } | True while the window is visible AND currently mounted in the scene. |
 | [Rect](IWindowControl/Rect.md) { get; } | Current on-screen rect (position + size). `default` until the window is mounted. |
+| [BringToFront](IWindowControl/BringToFront.md)() | Bring this window in front of all other windows at the same [`ZOrder`](../Stellar.Abstractions.Domain/WindowSpec/ZOrder.md) and [`Category`](../Stellar.Abstractions.Domain/WindowSpec/Category.md). Call this when a plugin programmatically opens another plugin's window (e.g. CombatMeter opening EntityInspector) so the opened window is not obscured by the caller. |
 | [MarkDirty](IWindowControl/MarkDirty.md)() | Hints to the framework to re-poll and apply this window's element values immediately rather than waiting for the next scheduled refresh. |
 | [Remove](IWindowControl/Remove.md)() | Permanently remove the window from the scene and the window registry. |
 | [SetRect](IWindowControl/SetRect.md)(…) | Move/resize the window (size honoured only for [`Resizable`](../Stellar.Abstractions.Domain/WindowSpec/Resizable.md) windows). The new rect is persisted by the framework. Used by plugins that remember their own per-mode geometry. |
-| [SetVisible](IWindowControl/SetVisible.md)(…) | Show or hide the window; persists the user's visibility preference. |
+| [SetVisible](IWindowControl/SetVisible.md)(…) | Show or hide the window for this session only. Does NOT persist — the choice is lost on relaunch. For a user-facing toggle whose state should survive a restart, use [`SetVisiblePersist`](./IWindowControl/SetVisiblePersist.md). |
+| [SetVisiblePersist](IWindowControl/SetVisiblePersist.md)(…) | Show or hide the window AND persist the choice to the active layout slot (per resolution), so it is restored on the next relaunch. This is the single source of truth the framework reapplies on launch — the layout-editor eye-toggle writes the same slot. Use it for user-driven visibility toggles (hotkeys, close buttons) instead of [`SetVisible`](./IWindowControl/SetVisible.md) plus a private config key, which desyncs from the slot and loses to it on relaunch. |
 
 ## See Also
 

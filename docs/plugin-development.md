@@ -43,6 +43,8 @@ public interface IStellarPlugin : IDisposable
 }
 ```
 
+`Name` is **user-visible UI text**, not a log string: the framework adopts it as your plugin's display name the first time it constructs you, and shows it in **Settings → Plugins**, the per-plugin rate rows in **Settings → Performance**, and as the group header for your hotkeys in **Settings → Hotkeys**. Give it a human-readable name (`"Mahiru Utility"`, not `"StellarMahiruUtilityPlugin"`); keep it short, since those columns are fixed-width and clip. Return empty and the framework falls back to your assembly's short name.
+
 The framework constructs your plugin once via constructor injection of `IPluginServices`, and calls `Dispose()` on shutdown or when the user disables the plugin in **Settings → Plugins**. Everything you do — registering windows/HUDs, subscribing to events, declaring hotkeys, owning colours — happens in the constructor; everything you registered must be released in `Dispose()`.
 
 ## What's in the toolbox: `IPluginServices`
@@ -53,7 +55,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 |---|---|
 | `Log` (`IPluginLog`) | `Info` / `Warning` / `Error` / `Debug` into `BepInEx/LogOutput.log`. Tag your lines `[MyMod]`. |
 | `Framework` (`IFramework`) | `Update` event (fires at *your plugin's* update rate, `float deltaTime`) + `FrameCount` + `EffectiveUpdateRateHz` + `RequestUpdateRate(hz)`. See [Update rate](#update-rate). |
-| `ClientState` (`IClientState`) | `IsLoggedIn`, `CurrentSceneName`, and `Login` / `Logout` / `SceneChanged` events. |
+| `ClientState` (`IClientState`) | Session state (`IsLoggedIn`, `CurrentSceneName`, `Login` / `Logout` / `SceneChanged`) **plus** the client-phase and world/UI signals: `Phase` (+ `PhaseChanged`), `IsWorldActive`, `UiState`. See [Phases and window visibility](#phases-and-window-visibility). |
 | `GameEvents` (`IGameEvents`) | Low-level escape hatch: `Subscribe(fullTypeName, handler)` returning an `IDisposable`. |
 | `PlayerState` (`IPlayerState`) | Polled local-player snapshot: `IsAvailable`, `Name`, `Level`, `Profession`, `Health`/`MaxHealth`, `Stamina`/`MaxStamina`, `Position`. |
 | `PlayerStats` (`IPlayerStats`) | Live character attribute snapshot (ATK, DEF, crit, etc.). |
@@ -70,8 +72,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | `Theme` (`ITheme`) | Active palette (`Theme.Colors.*`), semantic text helpers, and the colour registry. |
 | `NamedTheme` (`INamedTheme`) | Active preset + global font scale. |
 | `Hotkeys` (`IHotkeys`) | `DeclareAction(...)` to bind a keyboard shortcut to a callback. |
-| `Windows` (`IWindowHost`) | Register interactive uGUI **windows** (draggable, closable, themed chrome). |
-| `Hud` (`IHudHost`) | Register uGUI **HUDs** (overlay layer, draggable, position-persisted). |
+| `Windows` (`IWindowHost`) | Register uGUI **windows** — both interactive panels (draggable, closable, themed chrome) *and* on-screen HUD overlays (borderless, `Surface = SurfaceStyle.HudOverlay`, position-persisted). |
 | `NativeUi` (`INativeUiHost`) | Inject your own uGUI into the game's own UI anchors. |
 | `Launcher` (`ILauncher`) | Register a tile in the Stellar launcher menu. |
 | `GameAssets` (`IGameAssets`) | Async-load game-supplied icons by id: profession crests (atlas Sprite + UV), Battle Imagine, item (gear/cosmetic), and skill icons. Poll per frame; null until loaded. Pair with `GameTextureElement`. |
@@ -98,22 +99,34 @@ Layout containers and leaves all derive from `HudElement`:
 - **Lists**: `ListElement(visibleCount, slots, Columns)` for short lists; `VirtualListElement(...)` for large windowed lists; `ConditionalElement(when, then, else)` for show/hide branches.
 - **Interaction** (window-grade): `ButtonElement(Func<string> label, Action onClick, Enabled, Style, Active, Width, Icon)`, `ToggleElement(label, get, set)`, `SliderElement(get, set, Min, Max)`, `InputElement(get, submit, Width, OnChange)`, `SelectableElement`, `ColorPickerElement`.
 
-Interaction elements work inside HUDs too, but interactive controls belong in **windows** (which gate game input correctly while focused). HUDs are best for read-only overlays.
+Every UI is a **window**. A read-only on-screen overlay is just a borderless window (`WindowPanelStyle.Borderless`, `Surface = SurfaceStyle.HudOverlay`) with no interactive controls; an interactive panel is a window with themed chrome. Both gate game input correctly while focused — there is no separate HUD path.
 
-### A HUD (read-only overlay)
+### An on-screen HUD overlay (a borderless window)
 
-`IHudHost.Register(HudSpec)` returns an `IHudHandle`. This is the PlayerHUD shape — a level pill, a name, two animated bars, and a position readout, all wrapped in a `ConditionalElement` so it shows "Player not loaded" before you're in-world:
+An overlay that sits over the world — an HP bar, a meter, a status strip — is a **window**, registered borderless with the HUD surface. `IWindowHost.Register(WindowRegistration)` returns an `IWindowControl`. Use `WindowPanelStyle.Borderless` (no frame), `WindowCategory.HUD` (the overlay draw layer), and `Surface = SurfaceStyle.HudOverlay` to get the native HUD look for `Text` / `Bar` / `Pill` leaves — shadowed text over the world, rounded HP-bar chrome, a transparent pill chip. `EditModeDragOnly = true` keeps it fixed during play and movable only in the Shift+\` layout editor. This is the PlayerHUD shape — a level pill, a name, two animated bars, and a position readout, all wrapped in a `ConditionalElement` so it shows "Player not loaded" before you're in-world:
 
 ```csharp
-private IHudHandle _hud = null!;
+private IWindowControl _hud = null!;
 private PlayerSnapshot _snap;   // your own struct, refreshed each tick
 
 private void BuildHud()
 {
-    _hud = _services.Hud.Register(new HudSpec(
-        Id:     "mymod.playerhud",
-        Anchor: HudAnchor.FreeOverlay,
-        Root:   new ConditionalElement(
+    _hud = _services.Windows.Register(new WindowRegistration(
+        Spec: new WindowSpec(
+            Id:          "mymod.playerhud",
+            Title:       "Player HUD",
+            DefaultRect: new WindowRect(40f, 120f, 220f, 0f),  // Height 0 = content-sized
+            Category:    WindowCategory.HUD,
+            Style:       WindowPanelStyle.Borderless)
+        {
+            Surface          = SurfaceStyle.HudOverlay,  // native HUD look for Text/Bar/Pill leaves
+            Draggable        = true,
+            EditModeDragOnly = true,                     // fixed in play, movable in the layout editor
+            // Required. Draw only in a gameplay world, and hide while a menu covers the HUD.
+            ShouldRender = () => _services.ClientState.Phase == GamePhase.World
+                              && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0,
+        },
+        Root: new ConditionalElement(
             When: () => _snap.IsAvailable,
             Then: new ColumnElement(new HudElement[]
             {
@@ -126,8 +139,7 @@ private void BuildHud()
                                () => $"{_snap.Health} / {_snap.MaxHealth}", Prefix: "HP"),
                 new TextElement(() => $"Pos {_snap.Position.X:0.0}, {_snap.Position.Z:0.0}"),
             }, Gap: 4f),
-            Else: new TextElement(() => "Player not loaded")),
-        HideUntilInWorld: true));
+            Else: new TextElement(() => "Player not loaded"))));
 }
 
 private void OnUpdate(float dt)
@@ -141,7 +153,7 @@ private void OnUpdate(float dt)
 private static float Frac(int v, int max) => max > 0 ? (float)v / max : 0f;
 ```
 
-`MarkDirty()` is an optional "apply now" hint; forgetting it never freezes the HUD because the framework polls anyway. Canonical reference: `Stellar.PlayerHUD`.
+`MarkDirty()` is an optional "apply now" hint; forgetting it never freezes the overlay because the framework polls anyway. Canonical reference: `Stellar.PlayerHUD`.
 
 ### A window (interactive)
 
@@ -162,7 +174,8 @@ private void BuildWindow()
         {
             Closable = true,
             Draggable = true,
-            HideUntilInWorld = true,
+            // Required. Draw only in a gameplay world (use `() => true` for a login-screen tool).
+            ShouldRender = () => _services.ClientState.Phase == GamePhase.World,
         },
         Root: new ColumnElement(new HudElement[]
         {
@@ -179,6 +192,61 @@ private void BuildWindow()
 ```
 
 `IWindowControl` lets you manage the live window: `SetVisible(bool)`, `IsShown`, `MarkDirty()`, `SetRect(...)` / `Rect`, and `Remove()`. Wire `OnClose` to `SetVisible(false)` (as above) so the ✕ and any hotkey/rail toggle stay agreed about visibility. Canonical reference: `Stellar.ChatTools` — a multi-section window with a scrolling log, a channel selector, an input composer, and a conditional sub-panel.
+
+## Phases and window visibility
+
+Every `WindowSpec` carries a compiler-**`required`** `Func<bool> ShouldRender` — the single source of truth for whether the window draws (HUD overlays are windows too, so this covers them). The framework evaluates it each apply (~10 Hz) and enacts `hide = !ShouldRender()`; a hidden element skips its value pull entirely (zero `Func` cost while hidden). It is a **pull**, so it is always current — you do not push a visibility flag. Because it is `required`, omitting it **fails the build** (no default that would spam windows over the login screen).
+
+You read whatever you want inside the predicate, via your captured `_services`. The three signals that matter live on `IClientState`:
+
+| Signal | Type | Use it for | Across an in-world zone load |
+|---|---|---|---|
+| `Phase` | `GamePhase` (`TitleScreen`/`CharSelect`/`World`) | **visibility** — what to draw in `ShouldRender` | stays `World` (window stays up) |
+| `IsWorldActive` | `bool` | **game-state access** — guard raw reads in your `Update` | dips `false` during the handshake — skip the read |
+| `UiState` | `[Flags] GameUIState` | in-world UI detail (menu covering the HUD, cutscene, loading) | `None` at title/char-select |
+
+`Phase` is a signal the framework gates nothing on; it coexists with session state (`IsLoggedIn`/`Login`/`Logout`) and answers a different question ("which client screen"). Read `Phase` for the initial state (e.g. in your ctor) and subscribe to `PhaseChanged` (`event Action<PhaseChange>`, where `PhaseChange` is a `readonly record struct(From, To)`) for transitions — unsubscribe in `Dispose`, same hygiene as `Framework.Update`.
+
+Typical `ShouldRender` values:
+
+```csharp
+// A login-screen tool (account switcher, server picker) — always visible, incl. the title screen:
+ShouldRender = () => true;
+
+// A gameplay window — only in a world scene:
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World;
+
+// A gameplay HUD — in-world, and hidden while a full-screen menu covers the HUD:
+ShouldRender = () => _services.ClientState.Phase == GamePhase.World
+                  && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0;
+```
+
+`GameUIState` is flat co-occurring flags (`GameHud`, `FullScreenMenu`, `MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`) plus preset masks (`GameHudHidden`, `AnyMenu`, `Blocking`) so you don't memorize bits — prefer the masks. It is informational only.
+
+### Do you need to gate your `Update`?
+
+Only if your plugin does **raw game reads**. The framework tick now runs UI/input every phase (that is what lets a window render at the title screen), but anything reading **live game state** must self-gate on `IsWorldActive`, because those reads corrupt the world-connect handshake while a scene transition is in flight:
+
+```csharp
+private void OnUpdate(float dt)
+{
+    if (!_services.ClientState.IsWorldActive) return;   // raw game-state read below
+    // ... snapshot PlayerState / combat / inventory into your fields ...
+}
+```
+
+A plugin that only **draws UI, does HTTP, or reads framework-cached data** touches no live game state and **needs no gate** — it just runs every phase. Gate on `IsWorldActive`, never on `Phase`/`IsLoggedIn` (both are true mid-transition, which is exactly when a raw read is unsafe).
+
+### Migrating to SDK 2.0.0
+
+SDK 2.0.0 is a **breaking** release. For each existing plugin:
+
+1. Bump every `Stellar.*` reference (`Stellar.Abstractions`, and the other `Stellar.*` SDK packages you use) to **`2.0.0`**.
+2. **Migrate every HUD to a window.** `IHudHost` / `HudSpec` / `IHudHandle` / `HudAnchor` are **removed** — the HUD path is now the window path. Replace `Hud.Register(new HudSpec(...))` with `Windows.Register(new WindowRegistration(new WindowSpec(..., WindowCategory.HUD, WindowPanelStyle.Borderless) { Surface = SurfaceStyle.HudOverlay, Draggable = true, EditModeDragOnly = true, ShouldRender = ... }, root))` (see "An on-screen HUD overlay" above). `Surface = SurfaceStyle.HudOverlay` reproduces the old borderless HUD look pixel-for-pixel; the returned `IWindowControl` replaces `IHudHandle`.
+3. Add a `ShouldRender` to **every** `WindowSpec` — the build fails until you do. For a window that used to be always-on, `ShouldRender = () => true`; for one that used `HideUntilInWorld`, `ShouldRender = () => _services.ClientState.Phase == GamePhase.World`.
+4. **Delete** `HideUntilInWorld` and `AutoHideBehindGameMenus` — both are removed. Fold the "hide behind a menu" behaviour into `ShouldRender` via `UiState` (see the gameplay-HUD example above).
+
+Non-UI plugins (no `WindowSpec`) only need the version bump.
 
 ## Convenience APIs
 
@@ -302,8 +370,8 @@ Every plugin MUST implement `Dispose()` correctly. The **Settings → Plugins** 
 
 **Release everything you acquired in the constructor:**
 
-- `-=` every event handler you `+=` (`Framework.Update`, `ClientState.Login/Logout/SceneChanged`, `Chat.MessageReceived`, `CombatEvents.CombatEventOccurred`, `Inventory.InventoryChanged`, `Config.SectionChanged`, …). **Capture handlers in fields** — inline lambdas (`X += () => ...;`) leak because `-=` can't find the same delegate instance later.
-- `Remove()` every `IHudHandle` and `IWindowControl`.
+- `-=` every event handler you `+=` (`Framework.Update`, `ClientState.Login/Logout/SceneChanged/PhaseChanged`, `Chat.MessageReceived`, `CombatEvents.CombatEventOccurred`, `Inventory.InventoryChanged`, `Config.SectionChanged`, …). **Capture handlers in fields** — inline lambdas (`X += () => ...;`) leak because `-=` can't find the same delegate instance later.
+- `Remove()` every `IWindowControl`.
 - `Dispose()` every `IColorSlot` and every `IHotkeyAction`.
 - `Dispose()` every token returned by `IGameEvents.Subscribe(...)` and `ILauncher.Register(...)`.
 
@@ -369,6 +437,6 @@ tail -f /opt/game/BlueProtocol2/drive_c/Star/StarLauncher/game/release_*/game_mi
 | Plugin | Purpose | What to learn from it |
 |---|---|---|
 | `Stellar.DebugInfo` | Minimal scene/frame readout | Smallest scaffold; subscribing to `ClientState` events |
-| `Stellar.PlayerHUD` | HP/stamina/identity HUD from `IPlayerState` | `IHudHost` + `HudElement` tree, snapshot-in-`Update` pattern, owned colour slots, hotkey toggle |
+| `Stellar.PlayerHUD` | HP/stamina/identity HUD from `IPlayerState` | Borderless HUD-overlay window (`Surface = SurfaceStyle.HudOverlay`) + `HudElement` tree, snapshot-in-`Update` pattern, owned colour slots, hotkey toggle |
 | `Stellar.ChatTools` | Chat log + composer + whisper auto-reply | `IWindowHost` multi-section window, the combined window+hotkey `Register` overload, `IChat` lifecycle, `ScrollElement`/`InputElement`/`ConditionalElement` |
 | `Stellar.AutoNav` | Autonomous navigation test fixture | Advanced test-only pattern (not representative of normal plugins) |
