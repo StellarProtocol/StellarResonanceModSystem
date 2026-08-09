@@ -49,7 +49,14 @@ internal sealed partial class WindowService : IWindowHost
             if (!existing.Removed) { _log.Error($"[Window] duplicate id '{reg.Spec.Id}'; ignored."); return new NoOpHandle(); }
             DestroyIfMounted(existing);
         }
-        var e = new Entry(reg) { Owner = this }.Init(reg.Spec.StartVisible); _windows[reg.Spec.Id] = e; return e;
+        // Seed the start-visible from the persisted layout: override StartVisible to hidden ONLY when there is an
+        // actual persisted hide (never force-SHOW a StartVisible=false window). A persisted-hidden window then
+        // starts Visible=false, never mounts, and never enters the fragile one-shot restore race in ApplySavedRect.
+        var start = reg.Spec.StartVisible;
+        if (start && _storage != null && _resolution != null
+            && _storage.IsPersistedHidden(_storage.ActiveSlot, reg.Spec.Id, _resolution()))
+            start = false;
+        var e = new Entry(reg) { Owner = this }.Init(start); _windows[reg.Spec.Id] = e; return e;
     }
 
     public IWindowControl Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys)

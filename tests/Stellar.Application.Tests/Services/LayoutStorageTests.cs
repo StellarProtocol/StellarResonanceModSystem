@@ -168,6 +168,53 @@ public sealed class LayoutStorageTests
         Assert.False(result.Visible);
     }
 
+    // --- IsPersistedHidden: distinguishes a DELIBERATE persisted hide (user hid the window via the layout editor)
+    // from "no saved layout" (Get's default is visible=true). Register seeds Visible=false only for the former. ---
+
+    [Fact]
+    public void IsPersistedHidden_HiddenBucket_True()
+    {
+        var storage = MakeStorage(out _);
+        var res = new Resolution(1920, 1080);
+        storage.Save(0, "p.main", res, new WindowRect(1, 2, 3, 4), visible: false);
+
+        Assert.True(storage.IsPersistedHidden(0, "p.main", res));
+    }
+
+    [Fact]
+    public void IsPersistedHidden_NoBucket_False()
+    {
+        var storage = MakeStorage(out _);
+        Assert.False(storage.IsPersistedHidden(0, "p.main", new Resolution(1920, 1080)));
+    }
+
+    [Fact]
+    public void IsPersistedHidden_VisibleBucket_False()
+    {
+        var storage = MakeStorage(out _);
+        var res = new Resolution(1920, 1080);
+        storage.Save(0, "p.main", res, new WindowRect(1, 2, 3, 4), visible: true);
+
+        Assert.False(storage.IsPersistedHidden(0, "p.main", res));
+    }
+
+    [Fact]
+    public void IsPersistedHidden_ClosestResolutionHidden_True()
+    {
+        var storage = MakeStorage(out _);
+        storage.Save(0, "p.main", new Resolution(1920, 1080), new WindowRect(1, 2, 3, 4), visible: false);
+
+        // No exact bucket for 1900x1080, but it's within delta of the hidden 1920x1080 save.
+        Assert.True(storage.IsPersistedHidden(0, "p.main", new Resolution(1900, 1080)));
+    }
+
+    [Fact]
+    public void IsPersistedHidden_OutOfRangeSlot_False()
+    {
+        var storage = MakeStorage(out _);
+        Assert.False(storage.IsPersistedHidden(99, "p.main", new Resolution(1920, 1080)));
+    }
+
     // --- ClampVisible: the shared on-screen clamp used by the live drag (WindowInteractionTicker) AND
     // programmatic placement (WindowRenderer.SetRect). Asserts its ACTUAL contract: it keeps a grabbable band
     // (MinVisiblePx) on-screen rather than fully pinning the window inside the viewport. ---

@@ -123,6 +123,18 @@ internal sealed class LayoutStorage
         return (ClampToScreen(defaultRect, clampRes), true);
     }
 
+    /// <summary>True iff a saved layout for this window (exact resolution, or the closest within delta) exists AND
+    /// records it HIDDEN. Lets Register seed Visible=false for a user-hidden window without force-showing untouched
+    /// ones (whose Get() default is visible=true).</summary>
+    public bool IsPersistedHidden(int slot, string windowId, Resolution resolution)
+    {
+        if (!InRange(slot)) return false;
+        if (!_slots[slot].Windows.TryGetValue(windowId, out var perRes)) return false;
+        if (perRes.TryGetValue(resolution.Key, out var exact)) return !exact.Visible;
+        var closest = FindClosestResolution(perRes.Keys, resolution);
+        return closest is { } k && perRes.TryGetValue(k, out var c) && !c.Visible;
+    }
+
     // Keep a window reachable on the current screen: a DefaultRect tuned for a larger resolution (or a layout
     // reused from a bigger screen) can place a window past the right/bottom edge — off-screen and ungrabbable.
     // Pull the top-left back so a fixed-size window fits fully on-screen, or — for content-auto-sized windows

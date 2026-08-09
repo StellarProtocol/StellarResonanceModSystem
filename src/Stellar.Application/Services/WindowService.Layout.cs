@@ -105,8 +105,13 @@ internal sealed partial class WindowService
         // Meanwhile hold the last-known-good pose (it survives on the Entry across the remount), so no visible jump.
         if (!CanvasScaleReady)
         {
+            // Sticky only WITHIN one pending window: a mount's applyVisibility=true must survive a reposition-only
+            // (false) reapply that defers during the same canvas-settle wait. Once the apply runs (ApplyPending
+            // cleared, below), the next cycle starts fresh — so a standalone resolution-change reapply on an
+            // already-resolved window stays reposition-only and never re-hides a session-shown window.
+            // Compute PendingApplyVisibility using the OLD ApplyPending, THEN set ApplyPending=true.
+            e.PendingApplyVisibility = e.ApplyPending ? (e.PendingApplyVisibility || applyVisibility) : applyVisibility;
             e.ApplyPending = true;
-            e.PendingApplyVisibility = applyVisibility;
             if (e.LastSavedRect.Width > 0f) _renderer.SetRect(e.Token, e.LastSavedRect);
             return;
         }

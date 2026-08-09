@@ -151,6 +151,90 @@ public class WindowServiceTests
         Assert.Equal(1, r.Mounts);
     }
 
+    // StartVisible=false reg (an on-demand dialog): stays hidden absent any persisted SHOW.
+    private static WindowRegistration HiddenReg(string id) =>
+        new(new WindowSpec(id, id, new WindowRect(0, 0, 300, 200), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
+            { ShouldRender = () => true, StartVisible = false }, new TextElement(() => "hi"));
+
+    // --- Persisted-visibility seeding at Register (the layout-editor "hide sticks across relaunch" fix).
+    // A window persisted HIDDEN must start Visible=false so it never mounts and never enters the fragile
+    // one-shot ApplySavedRect restore race. Register overrides StartVisible to hidden ONLY on an actual
+    // persisted hide — it never force-SHOWs a StartVisible=false window nor a persisted-visible one. ---
+
+    [Fact]
+    public void Persisted_hidden_StartVisible_window_starts_hidden_and_never_mounts()
+    {
+        var r = new FakeRenderer();
+        var storage = new LayoutStorage(new InMemoryConfig(), new NullLog());
+        var res = new Resolution(1920, 1080);
+        storage.Save(storage.ActiveSlot, "w", res, new WindowRect(0, 0, 300, 200), visible: false);
+        var svc = new WindowService(r, new NullLog());
+        svc.AttachLayout(storage, () => res);
+
+        svc.Register(Reg("w"));   // StartVisible=true, but persisted hidden → seeded hidden
+        svc.Tick(0.2f);
+
+        Assert.Equal(0, r.Mounts);   // never mounted → no restore race, no flash
+    }
+
+    [Fact]
+    public void Persisted_visible_window_is_not_force_hidden()
+    {
+        var r = new FakeRenderer();
+        var storage = new LayoutStorage(new InMemoryConfig(), new NullLog());
+        var res = new Resolution(1920, 1080);
+        storage.Save(storage.ActiveSlot, "w", res, new WindowRect(10, 20, 300, 200), visible: true);
+        var svc = new WindowService(r, new NullLog());
+        svc.AttachLayout(storage, () => res);
+
+        svc.Register(Reg("w"));   // persisted VISIBLE → StartVisible=true honoured
+        svc.Tick(0.2f);
+
+        Assert.Equal(1, r.Mounts);
+    }
+
+    [Fact]
+    public void StartVisible_false_untouched_window_stays_hidden()
+    {
+        var r = new FakeRenderer();
+        var storage = new LayoutStorage(new InMemoryConfig(), new NullLog());
+        var svc = new WindowService(r, new NullLog());
+        svc.AttachLayout(storage, () => new Resolution(1920, 1080));
+
+        svc.Register(HiddenReg("w"));   // no persisted layout → seeding never force-SHOWs it
+        svc.Tick(0.2f);
+
+        Assert.Equal(0, r.Mounts);
+    }
+
     private sealed class NullLog : IPluginLog
     { public void Info(string m){} public void Warning(string m){} public void Error(string m){} public void Debug(string m){} }
+
+    // Minimal in-memory IPluginConfig for constructing a real LayoutStorage in-test.
+    private sealed class InMemoryConfig : IPluginConfig
+    {
+        private readonly System.Collections.Generic.Dictionary<string, InMemorySection> _sections = new();
+#pragma warning disable CS0067
+        public event System.Action<string>? SectionChanged;
+#pragma warning restore CS0067
+        public IConfigSection GetSection(string name)
+        {
+            if (!_sections.TryGetValue(name, out var s)) { s = new InMemorySection(); _sections[name] = s; }
+            return s;
+        }
+    }
+
+    private sealed class InMemorySection : IConfigSection
+    {
+        private readonly System.Collections.Generic.Dictionary<string, object?> _store = new();
+        public T? Get<T>(string key, T? defaultValue) => _store.TryGetValue(key, out var v) && v is T t ? t : defaultValue;
+        public void Set<T>(string key, T value) => _store[key] = value;
+        public void Save() { }
+        public void SaveQuiet() { }
+        public void RemoveByPrefix(string prefix)
+        {
+            foreach (var k in new System.Collections.Generic.List<string>(_store.Keys))
+                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _store.Remove(k);
+        }
+    }
 }
