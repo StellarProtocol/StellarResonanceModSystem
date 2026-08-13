@@ -11,7 +11,10 @@ namespace Stellar.Infrastructure.Game;
 /// Reflection-based <see cref="IGameDataResonance"/>. A skill is a Battle Imagine
 /// (the "aoyi" skills) iff <c>Bokura.SkillTableBase[skillId].SlotPositionId</c>
 /// contains 7 or 8. Each player's equipped loadout (from
-/// <c>ICombatLookup.GetSkillLevels</c>) carries exactly two such skills.
+/// <c>ICombatLookup.GetSkillLevels</c>) carries exactly two such skills. Skills the
+/// SUMMONED imagine casts are flagged [0]/[6] instead — those resolve through
+/// <see cref="ImagineAoyiRule"/> (monster-id closure over SkillAoyiTable + curated
+/// companion arcanes) to the aoyi identity skill's <see cref="ImagineInfo"/>.
 ///
 /// <para>
 /// Display data comes from <c>Bokura.SkillTableBase[skillId]</c>
@@ -58,6 +61,7 @@ internal sealed partial class GameDataResonance : IGameDataResonance
         if (_imagineMemo.TryGetValue(skillId, out var memo)) return memo;   // hot path: dict hit, no reflection
 
         ImagineInfo? result = TryResolveImagine(skillId, out var info) ? info : null;
+        bool memoSafe = true;
         // Cast/cooldown rows carry a leveled skill_level_id (e.g. 395001) that is NOT in SkillTable.
         // Map it to its base skill via SkillFightLevelTable[id].SkillId (the game's own column) so observed
         // casts + LocalCooldowns resolve to the equipped imagine (whose ImagineInfo.SkillId stays the base —
@@ -67,9 +71,22 @@ internal sealed partial class GameDataResonance : IGameDataResonance
             int baseId = ResolveBaseSkillId(skillId);
             if (baseId > 0 && baseId != skillId) result = GetImagineForSkill(baseId);
             if (result is null) result = GetImagineForSkill(skillId / 100);
+            // Summon skills a Battle Imagine's monster casts (MonsterId*100+NN, e.g. 1008440) and the
+            // curated companion arcanes are flagged [0]/[6], never 7/8 — resolve them to the aoyi
+            // identity skill (3944) so summon damage attributes to the equipped imagine. Gated on
+            // baseId == 0 because a leveled PLAYER id shares this numeric namespace: 140116 is both
+            // Windborne Grace lv16 and an Igoreus monster skill — an own SkillFightLevelTable row
+            // marks the player reading and wins (see ImagineAoyiRule).
+            if (result is null && baseId == 0)
+            {
+                int aoyiId = ResolveAoyiForSkill(skillId, ref memoSafe);
+                if (aoyiId > 0) result = GetImagineForSkill(aoyiId);
+            }
         }
-        // Cache positives always; cache negatives only once the table is loaded, so a pre-load null isn't stuck.
-        if (result is not null || _skillTableReady) _imagineMemo[skillId] = result;
+        // Cache positives always; cache negatives only once the tables consulted are loaded, so a
+        // pre-load null isn't stuck (memoSafe covers the aoyi index the same way _skillTableReady
+        // covers SkillTable).
+        if (result is not null || (_skillTableReady && memoSafe)) _imagineMemo[skillId] = result;
         return result;
     }
 }
