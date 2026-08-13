@@ -14,6 +14,25 @@ namespace Stellar.Infrastructure.Game;
 ///   <item>Companion arcanes live in per-companion 29NNNXX bands with no monster closure;
 ///         <see cref="MapCompanionArcane"/> carries the curated set.</item>
 /// </list>
+/// <para>
+/// SANCTIONED SYNTHETIC PROBE — NN=00 composites (2026-08-13, buff-only companion capture): a
+/// consumer that knows a summon entity's MONSTER CONFIG id but has no skill id at all (the
+/// CombatMeter plugin, on <c>CombatEvent.EntitySummonAppeared</c> → <c>GetMonsterByEntity</c>)
+/// probes the summon's imagine identity as <c>GetImagineForSkill(configId * 100)</c>. That is a
+/// CONSUMER CONTRACT, not an accident of the decomposition, and it rides on three facts:
+/// (1) <see cref="CandidateMonsterId"/><c>(configId * 100) == configId</c> — exact division,
+/// NN=00; (2) membership of <c>configId</c> in the SkillAoyiTable MonsterId index decides
+/// imagine-or-not, exactly as for a real NN&gt;0 summon skill — the column holds BOTH
+/// monster-summon ids (10084 Celestial Flier) and companion "- Resonance" ids (3000033 Tina →
+/// aoyi 3921), so the one closure covers buff-only companions too; (3) an NN=00 composite can
+/// never collide with a leveled PLAYER id — levels start at 1, so no SkillFightLevelTable row
+/// exists at <c>*00</c> and <c>GetImagineForSkill</c>'s <c>baseId == 0</c> gate stays open.
+/// Overflow: the largest MonsterId band is the 7-digit companion one (3000033 * 100 =
+/// 300003300), which fits <c>int</c>; consumers still guard
+/// <c>configId &lt;= int.MaxValue / 100</c> before composing. Do NOT repurpose the NN=00 band or
+/// tighten <see cref="MinCompositeSkillId"/> past it — the plugin's appear-sourced companion
+/// capture depends on the composite resolving (pinned in ImagineAoyiRuleTests).
+/// </para>
 /// </summary>
 internal static class ImagineAoyiRule
 {
@@ -23,7 +42,9 @@ internal static class ImagineAoyiRule
     /// <summary>
     /// The monster id a summon skill id would decompose to (<c>MonsterId*100+NN</c>), or 0 when
     /// the id is too small to hold one. Membership in SkillAoyiTable decides whether the
-    /// candidate is real — see <see cref="ResolveSummonAoyi"/>.
+    /// candidate is real — see <see cref="ResolveSummonAoyi"/>. NN=00 is sanctioned:
+    /// <c>CandidateMonsterId(configId * 100) == configId</c> is the round-trip the synthetic
+    /// probe contract (class doc) is built on.
     /// </summary>
     public static int CandidateMonsterId(int skillId)
         => skillId > MinCompositeSkillId ? skillId / 100 : 0;

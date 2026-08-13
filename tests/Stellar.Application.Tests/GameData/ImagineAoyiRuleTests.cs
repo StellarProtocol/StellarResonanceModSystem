@@ -25,6 +25,7 @@ public sealed class ImagineAoyiRuleTests
         [10086] = 3946,   // Goblin King — "Arcane! Goblin March"
         [1110] = 3971,    // Kartgriff — "Arcane! Superconductor Surge"
         [1401] = 3969,    // Igoreus — collision band, see caller-constraint test
+        [3000033] = 3921, // Tina "- Resonance" — companion row IN the MonsterId column (no curation needed)
     };
 
     [Theory]
@@ -89,4 +90,38 @@ public sealed class ImagineAoyiRuleTests
     [Fact]
     public void ResolveSummonAoyi_collision_band_resolves_hence_callers_must_gate_on_fight_level_row()
         => Assert.Equal(3969, ImagineAoyiRule.ResolveSummonAoyi(140116, AoyiByMonster));
+
+    // -------------------------------------------------------------------------
+    // SANCTIONED SYNTHETIC PROBE — NN=00 composites (see ImagineAoyiRule's class doc).
+    // The CombatMeter plugin probes a summon entity's imagine identity from its MONSTER CONFIG id
+    // alone (CombatEvent.EntitySummonAppeared → GetMonsterByEntity → GetImagineForSkill(configId*100)),
+    // relying on CandidateMonsterId(configId*100) == configId and closure membership. These pins are
+    // the contract: weakening either breaks the plugin's buff-only companion capture (Tina et al.,
+    // whose companions produce NO damage/heal wire events to resolve through).
+    // -------------------------------------------------------------------------
+
+    /// <summary>(a) An NN=00 composite of a monster id present in the index resolves to that
+    /// monster's aoyi identity — the exact probe the plugin issues for a monster-summon imagine.</summary>
+    [Fact]
+    public void Nn00_composite_probe_of_an_indexed_monster_id_resolves()
+    {
+        const int configId = 10084;                       // Celestial Flier, MonsterTable config id
+        Assert.Equal(configId, ImagineAoyiRule.CandidateMonsterId(configId * 100));   // round-trip
+        Assert.Equal(3944, ImagineAoyiRule.ResolveSummonAoyi(configId * 100, AoyiByMonster));
+    }
+
+    /// <summary>(b) A companion "- Resonance"-scale id (7-digit MonsterId band) survives the
+    /// composite step without int overflow: checked(3000033 * 100) = 300003300 &lt; int.MaxValue
+    /// (2147483647), the round-trip holds, and the closure resolves it — buff-only companions ride
+    /// the SAME index as monster summons, no curation involved.</summary>
+    [Fact]
+    public void Nn00_composite_of_a_companion_resonance_id_fits_int_and_resolves()
+    {
+        const int configId = 3000033;                     // Tina "- Resonance" (SkillAoyiTable MonsterId)
+        int composite = checked(configId * 100);          // would throw OverflowException if it didn't fit
+        Assert.Equal(300003300, composite);
+        Assert.True(configId <= int.MaxValue / 100);      // the consumer-side guard the plugin applies
+        Assert.Equal(configId, ImagineAoyiRule.CandidateMonsterId(composite));
+        Assert.Equal(3921, ImagineAoyiRule.ResolveSummonAoyi(composite, AoyiByMonster));
+    }
 }
