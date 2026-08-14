@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.0.2] - 2026-08-15
+_**2.0.2** (patch) — adds `IEntityDetail.GetAttribute(id, attrId)`, a cheap per-entity single-attribute read (the `GetFightPoint` equivalent). Additive, binary-compatible with all existing plugins._
+### Added
+- Groundwork that lets plugins show more of your character's stats efficiently — this powers the new Illusion-Breaking Strength readout in CombatMeter.
+### Developer notes
+- New `IEntityDetail.GetAttribute(EntityId, int attrId)`: single-key read of the per-entity broadcast attribute map (no dictionary copy), for surfacing one attribute per entity on a hot path (e.g. a meter row), parallel to `ICombatLookup.GetFightPoint`. Implemented in `CombatEntityTracker`, delegated by `CombatService`, null-object in `NullEntityDetail`. `IEntityDetail` goes 5→6 members (under the analyzer cap); `ICombatLookup` was already at 8.
+
 ## [2.0.1] - 2026-08-14
 _**2.0.1** (patch) — summoned-companion (imagine) damage now resolves to the right creature in combat data. Data-resolution only; no API change, binary-compatible with all existing plugins._
 ### Fixed
