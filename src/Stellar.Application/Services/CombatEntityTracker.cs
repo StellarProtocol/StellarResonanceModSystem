@@ -135,6 +135,14 @@ internal sealed class CombatEntityTracker
 
     public string? GetEntityName(EntityId entityId) => _names.Get(entityId);
 
+    public long GetAttribute(EntityId entityId, int attrId)
+    {
+        // Single-key read of the SAME per-entity attr map GetAttributes copies — no dict copy, as cheap as
+        // GetFightPoint. Lets a hot path (a meter row) read one broadcast attr per entity on demand.
+        lock (_attrsByEntityLock)
+            return _attrsByEntity.TryGetValue(entityId, out var map) && map.TryGetValue(attrId, out var v) ? v : 0;
+    }
+
     public IReadOnlyDictionary<int, long> GetAttributes(EntityId entityId)
     {
         lock (_attrsByEntityLock)
