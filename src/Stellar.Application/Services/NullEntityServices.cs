@@ -16,6 +16,7 @@ internal sealed class NullEntityDetail : IEntityDetail
     private static readonly IReadOnlyDictionary<int, long> _emptyAttrs =
         new System.Collections.ObjectModel.ReadOnlyDictionary<int, long>(new Dictionary<int, long>());
     public IReadOnlyDictionary<int, long> GetAttributes(EntityId entity) => _emptyAttrs;
+    public long GetAttribute(EntityId entity, int attrId) => 0;
     public IReadOnlyList<EquippedItem> GetEquipment(EntityId entity) =>
         Array.Empty<EquippedItem>();
     public IReadOnlyList<FashionEntry> GetFashion(EntityId entity) =>

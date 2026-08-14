@@ -16,6 +16,13 @@ public interface IEntityDetail
     /// <summary>The entity's full broadcast numeric attribute map (attr id → value); empty if unknown.</summary>
     IReadOnlyDictionary<int, long> GetAttributes(EntityId entity);
 
+    /// <summary>The entity's value for a SINGLE broadcast numeric attribute, or 0 when the entity or the
+    /// attribute has not been observed. The cheap single-key read of <see cref="GetAttributes"/> — no
+    /// dictionary copy — for surfacing one attribute per entity on a hot path (e.g. a meter row's
+    /// Illusion-Breaking Strength, attr 11440), the same way <see cref="ICombatLookup.GetFightPoint"/>
+    /// surfaces the ability score.</summary>
+    long GetAttribute(EntityId entity, int attrId);
+
     /// <summary>The entity's equipped items (slot + item id); empty if not broadcast.</summary>
     IReadOnlyList<EquippedItem> GetEquipment(EntityId entity);
 
