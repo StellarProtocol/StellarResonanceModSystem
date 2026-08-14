@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.0.1] - 2026-08-14
+_**2.0.1** (patch) — summoned-companion (imagine) damage now resolves to the right creature in combat data. Data-resolution only; no API change, binary-compatible with all existing plugins._
+### Fixed
+- Damage from your summoned companions now shows up correctly in the combat meter and on the logs website. Some newer companion abilities weren't being recognised, so their damage went uncredited.
+### Developer notes
+- `GetImagineForSkill` gains `ImagineAoyiRule`. Newer battle imagines flag their damage skills as SlotPositionId [0]/[6] (not the aoyi 7/8 slots) with no `SkillFightLevelTable` row, so resolution rejected them and player-attributed summon damage never mapped back to the imagine (measured on jp/RXALtMH6J3: Celestial Flier 1008440, Rorola 2900840, Venobzzar 1007741, Kartgriff 111069 — all invisible while their damage sat in the run's own perActorSkills). The new rung is gated to ids with no fight-level row of their own (`baseId == 0`): it decomposes `MonsterId*100+NN` over a lazy `SkillAoyiTable` MonsterId→aoyi index (`GameDataResonance.Aoyi.cs`) plus a curated companion-arcane map (Boyce/Rorola/Fafala, table-evidenced). The gate is load-bearing — leveled player ids share the numeric namespace (140116 = Windborne Grace lv16 AND an Igoreus monster skill), and an own fight-level row wins. Negative memoisation stays pre-load-safe. Documented residuals: Igoreus/Denvel bands are ambiguous by construction; Dorothy/Lucy/Natsu have no evidenced rows and are never guessed. Also documents the `NN=00` composite probe as a sanctioned CombatMeter consumer contract (summon-entity appear-sourced imagine capture). Pinned by `ImagineAoyiRuleTests` (23 cases incl. the collision band).
+
 ## [2.0.0] - 2026-08-10
 _**2.0.0** (major) — the interface overhaul: resize the whole mod UI, a redesigned move-and-resize editing mode, a hotkey to hide the on-screen displays, and the Stellar menu on the login screen. One rendering engine now draws every window and overlay. **Breaking for plugins that draw their own on-screen display (HUD)** — the old HUD API is removed and those plugins must be rebuilt against the 2.0 SDK; all other plugins stay binary-compatible. Also bundles the 1.17.0–1.18.1 player fixes for anyone updating from an older build._
 ### Added
