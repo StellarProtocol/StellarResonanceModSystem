@@ -14,6 +14,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.0.2] - 2026-08-15
+### Added
+- Plugins can now show more of your character's stats — this powers the new Illusion-Breaking Strength readout in CombatMeter.
+
 ## [2.0.1] - 2026-08-14
 _**2.0.1** (patch) — summoned-companion (imagine) damage now resolves to the right creature in combat data. Data-resolution only; no API change, binary-compatible with all existing plugins._
 ### Fixed
