@@ -268,6 +268,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     // --- IEntityDetail ---
 
     public IReadOnlyDictionary<int, long> GetAttributes(EntityId entity) => _entities.GetAttributes(entity);
+    public long GetAttribute(EntityId entity, int attrId) => _entities.GetAttribute(entity, attrId);
 
     public IReadOnlyList<EquippedItem> GetEquipment(EntityId entity) => _entities.GetEquipment(entity);
 
