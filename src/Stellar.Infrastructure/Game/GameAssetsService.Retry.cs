@@ -88,19 +88,18 @@ internal sealed partial class GameAssetsService
         }
     }
 
-    // One-shot fallback: if this is a first-failure on an Item slot, retry with
-    // the SPRITE loader (items load Texture2D-first per live evidence; the retry covers a
-    // hypothetical atlased item icon). Sets RetriedAlternate so it can't loop.
-    // Always writes the final slot state into slots[key].
+    // One-shot fallback: if this is a first-failure on an Item OR Path slot, retry with the SPRITE
+    // loader (both load Texture2D-first; the retry covers an atlased asset). Sets RetriedAlternate so
+    // it can't loop. Always writes the final slot state into slots[key].
     private void RetryItemAlternate(Dictionary<int, Slot> slots, Slot slot, int key, IconKind kind, string reason)
     {
-        if (kind != IconKind.Item || slot.RetriedAlternate || slot.Path is null)
+        if ((kind != IconKind.Item && kind != IconKind.Path) || slot.RetriedAlternate || slot.Path is null)
         {
             slots[key] = slot;
             return;
         }
 
-        _log.Info($"[GameAssets][icon] item={key} {reason} — retrying as Sprite");
+        _log.Info($"[GameAssets][icon] {LabelOf(kind)}={key} {reason} — retrying as Sprite");
         var retrySlot = BeginLoadSpriteRetry(slot.Path, key);
         retrySlot.RetriedAlternate = true;
         slots[key] = retrySlot;
