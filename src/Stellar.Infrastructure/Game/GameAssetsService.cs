@@ -64,6 +64,12 @@ internal sealed partial class GameAssetsService : IGameAssets
     // never collide with profession / imagine / item / skill id spaces.
     private readonly Dictionary<int, Slot> _buffSlots = new();
 
+    // Per-PATH state for LoadByPath (arbitrary asset addresses with no id-based loader — e.g. dungeon
+    // crests). Paths are interned to sequential ints (_pathKeys) so they reuse the int-keyed slot
+    // machinery without hash collisions.
+    private readonly Dictionary<int, Slot> _pathSlots = new();
+    private readonly Dictionary<string, int> _pathKeys = new();
+
     // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
     // failures retry (bounded + backoff-gated) so a boot race self-heals instead
     // of latching Failed forever.
@@ -177,6 +183,21 @@ internal sealed partial class GameAssetsService : IGameAssets
 
         // Buff icons follow the same path convention as skill icons (Texture2D family).
         return LoadIcon(_buffSlots, buffId, row.Value.IconPath, IconKind.Buff, out uv);
+    }
+
+    /// <inheritdoc/>
+    public object? LoadByPath(string assetPath, out UvRect uv)
+    {
+        uv = new UvRect(0f, 0f, 1f, 1f);
+        if (string.IsNullOrEmpty(assetPath)) return null;
+        if (!_pathKeys.TryGetValue(assetPath, out var key))
+        {
+            key = _pathKeys.Count + 1;                           // stable per-path int (no hash collisions)
+            _pathKeys[assetPath] = key;
+        }
+        if (_pathSlots.ContainsKey(key))                         // existing slot: don't re-pass the address
+            return LoadIcon(_pathSlots, key, address: null, IconKind.Path, out uv);
+        return LoadIcon(_pathSlots, key, assetPath, IconKind.Path, out uv);
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller
@@ -297,9 +318,10 @@ internal sealed partial class GameAssetsService : IGameAssets
                     // Sprite-first produced 11 warnings/login) — Sprite is the one-shot fallback
         Skill,      // standalone Texture2D — skill icons live under ui/textures/ like Imagine
         Buff,       // atlas Sprite — buff icon paths are under ui/atlas/ (Sprite atlas, same family as Profession)
+        Path,       // LoadByPath: arbitrary address, type unknown → Texture2D first, Sprite fallback (like Item)
     }
 
-    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill;
+    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Path;
     private static string LabelOf(IconKind kind) => kind switch
     {
         IconKind.Profession => "profession",
@@ -307,6 +329,7 @@ internal sealed partial class GameAssetsService : IGameAssets
         IconKind.Item       => "item",
         IconKind.Skill      => "skill",
         IconKind.Buff       => "buff",
+        IconKind.Path       => "path",
         _                   => "icon",
     };
 

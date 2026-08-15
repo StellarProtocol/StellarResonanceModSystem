@@ -74,4 +74,18 @@ public interface IGameAssets
     /// <param name="buffId">The buff base id (BuffTable row id).</param>
     /// <param name="uv">The UV sub-rect for the icon within its atlas, or full-rect when standalone.</param>
     object? LoadBuffIcon(int buffId, out UvRect uv);
+
+    /// <summary>
+    /// Loads an arbitrary game asset (atlas <c>Sprite</c> or standalone <c>Texture2D</c>) by its raw
+    /// ZResLoader address, for content that has no dedicated id-based loader above — e.g. a dungeon
+    /// crest whose path comes from a game table (<c>TeamTargetTable.Icon</c> / <c>MatchPic</c>). The
+    /// asset type is auto-detected (Texture2D first, Sprite fallback). Returns <c>null</c> while
+    /// loading, on failure, or for an empty path; safe to call every frame (the result is cached by path).
+    /// </summary>
+    /// <param name="assetPath">The ZResLoader address (a table's icon/pic path).</param>
+    /// <param name="uv">
+    /// The UV sub-rect for the asset within its atlas (normalised, bottom-left origin), or
+    /// <c>(0,0,1,1)</c> for a standalone texture / until the load resolves.
+    /// </param>
+    object? LoadByPath(string assetPath, out UvRect uv);
 }
