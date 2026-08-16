@@ -299,6 +299,11 @@ public sealed partial class BootstrapPlugin
 
         try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
+
+        // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on
+        // in-dungeon + PartyId==0, throttled + capped, so it's a no-op on every normal tick.
+        try { _teamInfoRefreshProbe!.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] team-refresh tick threw: {ex.Message}"); }
     }
 
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the

@@ -9,6 +9,10 @@ public sealed partial class BootstrapPlugin
     // ── Loadout services (Wiring.Loadout.cs) ────────────────────────────────
     private PandaLoadoutProbe? _loadoutProbe;
     private LoadoutService? _loadoutService;
+    // Mid-dungeon-reconnect party-id refresher — invokes WorldProxy.GetTeamInfo({}) via the same Lua
+    // bridge so a reconnected run's PartyId fills in promptly (see PandaTeamInfoRefreshProbe). Ticked
+    // world-gated in DrainEquipAndLoadout (Wiring.ServiceTick.cs).
+    private PandaTeamInfoRefreshProbe? _teamInfoRefreshProbe;
 
     /// <summary>
     /// Constructs the loadout (profession-project) switch probe + service. The
@@ -32,5 +36,13 @@ public sealed partial class BootstrapPlugin
         // handler only flips a flag (network-thread-safe). _inventoryService is built before this.
         _inventoryService!.SelfGearChanged += _loadoutProbe.OnGearChanged;
         _loadoutService = new LoadoutService(_loadoutProbe);
+
+        // Party-id reconnect refresher (built here for the shared typeRegistry + Lua bridge; _partyService
+        // and _dungeonStateService are already constructed in BuildCoreServices). Reads the live run id +
+        // party id each tick and, in a dungeon with no party id yet, fires WorldProxy.GetTeamInfo.
+        _teamInfoRefreshProbe = new PandaTeamInfoRefreshProbe(
+            log, typeRegistry,
+            () => _dungeonStateService!.CurrentRunId,
+            () => _partyService!.PartyId);
     }
 }
