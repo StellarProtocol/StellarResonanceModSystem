@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.0.3] - 2026-08-16
+_**2.0.3** (minor) — readable text inputs, plus internal groundwork for the CombatMeter Discord run-card and a reconnect fix that keeps a mid-dungeon disconnect from splitting your run in two._
+### Fixed
+- Text boxes in Stellar windows are readable again — they show the dark themed background instead of white-on-white.
+### Developer notes
+- `IGameAssets.LoadByPath` — load an arbitrary game asset by its ZResLoader address (#61); backs the in-game image rendering for the CombatMeter Discord run-card.
+- Mid-dungeon reconnect party recovery: `PandaTeamInfoRefreshProbe` invokes the game's own `WorldProxy.GetTeamInfo({})` via the tolua# Lua bridge when in a dungeon with `IPartySnapshot.PartyId == 0` (a reconnect drops the party id until the game lazily re-delivers it — measured arriving only after a whole run). Bounded (≤3/run, 2.5 s throttle, world-gated main-thread); the reply is decoded by the existing `PandaPartyStubProbe` → `PartyId`. Enables CombatMeter's reconnect run-split fix by making the party id available during the run instead of after it.
+
 ## [2.0.2] - 2026-08-15
 ### Added
 - Plugins can now show more of your character's stats — this powers the new Illusion-Breaking Strength readout in CombatMeter.
