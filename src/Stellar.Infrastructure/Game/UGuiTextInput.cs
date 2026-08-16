@@ -62,6 +62,12 @@ internal sealed class UGuiTextInput
         _field = go.AddComponent<InputField>();
         _field.textComponent = txt;
         _field.targetGraphic = bg;
+        // The field is a Selectable: its DEFAULT ColorTint transition drives targetGraphic.color from the
+        // state ColorBlock (normalColor is WHITE), which OVERWRITES the dark themed bg ApplyStyle sets and
+        // leaves the light themed text on a white field — unreadable (owner report 2026-08-16: "white bg,
+        // white text"; the "sometimes black" is the pre-transition frame). Transition.None keeps the themed
+        // colours in every state; the blinking caret is the focus affordance.
+        _field.transition = Selectable.Transition.None;
         // MultiLineNewline is the ONLY mode uGUI does NOT deactivate on Enter. SingleLine returns
         // EditState.Finish on Enter -> DeactivateInputField() runs right after onEndEdit -> the field
         // loses focus for a frame -> the game (chat opens only when no field is focused) flashes chat
