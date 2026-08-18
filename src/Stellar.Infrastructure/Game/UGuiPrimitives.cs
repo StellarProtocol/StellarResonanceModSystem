@@ -72,26 +72,10 @@ internal static class UGuiPrimitives
     public static FontStyle EmphasisStyle(bool emphasis, string? text)
         => emphasis && !GlyphScript.HasSyntheticBoldRisk(text) ? FontStyle.Bold : FontStyle.Normal;
 
-    // Script-aware emphasis for a STATIC text (window/overlay titles). Thai → a real bold Thai FACE
-    // (thaiBold, applied with FontStyle.Normal — crisp readable bold); other complex scripts (CJK/kana/
-    // Hangul) → FontStyle.Normal on the regular face (crisp, no synthetic-bold blur); Latin → real
-    // FontStyle.Bold. thaiBold null (or absent family) → Thai stays on the regular face (readable, not bold).
-    public static void ApplyEmphasisFont(Text t, string? text, Font? thaiBold)
-    {
-        if (GlyphScript.IsThai(text))
-        {
-            if (thaiBold != null) t.font = thaiBold;
-            t.fontStyle = FontStyle.Normal;
-        }
-        else if (GlyphScript.HasSyntheticBoldRisk(text))
-        {
-            t.fontStyle = FontStyle.Normal;   // CJK/kana/Hangul: crisp regular (no readable bold face available)
-        }
-        else
-        {
-            t.fontStyle = FontStyle.Bold;      // Latin: real bold
-        }
-    }
+    // Emphasis for a STATIC text (window/overlay titles): synthetic bold for every script — the only bold the
+    // overlay engine renders (no real bold FACE loads under Proton). Kept as a helper so the title call sites
+    // read intently; the params beyond `t` are retained for call-site symmetry with the script-aware history.
+    public static void ApplyEmphasisFont(Text t, string? text, Font? thaiBold) => t.fontStyle = FontStyle.Bold;
 
     public static void SetPreferred(GameObject go, float w, float h)
     {

@@ -74,23 +74,14 @@ internal sealed partial class WindowBuilder
                 // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
                 if (Emphasis)
                 {
-                    C.fontSize = EmphSize;   // emphasis size (weight carries the emphasis, not size)
-                    if (GlyphScript.IsThai(s))
-                    {
-                        if (EmphThaiFont != null) C.font = EmphThaiFont;   // real bold Thai face (FontStyle.Normal)
-                        C.fontStyle = FontStyle.Normal;
-                    }
-                    else if (GlyphScript.HasSyntheticBoldRisk(s))
-                    {
-                        if (EmphBaseFont != null) C.font = EmphBaseFont;   // CJK/kana/Hangul: larger crisp regular
-                        C.fontStyle = FontStyle.Normal;
-                    }
-                    else
-                    {
-                        if (EmphBaseFont != null) C.font = EmphBaseFont;   // Latin: larger + real bold
-                        C.fontStyle = FontStyle.Bold;
-                    }
-                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = C.fontSize; }
+                    // Bold ALL emphasis via Unity's synthetic bold — the ONLY bold the overlay engine renders
+                    // (a real bold FACE will not load under Proton, whatever font/location we install). English
+                    // tolerates the faux-thickening cleanly; Thai/CJK thicken less crisply, but the owner wants
+                    // bold consistent with English (ruling 2026-08-18). Same mechanism for every script.
+                    C.fontSize = EmphSize;
+                    if (EmphBaseFont != null) C.font = EmphBaseFont;
+                    C.fontStyle = FontStyle.Bold;
+                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = FontStyle.Bold; Shadow.fontSize = EmphSize; }
                 }
             }
             if (ColorFn != null && ColorFn() is { } v)
