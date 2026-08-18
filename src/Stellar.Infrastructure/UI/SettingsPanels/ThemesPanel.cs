@@ -167,6 +167,15 @@ internal sealed class ThemesPanel
         }));
         items.Add(new BarElement(() => 0.78f, new ColorRgba(0.36f, 0.78f, 0.45f, 1f), () => "8240 / 10500", "HP"));
         items.Add(new BarElement(() => 0.42f, new ColorRgba(0.93f, 0.78f, 0.33f, 1f), () => "126 / 300", "Stamina"));
+        // Typography sample — one element per style flag, localized, so every language's real-bold face,
+        // italic, underline, and strikethrough are visible in the preview (and pinned by the visual scenario).
+        items.Add(new RowElement(new HudElement[]
+        {
+            new TextElement(() => _text.T("themes.type.bold")) { Bold = true },
+            new TextElement(() => _text.T("themes.type.italic")) { Italic = true },
+            new TextElement(() => _text.T("themes.type.underline")) { Underline = true },
+            new TextElement(() => _text.T("themes.type.strike")) { Strikethrough = true },
+        }));
     }
 
     /// <summary>Per-frame tick for the uGUI hub (Host TickOverlayServices) — coalesces drag edits to one

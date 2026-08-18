@@ -82,6 +82,10 @@
   "themes.rename": "เปลี่ยนชื่อ",
   "themes.renameLabel": "เปลี่ยนชื่อ:",
   "themes.scrollbar": "แถบเลื่อน",
+  "themes.type.bold": "ตัวหนา",
+  "themes.type.italic": "ตัวเอียง",
+  "themes.type.underline": "ขีดเส้นใต้",
+  "themes.type.strike": "ขีดฆ่า",
   "themes.uiScale": "ขนาด UI",
   "themes.windowOpacity": "ความทึบของหน้าต่าง"
 }

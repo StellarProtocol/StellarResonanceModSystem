@@ -82,6 +82,10 @@
   "themes.rename": "Ganti nama",
   "themes.renameLabel": "Ganti nama:",
   "themes.scrollbar": "Bilah gulir",
+  "themes.type.bold": "Tebal",
+  "themes.type.italic": "Miring",
+  "themes.type.underline": "Garis bawah",
+  "themes.type.strike": "Coret",
   "themes.uiScale": "Skala UI",
   "themes.windowOpacity": "Opasitas jendela"
 }

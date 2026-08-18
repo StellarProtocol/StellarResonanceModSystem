@@ -82,6 +82,10 @@
   "themes.rename": "名前を変更",
   "themes.renameLabel": "名前を変更:",
   "themes.scrollbar": "スクロールバー",
+  "themes.type.bold": "太字",
+  "themes.type.italic": "斜体",
+  "themes.type.underline": "下線",
+  "themes.type.strike": "取り消し線",
   "themes.uiScale": "UI スケール",
   "themes.windowOpacity": "ウィンドウの不透明度"
 }

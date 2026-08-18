@@ -82,6 +82,10 @@
   "themes.rename": "Rename",
   "themes.renameLabel": "Rename:",
   "themes.scrollbar": "Scrollbar",
+  "themes.type.bold": "Bold",
+  "themes.type.italic": "Italic",
+  "themes.type.underline": "Underline",
+  "themes.type.strike": "Strikethrough",
   "themes.uiScale": "UI Scale",
   "themes.windowOpacity": "Window Opacity"
 }
