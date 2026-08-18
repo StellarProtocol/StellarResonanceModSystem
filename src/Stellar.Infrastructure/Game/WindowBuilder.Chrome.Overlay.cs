@@ -28,7 +28,7 @@ internal sealed partial class WindowBuilder
         var tGo = UGuiPrimitives.NewChild("Title", title.transform);
         var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true);
         t.color = _assets.MenuText; t.text = spec.Title; t.raycastTarget = false;
-        t.fontStyle = UGuiPrimitives.EmphasisStyle(true, spec.Title);   // drop faux-bold for a CJK/Thai title
+        UGuiPrimitives.ApplyEmphasis(t, tGo.AddComponent<UnityEngine.UI.Outline>(), true, spec.Title);   // readable bold for a CJK/Thai title
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);
@@ -61,7 +61,7 @@ internal sealed partial class WindowBuilder
         var tGo = UGuiPrimitives.NewChild("Title", banner.transform);
         var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true);
         t.color = new Color(0.06f, 0.16f, 0.15f, 1f); t.text = spec.Title; t.raycastTarget = false;
-        t.fontStyle = UGuiPrimitives.EmphasisStyle(true, spec.Title);   // drop faux-bold for a CJK/Thai title
+        UGuiPrimitives.ApplyEmphasis(t, tGo.AddComponent<UnityEngine.UI.Outline>(), true, spec.Title);   // readable bold for a CJK/Thai title
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);

@@ -219,7 +219,7 @@ internal sealed partial class WindowBuilder
         var title = titleGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
         title.color = _assets.MenuText; title.text = spec.Title; title.raycastTarget = false;
-        title.fontStyle = UGuiPrimitives.EmphasisStyle(true, spec.Title);   // drop faux-bold for a CJK/Thai title (e.g. 設定)
+        UGuiPrimitives.ApplyEmphasis(title, titleGo.AddComponent<UnityEngine.UI.Outline>(), true, spec.Title);   // readable bold for a CJK/Thai title (e.g. 設定)
         RegisterTextReskin(token, title, 13);
     }
 

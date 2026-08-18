@@ -42,10 +42,12 @@ internal sealed partial class WindowBuilder
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
         // Emphasised (bold) text re-derives its weight from the CURRENT string each time the text changes:
-        // real bold for Latin, regular weight for complex scripts (CJK/kana/Hangul/Thai) whose glyphs Unity's
-        // synthetic bold mangles (i18n P0 JA/TH bold-header bug). Re-checked on live language switches and any
-        // dynamic-content change. Non-emphasis bindings leave fontStyle untouched.
+        // real FontStyle.Bold for Latin; for complex scripts (CJK/kana/Hangul/Thai) whose glyphs Unity's
+        // synthetic bold mangles (i18n P0 JA/TH bold-header bug) it stays FontStyle.Normal and gets its weight
+        // from EmphasisOutline (a same-colour fatten) so it reads bold AND readable. Re-checked on live language
+        // switches and any dynamic-content change. Non-emphasis bindings leave fontStyle/outline untouched.
         public bool Emphasis;
+        public Outline? EmphasisOutline;   // fatten for complex-script emphasis (null on non-emphasis text)
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -66,12 +68,11 @@ internal sealed partial class WindowBuilder
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
-                // Re-derive emphasis weight from the new string so complex scripts drop faux-bold (see Emphasis).
+                // Re-derive emphasis weight from the new string: Latin real-bold, complex-script fatten-bold.
                 if (Emphasis)
                 {
-                    var style = UGuiPrimitives.EmphasisStyle(true, s);
-                    C.fontStyle = style;
-                    if (Shadow != null) Shadow.fontStyle = style;
+                    UGuiPrimitives.ApplyEmphasis(C, EmphasisOutline, true, s);
+                    if (Shadow != null) Shadow.fontStyle = C.fontStyle;   // HUD twin mirrors the weight
                 }
             }
             if (ColorFn != null && ColorFn() is { } v)

@@ -65,10 +65,31 @@ internal static class UGuiPrimitives
 
     // Emphasis weight for a specific string. Real bold ONLY for text the dynamic OS font can embolden
     // cleanly — a complex-script run (CJK/kana/Hangul/Thai) has no bold face under Proton/IL2CPP, so Unity's
-    // synthetic bold would mangle it (the i18n P0 JA/TH bold-header bug); those stay regular weight, which
-    // the OS-font fallback chain renders correctly. Callers apply this to a Text whenever its string changes.
+    // synthetic bold would mangle it (the i18n P0 JA/TH bold-header bug); those stay FontStyle.Normal (the
+    // OS-font fallback chain renders the regular glyph correctly) and get their WEIGHT from a fatten outline
+    // instead — see ApplyEmphasis. Callers with no outline still get the right fontStyle from this.
     public static FontStyle EmphasisStyle(bool emphasis, string? text)
         => emphasis && !GlyphScript.HasSyntheticBoldRisk(text) ? FontStyle.Bold : FontStyle.Normal;
+
+    // Fatten radius (uGUI units) for the complex-script pseudo-bold outline. A uniform same-colour Outline
+    // thickens the REGULAR glyph edge-outward WITHOUT the synthetic-bold stroke distortion, so CJK/Thai
+    // emphasis reads bold AND stays readable. Tuned for legibility at the 13–15 px header sizes.
+    public const float EmphasisFattenPx = 0.7f;
+
+    // Apply emphasis to a Text + its optional fatten Outline. Latin → real FontStyle.Bold, no outline.
+    // Complex script → FontStyle.Normal + a same-colour Outline fatten (readable bold). Non-emphasis or a
+    // Latin string leaves the outline disabled. Re-evaluated whenever the string changes (live language switch).
+    public static void ApplyEmphasis(Text t, Outline? fatten, bool emphasis, string? text)
+    {
+        var complex = emphasis && GlyphScript.HasSyntheticBoldRisk(text);
+        t.fontStyle = emphasis && !complex ? FontStyle.Bold : FontStyle.Normal;
+        if (fatten == null) return;
+        fatten.enabled = complex;
+        if (!complex) return;
+        fatten.useGraphicAlpha = false;
+        fatten.effectDistance = new Vector2(EmphasisFattenPx, EmphasisFattenPx);
+        var c = t.color; fatten.effectColor = new Color(c.r, c.g, c.b, 1f);   // fatten in the text colour
+    }
 
     public static void SetPreferred(GameObject go, float w, float h)
     {
