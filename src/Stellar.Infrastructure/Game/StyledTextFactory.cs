@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Services;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.Game;
@@ -17,7 +18,8 @@ internal static class StyledTextFactory
     public static Func<Transform, StyledTextSpec, IStyledTextHandle?>? CreateBold;
 }
 
-/// <summary>Creation inputs for a real-bold text element (initial values; live updates go through the handle).</summary>
+/// <summary>Creation inputs for a styled text element (initial values; live updates go through the
+/// handle). Styles are per-element constants — only the string and colour are live-bound.</summary>
 internal readonly struct StyledTextSpec
 {
     public readonly string Text;
@@ -25,9 +27,25 @@ internal readonly struct StyledTextSpec
     public readonly Color Color;
     public readonly bool Wrap;
 
+    /// <summary>Real-bold weight — a designed bold face per script, never synthetic bold.</summary>
+    public bool Bold { get; init; }
+
+    /// <summary>Synthetic slant (script-safe in TMP's SDF rendering).</summary>
+    public bool Italic { get; init; }
+
+    /// <summary>Underline decoration (needs U+005F in the primary face — the shipped faces carry it).</summary>
+    public bool Underline { get; init; }
+
+    /// <summary>Strikethrough decoration.</summary>
+    public bool Strikethrough { get; init; }
+
+    /// <summary>Horizontal alignment (TextAlign.Left default).</summary>
+    public TextAlign Align { get; init; }
+
     public StyledTextSpec(string text, int fontSize, Color color, bool wrap)
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
+        Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
     }
 }
 
