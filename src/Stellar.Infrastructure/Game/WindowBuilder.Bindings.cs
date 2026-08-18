@@ -49,7 +49,7 @@ internal sealed partial class WindowBuilder
         public bool Emphasis;
         public Font? EmphThaiFont;   // real bold Thai face (WindowThemeAssets.ThaiBoldFont)
         public Font? EmphBaseFont;   // the normal window font (restore target for non-Thai emphasis)
-        public int EmphSize;         // scaled emphasis size (LARGER than body — see BuildText)
+        public int EmphSize;         // scaled emphasis size (15; weight — not size — carries the emphasis)
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -74,7 +74,7 @@ internal sealed partial class WindowBuilder
                 // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
                 if (Emphasis)
                 {
-                    C.fontSize = EmphSize;   // larger than body — the reliable standout cue (all languages)
+                    C.fontSize = EmphSize;   // emphasis size (weight carries the emphasis, not size)
                     if (GlyphScript.IsThai(s))
                     {
                         if (EmphThaiFont != null) C.font = EmphThaiFont;   // real bold Thai face (FontStyle.Normal)

@@ -378,10 +378,10 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
-        // Emphasis headers are noticeably LARGER (18 vs 14 body) — the size guarantees a header stands out in
-        // EVERY language even when no bold face resolves (owner ruling 2026-08-18: bold weight alone was too
-        // subtle / unreliable under Proton). Latin + Thai also get real bold weight on top (see the binding).
-        UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 18 : 14), anchor, bold: t.Emphasis);
+        // Emphasis headers carry their weight via a real BOLD face (not size): Latin synthetic bold + Thai
+        // the "Stellar Thai Bold" host font (see the binding). Size stays at the original 15 (owner ruling
+        // 2026-08-18: "same font size but bold"). CJK/kana/Hangul have no bold face → they read as regular.
+        UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
         // Centre on the glyph GEOMETRY, not the font line-box — the OS dynamic font sits the ink low under a
         // Middle anchor, so bare text rendered ~2-3px below button labels (which already optically-centre via
         // asymmetric padding in BuildButton). alignByGeometry makes a label vertically match the buttons in a
@@ -415,7 +415,7 @@ internal sealed partial class WindowBuilder
         // Script-aware emphasis (TextBinding.Apply picks per current string): Thai → real bold Thai face,
         // CJK → larger crisp regular, Latin → real bold. Fields carry the fonts + scaled sizes it needs.
         token.Texts.Add(BuildTextBinding(t, txt));
-        RegisterTextReskin(token, txt, t.Emphasis ? 18 : 14);
+        RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
     }
 
     // Override ConfigureText's builtin-Arial attempt with the OS dynamic font (resolved consistently in
@@ -427,7 +427,7 @@ internal sealed partial class WindowBuilder
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
         var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis };
-        if (t.Emphasis) { b.EmphThaiFont = _assets.ThaiBoldFont; b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(18); }
+        if (t.Emphasis) { b.EmphThaiFont = _assets.ThaiBoldFont; b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }
 
