@@ -96,6 +96,7 @@ internal sealed partial class WindowBuilder
         public Func<string> TextFn = null!;
         public Func<ColorRgba?>? ColorFn;
         private string? _last;
+        private int _applies;
 
         public void Apply()
         {
@@ -104,6 +105,9 @@ internal sealed partial class WindowBuilder
             var s = TextFn();
             if (s != _last) { _last = s; H.SetText(s); }
             if (ColorFn != null && ColorFn() is { } v) H.SetColor(new Color(v.R, v.G, v.B, v.A));
+            // One forced regeneration on the SECOND poll (post-first-paint): the game's TMP build drops
+            // the underline segment on a text's first post-layout generation — see IStyledTextHandle.Refresh.
+            if (_applies < 2 && ++_applies == 2) H.Refresh();
         }
     }
 

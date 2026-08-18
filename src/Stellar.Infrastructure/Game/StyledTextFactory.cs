@@ -63,4 +63,10 @@ internal interface IStyledTextHandle
 
     /// <summary>Set the text colour.</summary>
     void SetColor(Color c);
+
+    /// <summary>Force one mesh regeneration. The game's TMP build drops the underline segment on a
+    /// text's FIRST post-layout generation (measured in-game 2026-08-18: the line appears only after any
+    /// later regeneration; strikethrough is unaffected) — the binding calls this once shortly after the
+    /// first paint so decorations are deterministic.</summary>
+    void Refresh();
 }

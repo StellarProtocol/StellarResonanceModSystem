@@ -61,7 +61,7 @@ internal static class TmpFontAssets
         // new Font(path) alone renders nothing on legacy Text, but TMP's CreateFontAsset(Font) resolves
         // the path through FontEngine.LoadFontFace(filePath) — measured working in-game (probe row T2/U1).
         var font = new Font(path);
-        return font == null ? null : TMP_FontAsset.CreateFontAsset(font);
+        return font == null ? null : SeedDecorationGlyph(TMP_FontAsset.CreateFontAsset(font));
     }
 
     private static TMP_FontAsset? CreateCjk(string style)
@@ -71,11 +71,29 @@ internal static class TmpFontAssets
             try
             {
                 var asset = TMP_FontAsset.CreateFontAsset(family, style, 90);
-                if (asset != null) return asset;
+                if (asset != null) return SeedDecorationGlyph(asset);
             }
             catch { /* try the next candidate */ }
         }
         return null;
+    }
+
+    // Pre-rasterize U+005F into the dynamic atlas AND flush the texture. TMP draws underline/strikethrough
+    // segments from the underscore glyph; in this game's TMP build a first-generation underline produced
+    // complete quads (measured: correct positions, full alpha) that rendered INVISIBLE because the '_'
+    // texels were never uploaded to the atlas texture — TryAddCharacters alone put it in the lookup table
+    // but the pixels only appeared after an unrelated atlas rebuild. Seeding + Apply() at creation makes
+    // decorations deterministic from the first frame (root-caused in-game 2026-08-18).
+    private static TMP_FontAsset? SeedDecorationGlyph(TMP_FontAsset? asset)
+    {
+        if (asset == null) return null;
+        try
+        {
+            asset.TryAddCharacters("_");
+            try { asset.atlasTexture.Apply(false, false); } catch { /* non-readable atlas — best effort */ }
+        }
+        catch { /* decorations degrade gracefully; text itself is unaffected */ }
+        return asset;
     }
 
     // Extract an embedded face next to the framework DLLs (recreated after every deploy; skipped when
