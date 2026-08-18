@@ -409,11 +409,17 @@ internal sealed partial class WindowBuilder
             ol.effectColor = new Color(0f, 0f, 0f, 0.85f);
             ol.effectDistance = new Vector2(1.1f, -1.1f);
         }
-        // Emphasis fatten outline: added disabled; TextBinding.Apply enables it only for a complex-script
-        // string (readable pseudo-bold). Latin emphasis uses real FontStyle.Bold and leaves it disabled.
-        UnityEngine.UI.Outline? emFatten = t.Emphasis ? go.AddComponent<UnityEngine.UI.Outline>() : null;
-        if (emFatten != null) emFatten.enabled = false;
-        token.Texts.Add(new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis, EmphasisOutline = emFatten });
+        // Script-aware emphasis (TextBinding.Apply picks per current string): Thai → real bold Thai face,
+        // CJK → larger crisp regular, Latin → real bold. Fields carry the fonts + scaled sizes it needs.
+        var emBinding = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis };
+        if (t.Emphasis)
+        {
+            emBinding.EmphThaiFont = _assets.ThaiBoldFont;
+            emBinding.EmphBaseFont = _assets.MenuFont;
+            emBinding.EmphSize = Scaled(15);
+            emBinding.EmphSizeCjk = Scaled(17);
+        }
+        token.Texts.Add(emBinding);
         RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
     }
 

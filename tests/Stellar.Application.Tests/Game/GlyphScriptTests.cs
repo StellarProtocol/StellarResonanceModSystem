@@ -56,4 +56,18 @@ public sealed class GlyphScriptTests
     public void Lone_high_surrogate_does_not_throw_and_is_not_risk()
         // Defensive: a dangling high surrogate (malformed string) must be handled as a BMP char, not crash.
         => Assert.False(GlyphScript.HasSyntheticBoldRisk("A\uD840"));
+
+    [Theory]
+    [InlineData("ภาษา")]
+    [InlineData("พรีเซ็ต")]
+    [InlineData("UI เกม")]   // mixed Latin + Thai → still Thai (gets the real bold Thai face)
+    public void Thai_strings_are_thai(string s) => Assert.True(GlyphScript.IsThai(s));
+
+    [Theory]
+    [InlineData("言語")]      // Japanese — NOT Thai (routes to larger-regular, not the Thai bold font)
+    [InlineData("Language")] // Latin
+    [InlineData("언어")]      // Korean
+    [InlineData("")]
+    [InlineData(null)]
+    public void Non_thai_strings_are_not_thai(string? s) => Assert.False(GlyphScript.IsThai(s));
 }

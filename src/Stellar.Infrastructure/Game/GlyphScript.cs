@@ -39,6 +39,20 @@ internal static class GlyphScript
         return false;
     }
 
+    /// <summary>
+    /// True when <paramref name="s"/> contains a Thai code point (U+0E00–U+0E7F). Thai emphasis gets a
+    /// REAL bold face (a bold Thai font, applied with FontStyle.Normal) rather than synthetic bold or a
+    /// fatten — both of those fill Thai's tight loops/counters and blur it. CJK/kana/Hangul have no
+    /// name-reachable bold face here, so they fall to a larger crisp regular instead (see the emphasis path).
+    /// </summary>
+    public static bool IsThai(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        foreach (var c in s)
+            if (c >= 0x0E00 && c <= 0x0E7F) return true;
+        return false;
+    }
+
     // Script blocks whose glyphs synthetic bold ruins. Kept as explicit ranges (not char.GetUnicodeCategory)
     // so the gate is exact and cheap on the per-text-change hot path.
     private static bool IsRiskCodePoint(int cp) =>

@@ -41,13 +41,16 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
-        // Emphasised (bold) text re-derives its weight from the CURRENT string each time the text changes:
-        // real FontStyle.Bold for Latin; for complex scripts (CJK/kana/Hangul/Thai) whose glyphs Unity's
-        // synthetic bold mangles (i18n P0 JA/TH bold-header bug) it stays FontStyle.Normal and gets its weight
-        // from EmphasisOutline (a same-colour fatten) so it reads bold AND readable. Re-checked on live language
-        // switches and any dynamic-content change. Non-emphasis bindings leave fontStyle/outline untouched.
+        // Emphasised (bold) text re-derives its presentation from the CURRENT string each time the text
+        // changes (live language switch resolves a new string). Latin → real FontStyle.Bold; Thai → a real
+        // bold Thai FACE (EmphThaiFont, FontStyle.Normal — crisp readable bold, not synthetic-bold blur);
+        // CJK/kana/Hangul → the base face at a larger crisp regular size (no name-reachable bold). i18n P0
+        // JA/TH bold-header bug. Non-emphasis bindings leave font/style/size untouched.
         public bool Emphasis;
-        public Outline? EmphasisOutline;   // fatten for complex-script emphasis (null on non-emphasis text)
+        public Font? EmphThaiFont;   // real bold Thai face (WindowThemeAssets.ThaiBoldFont)
+        public Font? EmphBaseFont;   // the normal window font (restore target for non-Thai emphasis)
+        public int EmphSize;         // scaled emphasis size (Latin + Thai)
+        public int EmphSizeCjk;      // scaled larger emphasis size (CJK/kana/Hangul)
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -68,11 +71,26 @@ internal sealed partial class WindowBuilder
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
-                // Re-derive emphasis weight from the new string: Latin real-bold, complex-script fatten-bold.
+                // Re-derive emphasis presentation from the new string (see the field comments):
+                // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
                 if (Emphasis)
                 {
-                    UGuiPrimitives.ApplyEmphasis(C, EmphasisOutline, true, s);
-                    if (Shadow != null) Shadow.fontStyle = C.fontStyle;   // HUD twin mirrors the weight
+                    if (GlyphScript.IsThai(s))
+                    {
+                        if (EmphThaiFont != null) C.font = EmphThaiFont;
+                        C.fontStyle = FontStyle.Normal; C.fontSize = EmphSize;
+                    }
+                    else if (GlyphScript.HasSyntheticBoldRisk(s))
+                    {
+                        if (EmphBaseFont != null) C.font = EmphBaseFont;
+                        C.fontStyle = FontStyle.Normal; C.fontSize = EmphSizeCjk;   // larger crisp regular
+                    }
+                    else
+                    {
+                        if (EmphBaseFont != null) C.font = EmphBaseFont;
+                        C.fontStyle = FontStyle.Bold; C.fontSize = EmphSize;         // Latin real bold
+                    }
+                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = C.fontSize; }
                 }
             }
             if (ColorFn != null && ColorFn() is { } v)

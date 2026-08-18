@@ -77,6 +77,20 @@ internal sealed class WindowThemeAssets
     private static bool _menuFontTried;
     public Font? MenuFont => _menuFont;
 
+    // Real BOLD Thai face for emphasis headers. Unity's synthetic FontStyle.Bold (and a fatten outline)
+    // fill Thai's tight loops/counters and blur it — the only readable bold is a designed bold FACE. The
+    // host's loopless "Noto Sans Thai" bold sits on the style axis (not name-reachable), but the LOOPED
+    // "Noto Looped Thai Bold" is a distinct family name that CreateDynamicFontFromOSFont CAN resolve — so
+    // Thai emphasis uses this font with FontStyle.Normal (crisp real bold). Falls back to the regular Thai
+    // face if the bold family is absent (readable, just not bold — never a blur). CJK/kana/Hangul have no
+    // such name-reachable bold and use a larger crisp regular instead (see the emphasis path).
+    private static Font? _thaiBoldFont;
+    public Font? ThaiBoldFont { get { EnsureFont(); return _thaiBoldFont; } }
+    private static readonly string[] ThaiBoldFamilies =
+    {
+        "Noto Looped Thai Bold", "Noto Sans Thai", "Noto Sans", "DejaVu Sans", "Arial",
+    };
+
     /// <summary>Process-shared glyph-complete overlay font (Latin + CJK + Thai via the OS-font
     /// fallback chain), for static text paths that have no <see cref="WindowThemeAssets"/> instance
     /// (e.g. the native-UI-host label builders). Null only when OS-font resolution failed entirely,
@@ -107,6 +121,8 @@ internal sealed class WindowThemeAssets
             if (_menuFont == null || !_menuFont) _menuFont = Font.CreateDynamicFontFromOSFont("Arial", 14);
         }
         catch { _menuFont = null; }   // null → window Text keeps ConfigureText's builtin attempt (sandbox is fine)
+        try { _thaiBoldFont = Font.CreateDynamicFontFromOSFont(ThaiBoldFamilies, 14); }
+        catch { _thaiBoldFont = null; }   // null → Thai emphasis stays on the regular font (readable, not bold)
     }
 
     public bool IsBaked => FrameBg != null && ButtonBg != null && Capsule != null;
