@@ -77,18 +77,19 @@ internal sealed class WindowThemeAssets
     private static bool _menuFontTried;
     public Font? MenuFont => _menuFont;
 
-    // Real BOLD Thai face for emphasis headers. Unity's synthetic FontStyle.Bold (and a fatten outline)
-    // fill Thai's tight loops/counters and blur it — the only readable bold is a designed bold FACE. The
-    // host's loopless "Noto Sans Thai" bold sits on the style axis (not name-reachable), but the LOOPED
-    // "Noto Looped Thai Bold" is a distinct family name that CreateDynamicFontFromOSFont CAN resolve — so
-    // Thai emphasis uses this font with FontStyle.Normal (crisp real bold). Falls back to the regular Thai
-    // face if the bold family is absent (readable, just not bold — never a blur). CJK/kana/Hangul have no
-    // such name-reachable bold and use a larger crisp regular instead (see the emphasis path).
+    // Real BOLD Thai face for emphasis headers, applied with FontStyle.Normal (Unity's synthetic Bold — and
+    // a fatten outline — fill Thai's tight loops/counters and blur it; only a designed bold FACE is readable).
+    // "Stellar Thai Bold" is the loopless Noto Sans Thai Bold, renamed to a unique family + labelled
+    // normal-weight and installed into the game's Wine-prefix Fonts dir (Wine reads prefix fonts natively, so
+    // CreateDynamicFontFromOSFont resolves it reliably — a host bold family name did NOT resolve under Proton).
+    // Chain fallbacks: the LOOPED "Noto Looped Thai Bold" (host, distinct family), then the regular Thai face
+    // (readable, just not bold — never a blur). The larger emphasis size (see the emphasis path) guarantees a
+    // header stands out even if no bold face resolves. CJK/kana/Hangul have no bold face here → larger regular.
     private static Font? _thaiBoldFont;
     public Font? ThaiBoldFont { get { EnsureFont(); return _thaiBoldFont; } }
     private static readonly string[] ThaiBoldFamilies =
     {
-        "Noto Looped Thai Bold", "Noto Sans Thai", "Noto Sans", "DejaVu Sans", "Arial",
+        "Stellar Thai Bold", "Noto Looped Thai Bold", "Noto Sans Thai", "Noto Sans", "DejaVu Sans", "Arial",
     };
 
     /// <summary>Process-shared glyph-complete overlay font (Latin + CJK + Thai via the OS-font

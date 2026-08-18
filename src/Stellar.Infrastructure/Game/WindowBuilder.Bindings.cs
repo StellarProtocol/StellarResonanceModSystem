@@ -49,8 +49,7 @@ internal sealed partial class WindowBuilder
         public bool Emphasis;
         public Font? EmphThaiFont;   // real bold Thai face (WindowThemeAssets.ThaiBoldFont)
         public Font? EmphBaseFont;   // the normal window font (restore target for non-Thai emphasis)
-        public int EmphSize;         // scaled emphasis size (Latin + Thai)
-        public int EmphSizeCjk;      // scaled larger emphasis size (CJK/kana/Hangul)
+        public int EmphSize;         // scaled emphasis size (LARGER than body — see BuildText)
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -75,20 +74,21 @@ internal sealed partial class WindowBuilder
                 // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
                 if (Emphasis)
                 {
+                    C.fontSize = EmphSize;   // larger than body — the reliable standout cue (all languages)
                     if (GlyphScript.IsThai(s))
                     {
-                        if (EmphThaiFont != null) C.font = EmphThaiFont;
-                        C.fontStyle = FontStyle.Normal; C.fontSize = EmphSize;
+                        if (EmphThaiFont != null) C.font = EmphThaiFont;   // real bold Thai face (FontStyle.Normal)
+                        C.fontStyle = FontStyle.Normal;
                     }
                     else if (GlyphScript.HasSyntheticBoldRisk(s))
                     {
-                        if (EmphBaseFont != null) C.font = EmphBaseFont;
-                        C.fontStyle = FontStyle.Normal; C.fontSize = EmphSizeCjk;   // larger crisp regular
+                        if (EmphBaseFont != null) C.font = EmphBaseFont;   // CJK/kana/Hangul: larger crisp regular
+                        C.fontStyle = FontStyle.Normal;
                     }
                     else
                     {
-                        if (EmphBaseFont != null) C.font = EmphBaseFont;
-                        C.fontStyle = FontStyle.Bold; C.fontSize = EmphSize;         // Latin real bold
+                        if (EmphBaseFont != null) C.font = EmphBaseFont;   // Latin: larger + real bold
+                        C.fontStyle = FontStyle.Bold;
                     }
                     if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = C.fontSize; }
                 }
