@@ -90,8 +90,10 @@ internal sealed class TmpStyledText : IStyledTextHandle
         }
         if (_st != null)
         {
+            // CJK ideographs centre higher in the line box than Latin/Thai lowercase bodies — the strike
+            // rides each script's visual middle (owner-tuned 2026-08-18: "vertical center of the word").
             _st.sizeDelta = new Vector2(w, h);
-            _st.anchoredPosition = new Vector2(0f, 0.04f * size);
+            _st.anchoredPosition = new Vector2(0f, (_cjk ? 0.04f : -0.08f) * size);
         }
     }
 
