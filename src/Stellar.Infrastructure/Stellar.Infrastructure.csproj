@@ -26,6 +26,9 @@
     <EmbeddedResource Include="Resources/StellarUIThaiBold.ttf">
       <LogicalName>Stellar.Infrastructure.Resources.StellarUIThaiBold.ttf</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources/StellarUIThai-Regular.ttf">
+      <LogicalName>Stellar.Infrastructure.Resources.StellarUIThai-Regular.ttf</LogicalName>
+    </EmbeddedResource>
     <!-- Launcher icon set (rasterised PNGs; never tofu). Logical names default to
          Stellar.Infrastructure.icons.<name>.png — resolved by suffix in LauncherIcons. -->
     <EmbeddedResource Include="Resources/icons/*.png" LogicalName="Stellar.Infrastructure.icons.%(Filename).png" />
