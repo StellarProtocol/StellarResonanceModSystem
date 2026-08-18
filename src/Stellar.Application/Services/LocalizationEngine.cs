@@ -14,7 +14,7 @@ namespace Stellar.Application.Services;
 /// each plugin reads only its own namespace through a <see cref="PluginLocalization"/> façade.
 /// Pure managed — no Unity/BepInEx.
 /// </summary>
-internal sealed partial class LocalizationEngine
+internal sealed partial class LocalizationEngine : ILocalizationControl
 {
     private const string LanguageKey = "language";
     private const string Follow = "follow";

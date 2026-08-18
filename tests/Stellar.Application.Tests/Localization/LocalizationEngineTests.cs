@@ -70,4 +70,17 @@ public sealed class LocalizationEngineTests
         e.SetLanguageSetting("klingon");
         Assert.Equal("follow", e.LanguageSetting);
     }
+
+    [Fact]
+    public void Control_surface_exposes_setting_and_active()
+    {
+        var probe = new FakeProbe { SupportedLanguage = "ja" };
+        Stellar.Abstractions.Services.ILocalizationControl e =
+            new LocalizationEngine(new FakeConfigSection(), probe, new FakeLog());
+        Assert.Equal("follow", e.LanguageSetting);
+        Assert.Equal("ja", e.ActiveLanguage);
+        e.SetLanguageSetting("th");
+        Assert.Equal("th", e.LanguageSetting);
+        Assert.Equal("th", e.ActiveLanguage);
+    }
 }
