@@ -23,6 +23,9 @@
     <!-- Launcher icon set (rasterised PNGs; never tofu). Logical names default to
          Stellar.Infrastructure.icons.<name>.png — resolved by suffix in LauncherIcons. -->
     <EmbeddedResource Include="Resources/icons/*.png" LogicalName="Stellar.Infrastructure.icons.%(Filename).png" />
+    <!-- Framework UI localization catalog (i18n). Logical names default to
+         Stellar.Infrastructure.Lang.<code>.json — read by FrameworkCatalogs, matched by ResourceScan. -->
+    <EmbeddedResource Include="Lang/*.json" LogicalName="Stellar.Infrastructure.Lang.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Composition root sees Infrastructure's concrete adapters via InternalsVisibleTo.

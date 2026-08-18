@@ -48,6 +48,7 @@ internal sealed class PluginServices : IPluginServices
     public IGameEnvironment GameEnvironment { get; }
     public ILua Lua { get; }
     public IHarmonyHost Harmony { get; }
+    public ILocalization Localization { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -92,7 +93,8 @@ internal sealed class PluginServices : IPluginServices
         IGameEnvironment gameEnvironment,
         IPluginDataStore data,
         ILua lua,
-        IHarmonyHost harmony)
+        IHarmonyHost harmony,
+        ILocalization localization)
     {
         Log = log;
         Framework = framework;
@@ -137,5 +139,6 @@ internal sealed class PluginServices : IPluginServices
         Data = data;
         Lua = lua;
         Harmony = harmony;
+        Localization = localization;
     }
 }

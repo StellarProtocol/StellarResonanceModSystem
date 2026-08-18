@@ -25,17 +25,19 @@ internal sealed class PerPluginServices : IPluginServices
     // Per-plugin Harmony host (id-namespaced to this plugin, auto-unpatched on dispose). Null in a bare test
     // host that supplies no per-plugin host — falls back to the shared bag's host.
     private readonly IHarmonyHost? _harmony;
+    // Per-plugin localization façade (namespaced to this plugin's GUID). Null in a bare test host — falls
+    // back to the shared bag's façade (the framework's own).
+    private readonly ILocalization? _localization;
 
-    public PerPluginServices(IPluginServices shared, IPluginConfig perPluginConfig, IFramework perPluginFramework,
-                             IPluginDataStore perPluginData, IHotkeys? perPluginHotkeys = null,
-                             IHarmonyHost? perPluginHarmony = null)
+    public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
         _shared = shared;
-        Config = perPluginConfig;
-        _framework = perPluginFramework;
-        Data = perPluginData;
-        _hotkeys = perPluginHotkeys;
-        _harmony = perPluginHarmony;
+        Config = scope.Config;
+        _framework = scope.Framework;
+        Data = scope.Data;
+        _hotkeys = scope.Hotkeys;
+        _harmony = scope.Harmony;
+        _localization = scope.Localization;
     }
 
     public IPluginConfig Config { get; }
@@ -82,4 +84,17 @@ internal sealed class PerPluginServices : IPluginServices
     public IGameEnvironment GameEnvironment => _shared.GameEnvironment;
     public ILua Lua => _shared.Lua;
     public IHarmonyHost Harmony => _harmony ?? _shared.Harmony;
+    public ILocalization Localization => _localization ?? _shared.Localization;
 }
+
+/// <summary>
+/// The per-plugin overrides bundled into one parameter so <see cref="PerPluginServices"/>'s constructor
+/// stays within the STELLAR0004 dependency cap. Nullable members fall back to the shared services bag.
+/// </summary>
+internal readonly record struct PerPluginScope(
+    IPluginConfig Config,
+    IPluginDataStore Data,
+    IFramework Framework,
+    IHotkeys? Hotkeys,
+    IHarmonyHost? Harmony,
+    ILocalization? Localization);

@@ -97,4 +97,6 @@ public interface IPluginServices
     /// <summary>Per-plugin Harmony host — create id-namespaced <see cref="HarmonyLib.Harmony"/> instances that are
     /// auto-unpatched when the plugin is disposed.</summary>
     IHarmonyHost Harmony { get; }
+    /// <summary>Localizes this plugin's own UI text into the active UI language (English fallback).</summary>
+    ILocalization Localization { get; }
 }

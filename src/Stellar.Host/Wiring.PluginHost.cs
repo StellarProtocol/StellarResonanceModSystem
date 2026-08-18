@@ -1,5 +1,6 @@
 using System.IO;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 using Stellar.Application.Hosting;
 using Stellar.Application.Services;
 using Stellar.Infrastructure.BepInExAdapters;
@@ -12,6 +13,7 @@ public sealed partial class BootstrapPlugin
 {
     private void WireGameEventsAndPluginHost(BepInExPluginLog log, PluginConfigFactory configFactory)
     {
+        BuildLocalization(log);   // engine + framework façade — needed by the aggregator + plugin host below
         BuildUGuiAdapters(log);
         ConstructPluginServices(log, configFactory);
         WireFrameworkUpdateEvents();
@@ -86,16 +88,28 @@ public sealed partial class BootstrapPlugin
             _luaService!,
             // Shared aggregator's Harmony host (framework-scoped id); plugins receive a per-plugin host that
             // overrides this via PerPluginServices, so this instance is never used by a plugin.
-            _harmonyHostFactory!.Create("stellar.framework"));
+            _harmonyHostFactory!.Create("stellar.framework"),
+            // Framework's own localization façade (namespace "stellar.framework"); plugins get their own
+            // per-plugin façade via PerPluginServices.
+            _frameworkLocalization!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
+        BuildRegistryAndHost(log, configFactory, services);
+    }
 
-        // PluginRegistry constructed after the aggregator so it is fully initialised
-        // in one step — no late-bind / SetServices (B-05).
+    /// <summary>
+    /// Constructs the <see cref="PluginRegistry"/> (fully initialised in one step — B-05) and the
+    /// <see cref="PluginHost"/>, bundling the per-plugin resource factories (config + data + localization)
+    /// so the host ctor stays within the dependency cap. Extracted to keep
+    /// <see cref="ConstructPluginServices"/> under the 50-LoC analyzer gate.
+    /// </summary>
+    private void BuildRegistryAndHost(BepInExPluginLog log, PluginConfigFactory configFactory, PluginServices services)
+    {
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
-
-        _pluginHost = new PluginHost(services, configFactory, _pluginDataStoreFactory!, _pluginRegistry, _scheduler!, _harmonyHostFactory!);
+        _pluginHost = new PluginHost(services,
+            new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!),
+            _pluginRegistry, _scheduler!, _harmonyHostFactory!);
     }
 
     /// <summary>
