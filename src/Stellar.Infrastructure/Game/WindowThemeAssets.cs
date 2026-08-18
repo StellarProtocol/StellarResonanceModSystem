@@ -77,10 +77,25 @@ internal sealed class WindowThemeAssets
     private static bool _menuFontTried;
     public Font? MenuFont => _menuFont;
 
-    // Same fallback chain as ThemeRenderer.FontFamilyFallbacks (Noto first for the design target; the
-    // DejaVu/Liberation tail covers the Proton box; Arial is Unity's always-synthesised last resort).
+    /// <summary>Process-shared glyph-complete overlay font (Latin + CJK + Thai via the OS-font
+    /// fallback chain), for static text paths that have no <see cref="WindowThemeAssets"/> instance
+    /// (e.g. the native-UI-host label builders). Null only when OS-font resolution failed entirely,
+    /// in which case the caller keeps its builtin-Arial attempt. Main-thread only (lazy-inits the font).</summary>
+    public static Font? SharedMenuFont { get { EnsureFont(); return _menuFont; } }
+
+    // OS-font fallback chain: CreateDynamicFontFromOSFont renders each glyph from the first listed family
+    // that provides it, so the chain must cover every UI language Stellar localizes into (i18n P0):
+    // Latin (Noto Sans) → CJK for ja/zh (Noto Sans CJK JP/SC) → Thai for th (Noto Sans Thai/Thai UI) →
+    // the DejaVu/Liberation tail that covers the Proton box → Arial (Unity's always-synthesised last resort).
+    // Indonesian (id) is Latin, covered by Noto Sans. Without the Thai families, th text tofu'd (the chain
+    // had CJK but no Thai) — the glyph-coverage gate (i18n Task 0) added them.
     private static readonly string[] FontFamilies =
-        { "Noto Sans", "NotoSans", "Noto Sans CJK SC", "DejaVu Sans", "Liberation Sans", "Arial" };
+    {
+        "Noto Sans", "NotoSans",
+        "Noto Sans CJK JP", "Noto Sans CJK SC",
+        "Noto Sans Thai", "Noto Sans Thai UI",
+        "DejaVu Sans", "Liberation Sans", "Arial",
+    };
 
     private static void EnsureFont()
     {

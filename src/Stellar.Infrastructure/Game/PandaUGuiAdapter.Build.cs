@@ -422,7 +422,7 @@ internal sealed partial class PandaUGuiAdapter
         var t = go.AddComponent<Text>();
         t.text = content; t.alignment = TextAnchor.MiddleCenter; t.fontSize = 18;
         t.color = tint is { } c ? new Color(c.R, c.G, c.B, c.A) : Color.white;
-        try { t.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
+        try { t.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
         go.transform.SetParent(parent, worldPositionStays: false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
@@ -468,7 +468,7 @@ internal sealed partial class PandaUGuiAdapter
         var t = go.AddComponent<Text>();
         t.text = content; t.alignment = TextAnchor.MiddleCenter; t.fontSize = fontSize; t.color = Color.white;
         t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
-        try { t.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
+        try { t.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
         go.transform.SetParent(parent, worldPositionStays: false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = anchorMin; rt.anchorMax = anchorMax; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
