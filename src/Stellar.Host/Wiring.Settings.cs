@@ -84,7 +84,12 @@ public sealed partial class BootstrapPlugin
     private void RegisterSettingsHub(SettingsPanelSet panels)
     {
         if (_windowService == null) return;
+        // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<0..6> preselects
+        // the hub tab at registration so a scenario can capture a specific panel (e.g. 2 = Themes).
         var tab = 0;
+        if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
+            && tabEnv is >= 0 and <= 6)
+            tab = tabEnv;
         var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
             new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
         // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
