@@ -19,6 +19,10 @@ internal sealed partial class WindowBuilder
     private static Color CdCol(ColorRgba c) => new(c.R, c.G, c.B, c.A);
     private static readonly Color CdInsetBg = new(0.10f, 0.12f, 0.16f, 0.95f);   // dark tile body inside the outline
     private static readonly Color CdLoadBg  = new(0.16f, 0.20f, 0.26f, 1f);      // neutral square while art loads / is null
+    // Owner 2026-08-19: the tile BORDER + countdown text must NOT be tinted by cooldown/buff/debuff type
+    // (a green buff outline over the world read as wrong). Only the foot fill-bar carries the type accent.
+    private static readonly Color CdFrameCol = new(0.36f, 0.41f, 0.49f, 1f);     // neutral tile border
+    private static readonly Color CdSecsCol  = new(0.90f, 0.92f, 0.96f, 1f);     // neutral countdown text
     private static readonly Color CdStarCol = new(1f, 0.81f, 0.30f, 1f);         // imagine ★ gold
     private static readonly Color CdChgCol  = new(1f, 0.86f, 0.40f, 1f);         // charge badge gold
 
@@ -145,14 +149,14 @@ internal sealed partial class WindowBuilder
                 Fallback.text = fb;
                 FallbackGo.SetActive(fb.Length > 0);
             }
-            if (fb.Length > 0) Fallback.color = CdCol(El.Accent());
+            if (fb.Length > 0) Fallback.color = CdSecsCol;   // neutral (was type-accent) — owner 2026-08-19
 
             var accent = El.Accent();
             if (!_initAccent || !accent.Equals(_accent))
             {
                 _initAccent = true; _accent = accent;
-                var c = CdCol(accent);
-                Outline.color = c; FillImg.color = c; Secs.color = c;
+                // Only the foot fill-bar carries the type colour; border + caption stay neutral (owner 2026-08-19).
+                Outline.color = CdFrameCol; FillImg.color = CdCol(accent); Secs.color = CdSecsCol;
             }
 
             var f = El.Fill01(); if (f < 0f) f = 0f; else if (f > 1f) f = 1f;
