@@ -74,14 +74,14 @@ internal sealed partial class WindowBuilder
                 // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
                 if (Emphasis)
                 {
-                    // Bold ALL emphasis via Unity's synthetic bold — the ONLY bold the overlay engine renders
-                    // (a real bold FACE will not load under Proton, whatever font/location we install). English
-                    // tolerates the faux-thickening cleanly; Thai/CJK thicken less crisply, but the owner wants
-                    // bold consistent with English (ruling 2026-08-18). Same mechanism for every script.
+                    // The accent COLOUR (set in BuildText) carries the emphasis crisply. Weight stays CRISP:
+                    // Latin gets real bold (it survives synthetic bold cleanly); complex scripts (CJK/Thai) stay
+                    // regular — synthetic bold blurs their tight loops and a real bold face won't load under
+                    // Proton (owner ruling 2026-08-18). Re-derived per string so a live language switch tracks.
                     C.fontSize = EmphSize;
                     if (EmphBaseFont != null) C.font = EmphBaseFont;
-                    C.fontStyle = FontStyle.Bold;
-                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = FontStyle.Bold; Shadow.fontSize = EmphSize; }
+                    C.fontStyle = GlyphScript.HasSyntheticBoldRisk(s) ? FontStyle.Normal : FontStyle.Bold;
+                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
                 }
             }
             if (ColorFn != null && ColorFn() is { } v)

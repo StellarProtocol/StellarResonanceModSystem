@@ -393,7 +393,10 @@ internal sealed partial class WindowBuilder
         // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
         // the cell edge rather than wrapping into a multi-line block.
         txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
-        txt.color = _assets.MenuText;
+        // Emphasis (section headers) render in the theme ACCENT colour — the reliable, CRISP standout cue in
+        // every language (a real bold face won't load under Proton, and synthetic bold blurs Thai/CJK; owner
+        // ruling 2026-08-18). An explicit ColorFn (t.Color) still overrides via the binding.
+        txt.color = t.Emphasis ? _assets.MenuAccent : _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
         // it stays natural-width and a sibling Spacer does the pushing (flexibleWidth=1 here made the label
@@ -415,7 +418,7 @@ internal sealed partial class WindowBuilder
         // Script-aware emphasis (TextBinding.Apply picks per current string): Thai → real bold Thai face,
         // CJK → larger crisp regular, Latin → real bold. Fields carry the fonts + scaled sizes it needs.
         token.Texts.Add(BuildTextBinding(t, txt));
-        RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
+        RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14, accent: t.Emphasis);
     }
 
     // Override ConfigureText's builtin-Arial attempt with the OS dynamic font (resolved consistently in
@@ -438,13 +441,13 @@ internal sealed partial class WindowBuilder
     // Register a re-skin closure for a window Text: re-applies the live font size (Font Scale), font, and the
     // default colour on a theme change — in place, no rebuild. (A ColorFn-bound Text gets its colour re-pulled
     // by TextBinding.Apply right after, so muted/warn texts override this default.)
-    private void RegisterTextReskin(WindowToken token, Text txt, int baseSize, bool muted = false)
+    private void RegisterTextReskin(WindowToken token, Text txt, int baseSize, bool muted = false, bool accent = false)
         => token.ReskinActions.Add(() =>
         {
             if (txt == null) return;
             txt.fontSize = Scaled(baseSize);
             if (_assets.MenuFont != null) txt.font = _assets.MenuFont;
-            txt.color = muted ? _assets.MenuMuted : _assets.MenuText;
+            txt.color = accent ? _assets.MenuAccent : muted ? _assets.MenuMuted : _assets.MenuText;
         });
 
     // 1 px themed divider. Horizontal: a 5 px-tall full-width slot, line centred (between rows). Vertical: a
