@@ -22,7 +22,7 @@ internal sealed class TmpStyledText : IStyledTextHandle
     {
         // Re-pick the face per string so a live language switch (EN↔JA↔TH) lands on the right script's
         // real bold. Latin + Thai → the shipped merged face; CJK/kana/Hangul → the system bold family.
-        var face = GlyphScript.HasSyntheticBoldRisk(s) && !GlyphScript.IsThai(s) && TmpFontAssets.CjkBold != null
+        var face = TextFacePick.For(s) == FaceScript.Cjk && TmpFontAssets.CjkBold != null
             ? TmpFontAssets.CjkBold
             : TmpFontAssets.UiBold;
         if (face != null && _t.font != face) _t.font = face;
@@ -41,7 +41,7 @@ internal sealed class TmpStyledText : IStyledTextHandle
         if (TmpFontAssets.UiBold == null) return null;
         // A CJK string with no resolvable CJK bold face would tofu on the merged Latin+Thai face — hand
         // it back to the legacy crisp path instead (in practice a candidate always resolves; see assets).
-        if (GlyphScript.HasSyntheticBoldRisk(spec.Text) && !GlyphScript.IsThai(spec.Text) && TmpFontAssets.CjkBold == null)
+        if (TextFacePick.For(spec.Text) == FaceScript.Cjk && TmpFontAssets.CjkBold == null)
             return null;
         var go = new GameObject("BoldText");
         go.AddComponent<RectTransform>();
