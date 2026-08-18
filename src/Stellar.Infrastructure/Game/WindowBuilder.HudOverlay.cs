@@ -55,7 +55,7 @@ internal sealed partial class WindowBuilder
             le.preferredWidth = t.Width;
             le.flexibleWidth = 0f;
         }
-        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color, DynamicFontSizeFn = t.DynamicFontSize });
+        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color, DynamicFontSizeFn = t.DynamicFontSize, Emphasis = t.Emphasis });
     }
 
     // Port of HudElementBuilder.BuildPill (:246-263): transparent HudPillBg 9-slice chip (ignore-layout stretched
@@ -78,7 +78,7 @@ internal sealed partial class WindowBuilder
 
         var (_, fg, shadow) = MakeShadowedTextHud(go.transform, HudPillTextSize, TextAnchor.MiddleCenter, bold: true);
         HudTextReskin(token, fg, shadow);
-        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = p.Text, ColorFn = p.Color });
+        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = p.Text, ColorFn = p.Color, Emphasis = true });
     }
 
     // Port of HudElementBuilder.BuildBar (Default path, :269-311): rounded 9-slice HudBarBg track + an
@@ -102,6 +102,8 @@ internal sealed partial class WindowBuilder
             HudTextReskin(token, pfg, pshadow);
             pslot.AddComponent<LayoutElement>().preferredWidth = HudBarPrefixWidth;
             pfg.text = b.Prefix; pshadow.text = b.Prefix;   // static caption — no binding needed
+            var pstyle = UGuiPrimitives.EmphasisStyle(true, b.Prefix);   // drop faux-bold if the caption is complex-script
+            pfg.fontStyle = pstyle; pshadow.fontStyle = pstyle;
         }
 
         var track = UGuiPrimitives.NewChild("Track", row.transform);

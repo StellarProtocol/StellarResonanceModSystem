@@ -409,7 +409,7 @@ internal sealed partial class WindowBuilder
             ol.effectColor = new Color(0f, 0f, 0f, 0.85f);
             ol.effectDistance = new Vector2(1.1f, -1.1f);
         }
-        token.Texts.Add(new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color });
+        token.Texts.Add(new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis });
         RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
     }
 

@@ -63,6 +63,13 @@ internal static class UGuiPrimitives
         try { t.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
     }
 
+    // Emphasis weight for a specific string. Real bold ONLY for text the dynamic OS font can embolden
+    // cleanly — a complex-script run (CJK/kana/Hangul/Thai) has no bold face under Proton/IL2CPP, so Unity's
+    // synthetic bold would mangle it (the i18n P0 JA/TH bold-header bug); those stay regular weight, which
+    // the OS-font fallback chain renders correctly. Callers apply this to a Text whenever its string changes.
+    public static FontStyle EmphasisStyle(bool emphasis, string? text)
+        => emphasis && !GlyphScript.HasSyntheticBoldRisk(text) ? FontStyle.Bold : FontStyle.Normal;
+
     public static void SetPreferred(GameObject go, float w, float h)
     {
         var le = go.AddComponent<LayoutElement>();

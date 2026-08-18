@@ -41,6 +41,11 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
+        // Emphasised (bold) text re-derives its weight from the CURRENT string each time the text changes:
+        // real bold for Latin, regular weight for complex scripts (CJK/kana/Hangul/Thai) whose glyphs Unity's
+        // synthetic bold mangles (i18n P0 JA/TH bold-header bug). Re-checked on live language switches and any
+        // dynamic-content change. Non-emphasis bindings leave fontStyle untouched.
+        public bool Emphasis;
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -61,6 +66,13 @@ internal sealed partial class WindowBuilder
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
+                // Re-derive emphasis weight from the new string so complex scripts drop faux-bold (see Emphasis).
+                if (Emphasis)
+                {
+                    var style = UGuiPrimitives.EmphasisStyle(true, s);
+                    C.fontStyle = style;
+                    if (Shadow != null) Shadow.fontStyle = style;
+                }
             }
             if (ColorFn != null && ColorFn() is { } v)
             {
