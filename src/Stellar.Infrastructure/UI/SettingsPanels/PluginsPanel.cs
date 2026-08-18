@@ -15,12 +15,14 @@ internal sealed class PluginsPanel
     private readonly IPluginInventory _inventory;
     private readonly ITheme _theme;
     private readonly System.Action<string, bool> _setEnabled;
+    private readonly ILocalization _loc;
 
-    public PluginsPanel(IPluginInventory inventory, ITheme theme, System.Action<string, bool> setEnabled)
+    public PluginsPanel(IPluginInventory inventory, ITheme theme, System.Action<string, bool> setEnabled, ILocalization loc)
     {
         _inventory = inventory;
         _theme = theme;
         _setEnabled = setEnabled;
+        _loc = loc;
     }
 
     private const int MaxRows = 64;
@@ -42,7 +44,7 @@ internal sealed class PluginsPanel
         return new ConditionalElement(
             () => { _cache = _inventory.List(); return _cache.Count > 0; },
             new ScrollElement(list, Height: 260f),
-            new TextElement(() => "No plugins loaded.", () => MutedColor));
+            new TextElement(() => _loc.T("common.noPlugins"), () => MutedColor));
     }
 
     private HudElement BuildPluginRow(int idx)
@@ -55,7 +57,7 @@ internal sealed class PluginsPanel
                 v => { var p = At(); if (p != null) _setEnabled(p.Id, v); }),
             new TextElement(() => At()?.DisplayName ?? "", Width: NameColumnWidth),
             new ConditionalElement(() => At()?.IsErrored ?? false,
-                new ButtonElement(() => "Retry", () => { var p = At(); if (p != null) _inventory.RequestRetry(p.Id); }),
+                new ButtonElement(() => _loc.T("common.retry"), () => { var p = At(); if (p != null) _inventory.RequestRetry(p.Id); }),
                 new TextElement(() => At()?.Version ?? "")),
         }, Gap: 10f);
     }

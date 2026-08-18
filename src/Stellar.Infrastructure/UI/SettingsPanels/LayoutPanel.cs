@@ -15,6 +15,7 @@ internal sealed partial class LayoutPanel
     private readonly LayoutStorage _storage;
     private readonly LayoutEditorService _editor;
     private readonly ITheme _theme;
+    private readonly ILocalization _loc;
     private string _renameBuffer = "";
     private const int MaxSlots = 8;
 
@@ -26,11 +27,12 @@ internal sealed partial class LayoutPanel
         return idx == _storage.ActiveSlot ? names[idx] + " *" : names[idx];
     }
 
-    public LayoutPanel(LayoutStorage storage, LayoutEditorService editor, ITheme theme)
+    public LayoutPanel(LayoutStorage storage, LayoutEditorService editor, ITheme theme, ILocalization loc)
     {
         _storage = storage;
         _editor = editor;
         _theme = theme;
+        _loc = loc;
         _storage.SlotsChanged += OnSlotsChanged;
         _renameBuffer = _storage.SlotNames.Count > 0 ? _storage.SlotNames[_storage.ActiveSlot] : "";
     }
@@ -41,7 +43,7 @@ internal sealed partial class LayoutPanel
     {
         var items = new System.Collections.Generic.List<HudElement>
         {
-            new TextElement(() => "Slot", Emphasis: true),
+            new TextElement(() => _loc.T("layout.slot"), Emphasis: true),
         };
         // Slot buttons: bounded at MaxSlots, each shown live (Conditional on idx < SlotCount) with its label
         // read LIVE from _storage each poll — NOT snapshotted at build (a captured `SlotNames` list left the
@@ -58,27 +60,27 @@ internal sealed partial class LayoutPanel
         items.Add(new RowElement(slotRow));
         items.Add(new RowElement(new HudElement[]
         {
-            new TextElement(() => "Rename:"),
+            new TextElement(() => _loc.T("layout.rename")),
             // OnChange keeps _renameBuffer live as you type, so the Apply button (which reads it) works even
             // without pressing Enter first (InputElement.Submit only fires on Enter/blur).
             new InputElement(() => _renameBuffer, s => _renameBuffer = s, 150f, OnChange: s => _renameBuffer = s),
-            new ButtonElement(() => "Apply", () => _storage.RenameSlot(_storage.ActiveSlot, _renameBuffer)),
+            new ButtonElement(() => _loc.T("common.apply"), () => _storage.RenameSlot(_storage.ActiveSlot, _renameBuffer)),
         }));
-        items.Add(new ButtonElement(() => "Remove this slot",
+        items.Add(new ButtonElement(() => _loc.T("layout.removeSlot"),
             () => { if (_storage.SlotCount > 2) _storage.RemoveSlot(_storage.ActiveSlot); }, () => _storage.SlotCount > 2));
-        items.Add(new TextElement(() => "Snap", Emphasis: true));
-        items.Add(new RowElement(new HudElement[] { new ToggleElement(() => "", () => _storage.SnapEnabled, v => _storage.SnapEnabled = v), new TextElement(() => "Enable") }));
+        items.Add(new TextElement(() => _loc.T("layout.snap"), Emphasis: true));
+        items.Add(new RowElement(new HudElement[] { new ToggleElement(() => "", () => _storage.SnapEnabled, v => _storage.SnapEnabled = v), new TextElement(() => _loc.T("common.enable")) }));
         items.Add(new RowElement(new HudElement[]
         {
-            new TextElement(() => "Threshold"),
+            new TextElement(() => _loc.T("layout.threshold")),
             new SliderElement(() => _storage.SnapThresholdPx, v => _storage.SnapThresholdPx = v, 0f, 24f, () => _storage.SnapEnabled),
-            new TextElement(() => $"{_storage.SnapThresholdPx:0} px"),
+            new TextElement(() => _loc.TFormat("layout.px", _storage.SnapThresholdPx)),
         }));
-        items.Add(new TextElement(() => "Window controls", Emphasis: true));
-        items.Add(new ButtonElement(() => "Reset selected to default", () => ResetSelected()));
-        items.Add(new ButtonElement(() => "Reset all in this slot", () => ResetAllInSlot()));
+        items.Add(new TextElement(() => _loc.T("layout.windowControls"), Emphasis: true));
+        items.Add(new ButtonElement(() => _loc.T("layout.resetSelected"), () => ResetSelected()));
+        items.Add(new ButtonElement(() => _loc.T("layout.resetAllSlot"), () => ResetAllInSlot()));
         items.Add(new SeparatorElement());
-        items.Add(new TextElement(() => _editor.IsEditing ? "Edit mode: Shift+` to exit" : "Edit mode: Shift+` to enter", () => _theme.Colors.TextMuted));
+        items.Add(new TextElement(() => _editor.IsEditing ? _loc.T("layout.editExit") : _loc.T("layout.editEnter"), () => _theme.Colors.TextMuted));
         return new ColumnElement(items.ToArray());
     }
 

@@ -20,13 +20,15 @@ internal sealed partial class PerformancePanel
     private readonly ITheme _theme;
     private readonly IPluginInventory _inventory;
     private readonly Func<string, int> _effectiveRateFor;
+    private readonly ILocalization _loc;
 
-    public PerformancePanel(PerfPrefs prefs, ITheme theme, IPluginInventory inventory, Func<string, int> effectiveRateFor)
+    public PerformancePanel(PerfPrefs prefs, ITheme theme, IPluginInventory inventory, Func<string, int> effectiveRateFor, ILocalization loc)
     {
         _prefs = prefs;
         _theme = theme;
         _inventory = inventory;
         _effectiveRateFor = effectiveRateFor;
+        _loc = loc;
     }
 
     public HudElement Describe()
@@ -34,10 +36,8 @@ internal sealed partial class PerformancePanel
         var pluginSection = BuildPluginSection();
         return new ColumnElement(new HudElement[]
         {
-            new TextElement(() => "Stellar Update Rate", Emphasis: true),
-            new TextElement(() =>
-                "How often Stellar refreshes its HUD, input and overlays each second. Lower = more game FPS; higher = smoother Stellar UI.",
-                () => _theme.Colors.TextMuted),
+            new TextElement(() => _loc.T("perf.updateRate"), Emphasis: true),
+            new TextElement(() => _loc.T("perf.updateRate.desc"), () => _theme.Colors.TextMuted),
             new RowElement(new HudElement[]
             {
                 new SliderElement(RateToSlider, SliderToRate, 0f, RateStops.Length - 1),
@@ -50,20 +50,13 @@ internal sealed partial class PerformancePanel
             new RowElement(new HudElement[]
             {
                 new ToggleElement(() => "", () => _prefs.Uncap, v => _prefs.Uncap = v),
-                new TextElement(() => "Uncap Frame Rate"),
+                new TextElement(() => _loc.T("perf.uncap")),
             }, Gap: 6f),
-            new TextElement(() =>
-                "Removes the game's frame-rate cap (disables V-Sync + the FPS limit) so it runs as fast as your GPU allows. " +
-                "Higher FPS, but more GPU heat/power/fan noise and possible screen tearing.",
-                () => _theme.Colors.TextMuted),
+            new TextElement(() => _loc.T("perf.uncap.desc"), () => _theme.Colors.TextMuted),
 
             new SeparatorElement(),
-            new TextElement(() => "Per-plugin update rate", Emphasis: true),
-            new TextElement(() =>
-                "Override how often each plugin refreshes. Self-rate lets a plugin drive its own update rate: " +
-                "Boost speeds it up briefly (released after a 10 s safety cap); Self-managed lets the plugin fully " +
-                "control and hold its own rate with no cap. Default is Off (follows the global rate).",
-                () => _theme.Colors.TextMuted),
+            new TextElement(() => _loc.T("perf.perPlugin"), Emphasis: true),
+            new TextElement(() => _loc.T("perf.perPlugin.desc"), () => _theme.Colors.TextMuted),
             pluginSection,
         });
     }
@@ -94,19 +87,15 @@ internal sealed partial class PerformancePanel
     private string RateValueLabel()
     {
         var hz = _prefs.UpdateRateHz;
-        return hz >= PerfControls.MaxUpdateRateHz ? "Every frame" : $"{hz} Hz";
+        return hz >= PerfControls.MaxUpdateRateHz ? _loc.T("perf.everyFrame") : _loc.TFormat("perf.hz", hz);
     }
 
     private string RateDescription()
     {
         var hz = _prefs.UpdateRateHz;
-        if (hz <= 15)
-            return "Best game FPS — Stellar barely touches your frame rate. The HUD, cooldowns and on-screen info refresh " +
-                   "only ~10-15×/sec, so they visibly lag and typing/dragging in Stellar feels delayed.";
-        if (hz >= PerfControls.MaxUpdateRateHz)
-            return "Smoothest, most responsive Stellar UI — updates every rendered frame. Costs the most game FPS.";
-        if (hz <= PerfControls.DefaultUpdateRateHz)
-            return "Near-vanilla game FPS while keeping the HUD and input smooth enough that most players won't notice. The sweet spot.";
-        return "Smoother Stellar UI than the default, at some game-FPS cost — higher is smoother but more costly.";
+        if (hz <= 15) return _loc.T("perf.rateDesc.low");
+        if (hz >= PerfControls.MaxUpdateRateHz) return _loc.T("perf.rateDesc.max");
+        if (hz <= PerfControls.DefaultUpdateRateHz) return _loc.T("perf.rateDesc.default");
+        return _loc.T("perf.rateDesc.high");
     }
 }

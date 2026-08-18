@@ -40,6 +40,7 @@ internal sealed partial class ThemeEditorBody
     private readonly ICustomThemeStore _store;
     private readonly IThemeOverrides _overrides;
     private readonly ITheme _theme;
+    private readonly ILocalization _text;
 
     // Editor state.
     private string _nameBuffer = "";
@@ -54,12 +55,13 @@ internal sealed partial class ThemeEditorBody
     private bool _editDirty;
 
     public ThemeEditorBody(INamedTheme namedTheme, ICustomThemeStore store,
-                           IThemeOverrides overrides, ITheme theme)
+                           IThemeOverrides overrides, ITheme theme, ILocalization text)
     {
         _namedTheme = namedTheme;
         _store = store;
         _overrides = overrides;
         _theme = theme;
+        _text = text;
     }
 
     // A slider drag holds the mouse down and fires many SetOverride calls; the

@@ -16,13 +16,15 @@ internal sealed partial class GameUiPanel
     private readonly ITheme _theme;
     private readonly IPluginLog _log;
     private readonly LayoutEditorService _layoutEditor;
+    private readonly ILocalization _loc;
 
-    public GameUiPanel(NativeUiService nativeUi, ITheme theme, IPluginLog log, LayoutEditorService layoutEditor)
+    public GameUiPanel(NativeUiService nativeUi, ITheme theme, IPluginLog log, LayoutEditorService layoutEditor, ILocalization loc)
     {
         _nativeUi = nativeUi;
         _theme = theme;
         _log = log;
         _layoutEditor = layoutEditor;
+        _loc = loc;
     }
 
     /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration). Per-entry
@@ -34,13 +36,13 @@ internal sealed partial class GameUiPanel
         foreach (var e in _nativeUi.Entries) rows.Add(EntryRow(e));
         return new ColumnElement(new HudElement[]
         {
-            new TextElement(() => "(i) Move or hide game HUD elements."),
+            new TextElement(() => _loc.T("gameui.info")),
             new ScrollElement(new ColumnElement(rows.ToArray()), 220f),
             new RowElement(new HudElement[]
             {
-                new ButtonElement(() => "Enter layout editing", () => { if (!_layoutEditor.IsEditing) _layoutEditor.ToggleEditMode(); }),
-                new ButtonElement(() => "Reset all", () => _nativeUi.ResetAll()),
-                new ButtonElement(() => "Recon paths…", () => ReconWalk()),
+                new ButtonElement(() => _loc.T("gameui.enterEdit"), () => { if (!_layoutEditor.IsEditing) _layoutEditor.ToggleEditMode(); }),
+                new ButtonElement(() => _loc.T("common.resetAll"), () => _nativeUi.ResetAll()),
+                new ButtonElement(() => _loc.T("gameui.reconPaths"), () => ReconWalk()),
             }),
         });
     }
@@ -60,12 +62,12 @@ internal sealed partial class GameUiPanel
             new ToggleElement(() => "", () => entry.Visible, v => { if (safe) _nativeUi.SetVisible(id, v); }, () => safe),
             new TextElement(() => name),
         };
-        if (!safe) items.Add(new TextElement(() => "! unsafe", () => _theme.Colors.Warning));
+        if (!safe) items.Add(new TextElement(() => _loc.T("gameui.unsafe"), () => _theme.Colors.Warning));
         items.Add(new SpacerElement());
-        items.Add(new ButtonElement(() => "Reset", () => _nativeUi.ResetToOriginal(id)));
+        items.Add(new ButtonElement(() => _loc.T("common.reset"), () => _nativeUi.ResetToOriginal(id)));
         return new ConditionalElement(() => entry.IsResolved,
             new RowElement(items.ToArray()),
-            new TextElement(() => $"--- {name} (not present)", () => _theme.Colors.TextMuted));
+            new TextElement(() => _loc.TFormat("gameui.notPresent", name), () => _theme.Colors.TextMuted));
     }
 
 }

@@ -27,18 +27,18 @@ internal sealed partial class ThemeEditorBody
     {
         var nameEntry = new RowElement(new HudElement[]
         {
-            new TextElement(() => _nameMode == NameMode.New ? "New theme:" : "Rename:"),
+            new TextElement(() => _nameMode == NameMode.New ? _text.T("themes.newTheme") : _text.T("themes.renameLabel")),
             // OnChange syncs the buffer per-keystroke so clicking OK (mouse, no Enter) validates the typed
             // text — without it, Submit only fired on Enter and a mouse-OK saw an empty buffer ("must be
             // non-empty" on a clearly-typed name).
             new InputElement(() => _nameBuffer, s => _nameBuffer = s ?? "", 160f, OnChange: s => _nameBuffer = s ?? ""),
-            new ButtonElement(() => "OK", TryCommitName),
-            new ButtonElement(() => "Cancel", CancelNameMode),
+            new ButtonElement(() => _text.T("common.ok"), TryCommitName),
+            new ButtonElement(() => _text.T("common.cancel"), CancelNameMode),
         });
 
         return new ColumnElement(new HudElement[]
         {
-            new TextElement(() => "Custom Themes", Emphasis: true),
+            new TextElement(() => _text.T("themes.customThemes"), Emphasis: true),
             new ConditionalElement(() => _nameMode == NameMode.None, BuildSelector(), nameEntry),
             new ConditionalElement(() => _nameError != null, new TextElement(() => _nameError ?? "", () => _theme.Colors.Warning)),
             new ConditionalElement(() => _namedTheme.ActiveCustomName != null && _nameMode == NameMode.None, BuildToolbar()),
@@ -58,25 +58,25 @@ internal sealed partial class ThemeEditorBody
         return new ColumnElement(new HudElement[]
         {
             new ListElement(() => System.Math.Min(_store.Names.Count, MaxNames), nameSlots),
-            new ButtonElement(() => "+ New", () => EnterNameMode(NameMode.New, "")),
+            new ButtonElement(() => _text.T("themes.new"), () => EnterNameMode(NameMode.New, "")),
             new ConditionalElement(() => _store.Names.Count == 0,
-                new TextElement(() => "No custom themes yet — clone a preset to start.", () => _theme.Colors.TextMuted)),
+                new TextElement(() => _text.T("themes.noCustom"), () => _theme.Colors.TextMuted)),
         });
     }
 
     private HudElement BuildToolbar()
         => new RowElement(new HudElement[]
         {
-            new ButtonElement(() => "Duplicate", () => EnterNameMode(NameMode.New, (_namedTheme.ActiveCustomName ?? "") + "_copy")),
-            new ButtonElement(() => "Rename", BeginRename),
-            new ButtonElement(() => _confirmDelete ? "Confirm?" : "Delete", DeleteUgui),
+            new ButtonElement(() => _text.T("themes.duplicate"), () => EnterNameMode(NameMode.New, (_namedTheme.ActiveCustomName ?? "") + "_copy")),
+            new ButtonElement(() => _text.T("themes.rename"), BeginRename),
+            new ButtonElement(() => _confirmDelete ? _text.T("common.confirm") : _text.T("common.delete"), DeleteUgui),
         });
 
     private HudElement BuildReadOnly()
         => new ColumnElement(new HudElement[]
         {
-            new TextElement(() => "Built-in presets are read-only."),
-            new ButtonElement(() => "Duplicate to customise", () => EnterNameMode(NameMode.New, _namedTheme.Active + "_custom")),
+            new TextElement(() => _text.T("themes.presetReadonly")),
+            new ButtonElement(() => _text.T("themes.duplicateToCustomise"), () => EnterNameMode(NameMode.New, _namedTheme.Active + "_custom")),
         });
 
     // No fixed-height Scroll wrapper: a fixed Scroll reserved 320 px even for a short override list, leaving
@@ -130,21 +130,21 @@ internal sealed partial class ThemeEditorBody
         {
             new RowElement(new HudElement[]
             {
-                new TextElement(() => "Filter"),
+                new TextElement(() => _text.T("themes.filter")),
                 // Live as-you-type (OnChange) so the list reflows per keystroke — matches the IMGUI filter feel.
                 new InputElement(() => _pickerFilter, s => _pickerFilter = s ?? "", 180f, OnChange: s => _pickerFilter = s ?? ""),
             }),
             new ListElement(() => SlotRowCount(), pickerSlots),
             new RowElement(new HudElement[]
             {
-                new ButtonElement(() => _checkedSlots.Count > 0 ? $"Add selected ({_checkedSlots.Count})" : "Add selected",
+                new ButtonElement(() => _checkedSlots.Count > 0 ? _text.TFormat("themes.addSelectedN", _checkedSlots.Count) : _text.T("themes.addSelected"),
                     CommitSelected, Enabled: () => _checkedSlots.Count > 0),
-                new ButtonElement(() => "Cancel", TogglePicker),
+                new ButtonElement(() => _text.T("common.cancel"), TogglePicker),
             }),
         });
         return new ColumnElement(new HudElement[]
         {
-            new ButtonElement(() => _pickerOpen ? "▾ Add colour override" : "+ Add colour override", TogglePicker),
+            new ButtonElement(() => _pickerOpen ? _text.T("themes.addOverride.open") : _text.T("themes.addOverride.closed"), TogglePicker),
             new ConditionalElement(() => _pickerOpen, body),
         });
     }
