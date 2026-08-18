@@ -99,6 +99,25 @@ Layout containers and leaves all derive from `HudElement`:
 - **Lists**: `ListElement(visibleCount, slots, Columns)` for short lists; `VirtualListElement(...)` for large windowed lists; `ConditionalElement(when, then, else)` for show/hide branches.
 - **Interaction** (window-grade): `ButtonElement(Func<string> label, Action onClick, Enabled, Style, Active, Width, Icon)`, `ToggleElement(label, get, set)`, `SliderElement(get, set, Min, Max)`, `InputElement(get, submit, Width, OnChange)`, `SelectableElement`, `ColorPickerElement`.
 
+### Text styling (every language)
+
+`TextElement` carries four typography flags — `Bold`, `Italic`, `Underline`, `Strikethrough` — that work
+in **every script** the framework localizes into (Latin, Thai, CJK/kana, Hangul):
+
+```csharp
+new TextElement(() => "Damage taken") { Bold = true },
+new TextElement(() => _text.T("row.deprecated")) { Strikethrough = true },
+```
+
+- **Bold is a real bold typeface**, never Unity's synthetic (faux) bold — the framework ships a merged
+  Latin+Thai bold face and resolves a system bold family for CJK, so bold Thai/Japanese stays crisp.
+  `Emphasis: true` is the section-header preset (bold at header size); use `Bold` for inline bold at
+  normal size.
+- Styled elements render through TextMeshPro, so TMP rich-text tags (`<b> <i> <s>`, colours, `<size>`)
+  also work inside a STYLED element's string. Prefer the flags for whole-element styling.
+- Scope: **window surfaces** (`SurfaceStyle` menu windows). HUD-overlay text (`Shadow: true` /
+  `SurfaceStyle.HudOverlay`) ignores the style flags.
+
 Every UI is a **window**. A read-only on-screen overlay is just a borderless window (`WindowPanelStyle.Borderless`, `Surface = SurfaceStyle.HudOverlay`) with no interactive controls; an interactive panel is a window with themed chrome. Both gate game input correctly while focused — there is no separate HUD path.
 
 ### An on-screen HUD overlay (a borderless window)
