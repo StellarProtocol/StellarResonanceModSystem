@@ -72,6 +72,7 @@
   "themes.filter": "Filter",
   "themes.fontScale": "Skala Font",
   "themes.language": "Bahasa",
+  "themes.language.follow": "Ikuti bahasa game",
   "themes.new": "+ Baru",
   "themes.newTheme": "Tema baru:",
   "themes.noCustom": "Belum ada tema kustom — duplikat sebuah preset untuk memulai.",

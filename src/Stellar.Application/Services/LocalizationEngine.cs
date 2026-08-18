@@ -10,8 +10,9 @@ namespace Stellar.Application.Services;
 /// The single localization engine: a per-namespace catalog registry plus the active-language
 /// state, resolution (active → English → key literal), <c>string.Format</c> support, the
 /// persisted <c>localization.language</c> setting, and a <see cref="LanguageChanged"/> event.
-/// Namespaces are plugin GUIDs (and <c>"stellar.framework"</c> for the framework's own strings);
-/// each plugin reads only its own namespace through a <see cref="PluginLocalization"/> façade.
+/// Namespaces are plugin GUIDs (and <c>BootstrapPlugin.PluginGuid</c>, i.e. <c>"stellar.framework"</c>,
+/// for the framework's own strings); each plugin reads only its own namespace through a
+/// <see cref="PluginLocalization"/> façade.
 /// Pure managed — no Unity/BepInEx.
 /// </summary>
 internal sealed partial class LocalizationEngine : ILocalizationControl

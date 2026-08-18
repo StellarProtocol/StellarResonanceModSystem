@@ -5,8 +5,8 @@ using System.Reflection;
 namespace Stellar.Infrastructure.Localization;
 
 /// <summary>
-/// Reads Infrastructure's own embedded <c>Lang/*.json</c> — the framework's UI catalog, registered
-/// under the reserved <c>"stellar.framework"</c> namespace. Mirrors the embedded-resource pattern of
+/// Reads Infrastructure's own embedded <c>Lang/*.json</c> — the framework's UI catalog, which Host
+/// registers under <c>BootstrapPlugin.PluginGuid</c> (value <c>"stellar.framework"</c>). Mirrors the embedded-resource pattern of
 /// <c>EmbeddedAssetProvider</c> / <c>LauncherIcons</c>. Resource names are
 /// <c>Stellar.Infrastructure.Lang.&lt;code&gt;.json</c> (the MSBuild logical-name default).
 /// </summary>

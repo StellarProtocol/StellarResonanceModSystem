@@ -72,6 +72,7 @@
   "themes.filter": "กรอง",
   "themes.fontScale": "ขนาดฟอนต์",
   "themes.language": "ภาษา",
+  "themes.language.follow": "ตามภาษาเกม",
   "themes.new": "+ ใหม่",
   "themes.newTheme": "ธีมใหม่:",
   "themes.noCustom": "ยังไม่มีธีมกำหนดเอง — ทำสำเนาพรีเซ็ตเพื่อเริ่มต้น",

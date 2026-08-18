@@ -16,9 +16,25 @@ internal sealed class ThemesPanel
     private static readonly ThemePreset[] Presets =
         { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
 
-    // Language dropdown option labels (native names) and their persisted setting codes, index-aligned.
-    private static readonly string[] LangOptions = { "Follow game client", "English", "日本語", "ไทย", "Bahasa Indonesia" };
+    // Language dropdown: setting codes (index-aligned to the option labels). Index 0 ("follow") is the only
+    // descriptive option (localized); indices 1-4 are language NAMES shown in their own script in every locale.
     private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id" };
+    // Options cached + rebuilt only when the active language changes (the "follow" label localizes), so the
+    // per-frame dropdown poll doesn't allocate a fresh array.
+    private string[]? _langOptCache;
+    private string? _langOptLang;
+    private System.Collections.Generic.IReadOnlyList<string> LangOptions
+    {
+        get
+        {
+            if (_langOptCache == null || _langOptLang != _text.Language)
+            {
+                _langOptLang = _text.Language;
+                _langOptCache = new[] { _text.T("themes.language.follow"), "English", "日本語", "ไทย", "Bahasa Indonesia" };
+            }
+            return _langOptCache;
+        }
+    }
 
     private readonly INamedTheme _namedTheme;
     private readonly IChromeStyle _chromeStyle;

@@ -72,6 +72,7 @@
   "themes.filter": "Filter",
   "themes.fontScale": "Font Scale",
   "themes.language": "Language",
+  "themes.language.follow": "Follow game client",
   "themes.new": "+ New",
   "themes.newTheme": "New theme:",
   "themes.noCustom": "No custom themes yet — clone a preset to start.",

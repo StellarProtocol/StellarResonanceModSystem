@@ -72,6 +72,7 @@
   "themes.filter": "フィルター",
   "themes.fontScale": "フォントスケール",
   "themes.language": "言語",
+  "themes.language.follow": "ゲームに合わせる",
   "themes.new": "＋ 新規",
   "themes.newTheme": "新しいテーマ:",
   "themes.noCustom": "カスタムテーマがまだありません — プリセットを複製して始めましょう。",
