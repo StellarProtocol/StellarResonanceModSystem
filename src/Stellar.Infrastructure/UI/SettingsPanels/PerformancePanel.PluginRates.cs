@@ -109,7 +109,22 @@ internal sealed partial class PerformancePanel
     //   Off (0)          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
     //   Boost (1)        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
     //   Self-managed (2) = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
-    private IReadOnlyList<string> SelfRateOptions => new[] { _loc.T("perf.self.off"), _loc.T("perf.self.boost"), _loc.T("perf.self.managed") };
+    // Cached so the per-frame dropdown poll doesn't allocate a fresh array every frame per row; rebuilt only
+    // when the active language changes (localized labels).
+    private string[]? _selfRateCache;
+    private string? _selfRateLang;
+    private IReadOnlyList<string> SelfRateOptions
+    {
+        get
+        {
+            if (_selfRateCache == null || _selfRateLang != _loc.Language)
+            {
+                _selfRateLang = _loc.Language;
+                _selfRateCache = new[] { _loc.T("perf.self.off"), _loc.T("perf.self.boost"), _loc.T("perf.self.managed") };
+            }
+            return _selfRateCache;
+        }
+    }
 
     private int SelfRateIndex(string id)
     {
