@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.1.0] - 2026-08-18
+_**2.1.0** (minor) — Stellar's own menus now speak your language. Adds a plugin localization API; additive, binary-compatible with all existing plugins._
+### Added
+- Stellar's settings menus now display in **English, 日本語 (Japanese), ไทย (Thai), and Bahasa Indonesia**. Pick your language in Settings → Themes → Language, or leave it on "Follow game client" to match your game.
+### Developer notes
+- `IPluginServices.Localization` (`ILocalization`): a plugin-scoped UI-text localizer. Ship four embedded `Lang/{en,ja,th,id}.json` catalogs (`<EmbeddedResource Include="Lang/*.json" LogicalName="Lang.%(Filename)%(Extension)" />`) and call `Localization.T("key")` / `TFormat("key", args)`; resolution is active-language → English → the key literal (a missing key renders visibly as the key). The framework auto-discovers each plugin's catalogs at plugin-load (namespaced by plugin GUID, matched by the `Lang.<code>.json` suffix) — no registration code. `ILocalizationControl` (Settings-facing, NOT on `IPluginServices`) drives the setting `localization.language` (default `follow`); `ClientLanguageProbe` maps the game client's `LanguageType` (`en=1,ja=2,th=5,id=6`, else `en`) to a supported code, and the setting live-switches (labels re-poll, baked renderers flush via `LanguageChanged`). Catalog completeness is validated by `tools/i18n-catalog.py <repo>` (used/undefined/incomplete/orphan, `--seed`). See `docs/plugin-development.md` § Localizing your plugin. New service only — additive, binary-compatible with plugins built against ≤2.0.3.
+
 ## [2.0.3] - 2026-08-16
 _**2.0.3** (minor) — readable text inputs, plus internal groundwork for the CombatMeter Discord run-card and a reconnect fix that keeps a mid-dungeon disconnect from splitting your run in two._
 ### Fixed

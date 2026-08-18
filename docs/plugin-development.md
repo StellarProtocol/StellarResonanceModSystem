@@ -408,6 +408,57 @@ You can assume single-threaded handlers. If you start your own threads, marshal 
 - **Don't spam.** Hot paths (`Update`, element Funcs, `MessageReceived`) should log at most once per state transition, not per invocation.
 - **Use the right level.** `Info` for normal flow, `Warning` for recoverable problems, `Error` for failures the user needs to see, `Debug` for diagnostics.
 
+## Localizing your plugin
+
+Stellar's own UI ships in English, 日本語, ไทย and Bahasa Indonesia; your plugin can too, via
+`Services.Localization` (`ILocalization`). It's scoped to your plugin (like `Log`) — your keys never
+collide with another plugin's.
+
+**1. Ship four catalogs.** Add `Lang/en.json`, `Lang/ja.json`, `Lang/th.json`, `Lang/id.json` to your
+project as embedded resources. `en.json` is the source of truth; the others are keyed by the same ids.
+Values may carry positional placeholders (`{0}`) so other languages can reorder them:
+
+```jsonc
+// Lang/en.json                       // Lang/ja.json
+{ "history.title": "History",         { "history.title": "履歴",
+  "dps.line":      "{0} DPS" }          "dps.line":      "{0} DPS" }
+```
+
+In your `.csproj`:
+
+```xml
+<ItemGroup>
+  <EmbeddedResource Include="Lang/*.json" LogicalName="Lang.%(Filename)%(Extension)" />
+</ItemGroup>
+```
+
+The framework auto-discovers these at load — **no registration code**.
+
+**2. Resolve at draw-time.** Call `T` / `TFormat` inside your element `Func<string>` labels so they
+re-render live when the user switches language:
+
+```csharp
+var s = Services.Localization;
+new TextElement(() => s.T("history.title"));
+new TextElement(() => s.TFormat("dps.line", dps));   // string.Format on the active-language template
+```
+
+Resolution is **active-language → English → the key literal**: a key you forgot to translate falls back
+to English; a key that exists nowhere renders as the key itself (so it's obvious in-game, never a crash).
+`Services.Localization.Language` is the active code (`"en"/"ja"/"th"/"id"`), and `LanguageChanged` fires
+on a switch (subscribe only if you cache built text; draw-time labels need no handler). Plugins **read**
+the language — they never set it (that's the framework's Settings → Themes → Language control).
+
+**3. Validate before you commit.** Run the catalog checker from the devkit:
+
+```
+python3 tools/i18n-catalog.py <your-plugin-repo>
+```
+
+It fails on a key used in code but missing from `en.json` (`undefined`) or a key in `en.json` missing
+from ja/th/id (`incomplete`); `--seed` copies `en` into the other catalogs as placeholders for a
+translation pass. Keep it green in CI.
+
 ## The no-cheating boundary
 
 Stellar holds the same line Dalamud does — QoL, not exploitation:
