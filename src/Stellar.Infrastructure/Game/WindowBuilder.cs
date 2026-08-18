@@ -377,15 +377,17 @@ internal sealed partial class WindowBuilder
     private void BuildText(TextElement t, Transform parent, WindowToken token)
     {
         if (_surface == SurfaceStyle.HudOverlay) { BuildTextHud(t, parent, token); return; }   // .HudOverlay.cs
-        // Emphasis (section headers): REAL bold in every script via the game-only TMP factory (owner
-        // requirement 2026-08-18: default typography — bold etc. — must work in EVERY language; the
-        // accent-colour and synthetic-bold emphasis iterations are retired). Shadow/aligned emphasis
-        // (unused by the framework UI) and the sandbox/no-face cases keep the legacy crisp path below.
-        if (t.Emphasis && !t.Shadow && t.Align == TextAlign.Left && TryBuildEmphasisText(t, parent, token)) return;
+        // Styled text (Emphasis headers + the Bold/Italic/Underline/Strikethrough flags): REAL faces in
+        // every script via the game-only TMP factory (owner requirement 2026-08-18: default typography
+        // must work in EVERY language; the accent-colour and synthetic-bold iterations are retired).
+        // Shadow elements (HUD-halo look) and the sandbox/no-face cases keep the legacy path below.
+        var styled = t.Emphasis || t.Bold || t.Italic || t.Underline || t.Strikethrough;
+        if (styled && !t.Shadow && TryBuildEmphasisText(t, parent, token)) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
+        if (styled) ApplyLegacyStyledFallback(txt, t);   // sandbox / no TMP face — see StyledText partial
         // Centre on the glyph GEOMETRY, not the font line-box — the OS dynamic font sits the ink low under a
         // Middle anchor, so bare text rendered ~2-3px below button labels (which already optically-centre via
         // asymmetric padding in BuildButton). alignByGeometry makes a label vertically match the buttons in a
