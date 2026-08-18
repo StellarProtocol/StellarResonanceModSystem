@@ -16,9 +16,14 @@ internal sealed class ThemesPanel
     private static readonly ThemePreset[] Presets =
         { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
 
+    // Language dropdown option labels (native names) and their persisted setting codes, index-aligned.
+    private static readonly string[] LangOptions = { "Follow game client", "English", "日本語", "ไทย", "Bahasa Indonesia" };
+    private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id" };
+
     private readonly INamedTheme _namedTheme;
     private readonly IChromeStyle _chromeStyle;
     private readonly ITheme _theme;
+    private readonly ILocalizationControl _loc;
     private readonly ThemeEditorBody _editor;
     // Pending Font Scale while dragging — drives the knob + the "x" label. The value is ALSO applied LIVE during
     // the drag (ApplyFontScalePreview → NamedThemeService.SetFontScalePreview, an un-persisted ActiveChanged that
@@ -32,11 +37,12 @@ internal sealed class ThemesPanel
     private NamedThemeService? Nts => _namedTheme as NamedThemeService;
 
     public ThemesPanel(INamedTheme namedTheme, IChromeStyle chromeStyle, ITheme theme,
-                       IThemeOverrides overrides, ICustomThemeStore customThemes)
+                       IThemeOverrides overrides, ICustomThemeStore customThemes, ILocalizationControl loc)
     {
         _namedTheme = namedTheme;
         _chromeStyle = chromeStyle;
         _theme = theme;
+        _loc = loc;
         _editor = new ThemeEditorBody(namedTheme, customThemes, overrides, theme);
     }
 
@@ -48,6 +54,7 @@ internal sealed class ThemesPanel
     public HudElement Describe()
     {
         var items = new System.Collections.Generic.List<HudElement>();
+        AddLanguage(items);
         AddPresetAndScale(items);
         AddControls(items);
         AddPreview(items);
@@ -55,6 +62,24 @@ internal sealed class ThemesPanel
         items.Add(new SeparatorElement());
         items.Add(_editor.Describe());
         return new ColumnElement(items.ToArray());
+    }
+
+    // Language selector — Follow game client (default) or one of the four shipped UI languages. Persists via
+    // ILocalizationControl and switches the overlay live (Func<string> labels re-poll; baked renderers flush).
+    private void AddLanguage(System.Collections.Generic.List<HudElement> items)
+    {
+        items.Add(new TextElement(() => "Language", Emphasis: true));
+        items.Add(new RowElement(new HudElement[]
+        {
+            new DropdownElement(LangIndex, () => LangOptions, i => _loc.SetLanguageSetting(LangCodes[i]), Width: 180f),
+        }));
+        items.Add(new SeparatorElement());
+    }
+
+    private int LangIndex()
+    {
+        var i = System.Array.IndexOf(LangCodes, _loc.LanguageSetting);
+        return i < 0 ? 0 : i;
     }
 
     private void AddPresetAndScale(System.Collections.Generic.List<HudElement> items)
