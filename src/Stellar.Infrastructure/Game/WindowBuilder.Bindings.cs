@@ -41,14 +41,13 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
-        // Emphasised (bold) text re-derives its presentation from the CURRENT string each time the text
-        // changes (live language switch resolves a new string). Latin → real FontStyle.Bold; Thai → a real
-        // bold Thai FACE (EmphThaiFont, FontStyle.Normal — crisp readable bold, not synthetic-bold blur);
-        // CJK/kana/Hangul → the base face at a larger crisp regular size (no name-reachable bold). i18n P0
-        // JA/TH bold-header bug. Non-emphasis bindings leave font/style/size untouched.
+        // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
+        // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
+        // GlyphScript) — re-derived per current string so a live language switch tracks. The preferred
+        // path is the TMP StyledTextBinding below (real bold in EVERY script; owner requirement
+        // 2026-08-18). Non-emphasis bindings leave font/style/size untouched.
         public bool Emphasis;
-        public Font? EmphThaiFont;   // real bold Thai face (WindowThemeAssets.ThaiBoldFont)
-        public Font? EmphBaseFont;   // the normal window font (restore target for non-Thai emphasis)
+        public Font? EmphBaseFont;   // the normal window font (emphasis keeps the shared face)
         public int EmphSize;         // scaled emphasis size (15; weight — not size — carries the emphasis)
         private string? _last;
         private int _lastFontSize;
@@ -70,17 +69,13 @@ internal sealed partial class WindowBuilder
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
-                // Re-derive emphasis presentation from the new string (see the field comments):
-                // Latin real-bold · Thai real bold FACE · CJK larger crisp regular.
+                // Re-derive the legacy-fallback emphasis presentation from the new string (see the field
+                // comments): Latin real-bold, complex scripts crisp regular.
                 if (Emphasis)
                 {
-                    // The accent COLOUR (set in BuildText) carries the emphasis crisply. Weight stays CRISP:
-                    // Latin gets real bold (it survives synthetic bold cleanly); complex scripts (CJK/Thai) stay
-                    // regular — synthetic bold blurs their tight loops and a real bold face won't load under
-                    // Proton (owner ruling 2026-08-18). Re-derived per string so a live language switch tracks.
                     C.fontSize = EmphSize;
                     if (EmphBaseFont != null) C.font = EmphBaseFont;
-                    C.fontStyle = GlyphScript.HasSyntheticBoldRisk(s) ? FontStyle.Normal : FontStyle.Bold;
+                    C.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
                     if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
                 }
             }
@@ -90,6 +85,25 @@ internal sealed partial class WindowBuilder
                 // Keep the shadow's dark rgb, track only the foreground alpha — matches HudElementBuilder's twin.
                 if (Shadow != null) { var sc = Shadow.color; Shadow.color = new Color(sc.r, sc.g, sc.b, v.A); }
             }
+        }
+    }
+
+    // TMP real-bold emphasis header (built through StyledTextFactory; see TryBuildEmphasisText). Carries
+    // no TMP types itself — the handle interface keeps this file sandbox-compilable.
+    internal sealed class StyledTextBinding
+    {
+        public IStyledTextHandle H = null!;
+        public Func<string> TextFn = null!;
+        public Func<ColorRgba?>? ColorFn;
+        private string? _last;
+
+        public void Apply()
+        {
+            var go = H.Go;
+            if (go == null || !go.activeInHierarchy) return;
+            var s = TextFn();
+            if (s != _last) { _last = s; H.SetText(s); }
+            if (ColorFn != null && ColorFn() is { } v) H.SetColor(new Color(v.R, v.G, v.B, v.A));
         }
     }
 

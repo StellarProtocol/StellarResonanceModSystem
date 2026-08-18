@@ -165,6 +165,7 @@ internal sealed partial class WindowBuilder
         /// previous open's size (the deferred MarkLayoutForRebuild path).</summary>
         internal void ResetLayout() => _laidOut = false;
         internal readonly List<TextBinding> Texts = new();
+        internal readonly List<StyledTextBinding> StyledTexts = new();   // TMP real-bold emphasis headers
         internal readonly List<ButtonBinding> Buttons = new();
         internal readonly List<ToggleBinding> Toggles = new();
         internal readonly List<SliderBinding> Sliders = new();
@@ -251,6 +252,7 @@ internal sealed partial class WindowBuilder
         private void ApplyValues()
         {
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
+            for (var i = 0; i < StyledTexts.Count; i++) StyledTexts[i].Apply();
             for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
             for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
             for (var i = 0; i < GameTextures.Count; i++) GameTextures[i].Apply();
@@ -375,12 +377,14 @@ internal sealed partial class WindowBuilder
     private void BuildText(TextElement t, Transform parent, WindowToken token)
     {
         if (_surface == SurfaceStyle.HudOverlay) { BuildTextHud(t, parent, token); return; }   // .HudOverlay.cs
+        // Emphasis (section headers): REAL bold in every script via the game-only TMP factory (owner
+        // requirement 2026-08-18: default typography — bold etc. — must work in EVERY language; the
+        // accent-colour and synthetic-bold emphasis iterations are retired). Shadow/aligned emphasis
+        // (unused by the framework UI) and the sandbox/no-face cases keep the legacy crisp path below.
+        if (t.Emphasis && !t.Shadow && t.Align == TextAlign.Left && TryBuildEmphasisText(t, parent, token)) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
-        // Emphasis headers carry their weight via a real BOLD face (not size): Latin synthetic bold + Thai
-        // the "Stellar Thai Bold" host font (see the binding). Size stays at the original 15 (owner ruling
-        // 2026-08-18: "same font size but bold"). CJK/kana/Hangul have no bold face → they read as regular.
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
         // Centre on the glyph GEOMETRY, not the font line-box — the OS dynamic font sits the ink low under a
         // Middle anchor, so bare text rendered ~2-3px below button labels (which already optically-centre via
@@ -393,10 +397,7 @@ internal sealed partial class WindowBuilder
         // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
         // the cell edge rather than wrapping into a multi-line block.
         txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
-        // Emphasis (section headers) render in the theme ACCENT colour — the reliable, CRISP standout cue in
-        // every language (a real bold face won't load under Proton, and synthetic bold blurs Thai/CJK; owner
-        // ruling 2026-08-18). An explicit ColorFn (t.Color) still overrides via the binding.
-        txt.color = t.Emphasis ? _assets.MenuAccent : _assets.MenuText;
+        txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
         // it stays natural-width and a sibling Spacer does the pushing (flexibleWidth=1 here made the label
@@ -415,22 +416,22 @@ internal sealed partial class WindowBuilder
             ol.effectColor = new Color(0f, 0f, 0f, 0.85f);
             ol.effectDistance = new Vector2(1.1f, -1.1f);
         }
-        // Script-aware emphasis (TextBinding.Apply picks per current string): Thai → real bold Thai face,
-        // CJK → larger crisp regular, Latin → real bold. Fields carry the fonts + scaled sizes it needs.
         token.Texts.Add(BuildTextBinding(t, txt));
-        RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14, accent: t.Emphasis);
+        RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
     }
+
+    // TryBuildEmphasisText + TryBuildBoldTitle (the TMP real-bold path) live in WindowBuilder.StyledText.cs.
 
     // Override ConfigureText's builtin-Arial attempt with the OS dynamic font (resolved consistently in
     // both the editor sandbox and the IL2CPP player) — see WindowThemeAssets.MenuFont. No-op when null.
     private void ApplyMenuFont(Text t) { if (_assets.MenuFont != null) t.font = _assets.MenuFont; }
 
-    // The text binding, carrying the script-aware emphasis inputs (Thai real-bold face + base font + the
-    // larger emphasis size) so TextBinding.Apply can pick per current string on a live language switch.
+    // The text binding. Emphasis here is the LEGACY fallback only (sandbox / no TMP face): it carries the
+    // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
         var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis };
-        if (t.Emphasis) { b.EmphThaiFont = _assets.ThaiBoldFont; b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
+        if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }
 
@@ -441,13 +442,13 @@ internal sealed partial class WindowBuilder
     // Register a re-skin closure for a window Text: re-applies the live font size (Font Scale), font, and the
     // default colour on a theme change — in place, no rebuild. (A ColorFn-bound Text gets its colour re-pulled
     // by TextBinding.Apply right after, so muted/warn texts override this default.)
-    private void RegisterTextReskin(WindowToken token, Text txt, int baseSize, bool muted = false, bool accent = false)
+    private void RegisterTextReskin(WindowToken token, Text txt, int baseSize, bool muted = false)
         => token.ReskinActions.Add(() =>
         {
             if (txt == null) return;
             txt.fontSize = Scaled(baseSize);
             if (_assets.MenuFont != null) txt.font = _assets.MenuFont;
-            txt.color = accent ? _assets.MenuAccent : muted ? _assets.MenuMuted : _assets.MenuText;
+            txt.color = muted ? _assets.MenuMuted : _assets.MenuText;
         });
 
     // 1 px themed divider. Horizontal: a 5 px-tall full-width slot, line centred (between rows). Vertical: a

@@ -20,6 +20,12 @@
     <EmbeddedResource Include="Resources/NotoSans-Regular.ttf">
       <LogicalName>Stellar.Infrastructure.Resources.NotoSans-Regular.ttf</LogicalName>
     </EmbeddedResource>
+    <!-- Merged Noto Sans Bold + Noto Sans Thai Bold (OFL): the shipped REAL-bold Latin+Thai face for TMP
+         titles/emphasis headers. Extracted beside the DLLs + loaded by file path (TmpFontAssets) — Unity
+         under Proton never sees host fonts, so shipping the face is the only machine-independent bold. -->
+    <EmbeddedResource Include="Resources/StellarUIThaiBold.ttf">
+      <LogicalName>Stellar.Infrastructure.Resources.StellarUIThaiBold.ttf</LogicalName>
+    </EmbeddedResource>
     <!-- Launcher icon set (rasterised PNGs; never tofu). Logical names default to
          Stellar.Infrastructure.icons.<name>.png — resolved by suffix in LauncherIcons. -->
     <EmbeddedResource Include="Resources/icons/*.png" LogicalName="Stellar.Infrastructure.icons.%(Filename).png" />

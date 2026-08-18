@@ -77,21 +77,6 @@ internal sealed class WindowThemeAssets
     private static bool _menuFontTried;
     public Font? MenuFont => _menuFont;
 
-    // Real BOLD Thai face for emphasis headers, applied with FontStyle.Normal (Unity's synthetic Bold — and
-    // a fatten outline — fill Thai's tight loops/counters and blur it; only a designed bold FACE is readable).
-    // "Stellar Thai Bold" is the loopless Noto Sans Thai Bold, renamed to a unique family + labelled
-    // normal-weight and installed into the game's Wine-prefix Fonts dir (Wine reads prefix fonts natively, so
-    // CreateDynamicFontFromOSFont resolves it reliably — a host bold family name did NOT resolve under Proton).
-    // Chain fallbacks: the LOOPED "Noto Looped Thai Bold" (host, distinct family), then the regular Thai face
-    // (readable, just not bold — never a blur). The larger emphasis size (see the emphasis path) guarantees a
-    // header stands out even if no bold face resolves. CJK/kana/Hangul have no bold face here → larger regular.
-    private static Font? _thaiBoldFont;
-    public Font? ThaiBoldFont { get { EnsureFont(); return _thaiBoldFont; } }
-    private static readonly string[] ThaiBoldFamilies =
-    {
-        "Stellar Thai Bold", "Noto Looped Thai Bold", "Noto Sans Thai", "Noto Sans", "DejaVu Sans", "Arial",
-    };
-
     /// <summary>Process-shared glyph-complete overlay font (Latin + CJK + Thai via the OS-font
     /// fallback chain), for static text paths that have no <see cref="WindowThemeAssets"/> instance
     /// (e.g. the native-UI-host label builders). Null only when OS-font resolution failed entirely,
@@ -122,8 +107,6 @@ internal sealed class WindowThemeAssets
             if (_menuFont == null || !_menuFont) _menuFont = Font.CreateDynamicFontFromOSFont("Arial", 14);
         }
         catch { _menuFont = null; }   // null → window Text keeps ConfigureText's builtin attempt (sandbox is fine)
-        try { _thaiBoldFont = Font.CreateDynamicFontFromOSFont(ThaiBoldFamilies, 14); }
-        catch { _thaiBoldFont = null; }   // null → Thai emphasis stays on the regular font (readable, not bold)
     }
 
     public bool IsBaked => FrameBg != null && ButtonBg != null && Capsule != null;
