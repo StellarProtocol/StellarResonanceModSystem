@@ -76,4 +76,22 @@ internal sealed class DeltaBytes
             .End()
             .ToArray();
     }
+
+    /// <summary>Builds a CharSerialize buffer containing TWO top-level fields:
+    /// <paramref name="skippedFieldNum"/> first, carrying a small NON-EMPTY nested container
+    /// (so the reader's skip-unknown-field path — not just the empty-container shortcut — is
+    /// exercised), followed by <paramref name="targetFieldNum"/> with an empty nested container.
+    /// For testing that a top-level field scan (e.g. TouchesTalents) still matches a target field
+    /// that comes AFTER a field it had to skip over.</summary>
+    public static byte[] CharSerializeWithFieldThenField(int skippedFieldNum, int targetFieldNum)
+    {
+        return new DeltaBytes()
+            .Begin(0)                       // CharSerialize container
+            .FieldIndex(skippedFieldNum)
+            .Begin(8).Int32(11).Int32(22)   // non-empty skippable body (8 bytes)
+            .FieldIndex(targetFieldNum)
+            .Begin(TagEnd)                  // empty nested container for the target field
+            .End()
+            .ToArray();
+    }
 }

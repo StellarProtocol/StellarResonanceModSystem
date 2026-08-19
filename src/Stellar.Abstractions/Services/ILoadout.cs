@@ -23,7 +23,11 @@ public interface ILoadout
     /// <summary>The local player's LIVE class + talents (never from a saved plan), or null until the
     /// live read resolves in-world. Refreshed with the loadout data; a talent respec re-fires the
     /// refresh via the framework's dirty-delta trigger, so re-read after
-    /// <see cref="IInventory.SelfGearChanged"/>.</summary>
+    /// <see cref="IInventory.SelfGearChanged"/>.
+    /// Same threading rule as <see cref="IDeepSlumber.GetState"/>: never read from the
+    /// <see cref="IInventory.SelfGearChanged"/> handler itself (network thread) — flag and read on the
+    /// game tick. The value read immediately after the event may still be pre-change; the refresh
+    /// lands within about a second (cooldown-coalesced), which is fine for snapshot-at-archive use.</summary>
     LiveLoadoutState? LiveState { get; }
 
     /// <summary>Triggers the game's native switch to the loadout identified by <paramref name="index"/>.</summary>
