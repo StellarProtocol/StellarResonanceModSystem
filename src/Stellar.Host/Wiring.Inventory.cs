@@ -23,6 +23,11 @@ public sealed partial class BootstrapPlugin
         // CharSerialize.resonance (field 28) off the same latched CharSerialize.
         _resonanceService = new ResonanceService(_inventoryProbe);
 
+        // Deep-Slumber Psychoscope (season cultivate) — the same probe (IDeepSlumberProbe) walks
+        // CharSerialize.SeasonCultivateLineData / SeasonRoleLevelData off the same latched CharSerialize.
+        // Every read is live; there is no caching layer here to go stale (Task F5).
+        _deepSlumberService = new DeepSlumberService(_inventoryProbe);
+
         // Phase 7 Iter 2: real IModuleEquip backed by PandaModuleEquipProbe.
         // It dispatches equip/uninstall through the game's Lua VM
         // (ModVM.AsyncEquipMod via the LuaState bridge) and polls the inventory

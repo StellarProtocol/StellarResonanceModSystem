@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Stellar.Abstractions.Domain.DeepSlumber;
 using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -28,7 +29,7 @@ namespace Stellar.Infrastructure.Game;
 /// public read API, each forwarded to the owning collaborator. The Host wiring
 /// (ctor + Start surface) is unchanged by the split.</para>
 /// </summary>
-internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
+internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe, IDeepSlumberProbe
 {
     // Cross-thread mutable state shared by the pull-read and stub-capture
     // concerns (equipped snapshot + captured CharSerialize latch + capture-hook
@@ -160,4 +161,12 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
         ResolvePlanLoadouts(
             IReadOnlyList<(IReadOnlyDictionary<int, long> Equip, IReadOnlyDictionary<int, long> Mod)> plans)
         => _pullReader.ResolvePlanLoadouts(plans);
+
+    /// <summary>True once the live CharSerialize container is reachable — forwarded to the pull-read
+    /// collaborator's already-resolved accessor (see <see cref="TryGetLiveCharSerialize"/>).</summary>
+    public bool IsResolved => _pullReader.TryGetLiveCharSerialize() is not null;
+
+    /// <summary>Reads the full live Deep-Slumber Psychoscope (season cultivate) state, or <c>null</c>
+    /// when unresolved / not yet synced. Forwarded to the pull-read collaborator.</summary>
+    public DeepSlumberState? Read() => _pullReader.ReadDeepSlumber();
 }

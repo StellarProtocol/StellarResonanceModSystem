@@ -85,6 +85,7 @@ internal sealed class PerPluginServices : IPluginServices
     public ILua Lua => _shared.Lua;
     public IHarmonyHost Harmony => _harmony ?? _shared.Harmony;
     public ILocalization Localization => _localization ?? _shared.Localization;
+    public IDeepSlumber DeepSlumber => _shared.DeepSlumber;
 }
 
 /// <summary>
