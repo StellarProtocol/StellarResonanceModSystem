@@ -170,4 +170,107 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Equal(0, live.ProfessionId);
         Assert.Null(live.TalentNodes);
     }
+
+    // ── Deep-Slumber (season cultivate) rows — the Lua-bridge read (owner-verified gap 2026-08-19:
+    // the C# CharSerialize mirror populates lazily; this reads the login-populated Lua mirror instead
+    // via the SAME refresh chunk/global) ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParsesDeepSlumberHappyPathWithTwoLinesAndOneInactiveArea()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "CUR=1\n1\tAtk\t2\t104\n" +
+            "DSLV\t93:65,94:10\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001\t\t21:4\n" +
+            "DSA\t93\t3\t2\t0\t0\t\t\t\n" +
+            "DSA\t94\t1\t1\t1\t50\t\t100:2000\t");
+
+        Assert.NotNull(state);
+        Assert.Equal(2, state!.SeasonLevels.Count);
+        Assert.Equal(new[] { 93, 65 }, state.SeasonLevels[0]);
+        Assert.Equal(new[] { 94, 10 }, state.SeasonLevels[1]);
+
+        Assert.Equal(2, state.Lines.Count);   // two distinct (lineId, subType) groups
+        var line93 = state.Lines[0];
+        Assert.Equal(93, line93.LineId);
+        Assert.Equal(3, line93.SubType);
+        Assert.Equal(2, line93.Areas.Count);
+
+        var activeArea = line93.Areas[0];
+        Assert.Equal(1, activeArea.AreaId);
+        Assert.True(activeArea.IsActive);
+        Assert.Equal(120, activeArea.Score);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(activeArea.BigNodes));
+        Assert.Empty(activeArea.MiddleNodes);
+        Assert.Equal(new[] { 21, 4 }, Assert.Single(activeArea.NormalNodes));
+
+        var inactiveArea = line93.Areas[1];
+        Assert.Equal(2, inactiveArea.AreaId);
+        Assert.False(inactiveArea.IsActive);
+        Assert.Equal(0, inactiveArea.Score);
+        Assert.Empty(inactiveArea.BigNodes);
+        Assert.Empty(inactiveArea.MiddleNodes);
+        Assert.Empty(inactiveArea.NormalNodes);
+
+        var line94 = state.Lines[1];
+        Assert.Equal(94, line94.LineId);
+        Assert.Equal(1, line94.SubType);
+        var area94 = Assert.Single(line94.Areas);
+        Assert.Equal(1, area94.AreaId);
+        Assert.True(area94.IsActive);
+        Assert.Equal(50, area94.Score);
+        Assert.Empty(area94.BigNodes);
+        Assert.Equal(new[] { 100, 2000 }, Assert.Single(area94.MiddleNodes));
+        Assert.Empty(area94.NormalNodes);
+    }
+
+    [Fact]
+    public void AbsentDslvRowYieldsNullDeepSlumberState()
+    {
+        // An OLD dump predating this enrichment (no DSLV/DSA rows at all) must parse to null — not an
+        // empty-but-real state — so IDeepSlumber correctly reports "not read yet", never "genuinely
+        // empty".
+        var state = PandaLoadoutProbe.ParseDeepSlumber("CUR=1\n1\tAtk\t2\t104\nLIVE\t\t\t2\t104\t");
+
+        Assert.Null(state);
+    }
+
+    [Fact]
+    public void EmptyDslvPayloadWithNoDsaRowsYieldsGenuinelyEmptyState()
+    {
+        // PINNED CHOICE: the refresh chunk ALWAYS emits the "DSLV" row, even with an empty payload —
+        // its PRESENCE (not its content) is what distinguishes a genuinely-empty season state from an
+        // old dump. No DSA rows either → an all-empty (never null) DeepSlumberState.
+        var state = PandaLoadoutProbe.ParseDeepSlumber("CUR=1\n1\tAtk\t2\t104\nDSLV\t");
+
+        Assert.NotNull(state);
+        Assert.Empty(state!.SeasonLevels);
+        Assert.Empty(state.Lines);
+    }
+
+    [Fact]
+    public void MalformedDeepSlumberNodePairsAreSkippedNotThrown()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:65\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001,junk,:99,22:\t\t");
+
+        var area = Assert.Single(Assert.Single(state!.Lines).Areas);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(area.BigNodes));
+    }
+
+    [Fact]
+    public void MalformedDeepSlumberIdColumnsDropTheWholeRowNotThrown()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:sixty-five,94:10\n" +
+            "DSA\t93\tX\t1\t1\t120\n" +          // non-numeric subType -> dropped
+            "DSA\tnotanumber\t3\t1\t1\t120\n" +  // non-numeric lineId -> dropped
+            "DSA\t95\t1\tnotanumber\n" +         // non-numeric areaId -> dropped
+            "DSA\t95\t1");                       // too few columns (<4) -> dropped
+
+        Assert.NotNull(state);
+        Assert.Equal(new[] { 94, 10 }, Assert.Single(state!.SeasonLevels));   // "93:sixty-five" skipped
+        Assert.Empty(state.Lines);
+    }
 }

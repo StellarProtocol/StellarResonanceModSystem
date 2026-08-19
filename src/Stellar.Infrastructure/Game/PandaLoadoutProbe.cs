@@ -62,7 +62,10 @@ internal readonly record struct ParsedPlan(
 ///
 /// <para>SOLID partial layout — Lua-bridge reflection + chunk builders + Lua-global
 /// reads live in <c>PandaLoadoutProbe.Resolution.cs</c>; gated per-event logging in
-/// <c>PandaLoadoutProbe.Diagnostics.cs</c>.</para>
+/// <c>PandaLoadoutProbe.Diagnostics.cs</c>. The Deep-Slumber (season cultivate)
+/// <see cref="Stellar.Application.Abstractions.IDeepSlumberProbe"/> reader — riding the SAME refresh
+/// chunk/global — lives in <c>PandaLoadoutProbe.DeepSlumber.cs</c> +
+/// <c>PandaLoadoutProbe.DeepSlumber.Diagnostics.cs</c>.</para>
 /// </summary>
 internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 {
@@ -260,6 +263,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _currentId = current;
         _parsedPlans = plans;
         ReadLiveLine(raw!);                    // CURRENT class's live equipped set + talents (overlay + no-plan source)
+        UpdateDeepSlumberState(raw!);           // Deep-Slumber Psychoscope (season cultivate) via the SAME Lua bridge
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here

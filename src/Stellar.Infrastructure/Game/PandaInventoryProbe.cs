@@ -29,7 +29,7 @@ namespace Stellar.Infrastructure.Game;
 /// public read API, each forwarded to the owning collaborator. The Host wiring
 /// (ctor + Start surface) is unchanged by the split.</para>
 /// </summary>
-internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe, IDeepSlumberProbe
+internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
 {
     // Cross-thread mutable state shared by the pull-read and stub-capture
     // concerns (equipped snapshot + captured CharSerialize latch + capture-hook
@@ -166,7 +166,16 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe, ID
     /// collaborator's already-resolved accessor (see <see cref="TryGetLiveCharSerialize"/>).</summary>
     public bool IsResolved => _pullReader.TryGetLiveCharSerialize() is not null;
 
-    /// <summary>Reads the full live Deep-Slumber Psychoscope (season cultivate) state, or <c>null</c>
-    /// when unresolved / not yet synced. Forwarded to the pull-read collaborator.</summary>
-    public DeepSlumberState? Read() => _pullReader.ReadDeepSlumber();
+    /// <summary>
+    /// UNUSED / demoted (owner-verified 2026-08-19) — no longer wired to <c>IDeepSlumberProbe</c>.
+    /// This C# <c>CharSerialize</c> reflection mirror populates LAZILY (empty until the player opens
+    /// the Psychoscope UI at least once this session), so a fresh session's archive uploaded no
+    /// Deep-Slumber block. <c>Host</c> now wires <c>DeepSlumberService</c> to
+    /// <see cref="PandaLoadoutProbe"/>'s Lua-bridge reader instead (see
+    /// <c>Stellar.Host.Wiring.Loadout.cs</c>), which reads the SAME containers via the game's Lua
+    /// mirror — populated at login, the source the game's own season views read. Kept (not deleted)
+    /// as a reflection-walk reference / potential fallback; forwarded to the pull-read collaborator,
+    /// which still owns the reflection walk.
+    /// </summary>
+    internal DeepSlumberState? Read() => _pullReader.ReadDeepSlumber();
 }
