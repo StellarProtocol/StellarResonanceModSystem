@@ -137,6 +137,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
     public int? ReadCurrentIndex() => _currentId;
 
+    // The live line (ReadLiveLine) is re-read on every new parse; profession 0 = no LIVE row yet.
+    public LiveLoadoutState? ReadLiveState()
+        => _liveProfessionId == 0
+            ? null
+            : new LiveLoadoutState(_liveProfessionId, _liveTalentStageId, _liveTalentNodes);
+
     public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
     {
         if (ct.IsCancellationRequested)

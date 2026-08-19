@@ -20,6 +20,12 @@ public interface ILoadout
     /// <summary>Index of the currently-active loadout, or null if none/unknown.</summary>
     int? CurrentIndex { get; }
 
+    /// <summary>The local player's LIVE class + talents (never from a saved plan), or null until the
+    /// live read resolves in-world. Refreshed with the loadout data; a talent respec re-fires the
+    /// refresh via the framework's dirty-delta trigger, so re-read after
+    /// <see cref="IInventory.SelfGearChanged"/>.</summary>
+    LiveLoadoutState? LiveState { get; }
+
     /// <summary>Triggers the game's native switch to the loadout identified by <paramref name="index"/>.</summary>
     /// <param name="index">A <see cref="LoadoutSlot.Index"/> value.</param>
     /// <param name="ct">Cancels the request before dispatch.</param>

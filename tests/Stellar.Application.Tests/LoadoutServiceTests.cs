@@ -17,10 +17,12 @@ public sealed class LoadoutServiceTests
         public int? Current;
         public int AppliedIndex = -1;
         public LoadoutResult ApplyReturns = LoadoutResult.Success;
+        public LiveLoadoutState? LiveState;
 
         public bool IsResolved => Resolved;
         public IReadOnlyList<LoadoutEntry> ReadLoadouts() => Entries;
         public int? ReadCurrentIndex() => Current;
+        public LiveLoadoutState? ReadLiveState() => LiveState;
         public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
         {
             AppliedIndex = index;
@@ -85,5 +87,15 @@ public sealed class LoadoutServiceTests
         var probe = new FakeProbe { Resolved = false };
         var svc = new LoadoutService(probe);
         Assert.False(svc.IsAvailable);
+    }
+
+    [Fact]
+    public void LiveState_PassesThroughProbe_AndNullWhenUnresolved()
+    {
+        var probe = new FakeProbe();
+        var service = new LoadoutService(probe);
+        Assert.Null(service.LiveState);
+        probe.LiveState = new LiveLoadoutState(5, 500, new[] { 1, 2, 3 });
+        Assert.Same(probe.LiveState, service.LiveState);
     }
 }
