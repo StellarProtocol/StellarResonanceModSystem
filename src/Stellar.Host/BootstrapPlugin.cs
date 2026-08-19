@@ -83,6 +83,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaTeamControlProbe? _teamControlProbe;
     private PartyControlService? _partyControlService;
     private ResonanceService? _resonanceService;   // self equipped Battle Imagines (CharSerialize.resonance)
+    private DeepSlumberService? _deepSlumberService;   // live Deep-Slumber Psychoscope (season cultivate)
     private double _inventoryAccumSeconds;   // time-based 1 Hz inventory poll (rate-independent)
 
     // ── GameData services (Wiring.GameData.cs / Wiring.GameData.Tick.cs) ───

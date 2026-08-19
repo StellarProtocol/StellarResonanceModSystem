@@ -256,4 +256,34 @@ public sealed class ContainerDirtyDeltaReaderTests
         Assert.True(delta.Touched);
         Assert.Equal(42L, delta.AddsAndUpdates[4]);
     }
+
+    [Fact]
+    public void TouchesTalents_TrueForProfessionListDelta()
+        => Assert.True(ContainerDirtyDeltaReader.TouchesTalents(
+            DeltaBytes.CharSerializeWithField(61)));
+
+    [Fact]
+    public void TouchesSeasonCultivate_TrueForSeasonCultivateDelta()
+        => Assert.True(ContainerDirtyDeltaReader.TouchesSeasonCultivate(
+            DeltaBytes.CharSerializeWithField(101)));
+
+    [Fact]
+    public void TouchesField_FalseForUntouchedField_AndMalformed()
+    {
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(
+            DeltaBytes.CharSerializeWithField(12), 61));
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(null, 61));
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(new byte[3], 61));
+    }
+
+    [Fact]
+    public void TouchesField_MatchesAFieldAfterASkippedField()
+    {
+        // Field 12 (equip) carries a non-empty skippable body and comes first; field 61
+        // (professionList / talents) follows it. TouchesTalents must skip past field 12's
+        // container and still match field 61 — a positive case for the skip-then-continue path
+        // that Read_SkipsUnknownTopLevelField_BeforeMod already covers for ContainerDirtyDeltaReader.Read.
+        Assert.True(ContainerDirtyDeltaReader.TouchesTalents(
+            DeltaBytes.CharSerializeWithFieldThenField(12, 61)));
+    }
 }

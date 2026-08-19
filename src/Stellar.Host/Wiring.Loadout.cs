@@ -37,6 +37,13 @@ public sealed partial class BootstrapPlugin
         _inventoryService!.SelfGearChanged += _loadoutProbe.OnGearChanged;
         _loadoutService = new LoadoutService(_loadoutProbe);
 
+        // Deep-Slumber Psychoscope (season cultivate) — the SAME loadout probe (IDeepSlumberProbe) reads
+        // it via the Lua bridge's on-demand refresh chunk (DSLV/DSA rows), NOT the C# CharSerialize
+        // reflection mirror PandaInventoryProbe used to serve this from: that mirror populates LAZILY
+        // (empty until the player opens the Psychoscope UI this session), so a fresh-session archive
+        // uploaded no Deep-Slumber block. The Lua mirror is populated at login (owner-verified 2026-08-19).
+        _deepSlumberService = new DeepSlumberService(_loadoutProbe);
+
         // Party-id reconnect refresher (built here for the shared typeRegistry + Lua bridge; _partyService
         // and _dungeonStateService are already constructed in BuildCoreServices). Reads the live run id +
         // party id each tick and, in a dungeon with no party id yet, fires WorldProxy.GetTeamInfo.

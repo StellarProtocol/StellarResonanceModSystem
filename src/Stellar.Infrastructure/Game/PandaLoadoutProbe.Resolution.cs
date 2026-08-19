@@ -248,6 +248,10 @@ internal sealed partial class PandaLoadoutProbe
         " local lstage=0 local lnodes=\"\"" +
         " pcall(function() local ti=((cs.professionList).talentList)[lp] if ti~=nil then lstage=ti.talentStageCfgId or 0 if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do lnodes=(lnodes==\"\" and tostring(nid)) or (lnodes..\",\"..tostring(nid)) end end end end)" +
         " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm..\"\\t\"..tostring(lp)..\"\\t\"..tostring(lstage)..\"\\t\"..lnodes" +
+        // Deep-Slumber Psychoscope section — split into its own partial (DeepSlumberChunk.cs) purely
+        // for file-size (STELLAR guardrail); see DeepSlumberChunkFragment there for the full root-cause
+        // writeup (owner run sea/O1jJepsgKC, 2026-08-20).
+        DeepSlumberChunkFragment +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

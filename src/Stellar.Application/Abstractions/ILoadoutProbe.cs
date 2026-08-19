@@ -18,6 +18,10 @@ internal interface ILoadoutProbe
     /// <summary>The current loadout id, or null if none/unknown.</summary>
     int? ReadCurrentIndex();
 
+    /// <summary>The local player's live class + talents from the LIVE line, or null when the live
+    /// read has not resolved yet.</summary>
+    LiveLoadoutState? ReadLiveState();
+
     /// <summary>Dispatch the native switch to <paramref name="index"/> (a loadout id).</summary>
     Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct);
 }

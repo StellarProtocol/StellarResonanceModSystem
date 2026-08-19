@@ -23,6 +23,10 @@ public sealed partial class BootstrapPlugin
         // CharSerialize.resonance (field 28) off the same latched CharSerialize.
         _resonanceService = new ResonanceService(_inventoryProbe);
 
+        // Deep-Slumber Psychoscope (season cultivate) is now wired in BuildLoadoutServices, off the
+        // Lua-bridge reader on _loadoutProbe — the C# CharSerialize mirror this probe would otherwise
+        // walk populates LAZILY (owner-verified 2026-08-19; see Wiring.Loadout.cs).
+
         // Phase 7 Iter 2: real IModuleEquip backed by PandaModuleEquipProbe.
         // It dispatches equip/uninstall through the game's Lua VM
         // (ModVM.AsyncEquipMod via the LuaState bridge) and polls the inventory

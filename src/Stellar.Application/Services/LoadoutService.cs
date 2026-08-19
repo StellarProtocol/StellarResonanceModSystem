@@ -27,6 +27,8 @@ internal sealed class LoadoutService : ILoadout
 
     public int? CurrentIndex => _currentIndex;
 
+    public LiveLoadoutState? LiveState => _probe.ReadLiveState();
+
     public event Action? LoadoutsChanged;
 
     public Task<LoadoutResult> ApplyAsync(int index, CancellationToken ct = default)

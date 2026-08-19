@@ -62,6 +62,9 @@ public interface IInventory
     /// A class swap re-syncs the new class's gear a moment after the profession flips,
     /// so consumers that snapshot per-class gear should re-read on this event rather than
     /// at the profession-change instant (the gear is stale then).
+    /// <para>Also fires on a talent dirty delta (respec / stage switch) and on a Deep-Slumber
+    /// season-cultivate edit — it is the local player's BUILD-state change signal, not gear-only.
+    /// Consumers that snapshot talents or Deep-Slumber state should re-read on it.</para>
     /// <para><b>Threading:</b> raised on the NETWORK/SYNC thread, NOT the game Update
     /// thread. Handlers MUST be minimal and thread-safe (e.g. set a volatile flag) and
     /// MUST NOT read game state (IL2CPP) from the handler — defer that to the game tick.</para></summary>

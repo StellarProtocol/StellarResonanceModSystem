@@ -49,6 +49,7 @@ internal sealed class PluginServices : IPluginServices
     public ILua Lua { get; }
     public IHarmonyHost Harmony { get; }
     public ILocalization Localization { get; }
+    public IDeepSlumber DeepSlumber { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -94,7 +95,8 @@ internal sealed class PluginServices : IPluginServices
         IPluginDataStore data,
         ILua lua,
         IHarmonyHost harmony,
-        ILocalization localization)
+        ILocalization localization,
+        IDeepSlumber deepSlumber)
     {
         Log = log;
         Framework = framework;
@@ -140,5 +142,6 @@ internal sealed class PluginServices : IPluginServices
         Lua = lua;
         Harmony = harmony;
         Localization = localization;
+        DeepSlumber = deepSlumber;
     }
 }
