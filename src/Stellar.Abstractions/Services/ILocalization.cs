@@ -6,12 +6,12 @@ namespace Stellar.Abstractions.Services;
 /// Localizes this plugin's own UI text. Resolves a stable structured key to the active UI
 /// language, falling back to English and then to the key literal. Scoped to the calling
 /// plugin's own catalog (like <see cref="IPluginLog"/>) — keys never collide across plugins.
-/// Ship four <c>Lang/&lt;code&gt;.json</c> catalogs (<c>en</c>, <c>ja</c>, <c>th</c>, <c>id</c>)
+/// Ship five <c>Lang/&lt;code&gt;.json</c> catalogs (<c>en</c>, <c>ja</c>, <c>th</c>, <c>id</c>, <c>fil</c>)
 /// as <c>EmbeddedResource</c> in your plugin; the framework auto-discovers them at load.
 /// </summary>
 public interface ILocalization
 {
-    /// <summary>Active UI language code: <c>"en"</c>, <c>"ja"</c>, <c>"th"</c> or <c>"id"</c>.</summary>
+    /// <summary>Active UI language code: <c>"en"</c>, <c>"ja"</c>, <c>"th"</c>, <c>"id"</c> or <c>"fil"</c>.</summary>
     string Language { get; }
 
     /// <summary>Raised after the active language changes (live switch). Rebuild any UI text you

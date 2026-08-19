@@ -18,7 +18,7 @@ internal sealed class ThemesPanel
 
     // Language dropdown: setting codes (index-aligned to the option labels). Index 0 ("follow") is the only
     // descriptive option (localized); indices 1-4 are language NAMES shown in their own script in every locale.
-    private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id" };
+    private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id", "fil" };
     // Options cached + rebuilt only when the active language changes (the "follow" label localizes), so the
     // per-frame dropdown poll doesn't allocate a fresh array.
     private string[]? _langOptCache;
@@ -30,7 +30,7 @@ internal sealed class ThemesPanel
             if (_langOptCache == null || _langOptLang != _text.Language)
             {
                 _langOptLang = _text.Language;
-                _langOptCache = new[] { _text.T("themes.language.follow"), "English", "日本語", "ไทย", "Bahasa Indonesia" };
+                _langOptCache = new[] { _text.T("themes.language.follow"), "English", "日本語", "ไทย", "Bahasa Indonesia", "Filipino" };
             }
             return _langOptCache;
         }

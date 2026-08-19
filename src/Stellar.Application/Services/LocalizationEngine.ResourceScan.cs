@@ -10,7 +10,7 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal static class LocalizationResourceScan
 {
-    private static readonly string[] Codes = { "en", "ja", "th", "id" };
+    private static readonly string[] Codes = { "en", "ja", "th", "id", "fil" };
 
     /// <summary>The supported code if <paramref name="name"/> ends with
     /// <c>Lang.&lt;code&gt;.json</c> (ordinal, case-insensitive); otherwise <c>null</c>.</summary>

@@ -19,7 +19,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
 {
     private const string LanguageKey = "language";
     private const string Follow = "follow";
-    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal) { "en", "ja", "th", "id" };
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal) { "en", "ja", "th", "id", "fil" };
 
     // ns → (langCode → (key → value))
     private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _catalogs = new(StringComparer.Ordinal);
