@@ -61,6 +61,8 @@ internal static partial class ContainerDirtyDeltaReader
     private const int FieldMod = 57;        // CharSerialize.mod
     private const int FieldModSlots = 1;    // Mod.mod_slots (map<int32,int64>)
     private const int FieldEquip = 12;      // CharSerialize.equip (EquipList) — the equipped-gear mapping
+    private const int FieldProfessionList = 61;       // CharSerialize.professionList (talents)
+    private const int FieldSeasonCultivate = 101;     // CharSerialize.seasonCultivateLineData (Deep-Slumber)
 
     private const int TagBegin = -2;
     private const int TagEnd = -3;
@@ -97,7 +99,20 @@ internal static partial class ContainerDirtyDeltaReader
     /// field 12). A read-only top-level field scan, DELIBERATELY separate from <see cref="Read"/> so the
     /// mod-slot decode path is untouched. Never throws — any malformed input returns false.
     /// </summary>
-    public static bool TouchesEquip(byte[]? buffer)
+    public static bool TouchesEquip(byte[]? buffer) => TouchesField(buffer, FieldEquip);
+
+    /// <summary>True when the delta touches the talent container (CharSerialize field 61 =
+    /// <c>professionList</c>) — a talent respec / stage switch.</summary>
+    public static bool TouchesTalents(byte[]? buffer) => TouchesField(buffer, FieldProfessionList);
+
+    /// <summary>True when the delta touches the Deep-Slumber season-cultivate container
+    /// (CharSerialize field 101 = <c>seasonCultivateLineData</c>) — a psychoscope node/card edit.</summary>
+    public static bool TouchesSeasonCultivate(byte[]? buffer) => TouchesField(buffer, FieldSeasonCultivate);
+
+    /// <summary>True when the delta's top-level CharSerialize field list contains
+    /// <paramref name="fieldNum"/>. Read-only scan, deliberately separate from <see cref="Read"/>
+    /// so the mod-slot decode path is untouched. Never throws — malformed input returns false.</summary>
+    public static bool TouchesField(byte[]? buffer, int fieldNum)
     {
         if (buffer is null || buffer.Length < 8) return false;
         try
@@ -107,7 +122,7 @@ internal static partial class ContainerDirtyDeltaReader
             var index = reader.ReadInt32();
             while (index > 0)
             {
-                if (index == FieldEquip) return true;
+                if (index == fieldNum) return true;
                 if (!TrySkipUnknownField(ref reader)) return false;
                 if (reader.Remaining < 4) break;
                 index = reader.ReadInt32();

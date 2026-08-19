@@ -63,4 +63,18 @@ internal sealed class DeltaBytes
 
     /// <summary>A field index entry (proto field number).</summary>
     public DeltaBytes FieldIndex(int index) => Int32(index);
+
+    /// <summary>Builds a minimal CharSerialize buffer containing a single field index
+    /// with an empty nested container — for testing top-level field scans like TouchesEquip,
+    /// TouchesTalents, etc.</summary>
+    public static byte[] CharSerializeWithField(int fieldNum)
+    {
+        return new DeltaBytes()
+            .Begin(0)           // CharSerialize container
+            .FieldIndex(fieldNum)
+            .Begin(0)           // empty nested container for this field
+            .End()
+            .End()
+            .ToArray();
+    }
 }

@@ -256,4 +256,23 @@ public sealed class ContainerDirtyDeltaReaderTests
         Assert.True(delta.Touched);
         Assert.Equal(42L, delta.AddsAndUpdates[4]);
     }
+
+    [Fact]
+    public void TouchesTalents_TrueForProfessionListDelta()
+        => Assert.True(ContainerDirtyDeltaReader.TouchesTalents(
+            DeltaBytes.CharSerializeWithField(61)));
+
+    [Fact]
+    public void TouchesSeasonCultivate_TrueForSeasonCultivateDelta()
+        => Assert.True(ContainerDirtyDeltaReader.TouchesSeasonCultivate(
+            DeltaBytes.CharSerializeWithField(101)));
+
+    [Fact]
+    public void TouchesField_FalseForUntouchedField_AndMalformed()
+    {
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(
+            DeltaBytes.CharSerializeWithField(12), 61));
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(null, 61));
+        Assert.False(ContainerDirtyDeltaReader.TouchesField(new byte[3], 61));
+    }
 }
