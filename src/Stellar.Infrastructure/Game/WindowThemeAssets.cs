@@ -40,7 +40,7 @@ internal sealed class WindowThemeAssets
     private const int SwatchTexSize = 16;
     private const int SwatchRadius = 3;
 
-    private Texture2D? _frameTex, _btnTex, _btnAccentTex, _capsuleTex, _panelTex, _hgradTex, _titleTex, _swatchTex, _btnGlassTex;
+    private Texture2D? _frameTex, _btnTex, _btnAccentTex, _capsuleTex, _panelTex, _hgradTex, _titleTex, _swatchTex, _btnGlassTex, _cdOutlineTex;
 
     // Live chrome-style providers (set by the renderer → IChromeStyle). The window button picks its sprite
     // from the global Button style when the element doesn't pin one; re-evaluated on a theme change (re-skin).
@@ -56,6 +56,7 @@ internal sealed class WindowThemeAssets
     public Sprite? Capsule { get; private set; }        // toggle track + knob (tinted per state); also the mint dot
     public Sprite? PanelBg { get; private set; }        // translucent dark rounded body (Tracker/Party overlay chromes)
     public Sprite? SwatchBg { get; private set; }       // 3-radius rounded square — theme-editor colour chip (tinted at use-site)
+    public Sprite? CdOutline { get; private set; }      // white rounded ring (radius 8, matches PanelBg) — CooldownTile border, tinted a darkened accent at use-site
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;
@@ -186,6 +187,11 @@ internal sealed class WindowThemeAssets
         {
             _swatchTex = RoundedTextureBaker.Rounded(SwatchTexSize, SwatchRadius, new ColorRgba(1f, 1f, 1f, 1f));
             SwatchBg = Sliced(_swatchTex, SwatchRadius + 1);
+        }
+        if (CdOutline == null)   // CooldownTile border ring — white/tint-through, radius 8 (same shape as PanelBg)
+        {
+            _cdOutlineTex = RoundedTextureBaker.Rounded(16, 8, new ColorRgba(1f, 1f, 1f, 1f));
+            CdOutline = Sliced(_cdOutlineTex, 8);
         }
     }
 

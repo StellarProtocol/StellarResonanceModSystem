@@ -17,6 +17,9 @@ internal sealed partial class WindowBuilder
 {
     private const float CdTileIcon = 44f;
     private static Color CdCol(ColorRgba c) => new(c.R, c.G, c.B, c.A);
+    // Owner 2026-08-19: the tile BORDER is a DARKENED type colour (dark blue/green/red), drawn on a neutral
+    // tint-through ring (CdOutline) so the hue shows — tinting the near-black PanelBg only ever read as grey.
+    private static Color CdBorder(ColorRgba c) => new(c.R * 0.6f, c.G * 0.6f, c.B * 0.6f, 1f);
     private static readonly Color CdInsetBg = new(0.10f, 0.12f, 0.16f, 0.95f);   // dark tile body inside the outline
     private static readonly Color CdLoadBg  = new(0.16f, 0.20f, 0.26f, 1f);      // neutral square while art loads / is null
     private static readonly Color CdStarCol = new(1f, 0.81f, 0.30f, 1f);         // imagine ★ gold
@@ -80,7 +83,7 @@ internal sealed partial class WindowBuilder
         var outlineGo = UGuiPrimitives.NewChild("Outline", iconBox);
         UGuiPrimitives.Stretch(outlineGo);
         var outline = outlineGo.AddComponent<Image>();
-        outline.sprite = _assets.PanelBg; outline.type = Image.Type.Sliced; outline.raycastTarget = false;
+        outline.sprite = _assets.CdOutline; outline.type = Image.Type.Sliced; outline.raycastTarget = false;
 
         var insetGo = UGuiPrimitives.NewChild("Inset", iconBox);
         var irt = insetGo.GetComponent<RectTransform>();
@@ -152,7 +155,7 @@ internal sealed partial class WindowBuilder
             {
                 _initAccent = true; _accent = accent;
                 var c = CdCol(accent);
-                Outline.color = c; FillImg.color = c; Secs.color = c;
+                Outline.color = CdBorder(accent); FillImg.color = c; Secs.color = c;
             }
 
             var f = El.Fill01(); if (f < 0f) f = 0f; else if (f > 1f) f = 1f;
