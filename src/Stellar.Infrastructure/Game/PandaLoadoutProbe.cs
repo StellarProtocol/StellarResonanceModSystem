@@ -146,6 +146,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
             ? null
             : new LiveLoadoutState(_liveProfessionId, _liveTalentStageId, _liveTalentNodes);
 
+    // ClearSession() (logout reset) lives in PandaLoadoutProbe.Session.cs — kept out of this file to
+    // stay under the 500-LoC standards gate.
+
     public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
     {
         if (ct.IsCancellationRequested)

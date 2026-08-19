@@ -4,8 +4,11 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
-/// <summary>Wraps <see cref="IDeepSlumberProbe"/> to expose <see cref="IDeepSlumber"/>. Stateless
-/// passthrough — every read is live (capture-is-default-on doctrine; no caching layer to go stale).</summary>
+/// <summary>Wraps <see cref="IDeepSlumberProbe"/> to expose <see cref="IDeepSlumber"/>. Passthrough —
+/// this service holds no state of its own; every read serves the probe's last on-demand parse
+/// (capture-is-default-on doctrine). The probe clears its parsed state on logout
+/// (<c>PandaLoadoutProbe.ClearSession</c>), so a relog never leaks the previous character's state
+/// through this passthrough.</summary>
 internal sealed class DeepSlumberService : IDeepSlumber
 {
     private readonly IDeepSlumberProbe _probe;

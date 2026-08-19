@@ -164,6 +164,7 @@ public sealed partial class BootstrapPlugin
         _inventoryService?.ClearSession();        // also empties the self-gear cache
         _resonanceService?.ClearSession();
         _loadoutService?.ClearSession();
+        _loadoutProbe?.ClearSession();             // parsed Deep-Slumber state + LIVE-line class/talents
         _socialDataCache?.ClearSession();
         _partyService?.ClearSession();
         _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns
