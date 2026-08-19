@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Stellar.Abstractions.Domain.DeepSlumber;
 using Stellar.Application.Abstractions;
 
@@ -23,10 +25,19 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaLoadoutProbe : IDeepSlumberProbe
 {
     private DeepSlumberState? _deepSlumberState;
+    private int? _lastDeepSlumberLineCount;
+    private IReadOnlyList<string> _lastDeepSlumberErrors = Array.Empty<string>();
 
     /// <summary>The current live Deep-Slumber state, or null before the first parse that carries a
     /// "DSLV" row (bridge unresolved, or a stale in-flight read from before this enrichment shipped).</summary>
     public DeepSlumberState? Read() => _deepSlumberState;
+
+    /// <summary>Tiny internal accessor for the raw "DSN"/"DSERR" diagnostic rows from the last refresh-
+    /// chunk parse (Task: DS iteration fix, owner run sea/O1jJepsgKC, 2026-08-20) — diagnostics-only,
+    /// never used for state-building. <c>LineCount</c> is null when no "DSN" row was present (an OLD
+    /// dump predating this enrichment); <c>Errors</c> is empty when every pcall'd section succeeded.</summary>
+    internal (int? LineCount, IReadOnlyList<string> Errors) LastDeepSlumberDiagnosticRows
+        => (_lastDeepSlumberLineCount, _lastDeepSlumberErrors);
 
     // Parses the DS rows out of the SAME raw dump ParseLoadoutData just decoded and latches the
     // result (mirrors how _loadouts/_currentId are replaced on every changed parse). Called once per
@@ -34,6 +45,8 @@ internal sealed partial class PandaLoadoutProbe : IDeepSlumberProbe
     private void UpdateDeepSlumberState(string raw)
     {
         _deepSlumberState = ParseDeepSlumber(raw);
-        LogDeepSlumberFirstRead(_deepSlumberState);   // no-op unless STELLAR_DIAGNOSTICS; non-latching on empty
+        (_lastDeepSlumberLineCount, _lastDeepSlumberErrors) = ParseDeepSlumberDiagnosticRows(raw);
+        // no-op unless STELLAR_DIAGNOSTICS; non-latching until the bridge has actually run once
+        LogDeepSlumberFirstRead(_deepSlumberState, _lastDeepSlumberLineCount, _lastDeepSlumberErrors);
     }
 }

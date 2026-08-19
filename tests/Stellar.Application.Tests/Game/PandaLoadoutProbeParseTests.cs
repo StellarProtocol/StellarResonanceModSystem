@@ -273,4 +273,52 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Equal(new[] { 94, 10 }, Assert.Single(state!.SeasonLevels));   // "93:sixty-five" skipped
         Assert.Empty(state.Lines);
     }
+
+    // ── "DSN"/"DSERR" diagnostic rows (Task: DS iteration fix, owner run sea/O1jJepsgKC, 2026-08-20) —
+    // the root cause was the game's zcontainer __pairs yielding nil values, so a plain "for k,v in
+    // pairs(m)" walk produced nothing with no error at all. The fixed chunk now walks keys-then-index
+    // and always appends "DSN\t<lineCount>" plus any "DSERR\t<section>\t<msg>" pcall failures. Neither
+    // row kind may affect ParseDeepSlumber's state-building — they are diagnostics-only, read back via
+    // ParseDeepSlumberDiagnosticRows instead. ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DsnAndDserrRowsAreIgnoredByParseDeepSlumberStateBuilding()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:65\n" +
+            "DSN\t1\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001\t\t21:4\n" +
+            "DSERR\tcultivateLines\tsome lua error");
+
+        Assert.NotNull(state);
+        Assert.Equal(new[] { 93, 65 }, Assert.Single(state!.SeasonLevels));
+        var area = Assert.Single(Assert.Single(state.Lines).Areas);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(area.BigNodes));
+    }
+
+    [Fact]
+    public void ParsesDeepSlumberDiagnosticRowsLineCountAndErrors()
+    {
+        var (lineCount, errors) = PandaLoadoutProbe.ParseDeepSlumberDiagnosticRows(
+            "DSLV\t93:65\n" +
+            "DSN\t7\n" +
+            "DSERR\tseasonLevel\tattempt to index a nil value\n" +
+            "DSERR\tcultivateLines\ttoo many results to unpack");
+
+        Assert.Equal(7, lineCount);
+        Assert.Equal(2, errors.Count);
+        Assert.Equal("seasonLevel\tattempt to index a nil value", errors[0]);
+        Assert.Equal("cultivateLines\ttoo many results to unpack", errors[1]);
+    }
+
+    [Fact]
+    public void AbsentDsnRowYieldsNullLineCountAndNoErrors()
+    {
+        // An OLD dump predating this enrichment (no DSN/DSERR rows at all) must parse to a null line
+        // count and an empty error list, never throw.
+        var (lineCount, errors) = PandaLoadoutProbe.ParseDeepSlumberDiagnosticRows("DSLV\t93:65\nDSA\t93\t3\t1\t1\t120");
+
+        Assert.Null(lineCount);
+        Assert.Empty(errors);
+    }
 }

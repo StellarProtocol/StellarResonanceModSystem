@@ -199,6 +199,35 @@ internal sealed partial class PandaLoadoutProbe
         return new DeepSlumberArea(areaId, isActive, score, big, middle, normal);
     }
 
+    /// <summary>Pure diagnostic-row extractor for the "DSN"/"DSERR" rows the refresh chunk appends
+    /// alongside DSLV/DSA (Task: DS iteration fix, owner run sea/O1jJepsgKC, 2026-08-20).
+    /// <see cref="ParseDeepSlumber"/> ignores both prefixes for state-building — they exist purely so a
+    /// walk that produced nothing tells the diagnostics partial exactly WHICH level failed:
+    /// "DSN\t&lt;lineCount&gt;" is the number of top-level seasonCultivateLineMap entries the outer walk
+    /// iterated, and each "DSERR\t&lt;section&gt;\t&lt;message&gt;" row is one pcall failure. Pure/static/
+    /// internal — no Lua bridge needed to exercise it.</summary>
+    internal static (int? LineCount, IReadOnlyList<string> Errors) ParseDeepSlumberDiagnosticRows(string raw)
+    {
+        int? lineCount = null;
+        List<string>? errors = null;
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.StartsWith("DSN\t", StringComparison.Ordinal))
+            {
+                if (int.TryParse(line.AsSpan(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                {
+                    lineCount = n;
+                }
+                continue;
+            }
+            if (line.StartsWith("DSERR\t", StringComparison.Ordinal))
+            {
+                (errors ??= new List<string>()).Add(line.Substring(6));
+            }
+        }
+        return (lineCount, errors ?? (IReadOnlyList<string>)Array.Empty<string>());
+    }
+
     // Parses a "k:v,k:v" list into [k,v] pairs (order-preserving list, not a map — the same shape
     // DeepSlumberArea/DeepSlumberState declare). Mirrors ParseUuidMap's idiom above. Malformed pairs
     // are skipped, never thrown; an empty/absent field yields the shared empty list (no allocation).

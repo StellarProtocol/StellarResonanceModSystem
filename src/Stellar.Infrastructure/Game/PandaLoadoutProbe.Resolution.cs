@@ -248,42 +248,10 @@ internal sealed partial class PandaLoadoutProbe
         " local lstage=0 local lnodes=\"\"" +
         " pcall(function() local ti=((cs.professionList).talentList)[lp] if ti~=nil then lstage=ti.talentStageCfgId or 0 if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do lnodes=(lnodes==\"\" and tostring(nid)) or (lnodes..\",\"..tostring(nid)) end end end end)" +
         " out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm..\"\\t\"..tostring(lp)..\"\\t\"..tostring(lstage)..\"\\t\"..lnodes" +
-        // Deep-Slumber Psychoscope (season cultivate) — owner-verified gap (2026-08-19): the C#
-        // reflection mirror (PandaInventoryPullReader.ReadDeepSlumber) populates the SAME containers
-        // LAZILY (empty until the player opens the Psychoscope UI at least once this session), so a
-        // fresh session's archive uploaded no Deep-Slumber block. This reads the LUA mirror instead —
-        // populated at login, the same source the game's own season views read. Field names are the
-        // Lua mirror's lowercase-camel shape (recon-pinned), NOT the C# "__Value" forms the reflection
-        // walk uses. Two INDEPENDENT pcalls (season levels / cultivate lines) so a missing container on
-        // one side still yields the other's rows — never breaks the rest of this dump.
-        // "DSLV\t<seasonId>:<level>,..." — cs.seasonRoleLevelData.seasonRoleLevelMap.
-        " local dslv=\"\" pcall(function()" +
-        "  local srl=(cs.seasonRoleLevelData) and (cs.seasonRoleLevelData).seasonRoleLevelMap" +
-        "  if srl~=nil then for sid,sl in pairs(srl) do" +
-        "   dslv=(dslv==\"\" and \"\" or dslv..\",\")..tostring(sid)..\":\"..tostring(sl and sl.level or 0)" +
-        "  end end" +
-        " end)" +
-        " out=out..\"\\nDSLV\\t\"..dslv" +
-        // One "DSA\t<lineId>\t<subType>\t<areaId>\t<0|1 active>\t<score>\t<big>\t<middle>\t<normal>" row per
-        // (lineId, subType, areaId) variant — cs.seasonCultivateLineData.seasonCultivateLineMap ->
-        // cultivateLineMap (by subType) -> cultivateLineDataMap (by areaId); each node map serialized as
-        // "nodeId:value,..." (fantasyId / itemId / activeLevel for big / middle / normal respectively).
-        " pcall(function()" +
-        "  local scl=(cs.seasonCultivateLineData) and (cs.seasonCultivateLineData).seasonCultivateLineMap" +
-        "  if scl~=nil then for lid,ld in pairs(scl) do local clm=ld and ld.cultivateLineMap" +
-        "   if clm~=nil then for st,subd in pairs(clm) do local cldm=subd and subd.cultivateLineDataMap" +
-        "    if cldm~=nil then for aid,ar in pairs(cldm) do" +
-        "     local active=(ar and ar.isActive) and 1 or 0" +
-        "     local score=(ar and ar.activateEffectScore) or 0" +
-        "     local big=\"\" local bm=ar and ar.cultivateBigNodeMap" +
-        "     if bm~=nil then for nid,nv in pairs(bm) do big=(big==\"\" and \"\" or big..\",\")..tostring(nid)..\":\"..tostring(nv and nv.fantasyId or 0) end end" +
-        "     local mid=\"\" local mm=ar and ar.cultivateMiddleNodeMap" +
-        "     if mm~=nil then for nid,nv in pairs(mm) do mid=(mid==\"\" and \"\" or mid..\",\")..tostring(nid)..\":\"..tostring(nv and nv.itemId or 0) end end" +
-        "     local nor=\"\" local nm=ar and ar.cultivateNormalNodeMap" +
-        "     if nm~=nil then for nid,nv in pairs(nm) do nor=(nor==\"\" and \"\" or nor..\",\")..tostring(nid)..\":\"..tostring(nv and nv.activeLevel or 0) end end" +
-        "     out=out..\"\\nDSA\\t\"..tostring(lid)..\"\\t\"..tostring(st)..\"\\t\"..tostring(aid)..\"\\t\"..tostring(active)..\"\\t\"..tostring(score)..\"\\t\"..big..\"\\t\"..mid..\"\\t\"..nor" +
-        "    end end end end end end" +
-        " end)" +
+        // Deep-Slumber Psychoscope section — split into its own partial (DeepSlumberChunk.cs) purely
+        // for file-size (STELLAR guardrail); see DeepSlumberChunkFragment there for the full root-cause
+        // writeup (owner run sea/O1jJepsgKC, 2026-08-20).
+        DeepSlumberChunkFragment +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 
