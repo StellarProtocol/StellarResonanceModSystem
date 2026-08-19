@@ -19,9 +19,9 @@ internal sealed partial class WindowBuilder
     private static Color CdCol(ColorRgba c) => new(c.R, c.G, c.B, c.A);
     // Owner 2026-08-19: the tile BORDER is a DARKENED type colour (dark blue/green/red), drawn on a neutral
     // tint-through ring (CdOutline) so the hue shows — tinting the near-black PanelBg only ever read as grey.
-    private static Color CdBorder(ColorRgba c) => new(c.R * 0.6f, c.G * 0.6f, c.B * 0.6f, 1f);
-    private static readonly Color CdInsetBg = new(0.10f, 0.12f, 0.16f, 0.95f);   // dark tile body inside the outline
-    private static readonly Color CdLoadBg  = new(0.16f, 0.20f, 0.26f, 1f);      // neutral square while art loads / is null
+    private static Color CdBorder(ColorRgba c) => new(c.R * 0.45f, c.G * 0.45f, c.B * 0.45f, 1f);
+    private static readonly Color CdInsetBg = new(0f, 0f, 0f, 0.95f);            // black tile body behind the icon (owner 2026-08-19)
+    private static readonly Color CdLoadBg  = new(0f, 0f, 0f, 1f);               // black square while art loads / is null
     private static readonly Color CdStarCol = new(1f, 0.81f, 0.30f, 1f);         // imagine ★ gold
     private static readonly Color CdChgCol  = new(1f, 0.86f, 0.40f, 1f);         // charge badge gold
 
