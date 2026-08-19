@@ -12,21 +12,23 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 internal sealed class AboutPanel
 {
     private readonly ITheme _theme;
+    private readonly ILocalization _loc;
 
-    public AboutPanel(ITheme theme)
+    public AboutPanel(ITheme theme, ILocalization loc)
     {
         _theme = theme;
+        _loc = loc;
     }
 
     /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration). Same content,
     /// declarative — the framework renders it as native uGUI.</summary>
     public HudElement Describe() => new ColumnElement(new HudElement[]
     {
-        new TextElement(() => $"Framework version: {FrameworkVersion.Value}"),
-        new TextElement(() => "Dalamud-style mod framework for Blue Protocol: Star Resonance."),
+        new TextElement(() => _loc.TFormat("about.version", FrameworkVersion.Value)),
+        new TextElement(() => _loc.T("about.tagline")),
         new SeparatorElement(),
-        new TextElement(() => "Loaded plugins are listed in the Plugins panel."),
-        new TextElement(() => "Hotkeys can be rebound in the Hotkeys panel."),
+        new TextElement(() => _loc.T("about.plugins")),
+        new TextElement(() => _loc.T("about.hotkeys")),
     });
 
 }

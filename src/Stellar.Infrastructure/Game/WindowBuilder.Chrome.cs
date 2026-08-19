@@ -215,10 +215,18 @@ internal sealed partial class WindowBuilder
 
     private void BuildTitleText(WindowSpec spec, GameObject bar, WindowToken token)
     {
+        // Real bold in every script via the game-only TMP factory; legacy crisp Text when unavailable.
+        var h = TryBuildBoldTitle(bar.transform, spec.Title, Scaled(13), _assets.MenuText);
+        if (h != null)
+        {
+            token.ReskinActions.Add(() => { h.SetFontSize(Scaled(13)); h.SetColor(_assets.MenuText); });
+            return;
+        }
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
         var title = titleGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
         title.color = _assets.MenuText; title.text = spec.Title; title.raycastTarget = false;
+        title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, spec.Title);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
     }
 

@@ -40,7 +40,7 @@ internal sealed class WindowThemeAssets
     private const int SwatchTexSize = 16;
     private const int SwatchRadius = 3;
 
-    private Texture2D? _frameTex, _btnTex, _btnAccentTex, _capsuleTex, _panelTex, _hgradTex, _titleTex, _swatchTex, _btnGlassTex;
+    private Texture2D? _frameTex, _btnTex, _btnAccentTex, _capsuleTex, _panelTex, _hgradTex, _titleTex, _swatchTex, _btnGlassTex, _cdOutlineTex;
 
     // Live chrome-style providers (set by the renderer → IChromeStyle). The window button picks its sprite
     // from the global Button style when the element doesn't pin one; re-evaluated on a theme change (re-skin).
@@ -56,6 +56,7 @@ internal sealed class WindowThemeAssets
     public Sprite? Capsule { get; private set; }        // toggle track + knob (tinted per state); also the mint dot
     public Sprite? PanelBg { get; private set; }        // translucent dark rounded body (Tracker/Party overlay chromes)
     public Sprite? SwatchBg { get; private set; }       // 3-radius rounded square — theme-editor colour chip (tinted at use-site)
+    public Sprite? CdOutline { get; private set; }      // white rounded ring (radius 8, matches PanelBg) — CooldownTile border, tinted a darkened accent at use-site
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;
@@ -77,10 +78,25 @@ internal sealed class WindowThemeAssets
     private static bool _menuFontTried;
     public Font? MenuFont => _menuFont;
 
-    // Same fallback chain as ThemeRenderer.FontFamilyFallbacks (Noto first for the design target; the
-    // DejaVu/Liberation tail covers the Proton box; Arial is Unity's always-synthesised last resort).
+    /// <summary>Process-shared glyph-complete overlay font (Latin + CJK + Thai via the OS-font
+    /// fallback chain), for static text paths that have no <see cref="WindowThemeAssets"/> instance
+    /// (e.g. the native-UI-host label builders). Null only when OS-font resolution failed entirely,
+    /// in which case the caller keeps its builtin-Arial attempt. Main-thread only (lazy-inits the font).</summary>
+    public static Font? SharedMenuFont { get { EnsureFont(); return _menuFont; } }
+
+    // OS-font fallback chain: CreateDynamicFontFromOSFont renders each glyph from the first listed family
+    // that provides it, so the chain must cover every UI language Stellar localizes into (i18n P0):
+    // Latin (Noto Sans) → CJK for ja/zh (Noto Sans CJK JP/SC) → Thai for th (Noto Sans Thai/Thai UI) →
+    // the DejaVu/Liberation tail that covers the Proton box → Arial (Unity's always-synthesised last resort).
+    // Indonesian (id) is Latin, covered by Noto Sans. Without the Thai families, th text tofu'd (the chain
+    // had CJK but no Thai) — the glyph-coverage gate (i18n Task 0) added them.
     private static readonly string[] FontFamilies =
-        { "Noto Sans", "NotoSans", "Noto Sans CJK SC", "DejaVu Sans", "Liberation Sans", "Arial" };
+    {
+        "Noto Sans", "NotoSans",
+        "Noto Sans CJK JP", "Noto Sans CJK SC",
+        "Noto Sans Thai", "Noto Sans Thai UI",
+        "DejaVu Sans", "Liberation Sans", "Arial",
+    };
 
     private static void EnsureFont()
     {
@@ -171,6 +187,11 @@ internal sealed class WindowThemeAssets
         {
             _swatchTex = RoundedTextureBaker.Rounded(SwatchTexSize, SwatchRadius, new ColorRgba(1f, 1f, 1f, 1f));
             SwatchBg = Sliced(_swatchTex, SwatchRadius + 1);
+        }
+        if (CdOutline == null)   // CooldownTile border ring — white/tint-through, radius 8 (same shape as PanelBg)
+        {
+            _cdOutlineTex = RoundedTextureBaker.Rounded(16, 8, new ColorRgba(1f, 1f, 1f, 1f));
+            CdOutline = Sliced(_cdOutlineTex, 8);
         }
     }
 

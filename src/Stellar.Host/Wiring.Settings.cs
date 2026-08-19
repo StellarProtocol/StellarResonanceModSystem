@@ -35,15 +35,16 @@ public sealed partial class BootstrapPlugin
             return;
         }
 
+        var loc = _frameworkLocalization!;
         var panels = new SettingsPanelSet
         {
-            Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled),
-            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
-            Themes  = new ThemesPanel(_namedTheme, _namedTheme, _themeRenderer, _colorRegistry!, _customThemes!),
-            Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer),
-            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log, _layoutEditor),
-            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor),
-            About   = new AboutPanel(_themeRenderer),
+            Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled, loc),
+            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName, loc),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
+            Themes  = new ThemesPanel(_namedTheme, _themeRenderer, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
+            Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer, loc),
+            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log, _layoutEditor, loc),
+            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor, loc),
+            About   = new AboutPanel(_themeRenderer, loc),
         };
 
         RegisterSettingsHub(panels);
@@ -83,7 +84,12 @@ public sealed partial class BootstrapPlugin
     private void RegisterSettingsHub(SettingsPanelSet panels)
     {
         if (_windowService == null) return;
+        // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<0..6> preselects
+        // the hub tab at registration so a scenario can capture a specific panel (e.g. 2 = Themes).
         var tab = 0;
+        if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
+            && tabEnv is >= 0 and <= 6)
+            tab = tabEnv;
         var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
             new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
         // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
@@ -108,20 +114,21 @@ public sealed partial class BootstrapPlugin
             OnClose: () => _settingsHubControl?.SetVisible(false)));
     }
 
-    // Icon + label tabs (each: the panel's launcher icon + a label Button highlighted when active).
-    private static HudElement[] BuildHubTabs(System.Func<int> getTab, System.Action<int> setTab)
+    // Icon + label tabs (each: the panel's launcher icon + a localized label Button highlighted when active).
+    private HudElement[] BuildHubTabs(System.Func<int> getTab, System.Action<int> setTab)
     {
-        var tabs = new (string Label, string Icon)[]
+        var loc = _frameworkLocalization!;
+        var tabs = new (string Key, string Icon)[]
         {
-            ("Plugins", "plugins"), ("Layout", "layout"), ("Themes", "theme"),
-            ("Hotkeys", "hotkeys"), ("Game UI", "gameui"), ("Performance", "settings"), ("About", "about"),
+            ("tab.plugins", "plugins"), ("tab.layout", "layout"), ("tab.themes", "theme"),
+            ("tab.hotkeys", "hotkeys"), ("tab.gameui", "gameui"), ("tab.performance", "settings"), ("tab.about", "about"),
         };
         var els = new HudElement[tabs.Length];
         for (var i = 0; i < tabs.Length; i++)
         {
-            var idx = i; var (lbl, icon) = tabs[i];
+            var idx = i; var (key, icon) = tabs[i];
             // Icon INSIDE the button → co-centred with the label by the button layout (font-robust alignment).
-            els[i] = new ButtonElement(() => lbl, () => setTab(idx), Active: () => getTab() == idx,
+            els[i] = new ButtonElement(() => loc.T(key), () => setTab(idx), Active: () => getTab() == idx,
                 Icon: () => LauncherIcons.Get(icon));
         }
         return els;

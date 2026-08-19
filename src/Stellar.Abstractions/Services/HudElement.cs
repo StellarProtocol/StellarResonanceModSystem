@@ -87,6 +87,20 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// Use with <see cref="Stellar.Abstractions.Services.IFramework.ScreenHeight"/> to scale text with
     /// screen resolution: <c>DynamicFontSize = () => services.Framework.ScreenHeight / 19</c>.</summary>
     public Func<int>? DynamicFontSize { get; init; }
+
+    /// <summary>Render in real bold weight — a designed bold FACE in every script (Latin, Thai, CJK, …),
+    /// never Unity's synthetic bold. Window surfaces only (HUD-overlay text ignores the style flags).
+    /// <see cref="Emphasis"/> already implies bold at header size; use this for bold at normal size.</summary>
+    public bool Bold { get; init; }
+
+    /// <summary>Slant the glyphs (synthetic italic — safe in every script). Window surfaces only.</summary>
+    public bool Italic { get; init; }
+
+    /// <summary>Draw an underline beneath the text (works in every script). Window surfaces only.</summary>
+    public bool Underline { get; init; }
+
+    /// <summary>Draw a line through the text (works in every script). Window surfaces only.</summary>
+    public bool Strikethrough { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's

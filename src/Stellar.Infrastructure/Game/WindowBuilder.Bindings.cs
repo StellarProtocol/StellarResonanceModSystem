@@ -41,6 +41,14 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
+        // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
+        // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
+        // GlyphScript) — re-derived per current string so a live language switch tracks. The preferred
+        // path is the TMP StyledTextBinding below (real bold in EVERY script; owner requirement
+        // 2026-08-18). Non-emphasis bindings leave font/style/size untouched.
+        public bool Emphasis;
+        public Font? EmphBaseFont;   // the normal window font (emphasis keeps the shared face)
+        public int EmphSize;         // scaled emphasis size (15; weight — not size — carries the emphasis)
         private string? _last;
         private int _lastFontSize;
         public void Apply()
@@ -61,6 +69,15 @@ internal sealed partial class WindowBuilder
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
+                // Re-derive the legacy-fallback emphasis presentation from the new string (see the field
+                // comments): Latin real-bold, complex scripts crisp regular.
+                if (Emphasis)
+                {
+                    C.fontSize = EmphSize;
+                    if (EmphBaseFont != null) C.font = EmphBaseFont;
+                    C.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
+                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
+                }
             }
             if (ColorFn != null && ColorFn() is { } v)
             {
@@ -68,6 +85,29 @@ internal sealed partial class WindowBuilder
                 // Keep the shadow's dark rgb, track only the foreground alpha — matches HudElementBuilder's twin.
                 if (Shadow != null) { var sc = Shadow.color; Shadow.color = new Color(sc.r, sc.g, sc.b, v.A); }
             }
+        }
+    }
+
+    // TMP real-bold emphasis header (built through StyledTextFactory; see TryBuildEmphasisText). Carries
+    // no TMP types itself — the handle interface keeps this file sandbox-compilable.
+    internal sealed class StyledTextBinding
+    {
+        public IStyledTextHandle H = null!;
+        public Func<string> TextFn = null!;
+        public Func<ColorRgba?>? ColorFn;
+        private string? _last;
+        private int _applies;
+
+        public void Apply()
+        {
+            var go = H.Go;
+            if (go == null || !go.activeInHierarchy) return;
+            var s = TextFn();
+            if (s != _last) { _last = s; H.SetText(s); }
+            if (ColorFn != null && ColorFn() is { } v) H.SetColor(new Color(v.R, v.G, v.B, v.A));
+            // One forced regeneration on the SECOND poll (post-first-paint): the game's TMP build drops
+            // the underline segment on a text's first post-layout generation — see IStyledTextHandle.Refresh.
+            if (_applies < 2 && ++_applies == 2) H.Refresh();
         }
     }
 

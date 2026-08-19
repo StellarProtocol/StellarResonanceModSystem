@@ -28,6 +28,7 @@ internal sealed partial class HotkeysPanel
     // truth is BootstrapPlugin.PluginName in Stellar.Host, and Infrastructure cannot reference Host
     // (the dependency runs Host -> Infrastructure only). Wiring.Settings passes it down.
     private readonly string _frameworkGroupLabel;
+    private readonly ILocalization _loc;
     private Filter _filter = Filter.All;
     private string? _capturingActionId;
     // Last drawn screen rect of the [ … ] cell that initiated the active
@@ -44,17 +45,18 @@ internal sealed partial class HotkeysPanel
     // per-row string interpolation under DrawRow.
     private readonly Dictionary<string, string> _bindingLabelCache = new();
 
-    private HudElement FilterChip(string label, Filter f)
-        => new ButtonElement(() => label, () => { _filter = f; }, null, null, Active: () => _filter == f);
+    private HudElement FilterChip(string key, Filter f)
+        => new ButtonElement(() => _loc.T(key), () => { _filter = f; }, null, null, Active: () => _filter == f);
 
     public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, IPluginInventory inventory,
-                        ITheme theme, string frameworkGroupLabel)
+                        ITheme theme, string frameworkGroupLabel, ILocalization loc)
     {
         _directory = directory;
         _blockDirectory = blockDirectory;
         _inventory = inventory;
         _theme = theme;
         _frameworkGroupLabel = frameworkGroupLabel;
+        _loc = loc;
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
         _directory.BindingChanged += OnBindingChanged;
@@ -156,15 +158,15 @@ internal sealed partial class HotkeysPanel
                 // Direction-first wording: the mod hotkey does NOT pass through to the game (so one press
                 // doesn't fire both). (Suppression is exact-match on key+modifiers — a blocked Ctrl+F1 leaves
                 // bare F1 alone.)
-                new TextElement(() => "Don't pass hotkeys through to the game"),
+                new TextElement(() => _loc.T("hotkeys.passthrough")),
             }, Gap: 6f),
             new SeparatorElement(),
-            new RowElement(new HudElement[] { FilterChip("All", Filter.All), FilterChip("Plugins", Filter.Plugins), FilterChip("Framework", Filter.Framework) }),
+            new RowElement(new HudElement[] { FilterChip("hotkeys.filter.all", Filter.All), FilterChip("hotkeys.filter.plugins", Filter.Plugins), FilterChip("hotkeys.filter.framework", Filter.Framework) }),
             new ConditionalElement(
                 () => { RebuildDisplay(); return _display.Count > 0; },
                 new ScrollElement(list, Height: 260f),
-                new TextElement(() => "No hotkeys.", () => _theme.Colors.TextMuted)),
-            new ButtonElement(() => "Reset all to defaults", () => ResetAllToDefaults()),
+                new TextElement(() => _loc.T("hotkeys.none"), () => _theme.Colors.TextMuted)),
+            new ButtonElement(() => _loc.T("hotkeys.resetAll"), () => ResetAllToDefaults()),
         });
     }
 

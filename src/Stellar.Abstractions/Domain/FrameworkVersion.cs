@@ -18,7 +18,16 @@ public static class FrameworkVersion
 {
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
-    /// BepInEx chainloader happy. 1.18.1 is a fix: game-region detection matches the running
+    /// BepInEx chainloader happy.
+    /// 2.1.0 adds <c>IPluginServices.Localization</c> (<c>ILocalization</c>) — a plugin-scoped UI-text
+    /// localizer. A plugin ships four embedded <c>Lang/{en,ja,th,id}.json</c> catalogs and calls
+    /// <c>Localization.T(key)</c> / <c>TFormat(key, args)</c>, resolved to the active language (English
+    /// fallback, then the key literal). The framework auto-discovers each plugin's catalogs at load, and
+    /// Stellar's own settings UI is now localized in English / 日本語 / ไทย / Bahasa Indonesia
+    /// (Settings → Themes → Language, defaulting to Follow-game-client). Adds <c>ILocalizationControl</c>
+    /// (Settings-facing, NOT on <c>IPluginServices</c>). New service only — additive, binary-compatible with
+    /// plugins built against ≤2.0.3.
+    /// 1.18.1 is a fix: game-region detection matches the running
     /// executable by name PREFIX (<c>StarSEA</c> = SEA, <c>StarASIA</c> = JP) rather than exact
     /// filename, so the Steam build's <c>StarSEA_STEAM.exe</c> resolves to SEA instead of Unknown
     /// (which had made upload plugins withhold every run). Detection-logic only — no API change,
@@ -111,5 +120,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.0.3";
+    public const string Value = "2.1.0";
 }

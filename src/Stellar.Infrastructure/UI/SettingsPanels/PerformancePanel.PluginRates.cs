@@ -41,7 +41,7 @@ internal sealed partial class PerformancePanel
         return new ConditionalElement(
             () => { _pluginCache = _inventory.List(); return _pluginCache.Count > 0; },
             new ScrollElement(list, Height: 220f),
-            new TextElement(() => "No plugins loaded.", () => _theme.Colors.TextMuted));
+            new TextElement(() => _loc.T("common.noPlugins"), () => _theme.Colors.TextMuted));
     }
 
     // Drop the redundant "Stellar." prefix every plugin shares, so names fit the column and don't spill onto the slider.
@@ -80,7 +80,7 @@ internal sealed partial class PerformancePanel
     {
         if (!IsRamping(id)) return PluginRateLabel(id);
         var eff = _effectiveRateFor(id);
-        return eff >= PerfControls.MaxUpdateRateHz ? "→ every frame" : $"→ {eff} Hz";
+        return eff >= PerfControls.MaxUpdateRateHz ? _loc.T("perf.ramp.everyFrame") : _loc.TFormat("perf.ramp.hz", eff);
     }
 
     // --- rate slider <-> stored Hz (snap to the nearest PluginStops entry; index 0 = follow global) ---
@@ -109,7 +109,22 @@ internal sealed partial class PerformancePanel
     //   Off (0)          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
     //   Boost (1)        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
     //   Self-managed (2) = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
-    private static readonly IReadOnlyList<string> SelfRateOptions = new[] { "Off", "Boost", "Self-managed" };
+    // Cached so the per-frame dropdown poll doesn't allocate a fresh array every frame per row; rebuilt only
+    // when the active language changes (localized labels).
+    private string[]? _selfRateCache;
+    private string? _selfRateLang;
+    private IReadOnlyList<string> SelfRateOptions
+    {
+        get
+        {
+            if (_selfRateCache == null || _selfRateLang != _loc.Language)
+            {
+                _selfRateLang = _loc.Language;
+                _selfRateCache = new[] { _loc.T("perf.self.off"), _loc.T("perf.self.boost"), _loc.T("perf.self.managed") };
+            }
+            return _selfRateCache;
+        }
+    }
 
     private int SelfRateIndex(string id)
     {
@@ -130,9 +145,9 @@ internal sealed partial class PerformancePanel
     private string PluginRateLabel(string id)
     {
         var hz = _prefs.GetPluginRate(id);
-        if (hz <= 0) return "Follow global";
-        if (hz >= PerfControls.MaxUpdateRateHz) return "Every frame";
-        return $"{hz} Hz";
+        if (hz <= 0) return _loc.T("perf.followGlobal");
+        if (hz >= PerfControls.MaxUpdateRateHz) return _loc.T("perf.everyFrame");
+        return _loc.TFormat("perf.hz", hz);
     }
 
     private bool IsRamping(string id)

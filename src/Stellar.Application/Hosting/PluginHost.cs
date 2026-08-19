@@ -22,18 +22,16 @@ namespace Stellar.Application.Hosting;
 internal sealed class PluginHost : IDisposable
 {
     private readonly IPluginServices _services;
-    private readonly IPluginConfigFactory _configFactory;
-    private readonly IPluginDataStoreFactory _dataStoreFactory;
+    private readonly PerPluginResourceFactories _factories;
     private readonly PluginRegistry _registry;
     private readonly IPluginLog _log;
     private readonly TickScheduler _scheduler;
     private readonly IHarmonyHostFactory _harmonyFactory;
 
-    public PluginHost(IPluginServices services, IPluginConfigFactory configFactory, IPluginDataStoreFactory dataStoreFactory, PluginRegistry registry, TickScheduler scheduler, IHarmonyHostFactory harmonyFactory)
+    public PluginHost(IPluginServices services, PerPluginResourceFactories factories, PluginRegistry registry, TickScheduler scheduler, IHarmonyHostFactory harmonyFactory)
     {
         _services = services;
-        _configFactory = configFactory;
-        _dataStoreFactory = dataStoreFactory;
+        _factories = factories;
         _registry = registry;
         _log = services.Log;
         _scheduler = scheduler;
@@ -94,8 +92,10 @@ internal sealed class PluginHost : IDisposable
         // until the first successful enable, we fall back to the assembly's
         // short name for the Plugins panel listing.
         var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
-        var perPluginConfig = _configFactory.Create(pluginGuid);
-        var perPluginData = _dataStoreFactory.Create(pluginGuid);
+        var perPluginConfig = _factories.Config.Create(pluginGuid);
+        var perPluginData = _factories.DataStore.Create(pluginGuid);
+        // Discover + register this plugin's embedded Lang/*.json catalogs and mint its scoped façade.
+        var perPluginLoc = _factories.Localization.RegisterPlugin(pluginGuid, asm);
 
         // Shared mutable cell: both the factory lambda (writer) and the onDispose
         // lambda (reader) capture the same StrongBox so each soft-cycle enable
@@ -106,7 +106,7 @@ internal sealed class PluginHost : IDisposable
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
-        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid));
+        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid), perPluginLoc);
 
         Func<IPluginServices, object> factory = sharedServices =>
             BuildAndInvoke(ctor, bindContext, frameworkCell, harmonyCell, sharedServices);
@@ -153,8 +153,9 @@ internal sealed class PluginHost : IDisposable
         frameworkCell.Value = perPluginFramework;
         var perPluginHarmony = _harmonyFactory.Create(bind.PluginGuid);
         harmonyCell.Value = perPluginHarmony;
-        var perPluginServices = new PerPluginServices(sharedServices, bind.PerPluginConfig, perPluginFramework,
-                                                     bind.PerPluginData, bind.PerPluginHotkeys, perPluginHarmony);
+        var perPluginServices = new PerPluginServices(sharedServices,
+            new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, perPluginFramework,
+                               bind.PerPluginHotkeys, perPluginHarmony, bind.PerPluginLocalization));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -172,7 +173,8 @@ internal sealed class PluginHost : IDisposable
     // alongside the existing pluginGuid + perPluginConfig. PerPluginHotkeys rides
     // along here for the same reason — BuildAndInvoke is already at the cap.
     private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig,
-                                                    IPluginDataStore PerPluginData, IHotkeys? PerPluginHotkeys);
+                                                    IPluginDataStore PerPluginData, IHotkeys? PerPluginHotkeys,
+                                                    ILocalization PerPluginLocalization);
 
     public void Dispose()
     {

@@ -25,9 +25,13 @@ internal sealed partial class WindowBuilder
         var dle = dot.AddComponent<LayoutElement>(); dle.preferredWidth = 9f; dle.preferredHeight = 9f;
         var dimg = dot.AddComponent<Image>(); dimg.sprite = _assets.Capsule; dimg.type = Image.Type.Sliced;
         dimg.color = _assets.MenuAccent; dimg.raycastTarget = false;
-        var tGo = UGuiPrimitives.NewChild("Title", title.transform);
-        var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true);
-        t.color = _assets.MenuText; t.text = spec.Title; t.raycastTarget = false;
+        if (TryBuildBoldTitle(title.transform, spec.Title, 13, _assets.MenuText) == null)
+        {
+            var tGo = UGuiPrimitives.NewChild("Title", title.transform);
+            var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true);
+            t.color = _assets.MenuText; t.text = spec.Title; t.raycastTarget = false;
+            t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, spec.Title);   // crisp per-script weight
+        }
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);
@@ -57,9 +61,14 @@ internal sealed partial class WindowBuilder
         var bbg = UGuiPrimitives.NewChild("BannerBg", banner.transform);
         bbg.AddComponent<LayoutElement>().ignoreLayout = true; UGuiPrimitives.Stretch(bbg);
         var bbgImg = bbg.AddComponent<Image>(); bbgImg.color = _assets.MenuAccent; bbgImg.raycastTarget = true;
-        var tGo = UGuiPrimitives.NewChild("Title", banner.transform);
-        var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true);
-        t.color = new Color(0.06f, 0.16f, 0.15f, 1f); t.text = spec.Title; t.raycastTarget = false;
+        var bannerTitleColor = new Color(0.06f, 0.16f, 0.15f, 1f);
+        if (TryBuildBoldTitle(banner.transform, spec.Title, 12, bannerTitleColor) == null)
+        {
+            var tGo = UGuiPrimitives.NewChild("Title", banner.transform);
+            var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true);
+            t.color = bannerTitleColor; t.text = spec.Title; t.raycastTarget = false;
+            t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, spec.Title);   // crisp per-script weight
+        }
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);

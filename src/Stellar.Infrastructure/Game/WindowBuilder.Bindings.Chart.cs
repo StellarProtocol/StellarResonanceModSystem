@@ -68,7 +68,7 @@ internal sealed partial class WindowBuilder
                 {
                     var s = series[i];
                     if (slot.Swatch != null) slot.Swatch.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
-                    if (slot.Label != null) { slot.Label.text = s.Name; slot.Label.fontStyle = s.Emphasis ? FontStyle.Bold : FontStyle.Normal; }
+                    if (slot.Label != null) { slot.Label.text = s.Name; slot.Label.fontStyle = UGuiPrimitives.EmphasisStyle(s.Emphasis, s.Name); }
                     slot.Root.SetActive(true);
                 }
                 else slot.Root.SetActive(false);

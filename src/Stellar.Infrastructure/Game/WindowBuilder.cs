@@ -165,6 +165,7 @@ internal sealed partial class WindowBuilder
         /// previous open's size (the deferred MarkLayoutForRebuild path).</summary>
         internal void ResetLayout() => _laidOut = false;
         internal readonly List<TextBinding> Texts = new();
+        internal readonly List<StyledTextBinding> StyledTexts = new();   // TMP real-bold emphasis headers
         internal readonly List<ButtonBinding> Buttons = new();
         internal readonly List<ToggleBinding> Toggles = new();
         internal readonly List<SliderBinding> Sliders = new();
@@ -251,6 +252,7 @@ internal sealed partial class WindowBuilder
         private void ApplyValues()
         {
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
+            for (var i = 0; i < StyledTexts.Count; i++) StyledTexts[i].Apply();
             for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
             for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
             for (var i = 0; i < GameTextures.Count; i++) GameTextures[i].Apply();
@@ -375,10 +377,17 @@ internal sealed partial class WindowBuilder
     private void BuildText(TextElement t, Transform parent, WindowToken token)
     {
         if (_surface == SurfaceStyle.HudOverlay) { BuildTextHud(t, parent, token); return; }   // .HudOverlay.cs
+        // Styled text (Emphasis headers + the Bold/Italic/Underline/Strikethrough flags): REAL faces in
+        // every script via the game-only TMP factory (owner requirement 2026-08-18: default typography
+        // must work in EVERY language; the accent-colour and synthetic-bold iterations are retired).
+        // Shadow elements (HUD-halo look) and the sandbox/no-face cases keep the legacy path below.
+        var styled = t.Emphasis || t.Bold || t.Italic || t.Underline || t.Strikethrough;
+        if (styled && !t.Shadow && TryBuildEmphasisText(t, parent, token)) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
+        if (styled) ApplyLegacyStyledFallback(txt, t);   // sandbox / no TMP face — see StyledText partial
         // Centre on the glyph GEOMETRY, not the font line-box — the OS dynamic font sits the ink low under a
         // Middle anchor, so bare text rendered ~2-3px below button labels (which already optically-centre via
         // asymmetric padding in BuildButton). alignByGeometry makes a label vertically match the buttons in a
@@ -409,13 +418,24 @@ internal sealed partial class WindowBuilder
             ol.effectColor = new Color(0f, 0f, 0f, 0.85f);
             ol.effectDistance = new Vector2(1.1f, -1.1f);
         }
-        token.Texts.Add(new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color });
+        token.Texts.Add(BuildTextBinding(t, txt));
         RegisterTextReskin(token, txt, t.Emphasis ? 15 : 14);
     }
+
+    // TryBuildEmphasisText + TryBuildBoldTitle (the TMP real-bold path) live in WindowBuilder.StyledText.cs.
 
     // Override ConfigureText's builtin-Arial attempt with the OS dynamic font (resolved consistently in
     // both the editor sandbox and the IL2CPP player) — see WindowThemeAssets.MenuFont. No-op when null.
     private void ApplyMenuFont(Text t) { if (_assets.MenuFont != null) t.font = _assets.MenuFont; }
+
+    // The text binding. Emphasis here is the LEGACY fallback only (sandbox / no TMP face): it carries the
+    // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
+    private TextBinding BuildTextBinding(TextElement t, Text txt)
+    {
+        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis };
+        if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
+        return b;
+    }
 
     // Apply the active theme's Font Scale to a base window-text size (so the Font Scale slider affects uGUI
     // windows, which previously hard-coded sizes). Window-only — the shared HUD ConfigureText isn't touched.

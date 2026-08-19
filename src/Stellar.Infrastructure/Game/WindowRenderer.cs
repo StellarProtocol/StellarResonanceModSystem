@@ -351,6 +351,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     // to keep it under the 50-LoC gate; runs once per canvas create (the ticker is non-null here).
     private void WireBuilderHooks()
     {
+        // Real-bold titles/headers in every script: install the TMP factory before any window builds
+        // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
+        TmpStyledText.Register();
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));

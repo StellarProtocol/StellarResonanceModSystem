@@ -125,7 +125,7 @@ internal sealed partial class PandaProfileCardActionInjector
         }
         var ut = go.AddComponent<Text>();
         ut.alignment = TextAnchor.MiddleCenter; ut.fontSize = 18; ut.color = Color.white; ut.raycastTarget = false;
-        try { ut.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
+        try { ut.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
         ut.text = text;
     }
 
