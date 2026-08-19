@@ -72,8 +72,7 @@ internal sealed class DeltaBytes
         return new DeltaBytes()
             .Begin(0)           // CharSerialize container
             .FieldIndex(fieldNum)
-            .Begin(0)           // empty nested container for this field
-            .End()
+            .Begin(TagEnd)      // empty nested container for this field (size == END)
             .End()
             .ToArray();
     }
