@@ -125,14 +125,18 @@ internal sealed partial class PandaInventoryWireCapture
 
         var slotDelta = Protobuf.ContainerDirtyDeltaReader.Read(buffer);
         var equipTouched = Protobuf.ContainerDirtyDeltaReader.TouchesEquip(buffer);
+        var talentsTouched = Protobuf.ContainerDirtyDeltaReader.TouchesTalents(buffer);
+        var cultivateTouched = Protobuf.ContainerDirtyDeltaReader.TouchesSeasonCultivate(buffer);
 
         if (slotDelta.Touched) ApplyModSlotDelta(slotDelta);
 
-        // Fire the change signal for a MODULE (field 57 = Mod → mod_slots) OR GEAR (field 12 = EquipList)
-        // dirty delta — a manual equip/refine or a class-swap re-equip. Method-21 already fires it on full
-        // syncs; this makes the LIVE-container consumers (per-class gear capture) react to mid-session edits
-        // too. Confirmed on the live wire (2026-08-03): gear edits carry field 12, module edits field 57.
-        if (slotDelta.Touched || equipTouched) _gearSink.OnGearMaybeChanged();
+        // Fire the change signal for a MODULE (field 57), GEAR (field 12 — confirmed live 2026-08-03),
+        // TALENT (field 61 = professionList: respec/stage switch), or DEEP-SLUMBER (field 101 =
+        // seasonCultivateLineData) dirty delta. Method-21 already fires it on full syncs; this makes the
+        // LIVE-container consumers (per-class gear capture, live talents, deep-slumber snapshot) react to
+        // mid-session edits too. SelfGearChanged is the self BUILD-state change signal, not gear-only.
+        if (slotDelta.Touched || equipTouched || talentsTouched || cultivateTouched)
+            _gearSink.OnGearMaybeChanged();
     }
 
     // Decodes a method-21 SyncContainerData payload into a CharSerialize.
