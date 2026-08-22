@@ -18,20 +18,27 @@ namespace Stellar.Infrastructure.Game;
 /// field-28 dirty-delta merge (<c>lua/zcontainer/resonance.lua</c> <c>mergeDataFuncs[2]</c>), so it
 /// is live the moment the swap syncs.
 ///
-/// <para><b>Primary mechanism: a 1 Hz POLL of the live Lua mirror</b> (owner diagnostics run
-/// <c>sea/pNhmVQvVmV</c>, 2026-08-23): zero of that session's 8 method-22 deltas carried
-/// top-level field 28 — the swap's container sync never reaches the WorldNtf hook, so NO trigger
-/// on that hook can re-fire the read (and generic unknown-field skipping is inherently
-/// unreliable: field 104 proved to be a RAW SCALAR, not a container — per-field encodings are
-/// unknowable). <see cref="PollResonanceIfDue"/> therefore reads the mirror directly on the
-/// drain tick. The trigger paths (refresh-chunk "RES" row + the field-28 delta trigger) remain
-/// as belt-and-braces. Absent row / RESERR = NO SIGNAL (<see cref="TryReadInstalled"/> returns
-/// false — the published snapshot is kept); an empty row = genuinely no imagines equipped.</para>
+/// <para><b>Primary mechanism: a 1 Hz POLL of the skill HOTBAR slots 7/8</b> (channel map from
+/// owner diagnostics run <c>sea/pNhmVQvVmV</c>, 2026-08-23): the swap's method-22 delta carried
+/// fields 2/55/96/104 — field 28 (<c>cs.resonance</c>) is NEVER re-serialized mid-session (its
+/// only write paths are login firstSync ResetData/MergeData), so BOTH the field-28 trigger AND
+/// the <c>cs.resonance.installed</c> read are login-stale. Worse, measured against the game
+/// tables: <c>installed</c> ids (50101/50102) are ENVIRONMENT (Terra) resonance objects
+/// ("Hero's Herb"/"Wind Core" — consumed only by <c>env_vm/env_service</c>), not Battle Imagines
+/// at all. The live equipped-imagine representation is the hotbar: <c>cs.slots.slots[7]/[8]</c>
+/// (MysteriesSkill slots per <c>weapon_skill_vm.lua</c>), whose <c>skillId</c>s are the aoyi
+/// SKILL ids — the id space the site's imagine chips (names <c>aoyi</c> map, 73 entries) and
+/// <c>IGameDataResonance.GetImagineForSkill</c> ALREADY resolve, so they are emitted directly
+/// with no mapping. The "RES" (installed) row is kept as diagnostics + a null-latch-only seed;
+/// <see cref="SelectInstalledSource"/> pins the no-source-flapping policy. RESSLOTERR / absent
+/// row = NO SIGNAL (<see cref="TryReadInstalled"/> returns false — the published snapshot is
+/// kept); an empty RESSLOT row = genuinely nothing in slots 7/8.</para>
 /// </summary>
 internal sealed partial class PandaLoadoutProbe : IResonanceProbe
 {
-    // Latched by UpdateResonanceState on each changed parse; null until a dump carries a "RES" row
-    // (bridge unresolved, an old in-flight dump, or the chunk's pcall failed → "RESERR" only).
+    // The published pair, PRIMARILY the hotbar slots 7/8 aoyi SKILL ids (slots-poll); null until a
+    // read succeeds (bridge unresolved, or every section errored → RESERR/RESSLOTERR only). Latch
+    // updates only through ApplyResonanceSources — never wiped by a no-signal read.
     private IReadOnlyList<int>? _resonanceInstalled;
 
     public bool TryReadInstalled(out IReadOnlyList<int> installed)
@@ -41,14 +48,41 @@ internal sealed partial class PandaLoadoutProbe : IResonanceProbe
         return latched is not null;
     }
 
-    // Called once per ParseLoadoutData pass (mirrors UpdateDeepSlumberState). Unconditional latch:
-    // a dump without a RES row sets null → TryReadInstalled reports "not ready" and the
-    // Application-side ResonanceService simply keeps its last published snapshot.
+    // Called once per ParseLoadoutData pass (refresh-chunk path). The dump's "RES" row is the
+    // login-stale installed list (env-resonance ids) — under SelectInstalledSource it may only
+    // SEED a still-null latch (old-dump tolerance); the hotbar slots poll is the live source and
+    // always wins. Never nulls the latch (a dump without a RES row is no-signal).
     private void UpdateResonanceState(string raw)
     {
-        _resonanceInstalled = ParseResonanceLine(raw);
-        // no-op unless STELLAR_DIAGNOSTICS; non-latching until the resonance fragment has run once
-        LogResonanceFirstRead(_resonanceInstalled, raw);
+        ApplyResonanceSources(slotsRow: null, installedRow: ParseResonanceLine(raw), raw);
+    }
+
+    // Shared latch-update for both read paths (refresh dump + 1 Hz poll). Pure policy in
+    // SelectInstalledSource; the change log + first-read one-shot are diagnostics-gated no-ops in
+    // production.
+    private void ApplyResonanceSources(
+        IReadOnlyList<int>? slotsRow, IReadOnlyList<int>? installedRow, string raw)
+    {
+        LogResonanceFirstRead(slotsRow, installedRow, raw);
+        var (next, source) = SelectInstalledSource(slotsRow, installedRow, _resonanceInstalled);
+        if (next is null) return;
+        if (!InstalledEquals(_resonanceInstalled, next))
+        {
+            LogResonanceChanged(_resonanceInstalled, next, source!);   // the owner's next-test discriminator
+        }
+        _resonanceInstalled = next;
+    }
+
+    /// <summary>Pure source-selection policy (unit-tested): the hotbar slots row is the PRIMARY
+    /// source and wins whenever present; the legacy installed row (login-stale env-resonance ids)
+    /// may only SEED a still-null latch — old-chunk-dump tolerance — so identity can never flap
+    /// between differently-sourced lists tick-to-tick. Null Next = keep the current latch.</summary>
+    internal static (IReadOnlyList<int>? Next, string? Source) SelectInstalledSource(
+        IReadOnlyList<int>? slotsRow, IReadOnlyList<int>? installedRow, IReadOnlyList<int>? currentLatch)
+    {
+        if (slotsRow is not null) return (slotsRow, "slots-poll");
+        if (currentLatch is null && installedRow is not null) return (installedRow, "installed-fallback");
+        return (null, null);
     }
 
     /// <summary>Pure "RES" row parser — internal so it's directly unit-testable without the Lua
@@ -100,15 +134,41 @@ internal sealed partial class PandaLoadoutProbe : IResonanceProbe
         var raw = ReadLuaGlobalString(ResonanceLiveGlobal);
         if (string.IsNullOrEmpty(raw) || raw == _lastResonanceLiveRaw) return;
         _lastResonanceLiveRaw = raw;
+        ApplyResonanceSources(ParseResonanceSlotsLine(raw!), ParseResonanceLine(raw!), raw!);
+    }
 
-        var parsed = ParseResonanceLine(raw!);
-        LogResonanceFirstRead(parsed, raw!);   // idempotent one-shot — fires on RES or RESERR
-        if (parsed is null) return;            // RESERR: never wipe a good latch with no-signal
-        if (!InstalledEquals(_resonanceInstalled, parsed))
+    /// <summary>Pure "RESSLOT" row parser — hotbar slots 7/8 as <c>7:&lt;skillId&gt;,8:&lt;skillId&gt;</c>
+    /// (the chunk emits only slots present with a non-zero skillId). Returns the aoyi SKILL ids in
+    /// CANONICAL SLOT ORDER (7 then 8 — setup identity is order-sensitive) regardless of pair order
+    /// in the row. Null when NO "RESSLOT" row is present (an old poll dump, or the slots pcall
+    /// failed and only "RESSLOTERR" was appended) — never for a genuinely empty hotbar, which still
+    /// carries a "RESSLOT" row with an empty payload. Malformed pairs and zero/negative ids are
+    /// skipped, never thrown.</summary>
+    internal static IReadOnlyList<int>? ParseResonanceSlotsLine(string raw)
+    {
+        foreach (var line in raw.Split('\n'))
         {
-            LogResonanceChanged(_resonanceInstalled, parsed);   // the owner's next-test discriminator
+            if (!line.StartsWith("RESSLOT\t", StringComparison.Ordinal)) continue;
+            var csv = line.Substring(8);
+            if (csv.Length == 0) return Array.Empty<int>();
+            int slot7 = 0, slot8 = 0;
+            foreach (var part in csv.Split(','))
+            {
+                var colon = part.IndexOf(':');
+                if (colon <= 0) continue;
+                if (!int.TryParse(part.Substring(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot)) continue;
+                if (!int.TryParse(part.Substring(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var skillId)) continue;
+                if (skillId <= 0) continue;
+                if (slot == 7) slot7 = skillId;
+                else if (slot == 8) slot8 = skillId;
+            }
+            if (slot7 == 0 && slot8 == 0) return Array.Empty<int>();
+            var ids = new List<int>(2);
+            if (slot7 != 0) ids.Add(slot7);
+            if (slot8 != 0) ids.Add(slot8);
+            return ids;
         }
-        _resonanceInstalled = parsed;
+        return null;
     }
 
     /// <summary>Pure order-sensitive id-list equality (installed is positional — imagine slot 1 /
@@ -126,10 +186,17 @@ internal sealed partial class PandaLoadoutProbe : IResonanceProbe
         return true;
     }
 
-    // Poll chunk: pcall-read cs.resonance.installed (same keys-first + 1..#inst index idioms as
-    // ResonanceChunkFragment below — never a bare pairs() loop value), build the same csv, and
-    // rawset "RES\t<csv>" on success or "RESERR\t<msg>" on pcall failure into ResonanceLiveGlobal.
-    // Const string — zero per-call string building; parsed by the SAME ParseResonanceLine.
+    // Poll chunk, two independently-pcall'd sections, ONE global write:
+    //   RESSLOT (PRIMARY) — hotbar slots 7/8: cs.slots.slots is the Slot container's message-valued
+    //     map (zcontainer/slot.lua mergeDataFuncs[1]); DIRECT numeric index (ss[7]/ss[8] via
+    //     setForbidenMt's __index — an ordinary table read, immune to the __pairs nil-value trap);
+    //     SlotInfo's Lua-side field is `skillId` (zcontainer/slot_info.lua mergeDataFuncs[2]).
+    //     Slots 7/8 = the MysteriesSkill (aoyi/imagine) slots per weapon_skill_vm's skillTypeInSlot.
+    //     Only slots present with a non-zero skillId are emitted.
+    //   RES (fallback/diagnostics) — cs.resonance.installed, kept for old-latch seeding + the
+    //     first-read log; login-stale (field 28 never re-serializes mid-session).
+    // Const string — zero per-call string building; parsed by ParseResonanceSlotsLine +
+    // ParseResonanceLine.
     private const string ResonancePollChunk =
         " local res=\"\"" +
         " local resOk,resErr=pcall(function()" +
@@ -142,16 +209,30 @@ internal sealed partial class PandaLoadoutProbe : IResonanceProbe
         "   end" +
         "  end" +
         " end)" +
-        " if resOk then rawset(_G,\"" + ResonanceLiveGlobal + "\",\"RES\\t\"..res)" +
-        " else rawset(_G,\"" + ResonanceLiveGlobal + "\",\"RESERR\\t\"..tostring(resErr)) end";
+        " local sl=\"\"" +
+        " local slOk,slErr=pcall(function()" +
+        "  local cs=(Z.ContainerMgr).CharSerialize" +
+        "  local ss=(cs.slots) and (cs.slots).slots" +
+        "  if ss~=nil then" +
+        "   local s7=ss[7] local s8=ss[8]" +
+        "   if s7~=nil and s7.skillId~=nil and s7.skillId~=0 then sl=\"7:\"..tostring(s7.skillId) end" +
+        "   if s8~=nil and s8.skillId~=nil and s8.skillId~=0 then sl=(sl==\"\" and \"\" or sl..\",\")..\"8:\"..tostring(s8.skillId) end" +
+        "  end" +
+        " end)" +
+        " local out" +
+        " if resOk then out=\"RES\\t\"..res else out=\"RESERR\\t\"..tostring(resErr) end" +
+        " if slOk then out=out..\"\\nRESSLOT\\t\"..sl else out=out..\"\\nRESSLOTERR\\t\"..tostring(slErr) end" +
+        " rawset(_G,\"" + ResonanceLiveGlobal + "\", out)";
 
-    // The equipped-Battle-Imagine fragment RefreshChunk (PandaLoadoutProbe.Resolution.cs) appends
-    // to its dump. cs.resonance.installed is a PLAIN Lua array living in the container's __data__
-    // (resolved via setForbidenMt's __index — an ordinary table read, unaffected by the __pairs
-    // trap), replaced wholesale on every field-28 merge — the live source. Indexed 1..#inst per the
-    // banked never-trust-a-bare-loop-value rule. The "RES" row is appended ONLY when the pcall
-    // succeeded (present-with-empty = genuinely no imagines); a failure appends "RESERR\t<msg>"
-    // instead, which the parser treats as no-signal.
+    // The "RES" fragment RefreshChunk (PandaLoadoutProbe.Resolution.cs) appends to its dump.
+    // cs.resonance.installed is a PLAIN Lua array in the container's __data__ (ordinary __index
+    // read, unaffected by the __pairs trap), indexed 1..#inst per the banked
+    // never-trust-a-bare-loop-value rule. CORRECTED 2026-08-23 (owner run sea/pNhmVQvVmV): this
+    // list is LOGIN-STALE (field 28's only write paths are login firstSync) and its ids are
+    // ENVIRONMENT-resonance objects, not Battle Imagines — kept ONLY as a null-latch seed +
+    // diagnostics under SelectInstalledSource; the hotbar slots poll is the real source. The row
+    // is appended ONLY when the pcall succeeded; a failure appends "RESERR\t<msg>" instead, which
+    // the parser treats as no-signal.
     private const string ResonanceChunkFragment =
         " local res=\"\"" +
         " local resOk,resErr=pcall(function()" +

@@ -364,6 +364,85 @@ public sealed class PandaLoadoutProbeParseTests
             PandaLoadoutProbe.ParseResonanceLine("RES\t50310003,junk,,50310010"));
     }
 
+    // ── Hotbar slots 7/8 ("RESSLOT") row — the LIVE equipped-imagine source ──────────────────────
+    // PINNED (owner diagnostics run sea/pNhmVQvVmV, 2026-08-23): field 28 / cs.resonance.installed
+    // is login-stale AND its ids are environment-resonance objects, not Battle Imagines; the live
+    // pair is the hotbar's aoyi slots (cs.slots.slots[7]/[8].skillId), emitted as the aoyi SKILL
+    // ids the site's imagine chips + IGameDataResonance.GetImagineForSkill already resolve. ───────
+
+    [Fact]
+    public void ParsesResonanceSlotsRowIntoSlotOrderedSkillIds()
+    {
+        Assert.Equal(new[] { 3944, 2350 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t50101,50102\nRESSLOT\t7:3944,8:2350"));
+    }
+
+    [Fact]
+    public void ResonanceSlotsRowCanonicalOrderIsSlot7ThenSlot8RegardlessOfPairOrder()
+    {
+        // Setup identity is order-sensitive; the canonical order is slot 7 then slot 8 even if the
+        // row ever carried the pairs reversed.
+        Assert.Equal(new[] { 3944, 2350 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t8:2350,7:3944"));
+    }
+
+    [Fact]
+    public void AbsentResonanceSlotsRowYieldsNullNotEmpty()
+    {
+        // No "RESSLOT" row (old poll dump) or only the "RESSLOTERR" failure row is NO SIGNAL —
+        // never publish a phantom empty pair over a genuinely-equipped one.
+        Assert.Null(PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t50101,50102"));
+        Assert.Null(PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t\nRESSLOTERR\tattempt to index a nil value"));
+    }
+
+    [Fact]
+    public void EmptyResonanceSlotsRowYieldsEmptyListGenuinelyNothingSlotted()
+    {
+        var ids = PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t");
+        Assert.NotNull(ids);
+        Assert.Empty(ids!);
+    }
+
+    [Fact]
+    public void SingleSlotAndZeroSkillIdsHandled()
+    {
+        Assert.Equal(new[] { 2350 }, PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t8:2350"));
+        // A zero skillId is "slot empty", never an id.
+        Assert.Equal(new[] { 3944 }, PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t7:3944,8:0"));
+    }
+
+    [Fact]
+    public void MalformedResonanceSlotPairsAreSkippedNotThrown()
+    {
+        Assert.Equal(new[] { 3944 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t7:3944,junk,:5,8:,9:1234"));
+    }
+
+    [Fact]
+    public void SelectInstalledSource_SlotsRowAlwaysWins_InstalledOnlySeedsNullLatch()
+    {
+        var slots = new[] { 3944, 2350 };
+        var installed = new[] { 50101, 50102 };
+        var latch = new[] { 1, 2 };
+
+        // Slots row present → primary source, latch state irrelevant.
+        Assert.Equal((slots, "slots-poll"),
+            PandaLoadoutProbe.SelectInstalledSource(slots, installed, latch));
+        Assert.Equal((slots, "slots-poll"),
+            PandaLoadoutProbe.SelectInstalledSource(slots, null, null));
+
+        // Installed row may ONLY seed a still-null latch (old-dump tolerance) — never override a
+        // latched value, so identity cannot flap between differently-sourced lists tick-to-tick.
+        Assert.Equal((installed, "installed-fallback"),
+            PandaLoadoutProbe.SelectInstalledSource(null, installed, null));
+        Assert.Equal(((System.Collections.Generic.IReadOnlyList<int>?)null, (string?)null),
+            PandaLoadoutProbe.SelectInstalledSource(null, installed, latch));
+
+        // No source at all → keep the latch.
+        Assert.Equal(((System.Collections.Generic.IReadOnlyList<int>?)null, (string?)null),
+            PandaLoadoutProbe.SelectInstalledSource(null, null, latch));
+    }
+
     [Fact]
     public void InstalledEquals_OrderSensitive_NullTolerant()
     {

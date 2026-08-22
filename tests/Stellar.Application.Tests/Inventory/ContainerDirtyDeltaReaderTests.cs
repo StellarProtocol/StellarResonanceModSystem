@@ -328,6 +328,65 @@ public sealed class ContainerDirtyDeltaReaderTests
     }
 
     [Fact]
+    public void TouchesField_MatchesAFieldAfterSkippedRawScalarFields()
+    {
+        // PINNED (owner run sea/pNhmVQvVmV — this exact shape appeared 4x in one session and killed
+        // the walk: "parse failure at CharSerialize.skip nextI32=[0,-3]"). CharSerialize has exactly
+        // TWO top-level RAW-SCALAR members (measured census of char_serialize.lua mergeDataFuncs):
+        // charId (field 1) and saveSerial (field 104), both br.ReadInt64 — no BEGIN container. The
+        // generic container-skip must not be applied to them; each is skipped as a raw i64.
+        var buffer = new DeltaBytes()
+            .Begin(0)                             // CharSerialize container
+            .FieldIndex(1).Int64(123456789012345) // charId — raw i64 scalar, no container
+            .FieldIndex(104).Int64(42)            // saveSerial — raw i64 scalar, no container
+            .FieldIndex(28)
+            .Begin(-3)                            // empty nested container for the target
+            .End()
+            .ToArray();
+
+        Assert.True(ContainerDirtyDeltaReader.TouchesResonance(buffer));
+    }
+
+    [Fact]
+    public void TouchesField_Guarded_MatchesAFieldAfterASkippedRawScalarField()
+    {
+        // SEA-wire (guards) variant: a raw i64 value carries ONE trailing canary (DeltaBytes.Int64 /
+        // BlobReader.ReadInt64 semantics) — the raw-scalar skip must consume value + canary.
+        var buffer = new DeltaBytes(guards: true)
+            .Begin(0)
+            .FieldIndex(104).Int64(42)            // saveSerial — raw i64 + one canary
+            .FieldIndex(28)
+            .Begin(-3)
+            .End()
+            .ToArray();
+
+        Assert.True(ContainerDirtyDeltaReader.TouchesResonance(buffer));
+    }
+
+    [Fact]
+    public void Read_SkipsRawScalarField_BeforeMod()
+    {
+        // Read()'s mod walk shares the top-level skip — a saveSerial (104) ahead of field 57 must
+        // not kill the descent (same defect class as the Touches* walks; owner run sea/pNhmVQvVmV).
+        var buffer = new DeltaBytes()
+            .Begin(0)
+                .FieldIndex(104).Int64(7)          // raw i64 scalar
+                .FieldIndex(FieldMod)
+                .Begin(0)
+                    .FieldIndex(FieldModSlots)
+                    .Int32(1).Int32(0).Int32(0)
+                    .Int32(4).Int64(42)
+                .End()
+            .End()
+            .ToArray();
+
+        var delta = ContainerDirtyDeltaReader.Read(buffer);
+
+        Assert.True(delta.Touched);
+        Assert.Equal(42L, delta.AddsAndUpdates[4]);
+    }
+
+    [Fact]
     public void TouchesResonance_Guarded_MatchesResonanceAfterASkippedNonEmptyField()
     {
         // SEA-wire (guards) variant of the skip-then-match case: the skipped container's size

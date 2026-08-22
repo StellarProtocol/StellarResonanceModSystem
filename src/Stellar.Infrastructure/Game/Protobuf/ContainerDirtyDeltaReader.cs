@@ -63,6 +63,15 @@ internal static partial class ContainerDirtyDeltaReader
 {
     private const int FieldMod = 57;        // CharSerialize.mod
     private const int FieldModSlots = 1;    // Mod.mod_slots (map<int32,int64>)
+
+    // CharSerialize's only two top-level RAW-SCALAR members (measured census of
+    // char_serialize.lua mergeDataFuncs, 2026-08-23: charId (1) and saveSerial (104), both
+    // br.ReadInt64 — every other field is a nested container). They carry NO BEGIN container,
+    // so the generic container-skip fails on them and kills the walk — owner log (run
+    // sea/pNhmVQvVmV, 4x in one session): "parse failure at CharSerialize.skip nextI32=[0,-3]",
+    // which made every field AFTER 104 invisible to the Touches* scans and Read().
+    private const int FieldCharId = 1;      // CharSerialize.charId (raw i64)
+    private const int FieldSaveSerial = 104; // CharSerialize.saveSerial (raw i64)
     private const int FieldEquip = 12;      // CharSerialize.equip (EquipList) — the equipped-gear mapping
     private const int FieldResonance = 28;  // CharSerialize.resonance — equipped Battle Imagines
     private const int FieldProfessionList = 61;       // CharSerialize.professionList (talents)
@@ -133,7 +142,7 @@ internal static partial class ContainerDirtyDeltaReader
             while (index > 0)
             {
                 if (index == fieldNum) return true;
-                if (!TrySkipUnknownField(ref reader)) return false;
+                if (!TrySkipTopLevelField(ref reader, index)) return false;
                 if (reader.Remaining < 4) break;
                 index = reader.ReadInt32();
             }
@@ -156,7 +165,7 @@ internal static partial class ContainerDirtyDeltaReader
                 return ReadModContainer(ref reader);
             }
 
-            if (!TrySkipUnknownField(ref reader))
+            if (!TrySkipTopLevelField(ref reader, index))
             {
                 DiagParseFailure("CharSerialize.skip", ref reader);
                 return ModSlotDelta.None;
@@ -304,6 +313,22 @@ internal static partial class ContainerDirtyDeltaReader
         var size = reader.ReadInt32();
         // size == END marks an empty container — nothing to walk.
         return size != TagEnd;
+    }
+
+    // Skips one top-level CharSerialize field of any kind: the two known raw i64 scalars
+    // (fields 1 / 104 — see the consts above) are consumed via ReadInt64, which also eats the
+    // value's single SEA-wire guard canary; every other field is a nested container skipped via
+    // TrySkipUnknownField. Used by BOTH top-level walks (TouchesField + WalkCharSerializeFields);
+    // the inner Mod walk keeps the plain container skip (Mod has no known raw-scalar members).
+    private static bool TrySkipTopLevelField(ref BlobReader reader, int index)
+    {
+        if (index == FieldCharId || index == FieldSaveSerial)
+        {
+            if (reader.Remaining < 8) return false;
+            reader.ReadInt64();
+            return true;
+        }
+        return TrySkipUnknownField(ref reader);
     }
 
     // Skips an unknown container field. Wire shape (authoritative decoder:
