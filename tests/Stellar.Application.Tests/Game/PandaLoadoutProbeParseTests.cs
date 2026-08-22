@@ -363,4 +363,17 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Equal(new[] { 50310003, 50310010 },
             PandaLoadoutProbe.ParseResonanceLine("RES\t50310003,junk,,50310010"));
     }
+
+    [Fact]
+    public void InstalledEquals_OrderSensitive_NullTolerant()
+    {
+        // Pure decision helper behind the 1 Hz live-mirror poll's latch-update + change-log
+        // (owner diagnostics run sea/pNhmVQvVmV, 2026-08-23): a swap (value change OR slot
+        // reorder) must register as a change; null (pre-first-read latch) never equals a list.
+        Assert.True(PandaLoadoutProbe.InstalledEquals(null, null));
+        Assert.True(PandaLoadoutProbe.InstalledEquals(new[] { 50101, 50102 }, new[] { 50101, 50102 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(null, new[] { 50101 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(new[] { 50101, 50102 }, new[] { 50102, 50101 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(new[] { 50101 }, new[] { 50101, 50102 }));
+    }
 }

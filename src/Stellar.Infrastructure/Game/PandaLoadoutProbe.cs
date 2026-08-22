@@ -207,6 +207,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
         RefreshIfDue();
         ParseLoadoutData();
+        PollResonanceIfDue();   // 1 Hz live-mirror imagine poll — see PandaLoadoutProbe.Resonance.cs (sea/pNhmVQvVmV)
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
         // container (distinct per class — correct for loadout switching). Resolves once when the loadout
         // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The

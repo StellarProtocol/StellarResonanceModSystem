@@ -31,6 +31,17 @@ internal sealed partial class PandaLoadoutProbe
         _log.Info($"[Stellar][Loadout][Resonance] first read via Lua bridge: installed=[{ids}] error={error ?? "none"}");
     }
 
+    /// <summary>Poll-path change log — the owner's next-test discriminator (run
+    /// <c>sea/pNhmVQvVmV</c>): fires whenever the polled live mirror differs from the current
+    /// latch, so an in-session imagine swap must produce exactly this line within ~1 s.
+    /// Diagnostics-gated; NOT a one-shot (every change is a data point).</summary>
+    private void LogResonanceChanged(IReadOnlyList<int>? old, IReadOnlyList<int> next)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var from = old is null ? "n/a" : string.Join(",", old);
+        _log.Info($"[Stellar][Loadout][Resonance] installed changed: [{from}] -> [{string.Join(",", next)}] (poll)");
+    }
+
     // Pure "RESERR" row extractor — the chunk appends it INSTEAD of "RES" when its pcall failed.
     // Diagnostics-only; never used for state-building (an erroring walk is no-signal, see
     // ParseResonanceLine).
