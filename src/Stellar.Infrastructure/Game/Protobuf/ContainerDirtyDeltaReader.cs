@@ -35,7 +35,10 @@ internal readonly record struct ModSlotDelta(
 ///   <item>Field entry = <c>index</c> (i32, &gt; 0 = a proto field number),
 ///         then field-specific data.</item>
 ///   <item>Nested MESSAGE field (e.g. <c>mod</c>, field 57) = its own
-///         BEGIN/size/inner-fields/END container — descend into it.</item>
+///         BEGIN/size/inner-fields/END container — descend into it. The
+///         <c>size</c> word EXCLUDES the trailing END tag (see
+///         <c>TrySkipUnknownField</c> for the char_serialize.lua proof); an
+///         empty nested container is BEGIN/END with no trailing tag.</item>
 ///   <item>MAP field data = <c>addCount</c> (i32). Sentinels: <c>-4</c> = skip
 ///         (no change to this map), <c>-1</c> = add-only (re-read the real
 ///         addCount next). Otherwise <c>addCount</c>, then <c>removeCount</c>
@@ -303,19 +306,33 @@ internal static partial class ContainerDirtyDeltaReader
         return size != TagEnd;
     }
 
-    // Skips an unknown container field: read BEGIN + size, then jump `size`
-    // bytes. Mirrors BPSR-B's _skip_unknown_field. Returns false on a malformed
-    // or out-of-range container.
+    // Skips an unknown container field. Wire shape (authoritative decoder:
+    // StarResonanceData lua/zcontainer/char_serialize.lua `mergeData`, ~line 1966):
+    // a NON-EMPTY nested field blob is [BEGIN][size][body][END] where `size`
+    // EXCLUDES the trailing END tag — proof: the game's unknown-field bail does
+    // SetOffset(offset + size) and then REQUIRES the next ReadInt32 to be -3
+    // ("Invalid end tag"), and each sub-container's own merge loop consumes its
+    // trailing -3. An EMPTY container is [BEGIN][END] with NO trailing tag.
+    // Skipping `size` without consuming the trailing END left the cursor ON the
+    // -3, so the next field-index read exited the walk — any field AFTER the
+    // first skipped non-empty field was invisible (TouchesResonance/TouchesEquip/
+    // etc. only matched a first-position field; Read's mod walk had the same
+    // defect). Production trigger: owner run sea/pNhmVQvVmV — an imagine swap
+    // whose field-28 delta sat behind another dirty field never re-fired the
+    // refresh. Returns false on malformed input, never throws.
     private static bool TrySkipUnknownField(ref BlobReader reader)
     {
         if (reader.Remaining < 8) return false;
         var tag = reader.ReadInt32();
         if (tag != TagBegin) return false;
         var size = reader.ReadInt32();
-        if (size == TagEnd) return true;   // empty container
+        if (size == TagEnd) return true;   // empty container: [BEGIN][END], no trailing tag
         if (size < 0 || size > reader.Remaining) return false;
         reader.Skip(size);
-        return true;
+        // Consume the trailing END tag the size word excludes (ReadInt32 also eats
+        // its guard canary on the SEA wire). Anything else is malformed.
+        if (reader.Remaining < 4) return false;
+        return reader.ReadInt32() == TagEnd;
     }
 
     // Bounds sanity: each add/update entry is 12 bytes (i32 key + i64 value) and

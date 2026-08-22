@@ -113,12 +113,13 @@ public sealed class ContainerDirtyDeltaReaderTests
     public void Read_SkipsUnknownTopLevelField_BeforeMod()
     {
         // A leading unknown container field (index 79 = itemCurrency) must be
-        // skipped via its BEGIN+size before the walk reaches field 57.
+        // skipped via its BEGIN+size+trailing-END before the walk reaches field 57.
+        // Wire-accurate: size EXCLUDES the trailing END tag (char_serialize.lua mergeData).
         var unknownPayload = new DeltaBytes().Int32(123).Int32(456).ToArray();
         var buffer = new DeltaBytes()
             .Begin(0)
                 .FieldIndex(79)                         // unknown field
-                .Begin(unknownPayload.Length).Int32(123).Int32(456)  // its container
+                .Begin(unknownPayload.Length).Int32(123).Int32(456).End()  // its container + END
                 .FieldIndex(FieldMod)
                 .Begin(0)
                     .FieldIndex(FieldModSlots)
@@ -144,7 +145,7 @@ public sealed class ContainerDirtyDeltaReaderTests
                 .FieldIndex(FieldMod)
                 .Begin(0)
                     .FieldIndex(2)                          // mod_infos (unknown to us)
-                    .Begin(8).Int32(11).Int32(22)           // its container, size=8
+                    .Begin(8).Int32(11).Int32(22).End()     // its container, size=8 (EXCLUSIVE) + END
                     .FieldIndex(FieldModSlots)
                     .Int32(1).Int32(0).Int32(0)
                     .Int32(9).Int64(900)
@@ -164,7 +165,7 @@ public sealed class ContainerDirtyDeltaReaderTests
         var buffer = new DeltaBytes()
             .Begin(0)
                 .FieldIndex(79)
-                .Begin(4).Int32(1)
+                .Begin(4).Int32(1).End()   // wire-accurate: the non-empty body carries its own END
             .End()
             .ToArray();
 
@@ -236,12 +237,13 @@ public sealed class ContainerDirtyDeltaReaderTests
     public void Read_Guarded_SkipsUnknownField_GuardInclusiveSize()
     {
         // With guards, the skipped container's size is a guard-inclusive byte
-        // count; the reader must skip the unknown field and still reach mod_slots.
+        // count; the reader must skip the unknown field (consuming its trailing
+        // END tag + canary) and still reach mod_slots.
         var unknown = new DeltaBytes(guards: true).Int32(123).Int32(456).ToArray();
         var buffer = new DeltaBytes(guards: true)
             .Begin(0)
                 .FieldIndex(79)                                       // unknown field
-                .Begin(unknown.Length).Int32(123).Int32(456)         // its container
+                .Begin(unknown.Length).Int32(123).Int32(456).End()   // its container + END
                 .FieldIndex(FieldMod)
                 .Begin(0)
                     .FieldIndex(FieldModSlots)
@@ -293,5 +295,54 @@ public sealed class ContainerDirtyDeltaReaderTests
         // that Read_SkipsUnknownTopLevelField_BeforeMod already covers for ContainerDirtyDeltaReader.Read.
         Assert.True(ContainerDirtyDeltaReader.TouchesTalents(
             DeltaBytes.CharSerializeWithFieldThenField(12, 61)));
+    }
+
+    [Fact]
+    public void TouchesResonance_MatchesResonanceAfterASkippedNonEmptyField()
+        // PINNED (owner run sea/pNhmVQvVmV, 2026-08-23): the exact suspected live shape — an
+        // imagine swap co-dirties attr (field 16) AHEAD of resonance (field 28). The old skip
+        // left the cursor on the skipped field's trailing END tag, the walk read -3 as the next
+        // index and exited, so TouchesResonance only ever matched a FIRST-position field 28 and
+        // the swap never re-fired the Lua refresh (segment 2 uploaded the stale pair).
+        => Assert.True(ContainerDirtyDeltaReader.TouchesResonance(
+            DeltaBytes.CharSerializeWithFieldThenField(16, 28)));
+
+    [Fact]
+    public void TouchesResonance_MatchesResonanceAfterTwoSkippedNonEmptyFields()
+    {
+        // Two consecutive skipped non-empty fields (16 then 7), then the target (28) —
+        // each skip must consume ITS OWN trailing END tag or the second skip desyncs.
+        // Wire shape per char_serialize.lua mergeData: [index][-2][size][body][-3], size exclusive.
+        var buffer = new DeltaBytes()
+            .Begin(0)                             // CharSerialize container
+            .FieldIndex(16)
+            .Begin(8).Int32(11).Int32(22).End()   // skipped body 1 (size 8, exclusive) + END
+            .FieldIndex(7)
+            .Begin(4).Int32(33).End()             // skipped body 2 (size 4, exclusive) + END
+            .FieldIndex(28)
+            .Begin(-3)                            // empty nested container for the target
+            .End()
+            .ToArray();
+
+        Assert.True(ContainerDirtyDeltaReader.TouchesResonance(buffer));
+    }
+
+    [Fact]
+    public void TouchesResonance_Guarded_MatchesResonanceAfterASkippedNonEmptyField()
+    {
+        // SEA-wire (guards) variant of the skip-then-match case: the skipped container's size
+        // is a guard-inclusive byte count of its body, and the trailing END tag carries its own
+        // canary — the skip must consume both before the walk reads the next field index.
+        var body = new DeltaBytes(guards: true).Int32(11).Int32(22).ToArray();
+        var buffer = new DeltaBytes(guards: true)
+            .Begin(0)                                       // CharSerialize container
+            .FieldIndex(16)
+            .Begin(body.Length).Int32(11).Int32(22).End()   // skipped body + END (+canaries)
+            .FieldIndex(28)
+            .Begin(-3)                                      // empty nested container for the target
+            .End()
+            .ToArray();
+
+        Assert.True(ContainerDirtyDeltaReader.TouchesResonance(buffer));
     }
 }
