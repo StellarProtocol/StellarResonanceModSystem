@@ -267,6 +267,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _parsedPlans = plans;
         ReadLiveLine(raw!);                    // CURRENT class's live equipped set + talents (overlay + no-plan source)
         UpdateDeepSlumberState(raw!);           // Deep-Slumber Psychoscope (season cultivate) via the SAME Lua bridge
+        UpdateResonanceState(raw!);             // equipped Battle Imagines via the SAME Lua bridge (live, not the C# mirror)
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here

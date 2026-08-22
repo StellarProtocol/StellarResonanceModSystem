@@ -252,6 +252,10 @@ internal sealed partial class PandaLoadoutProbe
         // for file-size (STELLAR guardrail); see DeepSlumberChunkFragment there for the full root-cause
         // writeup (owner run sea/O1jJepsgKC, 2026-08-20).
         DeepSlumberChunkFragment +
+        // Equipped Battle Imagines ("RES" row) — lives in PandaLoadoutProbe.Resonance.cs; reads the
+        // LIVE Lua mirror cs.resonance.installed (the C# mirror serves the pre-swap pair — owner
+        // staging run sea/445626427740520448, 2026-08-23).
+        ResonanceChunkFragment +
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 

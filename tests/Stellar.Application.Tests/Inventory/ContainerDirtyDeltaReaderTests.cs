@@ -268,6 +268,14 @@ public sealed class ContainerDirtyDeltaReaderTests
             DeltaBytes.CharSerializeWithField(101)));
 
     [Fact]
+    public void TouchesResonance_TrueForResonanceDelta()
+        // PINNED: field 28 (CharSerialize.resonance — equipped Battle Imagines) must be in the
+        // SelfGearChanged trigger set, so an in-session imagine swap re-fires the Lua refresh + the
+        // plugin's recapture (owner staging run sea/445626427740520448, 2026-08-23).
+        => Assert.True(ContainerDirtyDeltaReader.TouchesResonance(
+            DeltaBytes.CharSerializeWithField(28)));
+
+    [Fact]
     public void TouchesField_FalseForUntouchedField_AndMalformed()
     {
         Assert.False(ContainerDirtyDeltaReader.TouchesField(

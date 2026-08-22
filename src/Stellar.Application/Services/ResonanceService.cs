@@ -7,8 +7,9 @@ using Stellar.Application.Abstractions;
 namespace Stellar.Application.Services;
 
 /// <summary>
-/// Implementation of <see cref="IResonanceState"/>. Polled at 1Hz alongside the
-/// inventory probe (both read the same latched <c>CharSerialize</c>), publishing
+/// Implementation of <see cref="IResonanceState"/>. Polled at 1Hz off the probe's
+/// latched read (Host wires the Lua-bridge loadout probe — the C# CharSerialize
+/// mirror served the pre-swap pair after an in-session imagine swap), publishing
 /// an immutable equipped-Imagine snapshot via a volatile reference so plugins on
 /// the main thread read lock-free.
 /// </summary>

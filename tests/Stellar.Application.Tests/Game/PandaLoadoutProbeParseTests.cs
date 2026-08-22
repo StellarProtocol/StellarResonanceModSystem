@@ -321,4 +321,46 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Null(lineCount);
         Assert.Empty(errors);
     }
+
+    // ── Resonance (equipped Battle Imagines) row ─────────────────────────────────────────────────
+    // PINNED (owner staging run sea/445626427740520448, 2026-08-23): the equipped-imagine pair must
+    // come from the LIVE Lua mirror ("RES" row of the refresh chunk), not the stale C# CharSerialize
+    // mirror — third organ of the stale-mirror disease (docs/recon/combatmeter-data-facts.md). A
+    // parse regression here silently reverts IResonanceState to serving the pre-swap pair after an
+    // in-session imagine swap. ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParsesResonanceRowIntoInstalledIds()
+    {
+        var installed = PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRES\t50310003,50310010");
+
+        Assert.NotNull(installed);
+        Assert.Equal(new[] { 50310003, 50310010 }, installed);
+    }
+
+    [Fact]
+    public void AbsentResonanceRowYieldsNullNotEmpty()
+    {
+        // No "RES" row at all (old dump, or the chunk's pcall failed and only "RESERR" was
+        // appended) is NO SIGNAL — the probe must keep reporting "not ready" rather than publish
+        // an empty pair over a genuinely-equipped one.
+        Assert.Null(PandaLoadoutProbe.ParseResonanceLine("CUR=1\n1\tSmite\t5\t104"));
+        Assert.Null(PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRESERR\tattempt to index a nil value"));
+    }
+
+    [Fact]
+    public void EmptyResonanceRowYieldsEmptyListGenuinelyNoImagines()
+    {
+        var installed = PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRES\t");
+
+        Assert.NotNull(installed);
+        Assert.Empty(installed!);
+    }
+
+    [Fact]
+    public void MalformedResonanceIdsAreSkippedNotThrown()
+    {
+        Assert.Equal(new[] { 50310003, 50310010 },
+            PandaLoadoutProbe.ParseResonanceLine("RES\t50310003,junk,,50310010"));
+    }
 }

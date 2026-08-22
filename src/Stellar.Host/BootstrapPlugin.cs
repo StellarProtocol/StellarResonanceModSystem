@@ -82,7 +82,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private ModuleEquipService? _moduleEquipService;
     private PandaTeamControlProbe? _teamControlProbe;
     private PartyControlService? _partyControlService;
-    private ResonanceService? _resonanceService;   // self equipped Battle Imagines (CharSerialize.resonance)
+    private ResonanceService? _resonanceService;   // self equipped Battle Imagines (Lua mirror via loadout probe — Wiring.Loadout.cs)
     private DeepSlumberService? _deepSlumberService;   // live Deep-Slumber Psychoscope (season cultivate)
     private double _inventoryAccumSeconds;   // time-based 1 Hz inventory poll (rate-independent)
 

@@ -61,6 +61,7 @@ internal static partial class ContainerDirtyDeltaReader
     private const int FieldMod = 57;        // CharSerialize.mod
     private const int FieldModSlots = 1;    // Mod.mod_slots (map<int32,int64>)
     private const int FieldEquip = 12;      // CharSerialize.equip (EquipList) — the equipped-gear mapping
+    private const int FieldResonance = 28;  // CharSerialize.resonance — equipped Battle Imagines
     private const int FieldProfessionList = 61;       // CharSerialize.professionList (talents)
     private const int FieldSeasonCultivate = 101;     // CharSerialize.seasonCultivateLineData (Deep-Slumber)
 
@@ -108,6 +109,12 @@ internal static partial class ContainerDirtyDeltaReader
     /// <summary>True when the delta touches the Deep-Slumber season-cultivate container
     /// (CharSerialize field 101 = <c>seasonCultivateLineData</c>) — a psychoscope node/card edit.</summary>
     public static bool TouchesSeasonCultivate(byte[]? buffer) => TouchesField(buffer, FieldSeasonCultivate);
+
+    /// <summary>True when the delta touches the resonance container (CharSerialize field 28 =
+    /// <c>resonance</c>) — a Battle Imagine install/swap. In the SelfGearChanged trigger set so an
+    /// in-session swap re-fires the Lua refresh + the plugin's recapture (owner staging run
+    /// <c>sea/445626427740520448</c>, 2026-08-23 — the swap otherwise served the pre-swap pair).</summary>
+    public static bool TouchesResonance(byte[]? buffer) => TouchesField(buffer, FieldResonance);
 
     /// <summary>True when the delta's top-level CharSerialize field list contains
     /// <paramref name="fieldNum"/>. Read-only scan, deliberately separate from <see cref="Read"/>

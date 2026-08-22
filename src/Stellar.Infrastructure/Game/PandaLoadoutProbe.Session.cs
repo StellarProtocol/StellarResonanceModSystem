@@ -7,12 +7,14 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaLoadoutProbe
 {
     /// <summary>Reset character-scoped session state on logout: the parsed Deep-Slumber state, the
-    /// LIVE-line class/talents, and the raw-dump memo (so the next login's first parse is not
-    /// skipped as "unchanged"). Re-arms the on-demand refresh so the next in-world tick re-reads the
-    /// new character promptly. Does NOT reset bridge resolution (process-scoped, not character-scoped).</summary>
+    /// equipped-imagine latch, the LIVE-line class/talents, and the raw-dump memo (so the next
+    /// login's first parse is not skipped as "unchanged"). Re-arms the on-demand refresh so the next
+    /// in-world tick re-reads the new character promptly. Does NOT reset bridge resolution
+    /// (process-scoped, not character-scoped).</summary>
     internal void ClearSession()
     {
         _deepSlumberState = null;
+        _resonanceInstalled = null;
         _liveProfessionId = 0;
         _liveTalentStageId = 0;
         _liveTalentNodes = null;
