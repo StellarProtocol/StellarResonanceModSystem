@@ -84,6 +84,18 @@ USER_PLUGINS=(
     "EntityInspector|build|$DEVKIT_ROOT/plugin-repos/StellarEntityInspectorPlugin/Stellar.EntityInspector.csproj"
 )
 
+# Framework-only mode (STELLAR_FRAMEWORK_ONLY=1): deploy the framework set and touch NOTHING under
+# stellar/plugins — no plugin builds, no slot copies, no case-variant/.bak evacuations there. Exists
+# because owner-MAIN framework deploys must not overwrite plugin slots whose dev repos have moved
+# past the deployed builds (measured 2026-08-23: 6 of 10 MAIN slots diverged from their repo HEADs).
+# Emptying USER_PLUGINS gates every plugin loop in one place; the stellar/plugins shadow sweep below
+# carries its own guard.
+FW_ONLY="${STELLAR_FRAMEWORK_ONLY:-0}"
+if [ "$FW_ONLY" = "1" ]; then
+    echo "framework-only mode: skipping user plugins (stellar/plugins untouched)"
+    USER_PLUGINS=()
+fi
+
 # Resolve a plugin entry's DLL path from its "subdir|mode|path" spec.
 # NOTE: separate `local` statements — a single `local a=.. b="${a..}"` line does
 # NOT reliably see `a`'s new value, which would silently return an empty path.
@@ -201,8 +213,9 @@ evacuate_shadows() {
 }
 # Framework scan path: the ONLY valid dir is exactly Stellar.Framework; any suffixed variant shadows it.
 evacuate_shadows "$GAME/BepInEx/plugins" "Stellar.Framework.*"
-# User-plugin scan path: any *.bak* slot shadows the live plugin folder.
-evacuate_shadows "$GAME/stellar/plugins" "*.bak*"
+# User-plugin scan path: any *.bak* slot shadows the live plugin folder. Skipped in
+# framework-only mode — that tree must not be read or written at all.
+[ "$FW_ONLY" = "1" ] || evacuate_shadows "$GAME/stellar/plugins" "*.bak*"
 if [ -d "$SHADOW_STASH" ]; then
     echo "SHADOW GUARD: moved shadow plugin copies out of the BepInEx/framework scan paths."
     echo "             They could have been loaded INSTEAD of the build just deployed. See $SHADOW_STASH"
@@ -230,7 +243,7 @@ fi
 
 cat <<EOF
 
-Deployed src/ build — MODE=$MODE
+Deployed src/ build — MODE=$MODE$([ "$FW_ONLY" = "1" ] && printf ' (framework-only: user plugins untouched)')
   framework DLLs -> $FW_DIR
   flags          -> $([ -f "$FLAGS" ] && tr '\n' ' ' < "$FLAGS" || echo '(none)')
   BepInEx log    -> InstantFlushing=$FLUSH, UnityLogListening=false, Console=$CONSOLE
