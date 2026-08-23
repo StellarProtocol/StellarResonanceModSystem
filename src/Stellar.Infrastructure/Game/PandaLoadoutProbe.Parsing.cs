@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Stellar.Abstractions.Domain.DeepSlumber;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -128,5 +129,122 @@ internal sealed partial class PandaLoadoutProbe
             }
         }
         return nodes;
+    }
+
+    // ── Deep-Slumber (season cultivate) rows ───────────────────────────────────────────────────
+    // The refresh chunk appends two row kinds to the SAME data global (Task: Lua-bridge DeepSlumber
+    // read): "DSLV\t<seasonId:level,...>" (always present once this dump ships, even with an empty
+    // payload) and one "DSA\t<lineId>\t<subType>\t<areaId>\t<0|1>\t<score>\t<big>\t<middle>\t<normal>"
+    // row per (lineId, subType, areaId) variant. DSA rows sharing (lineId, subType) group into ONE
+    // DeepSlumberLine. Pure/static/internal — no Lua bridge needed to exercise it.
+
+    private static readonly IReadOnlyList<int[]> EmptyIntPairs = Array.Empty<int[]>();
+
+    /// <summary>Pure DS-row parser — internal so it's directly unit-testable without the Lua bridge.
+    /// Returns null only when NO "DSLV" row is present at all (an OLD dump predating this enrichment) —
+    /// never for a genuinely empty season state, which still carries a "DSLV" row with an empty
+    /// payload. Malformed DSA columns are skipped/defaulted, never thrown.</summary>
+    internal static DeepSlumberState? ParseDeepSlumber(string raw)
+    {
+        IReadOnlyList<int[]>? seasonLevels = null;
+        var groups = new List<(int LineId, int SubType, List<DeepSlumberArea> Areas)>();
+
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.StartsWith("DSLV\t", StringComparison.Ordinal))
+            {
+                seasonLevels = ParseIntPairCsv(line.Substring(5));
+                continue;
+            }
+            if (!line.StartsWith("DSA\t", StringComparison.Ordinal)) continue;
+
+            var area = TryParseDeepSlumberAreaRow(line, out var lineId, out var subType);
+            if (area is null) continue;
+
+            var groupIndex = groups.FindIndex(g => g.LineId == lineId && g.SubType == subType);
+            if (groupIndex < 0)
+            {
+                groupIndex = groups.Count;
+                groups.Add((lineId, subType, new List<DeepSlumberArea>()));
+            }
+            groups[groupIndex].Areas.Add(area);
+        }
+
+        if (seasonLevels is null) return null;   // no DSLV row at all — old dump, not a genuine empty state
+
+        var lines = new List<DeepSlumberLine>(groups.Count);
+        foreach (var g in groups) lines.Add(new DeepSlumberLine(g.LineId, g.SubType, g.Areas));
+        return new DeepSlumberState(seasonLevels, lines);
+    }
+
+    // One "DSA\t<lineId>\t<subType>\t<areaId>\t<0|1>\t<score>\t<big>\t<middle>\t<normal>" row.
+    // Returns null on an unparseable id column; missing trailing columns default to
+    // inactive/0/empty rather than throwing (tolerates a stale in-flight read).
+    private static DeepSlumberArea? TryParseDeepSlumberAreaRow(string line, out int lineId, out int subType)
+    {
+        lineId = 0;
+        subType = 0;
+        var cols = line.Split('\t');
+        if (cols.Length < 4) return null;
+        if (!int.TryParse(cols[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out lineId)) return null;
+        if (!int.TryParse(cols[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out subType)) return null;
+        if (!int.TryParse(cols[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var areaId)) return null;
+
+        var isActive = cols.Length > 4 && cols[4] == "1";
+        var score = cols.Length > 5
+            && long.TryParse(cols[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) ? s : 0L;
+        var big = cols.Length > 6 ? ParseIntPairCsv(cols[6]) : EmptyIntPairs;
+        var middle = cols.Length > 7 ? ParseIntPairCsv(cols[7]) : EmptyIntPairs;
+        var normal = cols.Length > 8 ? ParseIntPairCsv(cols[8]) : EmptyIntPairs;
+        return new DeepSlumberArea(areaId, isActive, score, big, middle, normal);
+    }
+
+    /// <summary>Pure diagnostic-row extractor for the "DSN"/"DSERR" rows the refresh chunk appends
+    /// alongside DSLV/DSA (Task: DS iteration fix, owner run sea/O1jJepsgKC, 2026-08-20).
+    /// <see cref="ParseDeepSlumber"/> ignores both prefixes for state-building — they exist purely so a
+    /// walk that produced nothing tells the diagnostics partial exactly WHICH level failed:
+    /// "DSN\t&lt;lineCount&gt;" is the number of top-level seasonCultivateLineMap entries the outer walk
+    /// iterated, and each "DSERR\t&lt;section&gt;\t&lt;message&gt;" row is one pcall failure. Pure/static/
+    /// internal — no Lua bridge needed to exercise it.</summary>
+    internal static (int? LineCount, IReadOnlyList<string> Errors) ParseDeepSlumberDiagnosticRows(string raw)
+    {
+        int? lineCount = null;
+        List<string>? errors = null;
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.StartsWith("DSN\t", StringComparison.Ordinal))
+            {
+                if (int.TryParse(line.AsSpan(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                {
+                    lineCount = n;
+                }
+                continue;
+            }
+            if (line.StartsWith("DSERR\t", StringComparison.Ordinal))
+            {
+                (errors ??= new List<string>()).Add(line.Substring(6));
+            }
+        }
+        return (lineCount, errors ?? (IReadOnlyList<string>)Array.Empty<string>());
+    }
+
+    // Parses a "k:v,k:v" list into [k,v] pairs (order-preserving list, not a map — the same shape
+    // DeepSlumberArea/DeepSlumberState declare). Mirrors ParseUuidMap's idiom above. Malformed pairs
+    // are skipped, never thrown; an empty/absent field yields the shared empty list (no allocation).
+    private static IReadOnlyList<int[]> ParseIntPairCsv(string csv)
+    {
+        if (string.IsNullOrEmpty(csv)) return EmptyIntPairs;
+        List<int[]>? pairs = null;
+        foreach (var part in csv.Split(','))
+        {
+            var colon = part.IndexOf(':');
+            if (colon <= 0 || colon >= part.Length - 1) continue;
+            if (int.TryParse(part.AsSpan(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out var a)
+                && int.TryParse(part.AsSpan(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var b))
+            {
+                (pairs ??= new List<int[]>()).Add(new[] { a, b });
+            }
+        }
+        return pairs ?? EmptyIntPairs;
     }
 }

@@ -19,9 +19,11 @@ public sealed partial class BootstrapPlugin
         _inventoryProbe = new PandaInventoryProbe(log, typeRegistry, selfGearCache);
         _inventoryService = new InventoryService(_inventoryProbe, selfGearCache, log, _clientState!);
 
-        // Self equipped Battle Imagines — the same probe (IResonanceProbe) reads
-        // CharSerialize.resonance (field 28) off the same latched CharSerialize.
-        _resonanceService = new ResonanceService(_inventoryProbe);
+        // Self equipped Battle Imagines (IResonanceState) AND Deep-Slumber Psychoscope are now wired
+        // in BuildLoadoutServices, off the Lua-bridge reader on _loadoutProbe — the C# CharSerialize
+        // mirror this probe would otherwise walk is STALE: Deep-Slumber populates lazily
+        // (owner-verified 2026-08-19) and resonance serves the pre-swap imagine pair after an
+        // in-session swap (owner staging run sea/445626427740520448, 2026-08-23; see Wiring.Loadout.cs).
 
         // Phase 7 Iter 2: real IModuleEquip backed by PandaModuleEquipProbe.
         // It dispatches equip/uninstall through the game's Lua VM

@@ -138,7 +138,10 @@ internal sealed partial class PandaCombatStubProbe
         _positions.Clear();
 
         LatchDungeonRunId(span);
-        DiagScanSceneAttrsForDeathCount(span);
+        // (The enter-scene SceneAttrs scan for AttrDeathCount(348) that used to sit here was recon.
+        //  Its delivery path is traced and CONSUMED now: PandaWorldAttrProbe subscribes to this same
+        //  method 3 — registered after this probe so the run id above is already latched — plus
+        //  WorldNtf 7 SyncSceneAttrs for every later change.)
         DiagEnterSceneIdentity(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);

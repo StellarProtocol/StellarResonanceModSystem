@@ -14,6 +14,29 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.2.0] - 2026-08-24
+_**2.2.0** (minor) — the live-build release. Stellar now notices the moment your setup changes and reads it live, and exposes the Deep-Slumber Psychoscope to plugins. Additive, binary-compatible with plugins built against ≤2.1.0._
+### Added
+- Stellar now notices the moment you change your build — swapping a piece of gear (including with the Replace button), changing modules, respeccing talents, switching a Battle Imagine, or editing your Psychoscope. Plugins that record your setup, such as the Combat Meter, can now save the exact build you fought each boss with instead of whatever you happened to have on when the run started.
+- Your Psychoscope (Deep Slumber) is now available to plugins — season level, lines, socketed cards and node levels, read live from the game rather than from a saved profile.
+### Changed
+- Less background work while you play. Stellar used to re-check your equipment, talents and dungeon death count on a timer every moment you were in the world; it now waits for the game to tell it something changed. Same information, noticeably less work per frame.
+### Fixed
+- Swapping a Battle Imagine now takes effect straight away. Before, Stellar kept showing the pair you had equipped when you logged in.
+- Changing a piece of gear with the Replace button is picked up again — it used to go completely unnoticed.
+- The dungeon death counter no longer gets stuck. If a later run reached the same number of deaths as an earlier one, it used to report none at all.
+- Logging out and back in on another character no longer shows the previous character's Psychoscope.
+- Fixed a case where the game sent several changes at once and everything after the first one was thrown away.
+### Developer notes
+- `ILoadout.LiveState` (`LiveLoadoutState`): the local player's LIVE class + talents, parsed from the live line — never a saved plan. Refreshed with the loadout data; a respec re-fires the refresh through the new dirty-delta trigger.
+- `ILoadout.LiveStateChanged`: ONE game-tick event for the whole build — equipped gear/module slots, class, talent stage/nodes, the equipped Battle Imagine pair, and `IDeepSlumber.GetState()`. Raised only after a re-read actually CHANGED what the service serves (structural, order-insensitive compares; a not-yet-read surface is no-signal). Published from the RESOLVE step, not the raw slot read, so it can never fire while `GetSlots()` still describes the previous setup; an unresolvable change is held and delivered on the tick the data lands (LATE, never STALE). Raised on the game Update thread, unlike `IInventory.SelfGearChanged`. Deep-Slumber joined this event in `8e5a7b2` (owner staging run `sea/dXkw1PSyOG`: a psychoscope factor unequipped between two archives and re-equipped after — the framework re-read it correctly but told nobody, so the consumer kept one stale snapshot across two materially different builds).
+- `IPluginServices.DeepSlumber` (`IDeepSlumber`) + `DeepSlumberState`/`DeepSlumberLine`/`DeepSlumberArea`: live reflection reader over `CharSerialize.SeasonCultivateLineData`/`SeasonRoleLevelData`, seeded through the tolua# bridge because the C# mirror populates lazily and is a stale latch on a fresh session. `zcontainer` maps are iterated the game's way — `__pairs` yields nil VALUES, so the reader indexes per key (owner run `O1jJepsgKC`). Session state clears on logout.
+- `IInventory.SelfGearChanged` widened to the self BUILD-state signal: generic `ContainerDirtyDeltaReader.TouchesField` + semantic wrappers fire it on talent (`professionList`, field 61) and Deep-Slumber (`seasonCultivateLineData`, field 101) method-22 deltas. Still network-thread — flag there, read on the tick, or subscribe to `LiveStateChanged` instead.
+- `IResonanceState.Installed` keeps its shape but changes SOURCE and id space: equipped Battle Imagines are read from the skill hotbar's aoyi slots 7/8 as aoyi SKILL ids (`IGameDataResonance.GetImagineForSkill` resolves them). `CharSerialize.resonance` (wire field 28) is never re-serialized on an in-session swap, so the old field-28 source could not see a swap at all (owner run `sea/pNhmVQvVmV`).
+- Wire fix: the top-level delta scan died after the first SKIPPED field because it never consumed that field's trailing END tag — every change after the first in one packet was dropped.
+- The framework's last two per-tick game reads are gone. Live-state capture is driven by the container-merge event (replacing a field allowlist + a 1 s poll), and `IDungeonState.LastDefeatedCount` now rides `WorldNtf 3 EnterScene` (`EnterSceneInfo.SceneAttrs`, the seed) + `WorldNtf 7 SyncSceneAttrs` instead of a four-layer IL2CPP reflection read of `ZWorld.GetWorldLuaAttr(348)` on every main-thread beat — the same carrier the game's own dungeon HUD watches. It also fixes a latent probe-side memo that never reset across runs (a second run reaching the same count reported 0 forever). `StubRouter.Register` is now MULTICAST with registration order preserved (WorldNtf 3 has two subscribers and the order is load-bearing).
+- `tools/install-stellar.sh` gains `STELLAR_FRAMEWORK_ONLY=1` (deploy the framework set, plugin slots untouched) and `STELLAR_ONLY_PLUGINS=<slots>` (deploy only the named plugin slots, framework slot untouched).
+
 ## [2.1.0] - 2026-08-18
 _**2.1.0** (minor) — Stellar's own menus now speak your language. Adds a plugin localization API; additive, binary-compatible with all existing plugins._
 ### Added

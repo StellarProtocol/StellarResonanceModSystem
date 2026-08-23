@@ -170,4 +170,289 @@ public sealed class PandaLoadoutProbeParseTests
         Assert.Equal(0, live.ProfessionId);
         Assert.Null(live.TalentNodes);
     }
+
+    // ── Deep-Slumber (season cultivate) rows — the Lua-bridge read (owner-verified gap 2026-08-19:
+    // the C# CharSerialize mirror populates lazily; this reads the login-populated Lua mirror instead
+    // via the SAME refresh chunk/global) ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParsesDeepSlumberHappyPathWithTwoLinesAndOneInactiveArea()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "CUR=1\n1\tAtk\t2\t104\n" +
+            "DSLV\t93:65,94:10\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001\t\t21:4\n" +
+            "DSA\t93\t3\t2\t0\t0\t\t\t\n" +
+            "DSA\t94\t1\t1\t1\t50\t\t100:2000\t");
+
+        Assert.NotNull(state);
+        Assert.Equal(2, state!.SeasonLevels.Count);
+        Assert.Equal(new[] { 93, 65 }, state.SeasonLevels[0]);
+        Assert.Equal(new[] { 94, 10 }, state.SeasonLevels[1]);
+
+        Assert.Equal(2, state.Lines.Count);   // two distinct (lineId, subType) groups
+        var line93 = state.Lines[0];
+        Assert.Equal(93, line93.LineId);
+        Assert.Equal(3, line93.SubType);
+        Assert.Equal(2, line93.Areas.Count);
+
+        var activeArea = line93.Areas[0];
+        Assert.Equal(1, activeArea.AreaId);
+        Assert.True(activeArea.IsActive);
+        Assert.Equal(120, activeArea.Score);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(activeArea.BigNodes));
+        Assert.Empty(activeArea.MiddleNodes);
+        Assert.Equal(new[] { 21, 4 }, Assert.Single(activeArea.NormalNodes));
+
+        var inactiveArea = line93.Areas[1];
+        Assert.Equal(2, inactiveArea.AreaId);
+        Assert.False(inactiveArea.IsActive);
+        Assert.Equal(0, inactiveArea.Score);
+        Assert.Empty(inactiveArea.BigNodes);
+        Assert.Empty(inactiveArea.MiddleNodes);
+        Assert.Empty(inactiveArea.NormalNodes);
+
+        var line94 = state.Lines[1];
+        Assert.Equal(94, line94.LineId);
+        Assert.Equal(1, line94.SubType);
+        var area94 = Assert.Single(line94.Areas);
+        Assert.Equal(1, area94.AreaId);
+        Assert.True(area94.IsActive);
+        Assert.Equal(50, area94.Score);
+        Assert.Empty(area94.BigNodes);
+        Assert.Equal(new[] { 100, 2000 }, Assert.Single(area94.MiddleNodes));
+        Assert.Empty(area94.NormalNodes);
+    }
+
+    [Fact]
+    public void AbsentDslvRowYieldsNullDeepSlumberState()
+    {
+        // An OLD dump predating this enrichment (no DSLV/DSA rows at all) must parse to null — not an
+        // empty-but-real state — so IDeepSlumber correctly reports "not read yet", never "genuinely
+        // empty".
+        var state = PandaLoadoutProbe.ParseDeepSlumber("CUR=1\n1\tAtk\t2\t104\nLIVE\t\t\t2\t104\t");
+
+        Assert.Null(state);
+    }
+
+    [Fact]
+    public void EmptyDslvPayloadWithNoDsaRowsYieldsGenuinelyEmptyState()
+    {
+        // PINNED CHOICE: the refresh chunk ALWAYS emits the "DSLV" row, even with an empty payload —
+        // its PRESENCE (not its content) is what distinguishes a genuinely-empty season state from an
+        // old dump. No DSA rows either → an all-empty (never null) DeepSlumberState.
+        var state = PandaLoadoutProbe.ParseDeepSlumber("CUR=1\n1\tAtk\t2\t104\nDSLV\t");
+
+        Assert.NotNull(state);
+        Assert.Empty(state!.SeasonLevels);
+        Assert.Empty(state.Lines);
+    }
+
+    [Fact]
+    public void MalformedDeepSlumberNodePairsAreSkippedNotThrown()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:65\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001,junk,:99,22:\t\t");
+
+        var area = Assert.Single(Assert.Single(state!.Lines).Areas);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(area.BigNodes));
+    }
+
+    [Fact]
+    public void MalformedDeepSlumberIdColumnsDropTheWholeRowNotThrown()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:sixty-five,94:10\n" +
+            "DSA\t93\tX\t1\t1\t120\n" +          // non-numeric subType -> dropped
+            "DSA\tnotanumber\t3\t1\t1\t120\n" +  // non-numeric lineId -> dropped
+            "DSA\t95\t1\tnotanumber\n" +         // non-numeric areaId -> dropped
+            "DSA\t95\t1");                       // too few columns (<4) -> dropped
+
+        Assert.NotNull(state);
+        Assert.Equal(new[] { 94, 10 }, Assert.Single(state!.SeasonLevels));   // "93:sixty-five" skipped
+        Assert.Empty(state.Lines);
+    }
+
+    // ── "DSN"/"DSERR" diagnostic rows (Task: DS iteration fix, owner run sea/O1jJepsgKC, 2026-08-20) —
+    // the root cause was the game's zcontainer __pairs yielding nil values, so a plain "for k,v in
+    // pairs(m)" walk produced nothing with no error at all. The fixed chunk now walks keys-then-index
+    // and always appends "DSN\t<lineCount>" plus any "DSERR\t<section>\t<msg>" pcall failures. Neither
+    // row kind may affect ParseDeepSlumber's state-building — they are diagnostics-only, read back via
+    // ParseDeepSlumberDiagnosticRows instead. ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DsnAndDserrRowsAreIgnoredByParseDeepSlumberStateBuilding()
+    {
+        var state = PandaLoadoutProbe.ParseDeepSlumber(
+            "DSLV\t93:65\n" +
+            "DSN\t1\n" +
+            "DSA\t93\t3\t1\t1\t120\t11:5110001\t\t21:4\n" +
+            "DSERR\tcultivateLines\tsome lua error");
+
+        Assert.NotNull(state);
+        Assert.Equal(new[] { 93, 65 }, Assert.Single(state!.SeasonLevels));
+        var area = Assert.Single(Assert.Single(state.Lines).Areas);
+        Assert.Equal(new[] { 11, 5110001 }, Assert.Single(area.BigNodes));
+    }
+
+    [Fact]
+    public void ParsesDeepSlumberDiagnosticRowsLineCountAndErrors()
+    {
+        var (lineCount, errors) = PandaLoadoutProbe.ParseDeepSlumberDiagnosticRows(
+            "DSLV\t93:65\n" +
+            "DSN\t7\n" +
+            "DSERR\tseasonLevel\tattempt to index a nil value\n" +
+            "DSERR\tcultivateLines\ttoo many results to unpack");
+
+        Assert.Equal(7, lineCount);
+        Assert.Equal(2, errors.Count);
+        Assert.Equal("seasonLevel\tattempt to index a nil value", errors[0]);
+        Assert.Equal("cultivateLines\ttoo many results to unpack", errors[1]);
+    }
+
+    [Fact]
+    public void AbsentDsnRowYieldsNullLineCountAndNoErrors()
+    {
+        // An OLD dump predating this enrichment (no DSN/DSERR rows at all) must parse to a null line
+        // count and an empty error list, never throw.
+        var (lineCount, errors) = PandaLoadoutProbe.ParseDeepSlumberDiagnosticRows("DSLV\t93:65\nDSA\t93\t3\t1\t1\t120");
+
+        Assert.Null(lineCount);
+        Assert.Empty(errors);
+    }
+
+    // ── Resonance (equipped Battle Imagines) row ─────────────────────────────────────────────────
+    // PINNED (owner staging run sea/445626427740520448, 2026-08-23): the equipped-imagine pair must
+    // come from the LIVE Lua mirror ("RES" row of the refresh chunk), not the stale C# CharSerialize
+    // mirror — third organ of the stale-mirror disease (docs/recon/combatmeter-data-facts.md). A
+    // parse regression here silently reverts IResonanceState to serving the pre-swap pair after an
+    // in-session imagine swap. ───────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParsesResonanceRowIntoInstalledIds()
+    {
+        var installed = PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRES\t50310003,50310010");
+
+        Assert.NotNull(installed);
+        Assert.Equal(new[] { 50310003, 50310010 }, installed);
+    }
+
+    [Fact]
+    public void AbsentResonanceRowYieldsNullNotEmpty()
+    {
+        // No "RES" row at all (old dump, or the chunk's pcall failed and only "RESERR" was
+        // appended) is NO SIGNAL — the probe must keep reporting "not ready" rather than publish
+        // an empty pair over a genuinely-equipped one.
+        Assert.Null(PandaLoadoutProbe.ParseResonanceLine("CUR=1\n1\tSmite\t5\t104"));
+        Assert.Null(PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRESERR\tattempt to index a nil value"));
+    }
+
+    [Fact]
+    public void EmptyResonanceRowYieldsEmptyListGenuinelyNoImagines()
+    {
+        var installed = PandaLoadoutProbe.ParseResonanceLine("CUR=1\nRES\t");
+
+        Assert.NotNull(installed);
+        Assert.Empty(installed!);
+    }
+
+    [Fact]
+    public void MalformedResonanceIdsAreSkippedNotThrown()
+    {
+        Assert.Equal(new[] { 50310003, 50310010 },
+            PandaLoadoutProbe.ParseResonanceLine("RES\t50310003,junk,,50310010"));
+    }
+
+    // ── Hotbar slots 7/8 ("RESSLOT") row — the LIVE equipped-imagine source ──────────────────────
+    // PINNED (owner diagnostics run sea/pNhmVQvVmV, 2026-08-23): field 28 / cs.resonance.installed
+    // is login-stale AND its ids are environment-resonance objects, not Battle Imagines; the live
+    // pair is the hotbar's aoyi slots (cs.slots.slots[7]/[8].skillId), emitted as the aoyi SKILL
+    // ids the site's imagine chips + IGameDataResonance.GetImagineForSkill already resolve. ───────
+
+    [Fact]
+    public void ParsesResonanceSlotsRowIntoSlotOrderedSkillIds()
+    {
+        Assert.Equal(new[] { 3944, 2350 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t50101,50102\nRESSLOT\t7:3944,8:2350"));
+    }
+
+    [Fact]
+    public void ResonanceSlotsRowCanonicalOrderIsSlot7ThenSlot8RegardlessOfPairOrder()
+    {
+        // Setup identity is order-sensitive; the canonical order is slot 7 then slot 8 even if the
+        // row ever carried the pairs reversed.
+        Assert.Equal(new[] { 3944, 2350 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t8:2350,7:3944"));
+    }
+
+    [Fact]
+    public void AbsentResonanceSlotsRowYieldsNullNotEmpty()
+    {
+        // No "RESSLOT" row (old poll dump) or only the "RESSLOTERR" failure row is NO SIGNAL —
+        // never publish a phantom empty pair over a genuinely-equipped one.
+        Assert.Null(PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t50101,50102"));
+        Assert.Null(PandaLoadoutProbe.ParseResonanceSlotsLine("RES\t\nRESSLOTERR\tattempt to index a nil value"));
+    }
+
+    [Fact]
+    public void EmptyResonanceSlotsRowYieldsEmptyListGenuinelyNothingSlotted()
+    {
+        var ids = PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t");
+        Assert.NotNull(ids);
+        Assert.Empty(ids!);
+    }
+
+    [Fact]
+    public void SingleSlotAndZeroSkillIdsHandled()
+    {
+        Assert.Equal(new[] { 2350 }, PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t8:2350"));
+        // A zero skillId is "slot empty", never an id.
+        Assert.Equal(new[] { 3944 }, PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t7:3944,8:0"));
+    }
+
+    [Fact]
+    public void MalformedResonanceSlotPairsAreSkippedNotThrown()
+    {
+        Assert.Equal(new[] { 3944 },
+            PandaLoadoutProbe.ParseResonanceSlotsLine("RESSLOT\t7:3944,junk,:5,8:,9:1234"));
+    }
+
+    [Fact]
+    public void SelectInstalledSource_SlotsRowAlwaysWins_InstalledOnlySeedsNullLatch()
+    {
+        var slots = new[] { 3944, 2350 };
+        var installed = new[] { 50101, 50102 };
+        var latch = new[] { 1, 2 };
+
+        // Slots row present → primary source, latch state irrelevant.
+        Assert.Equal((slots, "slots-poll"),
+            PandaLoadoutProbe.SelectInstalledSource(slots, installed, latch));
+        Assert.Equal((slots, "slots-poll"),
+            PandaLoadoutProbe.SelectInstalledSource(slots, null, null));
+
+        // Installed row may ONLY seed a still-null latch (old-dump tolerance) — never override a
+        // latched value, so identity cannot flap between differently-sourced lists tick-to-tick.
+        Assert.Equal((installed, "installed-fallback"),
+            PandaLoadoutProbe.SelectInstalledSource(null, installed, null));
+        Assert.Equal(((System.Collections.Generic.IReadOnlyList<int>?)null, (string?)null),
+            PandaLoadoutProbe.SelectInstalledSource(null, installed, latch));
+
+        // No source at all → keep the latch.
+        Assert.Equal(((System.Collections.Generic.IReadOnlyList<int>?)null, (string?)null),
+            PandaLoadoutProbe.SelectInstalledSource(null, null, latch));
+    }
+
+    [Fact]
+    public void InstalledEquals_OrderSensitive_NullTolerant()
+    {
+        // Pure decision helper behind the 1 Hz live-mirror poll's latch-update + change-log
+        // (owner diagnostics run sea/pNhmVQvVmV, 2026-08-23): a swap (value change OR slot
+        // reorder) must register as a change; null (pre-first-read latch) never equals a list.
+        Assert.True(PandaLoadoutProbe.InstalledEquals(null, null));
+        Assert.True(PandaLoadoutProbe.InstalledEquals(new[] { 50101, 50102 }, new[] { 50101, 50102 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(null, new[] { 50101 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(new[] { 50101, 50102 }, new[] { 50102, 50101 }));
+        Assert.False(PandaLoadoutProbe.InstalledEquals(new[] { 50101 }, new[] { 50101, 50102 }));
+    }
 }

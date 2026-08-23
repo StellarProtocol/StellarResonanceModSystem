@@ -18,6 +18,17 @@ internal interface ILoadoutProbe
     /// <summary>The current loadout id, or null if none/unknown.</summary>
     int? ReadCurrentIndex();
 
+    /// <summary>The local player's live class + talents from the LIVE line, or null when the live
+    /// read has not resolved yet.</summary>
+    LiveLoadoutState? ReadLiveState();
+
+    /// <summary>Consumes the probe's "the live re-read changed what we serve" flag (equipped
+    /// gear/module slots, class, talent stage/nodes, or the equipped imagine pair). Returns true at
+    /// most once per real change — the probe raises it only on a structural difference, never on an
+    /// identical re-parse. Read on the game tick right after <c>DrainPendingCompletions</c>, so the
+    /// per-class resolve for that change has already run.</summary>
+    bool ConsumeLiveStateChanged();
+
     /// <summary>Dispatch the native switch to <paramref name="index"/> (a loadout id).</summary>
     Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct);
 }

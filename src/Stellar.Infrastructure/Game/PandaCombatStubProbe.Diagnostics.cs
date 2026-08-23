@@ -182,14 +182,12 @@ internal sealed partial class PandaCombatStubProbe
                   $"hasDir={pos.HasDir} dir={pos.Dir:0.00}");
     }
 
-    // Recon probe for Task 6 (Defeated / AttrDeathCount=348): the World-entity attr's
-    // delivery path is NOT yet traced (unlike scene attrs 340-345, which are proven to
-    // ride EnterSceneInfo.SceneAttrs). This logs every occurrence seen across the three
-    // attr-iteration sites (appear / enter-scene self / delta) so the Task-9 in-game
-    // smoke can confirm which carrier ships it and that its value matches the Victory
-    // screen's "Defeated" count. Dedup'd per (entity, value) so a steady-state resend of
-    // the same value doesn't spam the log; a genuinely changing count (0 -> 1 -> 2 ...)
-    // still logs each new value.
+    // AttrDeathCount(348) sightings on a PER-ENTITY attr collection (appear / enter-scene self /
+    // delta). The real capture no longer runs here: 348 is a SCENE attr and rides the scene attr
+    // collection (EnterSceneInfo.SceneAttrs + WorldNtf 7 SyncSceneAttrs), which PandaWorldAttrProbe
+    // now consumes. This line is kept purely as a negative-result watchdog — if 348 ever DOES show
+    // up on an entity's attrs, that is new information worth seeing. Dedup'd per (entity, value) so
+    // a steady-state resend of the same value doesn't spam the log.
     private static readonly HashSet<(long Uuid, long Value)> SeenDeathCountValues = new();
     private static readonly object SeenDeathCountLock = new();
 
@@ -203,25 +201,6 @@ internal sealed partial class PandaCombatStubProbe
         if (!first) return;
 
         _log.Info($"[CombatStub][DeathCount] AttrDeathCount(348) seen entity={eid.Value} value={value} path={path}");
-    }
-
-    // AttrDeathCount(348) is documented as a scene/World-level attr (same family as
-    // AttrSceneName=340 / AttrSceneUuid=342 / AttrSceneLevelId=345), which ride
-    // EnterSceneInfo.SceneAttrs — a DIFFERENT AttrCollection than PlayerEnt.Attrs (the
-    // self entity's own attrs, scanned in OnEnterScene above). Scan SceneAttrs
-    // separately on every EnterScene so we don't miss 348 if it never appears on any
-    // per-entity AttrCollection at all. Uses EntityId(0) as the "no entity" sentinel
-    // since scene-level attrs are not entity-scoped.
-    private void DiagScanSceneAttrsForDeathCount(ReadOnlySpan<byte> span)
-    {
-        if (!StellarDiagnostics.IsEnabled) return;
-        if (!EnterSceneReader.TryReadSceneAttrs(span, out var sceneAttrs, out _)) return;
-        for (int i = 0; i < sceneAttrs.Items.Count; i++)
-        {
-            var attr = sceneAttrs.Items[i];
-            if (attr.Id == AttrTypeIds.AttrDeathCount)
-                DiagDeathCountAttr(default, attr, "enter-scene-SceneAttrs");
-        }
     }
 
     // One line per enter-scene: the raw scene uuid, the run-id gate's decision, and the two

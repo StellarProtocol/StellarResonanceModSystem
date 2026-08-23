@@ -99,4 +99,7 @@ public interface IPluginServices
     IHarmonyHost Harmony { get; }
     /// <summary>Localizes this plugin's own UI text into the active UI language (English fallback).</summary>
     ILocalization Localization { get; }
+    /// <summary>Live Deep-Slumber Psychoscope (season cultivate) state — level, lines, socketed
+    /// cards, node levels. Read live per call; never sourced from a saved profile.</summary>
+    IDeepSlumber DeepSlumber { get; }
 }

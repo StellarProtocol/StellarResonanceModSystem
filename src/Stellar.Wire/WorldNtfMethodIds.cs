@@ -10,6 +10,17 @@ public static class WorldNtfMethodIds
     public const uint EnterScene           = 3;  // EnterSceneInfo.PlayerEnt.Attrs = self's full attr set (incl. skill loadout 116)
     public const uint Teleport             = 5;
     public const uint SyncNearEntities     = 6;
+    // SyncSceneAttrs{ AttrCollection attrs = 1 } — the SCENE/World attr sync: the carrier that keeps
+    // Panda.ZGame.ZWorld's world attr collection fresh (ZWorld.ParseAttrProto(AttrCollection) fills the
+    // very collection Z.World:GetWorldLuaAttr(id) reads). Same attr band the framework already consumes
+    // off EnterSceneInfo.SceneAttrs (340 SceneName / 341 SceneBasicId / 342 SceneUuid / 345 SceneLevelId);
+    // AttrDeathCount(348) — the settlement "Defeated" counter — rides here too.
+    // Id confirmed two independent ways: (a) reconstructing the WorldNtf method table by merging the
+    // Cpp2IL Zproto.WorldNtf.Types declaration order with the lua id map in
+    // StarResonanceData/lua/zservice/world_ntf_gen.lua — the merge yields 46 consecutive ids and every
+    // known anchor (3/5/6/21/22/23/24/43/45/46) lands exactly right; (b) the independent third-party
+    // enum data/BPSR-ZDPS/BPSR-ZDPSLib/ServiceMethods/WorldNtf.cs — `SyncSceneAttrs = 0x7`.
+    public const uint SyncSceneAttrs       = 7;
     public const uint SyncContainerData    = 21; // full inventory sync (CharSerialize)
     public const uint SyncContainerDirtyData = 22; // incremental container update
     public const uint SyncDungeonData      = 23; // DungeonSyncData (scene_uuid + settlement). Confirmed: lua/zservice/world_ntf_gen.lua OnCallStub GetMethodId()==23

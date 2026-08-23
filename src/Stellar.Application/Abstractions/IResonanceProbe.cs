@@ -4,13 +4,17 @@ namespace Stellar.Application.Abstractions;
 
 /// <summary>
 /// Outbound contract for reading the local player's equipped Battle Imagines
-/// from the game. Implemented by Infrastructure (<c>PandaInventoryProbe</c>) by
-/// walking <c>CharSerialize.resonance</c> (wire field 28) on the same live
-/// <c>CharSerialize</c> the inventory probe already latches. Application's
+/// (<c>CharSerialize.resonance</c>, wire field 28). The Host-selected
+/// implementation is <c>PandaLoadoutProbe</c>, which reads the LIVE Lua mirror
+/// via its refresh chunk — the C# <c>CharSerialize</c> reflection mirror
+/// (<c>PandaInventoryProbe</c>, still implemented but unwired) is a stale latch
+/// that kept serving the pre-swap pair after an in-session imagine swap (owner
+/// staging run <c>sea/445626427740520448</c>, 2026-08-23). Application's
 /// <c>ResonanceService</c> consumes this without ever touching IL2CPP.
 ///
-/// Returns <c>false</c> rather than throwing when the game's container path
-/// can't be resolved yet — Application treats this as "data not ready".
+/// Returns <c>false</c> rather than throwing when the data isn't readable yet
+/// (bridge unresolved / no "RES" row parsed) — Application treats this as
+/// "data not ready" and keeps its last published snapshot.
 /// </summary>
 internal interface IResonanceProbe
 {

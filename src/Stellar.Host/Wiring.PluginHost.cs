@@ -91,7 +91,8 @@ public sealed partial class BootstrapPlugin
             _harmonyHostFactory!.Create("stellar.framework"),
             // Framework's own localization façade (namespace "stellar.framework"); plugins get their own
             // per-plugin façade via PerPluginServices.
-            _frameworkLocalization!);
+            _frameworkLocalization!,
+            _deepSlumberService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

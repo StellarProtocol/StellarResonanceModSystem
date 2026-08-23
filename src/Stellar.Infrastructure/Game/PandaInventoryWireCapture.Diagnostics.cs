@@ -90,6 +90,34 @@ internal sealed partial class PandaInventoryWireCapture
         _log.Info($"[Inventory][Gear] decoded {count} gear instances");
     }
 
+    // ── Container-merge event diagnostics (from StubCapture.cs HandleDirtyContainerFromBytes) ──
+    //
+    // Banks what a real edit actually emits. The per-field trigger allowlist that shipped before
+    // 2026-08-23 silently dropped the gear UI's "Replace" button and imagine swaps, and NOTHING ever
+    // logged the field list of a delta it rejected — so the gap was invisible for a whole session.
+    // Both of these fire per event (not one-shot): the census IS the measurement, and a merge storm
+    // only happens under a deliberate player action.
+
+    private void DiagContainerMerge(byte[] buffer)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        try
+        {
+            var fields = Protobuf.ContainerDirtyDeltaReader.TopLevelFields(buffer);
+            _log.Info($"[Inventory][Merge] container delta bytes={buffer.Length} fields=[{string.Join(",", fields)}]");
+        }
+        catch { /* diagnostics must never disturb the receive thread */ }
+    }
+
+    /// <summary>Names the stage at which the m22 envelope walk gave up. Previously every one of these
+    /// bails returned silently, which is indistinguishable from "the player changed nothing".</summary>
+    private void DiagMergeEnvelopeFail(string stage, int inputLength)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        try { _log.Info($"[Inventory][Merge] envelope extraction FAILED at {stage} (input {inputLength} bytes) — no merge signal raised"); }
+        catch { /* diagnostics must never disturb the receive thread */ }
+    }
+
     // ── Decode diagnostics (from StubCapture.Decode.cs) ──
 
     private bool _wrapperMembersLogged;

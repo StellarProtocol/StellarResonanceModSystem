@@ -35,7 +35,10 @@ internal readonly record struct ModSlotDelta(
 ///   <item>Field entry = <c>index</c> (i32, &gt; 0 = a proto field number),
 ///         then field-specific data.</item>
 ///   <item>Nested MESSAGE field (e.g. <c>mod</c>, field 57) = its own
-///         BEGIN/size/inner-fields/END container — descend into it.</item>
+///         BEGIN/size/inner-fields/END container — descend into it. The
+///         <c>size</c> word EXCLUDES the trailing END tag (see
+///         <c>TrySkipUnknownField</c> for the char_serialize.lua proof); an
+///         empty nested container is BEGIN/END with no trailing tag.</item>
 ///   <item>MAP field data = <c>addCount</c> (i32). Sentinels: <c>-4</c> = skip
 ///         (no change to this map), <c>-1</c> = add-only (re-read the real
 ///         addCount next). Otherwise <c>addCount</c>, then <c>removeCount</c>
@@ -60,7 +63,19 @@ internal static partial class ContainerDirtyDeltaReader
 {
     private const int FieldMod = 57;        // CharSerialize.mod
     private const int FieldModSlots = 1;    // Mod.mod_slots (map<int32,int64>)
+
+    // CharSerialize's only two top-level RAW-SCALAR members (measured census of
+    // char_serialize.lua mergeDataFuncs, 2026-08-23: charId (1) and saveSerial (104), both
+    // br.ReadInt64 — every other field is a nested container). They carry NO BEGIN container,
+    // so the generic container-skip fails on them and kills the walk — owner log (run
+    // sea/pNhmVQvVmV, 4x in one session): "parse failure at CharSerialize.skip nextI32=[0,-3]",
+    // which made every field AFTER 104 invisible to the Touches* scans and Read().
+    private const int FieldCharId = 1;      // CharSerialize.charId (raw i64)
+    private const int FieldSaveSerial = 104; // CharSerialize.saveSerial (raw i64)
     private const int FieldEquip = 12;      // CharSerialize.equip (EquipList) — the equipped-gear mapping
+    private const int FieldResonance = 28;  // CharSerialize.resonance — equipped Battle Imagines
+    private const int FieldProfessionList = 61;       // CharSerialize.professionList (talents)
+    private const int FieldSeasonCultivate = 101;     // CharSerialize.seasonCultivateLineData (Deep-Slumber)
 
     private const int TagBegin = -2;
     private const int TagEnd = -3;
@@ -97,7 +112,87 @@ internal static partial class ContainerDirtyDeltaReader
     /// field 12). A read-only top-level field scan, DELIBERATELY separate from <see cref="Read"/> so the
     /// mod-slot decode path is untouched. Never throws — any malformed input returns false.
     /// </summary>
-    public static bool TouchesEquip(byte[]? buffer)
+    public static bool TouchesEquip(byte[]? buffer) => TouchesField(buffer, FieldEquip);
+
+    /// <summary>True when the delta touches the talent container (CharSerialize field 61 =
+    /// <c>professionList</c>) — a talent respec / stage switch.</summary>
+    public static bool TouchesTalents(byte[]? buffer) => TouchesField(buffer, FieldProfessionList);
+
+    /// <summary>True when the delta touches the Deep-Slumber season-cultivate container
+    /// (CharSerialize field 101 = <c>seasonCultivateLineData</c>) — a psychoscope node/card edit.</summary>
+    public static bool TouchesSeasonCultivate(byte[]? buffer) => TouchesField(buffer, FieldSeasonCultivate);
+
+    /// <summary>True when the delta touches the resonance container (CharSerialize field 28 =
+    /// <c>resonance</c>) — a Battle Imagine install/swap. NO LONGER a trigger gate (see
+    /// <see cref="IsMergeSignal"/>); kept as tested wire-fact API + diagnostics, because field 28 is
+    /// provably NOT re-serialized mid-session (owner run <c>sea/pNhmVQvVmV</c>: an imagine swap's
+    /// delta carried fields 2/55/96/104).</summary>
+    public static bool TouchesResonance(byte[]? buffer) => TouchesField(buffer, FieldResonance);
+
+    /// <summary>
+    /// FIELD-AGNOSTIC merge signal: true when <paramref name="buffer"/> is a structurally-valid,
+    /// NON-EMPTY CharSerialize delta container — <b>regardless of which fields it carries</b>.
+    ///
+    /// <para><b>Why field-agnostic (owner ruling 2026-08-23 — capture must be event-driven at the
+    /// right probe point, no polling):</b> every CharSerialize update, login full sync and dirty
+    /// delta alike, funnels through ONE service (<c>Panda.ZGame.ContainerSyncService</c> → Lua
+    /// <c>ContainerSyncService.OnSync</c> → <c>MergeData</c> → watcher dispatch), so the ARRIVAL of
+    /// a delta — not its field list — is the correct "the game just merged fresh container data"
+    /// event. The previous allowlist (<see cref="TouchesEquip"/> 12 / <see cref="TouchesResonance"/>
+    /// 28 / <c>mod</c> 57 / <see cref="TouchesTalents"/> 61 / <see cref="TouchesSeasonCultivate"/>
+    /// 101) MISSED real edits: the gear UI's "Replace" button and an imagine swap both emit deltas
+    /// whose top-level fields are none of those five (measured 2/55/96/104), so the framework's live
+    /// surfaces were never re-read and the plugin never re-captured the setup. An extra signal costs
+    /// one local Lua re-read; a missed one loses the player's setup, so the asymmetry is decisive.</para>
+    ///
+    /// <para>An EMPTY container (<c>size == END</c>) is deliberately NOT a signal — the game merged
+    /// nothing, so there is nothing to re-read. Never throws: malformed input returns false.</para>
+    /// </summary>
+    public static bool IsMergeSignal(byte[]? buffer)
+    {
+        if (buffer is null || buffer.Length < 8) return false;
+        try
+        {
+            var reader = new BlobReader(buffer);
+            return TryEnterContainer(ref reader, "CharSerialize.mergeSignal");
+        }
+        catch { return false; /* never throw on the network thread */ }
+    }
+
+    /// <summary>
+    /// Cheap top-level field census — the proto field numbers present at the CharSerialize level,
+    /// in wire order. DIAGNOSTICS ONLY (it allocates): callers must gate on
+    /// <c>StellarDiagnostics.IsEnabled</c>. Exists to bank what real edits actually emit — the
+    /// "Replace"-button gap above was invisible because nothing ever logged the field list of a
+    /// delta the allowlist rejected. Stops after <paramref name="max"/> fields so a corrupt buffer
+    /// can never drive an unbounded list. Never throws — a malformed walk returns what it read so
+    /// far.
+    /// </summary>
+    public static List<int> TopLevelFields(byte[]? buffer, int max = 32)
+    {
+        var fields = new List<int>();
+        if (buffer is null || buffer.Length < 8) return fields;
+        try
+        {
+            var reader = new BlobReader(buffer);
+            if (!TryEnterContainer(ref reader, "CharSerialize.census")) return fields;
+            var index = reader.ReadInt32();
+            while (index > 0 && fields.Count < max)
+            {
+                fields.Add(index);
+                if (!TrySkipTopLevelField(ref reader, index)) break;
+                if (reader.Remaining < 4) break;
+                index = reader.ReadInt32();
+            }
+        }
+        catch { /* never throw on the network thread — return the partial census */ }
+        return fields;
+    }
+
+    /// <summary>True when the delta's top-level CharSerialize field list contains
+    /// <paramref name="fieldNum"/>. Read-only scan, deliberately separate from <see cref="Read"/>
+    /// so the mod-slot decode path is untouched. Never throws — malformed input returns false.</summary>
+    public static bool TouchesField(byte[]? buffer, int fieldNum)
     {
         if (buffer is null || buffer.Length < 8) return false;
         try
@@ -107,8 +202,8 @@ internal static partial class ContainerDirtyDeltaReader
             var index = reader.ReadInt32();
             while (index > 0)
             {
-                if (index == FieldEquip) return true;
-                if (!TrySkipUnknownField(ref reader)) return false;
+                if (index == fieldNum) return true;
+                if (!TrySkipTopLevelField(ref reader, index)) return false;
                 if (reader.Remaining < 4) break;
                 index = reader.ReadInt32();
             }
@@ -131,7 +226,7 @@ internal static partial class ContainerDirtyDeltaReader
                 return ReadModContainer(ref reader);
             }
 
-            if (!TrySkipUnknownField(ref reader))
+            if (!TrySkipTopLevelField(ref reader, index))
             {
                 DiagParseFailure("CharSerialize.skip", ref reader);
                 return ModSlotDelta.None;
@@ -281,19 +376,49 @@ internal static partial class ContainerDirtyDeltaReader
         return size != TagEnd;
     }
 
-    // Skips an unknown container field: read BEGIN + size, then jump `size`
-    // bytes. Mirrors BPSR-B's _skip_unknown_field. Returns false on a malformed
-    // or out-of-range container.
+    // Skips one top-level CharSerialize field of any kind: the two known raw i64 scalars
+    // (fields 1 / 104 — see the consts above) are consumed via ReadInt64, which also eats the
+    // value's single SEA-wire guard canary; every other field is a nested container skipped via
+    // TrySkipUnknownField. Used by BOTH top-level walks (TouchesField + WalkCharSerializeFields);
+    // the inner Mod walk keeps the plain container skip (Mod has no known raw-scalar members).
+    private static bool TrySkipTopLevelField(ref BlobReader reader, int index)
+    {
+        if (index == FieldCharId || index == FieldSaveSerial)
+        {
+            if (reader.Remaining < 8) return false;
+            reader.ReadInt64();
+            return true;
+        }
+        return TrySkipUnknownField(ref reader);
+    }
+
+    // Skips an unknown container field. Wire shape (authoritative decoder:
+    // StarResonanceData lua/zcontainer/char_serialize.lua `mergeData`, ~line 1966):
+    // a NON-EMPTY nested field blob is [BEGIN][size][body][END] where `size`
+    // EXCLUDES the trailing END tag — proof: the game's unknown-field bail does
+    // SetOffset(offset + size) and then REQUIRES the next ReadInt32 to be -3
+    // ("Invalid end tag"), and each sub-container's own merge loop consumes its
+    // trailing -3. An EMPTY container is [BEGIN][END] with NO trailing tag.
+    // Skipping `size` without consuming the trailing END left the cursor ON the
+    // -3, so the next field-index read exited the walk — any field AFTER the
+    // first skipped non-empty field was invisible (TouchesResonance/TouchesEquip/
+    // etc. only matched a first-position field; Read's mod walk had the same
+    // defect). Production trigger: owner run sea/pNhmVQvVmV — an imagine swap
+    // whose field-28 delta sat behind another dirty field never re-fired the
+    // refresh. Returns false on malformed input, never throws.
     private static bool TrySkipUnknownField(ref BlobReader reader)
     {
         if (reader.Remaining < 8) return false;
         var tag = reader.ReadInt32();
         if (tag != TagBegin) return false;
         var size = reader.ReadInt32();
-        if (size == TagEnd) return true;   // empty container
+        if (size == TagEnd) return true;   // empty container: [BEGIN][END], no trailing tag
         if (size < 0 || size > reader.Remaining) return false;
         reader.Skip(size);
-        return true;
+        // Consume the trailing END tag the size word excludes (ReadInt32 also eats
+        // its guard canary on the SEA wire). Anything else is malformed.
+        if (reader.Remaining < 4) return false;
+        return reader.ReadInt32() == TagEnd;
     }
 
     // Bounds sanity: each add/update entry is 12 bytes (i32 key + i64 value) and

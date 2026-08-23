@@ -37,6 +37,22 @@ public sealed partial class BootstrapPlugin
         _inventoryService!.SelfGearChanged += _loadoutProbe.OnGearChanged;
         _loadoutService = new LoadoutService(_loadoutProbe);
 
+        // Deep-Slumber Psychoscope (season cultivate) — the SAME loadout probe (IDeepSlumberProbe) reads
+        // it via the Lua bridge's on-demand refresh chunk (DSLV/DSA rows), NOT the C# CharSerialize
+        // reflection mirror PandaInventoryProbe used to serve this from: that mirror populates LAZILY
+        // (empty until the player opens the Psychoscope UI this session), so a fresh-session archive
+        // uploaded no Deep-Slumber block. The Lua mirror is populated at login (owner-verified 2026-08-19).
+        _deepSlumberService = new DeepSlumberService(_loadoutProbe);
+
+        // Self equipped Battle Imagines (IResonanceState) — the SAME loadout probe (IResonanceProbe)
+        // reads cs.resonance.installed via the Lua bridge's refresh chunk ("RES" row), NOT the C#
+        // CharSerialize reflection mirror PandaInventoryProbe used to serve this from: that mirror is
+        // a stale latch — after an in-session imagine swap it kept serving the PRE-SWAP pair (owner
+        // staging run sea/445626427740520448, 2026-08-23 — third organ of the stale-mirror disease,
+        // docs/recon/combatmeter-data-facts.md). The Lua mirror is replaced wholesale on every
+        // field-28 dirty delta, which now also fires SelfGearChanged → OnGearChanged → re-refresh.
+        _resonanceService = new ResonanceService(_loadoutProbe);
+
         // Party-id reconnect refresher (built here for the shared typeRegistry + Lua bridge; _partyService
         // and _dungeonStateService are already constructed in BuildCoreServices). Reads the live run id +
         // party id each tick and, in a dungeon with no party id yet, fires WorldProxy.GetTeamInfo.

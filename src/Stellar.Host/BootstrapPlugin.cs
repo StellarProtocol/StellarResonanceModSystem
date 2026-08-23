@@ -82,7 +82,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private ModuleEquipService? _moduleEquipService;
     private PandaTeamControlProbe? _teamControlProbe;
     private PartyControlService? _partyControlService;
-    private ResonanceService? _resonanceService;   // self equipped Battle Imagines (CharSerialize.resonance)
+    private ResonanceService? _resonanceService;   // self equipped Battle Imagines (Lua mirror via loadout probe — Wiring.Loadout.cs)
+    private DeepSlumberService? _deepSlumberService;   // live Deep-Slumber Psychoscope (season cultivate)
     private double _inventoryAccumSeconds;   // time-based 1 Hz inventory poll (rate-independent)
 
     // ── GameData services (Wiring.GameData.cs / Wiring.GameData.Tick.cs) ───
@@ -107,7 +108,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
     private PandaDungeonProbe? _dungeonProbe;
-    private PandaWorldAttrProbe? _worldAttrProbe;   // main-thread tick: reads ZWorld AttrDeathCount(348) → Defeated
+    private PandaWorldAttrProbe? _worldAttrProbe;   // wire-driven: scene attrs (WorldNtf 3 + 7) → AttrDeathCount(348) → Defeated
     // EntityCtrlDead.OnEnter / ZStateBreaking.OnEnter → CombatEvent.EntityStateChanged (2026-07-28
     // entity-state-death-signal spec) — the client's own death/break signal, not an HP-zero inference.
     private PandaEntityStateProbe? _entityStateProbe;
