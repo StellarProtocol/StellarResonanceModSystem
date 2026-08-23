@@ -42,7 +42,17 @@ public interface ILoadout
     /// <summary>
     /// Raised on the game tick AFTER the framework re-read the local player's LIVE build state and
     /// the re-read actually CHANGED what this service serves — equipped gear/module slots, class,
-    /// talent stage/nodes, or the equipped Battle Imagine pair. An identical re-read raises nothing.
+    /// talent stage/nodes, the equipped Battle Imagine pair, or the Deep-Slumber Psychoscope state
+    /// (<see cref="IDeepSlumber.GetState"/>). An identical re-read raises nothing.
+    ///
+    /// <para><b>ONE event for the whole build.</b> Deep-Slumber joined this event 2026-08-23 (owner
+    /// staging run <c>sea/dXkw1PSyOG</c>: a psychoscope factor was unequipped between two archives and
+    /// re-equipped after; the framework re-read it correctly but told nobody, so the consumer kept one
+    /// stale snapshot for two materially different builds). Subscribers therefore never need a second
+    /// subscription — or a poll — to notice a psychoscope edit; re-read whatever build surfaces they
+    /// snapshot, <see cref="IDeepSlumber"/> included, whenever this fires. Both compares are
+    /// STRUCTURAL and order-insensitive, and a not-yet-read surface is treated as no-signal (it never
+    /// raises on its own).</para>
     ///
     /// <para><b>Why this and not <see cref="IInventory.SelfGearChanged"/>:</b> that event fires on the
     /// network thread the instant a container delta ARRIVES, which is BEFORE the framework has re-read
