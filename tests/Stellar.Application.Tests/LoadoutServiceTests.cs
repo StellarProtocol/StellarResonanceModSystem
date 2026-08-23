@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 using Stellar.Application.Abstractions;
 using Stellar.Application.Services;
@@ -149,6 +150,63 @@ public sealed class LoadoutServiceTests
 
         Assert.Equal(2, slotsSeenByHandler);
         Assert.Equal(1, currentSeenByHandler);
+    }
+
+    /// <summary>PINNED — THE owner-visible defect of staging run <c>sea/P073ErzDAx</c> (2026-08-23): a
+    /// gear "Replace" swaps ONE item for another, so every count the notification signature folds in is
+    /// unchanged (11 gear, 5 modules, same plan list, same selection). The served snapshot must still
+    /// follow the probe, or <c>GetSlots()</c> keeps handing out the PRE-Replace ring for the rest of the
+    /// session — which is exactly how the CombatMeter compared the old gear, decided "same setup", and
+    /// never minted the new one (measured: probe `207:2070912` vs plugin `207:2071330`, log lines
+    /// 9819/9829). Same shape for a module Replace.</summary>
+    [Fact]
+    public void GetSlots_follows_a_same_count_item_swap_that_the_notification_signature_cannot_see()
+    {
+        var oldRing = new GearInstance(207, 18598, 2071330, 5, 0, default, GearAttrRolls.Empty, null, 0);
+        var newRing = new GearInstance(207, 10370, 2070912, 5, 0, default, GearAttrRolls.Empty, null, 0);
+        var probe = new FakeProbe
+        {
+            Entries = new() { new(2, "Frost", 2, 105, new[] { 1, 2 }, new[] { oldRing }) },
+            Current = 2,
+        };
+        var svc = new LoadoutService(probe);
+        svc.Tick();
+        Assert.Equal(2071330, svc.GetSlots()[0].Gear![0].ConfigId);
+
+        // The probe re-resolved and now serves the NEW ring — same slot, same count, same everything the
+        // signature looks at.
+        probe.Entries = new() { new(2, "Frost", 2, 105, new[] { 1, 2 }, new[] { newRing }) };
+        var raised = 0;
+        svc.LoadoutsChanged += () => raised++;
+
+        svc.Tick();
+
+        Assert.Equal(2070912, svc.GetSlots()[0].Gear![0].ConfigId);
+        Assert.Equal(0, raised);   // and it is NOT announced as a saved-list/selection change
+    }
+
+    /// <summary>PINNED: the <c>LiveStateChanged</c> handler must observe the swapped gear — the event's
+    /// documented promise ("by the time it fires, GetSlots() … already describe the new setup"). This is
+    /// the seam the CombatMeter's capture runs on.</summary>
+    [Fact]
+    public void LiveStateChanged_handler_observes_the_swapped_gear()
+    {
+        var probe = new FakeProbe
+        {
+            Entries = new() { new(2, "Frost", 2, 105, null, new[] { new GearInstance(207, 18598, 2071330, 5, 0, default, GearAttrRolls.Empty, null, 0) }) },
+            Current = 2,
+        };
+        var svc = new LoadoutService(probe);
+        svc.Tick();
+
+        probe.Entries = new() { new(2, "Frost", 2, 105, null, new[] { new GearInstance(207, 10370, 2070912, 5, 0, default, GearAttrRolls.Empty, null, 0) }) };
+        probe.LiveStateChangedFlag = true;
+        var seen = 0;
+        svc.LiveStateChanged += () => seen = svc.GetSlots()[0].Gear![0].ConfigId;
+
+        svc.Tick();
+
+        Assert.Equal(2070912, seen);
     }
 
     [Fact]

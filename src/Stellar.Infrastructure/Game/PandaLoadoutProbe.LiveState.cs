@@ -38,9 +38,37 @@ internal sealed partial class PandaLoadoutProbe
     // resolves reads once without waiting for a delta (login's own m21 raises it again anyway).
     private volatile bool _mergePending = true;
 
-    // "The last re-read changed what we SERVE." Set only on a structural difference (see
-    // ApplyLiveRows); consumed once by LoadoutService.Tick via ConsumeLiveStateChanged.
+    // "The last re-read changed what we SERVE." PUBLISHED (never set directly by the read) — see
+    // PublishLiveStateChangeIfArmed; consumed once by LoadoutService.Tick via ConsumeLiveStateChanged.
     private bool _liveStateChanged;
+
+    // ARMED by ApplyLiveRows the moment the live read differs structurally; PUBLISHED into
+    // _liveStateChanged only once TryResolvePerClassDetails has actually rebuilt _loadouts from those
+    // fresh slot→uuid maps.
+    //
+    // WHY THE TWO ARE SEPARATE (owner staging run sea/P073ErzDAx, 2026-08-23). ILoadout.LiveStateChanged
+    // promises its handlers that "by the time it fires, GetSlots() … already describe the new setup".
+    // The live read only refreshes the UUID LINE; the uuid→GearInstance/ModuleInfo resolve is a second,
+    // separately-gated step (TryResolvePerClassDetails) that can legitimately do nothing this tick — the
+    // item container may not be synced, the resolver may not be wired, the plan list may be empty. Raising
+    // the event straight out of the read made the promise TRUE ONLY BY ORDERING COINCIDENCE (both calls
+    // happen to sit in one DrainPendingCompletions body, in the right order); every path where the resolve
+    // bails published a change whose gear was still the previous setup's. A consumer that snapshots on that
+    // event then compares the OLD gear, decides "nothing changed", and silently drops the edit — or worse,
+    // freezes an EMPTY gear set as a real setup. Publishing from the resolve makes "event ⇒ the served
+    // slots already carry this change" true BY CONSTRUCTION: if the resolve cannot run, the change stays
+    // ARMED and the next container merge (which re-arms _resolvePending) delivers it late instead of wrong.
+    private bool _liveStatePendingPublish;
+
+    /// <summary>Hands an armed live-state change to the consumer event. Called ONLY from
+    /// <c>TryResolvePerClassDetails</c>, immediately after <c>_loadouts</c> has been rebuilt — the single
+    /// point at which the freshly-read uuids have become served gear/modules.</summary>
+    private void PublishLiveStateChangeIfArmed()
+    {
+        if (!_liveStatePendingPublish) return;
+        _liveStatePendingPublish = false;
+        _liveStateChanged = true;
+    }
 
     // Lua global the live-state chunk writes; C# reads it back the same tick (DoString is synchronous).
     private const string LiveStateGlobal = "_StellarLiveState";
@@ -98,8 +126,8 @@ internal sealed partial class PandaLoadoutProbe
         var imaginesChanged = ApplyResonanceSources(slotsRow, ParseResonanceLine(raw), raw);
         if (!liveChanged && !imaginesChanged) return;
 
-        _resolvePending = true;    // re-resolve this class's gear/modules from the fresh slot→uuid maps
-        _liveStateChanged = true;  // consumer-facing post-parse event (ILoadout.LiveStateChanged)
+        _resolvePending = true;          // re-resolve this class's gear/modules from the fresh slot→uuid maps
+        _liveStatePendingPublish = true; // …and only THEN raise ILoadout.LiveStateChanged (see the field's doc)
         LogLiveStateChanged(liveChanged ? (imaginesChanged ? "live+imagines" : "live") : "imagines");
     }
 

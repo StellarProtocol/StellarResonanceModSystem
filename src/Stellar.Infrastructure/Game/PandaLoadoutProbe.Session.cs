@@ -23,6 +23,7 @@ internal sealed partial class PandaLoadoutProbe
         _lastDataRaw = null;
         _lastLiveStateRaw = null;
         _liveStateChanged = false;
+        _liveStatePendingPublish = false;   // …including one still waiting on the per-class resolve
         _mergePending = true;
         _refreshPending = true;
     }

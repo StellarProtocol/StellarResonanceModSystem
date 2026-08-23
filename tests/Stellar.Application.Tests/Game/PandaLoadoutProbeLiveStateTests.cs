@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Application.Abstractions;
 using Stellar.Infrastructure.Game;
 using Xunit;
@@ -19,6 +20,13 @@ namespace Stellar.Application.Tests.Game;
 ///   <item><b>A failed read never blanks the latch.</b> A dump whose live section's pcall failed
 ///   carries no "LIVE" row; parsing that as an all-empty live loadout would wipe class + talents and
 ///   read as a change — the Deep-Slumber error-silent-empty-capture failure mode all over again.</item>
+///   <item><b>The event is PUBLISHED FROM THE RESOLVE, never from the read.</b> The live read only
+///   refreshes the slot→uuid LINE; the uuid→gear/module resolve is a second, separately-gated step.
+///   Raising the change event out of the read makes <c>ILoadout.LiveStateChanged</c>'s documented
+///   promise ("GetSlots() already describes the new setup") true only by call ordering — on every path
+///   where the resolve bails, the consumer snapshots the PREVIOUS setup's gear, compares it equal, and
+///   drops the edit. Root cause of the owner's un-minted ring/module Replace, staging run
+///   <c>sea/P073ErzDAx</c> (2026-08-23).</item>
 /// </list>
 /// </summary>
 public sealed class PandaLoadoutProbeLiveStateTests
@@ -32,13 +40,51 @@ public sealed class PandaLoadoutProbeLiveStateTests
         "RES\t50101,50102\nRESSLOT\t7:50310003,8:50310010\n" +
         "LIVE\t200:2000835,201:2010937\t3:122,4:115\t4\t106\t69126,10442";
 
-    private static PandaLoadoutProbe NewProbe() => new(new StubLog(), new FakeTypeRegistry());
+    // A probe whose per-class resolver produces data, i.e. the normal in-world case. Tests that want
+    // the container-not-ready case flip this to false. Instance state — xUnit builds one instance per
+    // test method, so nothing leaks between tests.
+    private bool _resolverReady = true;
+
+    private PandaLoadoutProbe NewProbe()
+    {
+        _resolverReady = true;
+        var probe = new PandaLoadoutProbe(new StubLog(), new FakeTypeRegistry());
+        probe.AttachGearResolver(plans =>
+        {
+            var results = new List<(IReadOnlyList<GearInstance>, IReadOnlyDictionary<int, ModuleInfo>)>(plans.Count);
+            for (var i = 0; i < plans.Count; i++)
+            {
+                results.Add(_resolverReady
+                    ? (new[] { new GearInstance(200, 11, 2000835, 5, 0, default, GearAttrRolls.Empty, null, 0) },
+                       new Dictionary<int, ModuleInfo>())
+                    : (System.Array.Empty<GearInstance>(), new Dictionary<int, ModuleInfo>()));
+            }
+            return results;
+        });
+        return probe;
+    }
 
     private static void ApplyLiveRows(PandaLoadoutProbe probe, string raw)
     {
         var m = typeof(PandaLoadoutProbe).GetMethod("ApplyLiveRows", BindingFlags.NonPublic | BindingFlags.Instance);
         Assert.NotNull(m);
         m!.Invoke(probe, new object?[] { raw, PandaLoadoutProbe.ParseResonanceSlotsLine(raw) });
+    }
+
+    // The second half of a real drain tick: turn the freshly-read slot→uuid maps into served
+    // gear/modules. Nothing may publish a live-state change before this has run.
+    private static void ResolvePerClassDetails(PandaLoadoutProbe probe)
+    {
+        var m = typeof(PandaLoadoutProbe).GetMethod("TryResolvePerClassDetails", BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(m);
+        m!.Invoke(probe, System.Array.Empty<object?>());
+    }
+
+    // One drain tick's worth of the live-state path: read, then resolve.
+    private static void ApplyAndResolve(PandaLoadoutProbe probe, string raw)
+    {
+        ApplyLiveRows(probe, raw);
+        ResolvePerClassDetails(probe);
     }
 
     private static bool ResolvePending(PandaLoadoutProbe probe)
@@ -53,12 +99,12 @@ public sealed class PandaLoadoutProbeLiveStateTests
     {
         var probe = NewProbe();
 
-        ApplyLiveRows(probe, LiveRowA);
+        ApplyAndResolve(probe, LiveRowA);
         Assert.True(((ILoadoutProbe)probe).ConsumeLiveStateChanged());   // first read IS a change
 
         // Byte-identical dump, applied again (the raw-string memo is bypassed here on purpose — this
         // pins the STRUCTURAL gate, which is what protects against Lua's unspecified `pairs` order).
-        ApplyLiveRows(probe, LiveRowA);
+        ApplyAndResolve(probe, LiveRowA);
 
         Assert.False(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
     }
@@ -67,10 +113,49 @@ public sealed class PandaLoadoutProbeLiveStateTests
     public void ConsumeLiveStateChanged_ReturnsTrueOnceThenFalse()
     {
         var probe = NewProbe();
-        ApplyLiveRows(probe, LiveRowA);
+        ApplyAndResolve(probe, LiveRowA);
 
         Assert.True(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
         Assert.False(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
+    }
+
+    // ── The event is published FROM the resolve, so "event ⇒ served data is fresh" holds ──────────
+
+    /// <summary>PINNED (owner staging run sea/P073ErzDAx, 2026-08-23): reading the fresh slot→uuid line
+    /// is NOT enough to raise the change event. Until the per-class resolve has turned those uuids into
+    /// served gear/modules, <c>GetSlots()</c> still describes the PREVIOUS setup — publishing there is
+    /// exactly what let a consumer compare stale gear, decide "same setup", and drop the edit.</summary>
+    [Fact]
+    public void ALiveRead_AloneDoesNotPublish_TheResolveDoes()
+    {
+        var probe = NewProbe();
+
+        ApplyLiveRows(probe, LiveRowA);
+        Assert.False(((ILoadoutProbe)probe).ConsumeLiveStateChanged());   // armed, not published
+
+        ResolvePerClassDetails(probe);
+        Assert.True(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
+    }
+
+    /// <summary>PINNED: a resolve that CANNOT produce data (item container not synced yet) keeps the
+    /// change ARMED rather than publishing it against stale gear — it is delivered LATE, on the tick the
+    /// data actually lands, never WRONG. The container-merge signal re-arms <c>_resolvePending</c>, which
+    /// is what drives that retry in-game.</summary>
+    [Fact]
+    public void AResolveThatIsNotReady_HoldsTheChangeUntilTheDataLands()
+    {
+        var probe = NewProbe();
+        _resolverReady = false;
+
+        ApplyAndResolve(probe, LiveRowA);
+        Assert.False(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
+
+        _resolverReady = true;
+        typeof(PandaLoadoutProbe).GetField("_resolvePending", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(probe, true);   // the next container merge re-arms the resolve
+        ResolvePerClassDetails(probe);
+
+        Assert.True(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
     }
 
     [Theory]
@@ -95,15 +180,16 @@ public sealed class PandaLoadoutProbeLiveStateTests
     public void ARealEdit_RaisesTheChangeEvent_AndReArmsThePerClassResolve(string edited)
     {
         var probe = NewProbe();
-        ApplyLiveRows(probe, LiveRowA);
+        ApplyAndResolve(probe, LiveRowA);
         ((ILoadoutProbe)probe).ConsumeLiveStateChanged();   // drain the first-read change
         typeof(PandaLoadoutProbe).GetField("_resolvePending", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(probe, false);
 
         ApplyLiveRows(probe, edited);
+        Assert.True(ResolvePending(probe));   // the read re-arms the resolve …
+        ResolvePerClassDetails(probe);        // … and the resolve publishes the change
 
         Assert.True(((ILoadoutProbe)probe).ConsumeLiveStateChanged());
-        Assert.True(ResolvePending(probe));
     }
 
     // ── Never blank the latch on a failed read ────────────────────────────────────────────────
@@ -112,13 +198,13 @@ public sealed class PandaLoadoutProbeLiveStateTests
     public void ADumpWithNoLiveRow_KeepsTheLatchedLiveState_AndRaisesNothing()
     {
         var probe = NewProbe();
-        ApplyLiveRows(probe, LiveRowA);
+        ApplyAndResolve(probe, LiveRowA);
         ((ILoadoutProbe)probe).ConsumeLiveStateChanged();
         var before = ((ILoadoutProbe)probe).ReadLiveState();
         Assert.NotNull(before);
 
         // The chunk's live section pcall failed — it appends LIVEERR INSTEAD of the LIVE row.
-        ApplyLiveRows(probe,
+        ApplyAndResolve(probe,
             "RES\t50101,50102\nRESSLOT\t7:50310003,8:50310010\nLIVEERR\tattempt to index a nil value");
 
         var after = ((ILoadoutProbe)probe).ReadLiveState();

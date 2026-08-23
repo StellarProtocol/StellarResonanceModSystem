@@ -52,6 +52,13 @@ public interface ILoadout
     /// <see cref="IResonanceState.Installed"/> already describe the new setup, so a consumer can flag
     /// here and snapshot on its next update tick.</para>
     ///
+    /// <para><b>That promise is structural, not incidental (2026-08-23).</b> The framework re-reads the
+    /// live slot→item line and RESOLVES those items into served gear/modules in two separate steps; the
+    /// event is published from the SECOND one, so it can never fire while <see cref="GetSlots"/> still
+    /// describes the previous setup. If the resolve cannot complete (item container not synced yet), the
+    /// change is held and delivered on the tick the data lands — LATE, never STALE. A consumer may
+    /// therefore treat this event as "the setup I can read right now is the new one".</para>
+    ///
     /// <para><b>Threading:</b> raised on the game Update thread (unlike
     /// <see cref="IInventory.SelfGearChanged"/>), so a handler may read game-backed services directly.
     /// Keep handlers short — this runs inside the framework service tick.</para>

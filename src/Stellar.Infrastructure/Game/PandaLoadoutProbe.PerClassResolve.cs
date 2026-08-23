@@ -50,6 +50,20 @@ internal sealed partial class PandaLoadoutProbe
         (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live =
             hasLive && results.Count > _parsedPlans.Count ? results[_parsedPlans.Count] : null;
 
+        _loadouts = BuildUpgradedEntries(results, live);
+        // The served gear/modules now reflect the live read that armed this resolve — the ONLY point at
+        // which ILoadout.LiveStateChanged may be raised (see _liveStatePendingPublish). Every early return
+        // above leaves the change armed, so it is delivered on the tick the data actually lands.
+        PublishLiveStateChangeIfArmed();
+        LogPerClassResolved(_loadouts);   // no-op unless STELLAR_DIAGNOSTICS
+    }
+
+    // Projects the resolver's per-plan results onto the parsed plans, overlaying the CURRENT plan with the
+    // live equipped set and synthesizing a "Current" entry when the active class has no saved plan.
+    private List<LoadoutEntry> BuildUpgradedEntries(
+        IReadOnlyList<(IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)> results,
+        (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live)
+    {
         var upgraded = new List<LoadoutEntry>(_parsedPlans.Count + 1);
         var currentClassCovered = false;
         for (var i = 0; i < _parsedPlans.Count; i++)
@@ -76,8 +90,7 @@ internal sealed partial class PandaLoadoutProbe
                 lc.Gear, lc.Modules));
         }
 
-        _loadouts = upgraded;
-        LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
+        return upgraded;
     }
 
     private static readonly IReadOnlyDictionary<int, ModuleInfo> EmptyModules = new Dictionary<int, ModuleInfo>(0);
