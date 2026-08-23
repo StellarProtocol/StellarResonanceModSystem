@@ -38,4 +38,23 @@ public interface ILoadout
 
     /// <summary>Raised when the saved-loadout list or the current selection changes.</summary>
     event Action? LoadoutsChanged;
+
+    /// <summary>
+    /// Raised on the game tick AFTER the framework re-read the local player's LIVE build state and
+    /// the re-read actually CHANGED what this service serves — equipped gear/module slots, class,
+    /// talent stage/nodes, or the equipped Battle Imagine pair. An identical re-read raises nothing.
+    ///
+    /// <para><b>Why this and not <see cref="IInventory.SelfGearChanged"/>:</b> that event fires on the
+    /// network thread the instant a container delta ARRIVES, which is BEFORE the framework has re-read
+    /// the game's live containers — a consumer that snapshots the build from that handler's tick races
+    /// the refresh and records the PRE-change setup. This event is the post-parse counterpart: by the
+    /// time it fires, <see cref="GetSlots"/>, <see cref="LiveState"/> and
+    /// <see cref="IResonanceState.Installed"/> already describe the new setup, so a consumer can flag
+    /// here and snapshot on its next update tick.</para>
+    ///
+    /// <para><b>Threading:</b> raised on the game Update thread (unlike
+    /// <see cref="IInventory.SelfGearChanged"/>), so a handler may read game-backed services directly.
+    /// Keep handlers short — this runs inside the framework service tick.</para>
+    /// </summary>
+    event Action? LiveStateChanged;
 }

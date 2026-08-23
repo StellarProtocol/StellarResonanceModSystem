@@ -266,9 +266,9 @@ public sealed partial class BootstrapPlugin
             _inventoryAccumSeconds = 0.0;
             try { _inventoryService!.Refresh(); }
             catch (Exception ex) { Log.LogWarning($"[boot] inventory refresh threw: {ex.Message}"); }
-            try { _resonanceService!.Refresh(); }
-            catch (Exception ex) { Log.LogWarning($"[boot] resonance refresh threw: {ex.Message}"); }
         }
+        // NB: _resonanceService.Refresh() moved OUT of this 1 Hz block into DrainEquipAndLoadout —
+        // see there for why a 1 Hz publish contradicted the event-driven imagine read.
 
         // DrainEquipAndLoadout() is called from Band 3 (RunGlobalRateWork), not here.
 
@@ -297,7 +297,20 @@ public sealed partial class BootstrapPlugin
         try { _moduleEquipProbe!.DrainPendingCompletions(); }
         catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
 
-        try { _loadoutProbe!.TryResolveBridgeIfDue(); _loadoutProbe!.DrainPendingCompletions(); _loadoutService!.Tick(); }
+        // Order is load-bearing: the probe drains the container-merge event (re-reading the live
+        // equipped set / class / talents / imagine hotbar), the resonance service republishes the
+        // imagine pair from the probe's fresh latch, and ONLY THEN does the loadout service tick —
+        // which raises ILoadout.LiveStateChanged last, so every surface a handler reads is already new.
+        // Refresh() sat in the 1 Hz RefreshPerTickServices block until 2026-08-23; since the probe's
+        // imagine latch is now event-driven, a 1 Hz publish would have kept the staleness the event
+        // removed. It is a list-identity compare — a no-op on every tick that changed nothing.
+        try
+        {
+            _loadoutProbe!.TryResolveBridgeIfDue();
+            _loadoutProbe!.DrainPendingCompletions();
+            _resonanceService!.Refresh();
+            _loadoutService!.Tick();
+        }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
 
         // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on

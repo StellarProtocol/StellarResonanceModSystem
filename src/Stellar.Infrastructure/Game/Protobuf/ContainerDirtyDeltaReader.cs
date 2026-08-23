@@ -123,10 +123,71 @@ internal static partial class ContainerDirtyDeltaReader
     public static bool TouchesSeasonCultivate(byte[]? buffer) => TouchesField(buffer, FieldSeasonCultivate);
 
     /// <summary>True when the delta touches the resonance container (CharSerialize field 28 =
-    /// <c>resonance</c>) — a Battle Imagine install/swap. In the SelfGearChanged trigger set so an
-    /// in-session swap re-fires the Lua refresh + the plugin's recapture (owner staging run
-    /// <c>sea/445626427740520448</c>, 2026-08-23 — the swap otherwise served the pre-swap pair).</summary>
+    /// <c>resonance</c>) — a Battle Imagine install/swap. NO LONGER a trigger gate (see
+    /// <see cref="IsMergeSignal"/>); kept as tested wire-fact API + diagnostics, because field 28 is
+    /// provably NOT re-serialized mid-session (owner run <c>sea/pNhmVQvVmV</c>: an imagine swap's
+    /// delta carried fields 2/55/96/104).</summary>
     public static bool TouchesResonance(byte[]? buffer) => TouchesField(buffer, FieldResonance);
+
+    /// <summary>
+    /// FIELD-AGNOSTIC merge signal: true when <paramref name="buffer"/> is a structurally-valid,
+    /// NON-EMPTY CharSerialize delta container — <b>regardless of which fields it carries</b>.
+    ///
+    /// <para><b>Why field-agnostic (owner ruling 2026-08-23 — capture must be event-driven at the
+    /// right probe point, no polling):</b> every CharSerialize update, login full sync and dirty
+    /// delta alike, funnels through ONE service (<c>Panda.ZGame.ContainerSyncService</c> → Lua
+    /// <c>ContainerSyncService.OnSync</c> → <c>MergeData</c> → watcher dispatch), so the ARRIVAL of
+    /// a delta — not its field list — is the correct "the game just merged fresh container data"
+    /// event. The previous allowlist (<see cref="TouchesEquip"/> 12 / <see cref="TouchesResonance"/>
+    /// 28 / <c>mod</c> 57 / <see cref="TouchesTalents"/> 61 / <see cref="TouchesSeasonCultivate"/>
+    /// 101) MISSED real edits: the gear UI's "Replace" button and an imagine swap both emit deltas
+    /// whose top-level fields are none of those five (measured 2/55/96/104), so the framework's live
+    /// surfaces were never re-read and the plugin never re-captured the setup. An extra signal costs
+    /// one local Lua re-read; a missed one loses the player's setup, so the asymmetry is decisive.</para>
+    ///
+    /// <para>An EMPTY container (<c>size == END</c>) is deliberately NOT a signal — the game merged
+    /// nothing, so there is nothing to re-read. Never throws: malformed input returns false.</para>
+    /// </summary>
+    public static bool IsMergeSignal(byte[]? buffer)
+    {
+        if (buffer is null || buffer.Length < 8) return false;
+        try
+        {
+            var reader = new BlobReader(buffer);
+            return TryEnterContainer(ref reader, "CharSerialize.mergeSignal");
+        }
+        catch { return false; /* never throw on the network thread */ }
+    }
+
+    /// <summary>
+    /// Cheap top-level field census — the proto field numbers present at the CharSerialize level,
+    /// in wire order. DIAGNOSTICS ONLY (it allocates): callers must gate on
+    /// <c>StellarDiagnostics.IsEnabled</c>. Exists to bank what real edits actually emit — the
+    /// "Replace"-button gap above was invisible because nothing ever logged the field list of a
+    /// delta the allowlist rejected. Stops after <paramref name="max"/> fields so a corrupt buffer
+    /// can never drive an unbounded list. Never throws — a malformed walk returns what it read so
+    /// far.
+    /// </summary>
+    public static List<int> TopLevelFields(byte[]? buffer, int max = 32)
+    {
+        var fields = new List<int>();
+        if (buffer is null || buffer.Length < 8) return fields;
+        try
+        {
+            var reader = new BlobReader(buffer);
+            if (!TryEnterContainer(ref reader, "CharSerialize.census")) return fields;
+            var index = reader.ReadInt32();
+            while (index > 0 && fields.Count < max)
+            {
+                fields.Add(index);
+                if (!TrySkipTopLevelField(ref reader, index)) break;
+                if (reader.Remaining < 4) break;
+                index = reader.ReadInt32();
+            }
+        }
+        catch { /* never throw on the network thread — return the partial census */ }
+        return fields;
+    }
 
     /// <summary>True when the delta's top-level CharSerialize field list contains
     /// <paramref name="fieldNum"/>. Read-only scan, deliberately separate from <see cref="Read"/>

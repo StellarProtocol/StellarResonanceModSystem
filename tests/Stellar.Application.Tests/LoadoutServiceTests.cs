@@ -18,11 +18,20 @@ public sealed class LoadoutServiceTests
         public int AppliedIndex = -1;
         public LoadoutResult ApplyReturns = LoadoutResult.Success;
         public LiveLoadoutState? LiveState;
+        public bool LiveStateChangedFlag;
+        public int ConsumeCalls;
 
         public bool IsResolved => Resolved;
         public IReadOnlyList<LoadoutEntry> ReadLoadouts() => Entries;
         public int? ReadCurrentIndex() => Current;
         public LiveLoadoutState? ReadLiveState() => LiveState;
+        public bool ConsumeLiveStateChanged()
+        {
+            ConsumeCalls++;
+            if (!LiveStateChangedFlag) return false;
+            LiveStateChangedFlag = false;
+            return true;
+        }
         public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
         {
             AppliedIndex = index;
@@ -87,6 +96,59 @@ public sealed class LoadoutServiceTests
         var probe = new FakeProbe { Resolved = false };
         var svc = new LoadoutService(probe);
         Assert.False(svc.IsAvailable);
+    }
+
+    /// <summary>PINNED (owner ruling 2026-08-23, event-driven capture): the post-parse
+    /// <c>LiveStateChanged</c> event fires ONLY when the probe reports a real difference. The
+    /// container-merge signal that drives the re-read is field-agnostic, so it fires on every merge —
+    /// if an identical re-read raised this event too, every consumer would re-snapshot the player's
+    /// setup on every unrelated delta.</summary>
+    [Fact]
+    public void Tick_raises_LiveStateChanged_only_when_the_probe_reports_a_change()
+    {
+        var probe = new FakeProbe { Entries = new() { new(0, "A") }, Current = 0 };
+        var svc = new LoadoutService(probe);
+        var raised = 0;
+        svc.LiveStateChanged += () => raised++;
+
+        svc.Tick();                          // probe reports no change
+        Assert.Equal(0, raised);
+
+        probe.LiveStateChangedFlag = true;
+        svc.Tick();                          // one real change -> exactly one raise
+        svc.Tick();                          // flag consumed -> silent again
+
+        Assert.Equal(1, raised);
+        Assert.Equal(3, probe.ConsumeCalls);
+    }
+
+    /// <summary>PINNED: the event is raised LAST, after the slot snapshot is rebuilt — a handler that
+    /// reads GetSlots()/CurrentIndex() must already see the changed setup, which is the whole point of
+    /// a POST-parse event (IInventory.SelfGearChanged fires pre-parse, on the network thread, and
+    /// racing it is what lost the owner's talent edit / imagine swap / setup revert).</summary>
+    [Fact]
+    public void Tick_raises_LiveStateChanged_after_the_slot_snapshot_is_rebuilt()
+    {
+        var probe = new FakeProbe { Entries = new() { new(0, "A") }, Current = 0 };
+        var svc = new LoadoutService(probe);
+        svc.Tick();
+
+        probe.Entries = new() { new(0, "A"), new(1, "B") };
+        probe.Current = 1;
+        probe.LiveStateChangedFlag = true;
+
+        var slotsSeenByHandler = -1;
+        int? currentSeenByHandler = null;
+        svc.LiveStateChanged += () =>
+        {
+            slotsSeenByHandler = svc.GetSlots().Count;
+            currentSeenByHandler = svc.CurrentIndex;
+        };
+
+        svc.Tick();
+
+        Assert.Equal(2, slotsSeenByHandler);
+        Assert.Equal(1, currentSeenByHandler);
     }
 
     [Fact]

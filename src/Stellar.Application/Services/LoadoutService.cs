@@ -31,11 +31,24 @@ internal sealed class LoadoutService : ILoadout
 
     public event Action? LoadoutsChanged;
 
+    public event Action? LiveStateChanged;
+
     public Task<LoadoutResult> ApplyAsync(int index, CancellationToken ct = default)
         => _probe.CallApplyAsync(index, ct);
 
-    /// <summary>Re-poll the probe; rebuild the snapshot and fire the event on change.</summary>
+    /// <summary>Re-poll the probe, then — LAST — raise the post-parse
+    /// <see cref="LiveStateChanged"/> event, so a handler that reads <see cref="GetSlots"/> /
+    /// <see cref="LiveState"/> already sees the changed setup. The probe raises its flag ONLY on a
+    /// structural difference, so an identical re-read fires nothing (pinned:
+    /// <c>LoadoutServiceTests.Tick_raises_LiveStateChanged_only_when_the_probe_reports_a_change</c>).</summary>
     public void Tick()
+    {
+        RefreshSlots();
+        if (_probe.ConsumeLiveStateChanged()) LiveStateChanged?.Invoke();
+    }
+
+    /// <summary>Re-poll the probe; rebuild the snapshot and fire <see cref="LoadoutsChanged"/> on change.</summary>
+    private void RefreshSlots()
     {
         var entries = _probe.ReadLoadouts();
         var current = _probe.ReadCurrentIndex();

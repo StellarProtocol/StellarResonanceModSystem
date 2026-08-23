@@ -76,8 +76,15 @@ internal sealed partial class PandaInventoryWireCapture
             // wrapper-resolution miss in the object decode below can't block it.
             // Own try/catch so a gear-decode surprise can never skip the module
             // latch + reseed below (review finding: shared catch coupled them).
-            try { DecodeSelfGearFromSync(payload); }
+            // A full sync refreshes EVERYTHING (login / map change / resync), so it must raise the
+            // container-merge signal even when the gear byte-walk found nothing to publish — otherwise
+            // the live-state consumers only wake on the next incremental delta, and a login whose
+            // wrapper shape surprised the walk serves stale/absent build state indefinitely.
+            // OnGearSync already raises it on the success path; this covers the bail-out paths.
+            var gearSyncRaisedSignal = false;
+            try { gearSyncRaisedSignal = DecodeSelfGearFromSync(payload); }
             catch (Exception ex) { _log.Warning($"[Inventory][Gear] self-gear decode threw: {ex.GetType().Name}: {ex.Message}"); }
+            if (!gearSyncRaisedSignal) _gearSink.OnGearMaybeChanged();
 
             // Full sync → latch CharSerialize and reseed the equipped set that
             // subsequent method-22 deltas will mutate.
@@ -99,14 +106,18 @@ internal sealed partial class PandaInventoryWireCapture
     // pure Stellar.Wire GearInstanceReader, then pushes the result to the
     // Application-side cache. Full syncs are authoritative: the sink REPLACES
     // its list on every call (evict-and-replace, never merge).
-    private void DecodeSelfGearFromSync(byte[] payload)
+    //
+    // Returns true when it pushed to the sink (which itself raises the change signal), so the caller
+    // knows whether it still owes the full sync's merge signal.
+    private bool DecodeSelfGearFromSync(byte[] payload)
     {
         var charSerialize = ReadLenDelimitedField(payload, fieldNum: 1); // SyncContainerData.VData
-        if (charSerialize is null) return;
+        if (charSerialize is null) { DiagMergeEnvelopeFail("m21 SyncContainerData.VData(1)", payload.Length); return false; }
 
         var gear = GearInstanceReader.Read(charSerialize);
         _gearSink.OnGearSync(gear);
         DiagGearDecoded(gear.Count);
+        return true;
     }
 
     // Method 22 entry from the dispatcher. The raw stub payload bytes are the
@@ -115,30 +126,37 @@ internal sealed partial class PandaInventoryWireCapture
     // reflection now that the bytes are pre-supplied.
     private void HandleDirtyContainerFromBytes(byte[] wire)
     {
-        if (wire.Length == 0) return;
+        // Envelope-walk failures used to return SILENTLY — so a shape change in the m22 wrapper would
+        // have looked exactly like "no edits happened". Each bail now names its stage under
+        // diagnostics (no-op in production).
+        if (wire.Length == 0) { DiagMergeEnvelopeFail("empty-wire", 0); return; }
 
         var vData = ReadLenDelimitedField(wire, fieldNum: 1);   // SyncContainerDirtyData.VData
-        if (vData is null) return;
+        if (vData is null) { DiagMergeEnvelopeFail("SyncContainerDirtyData.VData(1)", wire.Length); return; }
 
         var buffer = ReadLenDelimitedField(vData, fieldNum: 1); // BufferStream.Buffer
-        if (buffer is null || buffer.Length == 0) return;
+        if (buffer is null || buffer.Length == 0) { DiagMergeEnvelopeFail("BufferStream.Buffer(1)", vData.Length); return; }
 
         var slotDelta = Protobuf.ContainerDirtyDeltaReader.Read(buffer);
-        var equipTouched = Protobuf.ContainerDirtyDeltaReader.TouchesEquip(buffer);
-        var talentsTouched = Protobuf.ContainerDirtyDeltaReader.TouchesTalents(buffer);
-        var cultivateTouched = Protobuf.ContainerDirtyDeltaReader.TouchesSeasonCultivate(buffer);
-        var resonanceTouched = Protobuf.ContainerDirtyDeltaReader.TouchesResonance(buffer);
-
         if (slotDelta.Touched) ApplyModSlotDelta(slotDelta);
 
-        // Fire the change signal for a MODULE (field 57), GEAR (field 12 — confirmed live 2026-08-03),
-        // TALENT (field 61 = professionList: respec/stage switch), DEEP-SLUMBER (field 101 =
-        // seasonCultivateLineData), or BATTLE-IMAGINE (field 28 = resonance — swap, 2026-08-23) dirty
-        // delta. Method-21 already fires it on full syncs; this makes the LIVE-container consumers
-        // (per-class gear capture, live talents, deep-slumber snapshot, equipped imagines) react to
-        // mid-session edits too. SelfGearChanged is the self BUILD-state change signal, not gear-only.
-        if (slotDelta.Touched || equipTouched || talentsTouched || cultivateTouched || resonanceTouched)
+        // FIELD-AGNOSTIC merge signal. Owner ruling 2026-08-23: capture is event-driven at the right
+        // probe point — and the right point for "the game merged fresh container data" is the ARRIVAL
+        // of the delta, not its field list. ALL CharSerialize updates funnel through one service
+        // (Panda.ZGame.ContainerSyncService → Lua ContainerSyncService.OnSync → MergeData → watcher
+        // dispatch), so any m22 arrival means the Lua container the framework reads is now fresh.
+        //
+        // The previous per-field allowlist (12 equip / 28 resonance / 57 mod / 61 professionList /
+        // 101 seasonCultivate) missed real owner-visible edits — the gear UI "Replace" button and an
+        // imagine swap emit deltas whose top-level fields are none of those five (measured 2/55/96/104
+        // on run sea/pNhmVQvVmV) — so the live surfaces were never re-read and the setup was never
+        // captured. See ContainerDirtyDeltaReader.IsMergeSignal for the full rationale; the census
+        // logged just below banks what each edit really emits.
+        DiagContainerMerge(buffer);   // top-level field census — no-op unless STELLAR_DIAGNOSTICS
+        if (Protobuf.ContainerDirtyDeltaReader.IsMergeSignal(buffer))
             _gearSink.OnGearMaybeChanged();
+        else
+            DiagMergeEnvelopeFail("CharSerialize.container(empty-or-malformed)", buffer.Length);
     }
 
     // Decodes a method-21 SyncContainerData payload into a CharSerialize.

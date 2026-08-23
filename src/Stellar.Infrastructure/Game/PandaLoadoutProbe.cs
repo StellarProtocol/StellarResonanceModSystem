@@ -98,17 +98,17 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _resolvePending = true;   // resolve now that a resolver is available
     }
 
-    // Live overlay freshness: set on IInventory.SelfGearChanged (network thread — flag only, no game read).
-    // A gear/module change or a loadout switch re-reads the live equipped set + re-resolves on the next tick.
-    private volatile bool _gearChangedPending;
-
-    /// <summary>Signals a gear/module change, a loadout switch, OR the item container becoming ready — all
-    /// arrive as <c>IInventory.SelfGearChanged</c> (method-21 full sync latches the container; method-22
-    /// deltas are edits/switches). Re-reads the live overlay AND re-arms the per-class resolve. Host wires
-    /// this to SelfGearChanged. Thread-safe (flags only; no game/IL2CPP read here).</summary>
+    /// <summary>The CONTAINER-MERGE event: the game just merged fresh <c>CharSerialize</c> data (a
+    /// method-21 full sync or ANY method-22 dirty delta — the signal is field-agnostic, see
+    /// <c>ContainerDirtyDeltaReader.IsMergeSignal</c>), so the Lua mirror this probe reads is now
+    /// fresh. Covers a gear/module edit, a talent respec, an imagine swap, a loadout switch, and the
+    /// item container becoming ready. Arms the live-state re-read (<c>_mergePending</c>, consumed
+    /// COALESCED on the next drain tick) and re-arms the per-class resolve. Host wires this to
+    /// <c>IInventory.SelfGearChanged</c>, which raises on the NETWORK thread — so this only flips
+    /// flags and never touches game/IL2CPP state.</summary>
     public void OnGearChanged()
     {
-        _gearChangedPending = true;
+        _mergePending = true;
         _resolvePending = true;
     }
 
@@ -199,15 +199,15 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         TryResolveBridgeIfDue();
         if (!_bridgeResolved) return;
 
-        // A gear/module change (manual equip/refine/removal OR a loadout switch — both fire SelfGearChanged
-        // via the method-22 field-12 delta) re-reads the live equipped set + current plan id, so the
-        // CURRENT class's overlay stays fresh. Event-driven: the flag is set on the network thread; consumed
-        // here on the tick (re-fires the on-demand refresh, which re-reads the live container).
-        if (_gearChangedPending) { _gearChangedPending = false; _refreshPending = true; }
+        // THE EVENT. A container merge (gear/module edit, talent respec, imagine swap, loadout switch,
+        // login full sync) re-reads the LIVE Lua containers — equipped slots, class, talents, imagine
+        // hotbar — and re-fires the on-demand plan refresh. Coalesced: the flag is set on the network
+        // thread, consumed once here, so a burst of deltas costs ONE read. No timer anywhere on this
+        // path (owner ruling 2026-08-23) — see PandaLoadoutProbe.LiveState.cs.
+        RefreshLiveStateIfArmed();
 
         RefreshIfDue();
         ParseLoadoutData();
-        PollResonanceIfDue();   // 1 Hz live-mirror imagine poll — see PandaLoadoutProbe.Resonance.cs (sea/pNhmVQvVmV)
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
         // container (distinct per class — correct for loadout switching). Resolves once when the loadout
         // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The
@@ -266,9 +266,12 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         var (current, plans) = ParseLoadoutData(raw!);
         _currentId = current;
         _parsedPlans = plans;
-        ReadLiveLine(raw!);                    // CURRENT class's live equipped set + talents (overlay + no-plan source)
+        // CURRENT class's live equipped set + talents + equipped imagines. Shared with the merge-event
+        // read path (PandaLoadoutProbe.LiveState.cs) so BOTH paths apply the same rows and run the same
+        // structural change detection — this dump carries no "RESSLOT" row, hence slotsRow: null (the
+        // hotbar latch is left alone; see SelectInstalledSource).
+        ApplyLiveRows(raw!, slotsRow: null);
         UpdateDeepSlumberState(raw!);           // Deep-Slumber Psychoscope (season cultivate) via the SAME Lua bridge
-        UpdateResonanceState(raw!);             // equipped Battle Imagines via the SAME Lua bridge (live, not the C# mirror)
         _loadouts = BuildBaseEntries(plans);   // gear/modules null until TryResolvePerClassDetails fills them
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
@@ -308,75 +311,8 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         return list;
     }
 
-    // Resolves each plan's per-class gear + modules from its slot→uuid maps via the injected resolver, and
-    // overlays the CURRENT class with its live equipped set. FULLY EVENT-DRIVEN — no polling: runs only when
-    // _resolvePending is set, which happens on a new parse and on OnGearChanged (fired from SelfGearChanged =
-    // the container-sync / dirty-delta event). The FIRST container sync (method-21, which latches the item
-    // container this resolve reads) fires that SAME event — so a resolve that ran before the container was
-    // ready simply re-runs when the sync lands. No retry loop, no per-tick scan: the flag gates the one
-    // (whole-item-container) scan to exactly the events that change its inputs.
-    private bool _resolvePending;
-
-    // Sentinel identity for the synthesized current-class entry: the class the player is actively using
-    // when it has NO saved loadout plan. A negative index cannot collide with a real (positive) planId, and
-    // it is never a switch target (there is no server-side plan to switch to). Owner requirement 2026-08-05:
-    // the current class must always reflect the live equipped set, saved loadout or not.
-    private const int LiveCurrentIndex = -1;
-    private const string LiveCurrentName = "Current";
-
-    private void TryResolvePerClassDetails()
-    {
-        if (!_resolvePending || _resolveGear is null) return;
-        var hasLive = _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
-        if (_parsedPlans.Count == 0 && !hasLive) return;   // nothing saved and nothing equipped — nothing to resolve
-        _resolvePending = false;   // one attempt per event; if the container isn't ready, the next sync re-arms it
-
-        var request = new List<(IReadOnlyDictionary<int, long>, IReadOnlyDictionary<int, long>)>(_parsedPlans.Count + 1);
-        foreach (var p in _parsedPlans) request.Add((p.EquipUuids, p.ModUuids));
-        // Append the CURRENT class's LIVE set as the LAST entry so it resolves in the SAME item-index pass.
-        if (hasLive) request.Add((_liveEquipUuids, _liveModUuids));
-
-        var results = _resolveGear(request);   // one pass; builds the item index once
-        var ready = false;
-        foreach (var (gear, modules) in results)
-            if (gear.Count > 0 || modules.Count > 0) { ready = true; break; }
-        if (!ready) return;   // container not synced yet — keep base entries; the container-sync event re-arms us
-
-        // The live equipped result (last request entry), if it resolved to anything.
-        (IReadOnlyList<GearInstance> Gear, IReadOnlyDictionary<int, ModuleInfo> Modules)? live =
-            hasLive && results.Count > _parsedPlans.Count ? results[_parsedPlans.Count] : null;
-
-        var upgraded = new List<LoadoutEntry>(_parsedPlans.Count + 1);
-        var currentClassCovered = false;
-        for (var i = 0; i < _parsedPlans.Count; i++)
-        {
-            var p = _parsedPlans[i];
-            var (gear, modules) = i < results.Count ? results[i] : (Array.Empty<GearInstance>(), (IReadOnlyDictionary<int, ModuleInfo>)EmptyModules);
-            // Overlay: the CURRENT plan uses its LIVE equipped set (reflects manual edits) when the live
-            // resolve produced anything; other plans keep their saved-loadout gear/modules.
-            if (p.Index == _currentId && live is { } lv && (lv.Gear.Count > 0 || lv.Modules.Count > 0))
-                (gear, modules) = lv;
-            if (p.ProfessionId == _liveProfessionId && _liveProfessionId != 0) currentClassCovered = true;
-            upgraded.Add(new LoadoutEntry(p.Index, p.Name, p.ProfessionId, p.TalentStageId, p.TalentNodes, gear, modules));
-        }
-
-        // Owner requirement (2026-08-05): when the CURRENT class has NO saved plan, the capture must still
-        // carry what the player is actually using — so synthesize a current-class entry straight from the
-        // live equipped gear/modules + live talents. Without this, a class with no saved loadout produced no
-        // entry at all, and the plugin uploaded gear=0 modules=0 talentNodes=null.
-        if (!currentClassCovered && _liveProfessionId != 0
-            && live is { } lc && (lc.Gear.Count > 0 || lc.Modules.Count > 0))
-        {
-            upgraded.Add(new LoadoutEntry(
-                LiveCurrentIndex, LiveCurrentName, _liveProfessionId, _liveTalentStageId, _liveTalentNodes,
-                lc.Gear, lc.Modules));
-        }
-
-        _loadouts = upgraded;
-        LogPerClassResolved(upgraded);   // no-op unless STELLAR_DIAGNOSTICS
-    }
-
-    private static readonly IReadOnlyDictionary<int, ModuleInfo> EmptyModules = new Dictionary<int, ModuleInfo>(0);
+    // Per-class gear/module resolution (TryResolvePerClassDetails + _resolvePending) lives in
+    // PandaLoadoutProbe.PerClassResolve.cs; served-change detection in PandaLoadoutProbe.StateChange.cs.
 
     private void DrainPendingDispatches()
     {
