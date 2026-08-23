@@ -242,8 +242,13 @@ internal sealed partial class PandaLoadoutProbe
         // plan's saved-loadout gear/modules AND, when the current class has NO saved plan, uses it as the
         // sole source of that class's loadout (owner requirement 2026-08-05 — capture live-current, not the
         // saved loadout). "LIVE\t<eq slot:uuid,...>\t<mod slot:uuid,...>\t<curProf>\t<talentStage>\t<talentNodes csv>".
-        " local le=\"\" pcall(function() local el=(cs.equip).equipList if el~=nil then for s,info in pairs(el) do if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end end end end)" +
-        " local lm=\"\" pcall(function() local ms=(cs.mod).modSlots if ms~=nil then for s,u in pairs(ms) do lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
+        //
+        // The two container walks are the SHARED zcontainer-safe fragments (PandaLoadoutProbe.LiveState.cs):
+        // both maps are __pairs-trapped, so a value-yielding `for k,v in pairs(m)` reads nil for every
+        // entry and this row silently emptied on every read. The plan maps above (eq/md, lines 234-235)
+        // are plain tables and deliberately keep the value form.
+        " local le=\"\"" + LiveEquipWalkFragment +
+        " local lm=\"\"" + LiveModWalkFragment +
         " local lp=(cs.professionList).curProfessionId" +
         " local lstage=0 local lnodes=\"\"" +
         " pcall(function() local ti=((cs.professionList).talentList)[lp] if ti~=nil then lstage=ti.talentStageCfgId or 0 if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do lnodes=(lnodes==\"\" and tostring(nid)) or (lnodes..\",\"..tostring(nid)) end end end end)" +

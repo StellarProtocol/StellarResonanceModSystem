@@ -173,6 +173,63 @@ internal sealed partial class PandaLoadoutProbe
     // Each section that fails appends "<NAME>ERR\t<msg>" INSTEAD of its data row — a silent bail is
     // indistinguishable from "the player changed nothing", which is exactly how the Deep-Slumber
     // empty-capture hid (owner run sea/O1jJepsgKC).
+    // ── ZCONTAINER-SAFE MAP WALKS — shared by BOTH read paths ────────────────────────────────
+    //
+    // ROOT CAUSE of owner run sea/zJr9W0iA53 (a ring "Replace", a module "Replace" and a second ring
+    // "Replace" — all three applied in-game, none captured). Every zcontainer map installs a
+    // metatable whose __pairs iterator hardcodes `local v = nil` (game source:
+    // lua/zcontainer/equip_list.lua:218-239, applied to the map itself at :490
+    // `setForbidenMt(ret.equipList)`; lua/zcontainer/mod.lua:266 `setForbidenMt(ret.modSlots)`), so
+    // `for k,v in pairs(map)` yields EVERY KEY WITH A NIL VALUE, silently. The old walks read that
+    // nil value:
+    //   equipList — guarded by `if info~=nil`, so every slot was skipped and `le` was ALWAYS "".
+    //   modSlots  — unguarded, so `lm` was ALWAYS "1:nil,2:nil,…", which ParseUuidMap drops whole.
+    // Both live maps therefore parsed EMPTY on every read since they shipped, which pins
+    // PerClassResolve's `hasLive` permanently false — the live overlay never applied and the served
+    // gear was always the cooldown-refreshed SAVED PLAN. That is exactly the owner-visible failure:
+    // the equip container HAD the new ring (a closed-world sweep of the Lua tree proves equipList
+    // has NO write path but the container-sync merge, and PutOnEquip's reply is a bare error code —
+    // lua/zproxy/world_proxy.lua:2165-2214), the merge event DID fire (field-agnostic since
+    // 32efbe7), and the re-read still served the pre-Replace ring. "Replace" was never a distinct
+    // wire path: it calls the SAME CheckPutOnEquip/AsyncEquipMod as a plain equip
+    // (lua/ui/item_btns/replace_equip_btn.lua:67 vs puton_equip_btn.lua:64).
+    //
+    // The documented safe form is `for k in pairs(m) do local v = m[k] … end` — the iterator still
+    // yields every real key, and the per-key index resolves through `__index = t.__data__`
+    // (docs/driving-game-actions.md § "zcontainer Lua maps"). It is the shape the game's own view
+    // code uses. ONE definition, used by both chunks: the previous copy-paste is precisely why the
+    // 2026-08-20 Deep-Slumber fix landed on that walk and missed these two.
+    //
+    // NOT applicable to the role-plan maps (`pd.equipInfoMap` / `pd.modInfoMap` in RefreshChunk):
+    // those are weapon_data.rolePlanServerData_ PLAIN tables, and the game itself value-iterates
+    // them (lua/ui/view_model/equip/equip_vm.lua:311, EquipVM.IsEquipByOtherPlan). Leave them alone.
+    //
+    // Each fragment appends to an `le` / `lm` string the caller has already declared and reads `cs`
+    // from the caller's scope; each is self-pcall'd so one broken container cannot kill the other.
+    // The mod walk now carries a nil-guard too, so a future container-shape change degrades to the
+    // never-blank "empty read" case instead of emitting unparseable "slot:nil" garbage.
+    internal const string LiveEquipWalkFragment =
+        " pcall(function()" +
+        "  local el=(cs.equip).equipList" +
+        "  if el~=nil then" +
+        "   for s in pairs(el) do" +
+        "    local info=el[s]" +
+        "    if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end" +
+        "   end" +
+        "  end" +
+        " end)";
+
+    internal const string LiveModWalkFragment =
+        " pcall(function()" +
+        "  local ms=(cs.mod).modSlots" +
+        "  if ms~=nil then" +
+        "   for s in pairs(ms) do" +
+        "    local u=ms[s]" +
+        "    if u~=nil then lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end" +
+        "   end" +
+        "  end" +
+        " end)";
+
     private const string LiveStateChunk =
         " local res=\"\"" +
         " local resOk,resErr=pcall(function()" +
@@ -198,8 +255,8 @@ internal sealed partial class PandaLoadoutProbe
         " local le=\"\" local lm=\"\" local lp=0 local lstage=0 local lnodes=\"\"" +
         " local lvOk,lvErr=pcall(function()" +
         "  local cs=(Z.ContainerMgr).CharSerialize" +
-        "  pcall(function() local el=(cs.equip).equipList if el~=nil then for s,info in pairs(el) do if info~=nil and info.itemUuid~=nil then le=(le==\"\" and \"\" or le..\",\")..tostring(s)..\":\"..tostring(info.itemUuid) end end end end)" +
-        "  pcall(function() local ms=(cs.mod).modSlots if ms~=nil then for s,u in pairs(ms) do lm=(lm==\"\" and \"\" or lm..\",\")..tostring(s)..\":\"..tostring(u) end end end)" +
+        LiveEquipWalkFragment +
+        LiveModWalkFragment +
         "  lp=(cs.professionList).curProfessionId or 0" +
         "  pcall(function() local ti=((cs.professionList).talentList)[lp] if ti~=nil then lstage=ti.talentStageCfgId or 0 if ti.talentNodeIds~=nil then for _,nid in ipairs(ti.talentNodeIds) do lnodes=(lnodes==\"\" and tostring(nid)) or (lnodes..\",\"..tostring(nid)) end end end end)" +
         " end)" +
