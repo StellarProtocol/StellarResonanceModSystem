@@ -179,6 +179,7 @@ internal sealed partial class WindowBuilder
 
         var (track, clipRt) = BuildModernTrack(b, row.transform);
         if (b.Sheen) BuildModernSheen(clipRt, token);
+        if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
         token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 });
 
         if (b.Label != null)
@@ -227,5 +228,39 @@ internal sealed partial class WindowBuilder
         sheen.texture = SheenTexture(); sheen.raycastTarget = false; sheen.color = Color.white;
         System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
         token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
+    }
+
+    // Secondary "overlay" fill on the SAME Modern track (e.g. a monster shield on an HP bar). Builds a second
+    // width-clipped fill (mirrors the main FillClip) and drives it via its OWN BarBinding from Overlay01. Draw
+    // order: OverlayInFront → the overlay is a later sibling than the main FillClip (created after it here) so it
+    // renders OVER the main fill as a translucent band, while the label overlay texts (added afterwards) stay on
+    // top. !OverlayInFront → SetAsFirstSibling puts it BEHIND the main fill so the opaque main fill covers it and
+    // only the excess shows as an extension cap. Called only when b.Overlay01 != null.
+    private void BuildModernOverlay(BarElement b, Transform track, RectTransform mainClip, WindowToken token)
+    {
+        var overlayRt = BuildOverlayClip(track, b.OverlayColor);
+        overlayRt.anchorMax = new Vector2(Mathf.Clamp01(b.Overlay01!()), 1f);
+        if (!b.OverlayInFront) overlayRt.SetAsFirstSibling();   // behind the main fill (extension cap)
+        token.Bars.Add(new BarBinding { FillRect = overlayRt, Fraction = b.Overlay01! });
+    }
+
+    // Builds a left-anchored, width-clipped fill on the given track — identical to BuildModernTrack's main
+    // FillClip (RectMask2D + a stretched spriteless Fill Image painted from ColorRgba incl. alpha). Returns the
+    // clip RectTransform so a BarBinding can drive its anchorMax.x. Caller sets the initial width + draw order.
+    private static RectTransform BuildOverlayClip(Transform track, ColorRgba color)
+    {
+        var clipGo = UGuiPrimitives.NewChild("OverlayClip", track);
+        var clipRt = clipGo.GetComponent<RectTransform>();
+        clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
+        clipRt.anchorMax = new Vector2(0f, 1f);
+        clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
+        clipGo.AddComponent<RectMask2D>();
+
+        var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
+        UGuiPrimitives.Stretch(fillGo);
+        var fill = fillGo.AddComponent<Image>();
+        fill.raycastTarget = false;
+        fill.color = new Color(color.R, color.G, color.B, color.A);
+        return clipRt;
     }
 }

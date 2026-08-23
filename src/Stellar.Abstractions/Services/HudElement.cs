@@ -134,6 +134,21 @@ public sealed record BarElement(
     /// <summary><see cref="BarStyle.Modern"/> only: an animated soft-white sheen band that sweeps across the fill.
     /// Default false. Ignored in <see cref="BarStyle.Default"/>.</summary>
     public bool          Sheen          { get; init; }
+    /// <summary><see cref="BarStyle.Modern"/> only: optional SECOND fill fraction 0..1 drawn on the SAME track as
+    /// <see cref="Fraction01"/>, re-pulled each refresh. Null (default) = no overlay → bar renders unchanged.
+    /// Pair with <see cref="OverlayColor"/> and <see cref="OverlayInFront"/> to show a second value (e.g. a
+    /// monster shield on an HP bar). Ignored in <see cref="BarStyle.Default"/>.</summary>
+    public Func<float>?  Overlay01      { get; init; }
+    /// <summary><see cref="BarStyle.Modern"/> only: colour of the <see cref="Overlay01"/> fill. Include an alpha
+    /// &lt; 1 for a translucent band (typical when <see cref="OverlayInFront"/> is true). Ignored when
+    /// <see cref="Overlay01"/> is null or in <see cref="BarStyle.Default"/>.</summary>
+    public ColorRgba     OverlayColor   { get; init; }
+    /// <summary><see cref="BarStyle.Modern"/> only: draw order of the <see cref="Overlay01"/> fill relative to the
+    /// main fill. <c>true</c> = draw OVER the main fill (a translucent band layered on top — e.g. a shield tint over
+    /// HP). <c>false</c> (default) = draw BEHIND the main fill so the opaque main fill covers it, leaving only the
+    /// excess visible as an "extension cap" past the main fill (e.g. <c>Overlay01 = (hp+shield)/max</c> shows the
+    /// shield as extra length). Ignored when <see cref="Overlay01"/> is null or in <see cref="BarStyle.Default"/>.</summary>
+    public bool          OverlayInFront { get; init; }
 }
 
 /// <summary>Render style for a <see cref="BarElement"/>.</summary>
