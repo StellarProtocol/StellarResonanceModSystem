@@ -96,6 +96,31 @@ if [ "$FW_ONLY" = "1" ]; then
     USER_PLUGINS=()
 fi
 
+# Selective plugin mode (STELLAR_ONLY_PLUGINS="combatmeter[,cooldownbar…]"): deploy ONLY the named
+# plugin slots and NOTHING else — the framework slot (build, copy, shadow sweep) is untouched.
+# Exists for single-plugin fix deploys to the owner's MAIN client: 6 of 10 plugin repos have moved
+# past the deployed builds (measured 2026-08-23) so a full plugin sweep must never run there, and
+# rebuilding the framework at a newer tools-commit HEAD would churn its embedded sha for no source
+# change. Names are the LOWERCASE slot names, comma- or space-separated. Mutually exclusive with
+# STELLAR_FRAMEWORK_ONLY.
+ONLY_PLUGINS="${STELLAR_ONLY_PLUGINS:-}"
+if [ -n "$ONLY_PLUGINS" ] && [ "$FW_ONLY" = "1" ]; then
+    echo "STELLAR_ONLY_PLUGINS and STELLAR_FRAMEWORK_ONLY are mutually exclusive"; exit 2
+fi
+if [ -n "$ONLY_PLUGINS" ]; then
+    echo "selective plugin mode: deploying ONLY [$ONLY_PLUGINS] (framework slot untouched)"
+    FILTERED=()
+    for entry in "${USER_PLUGINS[@]}"; do
+        subdir="${entry%%|*}"
+        slot="$(printf '%s' "$subdir" | tr '[:upper:]' '[:lower:]')"
+        case ",$(printf '%s' "$ONLY_PLUGINS" | tr ' ' ',')," in
+            *",$slot,"*) FILTERED+=("$entry") ;;
+        esac
+    done
+    [ ${#FILTERED[@]} -gt 0 ] || { echo "STELLAR_ONLY_PLUGINS matched no known plugin slot"; exit 2; }
+    USER_PLUGINS=("${FILTERED[@]}")
+fi
+
 # Resolve a plugin entry's DLL path from its "subdir|mode|path" spec.
 # NOTE: separate `local` statements — a single `local a=.. b="${a..}"` line does
 # NOT reliably see `a`'s new value, which would silently return an empty path.
@@ -117,8 +142,12 @@ plugin_dll() {  # $1 = "subdir|mode|path" -> echoes the expected DLL path
 # the working build was -c Debug). Skip with SKIP_BUILD=1.
 DOTNET="${DOTNET:-/home/dorasu/.dotnet/dotnet}"
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    echo "building framework src/ (Release) before deploy…"
-    "$DOTNET" build "$SRC/Stellar.sln" -c Release --nologo -v quiet
+    if [ -n "$ONLY_PLUGINS" ]; then
+        echo "selective plugin mode: skipping the framework src/ build"
+    else
+        echo "building framework src/ (Release) before deploy…"
+        "$DOTNET" build "$SRC/Stellar.sln" -c Release --nologo -v quiet
+    fi
     # build-mode plugins live in their own repos (plugin-repos/), NOT in
     # Stellar.sln — build each csproj individually so a deploy never ships a stale
     # plugin DLL. prebuilt-mode plugins (plugins/ monorepo) ship as published DLLs
@@ -134,25 +163,30 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
     done
 fi
 
-# Sanity check inputs.
-for dll in "${FRAMEWORK_DLLS[@]}"; do
-    [ -f "$dll" ] || { echo "missing $dll — build src/ first"; exit 1; }
-done
+# Sanity check inputs (framework set skipped in selective plugin mode — not deployed).
+if [ -z "$ONLY_PLUGINS" ]; then
+    for dll in "${FRAMEWORK_DLLS[@]}"; do
+        [ -f "$dll" ] || { echo "missing $dll — build src/ first"; exit 1; }
+    done
+fi
 for entry in "${USER_PLUGINS[@]}"; do
     dll="$(plugin_dll "$entry")"
     [ -f "$dll" ] || { echo "missing $dll — build ${entry#*|} first (or unset SKIP_BUILD)"; exit 1; }
 done
 
-# Framework directory (BepInEx auto-discovers DLLs here).
+# Framework directory (BepInEx auto-discovers DLLs here). Skipped entirely in selective plugin
+# mode — the deployed framework build must not churn on a plugin-only fix.
 FW_DIR="$GAME/BepInEx/plugins/Stellar.Framework"
-mkdir -p "$FW_DIR"
+if [ -z "$ONLY_PLUGINS" ]; then
+    mkdir -p "$FW_DIR"
 
-# Clean prior framework DLLs so a renamed/removed assembly doesn't linger.
-rm -f "$FW_DIR"/*.dll
+    # Clean prior framework DLLs so a renamed/removed assembly doesn't linger.
+    rm -f "$FW_DIR"/*.dll
 
-for dll in "${FRAMEWORK_DLLS[@]}"; do
-    cp -v "$dll" "$FW_DIR/"
-done
+    for dll in "${FRAMEWORK_DLLS[@]}"; do
+        cp -v "$dll" "$FW_DIR/"
+    done
+fi
 
 # Where evicted shadow copies go. Defined here because the user-plugin loop below already needs it;
 # the later shadow-copy guard reuses the same stash (`:=` keeps ONE timestamp for the whole run).
@@ -212,7 +246,8 @@ evacuate_shadows() {
     done
 }
 # Framework scan path: the ONLY valid dir is exactly Stellar.Framework; any suffixed variant shadows it.
-evacuate_shadows "$GAME/BepInEx/plugins" "Stellar.Framework.*"
+# Skipped in selective plugin mode — nothing under BepInEx/plugins may change on a plugin-only deploy.
+[ -n "$ONLY_PLUGINS" ] || evacuate_shadows "$GAME/BepInEx/plugins" "Stellar.Framework.*"
 # User-plugin scan path: any *.bak* slot shadows the live plugin folder. Skipped in
 # framework-only mode — that tree must not be read or written at all.
 [ "$FW_ONLY" = "1" ] || evacuate_shadows "$GAME/stellar/plugins" "*.bak*"
@@ -243,8 +278,8 @@ fi
 
 cat <<EOF
 
-Deployed src/ build — MODE=$MODE$([ "$FW_ONLY" = "1" ] && printf ' (framework-only: user plugins untouched)')
-  framework DLLs -> $FW_DIR
+Deployed src/ build — MODE=$MODE$([ "$FW_ONLY" = "1" ] && printf ' (framework-only: user plugins untouched)')$([ -n "$ONLY_PLUGINS" ] && printf ' (selective plugins: %s — framework slot untouched)' "$ONLY_PLUGINS")
+  framework DLLs -> $([ -n "$ONLY_PLUGINS" ] && echo "UNTOUCHED (selective plugin mode)" || echo "$FW_DIR")
   flags          -> $([ -f "$FLAGS" ] && tr '\n' ' ' < "$FLAGS" || echo '(none)')
   BepInEx log    -> InstantFlushing=$FLUSH, UnityLogListening=false, Console=$CONSOLE
   log truncated. Fully close + relaunch via Heroic.
