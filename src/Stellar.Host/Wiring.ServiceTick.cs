@@ -136,9 +136,8 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:equiploadout");
         RefreshPerTickServices(globalDt);
         ProbeGameRootOnce(_gameInstance);
-        Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:worldattr");
-        _worldAttrProbe?.Tick();   // main-thread read of ZWorld AttrDeathCount(348) → Defeated (no-op in town)
-        Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:worldattr");
+        // (No world-attr tick any more: AttrDeathCount(348) → Defeated is event-driven off the scene
+        //  attr sync on the wire — PandaWorldAttrProbe, WorldNtf 3 + 7. Owner ruling 2026-08-23.)
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:input");
         TickInputAndHotkeys();
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:input");

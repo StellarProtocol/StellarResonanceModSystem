@@ -78,9 +78,15 @@ public sealed partial class BootstrapPlugin
         // re-attempting any of them.
         _dungeonProbe = new PandaDungeonProbe(_dungeonStateService!, _dungeonStateService!, _combatService!, log);
         _dungeonProbe.RegisterWith(_worldNtfDispatcher);
-        // Defeated count rides ZWorld's AttrDeathCount (348), NOT the wire — read on the main-thread
-        // framework tick (PandaWorldAttrProbe.Tick from RunGlobalRateWork), not this dispatcher.
-        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log, _clientState!);
+        // Defeated count (AttrDeathCount 348) is a SCENE attr and rides the wire: EnterSceneInfo.SceneAttrs
+        // on zone-in (method 3, the seed) + WorldNtf.SyncSceneAttrs (method 7) for every later change —
+        // the same collection ZWorld.ParseAttrProto fills and the game's own dungeon HUD watches. The
+        // per-tick ZWorld read this replaced is gone (owner ruling 2026-08-23: no compare-polls).
+        // ORDER IS LOAD-BEARING: register AFTER _combatStubProbe so its method-3 handler has already
+        // latched the new run id when the seed below applies its run-id gate (StubRouter invokes
+        // handlers for one method id in registration order).
+        _worldAttrProbe = new PandaWorldAttrProbe(_dungeonStateService!, _dungeonStateService!, log);
+        _worldAttrProbe.RegisterWith(_worldNtfDispatcher);
         _worldNtfDispatcher.Install(PluginGuid);
     }
 

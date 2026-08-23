@@ -1,145 +1,128 @@
 using System;
-using System.Reflection;
-using HarmonyLib;
-using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Infrastructure.Game.Protobuf;
 using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Reads World-scoped attributes that ride the game's <c>ZWorld</c> singleton (NOT the wire) and
-/// feeds them into the dungeon-state sink. Currently: <c>AttrDeathCount</c> (348) = the settlement
-/// "Defeated" count, read via <c>Panda.ZGame.ZWorld.Instance.GetWorldLuaAttr(348).Value</c> —
-/// exactly how the game's own dungeon UI reads it (lua <c>Z.World:GetWorldLuaAttr</c>).
+/// EVENT-DRIVEN capture of the World/scene-scoped attributes the dungeon-state sink consumes —
+/// currently <c>AttrDeathCount</c> (348), the settlement "Defeated" counter.
 ///
-/// <para>
-/// Runs on the MAIN-THREAD framework tick ONLY (never the network receive thread — a live IL2CPP
-/// read off-thread can fault). Reflection over the Il2CppInterop wrapper (Infrastructure holds no
-/// typed <c>Panda.*</c> reference). Fully defensive: a missing type/method permanently disables the
-/// probe; a transient-null Instance (pre-world) retries; any read exception disables + logs once.
-/// Never throws across the IL2CPP boundary.
-/// </para>
+/// <para><b>Owner ruling 2026-08-23 (binding):</b> capture is event-driven at the RIGHT probe point;
+/// no polling / timer-based data gathering. Until this rework the probe read
+/// <c>Panda.ZGame.ZWorld.Instance.GetWorldLuaAttr(348).Value</c> through four layers of IL2CPP
+/// reflection on EVERY main-thread framework tick and diffed the result — a compare-poll.</para>
+///
+/// <para><b>The event.</b> The game itself never polls this attr either: its dungeon HUD binds
+/// <c>Z.World:BindWorldLuaAttrWatcher({AttrDeathCount}, refreshDeadUI)</c>
+/// (<c>lua/ui/component/dungeon/dungeon_time.lua</c>) and only redraws when the watcher fires. That
+/// watcher fires because the world attr collection was re-parsed — <c>ZWorld.ParseAttrProto(AttrCollection)</c>
+/// — and the collection's wire carrier is the scene attr sync. So the ARRIVAL of a scene attr
+/// collection is the correct signal, and this probe taps it directly on the wire, upstream of the
+/// game's own watcher:</para>
+/// <list type="bullet">
+/// <item><b>WorldNtf 3 <c>EnterScene</c></b> → <c>EnterSceneInfo.SceneAttrs</c>: the scene's attr set at
+/// zone-in. This is the SEED — it is what carries an already-accumulated count on a mid-run
+/// reconnect, which the old per-tick read used to pick up incidentally.</item>
+/// <item><b>WorldNtf 7 <c>SyncSceneAttrs</c></b> → every later change to a scene attr, i.e. every death.</item>
+/// </list>
+///
+/// <para>Both are pure byte-walks on the network receive thread (no IL2CPP object touched anywhere in
+/// this file any more, so the whole reflection/fault-disable machinery — <c>ZWorld</c> type lookup,
+/// <c>Zproto.ZAttr&lt;int&gt;</c> re-wrapping, the <c>Il2CppObjectBase.Pointer</c> read, the
+/// permanent-disable latch and the <c>IClientState</c> handshake guard — is gone). The sink is
+/// already written from this thread by <see cref="PandaDungeonProbe"/>, and
+/// <c>DungeonStateService.SetDefeated</c> is interlocked.</para>
+///
+/// <para><b>Consumer semantics are unchanged:</b> only a positive, changed count is latched, and only
+/// while a run id is active. <see cref="IDungeonState.LastDefeatedCount"/> keeps reading exactly what
+/// it read before. Registration ORDER matters — Host registers this probe AFTER
+/// <see cref="PandaCombatStubProbe"/>, so the method-3 seed runs once that probe has already latched
+/// the new run id from the very same packet.</para>
 ///
 /// <para>Diagnostics live in <c>PandaWorldAttrProbe.Diagnostics.cs</c>.</para>
 /// </summary>
 internal sealed partial class PandaWorldAttrProbe
 {
-    private const string ZWorldTypeName = "Panda.ZGame.ZWorld";
+    private const string SourceEnterScene = "enter-scene.SceneAttrs";
+    private const string SourceSceneSync  = "SyncSceneAttrs(7)";
 
     private readonly IDungeonStateSink _sink;
     private readonly IDungeonState _state;
     private readonly IPluginLog _log;
-    private readonly IClientState _clientState;
 
-    private bool _disabled;                 // permanent: type/method missing or a read faulted
-    private Type? _zworldType;
-    private MethodInfo? _getWorldLuaAttr;   // GetWorldLuaAttr(int) -> Zproto.IAttr (abstract base)
-    private PropertyInfo? _instanceProp;     // static ZSingleton<ZWorld>.Instance
-    // The runtime object GetWorldLuaAttr returns is a concrete Zproto.ZAttr<int>, but Il2CppInterop
-    // hands it back wrapped as the abstract Zproto.IAttr base (which has NO Value member — only
-    // ParseProto/BindWatcher). So we re-wrap the returned pointer as ZAttr<int> and read its Value.
-    private ConstructorInfo? _zattrIntCtor;  // Zproto.ZAttr<int>.ctor(IntPtr)
-    private PropertyInfo? _zattrIntValue;    // Zproto.ZAttr<int>.Value  (int)
-    private PropertyInfo? _pointerProp;      // Il2CppObjectBase.Pointer (off the returned attr)
-    private int _lastDefeated = -1;
+    // Last value pushed to the sink; suppresses the steady-state re-delivery of an unchanged count.
+    // Zeroed on every enter-scene because the game zeroes its side there too
+    // (ZWorld.OnEnterScene -> ResetSceneAttrs) and DungeonStateService clears _lastDefeated on a new
+    // run id — without this reset, two consecutive runs that reach the SAME count would leave the
+    // second run reporting 0 (the service cleared, the probe still thought it had latched).
+    private int _lastDefeated;
 
-    public PandaWorldAttrProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log, IClientState clientState)
+    public PandaWorldAttrProbe(IDungeonStateSink sink, IDungeonState state, IPluginLog log)
     {
         _sink  = sink  ?? throw new ArgumentNullException(nameof(sink));
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _log   = log   ?? throw new ArgumentNullException(nameof(log));
-        _clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
     }
 
     /// <summary>
-    /// Called from the throttled MAIN-THREAD framework tick. During an instanced run, reads the
-    /// World <c>AttrDeathCount</c> (348) and latches it as the Defeated count. No-op in town, before
-    /// the type/Instance resolve, or on any failure.
+    /// Subscribes the two scene-attr carriers on the shared dispatcher. MUST be registered after
+    /// <see cref="PandaCombatStubProbe"/> (see the class doc's ordering note) and before
+    /// <see cref="WorldNtfStubDispatcher.Install"/>.
     /// </summary>
-    [WorldGated]
-    public void Tick()
+    public void RegisterWith(WorldNtfStubDispatcher dispatcher) => RegisterHandlers(dispatcher.Register);
+
+    /// <summary>The subscription itself, against a bare <c>Register</c> callback so the unit tests can
+    /// drive the SAME registration into a plain <see cref="StubRouter"/> (no IL2CPP dispatcher) instead
+    /// of restating the method ids and risking drift.</summary>
+    internal void RegisterHandlers(Action<uint, Action<uint, byte[]>> register)
     {
-        if (!_clientState.IsWorldActive) return; // never touch the live IL2CPP world during the connect handshake
-        if (_disabled) return;
-        if (_state.CurrentRunId == 0) return;   // only inside a dungeon/instanced run
+        register(WorldNtfMethodIds.EnterScene,     OnEnterScene);   // 3 — seed
+        register(WorldNtfMethodIds.SyncSceneAttrs, OnSceneAttrs);   // 7 — every later change
+    }
 
-        try
+    // WorldNtf 3. The scene changed: drop the memo (see _lastDefeated) and seed from this packet's
+    // own scene attrs. A scene with no 348 row simply seeds nothing — the count starts at 0, which is
+    // what DungeonStateService already holds for a fresh run.
+    internal void OnEnterScene(uint methodId, byte[] payload)
+    {
+        _lastDefeated = 0;
+        if (!EnterSceneReader.TryReadSceneAttrs(payload, out var sceneAttrs, out _)) return;
+        LatchDeathCount(sceneAttrs, SourceEnterScene);
+    }
+
+    // WorldNtf 7. Every later scene-attr change (weather, day/night, firework timers, AND the death
+    // count) rides this one message, carrying only the attrs that changed — so a delivery without a
+    // 348 row is the common case and costs one scan of a handful of rows.
+    internal void OnSceneAttrs(uint methodId, byte[] payload)
+    {
+        if (!SyncSceneAttrsReader.TryRead(payload, out var sceneAttrs)) return;
+        LatchDeathCount(sceneAttrs, SourceSceneSync);
+    }
+
+    private void LatchDeathCount(in AttrCollectionMsg sceneAttrs, string source)
+    {
+        var items = sceneAttrs.Items;
+        if (items is null) return;
+        for (int i = 0; i < items.Count; i++)
         {
-            if (!TryResolveStatics()) return;                 // type + method (permanent-fail if missing)
-            var instance = _instanceProp!.GetValue(null);     // ZSingleton Instance (may be null pre-world → retry)
-            if (instance is null) return;
-
-            var attr = _getWorldLuaAttr!.Invoke(instance, new object[] { AttrTypeIds.AttrDeathCount });
-            if (attr is null) return;
-            if (!TryResolveAttrInt(attr)) { DiagAttrShape(attr); return; }  // disables on hard-miss
-
-            var ptr = (IntPtr)_pointerProp!.GetValue(attr)!;                // native ZAttr<int> pointer
-            if (ptr == IntPtr.Zero) return;
-            var typed = _zattrIntCtor!.Invoke(new object[] { ptr });        // re-wrap as ZAttr<int>
-            var raw = _zattrIntValue!.GetValue(typed);
-            if (raw is null) return;
-
-            int value = Convert.ToInt32(raw);
-            if (value <= 0 || value == _lastDefeated) return; // only latch a changed, positive count
-            _lastDefeated = value;
-            _sink.SetDefeated(value);
-            DiagDefeated(value);
-        }
-        catch (Exception ex)
-        {
-            _disabled = true;   // stop retrying a broken path
-            DiagFaulted(ex);
+            var attr = items[i];
+            if (attr.Id != AttrTypeIds.AttrDeathCount) continue;
+            Latch((int)attr.DecodedLong, source);
+            return;
         }
     }
 
-    // Resolve the ZWorld type + GetWorldLuaAttr(int) + static Instance property ONCE. A missing type
-    // or method permanently disables the probe (there's no point retrying). Returns true once resolved.
-    private bool TryResolveStatics()
+    // Same three gates the per-tick read applied, in the same order: inside an instanced run only,
+    // positive only, changed only.
+    private void Latch(int value, string source)
     {
-        if (_getWorldLuaAttr is not null && _instanceProp is not null) return true;
-
-        _zworldType ??= AccessTools.TypeByName(ZWorldTypeName);
-        if (_zworldType is null) { _disabled = true; DiagResolveMissing("type " + ZWorldTypeName); return false; }
-
-        _getWorldLuaAttr ??= _zworldType.GetMethod("GetWorldLuaAttr", new[] { typeof(int) });
-        _instanceProp ??= _zworldType.GetProperty(
-            "Instance", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-
-        if (_getWorldLuaAttr is null || _instanceProp is null)
-        {
-            _disabled = true;
-            DiagResolveMissing(_getWorldLuaAttr is null ? "GetWorldLuaAttr(int)" : "static Instance");
-            return false;
-        }
-        return true;
-    }
-
-    // Resolve, ONCE, the concrete Zproto.ZAttr<int> wrapper (ctor + Value getter) and the
-    // Il2CppObjectBase.Pointer accessor off the returned attr. The value member is NOT on the
-    // abstract Zproto.IAttr the method returns — it lives on the concrete generic instantiation
-    // (confirmed offline: ilspycmd Panda.ZRpcGen Zproto.ZAttr`1 → `public T Value`). Returns false
-    // (and permanently disables) if any piece is missing.
-    private bool TryResolveAttrInt(object attr)
-    {
-        if (_zattrIntValue is not null && _zattrIntCtor is not null && _pointerProp is not null) return true;
-
-        _pointerProp ??= attr.GetType().GetProperty(
-            "Pointer", BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
-
-        var open = AccessTools.TypeByName("Zproto.ZAttr`1");
-        var closed = open?.MakeGenericType(typeof(int));
-        _zattrIntCtor ??= closed?.GetConstructor(new[] { typeof(IntPtr) });
-        _zattrIntValue ??= closed?.GetProperty("Value");
-
-        if (_pointerProp is null || _zattrIntCtor is null || _zattrIntValue is null)
-        {
-            _disabled = true;
-            DiagResolveMissing(open is null ? "type Zproto.ZAttr`1"
-                : _pointerProp is null ? "Il2CppObjectBase.Pointer" : "ZAttr<int>.ctor/Value");
-            return false;
-        }
-        return true;
+        if (_state.CurrentRunId == 0) return;
+        if (value <= 0 || value == _lastDefeated) return;
+        _lastDefeated = value;
+        _sink.SetDefeated(value);
+        DiagDefeated(value, source);
     }
 }
