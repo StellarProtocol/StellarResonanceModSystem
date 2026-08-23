@@ -19,6 +19,22 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.2.0 is the live-build release. Adds <c>ILoadout.LiveState</c> (<c>LiveLoadoutState</c> — the
+    /// live class + talents, never a saved plan), <c>ILoadout.LiveStateChanged</c> (ONE game-tick event
+    /// covering the whole build: equipped gear/module slots, class, talent stage/nodes, the equipped
+    /// Battle Imagine pair, and Deep-Slumber — raised only after the framework's re-read actually changed
+    /// what it serves, so a consumer may treat it as "the setup I can read right now is the new one"),
+    /// and <c>IPluginServices.DeepSlumber</c> (<c>IDeepSlumber</c>) — the live Deep-Slumber Psychoscope
+    /// (season cultivate) state: season levels, lines, areas, socketed cards and node levels, read live
+    /// per call. <c>IInventory.SelfGearChanged</c> widens from gear-only to the local player's BUILD-state
+    /// signal (it now also fires on talent field-61 and season-cultivate field-101 dirty deltas).
+    /// <c>IResonanceState.Installed</c> keeps its shape but changes SOURCE and id space: the equipped
+    /// Battle Imagines are now read from the skill hotbar's aoyi slots 7/8 as aoyi SKILL ids (resolve via
+    /// <c>IGameDataResonance.GetImagineForSkill</c>) because <c>CharSerialize.resonance</c> (wire field 28)
+    /// is never re-serialized on an in-session swap. Internally the framework's last per-tick game reads
+    /// are gone — live-state capture and the dungeon defeated count are both event-driven now
+    /// (container-merge / scene-attr sync). New members + a new service only — additive, binary-compatible
+    /// with plugins built against ≤2.1.0.
     /// 2.1.0 adds <c>IPluginServices.Localization</c> (<c>ILocalization</c>) — a plugin-scoped UI-text
     /// localizer. A plugin ships four embedded <c>Lang/{en,ja,th,id}.json</c> catalogs and calls
     /// <c>Localization.T(key)</c> / <c>TFormat(key, args)</c>, resolved to the active language (English
@@ -120,5 +136,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.1.0";
+    public const string Value = "2.2.0";
 }
