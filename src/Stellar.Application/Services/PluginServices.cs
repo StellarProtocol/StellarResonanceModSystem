@@ -38,6 +38,7 @@ internal sealed class PluginServices : IPluginServices
     public IResonanceState Resonance { get; }
     public IGameDataResonance ResonanceData { get; }
     public IEntityDetail EntityDetail { get; }
+    public IWardrobe Wardrobe { get; }
     public IEntityContextMenu EntityContextMenu { get; }
     public IEntityPortrait EntityPortrait { get; }
     public IProfileCardActions ProfileCardActions { get; }
@@ -96,7 +97,8 @@ internal sealed class PluginServices : IPluginServices
         ILua lua,
         IHarmonyHost harmony,
         ILocalization localization,
-        IDeepSlumber deepSlumber)
+        IDeepSlumber deepSlumber,
+        IWardrobe wardrobe)
     {
         Log = log;
         Framework = framework;
@@ -143,5 +145,6 @@ internal sealed class PluginServices : IPluginServices
         Harmony = harmony;
         Localization = localization;
         DeepSlumber = deepSlumber;
+        Wardrobe = wardrobe;
     }
 }

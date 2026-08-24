@@ -74,6 +74,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IResonanceState Resonance => _shared.Resonance;
     public IGameDataResonance ResonanceData => _shared.ResonanceData;
     public IEntityDetail EntityDetail => _shared.EntityDetail;
+    public IWardrobe Wardrobe => _shared.Wardrobe;
     public IEntityContextMenu EntityContextMenu => _shared.EntityContextMenu;
     public IEntityPortrait EntityPortrait => _shared.EntityPortrait;
     public IProfileCardActions ProfileCardActions => _shared.ProfileCardActions;
