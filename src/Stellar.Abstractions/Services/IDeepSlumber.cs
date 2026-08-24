@@ -1,3 +1,5 @@
+using System.Threading;
+using System.Threading.Tasks;
 using Stellar.Abstractions.Domain.DeepSlumber;
 
 namespace Stellar.Abstractions.Services;
@@ -25,4 +27,15 @@ public interface IDeepSlumber
 
     /// <summary>The current live Deep-Slumber state, or null before the live container resolves.</summary>
     DeepSlumberState? GetState();
+
+    /// <summary>Drives the game to become <paramref name="target"/>: enables the bound line/area(s)
+    /// and reconciles their phantom factors to match, through the game's own <c>season_talent</c>
+    /// dispatcher. Idempotent — a target already matching the live state applies nothing and returns
+    /// <see cref="DeepSlumberApplyResult.AlreadyMatched"/>. Never bypasses game-side gating (combat,
+    /// cost, unlock, missing factor item); refusals surface in the result and the game toasts the
+    /// reason. Call on the game Update thread (or a plugin callback that runs there).</summary>
+    /// <param name="target">The setup to apply, typically a snapshot from <see cref="GetState"/>.</param>
+    /// <param name="ct">Cancels remaining operations before their dispatch.</param>
+    /// <returns>The aggregate outcome.</returns>
+    Task<DeepSlumberApplyResult> ApplySetupAsync(DeepSlumberSetup target, CancellationToken ct = default);
 }

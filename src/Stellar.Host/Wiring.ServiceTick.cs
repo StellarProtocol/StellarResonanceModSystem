@@ -312,6 +312,11 @@ public sealed partial class BootstrapPlugin
         }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
 
+        // Deep-Slumber write probe: drains its own single-flight dispatch queue (enable line / socket /
+        // unsocket a factor). Independent Lua-bridge resolution from the loadout read probe above.
+        try { _seasonTalentWriteProbe?.DrainPending(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] season-talent write drain threw: {ex.Message}"); }
+
         // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on
         // in-dungeon + PartyId==0, throttled + capped, so it's a no-op on every normal tick.
         try { _teamInfoRefreshProbe!.Tick(); }

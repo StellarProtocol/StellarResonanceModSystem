@@ -82,6 +82,7 @@ USER_PLUGINS=(
     "StatInspector|build|$DEVKIT_ROOT/plugin-repos/StellarStatInspectorPlugin/Stellar.StatInspector.csproj"
     "ModuleOptimizer|build|$DEVKIT_ROOT/plugin-repos/StellarModuleOptimizerPlugin/Stellar.ModuleOptimizer.csproj"
     "EntityInspector|build|$DEVKIT_ROOT/plugin-repos/StellarEntityInspectorPlugin/Stellar.EntityInspector.csproj"
+    "LoadoutSwitcher|build|$DEVKIT_ROOT/plugin-repos/StellarLoadoutSwitcherPlugin/Stellar.LoadoutSwitcher.csproj"
 )
 
 # Framework-only mode (STELLAR_FRAMEWORK_ONLY=1): deploy the framework set and touch NOTHING under

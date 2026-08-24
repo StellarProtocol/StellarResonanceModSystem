@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.3.0] - 2026-08-25
+_**2.3.0** (minor) — plugins can now apply a Deep-Slumber setup for you, and applying one is fast and self-healing. Additive, binary-compatible with plugins built against ≤2.2.0._
+### Added
+- Plugins can now change your Deep-Slumber Psychoscope for you — its cultivate line and its phantom factors. The Loadout Switcher uses this to re-apply the Deep-Slumber you bound to a loadout the moment you switch to it.
+### Changed
+- Applying a Deep-Slumber setup is much faster. A switch that moves a lot of factors used to take a few seconds; now it finishes in a fraction of that, and if the game drops one of the changes it quietly retries instead of stopping half-done.
+### Developer notes
+- New plugin surface: `IDeepSlumber.ApplySetupAsync(DeepSlumberSetup, CancellationToken)` returning `DeepSlumberApplyResult`, plus `DeepSlumberSetup`/`DeepSlumberAreaBinding`. The live→target diff (`DeepSlumberReconciler`) lives in Application; the write path drives the game's `season_talent` worldProxy RPCs (Approach A — raw RPC returns the bare `EErrorCode` inline) via `PandaSeasonTalentProbe`. Docs: `docs/driving-game-actions.md` § Deep-Slumber.
+- Apply overlaps its server round-trips: a bounded in-flight window (5) with one-dispatch-per-tick pacing, run in Kind-phases (enable → unsocket → socket) with a barrier that preserves the scarce single-copy unsocket-before-socket invariant. Only transient (did-not-land) ops retry (initial + 2, 250 ms backoff); a positive game refusal (7555/7561/combat) is never retried.
+
 ## [2.2.0] - 2026-08-24
 _**2.2.0** (minor) — the live-build release. Stellar now notices the moment your setup changes and reads it live, and exposes the Deep-Slumber Psychoscope to plugins. Additive, binary-compatible with plugins built against ≤2.1.0._
 ### Added
