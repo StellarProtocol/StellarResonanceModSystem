@@ -317,6 +317,11 @@ public sealed partial class BootstrapPlugin
         try { _seasonTalentWriteProbe?.DrainPending(); }
         catch (Exception ex) { Log.LogWarning($"[boot] season-talent write drain threw: {ex.Message}"); }
 
+        // Wardrobe (fashion) probe: resolves its own Lua bridge, refreshes the worn-outfit capture when
+        // armed (merge event / post-apply), and drains a queued FashionWear apply. Own bridge + queue.
+        try { _fashionProbe?.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] wardrobe tick threw: {ex.Message}"); }
+
         // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on
         // in-dungeon + PartyId==0, throttled + capped, so it's a no-op on every normal tick.
         try { _teamInfoRefreshProbe!.Tick(); }

@@ -92,7 +92,8 @@ public sealed partial class BootstrapPlugin
             // Framework's own localization façade (namespace "stellar.framework"); plugins get their own
             // per-plugin façade via PerPluginServices.
             _frameworkLocalization!,
-            _deepSlumberService!);
+            _deepSlumberService!,
+            _wardrobeService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
