@@ -13,38 +13,51 @@ internal static class DeepSlumberReconciler
 {
     public static IReadOnlyList<DeepSlumberOp> Plan(DeepSlumberState current, DeepSlumberSetup target)
     {
-        var ops = new List<DeepSlumberOp>();
+        // Emit in three phases — enable lines, then ALL unsockets, then ALL sockets — NOT interleaved.
+        // Factor items are SCARCE (often a single copy shared across loadouts): socketing before the
+        // shared item has been freed from its old node fails ("item unavailable" → code 7561 → "partly
+        // applied"; owner smoke 2026-08-24: op unsocket 141 ran AFTER the socket of 140 that needed that
+        // item). Unsocketing everything first returns every item to the bag, so the sockets always have
+        // the item available.
+        var enables = new List<DeepSlumberOp>();
+        var unsockets = new List<DeepSlumberOp>();
+        var sockets = new List<DeepSlumberOp>();
+
         // Match target areas against the CURRENT season ONLY. Season-talent AreaIds are REUSED across
         // seasons — the live container carries every season the character ever touched — so an
         // AreaId-only match can diff a current-season area against a PRIOR season's same-numbered area
-        // and emit ops against factors the game's current area never had (owner smoke 2026-08-24: 18
-        // bogus UnInstallItemToMiddleNode, every one code 7555 → "partly applied"). The current season
-        // is the newest line id present; the plugin captures the same way (logs-site current-season model).
+        // and emit ops against factors the game's current area never had (owner smoke: 18 bogus
+        // UnInstallItemToMiddleNode, every one code 7555). The current season is the newest line id
+        // present; the plugin captures the same way (logs-site current-season model).
         var currentLine = current.Lines.Count == 0 ? int.MinValue : current.Lines.Max(l => l.LineId);
         foreach (var area in target.Areas.OrderBy(a => a.AreaId))
         {
             var live = FindArea(current, currentLine, area.AreaId);
             if (live is null || !live.IsActive)
-                ops.Add(DeepSlumberOp.EnableLine(area.AreaId));
+                enables.Add(DeepSlumberOp.EnableLine(area.AreaId));
 
             var liveFactors = ToMap(live?.MiddleNodes);
             var wanted = ToMap(area.Factors);
 
-            // Sockets/replacements for every wanted node.
             foreach (var (node, item) in wanted.OrderBy(kv => kv.Key))
             {
                 if (liveFactors.TryGetValue(node, out var cur))
                 {
-                    if (cur == item) continue;                 // already matches
-                    ops.Add(DeepSlumberOp.Unsocket(node, cur)); // replace
+                    if (cur == item) continue;                       // already matches
+                    unsockets.Add(DeepSlumberOp.Unsocket(node, cur)); // replace: free the old first
                 }
-                ops.Add(DeepSlumberOp.Socket(node, item));
+                sockets.Add(DeepSlumberOp.Socket(node, item));
             }
             // Remove any live factor the target does not name.
             foreach (var (node, cur) in liveFactors.OrderBy(kv => kv.Key))
                 if (!wanted.ContainsKey(node))
-                    ops.Add(DeepSlumberOp.Unsocket(node, cur));
+                    unsockets.Add(DeepSlumberOp.Unsocket(node, cur));
         }
+
+        var ops = new List<DeepSlumberOp>(enables.Count + unsockets.Count + sockets.Count);
+        ops.AddRange(enables);
+        ops.AddRange(unsockets);
+        ops.AddRange(sockets);
         return ops;
     }
 

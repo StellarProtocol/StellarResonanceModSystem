@@ -42,6 +42,20 @@ public sealed class DeepSlumberReconcilerTests
     }
 
     [Fact]
+    public void SharedFactorMovingNodes_FreesItemBeforeSocketing()
+    {
+        // Live area 5 holds scarce item 20020964 at node 141; the target wants it at node 140. Factor
+        // items are single-copy, so the reconciler must unsocket 141 (return it to the bag) BEFORE
+        // socketing 140 (owner smoke 2026-08-24: socket-before-unsocket → item unavailable → code 7561
+        // → "partly applied").
+        var ops = DeepSlumberReconciler.Plan(State(5, true, (141, 20020964)), Setup(5, (140, 20020964))).ToList();
+        var freeIdx = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141);
+        var socketIdx = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 140);
+        Assert.True(freeIdx >= 0 && socketIdx >= 0, "expected both a free-141 and a socket-140 op");
+        Assert.True(freeIdx < socketIdx, "must unsocket the shared item before socketing it elsewhere");
+    }
+
+    [Fact]
     public void InactiveTargetArea_EmitsEnableLineFirst()
     {
         var ops = DeepSlumberReconciler.Plan(State(5, false), Setup(5));
