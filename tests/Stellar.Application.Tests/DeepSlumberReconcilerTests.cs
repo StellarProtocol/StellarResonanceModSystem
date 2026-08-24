@@ -32,10 +32,60 @@ public sealed class DeepSlumberReconcilerTests
     }
 
     [Fact]
+    public void EmptyLiveSocket_NotUnsocketed()
+    {
+        // The live area carries UNLOCKED-but-EMPTY middle sockets (itemId 0). An empty socket is not a
+        // factor — the reconciler must NOT try to unsocket it (owner smoke 2026-08-24: unsocket on an
+        // empty socket → code 7555 → "partly applied"). Target wants 0 factors here.
+        var ops = DeepSlumberReconciler.Plan(State(5, true, (143, 0), (146, 0)), Setup(5));
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+    }
+
+    [Fact]
     public void InactiveTargetArea_EmitsEnableLineFirst()
     {
         var ops = DeepSlumberReconciler.Plan(State(5, false), Setup(5));
         Assert.Equal(DeepSlumberOp.EnableLine(5), ops[0]);
+    }
+
+    [Fact]
+    public void CrossSeasonAreaIdCollision_MatchesCurrentSeasonOnly()
+    {
+        // AreaIds are REUSED across seasons: prior season (lineId 2) area 7 is fully built; the current
+        // season (lineId 3) area 7 is active + empty. Matching by AreaId alone would strip the prior
+        // season's factors (owner smoke 2026-08-24: 18 bogus unsockets → every one code 7555). Target =
+        // current-season area 7, 0 factors → the reconciler must diff the CURRENT (empty) area 7 and
+        // emit NO unsocket ops for the prior season's factors.
+        var oldArea = new DeepSlumberArea(7, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 160, 500 }, new[] { 161, 501 } }, new List<int[]>());
+        var newArea = new DeepSlumberArea(7, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(2, 800522, new List<DeepSlumberArea> { oldArea }),
+            new(3, 800522, new List<DeepSlumberArea> { newArea }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(7, new List<int[]>()) });
+        var ops = DeepSlumberReconciler.Plan(state, target);
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+    }
+
+    [Fact]
+    public void AlreadyCorrectFactor_CurrentSeason_PlansNothing()
+    {
+        // Prior season area 7 has a DIFFERENT factor at the same node; the current season area 7 already
+        // holds the wanted factor. Must read as "already matches" → no unsocket+resocket churn (owner:
+        // switching back re-sockets the same factor, wasting resources).
+        var oldArea = new DeepSlumberArea(7, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 118, 999 } }, new List<int[]>());
+        var newArea = new DeepSlumberArea(7, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 118, 20020001 } }, new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(2, 800522, new List<DeepSlumberArea> { oldArea }),
+            new(3, 800522, new List<DeepSlumberArea> { newArea }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, Setup(7, (118, 20020001)));
+        Assert.Empty(ops);
     }
 
     [Fact]
