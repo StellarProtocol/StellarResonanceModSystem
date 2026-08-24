@@ -15,4 +15,6 @@ public enum DeepSlumberApplyResult
     Refused,
     /// <summary>The write API or the live state was not resolved yet; nothing was attempted.</summary>
     Unavailable,
+    /// <summary>The apply was cancelled before any operation completed; nothing was applied.</summary>
+    Cancelled,
 }

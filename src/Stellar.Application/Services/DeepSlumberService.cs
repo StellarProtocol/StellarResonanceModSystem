@@ -35,13 +35,15 @@ internal sealed class DeepSlumberService : IDeepSlumber
 
         var failed = 0;
         var ok = 0;
+        var cancelled = false;
         foreach (var op in ops)
         {
-            if (ct.IsCancellationRequested) break;
+            if (ct.IsCancellationRequested) { cancelled = true; break; }
             var code = await Dispatch(op, ct).ConfigureAwait(false);
             if (code == 0) ok++; else failed++;
         }
 
+        if (cancelled) return ok > 0 ? DeepSlumberApplyResult.PartialFailure : DeepSlumberApplyResult.Cancelled;
         if (failed == 0) return DeepSlumberApplyResult.Success;
         return ok > 0 ? DeepSlumberApplyResult.PartialFailure : DeepSlumberApplyResult.Refused;
     }

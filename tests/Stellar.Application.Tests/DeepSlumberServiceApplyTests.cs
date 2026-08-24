@@ -22,10 +22,11 @@ public sealed class DeepSlumberServiceApplyTests
         public bool Resolved = true;
         public readonly List<string> Calls = new();
         public int EnableCode, SocketCode, UnsocketCode;
+        public System.Action? AfterCall;
         public bool IsResolved => Resolved;
-        public Task<int> EnableLineAsync(int a, CancellationToken ct) { Calls.Add($"enable:{a}"); return Task.FromResult(EnableCode); }
-        public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct) { Calls.Add($"socket:{n}:{i}"); return Task.FromResult(SocketCode); }
-        public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct) { Calls.Add($"unsocket:{n}"); return Task.FromResult(UnsocketCode); }
+        public Task<int> EnableLineAsync(int a, CancellationToken ct) { Calls.Add($"enable:{a}"); AfterCall?.Invoke(); return Task.FromResult(EnableCode); }
+        public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct) { Calls.Add($"socket:{n}:{i}"); AfterCall?.Invoke(); return Task.FromResult(SocketCode); }
+        public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct) { Calls.Add($"unsocket:{n}"); AfterCall?.Invoke(); return Task.FromResult(UnsocketCode); }
     }
 
     private static DeepSlumberState LiveActive(int areaId, params (int, int)[] mids)
@@ -83,5 +84,29 @@ public sealed class DeepSlumberServiceApplyTests
     {
         var svc = new DeepSlumberService(new FakeRead { State = LiveActive(5) }, new FakeWrite { Resolved = false });
         Assert.Equal(DeepSlumberApplyResult.Unavailable, await svc.ApplySetupAsync(Target(5)));
+    }
+
+    [Fact]
+    public async Task AlreadyCancelled_ReturnsCancelled_IssuesNoCalls()
+    {
+        var read = new FakeRead { State = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>()) }; // area 5 inactive/absent → non-empty plan
+        var write = new FakeWrite();
+        var svc = new DeepSlumberService(read, write);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.Equal(DeepSlumberApplyResult.Cancelled, await svc.ApplySetupAsync(Target(5), cts.Token));
+        Assert.Empty(write.Calls);
+    }
+
+    [Fact]
+    public async Task CancelledAfterFirstOp_ReturnsPartialFailure()
+    {
+        var read = new FakeRead { State = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>()) };
+        var write = new FakeWrite { EnableCode = 0, SocketCode = 0 };
+        using var cts = new CancellationTokenSource();
+        write.AfterCall = () => cts.Cancel();
+        var svc = new DeepSlumberService(read, write);
+        Assert.Equal(DeepSlumberApplyResult.PartialFailure, await svc.ApplySetupAsync(Target(5, (118, 222)), cts.Token));
+        Assert.Single(write.Calls);
     }
 }
