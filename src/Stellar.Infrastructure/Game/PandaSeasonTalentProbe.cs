@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Threading;
@@ -22,10 +23,15 @@ namespace Stellar.Infrastructure.Game;
 /// back via <c>CharSerialize</c>, which the existing Deep-Slumber capture
 /// (<see cref="PandaLoadoutProbe"/>) already latches.
 ///
-/// <para><b>Ordering:</b> <see cref="DrainPending"/> dispatches at most ONE op per Update tick and
-/// will not fire the next queued op until the previous one has completed or timed out — so an
-/// enable-then-socket sequence (the reconciler's op order) can never overlap two coroutines against
-/// the same Lua VM.</para>
+/// <para><b>Ordering &amp; pacing:</b> <see cref="DrainPending"/> dispatches at most ONE <i>new</i> op
+/// per Update tick and keeps at most <see cref="MaxInFlight"/> ops in flight at once. Each op has its
+/// own reply global (<c>_StellarSeasonTalentResult&lt;id&gt;</c>), so concurrent coroutines never
+/// collide — this is exactly how the game fires its own RPCs. One-dispatch-per-tick paces requests
+/// roughly a frame apart (a burst of simultaneous RPCs is what trips a server drop), while the bounded
+/// window overlaps their round-trips so a many-factor switch is not paid serially. The reconciler's
+/// cross-phase invariant (all unsockets before any socket — scarce single-copy factors freed first) is
+/// enforced caller-side by <c>DeepSlumberService</c>'s phase barrier, which only fires a phase's ops
+/// once the prior phase has fully drained; this probe is order-agnostic within whatever it is handed.</para>
 ///
 /// <para><b>Cancellation never throws.</b> Every completion path (bridge unresolved, dispatch
 /// failure, timeout, or a caller's token firing) completes the awaiting <c>Task&lt;int&gt;</c> with a
@@ -46,20 +52,27 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
     // are not safe to blindly re-fire the way a read is).
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(10);
 
-    // Non-zero sentinel codes this probe completes an op with when it cannot obtain a real game
-    // reply. Any non-zero code surfaces to DeepSlumberService as a failed op (Refused/PartialFailure)
-    // — never a hang, and never a thrown OperationCanceledException.
-    private const int UnavailableCode = -1;
-    private const int TimeoutCode = -2;
-    private const int CancelledCode = -3;
+    // How many ops may be in flight (dispatched, awaiting their server reply) at once. The ops overlap
+    // their round-trips inside this window; kept modest so a switch stays gentle on the server (the
+    // caller retries a genuine drop). One-dispatch-per-tick, below, ramps up to it a frame at a time.
+    private const int MaxInFlight = 5;
+
+    // Non-zero sentinel codes this probe completes an op with when it cannot obtain a real game reply
+    // (single source of truth in DeepSlumberWriteCode). Any non-zero code surfaces to
+    // DeepSlumberService as a failed op — never a hang, never a thrown OperationCanceledException.
+    private const int UnavailableCode = DeepSlumberWriteCode.Unavailable;
+    private const int TimeoutCode = DeepSlumberWriteCode.Timeout;
+    private const int CancelledCode = DeepSlumberWriteCode.Cancelled;
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
 
     // Dispatches enqueued by EnableLineAsync/SocketFactorAsync/UnsocketFactorAsync (any thread) and
-    // drained one-at-a-time on the Update tick — the game's Lua VM is main-thread-only.
+    // drained on the Update tick — the game's Lua VM is main-thread-only. _inflight holds the
+    // currently-dispatched ops (≤ MaxInFlight); it is mutated ONLY on the main thread (a cancellation
+    // completing an op from another thread just flips its IsCompleted, and the next tick reaps it).
     private readonly ConcurrentQueue<PendingOp> _toDispatch = new();
-    private PendingOp? _active;
+    private readonly List<PendingOp> _inflight = new(MaxInFlight);
     private int _nextOpId;
 
     public PandaSeasonTalentProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
@@ -94,7 +107,7 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
 
         if (ct.CanBeCanceled)
         {
-            pending.AttachCancellation(ct, this);
+            pending.AttachCancellation(ct);
         }
 
         _toDispatch.Enqueue(pending);
@@ -103,8 +116,9 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
 
     /// <summary>
     /// Called per Update tick from the Host service tick (the Unity main thread). Resolves the Lua
-    /// bridge (throttled), services the in-flight op if any (reads its reply global / checks its
-    /// timeout), then dispatches the next queued op once the previous one has cleared.
+    /// bridge (throttled), services every in-flight op (reads its reply global / checks its timeout /
+    /// reaps a cancelled one), then dispatches at most one new queued op if the in-flight window has
+    /// room.
     /// </summary>
     public void DrainPending()
     {
@@ -116,40 +130,50 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
             return;
         }
 
-        ServiceActive();
-        DispatchNextIfFree();
+        ServiceInflight();
+        DispatchOneIfCapacity();
     }
 
-    // Reads the in-flight op's reply global, completing it on a result or a timeout. No-op while an
-    // op is still genuinely pending.
-    private void ServiceActive()
+    // Services every in-flight op: completes it on a reply or a timeout, and reaps any already
+    // completed out-of-band (cancelled from another thread). _inflight is small (≤ MaxInFlight);
+    // iterate backwards so RemoveAt does not disturb the unvisited indices.
+    private void ServiceInflight()
     {
-        var active = _active;
-        if (active is null) return;
-
-        var reply = ReadLuaGlobalString(active.Global);
-        if (reply is not null)
+        for (var i = _inflight.Count - 1; i >= 0; i--)
         {
-            _active = null;
-            var code = ParseCode(reply);
-            DiagResult(active.OpId, code, active.Elapsed.TotalMilliseconds);
-            active.Complete(code, this);
-            return;
-        }
+            var op = _inflight[i];
 
-        if (active.Elapsed >= CompletionTimeout)
-        {
-            _active = null;
-            DiagResult(active.OpId, TimeoutCode, active.Elapsed.TotalMilliseconds);
-            active.Complete(TimeoutCode, this);
+            if (op.IsCompleted)   // cancelled (or otherwise completed) off the main thread — just reap it
+            {
+                _inflight.RemoveAt(i);
+                continue;
+            }
+
+            var reply = ReadLuaGlobalString(op.Global);
+            if (reply is not null)
+            {
+                var code = ParseCode(reply);
+                DiagResult(op.OpId, code, op.Elapsed.TotalMilliseconds);
+                op.Complete(code);
+                _inflight.RemoveAt(i);
+                continue;
+            }
+
+            if (op.Elapsed >= CompletionTimeout)
+            {
+                DiagResult(op.OpId, TimeoutCode, op.Elapsed.TotalMilliseconds);
+                op.Complete(TimeoutCode);
+                _inflight.RemoveAt(i);
+            }
         }
     }
 
-    // Fires the next queued op's chunk once no op is in flight. Skips any entry already completed
-    // (cancelled/superseded before it reached the VM) without dispatching it.
-    private void DispatchNextIfFree()
+    // Fires at most ONE queued op's chunk per tick while the in-flight window has room — spreading
+    // dispatches ~a frame apart. Skips any entry already completed (cancelled before it reached the
+    // VM) without dispatching it, and keeps skipping until it either dispatches one or drains the queue.
+    private void DispatchOneIfCapacity()
     {
-        if (_active is not null) return;
+        if (_inflight.Count >= MaxInFlight) return;
 
         while (_toDispatch.TryDequeue(out var pending))
         {
@@ -157,12 +181,12 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
 
             if (InvokeChunk(pending.Chunk))
             {
-                _active = pending;
+                _inflight.Add(pending);
                 DiagDispatched(pending.OpId, pending.Chunk);
             }
             else
             {
-                pending.Complete(UnavailableCode, this);
+                pending.Complete(UnavailableCode);
                 continue;
             }
             return;
@@ -173,7 +197,7 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
     {
         while (_toDispatch.TryDequeue(out var pending))
         {
-            pending.Complete(code, this);
+            pending.Complete(code);
         }
     }
 
@@ -182,14 +206,11 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
     private static string ResultGlobal(int opId)
         => "_StellarSeasonTalentResult" + opId.ToString(CultureInfo.InvariantCulture);
 
-    private void RemoveActiveIfMatches(PendingOp pending)
-    {
-        if (ReferenceEquals(_active, pending)) _active = null;
-    }
-
     // One in-flight write op: its reply global (embedded in Chunk), the chunk to dispatch, and the
     // awaiting TaskCompletionSource. Completion is idempotent and ALWAYS sets a value — never a
-    // cancellation exception — so an OperationCanceledException can never escape this probe.
+    // cancellation exception — so an OperationCanceledException can never escape this probe. Complete
+    // never touches _inflight: the main-thread ServiceInflight reaps a completed op by its IsCompleted
+    // flag, so a cross-thread cancellation callback never mutates the list.
     private sealed class PendingOp
     {
         private readonly TaskCompletionSource<int> _tcs;
@@ -211,20 +232,15 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
         public bool IsCompleted => Volatile.Read(ref _completed) != 0;
         public TimeSpan Elapsed => _stopwatch.Elapsed;
 
-        public void AttachCancellation(CancellationToken ct, PandaSeasonTalentProbe owner)
+        public void AttachCancellation(CancellationToken ct)
         {
-            _ctReg = ct.Register(static state =>
-            {
-                var (self, probe) = ((PendingOp, PandaSeasonTalentProbe))state!;
-                self.Complete(CancelledCode, probe);
-            }, (this, owner));
+            _ctReg = ct.Register(static state => ((PendingOp)state!).Complete(CancelledCode), this);
         }
 
-        public void Complete(int code, PandaSeasonTalentProbe owner)
+        public void Complete(int code)
         {
             if (Interlocked.Exchange(ref _completed, 1) != 0) return;
             _stopwatch.Stop();
-            owner.RemoveActiveIfMatches(this);
             _tcs.TrySetResult(code);
             try { _ctReg.Dispose(); } catch { /* registration already gone */ }
         }
