@@ -9,6 +9,10 @@ public sealed partial class BootstrapPlugin
     // ── Loadout services (Wiring.Loadout.cs) ────────────────────────────────
     private PandaLoadoutProbe? _loadoutProbe;
     private LoadoutService? _loadoutService;
+    // Deep-Slumber write verbs (enable line / socket / unsocket a factor) — drives the raw worldProxy
+    // RPCs (Approach A) over the SAME Lua bridge shape as the loadout probe. Self-resolves lazily;
+    // drained world-gated in DrainEquipAndLoadout (Wiring.ServiceTick.cs) alongside the loadout probe.
+    private PandaSeasonTalentProbe? _seasonTalentWriteProbe;
     // Mid-dungeon-reconnect party-id refresher — invokes WorldProxy.GetTeamInfo({}) via the same Lua
     // bridge so a reconnected run's PartyId fills in promptly (see PandaTeamInfoRefreshProbe). Ticked
     // world-gated in DrainEquipAndLoadout (Wiring.ServiceTick.cs).
@@ -42,7 +46,11 @@ public sealed partial class BootstrapPlugin
         // reflection mirror PandaInventoryProbe used to serve this from: that mirror populates LAZILY
         // (empty until the player opens the Psychoscope UI this session), so a fresh-session archive
         // uploaded no Deep-Slumber block. The Lua mirror is populated at login (owner-verified 2026-08-19).
-        _deepSlumberService = new DeepSlumberService(_loadoutProbe);
+        // Writes (line enable / factor socket-unsocket) go through the dedicated write probe — raw
+        // worldProxy RPCs (Approach A), a separate Lua-bridge resolution + dispatch queue from the read
+        // side (docs/driving-game-actions.md § CONFIRMED spike 2026-08-24).
+        _seasonTalentWriteProbe = new PandaSeasonTalentProbe(log, typeRegistry);
+        _deepSlumberService = new DeepSlumberService(_loadoutProbe, _seasonTalentWriteProbe);
 
         // Self equipped Battle Imagines (IResonanceState) — the SAME loadout probe (IResonanceProbe)
         // reads cs.resonance.installed via the Lua bridge's refresh chunk ("RES" row), NOT the C#
