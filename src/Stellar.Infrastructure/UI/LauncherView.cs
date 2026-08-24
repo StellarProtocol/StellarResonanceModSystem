@@ -110,7 +110,7 @@ internal sealed class LauncherView
     {
         LauncherEntry? At() => VisibleAt(pinnedOnly ? _pinned : _all, idx);
         return new TileElement(
-            () => At()?.IconPng ?? Icon("plugins"), () => At()?.Title ?? "",
+            () => At()?.IconPng ?? Icon("plugins"), () => At()?.DisplayTitle ?? "",
             () => { var e = At(); if (e != null) SafeOpen(e); },
             Pinned: () => { var e = At(); return e != null && _registry.IsPinned(e); },
             OnTogglePin: () => { var e = At(); if (e != null) _registry.SetPinned(e, !_registry.IsPinned(e)); });
