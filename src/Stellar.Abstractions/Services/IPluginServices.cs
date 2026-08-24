@@ -72,6 +72,8 @@ public interface IPluginServices
     IGameDataResonance ResonanceData { get; }
     /// <summary>Per-entity detail (full attribute map + equipment) for the inspector.</summary>
     IEntityDetail EntityDetail { get; }
+    /// <summary>Save and switch the local player's worn cosmetic outfits (wardrobe).</summary>
+    IWardrobe Wardrobe { get; }
     /// <summary>Row context-menu extension point (register entity-scoped menu items).</summary>
     IEntityContextMenu EntityContextMenu { get; }
     /// <summary>Live 3D portrait of the local player (Entity Inspector). Self-only in v1.</summary>
