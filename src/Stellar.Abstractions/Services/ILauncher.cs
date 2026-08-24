@@ -42,6 +42,17 @@ public sealed record LauncherEntry(string Title, byte[]? IconPng, string? IconKe
     /// <c>ShouldShow = () =&gt; services.ClientState.Phase == GamePhase.World</c> for a gameplay-only tool.
     /// Applies only to the plugin tile; the framework's own ⚙ Settings entry is always shown.</summary>
     public Func<bool>? ShouldShow { get; init; }
+
+    /// <summary>Optional live-localized DISPLAY title, evaluated each time the menu draws so the tile
+    /// re-localizes immediately when the language changes (<see cref="Title"/> is a captured string and
+    /// does not). <c>null</c> (the default) shows <see cref="Title"/>. Set it to
+    /// <c>() =&gt; services.Localization.T("your.title.key")</c>. <see cref="Title"/> stays the stable
+    /// pinned-state identity, so keep it language-independent if you rely on pin persistence.</summary>
+    public Func<string>? TitleProvider { get; init; }
+
+    /// <summary>The title the launcher DISPLAYS: <see cref="TitleProvider"/> if set (live-localized),
+    /// otherwise <see cref="Title"/>. Identity/pinning still keys on <see cref="Title"/>.</summary>
+    public string DisplayTitle => TitleProvider?.Invoke() ?? Title;
 }
 
 /// <summary>
