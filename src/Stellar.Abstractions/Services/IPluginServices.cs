@@ -74,6 +74,8 @@ public interface IPluginServices
     IEntityDetail EntityDetail { get; }
     /// <summary>Save and switch the local player's worn cosmetic outfits (wardrobe).</summary>
     IWardrobe Wardrobe { get; }
+    /// <summary>Live 3D preview of the local player wearing an arbitrary saved outfit (wardrobe preview).</summary>
+    IWardrobePreview WardrobePreview { get; }
     /// <summary>Row context-menu extension point (register entity-scoped menu items).</summary>
     IEntityContextMenu EntityContextMenu { get; }
     /// <summary>Live 3D portrait of the local player (Entity Inspector). Self-only in v1.</summary>

@@ -65,7 +65,7 @@ public sealed partial class BootstrapPlugin
         IInventory inventory = SelectMockOrReal<IInventory>(
             "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log);
 
-        var (gameAssets, entityTransforms, portraitService) = BuildInfraServices(log);
+        var (gameAssets, entityTransforms, portraitService, wardrobePreview) = BuildInfraServices(log);
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
@@ -93,7 +93,8 @@ public sealed partial class BootstrapPlugin
             // per-plugin façade via PerPluginServices.
             _frameworkLocalization!,
             _deepSlumberService!,
-            _wardrobeService!);
+            _wardrobeService!,
+            wardrobePreview);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
@@ -118,7 +119,9 @@ public sealed partial class BootstrapPlugin
     /// Constructs the infrastructure services that feed <see cref="ConstructPluginServices"/>
     /// — extracted to keep that method under the 50-LoC analyzer gate.
     /// </summary>
-    private (GameAssetsService gameAssets, EntityTransformsService entityTransforms, Stellar.Infrastructure.Game.EntityPortraitService portraitService)
+    private (GameAssetsService gameAssets, EntityTransformsService entityTransforms,
+             Stellar.Infrastructure.Game.EntityPortraitService portraitService,
+             Stellar.Infrastructure.Game.WardrobePreviewService wardrobePreview)
         BuildInfraServices(BepInExPluginLog log)
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
@@ -132,7 +135,12 @@ public sealed partial class BootstrapPlugin
         var portraitModelProbe = new PandaPortraitModelProbe(_gameTypeRegistry!, log);
         var portraitModelHost = new PortraitModelHost(_gameTypeRegistry!, log);
         var portraitService = new Stellar.Infrastructure.Game.EntityPortraitService(portraitModelProbe, portraitModelHost);
-        return (gameAssets, entityTransforms, portraitService);
+        // Wardrobe 3D preview: its OWN outfit-dressing model probe + its OWN render host, so the preview
+        // model never fights the Entity-Inspector portrait's model (each renders into its own texture).
+        var wardrobePreviewProbe = new Stellar.Infrastructure.Game.PandaWardrobePreviewProbe(_gameTypeRegistry!, log);
+        var wardrobePreviewHost = new PortraitModelHost(_gameTypeRegistry!, log);
+        var wardrobePreview = new Stellar.Infrastructure.Game.WardrobePreviewService(wardrobePreviewProbe, wardrobePreviewHost);
+        return (gameAssets, entityTransforms, portraitService, wardrobePreview);
     }
 
     /// <summary>

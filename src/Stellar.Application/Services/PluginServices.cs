@@ -39,6 +39,7 @@ internal sealed class PluginServices : IPluginServices
     public IGameDataResonance ResonanceData { get; }
     public IEntityDetail EntityDetail { get; }
     public IWardrobe Wardrobe { get; }
+    public IWardrobePreview WardrobePreview { get; }
     public IEntityContextMenu EntityContextMenu { get; }
     public IEntityPortrait EntityPortrait { get; }
     public IProfileCardActions ProfileCardActions { get; }
@@ -98,7 +99,8 @@ internal sealed class PluginServices : IPluginServices
         IHarmonyHost harmony,
         ILocalization localization,
         IDeepSlumber deepSlumber,
-        IWardrobe wardrobe)
+        IWardrobe wardrobe,
+        IWardrobePreview wardrobePreview)
     {
         Log = log;
         Framework = framework;
@@ -146,5 +148,6 @@ internal sealed class PluginServices : IPluginServices
         Localization = localization;
         DeepSlumber = deepSlumber;
         Wardrobe = wardrobe;
+        WardrobePreview = wardrobePreview;
     }
 }

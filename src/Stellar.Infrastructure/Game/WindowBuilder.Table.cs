@@ -57,7 +57,8 @@ internal sealed partial class WindowBuilder
         // 3-state re-tint via a diffing binding (no-change poll writes nothing). Hover is ticker-driven (null
         // in sandbox → rest/selected only); selected is polled; reskin recomputes the accent-derived tints.
         var binding = new SelectableBinding { Bg = bg, SelectedFn = sel.Selected, Rest = SelRest(), Hover = SelHover(), On = SelOn() };
-        _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { binding.HoverState = on; binding.ForceRepaint(); });
+        var onHover = sel.OnHover;
+        _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { binding.HoverState = on; binding.ForceRepaint(); onHover?.Invoke(on); });
         token.Selectables.Add(binding);
         token.ReskinActions.Add(() => { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
