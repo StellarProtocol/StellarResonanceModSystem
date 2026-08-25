@@ -89,7 +89,7 @@ internal sealed class PandaWardrobePreviewProbe
     // Recipe = create the self model (social data), then dress it with the outfit + each piece's LIVE dye.
     // Split into preamble / dress / tail to stay under the method-size gate.
     internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit)
-        => Preamble(charId) + DressLua(outfit) +
+        => Preamble(charId) + DyeDiagLua + DressLua(outfit) +
            "    rawset(_G, '" + ModelGlobal + "', m)\n" +
            "  end)\n" +
            "  coroFn()\n" +
@@ -130,6 +130,28 @@ internal sealed class PandaWardrobePreviewProbe
                "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
                "    end)\n";
     }
+
+    // TEMP dye diagnostic (one-shot per session via _stellarDyeDumped): dumps the worn pieces, the server
+    // dye container (CharSerialize.fashion.colors.colors — dk→IntVec3), and the UI model's GetColor for the
+    // first worn piece, so we can see the real key encoding + value format. Goes to the game log (Player.log
+    // — BepInEx UnityLogListening is off). Remove once the dye source is confirmed.
+    private const string DyeDiagLua =
+        "    pcall(function()\n" +
+        "      if rawget(_G,'_stellarDyeDumped') then return end\n" +
+        "      rawset(_G,'_stellarDyeDumped', true)\n" +
+        "      local cs=(Z.ContainerMgr).CharSerialize\n" +
+        "      local f=cs and cs.fashion\n" +
+        "      local out='[WardrobePreview.dye]'\n" +
+        "      local fw=f and f.wearInfo\n" +
+        "      if fw then local n=0 for r in pairs(fw) do out=out..' wear['..tostring(r)..']='..tostring(fw[r]) n=n+1 if n>=4 then break end end end\n" +
+        "      local fc=f and f.colors\n" +
+        "      out=out..' | colorsC='..tostring(fc)\n" +
+        "      if fc and fc.colors then local n=0 for k in pairs(fc.colors) do local v=(fc.colors)[k] out=out..' c['..tostring(k)..']=('..tostring(v and v.x)..','..tostring(v and v.y)..','..tostring(v and v.z)..')' n=n+1 if n>=8 then break end end out=out..' cCount~'..tostring(n) end\n" +
+        "      local fd2=(Z.DataMgr.Get)('fashion_data')\n" +
+        "      out=out..' | ui='..tostring(fd2)\n" +
+        "      if fd2 and fw then for r in pairs(fw) do local fid=fw[r] if fid and fid~=0 then local cd=fd2:GetColor(fid) local m=0 if cd then for a in pairs(cd) do local h=cd[a] out=out..' ui['..tostring(fid)..'/'..tostring(a)..']=h'..tostring(h and h.h)..'s'..tostring(h and h.s)..'v'..tostring(h and h.v) m=m+1 if m>=4 then break end end end out=out..' uiCount='..tostring(m) break end end end\n" +
+        "      logError(out)\n" +
+        "    end)\n";
 
     // Opens the dress pcall's zList + the colz(fid,a0,a1) helper (per-piece RGB dye ZList).
     private const string DyeHelperLua =
