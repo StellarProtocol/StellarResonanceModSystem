@@ -171,6 +171,7 @@ public sealed partial class BootstrapPlugin
         _resonanceService?.ClearSession();
         _loadoutService?.ClearSession();
         _loadoutProbe?.ClearSession();             // parsed Deep-Slumber state + imagine latch + LIVE-line class/talents
+        _fashionProbe?.ClearSession();             // worn-outfit capture (falls IsInWorld false until re-captured)
         _socialDataCache?.ClearSession();
         _partyService?.ClearSession();
         _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns

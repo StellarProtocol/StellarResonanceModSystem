@@ -192,6 +192,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         BuildLauncherServices();
         BuildInventoryServices(log, typeRegistry);
         BuildLoadoutServices(log, typeRegistry);
+        BuildWardrobeServices(log, typeRegistry);   // fashion capture/apply — needs _inventoryService (merge event)
         BuildExchangeServices(log, typeRegistry);
         // Resonance lookup must exist before the plugin-services aggregator —
         // GameAssetsService takes IGameDataResonance via its constructor. Cheap +

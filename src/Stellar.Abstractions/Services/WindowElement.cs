@@ -135,7 +135,13 @@ public sealed record CellElement(HudElement Child, float Width = 0f, float Weigh
 /// layout. Rest = transparent; hover = faint accent wash; <paramref name="Selected"/>() true (poll-diffed) = a
 /// stronger accent fill. A click anywhere on the row fires <paramref name="OnClick"/>. Composes inside a List/Column
 /// like any leaf.</summary>
-public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bool>? Selected = null) : HudElement;
+public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bool>? Selected = null) : HudElement
+{
+    /// <summary>Optional — fires with <c>true</c> when the pointer enters the row and <c>false</c> when it leaves
+    /// (ticker-driven; never fires in the static sandbox). Use for hover-preview panes. Added as an init property,
+    /// NOT a ctor param, so the record's primary constructor stays binary-compatible with existing plugins.</summary>
+    public Action<bool>? OnHover { get; init; }
+}
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint
 /// <paramref name="Stripe"/>-tinted bar whose width is <paramref name="Share"/> (0..1) of the row, plus a 3-px
