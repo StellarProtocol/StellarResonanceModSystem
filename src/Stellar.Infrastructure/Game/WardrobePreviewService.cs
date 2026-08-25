@@ -36,7 +36,8 @@ internal sealed class WardrobePreviewService : IWardrobePreview
         }
     }
 
-    public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes = null)
+    public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit,
+        IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes = null)
     {
         if (!self.IsPlayer) { Hide(); return; }
         if (!_host.EnsureCreated()) return;
@@ -59,6 +60,10 @@ internal sealed class WardrobePreviewService : IWardrobePreview
     public void SetViewport(int width, int height) => _host.SetViewport(width, height);
 
     public void Orbit(float dx, float dy) => _host.Orbit(dx, dy);
+
+    public void Zoom(float delta) => _host.Zoom(delta);
+
+    public void Pan(float dx, float dy) => _host.Pan(dx, dy);
 
     private void ReleaseModel()
     {

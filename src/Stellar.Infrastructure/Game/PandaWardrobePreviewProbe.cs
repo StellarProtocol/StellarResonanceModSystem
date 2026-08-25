@@ -44,7 +44,7 @@ internal sealed class PandaWardrobePreviewProbe
 
     /// <summary>Create the preview model for <paramref name="charId"/> dressed with <paramref name="outfit"/>
     /// (async — lands in the Lua global a few frames later). No-op if the Lua bridge is unresolved.</summary>
-    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
+    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
         => Run(BuildModelChunk(charId, outfit, dyes), $"[WardrobePreview] BuildModel({charId})");
 
     /// <summary>Recycle the preview model through the game's pool and clear the global.</summary>
@@ -88,7 +88,7 @@ internal sealed class PandaWardrobePreviewProbe
 
     // Recipe = create the self model (social data), then dress it with the outfit + each piece's LIVE dye.
     // Split into preamble / dress / tail to stay under the method-size gate.
-    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
+    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
         => Preamble(charId) + DressLua(outfit, dyes) +
            "    rawset(_G, '" + ModelGlobal + "', m)\n" +
            "  end)\n" +
@@ -110,34 +110,50 @@ internal sealed class PandaWardrobePreviewProbe
         "    pcall(function() if ((socialData.basicData).gender) ~= (Z.PbEnum)('EGender', 'GenderMale') then clip = 'as_m_base_idle' end end)\n" +
         "    pcall(function() m:SetLuaAttr((Z.ModelAttr).EModelAnimOverrideByName, ((Z.AnimBaseData).Rent)(clip, ((Panda.ZAnim).EAnimBase).EIdle)) end)\n";
 
-    // The dress block: a ZList of SingleWearData from the outfit (skip 0). When dyes for a region were
-    // captured (region → flattened RGB triples, each channel 0..1, from IEntityDetail.GetFashion at save
-    // time — the same source the Entity Inspector reads), tint the piece by setting BaseColor +
-    // AttachmentColor = [zero] + those colours (the per-area SingleWearData.BaseColor shape). Fashion ids +
-    // colour floats are values we control (InvariantCulture) — no injection. Colour access pcall-guarded.
-    private static string DressLua(IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
+    // The dress block: a ZList of SingleWearData from the outfit (skip 0). When per-area dyes for a region
+    // were captured (region → area → RGB, each channel 0..1, from IEntityDetail.GetFashion at save time —
+    // the same source the Entity Inspector reads), the piece is tinted PER AREA (see AppendPiece); absent
+    // regions render in the fashion's default colour. Fashion ids + colour floats are values we control
+    // (InvariantCulture) — no injection. Colour access pcall-guarded.
+    private static string DressLua(IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
     {
         var wear = new StringBuilder();
         foreach (var kv in outfit)
         {
             if (kv.Value == 0) continue;
-            var id = kv.Value.ToString(CultureInfo.InvariantCulture);
-            wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=").Append(id).Append(" wd.SlotID=0\n");
-            if (dyes != null && dyes.TryGetValue(kv.Key, out var rgb) && rgb.Length >= 3)
-            {
-                var adds = new StringBuilder();
-                for (var i = 0; i + 2 < rgb.Length; i += 3)
-                    adds.Append("z:Add((Vector3.New)(").Append(F(rgb[i])).Append(',').Append(F(rgb[i + 1])).Append(',').Append(F(rgb[i + 2])).Append(")) ");
-                wear.Append("        pcall(function() local function mk() local z=((((ZUtil.Pool).Collections).ZList_UnityEngine_Vector3).Rent)() z:Add(Vector3.zero) ")
-                    .Append(adds).Append("return z end wd.BaseColor=mk() wd.AttachmentColor=mk() end)\n");
-            }
-            wear.Append("        zList:Add(wd) end\n");
+            IReadOnlyDictionary<int, float[]>? areaMap = null;
+            dyes?.TryGetValue(kv.Key, out areaMap);
+            AppendPiece(wear, kv.Value, areaMap);
         }
         return "    pcall(function()\n" +
                "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
                wear +
                "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
                "    end)\n";
+    }
+
+    // One SingleWearData for a piece. When its per-area dyes were captured, place each colour on its real
+    // EFashionColorAreaType area exactly as the game's fashion_vm does: BaseColor is a 17-slot ZList indexed
+    // by area (index 0 a zero placeholder, 1..16 the areas), AttachmentColor a 5-slot socks list
+    // ([zero, Socks1..4] = areas 5..8). Areas the piece did not dye stay zero → they render in the default.
+    private static void AppendPiece(StringBuilder wear, int fashionId, IReadOnlyDictionary<int, float[]>? areaMap)
+    {
+        wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=")
+            .Append(fashionId.ToString(CultureInfo.InvariantCulture)).Append(" wd.SlotID=0\n");
+        if (areaMap is { Count: > 0 })
+        {
+            var tbl = new StringBuilder();
+            foreach (var ac in areaMap)
+                if (ac.Value.Length >= 3)
+                    tbl.Append('[').Append(ac.Key.ToString(CultureInfo.InvariantCulture)).Append("]=(Vector3.New)(")
+                       .Append(F(ac.Value[0])).Append(',').Append(F(ac.Value[1])).Append(',').Append(F(ac.Value[2])).Append("),");
+            wear.Append("        pcall(function() local dye={").Append(tbl).Append("}\n")
+                .Append("          local function rent() return ((((ZUtil.Pool).Collections).ZList_UnityEngine_Vector3).Rent)() end\n")
+                .Append("          local bc=rent() for a=0,16 do bc:Add(dye[a] or Vector3.zero) end\n")
+                .Append("          local at=rent() at:Add(Vector3.zero) for a=5,8 do at:Add(dye[a] or Vector3.zero) end\n")
+                .Append("          wd.BaseColor=bc wd.AttachmentColor=at end)\n");
+        }
+        wear.Append("        zList:Add(wd) end\n");
     }
 
     private static string F(float v) => v.ToString("0.####", CultureInfo.InvariantCulture);
