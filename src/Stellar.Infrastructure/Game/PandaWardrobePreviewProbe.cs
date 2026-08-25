@@ -44,8 +44,8 @@ internal sealed class PandaWardrobePreviewProbe
 
     /// <summary>Create the preview model for <paramref name="charId"/> dressed with <paramref name="outfit"/>
     /// (async — lands in the Lua global a few frames later). No-op if the Lua bridge is unresolved.</summary>
-    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit)
-        => Run(BuildModelChunk(charId, outfit), $"[WardrobePreview] BuildModel({charId})");
+    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
+        => Run(BuildModelChunk(charId, outfit, dyes), $"[WardrobePreview] BuildModel({charId})");
 
     /// <summary>Recycle the preview model through the game's pool and clear the global.</summary>
     public void ClearModel() => Run(BuildClearChunk(), null);
@@ -88,8 +88,8 @@ internal sealed class PandaWardrobePreviewProbe
 
     // Recipe = create the self model (social data), then dress it with the outfit + each piece's LIVE dye.
     // Split into preamble / dress / tail to stay under the method-size gate.
-    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit)
-        => Preamble(charId) + DyeDiagLua + DressLua(outfit) +
+    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
+        => Preamble(charId) + DressLua(outfit, dyes) +
            "    rawset(_G, '" + ModelGlobal + "', m)\n" +
            "  end)\n" +
            "  coroFn()\n" +
@@ -110,69 +110,37 @@ internal sealed class PandaWardrobePreviewProbe
         "    pcall(function() if ((socialData.basicData).gender) ~= (Z.PbEnum)('EGender', 'GenderMale') then clip = 'as_m_base_idle' end end)\n" +
         "    pcall(function() m:SetLuaAttr((Z.ModelAttr).EModelAnimOverrideByName, ((Z.AnimBaseData).Rent)(clip, ((Panda.ZAnim).EAnimBase).EIdle)) end)\n";
 
-    // The dress block: build a ZList of SingleWearData from the outfit (skip 0) WITH each piece's live dye
-    // (BaseColor over Base1..UnderWear4, AttachmentColor over Socks1..Socks4) from fashion_data:GetColor —
-    // a faithful replica of fashion_vm's getFashionColorZList. Dye is per-piece (one per id), so reading it
-    // live shows the player's real colours without any per-outfit storage. Fashion ids are ints (no injection).
-    private static string DressLua(IReadOnlyDictionary<int, int> outfit)
+    // The dress block: a ZList of SingleWearData from the outfit (skip 0). When dyes for a region were
+    // captured (region → flattened RGB triples, each channel 0..1, from IEntityDetail.GetFashion at save
+    // time — the same source the Entity Inspector reads), tint the piece by setting BaseColor +
+    // AttachmentColor = [zero] + those colours (the per-area SingleWearData.BaseColor shape). Fashion ids +
+    // colour floats are values we control (InvariantCulture) — no injection. Colour access pcall-guarded.
+    private static string DressLua(IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes)
     {
         var wear = new StringBuilder();
         foreach (var kv in outfit)
         {
             if (kv.Value == 0) continue;
             var id = kv.Value.ToString(CultureInfo.InvariantCulture);
-            wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=").Append(id).Append(" wd.SlotID=0\n")
-                .Append("        pcall(function() wd.BaseColor=colz(").Append(id).Append(",(E.EFashionColorAreaType).Base1,(E.EFashionColorAreaType).UnderWear4) end)\n")
-                .Append("        pcall(function() wd.AttachmentColor=colz(").Append(id).Append(",(E.EFashionColorAreaType).Socks1,(E.EFashionColorAreaType).Socks4) end)\n")
-                .Append("        zList:Add(wd) end\n");
+            wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=").Append(id).Append(" wd.SlotID=0\n");
+            if (dyes != null && dyes.TryGetValue(kv.Key, out var rgb) && rgb.Length >= 3)
+            {
+                var adds = new StringBuilder();
+                for (var i = 0; i + 2 < rgb.Length; i += 3)
+                    adds.Append("z:Add((Vector3.New)(").Append(F(rgb[i])).Append(',').Append(F(rgb[i + 1])).Append(',').Append(F(rgb[i + 2])).Append(")) ");
+                wear.Append("        pcall(function() local function mk() local z=((((ZUtil.Pool).Collections).ZList_UnityEngine_Vector3).Rent)() z:Add(Vector3.zero) ")
+                    .Append(adds).Append("return z end wd.BaseColor=mk() wd.AttachmentColor=mk() end)\n");
+            }
+            wear.Append("        zList:Add(wd) end\n");
         }
-        return "    pcall(function()\n" + DyeHelperLua + wear +
+        return "    pcall(function()\n" +
+               "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
+               wear +
                "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
                "    end)\n";
     }
 
-    // TEMP dye diagnostic (one-shot per session via _stellarDyeDumped): dumps the worn pieces, the server
-    // dye container (CharSerialize.fashion.colors.colors — dk→IntVec3), and the UI model's GetColor for the
-    // first worn piece, so we can see the real key encoding + value format. Goes to the game log (Player.log
-    // — BepInEx UnityLogListening is off). Remove once the dye source is confirmed.
-    private const string DyeDiagLua =
-        "    pcall(function()\n" +
-        "      if rawget(_G,'_stellarDyeDumped') then return end\n" +
-        "      rawset(_G,'_stellarDyeDumped', true)\n" +
-        "      local cs=(Z.ContainerMgr).CharSerialize\n" +
-        "      local f=cs and cs.fashion\n" +
-        "      local out='[WardrobePreview.dye]'\n" +
-        "      local fw=f and f.wearInfo\n" +
-        "      if fw then local n=0 for r in pairs(fw) do out=out..' wear['..tostring(r)..']='..tostring(fw[r]) n=n+1 if n>=4 then break end end end\n" +
-        "      local fc=f and f.colors\n" +
-        "      out=out..' | colorsC='..tostring(fc)\n" +
-        "      if fc and fc.colors then local n=0 for k in pairs(fc.colors) do local v=(fc.colors)[k] out=out..' c['..tostring(k)..']=('..tostring(v and v.x)..','..tostring(v and v.y)..','..tostring(v and v.z)..')' n=n+1 if n>=8 then break end end out=out..' cCount~'..tostring(n) end\n" +
-        "      local fd2=(Z.DataMgr.Get)('fashion_data')\n" +
-        "      out=out..' | ui='..tostring(fd2)\n" +
-        "      if fd2 and fw then for r in pairs(fw) do local fid=fw[r] if fid and fid~=0 then local cd=fd2:GetColor(fid) local m=0 if cd then for a in pairs(cd) do local h=cd[a] out=out..' ui['..tostring(fid)..'/'..tostring(a)..']=h'..tostring(h and h.h)..'s'..tostring(h and h.s)..'v'..tostring(h and h.v) m=m+1 if m>=4 then break end end end out=out..' uiCount='..tostring(m) break end end end\n" +
-        "      logError(out)\n" +
-        "    end)\n";
-
-    // Opens the dress pcall's zList + the colz(fid,a0,a1) helper (per-piece RGB dye ZList).
-    private const string DyeHelperLua =
-        "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
-        "      local fd=(Z.DataMgr.Get)('fashion_data')\n" +
-        "      local function colz(fid,a0,a1)\n" +
-        "        local zl=((((ZUtil.Pool).Collections).ZList_UnityEngine_Vector3).Rent)()\n" +
-        "        local cd=fd and fd:GetColor(fid)\n" +
-        "        for area=a0,a1 do\n" +
-        "          local hsv\n" +
-        "          if cd and cd[area] then hsv=cd[area] else\n" +
-        "            hsv=(Z.ColorHelper.GetDefaultHSV)()\n" +
-        "            pcall(function() local dl=(Z.LuaBridge.GetFashionDefaultHSVListByFashionId)(fid)\n" +
-        "              if dl then if area<dl.count then local v=dl[area] hsv={h=(math.floor)(v.x*360+0.5),s=(math.floor)(v.y*100+0.5),v=(math.floor)(v.z*100+0.5)} end dl:Recycle() end end)\n" +
-        "          end\n" +
-        "          local rgb=(Color.HSVToRGB)(hsv.h/360, hsv.s/100, hsv.v/100, true)\n" +
-        "          zl:Add((Vector3.New)(rgb.r, rgb.g, rgb.b))\n" +
-        "        end\n" +
-        "        zl:Insert(0, Vector3.zero)\n" +
-        "        return zl\n" +
-        "      end\n";
+    private static string F(float v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
     internal static string BuildClearChunk() =>
         "pcall(function()\n" +

@@ -19,7 +19,10 @@ public interface IWardrobePreview
     /// (region→fashionId; 0 = empty slot). A non-player id hides the preview instead.</summary>
     /// <param name="self">The local player entity (its outfit is overridden by <paramref name="outfit"/>).</param>
     /// <param name="outfit">Region→fashionId map to dress the model with.</param>
-    void Show(EntityId self, IReadOnlyDictionary<int, int> outfit);
+    /// <param name="dyes">Optional per-region dye colours (region → flattened RGB triples, each channel 0..1,
+    /// captured from <see cref="IEntityDetail.GetFashion"/>). When present, the piece is tinted with them;
+    /// omitted/absent regions render in the fashion's default colour.</param>
+    void Show(EntityId self, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes = null);
 
     /// <summary>Hide the preview and release the model back to the game's pool.</summary>
     void Hide();

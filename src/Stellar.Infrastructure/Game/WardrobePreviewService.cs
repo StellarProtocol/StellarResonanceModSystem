@@ -36,14 +36,14 @@ internal sealed class WardrobePreviewService : IWardrobePreview
         }
     }
 
-    public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit)
+    public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, float[]>? dyes = null)
     {
         if (!self.IsPlayer) { Hide(); return; }
         if (!_host.EnsureCreated()) return;
         ReleaseModel();                       // switching outfit while open: drop the old model first
         _host.ApplyTuning();
         _host.SetVisible(true);
-        _probe.BuildModel(self.Uid, outfit);
+        _probe.BuildModel(self.Uid, outfit, dyes);
         _awaitingModel = true;
         IsActive = true;
     }
