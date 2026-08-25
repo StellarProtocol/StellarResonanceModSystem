@@ -86,45 +86,71 @@ internal sealed class PandaWardrobePreviewProbe
         }
     }
 
-    // Same recipe as the portrait, plus a dress step: build a ZList of SingleWearData from the outfit
-    // (region→fashionId; skip 0), then SetLuaAttr(EWearFashion, zList). Region/fashionId are ints we
-    // control, interpolated via InvariantCulture — no injection surface. pcall-guarded so a bad dress never
-    // breaks model creation.
+    // Recipe = create the self model (social data), then dress it with the outfit + each piece's LIVE dye.
+    // Split into preamble / dress / tail to stay under the method-size gate.
     internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit)
+        => Preamble(charId) + DressLua(outfit) +
+           "    rawset(_G, '" + ModelGlobal + "', m)\n" +
+           "  end)\n" +
+           "  coroFn()\n" +
+           "end)\n" +
+           "if not ok and logError then logError('[WardrobePreview.lua] err: ' .. tostring(err)) end";
+
+    // Model creation up to (but not including) the dress: social data → GenModelByLuaSocialData → idle clip.
+    private static string Preamble(int charId) =>
+        "local ok, err = pcall(function()\n" +
+        "  local coroFn = ((Z.CoroUtil).create_coro_xpcall)(function()\n" +
+        "    local socialVM = ((Z.VMMgr).GetVM)('social')\n" +
+        "    if not socialVM then logError('[WardrobePreview.lua] no socialVM') return end\n" +
+        "    local socialData = (socialVM.AsyncGetSocialData)(0, " + charId.ToString(CultureInfo.InvariantCulture) + ", (ZUtil.ZCancelSource).NeverCancelToken)\n" +
+        "    if not socialData then logError('[WardrobePreview.lua] socialData nil') return end\n" +
+        "    local m = (Z.ModelManager):GenModelByLuaSocialData(socialData)\n" +
+        "    if not m then logError('[WardrobePreview.lua] gen nil') return end\n" +
+        "    local clip = 'as_f_base_idle'\n" +
+        "    pcall(function() if ((socialData.basicData).gender) ~= (Z.PbEnum)('EGender', 'GenderMale') then clip = 'as_m_base_idle' end end)\n" +
+        "    pcall(function() m:SetLuaAttr((Z.ModelAttr).EModelAnimOverrideByName, ((Z.AnimBaseData).Rent)(clip, ((Panda.ZAnim).EAnimBase).EIdle)) end)\n";
+
+    // The dress block: build a ZList of SingleWearData from the outfit (skip 0) WITH each piece's live dye
+    // (BaseColor over Base1..UnderWear4, AttachmentColor over Socks1..Socks4) from fashion_data:GetColor —
+    // a faithful replica of fashion_vm's getFashionColorZList. Dye is per-piece (one per id), so reading it
+    // live shows the player's real colours without any per-outfit storage. Fashion ids are ints (no injection).
+    private static string DressLua(IReadOnlyDictionary<int, int> outfit)
     {
         var wear = new StringBuilder();
         foreach (var kv in outfit)
         {
             if (kv.Value == 0) continue;
-            wear.Append("        do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=")
-                .Append(kv.Value.ToString(CultureInfo.InvariantCulture))
-                .Append(" wd.SlotID=0 zList:Add(wd) end\n");
+            var id = kv.Value.ToString(CultureInfo.InvariantCulture);
+            wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=").Append(id).Append(" wd.SlotID=0\n")
+                .Append("        pcall(function() wd.BaseColor=colz(").Append(id).Append(",(E.EFashionColorAreaType).Base1,(E.EFashionColorAreaType).UnderWear4) end)\n")
+                .Append("        pcall(function() wd.AttachmentColor=colz(").Append(id).Append(",(E.EFashionColorAreaType).Socks1,(E.EFashionColorAreaType).Socks4) end)\n")
+                .Append("        zList:Add(wd) end\n");
         }
-
-        return "local ok, err = pcall(function()\n" +
-            "  local coroFn = ((Z.CoroUtil).create_coro_xpcall)(function()\n" +
-            "    local socialVM = ((Z.VMMgr).GetVM)('social')\n" +
-            "    if not socialVM then logError('[WardrobePreview.lua] no socialVM') return end\n" +
-            "    local socialData = (socialVM.AsyncGetSocialData)(0, " + charId.ToString(CultureInfo.InvariantCulture) + ", (ZUtil.ZCancelSource).NeverCancelToken)\n" +
-            "    if not socialData then logError('[WardrobePreview.lua] socialData nil') return end\n" +
-            "    local m = (Z.ModelManager):GenModelByLuaSocialData(socialData)\n" +
-            "    if not m then logError('[WardrobePreview.lua] gen nil') return end\n" +
-            "    local clip = 'as_f_base_idle'\n" +
-            "    pcall(function()\n" +
-            "      if ((socialData.basicData).gender) ~= (Z.PbEnum)('EGender', 'GenderMale') then clip = 'as_m_base_idle' end\n" +
-            "    end)\n" +
-            "    pcall(function() m:SetLuaAttr((Z.ModelAttr).EModelAnimOverrideByName, ((Z.AnimBaseData).Rent)(clip, ((Panda.ZAnim).EAnimBase).EIdle)) end)\n" +
-            "    pcall(function()\n" +
-            "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
-            wear +
-            "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
-            "    end)\n" +
-            "    rawset(_G, '" + ModelGlobal + "', m)\n" +
-            "  end)\n" +
-            "  coroFn()\n" +
-            "end)\n" +
-            "if not ok and logError then logError('[WardrobePreview.lua] err: ' .. tostring(err)) end";
+        return "    pcall(function()\n" + DyeHelperLua + wear +
+               "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
+               "    end)\n";
     }
+
+    // Opens the dress pcall's zList + the colz(fid,a0,a1) helper (per-piece RGB dye ZList).
+    private const string DyeHelperLua =
+        "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
+        "      local fd=(Z.DataMgr.Get)('fashion_data')\n" +
+        "      local function colz(fid,a0,a1)\n" +
+        "        local zl=((((ZUtil.Pool).Collections).ZList_UnityEngine_Vector3).Rent)()\n" +
+        "        local cd=fd and fd:GetColor(fid)\n" +
+        "        for area=a0,a1 do\n" +
+        "          local hsv\n" +
+        "          if cd and cd[area] then hsv=cd[area] else\n" +
+        "            hsv=(Z.ColorHelper.GetDefaultHSV)()\n" +
+        "            pcall(function() local dl=(Z.LuaBridge.GetFashionDefaultHSVListByFashionId)(fid)\n" +
+        "              if dl then if area<dl.count then local v=dl[area] hsv={h=(math.floor)(v.x*360+0.5),s=(math.floor)(v.y*100+0.5),v=(math.floor)(v.z*100+0.5)} end dl:Recycle() end end)\n" +
+        "          end\n" +
+        "          local rgb=(Color.HSVToRGB)(hsv.h/360, hsv.s/100, hsv.v/100, true)\n" +
+        "          zl:Add((Vector3.New)(rgb.r, rgb.g, rgb.b))\n" +
+        "        end\n" +
+        "        zl:Insert(0, Vector3.zero)\n" +
+        "        return zl\n" +
+        "      end\n";
 
     internal static string BuildClearChunk() =>
         "pcall(function()\n" +
