@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.4.0] - 2026-08-25
+_**2.4.0** (minor) — plugins can now save your outfits and switch between them, with a live 3D preview. Additive, binary-compatible with plugins built against ≤2.3.0._
+### Added
+- Plugins can now save the outfit you're wearing and switch you back to it later, and show a live 3D preview of a saved outfit on your own character. The new Wardrobe plugin uses this for instant hotkey outfit switching.
+### Developer notes
+- New plugin surface: `IWardrobe` (capture the worn outfit as a region→fashionId map; apply through the game's own `WorldProxy.FashionWear`, keeping every server-side check) and `IWardrobePreview` (dress a fresh self-model with an arbitrary saved outfit via `GenModelByLuaSocialData` + `SetLuaAttr(EWearFashion, …)`, rendered through a second `PortraitModelHost`; orbit / zoom / pan). `FashionEntry` gains `DyeAreas` — parallel to `Dyes`, carrying each dye's `EFashionColorAreaType` so multi-area pieces preview on their real areas; `AttrFashionDataReader` now reads both the base (field 2) and attachment/socks (field 3) colour maps. RE: `docs/recon/wardrobe-fashion-preview.md`.
+
 ## [2.3.0] - 2026-08-25
 _**2.3.0** (minor) — plugins can now apply a Deep-Slumber setup for you, and applying one is fast and self-healing. Additive, binary-compatible with plugins built against ≤2.2.0._
 ### Added
