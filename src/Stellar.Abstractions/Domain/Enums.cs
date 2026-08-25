@@ -104,6 +104,11 @@ public enum MenuButtonStyle
     Filled  = 1,
     /// <summary>Faint glass fill + thin accent border + light label. Low-emphasis.</summary>
     Glass   = 2,
+    /// <summary>No fill and no border — just the label/icon with a hover tint on the row. For compact
+    /// icon buttons (e.g. a table row's action glyphs) where button chrome would be visual noise.
+    /// Per-button only (via <see cref="Stellar.Abstractions.Services.ButtonElement"/>'s Style); not a
+    /// selectable global chrome style.</summary>
+    Bare    = 3,
 }
 
 /// <summary>Visual style for the vertical scrollbar (GlassMenu panels).</summary>

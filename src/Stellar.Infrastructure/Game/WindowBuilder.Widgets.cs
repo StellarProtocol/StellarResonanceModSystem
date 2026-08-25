@@ -20,11 +20,13 @@ internal sealed partial class WindowBuilder
         if (es != null) es.SetSelectedGameObject(null);
     }
 
-    // Normal (non-active) button sprite for a style: Outline = faint outline, Filled = accent, Glass = frosted.
+    // Normal (non-active) button sprite for a style: Outline = faint outline, Filled = accent, Glass = frosted,
+    // Bare = none (no chrome — a flat icon/label; see BuildButton's transparent path).
     private Sprite? NormalButtonSprite(MenuButtonStyle style) => style switch
     {
         MenuButtonStyle.Filled => _assets.ButtonAccentBg,
         MenuButtonStyle.Glass  => _assets.ButtonGlassBg,
+        MenuButtonStyle.Bare   => null,
         _                      => _assets.ButtonBg,
     };
 
@@ -48,6 +50,18 @@ internal sealed partial class WindowBuilder
         return true;
     }
 
+    // Set up a button's background Image for its style; returns the resolved normal sprite (for the binding).
+    // Bare = fully transparent (no chrome) but still raycasts so clicks land; every other style keeps the
+    // sliced chip + accent-on-active swap.
+    private Sprite? ConfigureButtonBg(Image img, ButtonElement b, MenuButtonStyle effStyle, bool bare)
+    {
+        var normalSprite = bare ? null : NormalButtonSprite(effStyle);
+        img.sprite = bare ? null : ((b.Active?.Invoke() ?? false) ? _assets.ButtonAccentBg : normalSprite);
+        if (bare) img.color = new Color(0f, 0f, 0f, 0f);
+        img.type = Image.Type.Sliced; img.raycastTarget = true;
+        return normalSprite;
+    }
+
     // Button: sliced rounded chip (radius baked into the sprite) + centred label. Sized to label+padding
     // via its own HorizontalLayoutGroup; the parent Row reads its preferred size (childControlWidth).
     private void BuildButton(ButtonElement b, Transform parent, WindowToken token)
@@ -55,10 +69,13 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("Button", parent);
         var img = go.AddComponent<Image>();
         // Effective style: the element's pinned style, else the user's global IChromeStyle.ButtonStyle.
-        var normalSprite = NormalButtonSprite(b.Style ?? _assets.ButtonStyle);
-        img.sprite = (b.Active?.Invoke() ?? false) ? _assets.ButtonAccentBg : normalSprite;
-        img.type = Image.Type.Sliced; img.raycastTarget = true;
+        var effStyle = b.Style ?? _assets.ButtonStyle;
+        var bare = effStyle == MenuButtonStyle.Bare;
+        var normalSprite = ConfigureButtonBg(img, b, effStyle, bare);
         var btn = go.AddComponent<Button>(); btn.targetGraphic = img;
+        // A ColorTint transition would repaint the transparent bare image opaque on every state change; None
+        // leaves img.color untouched (the row's SelectableElement provides hover feedback instead).
+        if (bare) btn.transition = Selectable.Transition.None;
 
         // Icon-only button (icon + empty label, e.g. the meter row's inspect magnifier): the icon must be the
         // SOLE centred child — so symmetric horizontal padding + no inter-child spacing (otherwise the trailing
@@ -93,7 +110,7 @@ internal sealed partial class WindowBuilder
         };
         token.Buttons.Add(binding);
         RegisterTextReskin(token, label, 11);
-        RegisterButtonReskin(token, binding, b.Style);
+        if (!bare) RegisterButtonReskin(token, binding, b.Style);   // bare has no sprite to re-skin
     }
 
     // Delivers the button's screen rect to OnClickWithRect. Overlay canvas: world space == screen space, Y up.
