@@ -62,6 +62,27 @@ public sealed class EntityVitalsServiceTests
     }
 
     [Fact]
+    public void Reset_OffGame_DoesNotThrow()
+    {
+        // I1 review fix's Reset() — wired at scene-change (OnEnterScene, network thread) and logout —
+        // must be safe to call even when nothing was ever tracked (off-game, or a scene change before
+        // any TryGetBlood call).
+        var svc = NewService();
+        svc.Reset();
+    }
+
+    [Fact]
+    public void Reset_OffGame_AfterFailedTryGetBlood_DoesNotThrow()
+    {
+        var svc = NewService();
+        svc.TryGetBlood(new EntityId(123), out _, out _);
+        svc.Reset();
+        Assert.False(svc.TryGetBlood(new EntityId(123), out var pct, out var stage));
+        Assert.Equal(0, pct);
+        Assert.Equal(0, stage);
+    }
+
+    [Fact]
     public void Tick_OffGame_AfterFailedTryGetBlood_StillDoesNotThrow()
     {
         // TryGetBlood off-game returns false before ever reaching TrackForWatcher (core handles never

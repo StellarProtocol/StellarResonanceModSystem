@@ -194,6 +194,62 @@ public sealed class CombatEntityTrackerTests
         Assert.Equal(42L, tracker.GetAttribute(id, 999));
     }
 
+    // ── C1a review fix: EntityVitals.LeftAoi — the AOI-presence proxy plugin code needs now that
+    // IsKnown alone can no longer distinguish "currently in AOI" from "kept, stale, out of AOI". ────
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_SetsLeftAoiFlag()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        var v = tracker.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.True(v.LeftAoi);
+    }
+
+    [Fact]
+    public void LeftAoi_ClearedByNextVitalsObservation()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+        Assert.True(tracker.GetVitals(id).LeftAoi);
+
+        // Any subsequent real observation clears it — even a MaxHp-only delta (hp=-1 sentinel).
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: 10500);
+
+        Assert.False(tracker.GetVitals(id).LeftAoi);
+    }
+
+    [Fact]
+    public void LeftAoi_DefaultsFalse()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+
+        Assert.False(tracker.GetVitals(id).LeftAoi);
+    }
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_NoExistingRow_DoesNotThrow()
+    {
+        // A Normal disappear for an entity we never saw vitals for (row absent) — the flag-set path
+        // must no-op, not create a phantom row or throw.
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        Assert.False(tracker.GetVitals(id).IsKnown);
+    }
+
     [Fact]
     public void OnEntityDisappeared_Normal_StillEvictsNonVitalsState()
     {

@@ -150,6 +150,9 @@ internal sealed partial class PandaCombatStubProbe
         _sink.ResetEntities();
         // Wire position cache follows the same scene lifecycle (bounds it to one scene's AOI entities).
         _positions.Clear();
+        // Native boss-vitals cache follows the same scene lifecycle too (I1 review fix) — see
+        // EntityVitalsService.Reset's doc for why this does NOT touch the native watcher bindings.
+        _entityVitals.Reset();
 
         LatchDungeonRunId(span);
         // (The enter-scene SceneAttrs scan for AttrDeathCount(348) that used to sit here was recon.

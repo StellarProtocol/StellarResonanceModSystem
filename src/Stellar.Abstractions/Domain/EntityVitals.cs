@@ -23,6 +23,22 @@ public readonly record struct EntityVitals(long Hp, long MaxHp, bool IsKnown)
     /// </summary>
     public bool HasHpObservation { get; init; }
 
+    /// <summary>
+    /// True when this row was KEPT despite an AOI-disappear (<c>EDisappearNormal</c> — the entity left
+    /// AOI while still alive elsewhere, e.g. a raid boss on another stage of a raid's one big
+    /// multi-stage map) rather than being evicted. Before the 2026-08-26 raid-bosshp-capture-design
+    /// fix, ANY disappear evicted the row, so callers used <see cref="IsKnown"/> flipping back to
+    /// <see langword="false"/> as an AOI-presence proxy (e.g. "vitals unknown" == "left AOI", the
+    /// signal a raid scripted-kill detector or stage-drain logic keys eviction on). That proxy no
+    /// longer holds — a Normal-disappear leaves <see cref="IsKnown"/> <see langword="true"/> with
+    /// stale-but-real data. Callers that need "still in AOI right now" must check
+    /// <c>IsKnown &amp;&amp; !LeftAoi</c> instead of <c>IsKnown</c> alone. Cleared by the very next
+    /// real vitals observation for this entity (any <c>AttrHp</c>/<c>AttrMaxHp</c>/<c>AttrMaxHpTotal</c>
+    /// delta, including a MaxHp-only one). Defaults to <see langword="false"/>; init-only, same
+    /// binary-compat rationale as <see cref="HasHpObservation"/>.
+    /// </summary>
+    public bool LeftAoi { get; init; }
+
     /// <summary>Sentinel returned when no observation has been received for this entity yet.</summary>
     public static readonly EntityVitals Unknown = new(0, 0, false);
 }

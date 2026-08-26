@@ -222,14 +222,19 @@ internal sealed partial class PandaCombatStubProbe
     // entities only (players churn AOI constantly and would flood this even under diagnostics).
     // disappearType is EntityDisappearReason.Unknown (its default) on an "appear" event — meaningless
     // there, printed as "appear" itself carries no disappear reason.
+    //
+    // C2 REVIEW FIX (2026-08-26): this fires from OnNearEntities — the NETWORK RECEIVE THREAD, not
+    // the main thread. EntityVitalsService is main-thread-only (reflective IL2CPP reads off-main-
+    // thread are the native-crash class, docs/il2cpp-probing-safety.md) — the original version called
+    // _entityVitals.DiagCheckLiveness/IsBoss right here, which is exactly wrong, and would have fired
+    // on every raid entity appear/disappear under STELLAR_DIAGNOSTICS=1 on the acceptance raid. Dropped
+    // the isBoss/exists/active enrichment entirely rather than hopping threads for a diagnostic line —
+    // uuid/event/disappearType is still enough to settle L1 (repeated disappear/Normal -> appear pairs).
     private void DiagEntityLife(EntityId eid, string evt, EntityDisappearReason reason)
     {
         if (!StellarDiagnostics.IsEnabled || !eid.IsMonster) return;
-        var (exists, active) = _entityVitals.DiagCheckLiveness(eid.Value);
-        var isBoss = _entityVitals.IsBoss(eid);
         var disappearType = evt == "disappear" ? reason.ToString() : "n/a";
-        _log.Info($"[BossHp] life eid={eid.Value} event={evt} disappearType={disappearType} " +
-                  $"isBoss={isBoss} exists={exists} active={active}");
+        _log.Info($"[BossHp] life eid={eid.Value} event={evt} disappearType={disappearType}");
     }
 
     // Which HP attr ids actually arrived on this payload (recon §6 grammar line 3) — settles the

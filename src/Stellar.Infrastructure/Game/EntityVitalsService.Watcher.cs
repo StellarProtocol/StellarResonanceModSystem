@@ -13,9 +13,40 @@ namespace Stellar.Infrastructure.Game;
 /// simply not resolving) leaves the id unwatched, which only costs the push-driven refresh between
 /// <see cref="EntityVitalsService.TryGetBlood"/> calls — <c>TryGetBlood</c> itself always attempts a
 /// direct live read first and never depends on a bound watcher to answer correctly.
+///
+/// <para>C3b review fix: the callback is bound PER TRACKED ID via a small closure object
+/// (<see cref="DirtyTrampoline"/>), not one shared instance method — so a change on one boss no longer
+/// marks every OTHER tracked id dirty too. This sidesteps needing a <c>ZEntity</c>→uuid accessor (none
+/// confirmed in the recon'd surface, §2.3) entirely: the uuid is already known at bind time
+/// (<see cref="TrackForWatcher"/>'s own parameter), so it's captured in the trampoline instead of
+/// extracted from the callback's <c>ZEntity</c> argument.</para>
 /// </summary>
 internal sealed partial class EntityVitalsService
 {
+    // Keeps each bound uuid's trampoline reachable for the lifetime of its watcher registration —
+    // belt-and-braces against GC (Delegate.Target already holds a strong reference while the native
+    // side retains the delegate, but an explicit owner-side reference removes any doubt) and gives
+    // Untrack/Reset a place to drop it.
+    private readonly System.Collections.Generic.Dictionary<long, object> _trampolines = new();
+
+    // Closure object: captures (owner, uuid) so the watcher callback can mark exactly ITS uuid dirty
+    // without needing to read a uuid back off the callback's ZEntity argument. MarkDirty is a plain
+    // locked HashSet.Add — safe to call from whatever thread the game's attr-dispatch fires on.
+    private sealed class DirtyTrampoline
+    {
+        private readonly EntityVitalsService _owner;
+        private readonly long _uuid;
+        public DirtyTrampoline(EntityVitalsService owner, long uuid) { _owner = owner; _uuid = uuid; }
+        // Signature matches whatever BindEntityLuaAttrWatcher's callback delegate needs — one
+        // reference-type parameter (the changed ZEntity), any return. The value is never used.
+        public void OnFire(object entity) => _owner.MarkDirty(_uuid);
+    }
+
+    private void MarkDirty(long uuid)
+    {
+        lock (_cacheLock) { _dirty.Add(uuid); }
+    }
+
     private void TrackForWatcher(long uuid)
     {
         if (_bindWatcherMethod is null || _mgrInstanceProperty is null) return;
@@ -29,14 +60,19 @@ internal sealed partial class EntityVitalsService
             if (mgr is null) return;
             var callbackParam = _bindWatcherMethod.GetParameters();
             if (callbackParam.Length != 3) return;
-            var callback = BuildDirtyCallback(callbackParam[2].ParameterType);
+            var trampoline = new DirtyTrampoline(this, uuid);
+            var callback = BuildDirtyCallback(callbackParam[2].ParameterType, trampoline);
             if (callback is null) return;
 
             var attrIds = new uint[] { (uint)AttrTypeIds.AttrHp, (uint)AttrTypeIds.AttrMaxHp, (uint)AttrTypeIds.AttrMaxHpTotal };
             var token = _bindWatcherMethod.Invoke(mgr, new object[] { uuid, attrIds, callback });
             if (token is uint t)
             {
-                lock (_cacheLock) { _watcherTokens[uuid] = t; }
+                lock (_cacheLock)
+                {
+                    _watcherTokens[uuid] = t;
+                    _trampolines[uuid] = trampoline;
+                }
             }
         }
         catch
@@ -53,6 +89,7 @@ internal sealed partial class EntityVitalsService
         {
             _cache.Remove(uuid);
             _dirty.Remove(uuid);
+            _trampolines.Remove(uuid);
             if (!_watcherTokens.TryGetValue(uuid, out token)) return;
             _watcherTokens.Remove(uuid);
         }
@@ -66,33 +103,20 @@ internal sealed partial class EntityVitalsService
         catch { /* best-effort cleanup */ }
     }
 
-    // Builds the watcher callback bound to OnAnyAttrDirty, targeting whatever concrete delegate type
-    // BindEntityLuaAttrWatcher's 3rd parameter resolves to at runtime (an IL2CppInterop-generated
+    // Builds the watcher callback bound to trampoline.OnFire, targeting whatever concrete delegate
+    // type BindEntityLuaAttrWatcher's 3rd parameter resolves to at runtime (an IL2CppInterop-generated
     // Action-shaped delegate over ZEntity — ZEntity's concrete Type is only known at runtime, a
     // hot-update assembly type, so this can't be written as ordinary compile-time C#). Relies on .NET's
     // contravariant delegate binding: a target method parameter typed `object` satisfies a delegate
     // expecting a more-derived reference-type parameter. Returns null on any failure.
-    private object? BuildDirtyCallback(Type delegateType)
+    private static object? BuildDirtyCallback(Type delegateType, DirtyTrampoline trampoline)
     {
         try
         {
-            var method = typeof(EntityVitalsService).GetMethod(nameof(OnAnyAttrDirty), AnyInstance);
+            var method = typeof(DirtyTrampoline).GetMethod(nameof(DirtyTrampoline.OnFire), AnyInstance);
             if (method is null) return null;
-            return Delegate.CreateDelegate(delegateType, this, method, throwOnBindFailure: false);
+            return Delegate.CreateDelegate(delegateType, trampoline, method, throwOnBindFailure: false);
         }
         catch { return null; }
-    }
-
-    // Watcher callback — fires when ANY watched attr changes for ANY bound uuid. The callback signature
-    // carries the changed ZEntity, not a uuid, and there is no confirmed ZEntity->uuid accessor in the
-    // recon'd surface (2026-08-26 recon §2.3) — rather than guess at one, this marks the WHOLE tracked
-    // set dirty. Cheap: the tracked set is a handful of bosses/elites per raid, and Tick() only re-reads
-    // ids actually in the dirty set.
-    private void OnAnyAttrDirty(object entity)
-    {
-        lock (_cacheLock)
-        {
-            foreach (var uuid in _watcherTokens.Keys) _dirty.Add(uuid);
-        }
     }
 }

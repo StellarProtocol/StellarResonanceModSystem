@@ -56,7 +56,10 @@ internal sealed partial class EntityVitalsService : IBossVitals
     private MethodInfo?   _conversionMethod;     // BossBloodUtil.ConversionBloodLogicDataToViewData(ZEntity) → Nullable<BossBloodLogicData>
     private PropertyInfo? _isBossProperty;       // ZEntity.IsBoss → bool
 
-    // Optional handles — nice-to-have; their absence degrades gracefully (liveness gate / watcher skipped).
+    // _isEntityExistMethod/_isEntityActiveMethod are MANDATORY for any live read (I3 review fix — see
+    // IsLive in EntityVitalsService.Reflection.cs): unresolved means the whole tap stays inert rather
+    // than an ungated GetEntity. _bindWatcherMethod/_unbindWatcherMethod stay genuinely optional — their
+    // absence only costs the push-driven cache refresh between TryGetBlood calls.
     private MethodInfo? _isEntityExistMethod;    // ZEntityMgr.IsEntityExist(long uuid) → bool
     private MethodInfo? _isEntityActiveMethod;   // ZEntityMgr.IsEntityActive(long uuid) → bool
     private MethodInfo? _bindWatcherMethod;      // ZEntityMgr.BindEntityLuaAttrWatcher(long, uint[], Action<ZEntity>) → uint
@@ -91,11 +94,16 @@ internal sealed partial class EntityVitalsService : IBossVitals
         if (_mgrInstanceProperty is null || _getEntityMethod is null || _conversionMethod is null)
             return false;
 
-        TrackForWatcher(id.Value);
-
         if (TryReadLive(id.Value, out var pct, out var stg))
         {
             SetCache(id.Value, pct, stg);
+            // C3a review fix: only start watching AFTER a live read actually returned boss-blood data
+            // (ConversionBloodLogicDataToViewData had a value) — TryGetBlood is called for every
+            // sampled entity, players included, and the old unconditional TrackForWatcher() here bound
+            // a watcher (and, via OnAnyAttrDirty, drove a per-tick reflected re-read) for every combat
+            // entity, not just bosses. Gating on a successful boss-blood read keeps the watched/dirty
+            // sets bounded to the handful of real bosses/elites a raid actually has.
+            TrackForWatcher(id.Value);
             percent = pct;
             stage = stg;
             DiagNativeRead(id, pct, stg);
@@ -130,6 +138,30 @@ internal sealed partial class EntityVitalsService : IBossVitals
         SweepDeadWatched();
     }
 
+    /// <summary>
+    /// Drops all cached vitals + watcher bookkeeping — the scene-change/logout reset, mirroring where
+    /// <c>CombatEntityTracker.Reset()</c>/<c>ResetEntities()</c> fires
+    /// (<c>PandaCombatStubProbe.OnEnterScene</c>, <c>Wiring.Wire.cs</c>'s <c>OnLogout</c>). I1 review
+    /// fix — bounds <see cref="_cache"/>/<see cref="_watcherTokens"/> to one scene's/session's
+    /// lifetime and prevents a stale cached percent surviving onto a RECYCLED entity id in the next
+    /// scene. Deliberately does NOT call <c>UnbindEntityLuaAttrWater</c> here: <c>OnEnterScene</c> can
+    /// invoke this from the network receive thread during exactly the mass-teardown window
+    /// <c>docs/il2cpp-probing-safety.md</c> warns is unsafe for a live IL2CPP call, and the native
+    /// watcher tokens are being invalidated by the scene teardown anyway — an orphaned native binding
+    /// is harmless (our callback only ever marks a managed dirty set; <see cref="Tick"/> silently
+    /// no-ops on an id we no longer track).
+    /// </summary>
+    public void Reset()
+    {
+        lock (_cacheLock)
+        {
+            _cache.Clear();
+            _dirty.Clear();
+            _watcherTokens.Clear();
+            _trampolines.Clear();
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Cache
     // -------------------------------------------------------------------------
@@ -155,22 +187,41 @@ internal sealed partial class EntityVitalsService : IBossVitals
         lock (_cacheLock) { _cache[uuid] = (percent, stage); }
     }
 
+    // C3c review fix: caps the per-tick MethodInfo.Invoke cost. Only the ids actually TAKEN this tick
+    // are removed from _dirty — anything past the budget stays dirty and gets picked up on a later
+    // tick (round-robin: HashSet enumeration order isn't insertion-stable, so repeated calls naturally
+    // rotate through the set rather than starving the same tail entries forever). With C3a/C3b bounding
+    // the tracked set to real bosses/elites, the budget is a defensive cap, not a steady-state limiter.
+    private const int MaxDrainPerTick = 8;
+
     private void DrainDirty()
     {
-        long[] dirtyIds;
+        long[] batch;
         lock (_cacheLock)
         {
             if (_dirty.Count == 0) return;
-            dirtyIds = new long[_dirty.Count];
-            _dirty.CopyTo(dirtyIds);
-            _dirty.Clear();
+            int take = Math.Min(_dirty.Count, MaxDrainPerTick);
+            batch = new long[take];
+            int i = 0;
+            foreach (var uuid in _dirty)
+            {
+                if (i >= take) break;
+                batch[i++] = uuid;
+            }
+            foreach (var uuid in batch) _dirty.Remove(uuid);
         }
-        foreach (var uuid in dirtyIds)
+        foreach (var uuid in batch)
         {
             if (TryReadLive(uuid, out var pct, out var stg)) SetCache(uuid, pct, stg);
         }
     }
 
+    // I1 review fix: sweeps BOTH _watcherTokens and _cache — a live-read-succeeded-but-watcher-bind-
+    // failed id lands in _cache with no watcher token, and was previously never swept, risking a stale
+    // cached percent surviving a scene change onto a RECYCLED entity id (mob ids recycle; see
+    // CombatEntityTracker's own notes on this). EntityVitalsService.Reset() also bounds this at every
+    // scene-change/logout, but the 5s sweep is the mid-scene backstop for an entity that quietly
+    // despawns without a matching AOI-disappear.
     private void SweepDeadWatched()
     {
         var now = Environment.TickCount64;
@@ -178,13 +229,15 @@ internal sealed partial class EntityVitalsService : IBossVitals
         _lastSweepMs = now;
         if (_mgrInstanceProperty is null) return;
 
-        long[] watched;
+        long[] tracked;
         lock (_cacheLock)
         {
-            watched = new long[_watcherTokens.Count];
-            _watcherTokens.Keys.CopyTo(watched, 0);
+            var ids = new System.Collections.Generic.HashSet<long>(_watcherTokens.Keys);
+            ids.UnionWith(_cache.Keys);
+            tracked = new long[ids.Count];
+            ids.CopyTo(tracked);
         }
-        foreach (var uuid in watched)
+        foreach (var uuid in tracked)
         {
             if (!IsLive(uuid)) Untrack(uuid);
         }

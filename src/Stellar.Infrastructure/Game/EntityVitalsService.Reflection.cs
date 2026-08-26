@@ -40,7 +40,8 @@ internal sealed partial class EntityVitalsService
         var isBossProp = entityType.GetProperty("IsBoss", AnyInstance);
         if (instanceProp is null || getEntity is null || conversion is null || isBossProp is null) return;
 
-        // Optional handles — resolved best-effort; absence degrades gracefully (liveness gate / watcher skipped).
+        // Resolved best-effort, retried every call while missing. IsEntityExist/IsEntityActive are
+        // MANDATORY for IsLive to ever return true (I3); the watcher pair stays genuinely optional.
         _isEntityExistMethod ??= mgrType.GetMethod("IsEntityExist", AnyInstance, binder: null, types: new[] { typeof(long) }, modifiers: null);
         _isEntityActiveMethod ??= mgrType.GetMethod("IsEntityActive", AnyInstance, binder: null, types: new[] { typeof(long) }, modifiers: null);
         _bindWatcherMethod ??= FindBindWatcherMethod(mgrType);
@@ -98,44 +99,29 @@ internal sealed partial class EntityVitalsService
     // Live read
     // -------------------------------------------------------------------------
 
+    // I3 review fix: IsEntityExist/IsEntityActive used to be "optional, nice-to-have" — if neither
+    // handle resolved, the OLD code fell through to `return true`, i.e. an UNGATED GetEntity/
+    // reflected-read on every call. That's exactly the native-crash class docs/il2cpp-probing-safety.md
+    // warns about (a live IL2CPP deref with no liveness gate). The liveness gate is now MANDATORY:
+    // unresolved handles means the whole native tap stays inert (TryGetBlood/IsBoss return false)
+    // until both resolve, logged once so the degraded state is visible without STELLAR_DIAGNOSTICS.
     private bool IsLive(long uuid)
     {
         if (_mgrInstanceProperty is null) return false;
+        if (_isEntityExistMethod is null || _isEntityActiveMethod is null)
+        {
+            DiagLivenessGateMissing();
+            return false;
+        }
         try
         {
             var mgr = _mgrInstanceProperty.GetValue(null);
             if (mgr is null) return false;
-            if (_isEntityExistMethod is not null
-                && _isEntityExistMethod.Invoke(mgr, new object[] { uuid }) is false)
-            {
-                return false;
-            }
-            if (_isEntityActiveMethod is not null
-                && _isEntityActiveMethod.Invoke(mgr, new object[] { uuid }) is false)
-            {
-                return false;
-            }
+            if (_isEntityExistMethod.Invoke(mgr, new object[] { uuid }) is false) return false;
+            if (_isEntityActiveMethod.Invoke(mgr, new object[] { uuid }) is false) return false;
             return true;
         }
         catch { return false; }
-    }
-
-    /// <summary>Diagnostics-only liveness probe (recon §6 grammar line 1, "exists"/"active" fields) —
-    /// separate booleans, unlike <see cref="IsLive"/>'s combined gate. Returns <c>(false, false)</c>
-    /// when the optional handles never resolved (not a failure — just "we don't know").</summary>
-    internal (bool Exists, bool Active) DiagCheckLiveness(long uuid)
-    {
-        EnsureResolved();
-        if (_mgrInstanceProperty is null) return (false, false);
-        try
-        {
-            var mgr = _mgrInstanceProperty.GetValue(null);
-            if (mgr is null) return (false, false);
-            bool exists = _isEntityExistMethod?.Invoke(mgr, new object[] { uuid }) is true;
-            bool active = _isEntityActiveMethod?.Invoke(mgr, new object[] { uuid }) is true;
-            return (exists, active);
-        }
-        catch { return (false, false); }
     }
 
     private object? ResolveEntity(long uuid)
@@ -155,7 +141,7 @@ internal sealed partial class EntityVitalsService
         stage = 0;
         if (!TryReadLiveResult(uuid, out var result) || result is null) return false;
         ResolveBloodFields(result.GetType());
-        percent = ExtractPercent(result);
+        percent = ExtractPercent(uuid, result);
         stage = ExtractStage(result);
         return true;
     }
@@ -187,12 +173,18 @@ internal sealed partial class EntityVitalsService
         if (_stageField is null) _stageProperty = t.GetProperty("Stage", AnyInstance);
     }
 
-    private int ExtractPercent(object result)
+    private int ExtractPercent(long uuid, object result)
     {
         try
         {
             var raw = _percentField is not null ? _percentField.GetValue(result) : _percentProperty?.GetValue(result);
-            return ToPercentInt(ToFloat(raw));
+            var f = ToFloat(raw);
+            // M4 review fix: the ≤1 "treat as fraction" heuristic below collapses a REAL 1% (the
+            // scripted-kill floor value, BossScriptedKillHpFrac=0.15f is the plugin-side threshold but
+            // the observed value can be lower) down to 100% if it's actually already a percent — log
+            // the raw value once per entity so the acceptance raid settles which scale BloodPercent uses.
+            DiagRawBloodPercent(uuid, f);
+            return ToPercentInt(f);
         }
         catch { return 0; }
     }

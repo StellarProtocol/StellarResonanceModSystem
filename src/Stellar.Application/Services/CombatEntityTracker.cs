@@ -183,6 +183,10 @@ internal sealed class CombatEntityTracker
                 // NOT — death inference requires HasHpObservation, so {Hp:0, MaxHp:>0} from a
                 // MaxHp-only first observation reads "alive, HP unknown" (the false-skull fix).
                 HasHpObservation = cur.HasHpObservation || hp >= 0,
+                // ANY real observation clears a prior Normal-disappear's LeftAoi latch (C1a review
+                // fix) — this call only ever fires on a genuine AttrHp/AttrMaxHp/AttrMaxHpTotal
+                // delta (both write sites gate on hp>=0||maxHp>=0 before calling), never a no-op.
+                LeftAoi = false,
             };
         }
         Touch(entityId, System.Environment.TickCount64);
@@ -349,6 +353,19 @@ internal sealed class CombatEntityTracker
             // re-broadcasts on re-appear (like vitals), so dropping it is safe and the inspector shows
             // "no data" once out of AOI.
             lock (_attrsByEntityLock) _attrsByEntity.Remove(entityId);
+        }
+        else
+        {
+            // C1a review fix: keeping the row on Normal quietly broke the "IsKnown flips false ==
+            // left AOI" proxy plugin code (incl. the protected raid scripted-kill detector/stage
+            // drain) relied on. Latch LeftAoi so those callers can distinguish "kept, stale, out of
+            // AOI right now" from "fresh, currently in AOI" — cleared by the next real observation
+            // (UpdateEntityVitals). No-op if the row was somehow already gone (idle-swept mid-flight).
+            lock (_vitalsByEntityLock)
+            {
+                if (_vitalsByEntity.TryGetValue(entityId, out var v))
+                    _vitalsByEntity[entityId] = v with { LeftAoi = true };
+            }
         }
         lock (_dpsBySourceLock)     _dpsBySource.Remove(entityId);
         lock (_hpsBySourceLock)     _hpsBySource.Remove(entityId);

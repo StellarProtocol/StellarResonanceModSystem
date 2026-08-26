@@ -176,6 +176,7 @@ public sealed partial class BootstrapPlugin
         _partyService?.ClearSession();
         _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns
         _combatStubProbe?.ResetLocalEntityId();
+        _entityVitals?.Reset();                   // I1 review fix — mirrors the ClearSession reset above
         _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null);
     }
 
