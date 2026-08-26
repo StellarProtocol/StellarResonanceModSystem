@@ -236,23 +236,52 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private int _refreshCooldown;
     private const int RefreshCooldownTicks = 20;   // ~0.66 s at the 30 Hz loadout drain
 
+    // Cached so the per-tick RefreshIfDue does not allocate a fresh Func<bool> from the instance method
+    // group every drain tick. DecideRefresh only INVOKES it once a refresh is otherwise due.
+    private Func<bool>? _inCombatProbe;
+
+    // Outcome of the combat-gated refresh state machine — see DecideRefresh.
+    internal enum RefreshOutcome { Wait, Fire, DeferForCombat }
+
     private void RefreshIfDue()
     {
+        _inCombatProbe ??= IsLocalPlayerInCombat;
         if (_refreshCooldown > 0) _refreshCooldown--;
-        if (!_refreshedOnce)
+
+        // The SyncProjectList RPC is COMBAT-GATED server-side (ErrStateIllegal 3202): the server rejects
+        // role-plan RPCs during combat and the game's own weapon-VM wrapper toasts "Cannot perform this
+        // action during combat". In combat the server drips CharSerialize deltas ~every 5 s, each re-arming
+        // _refreshPending (PandaLoadoutProbe.LiveState.cs), so the rejected RPC — and its toast — recurred on
+        // that cadence with ZERO plugins (Discord issue 2026-08-25, framework-only, owner-validated). DEFER
+        // the RPC while the local player is in combat, keeping _refreshPending / !_refreshedOnce armed so
+        // exactly ONE refresh fires the moment combat ends. Nothing is lost: an in-game loadout switch is
+        // itself combat-locked, so plans only change out of combat; the RPC-free live-state re-read
+        // (RefreshLiveStateIfArmed) keeps running in combat. The (Lua-backed) combat read is consulted only
+        // when a refresh is otherwise due — DecideRefresh short-circuits on cooldown / nothing-pending first.
+        switch (DecideRefresh(_refreshedOnce, _refreshPending, _refreshCooldown > 0, _inCombatProbe))
         {
-            _refreshedOnce = true;
-            _refreshPending = false;
-            _refreshCooldown = RefreshCooldownTicks;
-            InvokeChunk(RefreshChunk);
-            return;
+            case RefreshOutcome.DeferForCombat:
+                _refreshCooldown = RefreshCooldownTicks;   // re-check ~0.66 s later, never every drain tick
+                break;
+            case RefreshOutcome.Fire:
+                _refreshedOnce = true;
+                _refreshPending = false;
+                _refreshCooldown = RefreshCooldownTicks;
+                InvokeChunk(RefreshChunk);
+                break;
         }
-        if (_refreshPending && _refreshCooldown == 0)
-        {
-            _refreshPending = false;
-            _refreshCooldown = RefreshCooldownTicks;
-            InvokeChunk(RefreshChunk);
-        }
+    }
+
+    /// <summary>Pure decision for the combat-gated on-demand <c>SyncProjectList</c> refresh (extracted for
+    /// <c>PandaLoadoutProbeRefreshGateTests</c> — pins the invariant that the RPC is DEFERRED, never dropped,
+    /// while in combat and fires exactly once combat ends). <paramref name="inCombat"/> is a delegate so the
+    /// Lua-backed combat read runs ONLY when a refresh is otherwise due — never on a cooldown tick and never
+    /// when nothing is pending.</summary>
+    internal static RefreshOutcome DecideRefresh(bool refreshedOnce, bool refreshPending, bool cooldownActive, Func<bool> inCombat)
+    {
+        if (cooldownActive) return RefreshOutcome.Wait;
+        if (refreshedOnce && !refreshPending) return RefreshOutcome.Wait;   // nothing due — no combat read
+        return inCombat() ? RefreshOutcome.DeferForCombat : RefreshOutcome.Fire;
     }
 
     // Read + parse the data global written by the refresh chunk. Skips reparse when
