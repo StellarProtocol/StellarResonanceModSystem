@@ -4,6 +4,57 @@ using System.Reflection;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
+/// Reflection handles for an Il2CppInterop Nullable&lt;T&gt;-shaped wrapper, resolved once per raw
+/// result <see cref="Type"/> by <see cref="EntityVitalsService.GetOrResolveNullableHandles"/>
+/// (field-failure review fix, sea/WwLG5Bq4ni, point 1). Property checked before field per member —
+/// the interop generator emits properties.
+/// </summary>
+internal readonly struct NullableWrapperHandles
+{
+    public readonly PropertyInfo? HasValueProperty;
+    public readonly FieldInfo? HasValueField;
+    public readonly PropertyInfo? ValueProperty;
+    public readonly FieldInfo? ValueField;
+
+    public NullableWrapperHandles(PropertyInfo? hasValueProperty, FieldInfo? hasValueField, PropertyInfo? valueProperty, FieldInfo? valueField)
+    {
+        HasValueProperty = hasValueProperty;
+        HasValueField = hasValueField;
+        ValueProperty = valueProperty;
+        ValueField = valueField;
+    }
+
+    /// <summary>True when the type carries BOTH a bool HasValue member and a Value/value member.</summary>
+    public bool IsNullableWrapper => (HasValueProperty is not null || HasValueField is not null)
+                                   && (ValueProperty is not null || ValueField is not null);
+}
+
+/// <summary>
+/// Reflection handles for the <c>BossBloodLogicData</c>-shaped value's <c>BloodPercent</c>/<c>Stage</c>
+/// members, resolved once per (unwrapped) value <see cref="Type"/> by
+/// <see cref="EntityVitalsService.ResolveBloodFields"/> (field-failure review fix, sea/WwLG5Bq4ni,
+/// point 2 — keyed per-Type so a miss for one type is never latched globally).
+/// </summary>
+internal readonly struct BloodFieldHandles
+{
+    public readonly FieldInfo? PercentField;
+    public readonly PropertyInfo? PercentProperty;
+    public readonly FieldInfo? StageField;
+    public readonly PropertyInfo? StageProperty;
+
+    public BloodFieldHandles(FieldInfo? percentField, PropertyInfo? percentProperty, FieldInfo? stageField, PropertyInfo? stageProperty)
+    {
+        PercentField = percentField;
+        PercentProperty = percentProperty;
+        StageField = stageField;
+        StageProperty = stageProperty;
+    }
+
+    public bool PercentReadable => PercentField is not null || PercentProperty is not null;
+    public bool StageReadable => StageField is not null || StageProperty is not null;
+}
+
+/// <summary>
 /// Reflection bootstrap + live-read/watcher plumbing for <see cref="EntityVitalsService"/>. Split out
 /// so the main file stays under the analyzer's file-size gate. Mirrors
 /// <see cref="EntityTransformsService"/>'s bootstrap shape (I-1: guard is handle-presence, not a
@@ -145,15 +196,22 @@ internal sealed partial class EntityVitalsService
         percent = 0;
         stage = 0;
         if (!TryReadLiveResult(uuid, out var result) || result is null) return false;
-        ResolveBloodFields(result.GetType());
-        percent = ExtractPercent(uuid, result);
-        stage = ExtractStage(result);
+
+        var handles = ResolveBloodFields(result.GetType());
+        // Point 3 fix (sea/WwLG5Bq4ni): a null/unconvertible percent FAILS the whole tier — it no
+        // longer silently degrades to a reported 0%, which is exactly what masked the wire tiers that
+        // used to produce correct dungeon tracks (this tier claimed success every tick regardless).
+        if (!TryExtractPercent(uuid, result, handles, out percent)) return false;
+        stage = ExtractStage(result, handles);
         return true;
     }
 
-    // Boxed Nullable<BossBloodLogicData>: HasValue=false boxes to a real null reference, HasValue=true
-    // boxes directly to the struct — so a null `result` here is a normal, expected "no boss-blood
-    // observation yet" answer, not a failure.
+    // Point 1 fix (sea/WwLG5Bq4ni): the OLD contract here ("boxed Nullable<BossBloodLogicData>:
+    // HasValue=false boxes to a real null reference") does NOT hold across the Il2CppInterop boundary —
+    // the interop-generated wrapper is a REAL, non-null object even when HasValue=false. A non-null
+    // invoke result must still be probed for a HasValue/Value shape and unwrapped (TryUnwrap) before
+    // it's usable; only a genuine null invoke result (or HasValue=false after unwrap) means "no
+    // boss-blood observation yet", not a failure.
     private bool TryReadLiveResult(long uuid, out object? result)
     {
         result = null;
@@ -162,43 +220,113 @@ internal sealed partial class EntityVitalsService
         if (entity is null) return false;
         try
         {
-            result = _conversionMethod!.Invoke(null, new object[] { entity });
+            var raw = _conversionMethod!.Invoke(null, new object[] { entity });
+            return raw is not null && TryUnwrap(raw, out result);
+        }
+        catch { result = null; return false; }
+    }
+
+    // Detects an Il2CppInterop Nullable<T>-shaped wrapper by reflection (property checked before
+    // field — interop emits properties) and unwraps it. A type with no HasValue+Value shape is assumed
+    // to already BE the value (preserves the original managed-boxing assumption as a fallback, in case
+    // a future interop build DOES box normally). Cached per raw Type (GetOrResolveNullableHandles).
+    // internal for direct unit coverage with plain C# test doubles (no IL2Cpp needed — pure reflection
+    // over whatever object is passed in).
+    internal bool TryUnwrap(object raw, out object? result)
+    {
+        result = null;
+        var rawType = raw.GetType();
+        var wrap = GetOrResolveNullableHandles(rawType);
+        if (!wrap.IsNullableWrapper)
+        {
+            result = raw;
+            return true;
+        }
+        bool hasValue;
+        try
+        {
+            var hv = wrap.HasValueProperty is not null ? wrap.HasValueProperty.GetValue(raw) : wrap.HasValueField!.GetValue(raw);
+            hasValue = hv is true;
+        }
+        catch { return false; }
+        if (!hasValue) return false; // genuine "no boss-blood observation yet"
+        try
+        {
+            result = wrap.ValueProperty is not null ? wrap.ValueProperty.GetValue(raw) : wrap.ValueField!.GetValue(raw);
             return result is not null;
+        }
+        catch { result = null; return false; }
+    }
+
+    // Resolves + caches (per raw Type) whether that Type looks like a Nullable<T> wrapper: a bool
+    // "HasValue" member (property preferred, field fallback) plus a "Value"/"value" member of any type.
+    // internal for direct unit coverage with plain C# test doubles (no IL2Cpp needed — pure reflection).
+    internal NullableWrapperHandles GetOrResolveNullableHandles(Type t)
+    {
+        if (_nullableWrapperHandlesByType.TryGetValue(t, out var cached)) return cached;
+
+        var hasValueProp = t.GetProperty("HasValue", AnyInstance);
+        if (hasValueProp is not null && hasValueProp.PropertyType != typeof(bool)) hasValueProp = null;
+        var hasValueField = hasValueProp is null ? t.GetField("HasValue", AnyInstance) : null;
+        if (hasValueField is not null && hasValueField.FieldType != typeof(bool)) hasValueField = null;
+        var valueProp = t.GetProperty("Value", AnyInstance) ?? t.GetProperty("value", AnyInstance);
+        var valueField = valueProp is null ? (t.GetField("Value", AnyInstance) ?? t.GetField("value", AnyInstance)) : null;
+
+        var handles = new NullableWrapperHandles(hasValueProp, hasValueField, valueProp, valueField);
+        _nullableWrapperHandlesByType[t] = handles;
+        DiagNullableShapeDiscovered(t, handles);
+        return handles;
+    }
+
+    // Point 2 fix (sea/WwLG5Bq4ni): resolved + cached PER Type, never latched globally — the old
+    // single `_bloodFieldsResolved` bool meant a first call that happened to see the WRAPPER type (no
+    // BloodPercent/Stage members — those live on the unwrapped value type) permanently recorded
+    // "unreadable" for every type forever after. A per-Type miss here IS the "recorded as unreadable
+    // for this type" outcome the fix calls for — it's a legitimate memoization (a CLR Type's member
+    // layout never changes at runtime), not a latch bug, because it can never apply to the WRONG type.
+    // internal for direct unit coverage with plain C# test doubles.
+    internal BloodFieldHandles ResolveBloodFields(Type t)
+    {
+        if (_bloodFieldHandlesByType.TryGetValue(t, out var cached)) return cached;
+
+        var percentField = t.GetField("BloodPercent", AnyInstance);
+        var percentProp = percentField is null ? t.GetProperty("BloodPercent", AnyInstance) : null;
+        var stageField = t.GetField("Stage", AnyInstance);
+        var stageProp = stageField is null ? t.GetProperty("Stage", AnyInstance) : null;
+
+        var handles = new BloodFieldHandles(percentField, percentProp, stageField, stageProp);
+        _bloodFieldHandlesByType[t] = handles;
+        DiagBloodFieldsDiscovered(t, handles);
+        return handles;
+    }
+
+    // Point 3 fix (sea/WwLG5Bq4ni): a null/unconvertible raw value now FAILS this tier (returns false)
+    // instead of degrading to a reported 0% — see ToFloat's doc for what "unconvertible" means.
+    private bool TryExtractPercent(long uuid, object result, BloodFieldHandles handles, out int percent)
+    {
+        percent = 0;
+        try
+        {
+            var raw = handles.PercentField is not null ? handles.PercentField.GetValue(result) : handles.PercentProperty?.GetValue(result);
+            var f = ToFloat(raw);
+            // M4 review fix: the ≤1 "treat as fraction" heuristic below collapses a REAL 1% (the
+            // scripted-kill floor value) down to 100% if it's actually already a percent — log the raw
+            // value once per entity so the acceptance raid settles which scale BloodPercent uses.
+            DiagRawBloodPercent(uuid, f);
+            if (f is null) return false;
+            percent = ToPercentInt(f.Value);
+            return true;
         }
         catch { return false; }
     }
 
-    private void ResolveBloodFields(Type t)
-    {
-        if (_bloodFieldsResolved) return;
-        _bloodFieldsResolved = true;
-        _percentField = t.GetField("BloodPercent", AnyInstance);
-        if (_percentField is null) _percentProperty = t.GetProperty("BloodPercent", AnyInstance);
-        _stageField = t.GetField("Stage", AnyInstance);
-        if (_stageField is null) _stageProperty = t.GetProperty("Stage", AnyInstance);
-    }
-
-    private int ExtractPercent(long uuid, object result)
+    // Stage is NOT the field that masked the wire tiers (BloodPercent is) — a missing/unconvertible
+    // Stage degrades to 0 without failing the whole read, unlike TryExtractPercent above.
+    private int ExtractStage(object result, BloodFieldHandles handles)
     {
         try
         {
-            var raw = _percentField is not null ? _percentField.GetValue(result) : _percentProperty?.GetValue(result);
-            var f = ToFloat(raw);
-            // M4 review fix: the ≤1 "treat as fraction" heuristic below collapses a REAL 1% (the
-            // scripted-kill floor value, BossScriptedKillHpFrac=0.15f is the plugin-side threshold but
-            // the observed value can be lower) down to 100% if it's actually already a percent — log
-            // the raw value once per entity so the acceptance raid settles which scale BloodPercent uses.
-            DiagRawBloodPercent(uuid, f);
-            return ToPercentInt(f);
-        }
-        catch { return 0; }
-    }
-
-    private int ExtractStage(object result)
-    {
-        try
-        {
-            var raw = _stageField is not null ? _stageField.GetValue(result) : _stageProperty?.GetValue(result);
+            var raw = handles.StageField is not null ? handles.StageField.GetValue(result) : handles.StageProperty?.GetValue(result);
             return ToInt(raw);
         }
         catch { return 0; }
@@ -224,12 +352,17 @@ internal sealed partial class EntityVitalsService
         _ => 0,
     };
 
-    private static float ToFloat(object? v) => v switch
+    // Point 4 fix (sea/WwLG5Bq4ni): returns null — NOT 0f — for a raw value that isn't one of the CLR
+    // primitive numeric types this method actually knows how to read. The OLD version defaulted
+    // unconvertible input (incl. a boxed Il2Cpp value this reflection layer can't unbox, or the
+    // WRAPPER object itself if TryUnwrap somehow didn't run) to 0f, which is indistinguishable from a
+    // genuine 0.0 reading — exactly the ambiguity that let ExtractPercent report a false 0% every tick.
+    internal static float? ToFloat(object? v) => v switch
     {
         float f => f,
         double d => (float)d,
         int i => i,
         long l => l,
-        _ => 0f,
+        _ => null,
     };
 }

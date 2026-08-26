@@ -108,4 +108,185 @@ public sealed class EntityVitalsServiceTests
     {
         Assert.Equal(expected, EntityVitalsService.ToPercentInt(raw));
     }
+
+    // ── ToFloat (pure) — field-failure fix, sea/WwLG5Bq4ni point 4 ────────────
+    // Must distinguish "unconvertible" from a genuine 0.0 reading — the OLD version defaulted both to
+    // 0f, which is exactly what let a masked read report a false 0%.
+
+    [Fact]
+    public void ToFloat_Float_Converts() => Assert.Equal(0.5f, EntityVitalsService.ToFloat(0.5f));
+
+    [Fact]
+    public void ToFloat_Double_Converts() => Assert.Equal(3.5f, EntityVitalsService.ToFloat(3.5d));
+
+    [Fact]
+    public void ToFloat_Int_Converts() => Assert.Equal(7f, EntityVitalsService.ToFloat(7));
+
+    [Fact]
+    public void ToFloat_Long_Converts() => Assert.Equal(9f, EntityVitalsService.ToFloat(9L));
+
+    [Fact]
+    public void ToFloat_Null_ReturnsNull_NotZero() => Assert.Null(EntityVitalsService.ToFloat(null));
+
+    [Fact]
+    public void ToFloat_UnconvertibleObject_ReturnsNull_NotZero() => Assert.Null(EntityVitalsService.ToFloat(new object()));
+
+    // ── GetOrResolveNullableHandles / TryUnwrap — the unwrap-decision seam ────
+    // Field-failure fix, sea/WwLG5Bq4ni point 1: Il2CppInterop's generated Nullable<T> wrapper is a
+    // REAL non-null object even when HasValue=false — pure reflection over plain C# test doubles
+    // shaped the same way (no IL2Cpp needed; the detection/unwrap logic is generic).
+
+    private sealed class WrapperViaProperties
+    {
+        public bool HasValue { get; set; }
+        public object? Value { get; set; }
+    }
+
+    private sealed class WrapperViaFields
+    {
+        public bool HasValue;
+        public object? Value;
+    }
+
+    private sealed class NotAWrapperShape
+    {
+        public int Unrelated;
+    }
+
+    [Fact]
+    public void GetOrResolveNullableHandles_PropertyShape_DetectsWrapper()
+    {
+        var handles = NewService().GetOrResolveNullableHandles(typeof(WrapperViaProperties));
+        Assert.True(handles.IsNullableWrapper);
+        Assert.NotNull(handles.HasValueProperty);
+        Assert.NotNull(handles.ValueProperty);
+        Assert.Null(handles.HasValueField);
+        Assert.Null(handles.ValueField);
+    }
+
+    [Fact]
+    public void GetOrResolveNullableHandles_FieldShape_DetectsWrapperViaFieldFallback()
+    {
+        var handles = NewService().GetOrResolveNullableHandles(typeof(WrapperViaFields));
+        Assert.True(handles.IsNullableWrapper);
+        Assert.NotNull(handles.HasValueField);
+        Assert.NotNull(handles.ValueField);
+    }
+
+    [Fact]
+    public void GetOrResolveNullableHandles_NoMatchingShape_NotAWrapper()
+    {
+        var handles = NewService().GetOrResolveNullableHandles(typeof(NotAWrapperShape));
+        Assert.False(handles.IsNullableWrapper);
+    }
+
+    [Fact]
+    public void TryUnwrap_NonWrapperObject_ReturnsItUnchanged()
+    {
+        // Preserves the original managed-boxing assumption as a fallback for a type with no
+        // HasValue+Value shape — treated as already BEING the value.
+        var svc = NewService();
+        var raw = new NotAWrapperShape { Unrelated = 42 };
+
+        var ok = svc.TryUnwrap(raw, out var result);
+
+        Assert.True(ok);
+        Assert.Same(raw, result);
+    }
+
+    [Fact]
+    public void TryUnwrap_WrapperHasValueTrue_ReturnsUnwrappedValue()
+    {
+        var svc = NewService();
+        var inner = new object();
+        var wrapper = new WrapperViaProperties { HasValue = true, Value = inner };
+
+        var ok = svc.TryUnwrap(wrapper, out var result);
+
+        Assert.True(ok);
+        Assert.Same(inner, result);
+    }
+
+    [Fact]
+    public void TryUnwrap_WrapperHasValueFalse_ReturnsFalse()
+    {
+        // THE root-cause case: a non-null invoke result whose HasValue is false is NOT a real
+        // observation — the OLD code treated any non-null result as success.
+        var svc = NewService();
+        var wrapper = new WrapperViaProperties { HasValue = false, Value = new object() };
+
+        var ok = svc.TryUnwrap(wrapper, out var result);
+
+        Assert.False(ok);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void TryUnwrap_FieldShapeWrapper_UnwrapsViaFields()
+    {
+        var svc = NewService();
+        var inner = new object();
+        var wrapper = new WrapperViaFields { HasValue = true, Value = inner };
+
+        var ok = svc.TryUnwrap(wrapper, out var result);
+
+        Assert.True(ok);
+        Assert.Same(inner, result);
+    }
+
+    // ── ResolveBloodFields — the field-resolution seam ────────────────────────
+    // Field-failure fix, sea/WwLG5Bq4ni point 2: resolved + cached PER Type, not latched globally.
+
+    private sealed class BloodDataViaFields
+    {
+        public float BloodPercent;
+        public int Stage;
+    }
+
+    private sealed class BloodDataViaProperties
+    {
+        public float BloodPercent { get; set; }
+        public int Stage { get; set; }
+    }
+
+    private sealed class BloodDataMissing
+    {
+        public int Unrelated;
+    }
+
+    [Fact]
+    public void ResolveBloodFields_FieldShape_ResolvesViaFields()
+    {
+        var handles = NewService().ResolveBloodFields(typeof(BloodDataViaFields));
+        Assert.True(handles.PercentReadable);
+        Assert.True(handles.StageReadable);
+        Assert.NotNull(handles.PercentField);
+        Assert.NotNull(handles.StageField);
+    }
+
+    [Fact]
+    public void ResolveBloodFields_PropertyShape_ResolvesViaProperties()
+    {
+        var handles = NewService().ResolveBloodFields(typeof(BloodDataViaProperties));
+        Assert.True(handles.PercentReadable);
+        Assert.True(handles.StageReadable);
+        Assert.NotNull(handles.PercentProperty);
+        Assert.NotNull(handles.StageProperty);
+    }
+
+    [Fact]
+    public void ResolveBloodFields_MissingShape_RecordsUnreadable_PerTypeNotGlobally()
+    {
+        // THE latch bug this fix corrects: a miss for one type must not poison resolution for a
+        // DIFFERENT, readable type looked up afterwards.
+        var svc = NewService();
+
+        var missing = svc.ResolveBloodFields(typeof(BloodDataMissing));
+        Assert.False(missing.PercentReadable);
+        Assert.False(missing.StageReadable);
+
+        var readable = svc.ResolveBloodFields(typeof(BloodDataViaFields));
+        Assert.True(readable.PercentReadable);
+        Assert.True(readable.StageReadable);
+    }
 }

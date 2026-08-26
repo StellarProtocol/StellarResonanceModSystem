@@ -65,12 +65,13 @@ internal sealed partial class EntityVitalsService : IBossVitals
     private MethodInfo? _bindWatcherMethod;      // ZEntityMgr.BindEntityLuaAttrWatcher(long, uint[], Action<ZEntity>) → uint
     private MethodInfo? _unbindWatcherMethod;    // ZEntityMgr.UnbindEntityLuaAttrWater(long, uint)
 
-    // BossBloodLogicData field/property handles — resolved from the live result type on first success.
-    private bool          _bloodFieldsResolved;
-    private FieldInfo?    _percentField;
-    private PropertyInfo? _percentProperty;
-    private FieldInfo?    _stageField;
-    private PropertyInfo? _stageProperty;
+    // BossBloodLogicData field/property handles + the Il2CppInterop Nullable-wrapper shape, BOTH keyed
+    // by the observed CLR Type rather than a single latch (field-failure review fix, sea/WwLG5Bq4ni,
+    // point 2) — a miss for one Type is recorded as unreadable for THAT Type only, never latched
+    // globally, so seeing the wrapper type first can't permanently poison field resolution for the
+    // (different) unwrapped value type seen right after. See EntityVitalsService.Reflection.cs.
+    private readonly Dictionary<Type, NullableWrapperHandles> _nullableWrapperHandlesByType = new();
+    private readonly Dictionary<Type, BloodFieldHandles> _bloodFieldHandlesByType = new();
 
     private readonly Dictionary<long, (int Percent, int Stage)> _cache = new();
     private readonly HashSet<long> _dirty = new();
@@ -94,7 +95,8 @@ internal sealed partial class EntityVitalsService : IBossVitals
         if (_mgrInstanceProperty is null || _getEntityMethod is null || _conversionMethod is null)
             return false;
 
-        if (TryReadLive(id.Value, out var pct, out var stg))
+        var readOk = TryReadLive(id.Value, out var pct, out var stg);
+        if (readOk && pct > 0)
         {
             SetCache(id.Value, pct, stg);
             // C3a review fix: only start watching AFTER a live read actually returned boss-blood data
@@ -109,9 +111,14 @@ internal sealed partial class EntityVitalsService : IBossVitals
             DiagNativeRead(id, pct, stg);
             return true;
         }
-        // Live read missed THIS frame (culled / not resolvable) — fall back to the last-known cached
-        // value (populated by a previous live read here, or by the watcher's dirty-drain in Tick).
-        // Stale-but-known beats Unknown — the same principle as the L1 wire fix (decision 1).
+        // Field-failure fix (sea/WwLG5Bq4ni, point 3): a native read that came back 0% is treated as a
+        // NON-observation, identically to a failed live read — a genuine 0% only occurs at death,
+        // already covered by MarkDead/wire, so a 0 here carries no information worth acting on and
+        // must NOT be cached (that would let a spurious 0 poison a stale-but-real prior value) or start
+        // a watcher. This is what restores dungeon boss-HP capture even if the interop surface stays
+        // broken in some other way we haven't found yet. Falls back to the last-known cached value
+        // exactly like a failed live read (stale-but-known beats Unknown, decision 1's principle).
+        if (readOk) DiagNativeZeroSuppressed(id, stg);
         return TryGetCached(id.Value, out percent, out stage);
     }
 
@@ -216,7 +223,10 @@ internal sealed partial class EntityVitalsService : IBossVitals
         }
         foreach (var uuid in batch)
         {
-            if (TryReadLive(uuid, out var pct, out var stg)) SetCache(uuid, pct, stg);
+            // Same "0 is a non-observation, never cached" rule as TryGetBlood (point 3 fix) — without
+            // it, this watcher-driven background path could poison the cache with a spurious 0 that a
+            // LATER TryGetBlood call would then read back out via TryGetCached, undoing the fix there.
+            if (TryReadLive(uuid, out var pct, out var stg) && pct > 0) SetCache(uuid, pct, stg);
         }
     }
 
