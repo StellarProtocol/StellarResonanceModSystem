@@ -29,6 +29,10 @@ internal sealed partial class PandaCombatStubProbe
     private readonly DungeonRunIdResolver  _runIdResolver;
     private readonly WireEntityPositions   _positions;
     private readonly IPluginLog            _log;
+    // Diagnostics-only (recon §6 grammar line 1: isBoss/exists/active on the appear/disappear life
+    // trace) — the probe never gates a capture/decision on this, only logs through it when
+    // STELLAR_DIAGNOSTICS is on. See PandaCombatStubProbe.Diagnostics.cs DiagEntityLife.
+    private readonly EntityVitalsService   _entityVitals;
 
     /// <summary>
     /// Cached local entity uuid. Set when <see cref="OnSelfDelta"/> first
@@ -52,12 +56,14 @@ internal sealed partial class PandaCombatStubProbe
         ICombatEventSink sink,
         DungeonRunIdResolver runIdResolver,
         WireEntityPositions positions,
-        IPluginLog log)
+        IPluginLog log,
+        EntityVitalsService entityVitals)
     {
         _sink          = sink          ?? throw new ArgumentNullException(nameof(sink));
         _runIdResolver = runIdResolver ?? throw new ArgumentNullException(nameof(runIdResolver));
         _positions     = positions     ?? throw new ArgumentNullException(nameof(positions));
         _log           = log           ?? throw new ArgumentNullException(nameof(log));
+        _entityVitals  = entityVitals  ?? throw new ArgumentNullException(nameof(entityVitals));
     }
 
     /// <summary>Clear the cached local entity uuid on logout so the next account doesn't inherit the

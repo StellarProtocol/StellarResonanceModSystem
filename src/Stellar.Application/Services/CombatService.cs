@@ -325,10 +325,10 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         _serverNowMs = epochMs;
     }
 
-    public void OnEntityDisappeared(EntityId entityId)
+    public void OnEntityDisappeared(EntityId entityId, EntityDisappearReason reason = EntityDisappearReason.Unknown)
     {
         RemoveEntityBuffs(entityId);
-        _entities.OnEntityDisappeared(entityId);
+        _entities.OnEntityDisappeared(entityId, reason);
     }
 
     // Shared by OnEntityDisappeared (AOI-disappear) and SweepIdleEntities (idle-TTL eviction) —

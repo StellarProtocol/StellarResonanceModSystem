@@ -64,8 +64,15 @@ internal interface ICombatEntityCache
     /// <summary>Idempotent — only the first non-None value sticks.</summary>
     void SetLocalEntityId(EntityId entityId);
 
-    /// <summary>Called when SyncNearEntities reports a disappear — sink drops cache rows.</summary>
-    void OnEntityDisappeared(EntityId entityId);
+    /// <summary>
+    /// Called when SyncNearEntities reports a disappear — sink drops cache rows. <paramref name="reason"/>
+    /// distinguishes an <see cref="EntityDisappearReason.Normal"/> AOI-leave (vitals + the raw attr map are
+    /// KEPT — stale-but-known beats Unknown, the 2026-08-26 raid-bosshp-capture-design L1 fix) from a real
+    /// death/destroy/transfer (evicted, same as before). Defaults to <see cref="EntityDisappearReason.Unknown"/>
+    /// — the safe "evict everything" behavior — for non-wire callers (e.g. the idle-entity sweep) that have
+    /// no disappear-type context.
+    /// </summary>
+    void OnEntityDisappeared(EntityId entityId, EntityDisappearReason reason = EntityDisappearReason.Unknown);
 
     /// <summary>
     /// Drop ALL per-entity cache rows (vitals/dps/hps/team/fight-point/skills/attrs/equip/fashion/names).

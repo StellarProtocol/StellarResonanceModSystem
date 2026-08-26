@@ -44,11 +44,17 @@ internal sealed partial class PandaCombatStubProbe
         if (!SyncNearEntitiesReader.TryReadAppearAndDisappear(span, out var appears, out var disappears))
             return;
 
-        // Disappears — drop combat-cache rows for entities that left AOI.
+        // Disappears — drop combat-cache rows for entities that left AOI. EDisappearNormal (left AOI,
+        // still alive elsewhere) is handed through as a reason so the sink KEEPS vitals/attrs instead
+        // of evicting them (L1 fix, 2026-08-26 raid-bosshp-capture-design) — everything else (Dead/
+        // Destroy/TransferLeave/unrecognized future values) evicts exactly as before.
         foreach (var d in disappears)
         {
-            _sink.OnEntityDisappeared(new EntityId(d));
-            _positions.Remove(d);
+            var reason = MapDisappearReason(d.DisappearType);
+            var eid = new EntityId(d.Uuid);
+            _sink.OnEntityDisappeared(eid, reason);
+            _positions.Remove(d.Uuid);
+            DiagEntityLife(eid, "disappear", reason);
         }
 
         // Appears — extract AttrName + the skill loadout (AttrSkillLevelIdList) from each entity's
@@ -58,9 +64,14 @@ internal sealed partial class PandaCombatStubProbe
         foreach (var entity in appears)
         {
             DiagAppearEntity(entity);
-            ReadAppearEntity(new EntityId(entity.Uuid), entity.Attrs, ts);
+            var eid = new EntityId(entity.Uuid);
+            ReadAppearEntity(eid, entity.Attrs, ts);
+            DiagEntityLife(eid, "appear", EntityDisappearReason.Unknown);
         }
     }
+
+    // ResolveMaxHp / MapDisappearReason / ApplyParsedDelta live in PandaCombatStubProbe.Vitals.cs
+    // (extracted to keep this file under the 500-LoC file-size gate).
 
     // Per-entity attr fan-out for a SyncNearEntities APPEAR. Extracted from OnNearEntities to
     // keep both bodies under the 50-LoC gate. NEW vs the old inline walk: AttrHp/AttrMaxHp are
@@ -72,7 +83,7 @@ internal sealed partial class PandaCombatStubProbe
     {
         if (attrsOpt is not { } attrs) return;
         long summonerId = 0, topSummonerId = 0;
-        long hp = -1, maxHp = -1;
+        long hp = -1, maxHpBase = -1, maxHpTotal = -1;
         for (int i = 0; i < attrs.Items.Count; i++)
         {
             var attr = attrs.Items[i];
@@ -81,8 +92,9 @@ internal sealed partial class PandaCombatStubProbe
                 var name = attr.DecodedString;
                 if (!string.IsNullOrEmpty(name)) _sink.UpdateEntityName(eid, name!);
             }
-            else if (attr.Id == AttrTypeIds.AttrHp)    { hp = attr.DecodedLong; }
-            else if (attr.Id == AttrTypeIds.AttrMaxHp) { maxHp = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrHp)         { hp = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrMaxHp)      { maxHpBase = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrMaxHpTotal) { maxHpTotal = attr.DecodedLong; }
             else if (attr.Id == AttrTypeIds.AttrFightPoint)
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
@@ -100,11 +112,13 @@ internal sealed partial class PandaCombatStubProbe
                 CaptureEntityDetail(eid, attr, "appear");
             }
         }
+        long maxHp = ResolveMaxHp(maxHpBase, maxHpTotal);
         if (hp >= 0 || maxHp >= 0)
         {
             _sink.UpdateEntityVitals(eid, hp, maxHp);
             DiagAppearVitalsSeed(eid, hp, maxHp);
         }
+        DiagBossHpWire(eid, "appear", hp, maxHpBase, maxHpTotal);
         EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
     }
 
@@ -314,7 +328,7 @@ internal sealed partial class PandaCombatStubProbe
 
     private void ApplyAttrDeltasForEntity(EntityId eid, AttrCollectionMsg attrCol)
     {
-        long hp = -1, maxHp = -1;
+        long hp = -1, maxHpBase = -1, maxHpTotal = -1;
         long? teamId = null;
         long? fightPoint = null;
         for (int i = 0; i < attrCol.Items.Count; i++)
@@ -332,7 +346,11 @@ internal sealed partial class PandaCombatStubProbe
             }
             else if (attr.Id == AttrTypeIds.AttrMaxHp)
             {
-                maxHp = attr.DecodedLong;
+                maxHpBase = attr.DecodedLong;
+            }
+            else if (attr.Id == AttrTypeIds.AttrMaxHpTotal)
+            {
+                maxHpTotal = attr.DecodedLong;
             }
             else if (attr.Id == AttrTypeIds.AttrTeamId)
             {
@@ -355,13 +373,7 @@ internal sealed partial class PandaCombatStubProbe
                 CaptureEntityDetail(eid, attr, "delta");
             }
         }
-        if (hp >= 0 || maxHp >= 0)     _sink.UpdateEntityVitals(eid, hp, maxHp);
-        if (teamId is long t)          _sink.UpdateEntityTeamId(eid, t);
-        if (fightPoint is long fp)
-        {
-            _sink.UpdateEntityFightPoint(eid, fp);
-            _sink.SetEntityAttribute(eid, AttrTypeIds.AttrFightPoint, fp);
-        }
+        ApplyParsedDelta(eid, (hp, maxHpBase, maxHpTotal), teamId, fightPoint);
     }
 
     // Inspector-detail capture shared by all three attr-iteration sites
