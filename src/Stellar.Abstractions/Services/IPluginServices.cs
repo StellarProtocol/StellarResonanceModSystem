@@ -111,4 +111,8 @@ public interface IPluginServices
     /// <summary>Live Deep-Slumber Psychoscope (season cultivate) state — level, lines, socketed
     /// cards, node levels. Read live per call; never sourced from a saved profile.</summary>
     IDeepSlumber DeepSlumber { get; }
+    /// <summary>Native boss-HP tap — reads the same merged entity store the game's own boss bar
+    /// reads, immune to the combat wire mirror's AOI-eviction (see <see cref="ICombatLookup.GetVitals"/>
+    /// for the wire-derived fallback).</summary>
+    IBossVitals BossVitals { get; }
 }

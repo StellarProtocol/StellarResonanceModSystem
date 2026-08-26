@@ -53,6 +53,7 @@ internal sealed class PluginServices : IPluginServices
     public IHarmonyHost Harmony { get; }
     public ILocalization Localization { get; }
     public IDeepSlumber DeepSlumber { get; }
+    public IBossVitals BossVitals { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -102,7 +103,8 @@ internal sealed class PluginServices : IPluginServices
         IDeepSlumber deepSlumber,
         IWardrobe wardrobe,
         IWardrobePreview wardrobePreview,
-        IRunTimer runTimer)
+        IRunTimer runTimer,
+        IBossVitals bossVitals)
     {
         Log = log;
         Framework = framework;
@@ -152,5 +154,6 @@ internal sealed class PluginServices : IPluginServices
         Wardrobe = wardrobe;
         WardrobePreview = wardrobePreview;
         RunTimer = runTimer;
+        BossVitals = bossVitals;
     }
 }

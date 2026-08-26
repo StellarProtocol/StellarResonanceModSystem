@@ -100,6 +100,11 @@ public sealed partial class BootstrapPlugin : BasePlugin
     // read by EntityTransformsService as the zero-sentinel fallback. Field initializer so it exists
     // whenever either wiring method runs (BuildInfraServices vs InstallWireAndStubProbes — order-free).
     private readonly Stellar.Infrastructure.Game.WireEntityPositions _wirePositions = new();
+    // Built in BuildInfraServices (Load(), before InstallWireAndStubProbes in OnHotUpdateReady) — the
+    // ctor needs _combatService, unlike _wirePositions, so it can't be a field initializer. Order is
+    // guaranteed (WireGameEventsAndPluginHost always precedes ApplyLifecyclePatches — see BootstrapPlugin's
+    // Load()/OnHotUpdateReady() call-order doc), so this is non-null by the time InstallWireAndStubProbes reads it.
+    private Stellar.Infrastructure.Game.EntityVitalsService? _entityVitals;
     private PandaWireTap? _wireTap;
     private PandaChatProbe? _chatProbe;
     private PandaCombatStubProbe? _combatStubProbe;

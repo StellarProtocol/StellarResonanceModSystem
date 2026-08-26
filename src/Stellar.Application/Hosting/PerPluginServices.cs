@@ -89,6 +89,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IHarmonyHost Harmony => _harmony ?? _shared.Harmony;
     public ILocalization Localization => _localization ?? _shared.Localization;
     public IDeepSlumber DeepSlumber => _shared.DeepSlumber;
+    public IBossVitals BossVitals => _shared.BossVitals;
 }
 
 /// <summary>
