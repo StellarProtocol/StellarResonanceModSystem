@@ -46,6 +46,7 @@ internal sealed class PluginServices : IPluginServices
     public IPluginExchange Exchange { get; }
     public INoticeTips NoticeTips { get; }
     public IDungeonState Dungeon { get; }
+    public IRunTimer RunTimer { get; }
     public IEntityTransforms EntityTransforms { get; }
     public IGameEnvironment GameEnvironment { get; }
     public ILua Lua { get; }
@@ -100,7 +101,8 @@ internal sealed class PluginServices : IPluginServices
         ILocalization localization,
         IDeepSlumber deepSlumber,
         IWardrobe wardrobe,
-        IWardrobePreview wardrobePreview)
+        IWardrobePreview wardrobePreview,
+        IRunTimer runTimer)
     {
         Log = log;
         Framework = framework;
@@ -149,5 +151,6 @@ internal sealed class PluginServices : IPluginServices
         DeepSlumber = deepSlumber;
         Wardrobe = wardrobe;
         WardrobePreview = wardrobePreview;
+        RunTimer = runTimer;
     }
 }

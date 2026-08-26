@@ -90,6 +90,11 @@ public interface IPluginServices
     INoticeTips NoticeTips { get; }
     /// <summary>Current dungeon run: per-run unique id (<c>level_uuid</c>) and clear-time/score once the run settles.</summary>
     IDungeonState Dungeon { get; }
+    /// <summary>Run-timer identity anchor (value + latch epoch) for the current dungeon run —
+    /// the upgrade-proof companion of <see cref="Dungeon"/>'s
+    /// <see cref="IDungeonState.RunTimerStartMs"/>. See <see cref="IRunTimer"/> for why run
+    /// identity must compare the EPOCH, not the value.</summary>
+    IRunTimer RunTimer { get; }
     /// <summary>Reads live world transforms (position + facing) of entities by id — for replay/position capture.</summary>
     IEntityTransforms EntityTransforms { get; }
     /// <summary>Region + version identity of the running game install (SEA / JP), detected once at boot.</summary>

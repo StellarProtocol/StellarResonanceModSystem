@@ -82,6 +82,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IPluginExchange Exchange => _shared.Exchange;
     public INoticeTips NoticeTips => _shared.NoticeTips;
     public IDungeonState Dungeon => _shared.Dungeon;
+    public IRunTimer RunTimer => _shared.RunTimer;
     public IEntityTransforms EntityTransforms => _shared.EntityTransforms;
     public IGameEnvironment GameEnvironment => _shared.GameEnvironment;
     public ILua Lua => _shared.Lua;

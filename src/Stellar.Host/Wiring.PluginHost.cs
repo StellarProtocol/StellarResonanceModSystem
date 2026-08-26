@@ -94,7 +94,8 @@ public sealed partial class BootstrapPlugin
             _frameworkLocalization!,
             _deepSlumberService!,
             _wardrobeService!,
-            wardrobePreview);
+            wardrobePreview,
+            _dungeonStateService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
