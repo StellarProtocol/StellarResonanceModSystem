@@ -148,8 +148,11 @@ internal sealed partial class EntityVitalsService : IBossVitals
     /// invoke this from the network receive thread during exactly the mass-teardown window
     /// <c>docs/il2cpp-probing-safety.md</c> warns is unsafe for a live IL2CPP call, and the native
     /// watcher tokens are being invalidated by the scene teardown anyway — an orphaned native binding
-    /// is harmless (our callback only ever marks a managed dirty set; <see cref="Tick"/> silently
-    /// no-ops on an id we no longer track).
+    /// is harmless: its trampoline still closes over the old uuid and can still call
+    /// <c>MarkDirty</c> if it fires again, but that only re-adds the uuid to the (now-cleared)
+    /// <see cref="_dirty"/> set — the next <see cref="Tick"/> just does one benign extra live re-read
+    /// for that uuid via <c>TryReadLive</c> (itself liveness-gated, so a truly torn-down entity still
+    /// answers false), not a crash or a leak.
     /// </summary>
     public void Reset()
     {
@@ -188,10 +191,11 @@ internal sealed partial class EntityVitalsService : IBossVitals
     }
 
     // C3c review fix: caps the per-tick MethodInfo.Invoke cost. Only the ids actually TAKEN this tick
-    // are removed from _dirty — anything past the budget stays dirty and gets picked up on a later
-    // tick (round-robin: HashSet enumeration order isn't insertion-stable, so repeated calls naturally
-    // rotate through the set rather than starving the same tail entries forever). With C3a/C3b bounding
-    // the tracked set to real bosses/elites, the budget is a defensive cap, not a steady-state limiter.
+    // are REMOVED from _dirty — that removal is what prevents starvation, not enumeration order: an id
+    // left over past the budget simply stays in _dirty, so next tick's iteration set is the remainder
+    // (plus anything newly dirtied since), naturally rotating through rather than the same first-N
+    // winning forever. With C3a/C3b bounding the tracked set to real bosses/elites, the budget is a
+    // defensive cap, not a steady-state limiter.
     private const int MaxDrainPerTick = 8;
 
     private void DrainDirty()

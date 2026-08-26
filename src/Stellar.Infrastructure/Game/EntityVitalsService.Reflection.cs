@@ -40,8 +40,13 @@ internal sealed partial class EntityVitalsService
         var isBossProp = entityType.GetProperty("IsBoss", AnyInstance);
         if (instanceProp is null || getEntity is null || conversion is null || isBossProp is null) return;
 
-        // Resolved best-effort, retried every call while missing. IsEntityExist/IsEntityActive are
-        // MANDATORY for IsLive to ever return true (I3); the watcher pair stays genuinely optional.
+        // Resolved in the SAME deterministic pass as the core four handles above, NOT independently
+        // retried — EnsureResolved's guard only checks the core four, so once those resolve this method
+        // stops being called again and a handle missed here (mgrType resolved, but e.g. IsEntityExist's
+        // signature didn't match) never gets a second attempt. That's fine for IsEntityExist/
+        // IsEntityActive specifically: MANDATORY for IsLive to ever return true (I3), so a partial
+        // failure here is permanent and surfaces as the tap staying inert + DiagLivenessGateMissing's
+        // one-shot warning — not a silent degrade. The watcher pair stays genuinely optional either way.
         _isEntityExistMethod ??= mgrType.GetMethod("IsEntityExist", AnyInstance, binder: null, types: new[] { typeof(long) }, modifiers: null);
         _isEntityActiveMethod ??= mgrType.GetMethod("IsEntityActive", AnyInstance, binder: null, types: new[] { typeof(long) }, modifiers: null);
         _bindWatcherMethod ??= FindBindWatcherMethod(mgrType);

@@ -29,9 +29,12 @@ internal sealed partial class PandaCombatStubProbe
     private readonly DungeonRunIdResolver  _runIdResolver;
     private readonly WireEntityPositions   _positions;
     private readonly IPluginLog            _log;
-    // Diagnostics-only (recon §6 grammar line 1: isBoss/exists/active on the appear/disappear life
-    // trace) — the probe never gates a capture/decision on this, only logs through it when
-    // STELLAR_DIAGNOSTICS is on. See PandaCombatStubProbe.Diagnostics.cs DiagEntityLife.
+    // Native boss-vitals cache: OnEnterScene calls _entityVitals.Reset() to bound it to one scene's
+    // lifetime (I1 review fix), mirroring _sink.ResetEntities()/_positions.Clear() just above it —
+    // a real lifecycle dependency, not diagnostics-only. Also used by DiagEntityLife's uuid/event/
+    // disappearType trace (PandaCombatStubProbe.Diagnostics.cs), which — after the C2 review fix —
+    // never calls back into it (that trace no longer touches EntityVitalsService at all; it stays
+    // main-thread-only, never invoked from this probe's network-receive-thread handlers).
     private readonly EntityVitalsService   _entityVitals;
 
     /// <summary>
