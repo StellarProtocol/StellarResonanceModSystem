@@ -178,6 +178,40 @@ internal sealed partial class PandaLoadoutProbe
         catch { return null; }
     }
 
+    // Lua global the combat-state probe writes; C# reads it back the SAME tick (DoString is synchronous).
+    private const string InCombatGlobal = "_StellarInCombat";
+
+    // Mirrors the game's OWN "am I in combat" check (game source
+    // lua/ui/view/fighterbtns_view.lua:987,1043):
+    //   PlayerEnt:GetLuaLocalAttrInBattleShow()  -- client-local in-battle flag
+    //   or PlayerEnt:GetLuaIsInCombat()          -- server combat state (AttrCombatState > 0)
+    // Each call is self-pcall'd; the rawset is OUTSIDE every guard so the global is ALWAYS written — a nil
+    // PlayerEnt (not in world) or a failed read yields "0" (not in combat), the safe default that lets the
+    // refresh proceed. Reads LOCAL Lua state only — no RPC, nothing yields.
+    private const string InCombatChunk =
+        " local inc=0" +
+        " pcall(function()" +
+        "  local pe=(Z.EntityMgr).PlayerEnt" +
+        "  if pe~=nil then" +
+        "   local a=false local b=false" +
+        "   pcall(function() a=pe:GetLuaLocalAttrInBattleShow() end)" +
+        "   pcall(function() b=pe:GetLuaIsInCombat() end)" +
+        "   if a==true or b==true then inc=1 end" +
+        "  end" +
+        " end)" +
+        " rawset(_G,\"" + InCombatGlobal + "\", tostring(inc))";
+
+    /// <summary>True when the local player is in combat, per the game's own check
+    /// (<c>PlayerEnt:GetLuaLocalAttrInBattleShow() or PlayerEnt:GetLuaIsInCombat()</c>). Used to DEFER the
+    /// combat-gated <c>SyncProjectList</c> RPC (see <see cref="RefreshIfDue"/>). A dispatch/read failure
+    /// returns <c>false</c> (not in combat) — the same never-block-on-a-broken-bridge default the other
+    /// reads use; only a broken bridge reaches it, and that already disables the whole probe.</summary>
+    private bool IsLocalPlayerInCombat()
+    {
+        if (!InvokeChunk(InCombatChunk)) return false;
+        return ReadLuaGlobalString(InCombatGlobal) == "1";
+    }
+
     // The tolua# LuaState string indexer returns the Lua string boxed as an
     // Il2CppSystem.Object whose managed ToString() yields the wrapper type name, not
     // the content. Decode the underlying IL2CPP string via the interop runtime.
