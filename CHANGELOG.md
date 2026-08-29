@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.4.1] - 2026-08-29
+_**2.4.1** (patch) — stops a repeated combat popup during long fights. No API change; binary-compatible with all existing plugins._
+### Fixed
+- No more repeated "Cannot perform this action during combat" popup during long fights. It could appear every few seconds in sustained combat, even with no plugins installed.
+### Developer notes
+- `PandaLoadoutProbe` now defers only the combat-gated `SyncProjectList` RPC (`AsyncGetRolePlanData`) while the local player is in combat, using the game's own in-combat check (`GetLuaLocalAttrInBattleShow()`/`GetLuaIsInCombat()`, fail-safe to not-in-combat), and fires exactly one refresh at combat end; the RPC-free live-state re-read keeps running in combat. Root cause: every CharSerialize merge re-armed `_refreshPending`, and the server rejects the RPC in combat (ErrStateIllegal 3202), which the game's own wrapper toasts (~every 5s as deltas drip in). Infrastructure-only (`PandaLoadoutProbe`, `PandaLoadoutProbe.Resolution`); no API change — binary-compatible with all existing plugins. +7 `PandaLoadoutProbeRefreshGateTests`. (#72)
+
 ## [2.4.0] - 2026-08-25
 _**2.4.0** (minor) — plugins can now save your outfits and switch between them, with a live 3D preview. Additive, binary-compatible with plugins built against ≤2.3.0._
 ### Added
