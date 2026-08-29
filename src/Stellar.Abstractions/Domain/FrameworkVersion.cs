@@ -19,6 +19,17 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.4.1 is a fix: the framework-only "Cannot perform this action during combat"
+    /// toast (~every 5s in sustained open-world combat) is gone. Root cause: every
+    /// CharSerialize merge re-armed the loadout refresh, whose weapon-VM
+    /// <c>SyncProjectList</c> RPC the server rejects in combat (ErrStateIllegal 3202)
+    /// and the game's own wrapper toasts. <c>PandaLoadoutProbe.DecideRefresh</c> now
+    /// defers ONLY that RPC while the local player is in combat (game's own check),
+    /// keeping the pending/first-refresh state armed so exactly one refresh fires at
+    /// combat end; the RPC-free live-state re-read keeps running in combat.
+    /// Infrastructure-only — no API change, binary-compatible with all existing plugins.
+    /// (2.4.0 shipped the Wardrobe surface but did not bump this constant; 2.4.1
+    /// realigns it.)
     /// 2.2.0 is the live-build release. Adds <c>ILoadout.LiveState</c> (<c>LiveLoadoutState</c> — the
     /// live class + talents, never a saved plan), <c>ILoadout.LiveStateChanged</c> (ONE game-tick event
     /// covering the whole build: equipped gear/module slots, class, talent stage/nodes, the equipped
@@ -136,5 +147,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.3.0";
+    public const string Value = "2.4.1";
 }
