@@ -24,6 +24,26 @@ public sealed class DeepSlumberReconcilerTests
         return new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(areaId, f) });
     }
 
+    // Live state with an activated tree (anchors) on the area, plus optional middle factors.
+    private static DeepSlumberState StateTree(int areaId, bool active, int[] anchors, params (int node, int item)[] mids)
+    {
+        var midList = new List<int[]>();
+        foreach (var m in mids) midList.Add(new[] { m.node, m.item });
+        var normalList = new List<int[]>();
+        foreach (var n in anchors) normalList.Add(new[] { n, 1 }); // [nodeId, activeLevel] — level is presence-only
+        var area = new DeepSlumberArea(areaId, active, 0, new List<int[]>(), midList, normalList);
+        var line = new DeepSlumberLine(3, 800522, new List<DeepSlumberArea> { area });
+        return new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine> { line });
+    }
+
+    // Target setup that captures a tree (NormalNodes non-null) — the new binding shape.
+    private static DeepSlumberSetup SetupTree(int areaId, int[] anchors, params (int node, int item)[] factors)
+    {
+        var f = new List<int[]>();
+        foreach (var x in factors) f.Add(new[] { x.node, x.item });
+        return new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(areaId, f) { NormalNodes = anchors.ToList() } });
+    }
+
     [Fact]
     public void IdenticalState_PlansNothing()
     {
@@ -132,5 +152,78 @@ public sealed class DeepSlumberReconcilerTests
         var ops = DeepSlumberReconciler.Plan(State(5, false), Setup(5, (118, 222)));
         Assert.Equal(DeepSlumberOpKind.EnableLine, ops[0].Kind);
         Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor);
+    }
+
+    // ── Tree (Anchors of the Mind / normal nodes) reconcile — owner ruling 2026-09-01 ──────────────
+    // A bound setup can share the LINE but differ in the TREE inside. The game has NO per-node anchor
+    // removal (only whole-area ResetAllNodes), so a differing tree must be reset + rebuilt before any
+    // factor lands (else the target factor's Cursor is never unlocked → "partly applied").
+
+    [Fact]
+    public void SameTree_DiffersOnlyByFactor_NoReset_NoActivate()
+    {
+        // Live and target trees are identical (anchors {1001,1002}); only a factor differs. The existing
+        // factor diff runs; no tree op is emitted (a reset would waste the game's reset currency).
+        var ops = DeepSlumberReconciler.Plan(
+            StateTree(5, true, new[] { 1001, 1002 }, (118, 111)),
+            SetupTree(5, new[] { 1001, 1002 }, (118, 222))).ToList();
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ResetNodes);
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ActivateNode);
+        var u = ops.IndexOf(DeepSlumberOp.Unsocket(118, 111));
+        var s = ops.IndexOf(DeepSlumberOp.Socket(118, 222));
+        Assert.True(u >= 0 && s >= 0 && u < s, "same tree still does the ordinary unsocket→socket factor diff");
+    }
+
+    [Fact]
+    public void TreeDiffers_ResetsThenActivatesTargetTreeThenSockets()
+    {
+        // Live tree {1001,1002} with a factor; target tree {1001,1003} with a factor. Trees differ and
+        // the live tree has anchors to remove → reset the area, re-activate the target anchors, then
+        // socket the target factor. No unsocket (the reset already cleared the live factor).
+        var ops = DeepSlumberReconciler.Plan(
+            StateTree(5, true, new[] { 1001, 1002 }, (118, 111)),
+            SetupTree(5, new[] { 1001, 1003 }, (200, 999))).ToList();
+
+        var reset = ops.FindIndex(o => o == DeepSlumberOp.ResetNodes(5));
+        var act1001 = ops.FindIndex(o => o == DeepSlumberOp.ActivateNode(1001));
+        var act1003 = ops.FindIndex(o => o == DeepSlumberOp.ActivateNode(1003));
+        var socket = ops.FindIndex(o => o == DeepSlumberOp.Socket(200, 999));
+
+        Assert.True(reset >= 0, "must reset the differing area");
+        Assert.True(act1001 >= 0 && act1003 >= 0, "must re-activate every target anchor");
+        Assert.True(socket >= 0, "must socket the target factor");
+        Assert.True(reset < act1001 && reset < act1003, "reset precedes anchor activation");
+        Assert.True(act1001 < socket && act1003 < socket, "anchors are activated before factors are socketed");
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ActivateNode && o.Key == 1002);
+    }
+
+    [Fact]
+    public void FreshArea_EmptyLiveTree_ActivatesWithoutReset()
+    {
+        // Live area is active but empty (no anchors, no factors); target wants anchors + a factor. There
+        // is nothing to remove, so NO reset (don't spend reset currency) — just build the tree, then socket.
+        var ops = DeepSlumberReconciler.Plan(
+            StateTree(5, true, System.Array.Empty<int>()),
+            SetupTree(5, new[] { 1001 }, (118, 222))).ToList();
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ResetNodes);
+        var act = ops.FindIndex(o => o == DeepSlumberOp.ActivateNode(1001));
+        var socket = ops.FindIndex(o => o == DeepSlumberOp.Socket(118, 222));
+        Assert.True(act >= 0 && socket >= 0 && act < socket, "activate the new anchor before socketing");
+    }
+
+    [Fact]
+    public void LegacyBinding_NullTree_NeverResetsOrActivates()
+    {
+        // A binding stored before tree-capture existed carries NO tree (NormalNodes == null). We must
+        // never reset/rebuild from it (that would nuke the live tree) — it stays factor-only, exactly
+        // as it behaved before. Live has anchors; the legacy target names none.
+        var ops = DeepSlumberReconciler.Plan(
+            StateTree(5, true, new[] { 1001, 1002 }, (118, 111)),
+            Setup(5, (118, 222))).ToList(); // Setup(...) → NormalNodes null (legacy)
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ResetNodes);
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.ActivateNode);
+        Assert.Contains(DeepSlumberOp.Unsocket(118, 111), ops); // still the ordinary factor diff
+        Assert.Contains(DeepSlumberOp.Socket(118, 222), ops);
     }
 }

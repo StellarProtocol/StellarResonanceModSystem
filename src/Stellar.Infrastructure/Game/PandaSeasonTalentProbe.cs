@@ -12,8 +12,9 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// Reflection-based <see cref="IDeepSlumberWriteProbe"/>. Drives the Deep-Slumber (season cultivate /
-/// Psychoscope) write verbs — enable a cultivate line, socket/unsocket a phantom factor — through the
-/// game's own <b>WorldProxy</b> RPCs directly (<c>zproxy.world_proxy</c>), "Approach A" per
+/// Psychoscope) write verbs — enable a cultivate line, reset an area's tree, activate a normal node,
+/// socket/unsocket a phantom factor — through the game's own <b>WorldProxy</b> RPCs directly
+/// (<c>zproxy.world_proxy</c>), "Approach A" per
 /// <c>docs/driving-game-actions.md</c> § CONFIRMED (spike 2026-08-24): the <c>season_talent</c> VM
 /// wrappers (<c>AsyncEnableCultivateLine</c> et al.) SWALLOW their reply (<c>ShowErrorCode(reply)</c>
 /// then no <c>return</c>), so driving the VM wrapper gives nothing to act on. The raw RPC instead
@@ -83,8 +84,20 @@ internal sealed partial class PandaSeasonTalentProbe : IDeepSlumberWriteProbe
 
     public bool IsResolved => _bridgeResolved;
 
+    /// <summary>True while a Deep-Slumber apply has ops queued or in flight. Read on the main Update tick
+    /// by <see cref="PandaLoadoutProbe"/> to defer its full-container refresh walk until the apply settles
+    /// (else the per-op CharSerialize deltas re-fire the walk every cooldown → frame hitches). Main-thread
+    /// read; <c>_toDispatch</c> is concurrent, <c>_inflight</c> is mutated only on this same tick.</summary>
+    internal bool HasPendingWrites => !_toDispatch.IsEmpty || _inflight.Count > 0;
+
     public Task<int> EnableLineAsync(int areaId, CancellationToken ct)
         => Enqueue(opId => EnableChunk(areaId, ResultGlobal(opId)), ct);
+
+    public Task<int> ResetNodesAsync(int areaId, CancellationToken ct)
+        => Enqueue(opId => ResetChunk(areaId, ResultGlobal(opId)), ct);
+
+    public Task<int> ActivateNodeAsync(int nodeId, CancellationToken ct)
+        => Enqueue(opId => ActivateChunk(nodeId, ResultGlobal(opId)), ct);
 
     public Task<int> SocketFactorAsync(int nodeId, int itemId, CancellationToken ct)
         => Enqueue(opId => SocketChunk(nodeId, itemId, ResultGlobal(opId)), ct);

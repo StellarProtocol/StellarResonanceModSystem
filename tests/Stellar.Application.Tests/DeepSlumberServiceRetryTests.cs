@@ -26,12 +26,16 @@ public sealed class DeepSlumberServiceRetryTests
         public bool IsResolved => true;
         public readonly List<string> Calls = new();
         public readonly Queue<int> EnableCodes = new();
+        public readonly Queue<int> ResetCodes = new();
+        public readonly Queue<int> ActivateCodes = new();
         public readonly Queue<int> SocketCodes = new();
         public readonly Queue<int> UnsocketCodes = new();
 
         private static int Next(Queue<int> q) => q.Count > 0 ? q.Dequeue() : DeepSlumberWriteCode.Ok;
 
         public Task<int> EnableLineAsync(int a, CancellationToken ct) { Calls.Add($"enable:{a}"); return Task.FromResult(Next(EnableCodes)); }
+        public Task<int> ResetNodesAsync(int a, CancellationToken ct) { Calls.Add($"reset:{a}"); return Task.FromResult(Next(ResetCodes)); }
+        public Task<int> ActivateNodeAsync(int n, CancellationToken ct) { Calls.Add($"activate:{n}"); return Task.FromResult(Next(ActivateCodes)); }
         public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct) { Calls.Add($"socket:{n}"); return Task.FromResult(Next(SocketCodes)); }
         public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct) { Calls.Add($"unsocket:{n}"); return Task.FromResult(Next(UnsocketCodes)); }
     }

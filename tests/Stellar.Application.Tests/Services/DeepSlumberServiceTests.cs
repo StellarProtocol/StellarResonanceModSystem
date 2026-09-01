@@ -24,6 +24,8 @@ public class DeepSlumberServiceTests
     {
         public bool IsResolved => true;
         public Task<int> EnableLineAsync(int areaId, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> ResetNodesAsync(int areaId, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> ActivateNodeAsync(int nodeId, CancellationToken ct) => Task.FromResult(0);
         public Task<int> SocketFactorAsync(int nodeId, int itemId, CancellationToken ct) => Task.FromResult(0);
         public Task<int> UnsocketFactorAsync(int nodeId, int currentItemId, CancellationToken ct) => Task.FromResult(0);
     }

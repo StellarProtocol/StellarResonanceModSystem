@@ -241,7 +241,15 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private Func<bool>? _inCombatProbe;
 
     // Outcome of the combat-gated refresh state machine — see DecideRefresh.
-    internal enum RefreshOutcome { Wait, Fire, DeferForCombat }
+    internal enum RefreshOutcome { Wait, Fire, DeferForCombat, DeferForDsWrite }
+
+    // Set by Host to the season-talent write probe's HasPendingWrites. While a plugin-driven Deep-Slumber
+    // apply is in flight, the server pushes a CharSerialize delta per op (reset + one-per-anchor activate +
+    // sockets), each re-arming _refreshPending; without this gate the full-container RefreshChunk walk
+    // re-fires every cooldown (~0.66 s) through the whole 1-2 s apply → 3-5 frame hitches. Defer (like
+    // combat) so the burst collapses into ONE refresh after the apply settles — the intermediate cultivate
+    // states are transient and never fought-with. Default: never in flight (no plugin / not wired in tests).
+    internal Func<bool> DsWriteInFlightProbe { get; set; } = static () => false;
 
     private void RefreshIfDue()
     {
@@ -258,9 +266,10 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // itself combat-locked, so plans only change out of combat; the RPC-free live-state re-read
         // (RefreshLiveStateIfArmed) keeps running in combat. The (Lua-backed) combat read is consulted only
         // when a refresh is otherwise due — DecideRefresh short-circuits on cooldown / nothing-pending first.
-        switch (DecideRefresh(_refreshedOnce, _refreshPending, _refreshCooldown > 0, _inCombatProbe))
+        switch (DecideRefresh(_refreshedOnce, _refreshPending, _refreshCooldown > 0, _inCombatProbe, DsWriteInFlightProbe))
         {
             case RefreshOutcome.DeferForCombat:
+            case RefreshOutcome.DeferForDsWrite:
                 _refreshCooldown = RefreshCooldownTicks;   // re-check ~0.66 s later, never every drain tick
                 break;
             case RefreshOutcome.Fire:
@@ -277,10 +286,14 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     /// while in combat and fires exactly once combat ends). <paramref name="inCombat"/> is a delegate so the
     /// Lua-backed combat read runs ONLY when a refresh is otherwise due — never on a cooldown tick and never
     /// when nothing is pending.</summary>
-    internal static RefreshOutcome DecideRefresh(bool refreshedOnce, bool refreshPending, bool cooldownActive, Func<bool> inCombat)
+    internal static RefreshOutcome DecideRefresh(bool refreshedOnce, bool refreshPending, bool cooldownActive,
+        Func<bool> inCombat, Func<bool> dsWriteInFlight)
     {
         if (cooldownActive) return RefreshOutcome.Wait;
-        if (refreshedOnce && !refreshPending) return RefreshOutcome.Wait;   // nothing due — no combat read
+        if (refreshedOnce && !refreshPending) return RefreshOutcome.Wait;   // nothing due — no combat/write read
+        // A plugin DS apply mutates cultivate state op-by-op; defer the walk until it settles (checked
+        // before the combat read — a DS apply only runs out of combat, so the Lua combat read is moot here).
+        if (dsWriteInFlight()) return RefreshOutcome.DeferForDsWrite;
         return inCombat() ? RefreshOutcome.DeferForCombat : RefreshOutcome.Fire;
     }
 

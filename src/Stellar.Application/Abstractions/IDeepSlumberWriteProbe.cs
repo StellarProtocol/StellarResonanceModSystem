@@ -11,6 +11,12 @@ internal interface IDeepSlumberWriteProbe
 {
     bool IsResolved { get; }
     Task<int> EnableLineAsync(int areaId, CancellationToken ct);
+    /// <summary>Reset every anchor + factor of one area to inactive (the game has no per-node anchor
+    /// removal — the only way to remove an anchor is a whole-area reset). Refunds consumed items and
+    /// returns every socketed factor to the bag; costs the game's reset currency.</summary>
+    Task<int> ResetNodesAsync(int areaId, CancellationToken ct);
+    /// <summary>Activate one normal node ("Anchor of the Mind") in the currently-active area.</summary>
+    Task<int> ActivateNodeAsync(int nodeId, CancellationToken ct);
     Task<int> SocketFactorAsync(int nodeId, int itemId, CancellationToken ct);
     Task<int> UnsocketFactorAsync(int nodeId, int currentItemId, CancellationToken ct);
 }
