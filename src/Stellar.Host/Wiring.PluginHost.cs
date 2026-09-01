@@ -65,7 +65,7 @@ public sealed partial class BootstrapPlugin
         IInventory inventory = SelectMockOrReal<IInventory>(
             "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log);
 
-        var (gameAssets, entityTransforms, portraitService, wardrobePreview) = BuildInfraServices(log);
+        var (gameAssets, entityTransforms, entityVitals, portraitService, wardrobePreview) = BuildInfraServices(log);
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
@@ -94,7 +94,9 @@ public sealed partial class BootstrapPlugin
             _frameworkLocalization!,
             _deepSlumberService!,
             _wardrobeService!,
-            wardrobePreview);
+            wardrobePreview,
+            _dungeonStateService!,
+            entityVitals);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
@@ -120,12 +122,23 @@ public sealed partial class BootstrapPlugin
     /// — extracted to keep that method under the 50-LoC analyzer gate.
     /// </summary>
     private (GameAssetsService gameAssets, EntityTransformsService entityTransforms,
+             EntityVitalsService entityVitals,
              Stellar.Infrastructure.Game.EntityPortraitService portraitService,
              Stellar.Infrastructure.Game.WardrobePreviewService wardrobePreview)
         BuildInfraServices(BepInExPluginLog log)
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
+        // Native boss-HP tap (2026-08-26 raid-bosshp-capture-design § decision 2) — reads the SAME
+        // merged entity store the game's own boss bar reads, immune by construction to the wire
+        // mirror's AOI-eviction starvation. _combatService doubles as ICombatLookup for the native-
+        // vs-wire diagnostic (grammar line 4).
+        var entityVitals = new EntityVitalsService(_gameTypeRegistry!, _combatService!, log);
+        _entityVitals = entityVitals;
+        // Drains the watcher's dirty set + runs the periodic dead-watched sweep — the "push, not poll"
+        // half of the no-polling doctrine (decision 2). Mirrors the other lightweight per-tick
+        // subscribers wired here (e.g. WireProfileCardActionInjector's _profileCardActionInjector.Tick()).
+        _framework!.Update += _ => entityVitals.Tick();
         _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);
@@ -140,7 +153,7 @@ public sealed partial class BootstrapPlugin
         var wardrobePreviewProbe = new Stellar.Infrastructure.Game.PandaWardrobePreviewProbe(_gameTypeRegistry!, log);
         var wardrobePreviewHost = new PortraitModelHost(_gameTypeRegistry!, log);
         var wardrobePreview = new Stellar.Infrastructure.Game.WardrobePreviewService(wardrobePreviewProbe, wardrobePreviewHost);
-        return (gameAssets, entityTransforms, portraitService, wardrobePreview);
+        return (gameAssets, entityTransforms, entityVitals, portraitService, wardrobePreview);
     }
 
     /// <summary>

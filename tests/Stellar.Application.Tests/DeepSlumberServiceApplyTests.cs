@@ -21,10 +21,12 @@ public sealed class DeepSlumberServiceApplyTests
     {
         public bool Resolved = true;
         public readonly List<string> Calls = new();
-        public int EnableCode, SocketCode, UnsocketCode;
+        public int EnableCode, ResetCode, ActivateCode, SocketCode, UnsocketCode;
         public System.Action? AfterCall;
         public bool IsResolved => Resolved;
         public Task<int> EnableLineAsync(int a, CancellationToken ct) { Calls.Add($"enable:{a}"); AfterCall?.Invoke(); return Task.FromResult(EnableCode); }
+        public Task<int> ResetNodesAsync(int a, CancellationToken ct) { Calls.Add($"reset:{a}"); AfterCall?.Invoke(); return Task.FromResult(ResetCode); }
+        public Task<int> ActivateNodeAsync(int n, CancellationToken ct) { Calls.Add($"activate:{n}"); AfterCall?.Invoke(); return Task.FromResult(ActivateCode); }
         public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct) { Calls.Add($"socket:{n}:{i}"); AfterCall?.Invoke(); return Task.FromResult(SocketCode); }
         public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct) { Calls.Add($"unsocket:{n}"); AfterCall?.Invoke(); return Task.FromResult(UnsocketCode); }
     }
@@ -42,6 +44,39 @@ public sealed class DeepSlumberServiceApplyTests
         var f = new List<int[]>();
         foreach (var (n, i) in factors) f.Add(new[] { n, i });
         return new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(areaId, f) });
+    }
+
+    private static DeepSlumberState LiveActiveTree(int areaId, int[] anchors, params (int, int)[] mids)
+    {
+        var m = new List<int[]>();
+        foreach (var (n, i) in mids) m.Add(new[] { n, i });
+        var normals = new List<int[]>();
+        foreach (var n in anchors) normals.Add(new[] { n, 1 });
+        var area = new DeepSlumberArea(areaId, true, 0, new List<int[]>(), m, normals);
+        return new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine> { new(3, 800522, new List<DeepSlumberArea> { area }) });
+    }
+
+    private static DeepSlumberSetup TargetTree(int areaId, int[] anchors, params (int, int)[] factors)
+    {
+        var f = new List<int[]>();
+        foreach (var (n, i) in factors) f.Add(new[] { n, i });
+        return new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(areaId, f) { NormalNodes = anchors } });
+    }
+
+    [Fact]
+    public async Task TreeDiffers_DrivesResetThenActivateThenSocket_InPhaseOrder()
+    {
+        // Live tree {1001,1002} + a factor; target tree {1001,1003} + a factor. The service must drive
+        // the ops in phase order: reset the area, activate every target anchor, then socket the factor —
+        // and issue NO unsocket (the reset already returned the live factor to the bag).
+        var read = new FakeRead { State = LiveActiveTree(5, new[] { 1001, 1002 }, (118, 111)) };
+        var write = new FakeWrite();
+        var svc = new DeepSlumberService(read, write);
+        var result = await svc.ApplySetupAsync(TargetTree(5, new[] { 1001, 1003 }, (200, 999)));
+
+        Assert.Equal(DeepSlumberApplyResult.Success, result);
+        Assert.Equal(new[] { "reset:5", "activate:1001", "activate:1003", "socket:200:999" }, write.Calls);
+        Assert.DoesNotContain(write.Calls, c => c.StartsWith("unsocket"));
     }
 
     [Fact]

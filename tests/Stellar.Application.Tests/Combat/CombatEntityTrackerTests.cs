@@ -171,6 +171,137 @@ public sealed class CombatEntityTrackerTests
         Assert.Null(tracker.GetEntityName(id));
     }
 
+    // ── OnEntityDisappeared: disappear-reason eviction matrix ─────────────────
+    // 2026-08-26 raid-bosshp-capture-design decision 1 (L1 fix): EDisappearNormal (left AOI, still
+    // alive elsewhere) keeps vitals + the raw attr map; every other reason evicts them exactly as
+    // before. Non-vitals state (dps/hps/teamid/fightpoint/equip/fashion) always evicts regardless of
+    // reason — only vitals/attrs are reason-conditional.
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_KeepsVitalsAndAttrs()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.SetEntityAttribute(id, attrId: 999, value: 42L);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        var v = tracker.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.Equal(5000L, v.Hp);
+        Assert.Equal(10000L, v.MaxHp);
+        Assert.Equal(42L, tracker.GetAttribute(id, 999));
+    }
+
+    // ── C1a review fix: EntityVitals.LeftAoi — the AOI-presence proxy plugin code needs now that
+    // IsKnown alone can no longer distinguish "currently in AOI" from "kept, stale, out of AOI". ────
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_SetsLeftAoiFlag()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        var v = tracker.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.True(v.LeftAoi);
+    }
+
+    [Fact]
+    public void LeftAoi_ClearedByNextVitalsObservation()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+        Assert.True(tracker.GetVitals(id).LeftAoi);
+
+        // Any subsequent real observation clears it — even a MaxHp-only delta (hp=-1 sentinel).
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: 10500);
+
+        Assert.False(tracker.GetVitals(id).LeftAoi);
+    }
+
+    [Fact]
+    public void LeftAoi_DefaultsFalse()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+
+        Assert.False(tracker.GetVitals(id).LeftAoi);
+    }
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_NoExistingRow_DoesNotThrow()
+    {
+        // A Normal disappear for an entity we never saw vitals for (row absent) — the flag-set path
+        // must no-op, not create a phantom row or throw.
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        Assert.False(tracker.GetVitals(id).IsKnown);
+    }
+
+    [Fact]
+    public void OnEntityDisappeared_Normal_StillEvictsNonVitalsState()
+    {
+        // Normal keeps ONLY vitals + the raw attr map — dps/hps/teamid/fightpoint are transient AOI
+        // state re-broadcast on re-appear, unaffected by the L1 fix's scope.
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.AccumulateDps(id, timestampMs: 1000, amount: 5000);
+        tracker.AccumulateHps(id, timestampMs: 1000, amount: 2000);
+        tracker.UpdateEntityTeamId(id, teamId: 5L);
+        tracker.UpdateEntityFightPoint(id, fightPoint: 777L);
+
+        tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        Assert.Equal(0L, tracker.GetLiveDps(id));
+        Assert.Equal(0L, tracker.GetLiveHps(id));
+        Assert.Equal(0L, tracker.GetTeamId(id));
+        Assert.Equal(0L, tracker.GetFightPoint(id));
+    }
+
+    [Theory]
+    [InlineData(EntityDisappearReason.Dead)]
+    [InlineData(EntityDisappearReason.Destroy)]
+    [InlineData(EntityDisappearReason.TransferLeave)]
+    [InlineData(EntityDisappearReason.Unknown)]
+    public void OnEntityDisappeared_NonNormalReason_EvictsVitalsAndAttrs(EntityDisappearReason reason)
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.SetEntityAttribute(id, attrId: 999, value: 42L);
+
+        tracker.OnEntityDisappeared(id, reason);
+
+        Assert.False(tracker.GetVitals(id).IsKnown);
+        Assert.Equal(0L, tracker.GetAttribute(id, 999));
+    }
+
+    [Fact]
+    public void OnEntityDisappeared_DefaultReasonIsUnknown_PreservesTodaysBehavior()
+    {
+        // Non-wire callers (e.g. the idle-entity sweep via EvictIdleEntity) call OnEntityDisappeared
+        // with no reason at all — the default must evict everything, unchanged from before this fix.
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0040L);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+
+        tracker.OnEntityDisappeared(id);
+
+        Assert.False(tracker.GetVitals(id).IsKnown);
+    }
+
     // ── OnEntityDisappeared: player display-name identity exemption ─────────
     // Mirrors the pre-existing _skillsByEntity exemption: a player walking out
     // of AOI shouldn't lose their resolved display name and degrade meter/
@@ -308,5 +439,20 @@ public sealed class CombatEntityTrackerTests
         Assert.Equal(EntityVitals.Unknown, svc.GetVitals(id));
         Assert.Equal(0L, svc.GetTeamId(id));
         Assert.Null(svc.GetEntityName(id));
+    }
+
+    [Fact]
+    public void CombatService_OnEntityDisappeared_ForwardsReasonToTracker_NormalKeepsVitals()
+    {
+        // CombatService.OnEntityDisappeared must thread its reason param through to the tracker
+        // unchanged — this is what makes the L1 fix reachable from the wire probe.
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var id = new EntityId(0x0000_0001_0000_0040L);
+
+        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        svc.OnEntityDisappeared(id, EntityDisappearReason.Normal);
+
+        Assert.True(svc.GetVitals(id).IsKnown);
+        Assert.Equal(5000L, svc.GetVitals(id).Hp);
     }
 }

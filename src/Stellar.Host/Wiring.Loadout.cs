@@ -51,6 +51,11 @@ public sealed partial class BootstrapPlugin
         // side (docs/driving-game-actions.md § CONFIRMED spike 2026-08-24).
         _seasonTalentWriteProbe = new PandaSeasonTalentProbe(log, typeRegistry);
         _deepSlumberService = new DeepSlumberService(_loadoutProbe, _seasonTalentWriteProbe);
+        // While a plugin DS apply is in flight, the loadout probe defers its full-container refresh walk
+        // so the per-op CharSerialize burst collapses into ONE refresh after the apply settles (owner
+        // 2026-09-01: reset+rebuild fired the walk 3-5× → frame hitches). Narrow: true only during a
+        // plugin-driven ApplySetupAsync, so a manual in-game switch is unaffected.
+        _loadoutProbe.DsWriteInFlightProbe = () => _seasonTalentWriteProbe!.HasPendingWrites;
 
         // Self equipped Battle Imagines (IResonanceState) — the SAME loadout probe (IResonanceProbe)
         // reads cs.resonance.installed via the Lua bridge's refresh chunk ("RES" row), NOT the C#

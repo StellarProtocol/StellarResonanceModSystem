@@ -14,7 +14,7 @@ namespace Stellar.Application.Services;
 /// <see cref="LastSettlement"/> on the main thread. State is published via
 /// volatile/interlocked so reads are lock-free and never tear.
 /// </summary>
-internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
+internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink, IRunTimer
 {
     private long _currentRunId;
     private int _currentDifficulty;
@@ -25,6 +25,11 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     // Interlocked.Read on _runTimerStartMs.
     private int _runTimerRank;
     private readonly object _runTimerLock = new();
+
+    // IRunTimer.Epoch backing: +1 per empty-slot latch, written only under _runTimerLock,
+    // read lock-free. NEVER cleared (ClearRunTimerLatch/Reset empty the value+rank slot only)
+    // so epoch comparisons cannot alias across runs.
+    private int _runTimerEpoch;
 
     // Settlement is a multi-field struct, so it can't be published with a single
     // volatile/interlocked write without tearing. Guard it with a small lock —
@@ -55,6 +60,10 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
     public int CurrentDifficulty => Interlocked.CompareExchange(ref _currentDifficulty, 0, 0);
 
     public long RunTimerStartMs => Interlocked.Read(ref _runTimerStartMs);
+
+    public long StartMs => RunTimerStartMs;
+
+    public int Epoch => Volatile.Read(ref _runTimerEpoch);
 
     public Stellar.Abstractions.Domain.DungeonOutcome LastOutcome
         => (Stellar.Abstractions.Domain.DungeonOutcome)Volatile.Read(ref _lastOutcome);
@@ -151,7 +160,13 @@ internal sealed class DungeonStateService : IDungeonState, IDungeonStateSink
             if (latchedRank != 0 && rank >= latchedRank) return RunTimerWrite.Ignored;
             Interlocked.Exchange(ref _runTimerStartMs, startMs);
             _runTimerRank = rank;
-            return latchedRank == 0 ? RunTimerWrite.Latched : RunTimerWrite.Upgraded;
+            if (latchedRank != 0) return RunTimerWrite.Upgraded;
+            // First value into the empty slot = the run got (re-)keyed — bump the identity
+            // epoch (IRunTimer.Epoch). A rank UPGRADE above moves the VALUE only: mid-run
+            // refinements must never look like a new run to identity consumers (raid
+            // run-split root cause, spec 2026-08-26).
+            Interlocked.Increment(ref _runTimerEpoch);
+            return RunTimerWrite.Latched;
         }
     }
 

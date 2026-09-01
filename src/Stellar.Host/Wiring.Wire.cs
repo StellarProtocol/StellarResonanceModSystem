@@ -39,7 +39,7 @@ public sealed partial class BootstrapPlugin
         var runIdResolver = new Stellar.Infrastructure.Game.DungeonRunIdResolver(
             _dungeonStateService!, _gameDataService!.World, _clientState!);
         _combatStubProbe = new PandaCombatStubProbe(
-            _combatService!, runIdResolver, _wirePositions, log);
+            _combatService!, runIdResolver, _wirePositions, log, _entityVitals!);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six
@@ -176,6 +176,7 @@ public sealed partial class BootstrapPlugin
         _partyService?.ClearSession();
         _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns
         _combatStubProbe?.ResetLocalEntityId();
+        _entityVitals?.Reset();                   // I1 review fix — mirrors the ClearSession reset above
         _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null);
     }
 

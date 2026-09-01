@@ -17,6 +17,15 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 internal readonly record struct AppearEntityMsg(long Uuid, AttrCollectionMsg? Attrs);
 
 /// <summary>
+/// One <c>disappear</c> entity entry. <see cref="DisappearType"/> is the raw
+/// <c>zproto.EDisappearType</c> wire int (field 2 on <c>DisappearEntity</c>) — 0 when the field was
+/// absent from the bytes, which is proto3's own default-value elision and is INDISTINGUISHABLE from
+/// an explicit 0 on the wire (both mean <c>EDisappearNormal</c>). Callers map this to
+/// <see cref="Stellar.Abstractions.Domain.EntityDisappearReason"/> (2026-08-26 raid-bosshp-capture-design).
+/// </summary>
+internal readonly record struct DisappearEntityMsg(long Uuid, int DisappearType);
+
+/// <summary>
 /// Pure parser for <c>SyncNearEntities</c> — the message that tells the client
 /// which entities entered or left its AOI.
 ///
@@ -40,7 +49,8 @@ internal readonly record struct AppearEntityMsg(long Uuid, AttrCollectionMsg? At
 ///   }
 ///   message DisappearEntity {
 ///     int64 uuid = 1;
-///     // other fields ignored
+///     EDisappearType type = 2;   // EdisappearNormal=0 (default, elided on the wire) / Dead=1 / Destroy=2 /
+///                                // TransferLeave=3 / TransferPassLineLeave=4 (Csharp.cs:60862-61039)
 ///   }
 /// </code>
 ///
@@ -96,29 +106,29 @@ internal static class SyncNearEntitiesReader
     public static bool TryReadAppearAndDisappear(
         ReadOnlySpan<byte> payload,
         out IReadOnlyList<AppearEntityMsg> appears,
-        out IReadOnlyList<long> disappearUuids)
+        out IReadOnlyList<DisappearEntityMsg> disappears)
     {
         var appearList    = new List<AppearEntityMsg>(2);
-        var disappearList = new List<long>(2);
+        var disappearList = new List<DisappearEntityMsg>(2);
         int pos = 0;
         while (pos < payload.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return Fail(out appears, out disappearUuids);
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return Fail(out appears, out disappears);
             switch ((field, wire))
             {
-                case (1, 2): if (!ReadAppearList(payload, ref pos, appearList))     return Fail(out appears, out disappearUuids); break;
-                case (2, 2): if (!ReadDisappearList(payload, ref pos, disappearList)) return Fail(out appears, out disappearUuids); break;
-                default:     if (!WireProtocol.SkipField(payload, ref pos, wire))    return Fail(out appears, out disappearUuids); break;
+                case (1, 2): if (!ReadAppearList(payload, ref pos, appearList))     return Fail(out appears, out disappears); break;
+                case (2, 2): if (!ReadDisappearList(payload, ref pos, disappearList)) return Fail(out appears, out disappears); break;
+                default:     if (!WireProtocol.SkipField(payload, ref pos, wire))    return Fail(out appears, out disappears); break;
             }
         }
-        appears        = appearList;
-        disappearUuids = disappearList;
+        appears   = appearList;
+        disappears = disappearList;
         return true;
 
-        static bool Fail(out IReadOnlyList<AppearEntityMsg> a, out IReadOnlyList<long> d)
+        static bool Fail(out IReadOnlyList<AppearEntityMsg> a, out IReadOnlyList<DisappearEntityMsg> d)
         {
             a = Array.Empty<AppearEntityMsg>();
-            d = Array.Empty<long>();
+            d = Array.Empty<DisappearEntityMsg>();
             return false;
         }
     }
@@ -130,10 +140,45 @@ internal static class SyncNearEntitiesReader
         return true;
     }
 
-    private static bool ReadDisappearList(ReadOnlySpan<byte> payload, ref int pos, List<long> disappearList)
+    private static bool ReadDisappearList(ReadOnlySpan<byte> payload, ref int pos, List<DisappearEntityMsg> disappearList)
     {
         if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var de)) return false;
-        if (TryReadDisappearUuid(de, out var u)) disappearList.Add(u);
+        if (TryReadDisappearEntity(de, out var entity)) disappearList.Add(entity);
+        return true;
+    }
+
+    /// <summary>Parse one wire <c>DisappearEntity</c> (uuid field 1 + <c>EDisappearType</c> field 2, varint).
+    /// <see cref="DisappearEntityMsg.DisappearType"/> defaults to 0 (<c>EdisappearNormal</c>) when field 2 is
+    /// absent — matching proto3's own default-value elision (the writer never emits the tag for the zero
+    /// value; see <c>DisappearEntity.WriteTo</c>, Csharp.cs:60974-60990). Returns false only when the uuid
+    /// itself can't be read (mirrors <see cref="TryReadDisappearUuid"/>'s contract).</summary>
+    private static bool TryReadDisappearEntity(ReadOnlySpan<byte> payload, out DisappearEntityMsg entity)
+    {
+        long uuid = 0;
+        int type = 0;
+        bool haveUuid = false;
+        int pos = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) { entity = default; return false; }
+            switch ((field, wire))
+            {
+                case (1, 0):
+                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) { entity = default; return false; }
+                    uuid = (long)u;
+                    haveUuid = true;
+                    break;
+                case (2, 0):
+                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var t)) { entity = default; return false; }
+                    type = (int)t;
+                    break;
+                default:
+                    if (!WireProtocol.SkipField(payload, ref pos, wire)) { entity = default; return false; }
+                    break;
+            }
+        }
+        if (!haveUuid) { entity = default; return false; }
+        entity = new DisappearEntityMsg(uuid, type);
         return true;
     }
 

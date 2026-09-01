@@ -12,12 +12,13 @@ namespace Stellar.Application.Services;
 /// <see cref="ApplySetupAsync"/> plans the live→target diff (<see cref="DeepSlumberReconciler"/>) and
 /// runs it through <see cref="IDeepSlumberWriteProbe"/>, aggregating the per-op codes.
 ///
-/// <para>The ops run in Kind-<b>phases</b> (enable → unsocket → socket) with a barrier between them;
-/// within a phase they fire concurrently and the write probe bounds real in-flight parallelism, so a
-/// many-factor loadout switch overlaps its server round-trips instead of paying one serially per op.
-/// The barrier preserves the two load-bearing invariants across phases — a line is enabled before its
-/// factors move, and every scarce single-copy factor is unsocketed (returned to the bag) before any
-/// socket needs it. A dropped request (no server reply → a <i>transient</i>
+/// <para>The ops run in Kind-<b>phases</b> (enable → reset → unsocket → activate → socket) with a
+/// barrier between them; within a phase they fire concurrently and the write probe bounds real in-flight
+/// parallelism, so a many-op loadout switch overlaps its server round-trips instead of paying one
+/// serially per op. The barrier preserves the load-bearing invariants across phases — a line is enabled
+/// before its nodes move, a differing tree is reset before it is rebuilt, every scarce single-copy factor
+/// is unsocketed (returned to the bag) before any socket needs it, and the target tree is activated
+/// before its cursors accept a factor. A dropped request (no server reply → a <i>transient</i>
 /// <see cref="DeepSlumberWriteCode"/>) is retried; a deterministic game refusal is not.</para></summary>
 internal sealed class DeepSlumberService : IDeepSlumber
 {
@@ -28,8 +29,13 @@ internal sealed class DeepSlumberService : IDeepSlumber
     private static readonly TimeSpan RetryBackoff = TimeSpan.FromMilliseconds(250);
 
     // Op-Kind order = the reconciler's flat emit order; one phase per Kind, barrier between phases.
+    // Enable a line before touching its nodes; reset a differing area before rebuilding it; free scarce
+    // factors (unsocket) before any socket; activate the target tree before its cursors accept a factor.
     private static readonly DeepSlumberOpKind[] Phases =
-        { DeepSlumberOpKind.EnableLine, DeepSlumberOpKind.UnsocketFactor, DeepSlumberOpKind.SocketFactor };
+    {
+        DeepSlumberOpKind.EnableLine, DeepSlumberOpKind.ResetNodes, DeepSlumberOpKind.UnsocketFactor,
+        DeepSlumberOpKind.ActivateNode, DeepSlumberOpKind.SocketFactor,
+    };
 
     private readonly IDeepSlumberProbe _probe;
     private readonly IDeepSlumberWriteProbe _write;
@@ -110,6 +116,8 @@ internal sealed class DeepSlumberService : IDeepSlumber
     private Task<int> Dispatch(DeepSlumberOp op, CancellationToken ct) => op.Kind switch
     {
         DeepSlumberOpKind.EnableLine => _write.EnableLineAsync(op.Key, ct),
+        DeepSlumberOpKind.ResetNodes => _write.ResetNodesAsync(op.Key, ct),
+        DeepSlumberOpKind.ActivateNode => _write.ActivateNodeAsync(op.Key, ct),
         DeepSlumberOpKind.SocketFactor => _write.SocketFactorAsync(op.Key, op.ItemId, ct),
         _ => _write.UnsocketFactorAsync(op.Key, op.CurrentItemId, ct),
     };

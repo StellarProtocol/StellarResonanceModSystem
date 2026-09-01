@@ -1,3 +1,4 @@
+using System.Linq;
 using Stellar.Wire;
 using Stellar.Application.Tests.Wire;
 using Stellar.Infrastructure.Game.Protobuf;
@@ -73,7 +74,7 @@ public sealed class SyncNearEntitiesReaderTests
 
         Assert.True(ok);
         Assert.Empty(appears);
-        Assert.Equal(new[] { 0x111L, 0x222L }, disappears);
+        Assert.Equal(new[] { 0x111L, 0x222L }, disappears.Select(d => d.Uuid));
     }
 
     [Fact]
@@ -91,8 +92,8 @@ public sealed class SyncNearEntitiesReaderTests
         Assert.True(ok);
         Assert.Single(appears);
         Assert.Equal(0xAAAAL, appears[0].Uuid);
-        Assert.Single(disappears);
-        Assert.Equal(0x111L, disappears[0]);
+        var disappear = Assert.Single(disappears);
+        Assert.Equal(0x111L, disappear.Uuid);
     }
 
     [Fact]
@@ -187,6 +188,75 @@ public sealed class SyncNearEntitiesReaderTests
         var item = Assert.Single(attrs.Items);
         Assert.Equal(AttrTypeIds.AttrName, item.Id);
         Assert.Equal(expectedName, item.DecodedString);
+        Assert.Empty(disappears);
+    }
+
+    // -----------------------------------------------------------------------
+    // DisappearEntity.Type (field 2, EDisappearType) — 2026-08-26 raid-bosshp-capture-design decision 1.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void TryReadAppearAndDisappear_DisappearWithExplicitType_ReadsType()
+    {
+        var d1 = new WireBytes().Tag(1, 0).Varint(0x111UL).Tag(2, 0).Varint(1UL).ToArray(); // Dead=1
+        var payload = new WireBytes().Tag(2, 2).LengthDelimited(d1).ToArray();
+
+        var ok = SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out _, out var disappears);
+
+        Assert.True(ok);
+        var d = Assert.Single(disappears);
+        Assert.Equal(0x111L, d.Uuid);
+        Assert.Equal(1, d.DisappearType);
+    }
+
+    [Fact]
+    public void TryReadAppearAndDisappear_DisappearWithoutTypeField_DefaultsToNormalZero()
+    {
+        // Proto3 elides the Type tag entirely when it's the default (EdisappearNormal=0) — see
+        // DisappearEntity.WriteTo (Csharp.cs:60974-60990). A disappear entry that carries ONLY the
+        // uuid must read as type 0, matching that elision.
+        var d1 = new WireBytes().Tag(1, 0).Varint(0x222UL).ToArray();
+        var payload = new WireBytes().Tag(2, 2).LengthDelimited(d1).ToArray();
+
+        var ok = SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out _, out var disappears);
+
+        Assert.True(ok);
+        var d = Assert.Single(disappears);
+        Assert.Equal(0x222L, d.Uuid);
+        Assert.Equal(0, d.DisappearType);
+    }
+
+    [Theory]
+    [InlineData(0)]  // EdisappearNormal
+    [InlineData(1)]  // EdisappearDead
+    [InlineData(2)]  // EdisappearDestroy
+    [InlineData(3)]  // EdisappearTransferLeave
+    [InlineData(4)]  // EdisappearTransferPassLineLeave (real proto value; framework doesn't name it)
+    [InlineData(99)] // Unrecognized future value
+    public void TryReadAppearAndDisappear_DisappearType_RoundTripsAnyWireValue(int wireType)
+    {
+        var d1 = new WireBytes().Tag(1, 0).Varint(0x333UL).Tag(2, 0).Varint((ulong)wireType).ToArray();
+        var payload = new WireBytes().Tag(2, 2).LengthDelimited(d1).ToArray();
+
+        var ok = SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out _, out var disappears);
+
+        Assert.True(ok);
+        var d = Assert.Single(disappears);
+        Assert.Equal(wireType, d.DisappearType);
+    }
+
+    [Fact]
+    public void TryReadAppearAndDisappear_DisappearMissingUuid_IsDropped()
+    {
+        // Entry carrying only a Type field, no uuid — TryReadDisappearEntity's contract mirrors
+        // TryReadDisappearUuid: without a uuid there's nothing to key the eviction on, so it's
+        // silently dropped (same "drop one entry, keep the batch" policy as the rest of this reader).
+        var malformed = new WireBytes().Tag(2, 0).Varint(1UL).ToArray();
+        var payload = new WireBytes().Tag(2, 2).LengthDelimited(malformed).ToArray();
+
+        var ok = SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out _, out var disappears);
+
+        Assert.True(ok);
         Assert.Empty(disappears);
     }
 }

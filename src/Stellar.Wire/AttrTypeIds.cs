@@ -26,6 +26,11 @@ public static class AttrTypeIds
     public const int AttrSeasonLevel     = 10070;  // season/battle-pass level
     public const int AttrHp              = 11310;
     public const int AttrMaxHp           = 11320;
+    public const int AttrMaxHpTotal      = 11321;  // Int64 (same storage-type trap as AttrHp/AttrMaxHp) — additional
+                                                    // MaxHp source; monsters demonstrably deliver 11320 (raw capture,
+                                                    // docs/recon/dungeon-start-capture-20260705.log), so 11320 stays
+                                                    // primary and 11321 is accepted only when 11320 is absent in the
+                                                    // same delta (2026-08-26 raid-bosshp-capture-design § decision 1).
     public const int AttrLevel           = 10000;  // character level
     public const int AttrDeathCount      = 348;    // scene/World-level per-run "Defeated" counter (Z.World:GetWorldLuaAttr(AttrDeathCount); EN label from Lang("DeadCount")). DELIVERY TRACED 2026-08-23: it rides the scene attr collection — EnterSceneInfo.SceneAttrs on zone-in (WorldNtf 3) and WorldNtf.SyncSceneAttrs (7) for every later change. Consumed by PandaWorldAttrProbe.
 }

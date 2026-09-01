@@ -217,6 +217,41 @@ internal sealed partial class PandaCombatStubProbe
                   $"sceneGuid={(sceneGuid.Length > 0 ? sceneGuid : "-")} connectGuid={(connectGuid.Length > 0 ? connectGuid : "-")}");
     }
 
+    // AOI life-cycle trace (recon §6 grammar line 1) — settles L1: does a raid boss genuinely leave
+    // AOI mid-fight (repeated disappear/Normal -> appear pairs) rather than despawn? Scoped to monster
+    // entities only (players churn AOI constantly and would flood this even under diagnostics).
+    // disappearType is EntityDisappearReason.Unknown (its default) on an "appear" event — meaningless
+    // there, printed as "appear" itself carries no disappear reason.
+    //
+    // C2 REVIEW FIX (2026-08-26): this fires from OnNearEntities — the NETWORK RECEIVE THREAD, not
+    // the main thread. EntityVitalsService is main-thread-only (reflective IL2CPP reads off-main-
+    // thread are the native-crash class, docs/il2cpp-probing-safety.md) — the original version called
+    // _entityVitals.DiagCheckLiveness/IsBoss right here, which is exactly wrong, and would have fired
+    // on every raid entity appear/disappear under STELLAR_DIAGNOSTICS=1 on the acceptance raid. Dropped
+    // the isBoss/exists/active enrichment entirely rather than hopping threads for a diagnostic line —
+    // uuid/event/disappearType is still enough to settle L1 (repeated disappear/Normal -> appear pairs).
+    private void DiagEntityLife(EntityId eid, string evt, EntityDisappearReason reason)
+    {
+        if (!StellarDiagnostics.IsEnabled || !eid.IsMonster) return;
+        var disappearType = evt == "disappear" ? reason.ToString() : "n/a";
+        _log.Info($"[BossHp] life eid={eid.Value} event={evt} disappearType={disappearType}");
+    }
+
+    // Which HP attr ids actually arrived on this payload (recon §6 grammar line 3) — settles the
+    // downgraded 11320/11321 question at BOTH vitals write sites (appear + delta).
+    private void DiagBossHpWire(EntityId eid, string path, long hp, long maxBase, long maxTotal)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        if (hp < 0 && maxBase < 0 && maxTotal < 0) return;
+        var ids = new List<string>(3);
+        if (hp >= 0) ids.Add(AttrTypeIds.AttrHp.ToString());
+        if (maxBase >= 0) ids.Add(AttrTypeIds.AttrMaxHp.ToString());
+        if (maxTotal >= 0) ids.Add(AttrTypeIds.AttrMaxHpTotal.ToString());
+        _log.Info($"[BossHp] wire eid={eid.Value} path={path} ids={string.Join(",", ids)} " +
+                  $"hp={(hp >= 0 ? hp.ToString() : "na")} maxBase={(maxBase >= 0 ? maxBase.ToString() : "na")} " +
+                  $"maxTotal={(maxTotal >= 0 ? maxTotal.ToString() : "na")}");
+    }
+
     /// <summary>
     /// Recover the concrete IL2CPP class FullName for a boxed managed reference
     /// whose declared type is just an interface (e.g.

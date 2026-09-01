@@ -352,4 +352,50 @@ public sealed class DungeonStateServiceTests
         Assert.Equal(0L, read.CurrentRunId);
         Assert.Null(read.LastSettlement);
     }
+
+    // --- IRunTimer.Epoch (raid run-split fix, spec 2026-08-26) --------------------------------
+    // The epoch is the plugin-visible "the framework re-KEYED the run" signal. It bumps ONLY when
+    // the empty latch slot accepts its first value; a mid-run rank UPGRADE (the measured raid
+    // poison: flow.active_time 1787662588000 -> timer_info 1787662620000) moves the VALUE only.
+    [Fact]
+    public void RunTimerEpoch_BumpsOnFirstLatch_NotOnUpgrade()
+    {
+        var svc = new DungeonStateService();
+        var timer = (IRunTimer)svc;
+        var write = (IDungeonStateSink)svc;
+        Assert.Equal(0, timer.Epoch);
+        write.SetCurrentRun(DungeonId);
+        Assert.Equal(RunTimerWrite.Latched,
+            write.SetRunTimerStart(1787662588000, RunTimerSource.FlowActiveTime));
+        Assert.Equal(1, timer.Epoch);
+        Assert.Equal(RunTimerWrite.Upgraded,
+            write.SetRunTimerStart(1787662620000, RunTimerSource.TimerInfo));
+        Assert.Equal(1787662620000, timer.StartMs);   // value upgraded…
+        Assert.Equal(1, timer.Epoch);                 // …epoch untouched (the split poison is inert)
+        // Same/worse-rank writes (duplicate ntfs — one per party member) stay fully ignored.
+        Assert.Equal(RunTimerWrite.Ignored,
+            write.SetRunTimerStart(1787662999000, RunTimerSource.TimerInfo));
+        Assert.Equal(1787662620000, timer.StartMs);
+        Assert.Equal(1, timer.Epoch);
+    }
+
+    [Fact]
+    public void RunTimerEpoch_NewRunRelatch_BumpsAgain_AndNeverRewinds()
+    {
+        var svc = new DungeonStateService();
+        var timer = (IRunTimer)svc;
+        var write = (IDungeonStateSink)svc;
+        write.SetCurrentRun(DungeonId);
+        write.SetRunTimerStart(1000, RunTimerSource.FlowActiveTime);
+        Assert.Equal(1, timer.Epoch);
+        write.SetCurrentRun(Dungeon2Id);   // new run id empties the slot…
+        Assert.Equal(0, timer.StartMs);
+        Assert.Equal(1, timer.Epoch);      // …but the counter NEVER rewinds (no cross-run aliasing)
+        write.SetRunTimerStart(2000, RunTimerSource.Method55Edge);
+        Assert.Equal(2, timer.Epoch);      // fresh latch = new epoch (this IS the yank evidence)
+        write.Reset();                     // logout empties the slot, keeps the counter
+        Assert.Equal(2, timer.Epoch);
+        write.SetRunTimerStart(3000, RunTimerSource.FlowActiveTime);
+        Assert.Equal(3, timer.Epoch);
+    }
 }

@@ -195,6 +195,26 @@ internal sealed partial class PandaSeasonTalentProbe
   rawset(_G, ""{resultGlobal}"", tostring(code))
 end))()";
 
+    // Reset a whole area's tree — every anchor + factor returns to inactive/the bag (the game has no
+    // per-node anchor removal). request.zoneId = areaId. Costs the game's reset currency; a raw RPC so
+    // it skips the in-game confirm dialog. Server refuses (non-zero code) on combat / insufficient cost.
+    private static string ResetChunk(int areaId, string resultGlobal) =>
+        $@"(Z.CoroUtil.create_coro_xpcall(function()
+  local worldProxy = require(""zproxy.world_proxy"")
+  local code = worldProxy.ResetAllNodes({{ zoneId = {areaId.ToString(CultureInfo.InvariantCulture)} }}, {NeverCancelToken})
+  rawset(_G, ""{resultGlobal}"", tostring(code))
+end))()";
+
+    // Activate a normal node ("Anchor of the Mind") in the currently-active area. request.nodeId. Node
+    // ids are area-relative — the game resolves them against the ACTIVE area — so the area must be enabled
+    // (and, on a rebuild, reset) before this fires; the caller's phase barrier guarantees that ordering.
+    private static string ActivateChunk(int nodeId, string resultGlobal) =>
+        $@"(Z.CoroUtil.create_coro_xpcall(function()
+  local worldProxy = require(""zproxy.world_proxy"")
+  local code = worldProxy.ActiveNormalNode({{ nodeId = {nodeId.ToString(CultureInfo.InvariantCulture)} }}, {NeverCancelToken})
+  rawset(_G, ""{resultGlobal}"", tostring(code))
+end))()";
+
     // Socket a phantom factor into a middle node. request.{nodeId, itemConfigId}.
     private static string SocketChunk(int nodeId, int itemId, string resultGlobal) =>
         $@"(Z.CoroUtil.create_coro_xpcall(function()

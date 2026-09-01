@@ -29,6 +29,13 @@ internal sealed partial class PandaCombatStubProbe
     private readonly DungeonRunIdResolver  _runIdResolver;
     private readonly WireEntityPositions   _positions;
     private readonly IPluginLog            _log;
+    // Native boss-vitals cache: OnEnterScene calls _entityVitals.Reset() to bound it to one scene's
+    // lifetime (I1 review fix), mirroring _sink.ResetEntities()/_positions.Clear() just above it —
+    // a real lifecycle dependency, not diagnostics-only. Also used by DiagEntityLife's uuid/event/
+    // disappearType trace (PandaCombatStubProbe.Diagnostics.cs), which — after the C2 review fix —
+    // never calls back into it (that trace no longer touches EntityVitalsService at all; it stays
+    // main-thread-only, never invoked from this probe's network-receive-thread handlers).
+    private readonly EntityVitalsService   _entityVitals;
 
     /// <summary>
     /// Cached local entity uuid. Set when <see cref="OnSelfDelta"/> first
@@ -52,12 +59,14 @@ internal sealed partial class PandaCombatStubProbe
         ICombatEventSink sink,
         DungeonRunIdResolver runIdResolver,
         WireEntityPositions positions,
-        IPluginLog log)
+        IPluginLog log,
+        EntityVitalsService entityVitals)
     {
         _sink          = sink          ?? throw new ArgumentNullException(nameof(sink));
         _runIdResolver = runIdResolver ?? throw new ArgumentNullException(nameof(runIdResolver));
         _positions     = positions     ?? throw new ArgumentNullException(nameof(positions));
         _log           = log           ?? throw new ArgumentNullException(nameof(log));
+        _entityVitals  = entityVitals  ?? throw new ArgumentNullException(nameof(entityVitals));
     }
 
     /// <summary>Clear the cached local entity uuid on logout so the next account doesn't inherit the
