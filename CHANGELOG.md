@@ -14,6 +14,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.5.0] - 2026-09-01
+_**2.5.0** (minor) — the Loadout Switcher can switch your whole Deep-Slumber (tree and all), plugins get accurate raid boss health, and raid runs record as one run. Additive, binary-compatible with plugins built against ≤2.4.0._
+### Added
+- Plugins can now read a boss's exact health straight from the game, and can tell when a raid boss has actually gone down even when the game never shows its health hitting zero. The Combat Meter uses this for accurate boss health in raid replays.
+### Changed
+- The Loadout Switcher now switches your entire Deep-Slumber when you change loadouts — its tree, not just the phantom factors. Switching to a loadout whose Deep-Slumber uses a different tree now rebuilds the tree for you instead of stopping half-done, and it no longer stutters while it applies.
+### Fixed
+- Raid runs are recorded as one continuous run again, instead of being split into pieces when the game's own timers reset partway through the fight.
+### Developer notes
+- `DeepSlumberAreaBinding` gains a non-positional `NormalNodes` init member (the tree / Anchor allocation — kept off the primary constructor so it stays binary-compatible with ≤2.4.0). `DeepSlumberReconciler` now diffs the tree and, when it differs, drives `ResetAllNodes` + `ActiveNormalNode` (whole-area reset — the game has no per-node anchor removal, owner ruling 2026-09-01) before re-socketing factors; legacy bindings with a null tree stay factor-only. Both new worldProxy RPCs were validated in-game (`code=0`, `zoneId=areaId`). New Kind-phase order: enable → reset → unsocket → activate → socket.
+- The loadout live-state refresh now defers its full-container walk while a plugin Deep-Slumber apply is in flight (`PandaLoadoutProbe.DecideRefresh` gated on `PandaSeasonTalentProbe.HasPendingWrites`), collapsing the per-op `CharSerialize` burst into one refresh after the apply settles — removes the 3-5 frame hitches a tree rebuild otherwise caused. Mirrors the existing combat-defer; a manual in-game switch is unaffected.
+- Native boss-HP tap: `IBossVitals` + `EntityVitalsService` read boss HP from the game's own entity, with `EDisappearType`-aware AOI eviction and an `AttrMaxHpTotal(11321)` fallback; a raid boss whose HP never reads 0 is detected as HP≈1%-then-vanish. `IRunTimer` latch-epoch gives upgrade-proof run identity so an evidence-less belt resolution cuts a segment without resetting the run's identity (raid run-split fix; spec 2026-08-26).
+
 ## [2.4.0] - 2026-08-25
 _**2.4.0** (minor) — plugins can now save your outfits and switch between them, with a live 3D preview. Additive, binary-compatible with plugins built against ≤2.3.0._
 ### Added
