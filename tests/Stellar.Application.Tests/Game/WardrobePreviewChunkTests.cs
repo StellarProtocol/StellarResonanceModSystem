@@ -59,21 +59,32 @@ public sealed class WardrobePreviewChunkTests
     }
 
     // Owner, 2026-09-05: "The 3D preview does not show the weapon skin. <-- it should show if class match".
-    // The weapon skin is NOT a FashionWear piece; the game dresses a preview model through the display
-    // override attr (fashion_weapon_skin_select_view.SelectStyle:26). The plugin only puts 731 in the map
-    // when the stored skin belongs to the player's CURRENT class.
+    // The weapon skin is NOT a FashionWear piece. 2.6.0 dressed it with the display-override attr, copying
+    // the game's weapon-skin tab — and the owner's in-game test that same day showed the preview keeping the
+    // LIVE weapon for every outfit ("for previewer it always show what user's currently using"). All three
+    // override call sites dress the CACHED PLAYER model (GetCachePlayerModel), never a social-data model,
+    // so the skin is now injected into the SOURCE — socialData.professionData.weaponSkin, the two-field
+    // {profession_id, weapon_skin} block the server fills for SocialDataTypeWeapon — before the model is
+    // generated. The plugin only puts 731 in the map when the stored skin belongs to the CURRENT class.
+    // Never weaken: the injection must precede GenModelByLuaSocialData or the model is built with the
+    // live skin and the async weapon load wins the race.
     [Fact]
-    public void DressChunk_WeaponSkin_UsesTheDisplayOverrideAttr_AndNeverTheWearList()
+    public void DressChunk_WeaponSkin_IsInjectedIntoTheSocialDataBeforeTheModelIsGenerated()
     {
         var outfit = new Dictionary<int, int> { [701] = 333, [WardrobeRegions.WeaponSkinPreview] = 7310003 };
 
         var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
 
-        Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
         Assert.Contains("local skin=7310003", chunk);
+        Assert.Contains("pd.weaponSkin = skin", chunk);
+        Assert.Contains("local pd = socialData.professionData", chunk);
         Assert.DoesNotContain("wd.SlotID=731", chunk);        // 731 is never a SingleWearData piece
         Assert.Equal(1, CountOf(chunk, "zList:Add(wd)"));     // only the 701 suit is dressed
-        // the weapon call sits AFTER the wear list is committed
+        // the re-skin happens BEFORE the model exists…
+        Assert.True(chunk.IndexOf("pd.weaponSkin = skin", StringComparison.Ordinal)
+                    < chunk.IndexOf("GenModelByLuaSocialData", StringComparison.Ordinal));
+        // …and the belt-and-braces display override still sits AFTER the wear list is committed
+        Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
         Assert.True(chunk.IndexOf("EWearFashion", StringComparison.Ordinal)
                     < chunk.IndexOf("EModelDisplayWeaponSkinId", StringComparison.Ordinal));
     }
@@ -87,6 +98,9 @@ public sealed class WardrobePreviewChunkTests
 
         Assert.DoesNotContain("EModelDisplayWeaponSkinId", chunk);
         Assert.DoesNotContain("GetWeaponOriginSkinId", chunk);
+        Assert.DoesNotContain("pd.weaponSkin = skin", chunk);
+        // …but the outcome global is still armed, so the log says the key was absent rather than nothing
+        Assert.Contains("rawset(_G, '__stellar_wardrobe_preview_weapon', 'none')", chunk);
     }
 
     // Skin 0 = "the class's default look". The apply path resolves it via GetWeaponOriginSkinId
@@ -101,8 +115,31 @@ public sealed class WardrobePreviewChunkTests
 
         Assert.Contains("local skin=0", chunk);
         Assert.Contains("skin = svm:GetWeaponOriginSkinId((wvm.GetCurWeapon)())", chunk);
-        Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
+        Assert.Contains("pd.weaponSkin = skin", chunk);
         Assert.DoesNotContain("zList:Add(wd)", chunk);   // a bare weapon key dresses no fashion piece
+    }
+
+    // A silent pcall is why 2.6.0's failure was undiagnosable from the owner's log (diagnostics=OFF, zero
+    // '[WardrobePreview.lua] err' lines, no way to tell whether key 731 even arrived). Every weapon path
+    // now records an outcome the host logs unconditionally: 'none', 'social=set(...)',
+    // 'social=no-professionData', or an err: with the Lua message. Never weaken.
+    [Fact]
+    public void DressChunk_WeaponSkin_ReportsItsOutcomeThroughTheWeaponGlobal()
+    {
+        var outfit = new Dictionary<int, int> { [WardrobeRegions.WeaponSkinPreview] = 7320012 };
+
+        var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
+
+        Assert.Contains("rawset(_G, '__stellar_wardrobe_preview_weapon', 'none')", chunk);   // armed first
+        Assert.Contains("' social=no-professionData'", chunk);
+        Assert.Contains("' social=set(prof=' .. tostring(pd.professionId) .. ',was=' .. tostring(pd.weaponSkin) .. ')'", chunk);
+        Assert.Contains("' social=err:' .. tostring(werr)", chunk);
+        Assert.Contains("' attr=err:' .. tostring(aerr)", chunk);
+        Assert.Contains("logError('[WardrobePreview.lua] weapon skin source err: '", chunk);
+        Assert.Contains("logError('[WardrobePreview.lua] weapon skin attr err: '", chunk);
+        // both weapon pcalls CAPTURE their result — a bare pcall(...) is what hid the 2.6.0 failure
+        Assert.Contains("local wok, werr = pcall(function()", chunk);
+        Assert.Contains("local aok, aerr = pcall(function() m:SetLuaIntAttr", chunk);
     }
 
     private static int CountOf(string haystack, string needle)
