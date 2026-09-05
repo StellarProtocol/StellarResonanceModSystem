@@ -39,4 +39,35 @@ public sealed class BuffInfoReaderTests
         Assert.True(BuffInfoReader.TryRead(System.ReadOnlySpan<byte>.Empty, out var b));
         Assert.Equal(0, b.BaseId);
     }
+
+    [Fact]
+    public void TryRead_Field12_FightSourceInfo_MapsSourceKindAndId()
+    {
+        var source = new WireBytes()
+            .Tag(1, 0).Varint(0)        // fight_source_type = Skill
+            .Tag(2, 0).Varint(2327)     // source_config_id = skill 2327
+            .ToArray();
+        var payload = new WireBytes()
+            .Tag(1, 0).Varint(111)
+            .Tag(2, 0).Varint(55333)
+            .Tag(7, 0).Varint(0xABCD0280UL)
+            .Tag(12, 2).LengthDelimited(source)
+            .ToArray();
+
+        var ok = BuffInfoReader.TryRead(payload, out var b);
+
+        Assert.True(ok);
+        Assert.Equal(0,    b.SourceKind);
+        Assert.Equal(2327, b.SourceId);
+        Assert.True(b.FirerId.IsPlayer);
+    }
+
+    [Fact]
+    public void TryRead_NoField12_SourceDefaultsToZero()
+    {
+        var payload = new WireBytes().Tag(1, 0).Varint(5).Tag(2, 0).Varint(9).ToArray();
+        Assert.True(BuffInfoReader.TryRead(payload, out var b));
+        Assert.Equal(0, b.SourceKind);
+        Assert.Equal(0, b.SourceId);
+    }
 }

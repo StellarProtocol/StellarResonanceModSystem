@@ -8,7 +8,8 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 /// Pure parser for a single <c>BuffInfo</c> protobuf message — the payload of a
 /// <c>BuffEffectLogicInfo.RawData</c> when its EffectType is BuffEffectAddBuff(18).
 /// Field numbers (stru_buff_info.proto): 1=BuffUuid, 2=BaseId, 3=Level,
-/// 6=CreateTime (epoch ms), 7=FireUuid, 8=Layer, 10=Count, 11=Duration (ms).
+/// 6=CreateTime (epoch ms), 7=FireUuid, 8=Layer, 10=Count,
+/// 11=Duration (ms), 12=FightSourceInfo{1=fight_source_type,2=source_config_id}.
 /// Never throws.
 /// </summary>
 internal static class BuffInfoReader
@@ -17,6 +18,7 @@ internal static class BuffInfoReader
     {
         int buffUuid = 0, baseId = 0, level = 0, layer = 0, count = 0, dur = 0;
         long createMs = 0, firer = 0;
+        int srcKind = 0, srcId = 0;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -31,12 +33,32 @@ internal static class BuffInfoReader
                 case (8, 0):  if (!WireProtocol.TryReadVarint(payload, ref pos, out var v8))  { buff = default; return false; } layer    = (int)v8;  break;
                 case (10, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var v10)) { buff = default; return false; } count    = (int)v10; break;
                 case (11, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var v11)) { buff = default; return false; } dur      = (int)v11; break;
+                case (12, 2):
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var src)) { buff = default; return false; }
+                    ReadFightSource(src, ref srcKind, ref srcId);
+                    break;
                 default:
                     if (!WireProtocol.SkipField(payload, ref pos, wire)) { buff = default; return false; }
                     break;
             }
         }
-        buff = new ActiveBuff(buffUuid, baseId, level, new EntityId(firer), count, layer, createMs, dur);
+        buff = new ActiveBuff(buffUuid, baseId, level, new EntityId(firer), count, layer, createMs, dur, srcKind, srcId);
         return true;
+    }
+
+    // FightSourceInfo { int32 fight_source_type = 1; int32 source_config_id = 2; } — malformed → both stay 0.
+    private static void ReadFightSource(ReadOnlySpan<byte> payload, ref int kind, ref int id)
+    {
+        int pos = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return;
+            switch ((field, wire))
+            {
+                case (1, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var k)) return; kind = (int)k; break;
+                case (2, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var i)) return; id   = (int)i; break;
+                default: if (!WireProtocol.SkipField(payload, ref pos, wire)) return; break;
+            }
+        }
     }
 }
