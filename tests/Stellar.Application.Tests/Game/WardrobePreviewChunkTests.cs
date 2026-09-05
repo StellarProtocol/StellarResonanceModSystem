@@ -14,6 +14,10 @@ namespace Stellar.Application.Tests.Game;
 /// while the game's own <c>fashion_vm.GetFashionWearList</c> sets <c>SlotId = region</c> and the model
 /// routes a head piece to its mount (HeadWear vs HeadWear2) by that SlotID — so both landed on ONE mount.
 /// The dress chunk must stamp each piece's SlotID with its FashionRegion. Never weaken.
+/// <para>Second regression origin (owner, 2026-09-05): the weapon-skin preview drew TWO weapons — the
+/// saved skin plus the one the player is wearing. A social-data model has two weapon renderers (the
+/// CMount attachment and <c>WeaponModelComp</c>); the chunk must clear the CMount when — and only when —
+/// it previews a weapon skin, exactly as the game's own preview views do.</para>
 /// </summary>
 public sealed class WardrobePreviewChunkTests
 {
@@ -87,6 +91,43 @@ public sealed class WardrobePreviewChunkTests
         Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
         Assert.True(chunk.IndexOf("EWearFashion", StringComparison.Ordinal)
                     < chunk.IndexOf("EModelDisplayWeaponSkinId", StringComparison.Ordinal));
+        // …with the CMount de-dupe between them: dress → drop the social weapon → assert the skin
+        Assert.True(chunk.IndexOf("EWearFashion", StringComparison.Ordinal)
+                    < chunk.IndexOf("EModelCMountWeaponL, ''", StringComparison.Ordinal));
+        Assert.True(chunk.IndexOf("EModelCMountWeaponL, ''", StringComparison.Ordinal)
+                    < chunk.IndexOf("EModelDisplayWeaponSkinId", StringComparison.Ordinal));
+    }
+
+    // Owner, 2026-09-05 (r3 build 59bfaca, one hover): "it show with currently weapon using (which should
+    // be hidden), it cause previewer show player have 2 weapons skin rendered" — the saved skin AND the worn
+    // weapon on one model, with the log line proving the social injection had run (`social=set(prof=2,
+    // was=nil)`). A social-data model carries TWO weapon renderers: the CMount attachment
+    // (EModelCMountWeaponL/R, string model paths that ride in with the social data — Panda.ZGame
+    // .WeaponOriginData bundles ModelCMountWeaponL/R beside WeaponSkinId/MainModelId) and
+    // Panda.ZGame.WeaponModelComp, which owns its own weapon GameObjects (mainWeaponModel_/subWeaponModel_)
+    // and is driven by the profession+skin data we inject. Every game view that puts a weapon skin on a
+    // preview model clears the CMount first and only then asks for the skin — fashion_system_view
+    // .initPlayerModel:844-845 (the very screen whose weapon-skin tab drives the display override) and
+    // shop_fashion_sub_view.initPlayerModel:319-320. Never weaken: without this clear the preview draws two
+    // weapons.
+    [Fact]
+    public void DressChunk_WeaponSkin_ClearsTheSocialWeaponFromTheCMountSoOnlyOneWeaponRenders()
+    {
+        var outfit = new Dictionary<int, int> { [701] = 333, [WardrobeRegions.WeaponSkinPreview] = 7320012 };
+
+        var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
+
+        // the exact shape the game's own social/preview views use to hide a model's weapon
+        Assert.Contains("m:SetLuaAttr((Z.ModelAttr).EModelCMountWeaponL, '')", chunk);
+        Assert.Contains("m:SetLuaAttr((Z.ModelAttr).EModelCMountWeaponR, '')", chunk);
+        // a resolved skin of 0 asks for NO display weapon, so the mount is left alone — never an unarmed model
+        Assert.Contains("if skin == 0 then say(' mount=skip(skin0)') return end", chunk);
+        // the pre-clear mount values are reported next to the skin's own weapon models, so ONE owner log
+        // says which renderer held which weapon; the read may never block the clear
+        Assert.Contains("mount=cleared(L:", chunk);
+        Assert.Contains("((Z.TableMgr).GetRow)('WeaponSkinTableMgr', skin)", chunk);
+        Assert.True(chunk.IndexOf("local l, r, wm = 'na', 'na', 'na'", StringComparison.Ordinal)
+                    < chunk.IndexOf("EModelCMountWeaponL, ''", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -99,6 +140,11 @@ public sealed class WardrobePreviewChunkTests
         Assert.DoesNotContain("EModelDisplayWeaponSkinId", chunk);
         Assert.DoesNotContain("GetWeaponOriginSkinId", chunk);
         Assert.DoesNotContain("pd.weaponSkin = skin", chunk);
+        // …and the model KEEPS the weapon the social data dressed it with: a pre-1.1.0 outfit previews
+        // exactly as it did before the weapon-skin feature existed. Never weaken — this is the "no outfit
+        // may leave the model unarmed" pin.
+        Assert.DoesNotContain("EModelCMountWeaponL", chunk);
+        Assert.DoesNotContain("EModelCMountWeaponR", chunk);
         // …but the outcome global is still armed, so the log says the key was absent rather than nothing
         Assert.Contains("rawset(_G, '__stellar_wardrobe_preview_weapon', 'none')", chunk);
     }
@@ -117,6 +163,8 @@ public sealed class WardrobePreviewChunkTests
         Assert.Contains("skin = svm:GetWeaponOriginSkinId((wvm.GetCurWeapon)())", chunk);
         Assert.Contains("pd.weaponSkin = skin", chunk);
         Assert.DoesNotContain("zList:Add(wd)", chunk);   // a bare weapon key dresses no fashion piece
+        // the resolution is a RUNTIME value, so the mount clear is emitted but guarded on it at run time
+        Assert.Contains("if skin == 0 then say(' mount=skip(skin0)') return end", chunk);
     }
 
     // A silent pcall is why 2.6.0's failure was undiagnosable from the owner's log (diagnostics=OFF, zero
@@ -134,11 +182,14 @@ public sealed class WardrobePreviewChunkTests
         Assert.Contains("' social=no-professionData'", chunk);
         Assert.Contains("' social=set(prof=' .. tostring(pd.professionId) .. ',was=' .. tostring(pd.weaponSkin) .. ')'", chunk);
         Assert.Contains("' social=err:' .. tostring(werr)", chunk);
-        Assert.Contains("' attr=err:' .. tostring(aerr)", chunk);
+        Assert.Contains("' mount=err:' .. tostring(merr)", chunk);
+        Assert.Contains("' disp=err:' .. tostring(aerr)", chunk);
         Assert.Contains("logError('[WardrobePreview.lua] weapon skin source err: '", chunk);
-        Assert.Contains("logError('[WardrobePreview.lua] weapon skin attr err: '", chunk);
-        // both weapon pcalls CAPTURE their result — a bare pcall(...) is what hid the 2.6.0 failure
+        Assert.Contains("logError('[WardrobePreview.lua] weapon mount clear err: '", chunk);
+        Assert.Contains("logError('[WardrobePreview.lua] weapon skin disp err: '", chunk);
+        // all three weapon pcalls CAPTURE their result — a bare pcall(...) is what hid the 2.6.0 failure
         Assert.Contains("local wok, werr = pcall(function()", chunk);
+        Assert.Contains("local mok, merr = pcall(function()", chunk);
         Assert.Contains("local aok, aerr = pcall(function() m:SetLuaIntAttr", chunk);
     }
 

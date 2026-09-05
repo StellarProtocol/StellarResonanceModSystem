@@ -19,8 +19,10 @@ namespace Stellar.Infrastructure.Game;
 /// <see cref="PortraitModelHost"/> to render.
 /// <para>The previewed WEAPON SKIN is not a wear piece: it is injected into the social data itself
 /// (<c>socialData.professionData.weaponSkin</c>) BEFORE the model is generated — see
-/// <c>WeaponSkinSourceLua</c> for the derivation and why the display-override attr alone did not work.
-/// Every preview writes a one-line outcome the host logs unconditionally.</para>
+/// <c>WeaponSkinSourceLua</c> for the derivation and why the display-override attr alone did not work —
+/// and the weapon the social data brought with it is then removed from the CMount attachment mount, the
+/// de-dupe every game view that shows a weapon skin on a preview model performs (see
+/// <c>WeaponMountClearLua</c>). Every preview writes a one-line outcome the host logs unconditionally.</para>
 /// </summary>
 internal sealed class PandaWardrobePreviewProbe
 {
@@ -84,10 +86,12 @@ internal sealed class PandaWardrobePreviewProbe
     // The Lua chunk records what it did to the weapon in a string global; surface it ONCE per preview,
     // UNCONDITIONALLY (a hover is a user action — one line is affordable, and diagnostics are off on the
     // owner's client, which is exactly when a silent no-op is unfalsifiable). Shapes:
-    //   weapon none                                            — no 731 key reached the framework
-    //   weapon skin=7320012 social=set(prof=2,was=0) attr=ok   — the skin was injected into the social data
-    //   weapon skin=… social=no-professionData attr=ok         — social data carried no profession block
-    //   weapon skin=… social=err:… | … attr=err:…              — the Lua call threw (message included)
+    //   weapon none                                       — no 731 key reached the framework
+    //   weapon skin=7320012 social=set(prof=2,was=0) mount=cleared(L:…,R:…,skinModels:…) disp=ok
+    //                                                     — skin injected, the social CMount weapon removed
+    //   weapon skin=… social=no-professionData …          — social data carried no profession block
+    //   weapon skin=… mount=skip(skin0) …                 — resolved default look: nothing to de-dupe
+    //   weapon skin=… social=err:… | mount=err:… | disp=err:…  — that Lua call threw (message included)
     private void LogWeaponOutcome(object state)
     {
         if (_weaponLogged || _luaToString is null) return;
@@ -122,13 +126,15 @@ internal sealed class PandaWardrobePreviewProbe
     }
 
     // Recipe = fetch the self social data, inject the previewed weapon skin INTO it, create the model from
-    // it, then dress it with the outfit + each piece's LIVE dye. Split into head / weapon / gen / dress /
-    // tail to stay under the method-size gate.
+    // it, dress it with the outfit + each piece's LIVE dye, then (weapon-skin previews only) clear the
+    // CMount weapon the social data brought with it so the model carries ONE weapon. Split into head /
+    // weapon / gen / dress / mount / tail to stay under the method-size gate.
     internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
     {
         var hasSkin = outfit.TryGetValue(WardrobeRegions.WeaponSkinPreview, out var skinId);
         return CoroHead(charId) + (hasSkin ? WeaponSkinSourceLua(skinId) : string.Empty) + GenLua() +
-               DressLua(outfit, dyes) + (hasSkin ? WeaponSkinOverrideLua : string.Empty) +
+               DressLua(outfit, dyes) +
+               (hasSkin ? WeaponMountClearLua + WeaponSkinOverrideLua : string.Empty) +
                "    rawset(_G, '" + ModelGlobal + "', m)\n" +
                "  end)\n" +
                "  coroFn()\n" +
@@ -215,15 +221,71 @@ internal sealed class PandaWardrobePreviewProbe
         "    if not wok then rawset(_G, '" + WeaponGlobal + "', 'skin=' .. tostring(skin) .. ' social=err:' .. tostring(werr))" +
         " logError('[WardrobePreview.lua] weapon skin source err: ' .. tostring(werr)) end\n";
 
+    // The DE-DUPE, and the fix for the owner's 2026-09-05 double-weapon report ("it show with currently
+    // weapon using (which should be hidden), it cause previewer show player have 2 weapons skin rendered").
+    // A social-data model carries TWO independent weapon renderers:
+    //   * the CMount attachment — EModelCMountWeaponL/R, string model paths that arrive WITH the social
+    //     data (Panda.ZGame.WeaponOriginData bundles ModelCMountWeaponL/R beside WeaponSkinId/MainModelId);
+    //   * Panda.ZGame.WeaponModelComp, which owns its OWN weapon GameObjects (fields mainWeaponModel_ /
+    //     subWeaponModel_, getWeaponMount/getMountName/clearModel) and is driven by the profession+skin
+    //     data — i.e. by the socialData.professionData.weaponSkin we inject above.
+    // That is why EVERY game view showing a weapon skin on a preview model clears the CMount first and only
+    // then asks for the skin: fashion_system_view.initPlayerModel:844-845 (the wardrobe screen that hosts
+    // the weapon-skin tab, whose SelectStyle:26 sets the display override) and shop_fashion_sub_view
+    // .initPlayerModel:319-320 (ShowPlayerWeaponModel:275 sets it) — plus every weaponless social view
+    // (investigation_clue_window_view:942/944, rank_main_view:503/637, face_edit_view:197,
+    // talk_model_window_view:307). Without the clear both renderers draw and the model wears two weapons.
+    // Guards, both load-bearing:
+    //   * emitted ONLY when the outfit carries a weapon skin — a legacy outfit (no 731 key) must keep
+    //     showing the worn weapon exactly as before;
+    //   * skipped when the resolved skin is 0 (GetWeaponOriginSkinId's end-of-chain fallback), because 0
+    //     asks for no display weapon and clearing the mount as well would leave the model unarmed.
+    // The pre-clear values are REPORTED (with the skin's own WeaponSkinTable.WeaponModelId list beside
+    // them, the ids equip_vm.CreateEquipModel:139 builds weapon models from) so one owner log settles which
+    // renderer holds which weapon; the read is in its own pcall so a read failure can never block the clear.
+    private const string WeaponMountClearLua =
+        "    local mok, merr = pcall(function()\n" +
+        "      local function say(s) rawset(_G, '" + WeaponGlobal + "', tostring(rawget(_G, '" + WeaponGlobal + "')) .. s) end\n" +
+        "      if skin == 0 then say(' mount=skip(skin0)') return end\n" +
+        "      local l, r, wm = 'na', 'na', 'na'\n" +
+        "      pcall(function()\n" +
+        "        local function mv(a)\n" +
+        "          local v = m:GetLuaAttr(a)\n" +
+        "          if v == nil then return 'nil' end\n" +
+        "          local okv, vv = pcall(function() return v.Value end)\n" +
+        "          local s = tostring((okv and vv ~= nil) and vv or v)\n" +
+        "          if #s > 40 then s = s:sub(#s - 39) end\n" +
+        "          return s\n" +
+        "        end\n" +
+        "        l = mv((Z.ModelAttr).EModelCMountWeaponL) r = mv((Z.ModelAttr).EModelCMountWeaponR)\n" +
+        "      end)\n" +
+        "      pcall(function()\n" +
+        "        local row = ((Z.TableMgr).GetRow)('WeaponSkinTableMgr', skin)\n" +
+        "        if row ~= nil and row.WeaponModelId ~= nil then\n" +
+        "          local t = {} for _, id in ipairs(row.WeaponModelId) do t[#t + 1] = tostring(id) end\n" +
+        "          wm = table.concat(t, '/')\n" +
+        "        end\n" +
+        "      end)\n" +
+        "      m:SetLuaAttr((Z.ModelAttr).EModelCMountWeaponL, '')\n" +
+        "      m:SetLuaAttr((Z.ModelAttr).EModelCMountWeaponR, '')\n" +
+        "      say(' mount=cleared(L:' .. l .. ',R:' .. r .. ',skinModels:' .. wm .. ')')\n" +
+        "    end)\n" +
+        "    if not mok then rawset(_G, '" + WeaponGlobal + "', tostring(rawget(_G, '" + WeaponGlobal + "')) .. ' mount=err:' .. tostring(merr))" +
+        " logError('[WardrobePreview.lua] weapon mount clear err: ' .. tostring(merr)) end\n";
+
     // SECONDARY mechanism, kept as belt-and-braces — the display override the 2.6.0 build shipped alone.
-    // It is a no-op-or-win: if DisplayWeaponAttrWatcher does reach this model it sets the SAME skin the
-    // source injection already asked for, and if it throws or does nothing the source injection stands.
+    // It is a no-op-or-win and CANNOT double-draw: WeaponModelComp holds a single mainWeaponModel_ /
+    // subWeaponModel_ pair and clearModel()s before loading, and the override asks for the SAME skin the
+    // source injection already baked in. It is kept because it is the ONE weapon mechanism the game
+    // exercises by hand, so if the source injection ever stops reaching WeaponModelComp this still answers;
+    // it is emitted AFTER the mount clear so the last word on this model is "one weapon, the saved skin".
+    // 2.6.0 shipped it alone and the owner saw the live weapon on every outfit, so it is not the mechanism.
     // Unlike 2.6.0 the failure is REPORTED (a bare pcall hid a nil attr / missing method / thrown exception),
-    // so the owner's next log names which of the two mechanisms answered.
+    // so the owner's next log names which of the mechanisms answered.
     private const string WeaponSkinOverrideLua =
         "    local aok, aerr = pcall(function() m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin) end)\n" +
-        "    rawset(_G, '" + WeaponGlobal + "', tostring(rawget(_G, '" + WeaponGlobal + "')) .. (aok and ' attr=ok' or (' attr=err:' .. tostring(aerr))))\n" +
-        "    if not aok then logError('[WardrobePreview.lua] weapon skin attr err: ' .. tostring(aerr)) end\n";
+        "    rawset(_G, '" + WeaponGlobal + "', tostring(rawget(_G, '" + WeaponGlobal + "')) .. (aok and ' disp=ok' or (' disp=err:' .. tostring(aerr))))\n" +
+        "    if not aok then logError('[WardrobePreview.lua] weapon skin disp err: ' .. tostring(aerr)) end\n";
 
     // One SingleWearData for a piece. SlotID MUST be the piece's FashionRegion — exactly what the game's own
     // fashion_vm.GetFashionWearList does (`data.SlotId = region`): the model routes a head piece to its mount
