@@ -11,7 +11,7 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="Layer">Buff layer index.</param>
 /// <param name="CreateTimeMs">Server epoch ms when the buff was created.</param>
 /// <param name="DurationMs">Total duration in milliseconds.</param>
-/// <param name="SourceKind">Origin domain of the buff (wire <c>FightSourceInfo.fight_source_type</c>, EFightSource: 0 Skill, 1 Buff, 6 Talent, 9 Mod, 10 Equip); 0 when absent.</param>
+/// <param name="SourceKind">Origin domain of the buff (wire <c>FightSourceInfo.fight_source_type</c>, EFightSource: 0 Skill, 1 Buff, 6 Talent, 9 Mod, 10 Equip, 13 SeasonTalent, 1000+ scene/affix, 10000 Other); 0 when absent.</param>
 /// <param name="SourceId">Config id inside <paramref name="SourceKind"/>'s domain — the skill id when <paramref name="SourceKind"/> is 0; 0 when absent.</param>
 public readonly record struct ActiveBuff(
     int      BuffUuid,

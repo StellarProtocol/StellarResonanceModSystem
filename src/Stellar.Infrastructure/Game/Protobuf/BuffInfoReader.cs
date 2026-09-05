@@ -49,16 +49,19 @@ internal static class BuffInfoReader
     // FightSourceInfo { int32 fight_source_type = 1; int32 source_config_id = 2; } — malformed → both stay 0.
     private static void ReadFightSource(ReadOnlySpan<byte> payload, ref int kind, ref int id)
     {
+        int k = 0, i = 0;
         int pos = 0;
         while (pos < payload.Length)
         {
             if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return;
             switch ((field, wire))
             {
-                case (1, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var k)) return; kind = (int)k; break;
-                case (2, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var i)) return; id   = (int)i; break;
+                case (1, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var v1)) return; k = (int)v1; break;
+                case (2, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var v2)) return; i = (int)v2; break;
                 default: if (!WireProtocol.SkipField(payload, ref pos, wire)) return; break;
             }
         }
+        kind = k;
+        id = i;
     }
 }

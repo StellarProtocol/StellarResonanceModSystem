@@ -44,8 +44,8 @@ public sealed class BuffInfoReaderTests
     public void TryRead_Field12_FightSourceInfo_MapsSourceKindAndId()
     {
         var source = new WireBytes()
-            .Tag(1, 0).Varint(0)        // fight_source_type = Skill
-            .Tag(2, 0).Varint(2327)     // source_config_id = skill 2327
+            .Tag(1, 0).Varint(10)       // fight_source_type = Equip
+            .Tag(2, 0).Varint(2327)     // source_config_id = equipment 2327
             .ToArray();
         var payload = new WireBytes()
             .Tag(1, 0).Varint(111)
@@ -57,9 +57,28 @@ public sealed class BuffInfoReaderTests
         var ok = BuffInfoReader.TryRead(payload, out var b);
 
         Assert.True(ok);
-        Assert.Equal(0,    b.SourceKind);
+        Assert.Equal(10,   b.SourceKind);
         Assert.Equal(2327, b.SourceId);
         Assert.True(b.FirerId.IsPlayer);
+    }
+
+    [Fact]
+    public void TryRead_Field12_TruncatedAfterFirstSubfield_LeavesBothZero()
+    {
+        // fight_source_type = 10 parses; source_config_id's varint is cut off (continuation bit set, no next byte).
+        var truncated = new byte[] { 0x08, 0x0A, 0x10, 0x80 };
+        var payload = new WireBytes()
+            .Tag(1, 0).Varint(111)
+            .Tag(2, 0).Varint(55333)
+            .Tag(12, 2).LengthDelimited(truncated)
+            .ToArray();
+
+        var ok = BuffInfoReader.TryRead(payload, out var b);
+
+        Assert.True(ok);                 // the outer read never fails on a malformed sub-message
+        Assert.Equal(55333, b.BaseId);
+        Assert.Equal(0, b.SourceKind);
+        Assert.Equal(0, b.SourceId);
     }
 
     [Fact]
