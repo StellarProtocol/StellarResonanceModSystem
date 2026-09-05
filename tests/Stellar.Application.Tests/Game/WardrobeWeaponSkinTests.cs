@@ -10,6 +10,8 @@ namespace Stellar.Application.Tests.Game;
 /// the outfit map and switches them with <c>WorldProxy.UseProfessionSkin</c>; the chunks here must mirror
 /// <c>weapon_skill_skin_vm.lua</c> (<c>GetWeaponSkinId</c> for the read, <c>AsyncUseProfessionSkin</c> for
 /// the apply: skin 0 → the class's origin skin, <c>OnWeaponSkinChange</c> dispatch on ok).
+/// Framework 2.6.1 adds the capture-side half of that same 0 ⇄ origin contract — see
+/// <see cref="CaptureChunk_ReportsTheCurrentWeaponsOriginSkin_AsNoSkin"/>.
 /// </summary>
 public sealed class WardrobeWeaponSkinTests
 {
@@ -47,9 +49,48 @@ public sealed class WardrobeWeaponSkinTests
                     < chunk.IndexOf("_StellarWardrobeWeapon", System.StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Regression pin — owner bug 2026-09-05, after the 2.6.0 release: "no weapon skin never been saved
+    /// when user select that and click store outfit." The Wardrobe's ⊘ tile is NOT skin 0: the tab marks
+    /// worn the tile whose Id equals <c>GetWeaponOriginSkinId(curProfessionId)</c>
+    /// (fashion_weapon_skin_select_view.lua:116, <c>isEmpty = value.Original == 1</c>), so picking it stores
+    /// a concrete <c>WeaponSkinTable</c> row (measured: outfit 9 held profession 5 / skin 7350002
+    /// "Mirrorlight Ring", <c>Original: 1</c>). Capture must report that as 0 — the contract both consumers
+    /// already resolve back — or the outfit pins the player to the weapon they saved with.
+    /// </summary>
+    [Fact]
+    public void CaptureChunk_ReportsTheCurrentWeaponsOriginSkin_AsNoSkin()
+    {
+        var chunk = PandaFashionProbe.CaptureChunk;
+
+        // Mirrors the tab's own worn-tile test, on the container's curProfessionId (== the VM's
+        // GetContainerProfession, which GetWeaponOriginSkinId requires to match or it returns nil).
+        Assert.Contains(
+            "    if sk~=0 then pcall(function()" +
+            "     local svm=((Z.VMMgr).GetVM)(\"weapon_skill_skin\")" +
+            "     local origin=svm and svm:GetWeaponOriginSkinId(cur)" +
+            "     if origin~=nil and origin~=0 and sk==origin then sk=0 end" +
+            "    end) end",
+            chunk);
+
+        // Its OWN pcall, nested inside the weapon block's: a failing origin lookup keeps the RAW skin id
+        // rather than losing the capture (dry-run cases c/e/f: GetVM nil / GetVM throws / call throws).
+        var normalise = chunk.IndexOf("local origin=svm", System.StringComparison.Ordinal);
+        var innerPcall = chunk.IndexOf("if sk~=0 then pcall(function()", System.StringComparison.Ordinal);
+        Assert.InRange(innerPcall, 0, normalise);
+
+        // The normalisation runs BEFORE the global is composed, so what C# parses is already normalised.
+        Assert.InRange(
+            normalise, 0, chunk.IndexOf("w=tostring(cur)..\":\"..tostring(sk)", System.StringComparison.Ordinal));
+
+        // …and still after the outfit global — a weapon-side failure can never lose the outfit.
+        Assert.InRange(
+            chunk.IndexOf("_StellarWardrobeWorn", System.StringComparison.Ordinal), 0, innerPcall);
+    }
+
     [Theory]
     [InlineData("5:160", 5, 160)]
-    [InlineData("5:0", 5, 0)]           // class wears its default weapon look
+    [InlineData("5:0", 5, 0)]           // ⊘ "no skin": the class wears its current weapon's own look
     [InlineData("13:4210.0", 13, 4210)] // Lua float formatting tolerated
     public void ParseWeaponSkin_ReadsClassAndSkin(string raw, int professionId, int skinId)
     {

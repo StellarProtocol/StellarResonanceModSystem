@@ -19,6 +19,11 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.6.1 is a fix: <c>IWardrobe.GetWornWeaponSkin</c> reports "no weapon skin" as
+    /// <c>SkinId 0</c> again. The Wardrobe's ⊘ tile is not skin 0 — the game stores the
+    /// current weapon's ORIGIN row id (a concrete <c>WeaponSkinTable</c> row per weapon
+    /// family), so capture saved a specific skin and re-applying the outfit forced that
+    /// look. Infrastructure-only (capture chunk) — no API change, binary-compatible.
     /// 2.4.1 is a fix: the framework-only "Cannot perform this action during combat"
     /// toast (~every 5s in sustained open-world combat) is gone. Root cause: every
     /// CharSerialize merge re-armed the loadout refresh, whose weapon-VM
