@@ -123,7 +123,7 @@ internal sealed class PandaWardrobePreviewProbe
             if (kv.Value == 0) continue;
             IReadOnlyDictionary<int, float[]>? areaMap = null;
             dyes?.TryGetValue(kv.Key, out areaMap);
-            AppendPiece(wear, kv.Value, areaMap);
+            AppendPiece(wear, kv.Key, kv.Value, areaMap);
         }
         return "    pcall(function()\n" +
                "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
@@ -132,14 +132,19 @@ internal sealed class PandaWardrobePreviewProbe
                "    end)\n";
     }
 
-    // One SingleWearData for a piece. When its per-area dyes were captured, place each colour on its real
-    // EFashionColorAreaType area exactly as the game's fashion_vm does: BaseColor is a 17-slot ZList indexed
-    // by area (index 0 a zero placeholder, 1..16 the areas), AttachmentColor a 5-slot socks list
-    // ([zero, Socks1..4] = areas 5..8). Areas the piece did not dye stay zero → they render in the default.
-    private static void AppendPiece(StringBuilder wear, int fashionId, IReadOnlyDictionary<int, float[]>? areaMap)
+    // One SingleWearData for a piece. SlotID MUST be the piece's FashionRegion — exactly what the game's own
+    // fashion_vm.GetFashionWearList does (`data.SlotId = region`): the model routes a head piece to its mount
+    // by SlotID (713 Headwear → EModelCMountHeadWearWearData, 718 HeadWearSecond → …HeadWear2WearData), so
+    // with SlotID=0 both head accessories collapsed onto ONE mount and the second overwrote the first
+    // (Discord report 2026-09-03: "briefly see head slot 1, then overwritten by head slot 2"). When per-area
+    // dyes were captured, place each colour on its real EFashionColorAreaType area exactly as fashion_vm does:
+    // BaseColor is a 17-slot ZList indexed by area (index 0 a zero placeholder, 1..16 the areas),
+    // AttachmentColor a 5-slot socks list ([zero, Socks1..4] = areas 5..8). Undyed areas stay zero → default.
+    private static void AppendPiece(StringBuilder wear, int region, int fashionId, IReadOnlyDictionary<int, float[]>? areaMap)
     {
         wear.Append("      do local wd=(((Panda.ZGame).SingleWearData).Rent)() wd.FashionID=")
-            .Append(fashionId.ToString(CultureInfo.InvariantCulture)).Append(" wd.SlotID=0\n");
+            .Append(fashionId.ToString(CultureInfo.InvariantCulture)).Append(" wd.SlotID=")
+            .Append(region.ToString(CultureInfo.InvariantCulture)).Append('\n');
         if (areaMap is { Count: > 0 })
         {
             var tbl = new StringBuilder();
