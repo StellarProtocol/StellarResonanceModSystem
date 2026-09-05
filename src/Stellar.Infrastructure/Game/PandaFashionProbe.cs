@@ -12,22 +12,23 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// Reflection-based <see cref="IWardrobeProbe"/>. Reads the local player's worn cosmetic outfit
-/// (region→fashionId) and applies a saved outfit through the game's own Lua bridge +
-/// <c>WorldProxy.FashionWear</c> RPC (never constructing packets). Mirror of
-/// <see cref="PandaLoadoutProbe"/>'s bridge shape.
+/// (region→fashionId) plus the current class's weapon skin, and applies a saved outfit / weapon skin
+/// through the game's own Lua bridge + <c>WorldProxy.FashionWear</c> / <c>UseProfessionSkin</c> RPCs
+/// (never constructing packets). Mirror of <see cref="PandaLoadoutProbe"/>'s bridge shape.
 ///
 /// <para><b>Capture</b> is a cheap LOCAL container read (no RPC), refreshed EVENT-DRIVEN — on first
 /// resolve, on the container-merge event (<see cref="OnGearChanged"/>, Host wires it to
 /// <c>IInventory.SelfGearChanged</c>), and after our own apply — never on a timer. The capture chunk
-/// carries no yielding call, so its global is set synchronously and read back the same tick.</para>
+/// carries no yielding call, so its globals are set synchronously and read back the same tick.</para>
 ///
-/// <para><b>Apply</b> fires the yielding <c>FashionWear</c> RPC (deferred to the Update tick — the Lua
-/// VM is main-thread-only) and polls the result global across ticks for the bare game code. The apply
-/// path is <b>unverified in-game</b> as of 2026-08-25 (the render-refresh replay + the exact error codes
-/// are on the owner's in-game test list — see the design spec).</para>
+/// <para><b>Apply</b> fires a yielding RPC chunk (deferred to the Update tick — the Lua VM is
+/// main-thread-only) and polls the result global across ticks for the bare game code. Outfit and
+/// weapon-skin applies share ONE pending slot and result global (a newer request supersedes an
+/// unfinished one).</para>
 ///
-/// <para>SOLID partial layout: Lua-bridge reflection + chunk builders live in
-/// <c>PandaFashionProbe.Resolution.cs</c>; gated per-event logging in
+/// <para>SOLID partial layout: Lua-bridge reflection + outfit chunk builders live in
+/// <c>PandaFashionProbe.Resolution.cs</c>; the weapon-skin read/apply in
+/// <c>PandaFashionProbe.WeaponSkin.cs</c>; gated per-event logging in
 /// <c>PandaFashionProbe.Diagnostics.cs</c>.</para>
 /// </summary>
 internal sealed partial class PandaFashionProbe : IWardrobeProbe
@@ -64,21 +65,27 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
     /// CharSerialize merge). Only flips a flag — safe to call from the network thread.</summary>
     public void OnGearChanged() => _captureDirty = true;
 
-    /// <summary>Logout reset — drop the worn snapshot so <see cref="IsInWorld"/> falls false and the
-    /// next in-world capture rebuilds it.</summary>
+    /// <summary>Logout reset — drop the worn snapshots so <see cref="IsInWorld"/> falls false and the
+    /// next in-world capture rebuilds them.</summary>
     public void ClearSession()
     {
         _worn = null;
+        _weaponSkin = null;
         _captureDirty = true;
     }
 
     public Task<int> CallApplyAsync(IReadOnlyDictionary<int, int> outfit, CancellationToken ct)
+        => Dispatch(BuildApplyChunk(outfit), FormatOutfit(outfit), ct);
+
+    // Queue one game-RPC chunk (outfit or weapon skin) for the Update tick. Both kinds share the single
+    // pending slot — a newer request supersedes an unfinished one (-2) — and the ApplyGlobal result read.
+    private Task<int> Dispatch(string chunk, string label, CancellationToken ct)
     {
         if (ct.IsCancellationRequested) return Task.FromResult(-2);
         if (!EnsureBridgeResolved()) return Task.FromResult(-3);
 
         var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var pending = new PendingApply(outfit, tcs, Stopwatch.StartNew());
+        var pending = new PendingApply(chunk, label, tcs, Stopwatch.StartNew());
 
         PendingApply? superseded;
         lock (_pendingLock)
@@ -96,7 +103,7 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
     }
 
     /// <summary>Called per Update tick from the Host service tick (Unity main thread, world-gated).
-    /// Resolves the bridge, refreshes the worn snapshot when armed, dispatches a queued apply, then
+    /// Resolves the bridge, refreshes the worn snapshots when armed, dispatches a queued apply, then
     /// polls the apply result global for completion.</summary>
     public void Tick()
     {
@@ -115,13 +122,14 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
     }
 
     // Capture is a synchronous local read (no yielding RPC in the chunk): invoke, then read back the
-    // global the same tick.
+    // globals the same tick. One chunk writes both the outfit and the weapon-skin global.
     private void CaptureIfDirty()
     {
         if (!_captureDirty) return;
         _captureDirty = false;
         if (!InvokeChunk(CaptureChunk)) return;
         ParseWorn(ReadLuaGlobalString(WornGlobal));
+        CaptureWeaponSkin();
     }
 
     // Parse "R;701:5;702:0;…" into a COMPLETE 14-region map (0 for any region the wire omitted; regions
@@ -158,9 +166,9 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
             if (pending.IsCompleted) continue;
 
             InvokeChunk(ClearApplyGlobalChunk);
-            if (InvokeChunk(BuildApplyChunk(pending.Outfit)))
+            if (InvokeChunk(pending.Chunk))
             {
-                DiagDispatched(pending.Outfit);
+                DiagDispatched(pending.Label);
             }
             else
             {
@@ -170,7 +178,7 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
     }
 
     // Decide an in-flight apply's outcome, or null to keep waiting. The apply global holds the bare
-    // FashionWear code once the RPC replies (0 = ok, positive = a game EErrorCode); -1 on timeout.
+    // game code once the RPC replies (0 = ok, positive = a game EErrorCode); -1 on timeout.
     private int? Evaluate(PendingApply pending)
     {
         if (pending.IsCompleted) return null;
@@ -179,7 +187,7 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
         if (!string.IsNullOrEmpty(raw)
             && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var code))
         {
-            _captureDirty = true;   // re-read the worn set so the overlay reflects the applied outfit
+            _captureDirty = true;   // re-read the worn set so the overlay reflects the applied outfit / skin
             return code;
         }
 
@@ -195,7 +203,8 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
         }
     }
 
-    // A single in-flight apply. Completion is idempotent and clears the owning probe's pending slot.
+    // A single in-flight apply (outfit or weapon skin — the Lua chunk decides). Completion is idempotent
+    // and clears the owning probe's pending slot.
     private sealed class PendingApply
     {
         private readonly TaskCompletionSource<int> _tcs;
@@ -203,14 +212,20 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
         private CancellationTokenRegistration _ctReg;
         private int _completed;
 
-        public PendingApply(IReadOnlyDictionary<int, int> outfit, TaskCompletionSource<int> tcs, Stopwatch stopwatch)
+        public PendingApply(string chunk, string label, TaskCompletionSource<int> tcs, Stopwatch stopwatch)
         {
-            Outfit = outfit;
+            Chunk = chunk;
+            Label = label;
             _tcs = tcs;
             _stopwatch = stopwatch;
         }
 
-        public IReadOnlyDictionary<int, int> Outfit { get; }
+        /// <summary>The Lua chunk to run on the Update tick.</summary>
+        public string Chunk { get; }
+
+        /// <summary>Human-readable description for the (diagnostics-gated) dispatch line.</summary>
+        public string Label { get; }
+
         public bool IsCompleted => Volatile.Read(ref _completed) != 0;
         public TimeSpan Elapsed => _stopwatch.Elapsed;
 

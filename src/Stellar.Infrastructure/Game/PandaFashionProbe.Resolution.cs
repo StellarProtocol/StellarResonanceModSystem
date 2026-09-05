@@ -183,8 +183,10 @@ internal sealed partial class PandaFashionProbe
     // Capture chunk: read cs.fashion.wearInfo (region→fashionId). The game's own fashion_vm.lua
     // iterates this map value-form (`for region,id in pairs(...) do wear[region]=id`), so it is a plain
     // value-yielding table — NOT the nil-value zcontainer trap. Prefix "R" once CharSerialize.fashion is
-    // present so C# can tell "in world, empty wardrobe" from "not ready". No interpolation — no injection.
-    private const string CaptureChunk =
+    // present so C# can tell "in world, empty wardrobe" from "not ready". The weapon-skin read
+    // (WeaponCaptureLua, PandaFashionProbe.WeaponSkin.cs) is spliced in after the outfit and writes its own
+    // global. No interpolation — no injection.
+    internal const string CaptureChunk =
         "(Z.CoroUtil.create_coro_xpcall(function()" +
         " local cs=(Z.ContainerMgr).CharSerialize" +
         " local out=\"\"" +
@@ -193,6 +195,7 @@ internal sealed partial class PandaFashionProbe
         "  if fw~=nil then pcall(function() for region,fid in pairs(fw) do out=out..\";\"..tostring(region)..\":\"..tostring(fid) end end) end" +
         " end" +
         " rawset(_G,\"" + WornGlobal + "\", out)" +
+        WeaponCaptureLua +
         " end))()";
 
     // Clears the apply result global before a dispatch so a stale value isn't read.

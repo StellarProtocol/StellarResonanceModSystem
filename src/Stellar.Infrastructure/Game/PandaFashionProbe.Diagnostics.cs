@@ -33,10 +33,17 @@ internal sealed partial class PandaFashionProbe
         _log.Info($"[WardrobeCapture] worn {FormatOutfit(worn)}");
     }
 
-    private void DiagDispatched(IReadOnlyDictionary<int, int> outfit)
+    private void DiagWeaponCaptured(WardrobeWeaponSkin skin)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[WardrobeApply] dispatch {FormatOutfit(outfit)}");
+        _log.Info($"[WardrobeCapture] weapon skin class={skin.ProfessionId} skin={skin.SkinId}");
+    }
+
+    // `label` = FormatOutfit(...) for an outfit apply, "weapon skin class=… skin=…" for a weapon-skin apply.
+    private void DiagDispatched(string label)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[WardrobeApply] dispatch {label}");
     }
 
     private void DiagResult(int code, long elapsedMs)
