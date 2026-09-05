@@ -18,6 +18,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 _**2.7.0** (minor) — no player-visible change yet; internal groundwork for an upcoming raid-contribution DPS (rDPS) feature. Additive, binary-compatible with plugins built against ≤2.6.1._
 ### Developer notes
 - CombatEvent.EntityAttributesChanged: a player's numeric attributes changed (one event per wire packet, stamped like the packet's buff events) — enables the CombatMeter stat-sheet track for rDPS.
+- Entity attribute capture now stores a genuine zero value (single 0x00 varint) instead of dropping it; non-varint payloads are still skipped.
 
 ## [2.6.1] - 2026-09-05
 _**2.6.1** (patch) — "no weapon skin" is saved as no weapon skin again. Infrastructure-only, binary-compatible with plugins built against ≤2.6.0._

@@ -14,7 +14,7 @@ public sealed class EntityAttributesChangedTests
         var attrs = new List<AttrValue> { new(11710, 3350), new(12670, 1200) };
         var ev = new CombatEvent.EntityAttributesChanged(1_788_604_960_970L, new EntityId(0x0000_0001_0000_0280), attrs);
         Assert.Equal(1_788_604_960_970L, ev.TimestampMs);
-        Assert.True(ev.EntityId.IsPlayer);
+        Assert.True(ev.TargetId.IsPlayer);
         Assert.Equal(2, ev.Attrs.Count);
         Assert.Equal(11710, ev.Attrs[0].AttrId);
         Assert.Equal(3350L, ev.Attrs[0].Value);

@@ -102,9 +102,9 @@ public abstract record CombatEvent(long TimestampMs)
     /// their own events and are not repeated here.
     /// </summary>
     /// <param name="TimestampMs">Wire receive time of the packet (client wall clock, Unix ms).</param>
-    /// <param name="EntityId">The entity whose attributes changed.</param>
+    /// <param name="TargetId">The entity whose attributes changed.</param>
     /// <param name="Attrs">The stored attribute values of this packet; never empty.</param>
-    public sealed record EntityAttributesChanged(long TimestampMs, EntityId EntityId, IReadOnlyList<AttrValue> Attrs) : CombatEvent(TimestampMs);
+    public sealed record EntityAttributesChanged(long TimestampMs, EntityId TargetId, IReadOnlyList<AttrValue> Attrs) : CombatEvent(TimestampMs);
 
     /// <summary>
     /// An entity's client-side actor/controller state machine entered a new state

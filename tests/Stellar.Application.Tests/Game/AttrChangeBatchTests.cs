@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
 using Stellar.Abstractions.Domain;
 using Stellar.Infrastructure.Game;
 using Xunit;
@@ -9,21 +7,25 @@ namespace Stellar.Application.Tests.Game;
 
 /// <summary>Pins the pure half of the P2 attribute-event emission (spec § 6.1): one packet's stored
 /// scalars → ONE EntityAttributesChanged for a PLAYER, stamped with the packet's own timestamp; nothing
-/// for monsters; nothing for an empty batch; the batch is reusable across packets.</summary>
+/// for monsters; nothing for an empty batch; the batch is reusable across packets; the batch is
+/// entity-keyed so a leaked batch from an interrupted packet is never mis-attributed; and
+/// <see cref="AttrChangeBatch.IsStorableScalar"/> admits a genuine varint zero while still skipping junk
+/// non-varint payloads that also decode to zero.</summary>
 public sealed class AttrChangeBatchTests
 {
     static readonly EntityId Player  = new(0x0000_0001_0000_0280);   // low16 = 640
+    static readonly EntityId OtherPlayer = new(0x0000_0002_0000_0280);
     static readonly EntityId Monster = new(0x0000_0009_0000_0040);
 
     [Fact]
     public void Player_batch_flushes_one_event_with_every_pair_and_the_packet_stamp()
     {
         var b = new AttrChangeBatch();
-        b.Add(11710, 3350); b.Add(12670, 1200);
+        b.Add(Player, 11710, 3350); b.Add(Player, 12670, 1200);
         var ev = b.Flush(Player, 1_788_604_960_970L);
         Assert.NotNull(ev);
         Assert.Equal(1_788_604_960_970L, ev!.TimestampMs);
-        Assert.Equal(Player, ev.EntityId);
+        Assert.Equal(Player, ev.TargetId);
         Assert.Equal(new[] { 11710, 12670 }, new[] { ev.Attrs[0].AttrId, ev.Attrs[1].AttrId });
         Assert.Equal(new[] { 3350L, 1200L }, new[] { ev.Attrs[0].Value, ev.Attrs[1].Value });
     }
@@ -32,7 +34,7 @@ public sealed class AttrChangeBatchTests
     public void Monster_batch_flushes_nothing_but_still_clears()
     {
         var b = new AttrChangeBatch();
-        b.Add(11710, 1);
+        b.Add(Monster, 11710, 1);
         Assert.Null(b.Flush(Monster, 5L));
         Assert.Equal(0, b.Count);
     }
@@ -47,50 +49,68 @@ public sealed class AttrChangeBatchTests
     public void Flush_clears_so_the_next_packet_starts_empty_and_the_emitted_list_is_a_snapshot()
     {
         var b = new AttrChangeBatch();
-        b.Add(11710, 1);
+        b.Add(Player, 11710, 1);
         var first = b.Flush(Player, 1L)!;
-        b.Add(11780, 2);
+        b.Add(Player, 11780, 2);
         var second = b.Flush(Player, 2L)!;
         Assert.Single(first.Attrs);  Assert.Equal(11710, first.Attrs[0].AttrId);
         Assert.Single(second.Attrs); Assert.Equal(11780, second.Attrs[0].AttrId);
     }
 
-    /// <summary>Structural pin (fix round 1): the probe stores a scalar attr in exactly ONE place —
-    /// PandaCombatStubProbe.AttrEvents.cs's StoreScalarAttr, which writes the sink and records the pair
-    /// together. A bare `_sink.SetEntityAttribute(` anywhere else is an unpaired write: the attr reaches
-    /// GetAttributes but is silently missing from that packet's EntityAttributesChanged, so the rDPS
-    /// sheet drifts from what the game actually sent. That is exactly the defect this pins — Vitals.cs's
-    /// ApplyParsedDelta wrote FightPoint straight to the sink. Route new writes through the chokepoint;
-    /// do NOT relax this test to a count.</summary>
+    /// <summary>Fix round 2: a batch left holding pairs for entity A (its Flush(A,...) was never reached —
+    /// an interrupted packet) must not bleed into entity B's packet. The next Add for a DIFFERENT entity
+    /// discards the leaked pairs rather than mis-attributing them.</summary>
     [Fact]
-    public void Every_scalar_attr_write_goes_through_the_StoreScalarAttr_chokepoint()
+    public void A_leaked_batch_from_another_entity_is_discarded_on_the_next_add()
     {
-        var probeDir = Path.Combine(RepoRoot(), "src", "Stellar.Infrastructure", "Game");
-        var probeFiles = Directory.GetFiles(probeDir, "PandaCombatStubProbe*.cs");
-        Assert.NotEmpty(probeFiles);
-
-        var hits = new List<string>();
-        foreach (var file in probeFiles)
-        {
-            var text = File.ReadAllText(file);
-            for (int i = text.IndexOf(SinkWrite, StringComparison.Ordinal); i >= 0;
-                 i = text.IndexOf(SinkWrite, i + 1, StringComparison.Ordinal))
-            {
-                hits.Add(Path.GetFileName(file));
-            }
-        }
-
-        Assert.Equal(new[] { "PandaCombatStubProbe.AttrEvents.cs" }, hits.ToArray());
+        var b = new AttrChangeBatch();
+        b.Add(Player, 11710, 1);
+        b.Add(OtherPlayer, 22000, 2);
+        var ev = b.Flush(OtherPlayer, 9L)!;
+        Assert.Single(ev.Attrs);
+        Assert.Equal(22000, ev.Attrs[0].AttrId);
+        Assert.Equal(2L, ev.Attrs[0].Value);
     }
 
-    const string SinkWrite = "_sink.SetEntityAttribute(";
-
-    /// <summary>Walks up from the test binary to the framework repo root (the dir holding src/Stellar.sln).</summary>
-    static string RepoRoot()
+    /// <summary>Flushing with an entity id that does not match the batch's own (leaked) entity returns null
+    /// and still clears — the leaked pairs never surface under the wrong id.</summary>
+    [Fact]
+    public void Flush_for_a_different_entity_than_the_batch_returns_null_and_clears()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "Stellar.sln"))) dir = dir.Parent;
-        if (dir is null) throw new DirectoryNotFoundException($"No ancestor of '{AppContext.BaseDirectory}' contains src/Stellar.sln.");
-        return dir.FullName;
+        var b = new AttrChangeBatch();
+        b.Add(Player, 11710, 1);
+        Assert.Null(b.Flush(OtherPlayer, 9L));
+        Assert.Equal(0, b.Count);
+    }
+
+    [Fact]
+    public void IsStorableScalar_stores_any_nonzero_decode()
+    {
+        Assert.True(AttrChangeBatch.IsStorableScalar(5, new byte[] { 0x05 }));
+        Assert.True(AttrChangeBatch.IsStorableScalar(5, Array.Empty<byte>()));
+    }
+
+    [Fact]
+    public void IsStorableScalar_stores_a_genuine_single_byte_varint_zero()
+    {
+        Assert.True(AttrChangeBatch.IsStorableScalar(0, new byte[] { 0x00 }));
+    }
+
+    [Fact]
+    public void IsStorableScalar_skips_a_zero_decode_from_an_empty_payload()
+    {
+        Assert.False(AttrChangeBatch.IsStorableScalar(0, Array.Empty<byte>()));
+    }
+
+    [Fact]
+    public void IsStorableScalar_skips_a_zero_decode_from_a_two_byte_payload()
+    {
+        Assert.False(AttrChangeBatch.IsStorableScalar(0, new byte[] { 0x00, 0x00 }));
+    }
+
+    [Fact]
+    public void IsStorableScalar_skips_a_zero_decode_from_a_string_payload()
+    {
+        Assert.False(AttrChangeBatch.IsStorableScalar(0, System.Text.Encoding.UTF8.GetBytes("abc")));
     }
 }

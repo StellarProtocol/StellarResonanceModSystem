@@ -412,11 +412,12 @@ internal sealed partial class PandaCombatStubProbe
         // wire position cache by TryRoutePositionAttr above (previously AttrPos was dropped here).
         if (attr.Id == AttrTypeIds.AttrName
          || attr.Id == AttrTypeIds.AttrSkillLevelIdList) return;
-        // Skip zero: a non-varint (string/packed) payload decodes to 0, so this drops junk entries that would
-        // otherwise pad every entity's attr map. Legit zero-valued scalar attrs (rare) are simply omitted from
-        // the Attributes tab — acceptable for a raw debug dump.
+        // A genuine zero (single 0x00 varint byte) IS stored: the rDPS sheet track regresses over step
+        // functions, and an attribute that returns to 0 (e.g. an element damage bonus after its buff expires)
+        // must be able to step back down. A non-varint (string/packed) payload also decodes to 0 via
+        // DecodedLong's safe-try, but is never exactly one 0x00 byte, so junk payloads are still skipped.
         var value = attr.DecodedLong;
-        if (value != 0) StoreScalarAttr(eid, attr.Id, value);
+        if (AttrChangeBatch.IsStorableScalar(value, attr.RawData.Span)) StoreScalarAttr(eid, attr.Id, value);
     }
 
     // Route the position-family attrs (AttrPos=52 / AttrDir=50) into the wire position cache instead of
