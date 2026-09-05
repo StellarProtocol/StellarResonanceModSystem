@@ -188,9 +188,11 @@ internal sealed partial class WindowBuilder
         internal readonly List<CooldownTileBinding> CooldownTiles = new(); // per-apply poll for CooldownBar tiles (icon+fill+seconds+★)
         internal readonly List<ChartBinding> Charts = new();            // per-apply poll: re-mesh LineChart only on series/range change
         internal readonly List<Texture2D> IconTextures = new();        // PNG icons (HideAndDontSave) — reclaimed on destroy
-        // Atlas dedup: SpriteElement cells that share one atlas byte[] reuse a single uploaded texture (keyed by
-        // array reference). The texture is owned by IconTextures (added once on first load), so disposal stays
-        // single — this map only prevents the duplicate decode+upload, it does NOT own the texture.
+        // Texture dedup for EVERY icon leaf (tiles, button chips, images, sprites, brand logo, pin stars):
+        // leaves sharing one PNG byte[] reuse a single uploaded texture (keyed by array reference — plugins
+        // hand back stable arrays). Populated and read in ONE place, WindowBuilder.LoadIcon. The texture is
+        // owned by IconTextures (added once on first load), so disposal stays single — this map only prevents
+        // the duplicate decode+upload, it does NOT own the texture.
         internal readonly Dictionary<byte[], Texture2D> AtlasCache = new();
         internal readonly List<Action<float>> Pulses = new();          // per-frame brand-logo glow pulse (ticker-driven)
         // Re-skin closures captured at build: each re-applies a themed sprite/colour/size from the (rebaked)

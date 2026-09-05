@@ -142,25 +142,34 @@ internal sealed class PluginConfigService : IPluginConfig
 
     private void SaveSection(string sectionName)
     {
-        JsonObject clone;
-        lock (_lock)
-        {
-            clone = CloneObject(_root);
-        }
-        _store.Save(_pluginGuid, clone);
+        FlushToStore();
         SectionChanged?.Invoke(sectionName);
     }
 
     private void SaveSectionQuiet(string sectionName)
     {
-        JsonObject clone;
-        lock (_lock)
-        {
-            clone = CloneObject(_root);
-        }
-        _store.Save(_pluginGuid, clone);
+        FlushToStore();
         // Intentionally does NOT fire SectionChanged — caller is reacting to its own change.
         _ = sectionName; // suppress unused-parameter warning; kept for symmetry with SaveSection
+    }
+
+    /// <summary>
+    /// Hands the LIVE root to the store while holding <see cref="_lock"/>. The store's contract
+    /// (<see cref="IConfigStore.Save"/>) is to serialize synchronously and retain nothing, and every
+    /// mutation path here takes the same lock, so the tree cannot change mid-serialization.
+    /// <para>This used to deep-clone the root (ToJsonString + Parse) purely to hand it to a store
+    /// that serializes it AGAIN — ~200 KB of throwaway allocation per save on the owner's 53-outfit
+    /// wardrobe config, a third of it on the large-object heap. Owner report 2026-09-05: each save
+    /// click froze a frame for 287-366 ms.</para>
+    /// <para>Note the event is deliberately raised OUTSIDE the lock (subscribers re-enter to read
+    /// values).</para>
+    /// </summary>
+    private void FlushToStore()
+    {
+        lock (_lock)
+        {
+            _store.Save(_pluginGuid, _root);
+        }
     }
 
     private JsonObject LoadRoot()
@@ -230,16 +239,6 @@ internal sealed class PluginConfigService : IPluginConfig
         if (a is null && b is null) return true;
         if (a is null || b is null) return false;
         return a.ToJsonString() == b.ToJsonString();
-    }
-
-    /// <summary>
-    /// net6.0-compatible deep clone of a <see cref="JsonObject"/> via
-    /// round-trip through its serialized form.
-    /// </summary>
-    private static JsonObject CloneObject(JsonObject src)
-    {
-        var parsed = JsonNode.Parse(src.ToJsonString());
-        return parsed as JsonObject ?? new JsonObject();
     }
 
     private sealed class ConfigSection : IConfigSection, Stellar.Application.Abstractions.IConfigKeyReader
