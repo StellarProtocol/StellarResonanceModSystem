@@ -157,9 +157,10 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
         // container (distinct per class — correct for loadout switching). Resolves once when the loadout
         // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The
-        // CURRENT class is overlaid with its LIVE equipped set (manual edits) inside this call. COALESCED:
-        // a re-equip burst arms the resolve ~30x/s and the walk is whole-item-container, so it runs at most
-        // once per ResolveCooldownTicks window — deferred, never dropped (owner report 2026-09-05).
+        // CURRENT class is overlaid with its LIVE equipped set (manual edits) inside this call. DEBOUNCED
+        // on the TRAILING edge: a re-equip burst arms the resolve ~30x/s and the walk is
+        // whole-item-container, so it runs ONCE after the burst goes quiet (ResolveQuietTicks) with a hard
+        // ResolveMaxDeferTicks ceiling — deferred, never dropped (owner report 2026-09-05).
         TryResolvePerClassDetailsIfDue();
         DrainPendingDispatches();
 

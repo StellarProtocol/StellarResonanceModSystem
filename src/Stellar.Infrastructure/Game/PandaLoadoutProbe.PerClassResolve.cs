@@ -19,6 +19,11 @@ internal sealed partial class PandaLoadoutProbe
     // resolve reads) fires that SAME event — so a resolve that ran before the container was ready simply
     // re-runs when the sync lands. No retry loop, no per-tick scan: the flag gates the one
     // (whole-item-container) scan to exactly the events that change its inputs.
+    //
+    // The sibling partials only ever SET this flag (it is the arm). The drain tick CONSUMES it once per
+    // tick into _resolveArmed — see ObservePerClassResolveArm — so the debounce below can tell a fresh
+    // delta from one it has already counted. TryResolvePerClassDetails still reads and clears it, so the
+    // regression pins that invoke that method directly keep working unchanged.
     private bool _resolvePending;
 
     // Sentinel identity for the synthesized current-class entry: the class the player is actively using
@@ -28,46 +33,108 @@ internal sealed partial class PandaLoadoutProbe
     private const int LiveCurrentIndex = -1;
     private const string LiveCurrentName = "Current";
 
-    // COALESCE the resolve, exactly like the SyncProjectList refresh above it (RefreshCooldownTicks).
+    // DEBOUNCE the resolve on the TRAILING edge of the delta burst.
+    //
     // The resolve is a WHOLE-item-container walk: PandaInventoryPullReader.PerClassLoadout builds a uuid
     // index over every item in every package and then reads a gear instance per slot per plan. It is
     // event-driven (never polled), but the events come in BURSTS: one loadout switch = a full server
     // re-equip = a CharSerialize delta per changed field, each one an OnGearChanged → _resolvePending, so
-    // the walk ran at the full drain rate (~30 Hz) for the length of the burst — the allocation class
-    // measured at ~1.8 MB/s → 100-475 ms GC frames in the 2026-07-25 A/B. Owner report 2026-09-05: three
-    // same-loadout switches in a row overlapped their bursts into a 3,261 ms frametime spike. The flag
-    // STAYS ARMED while cooling down, so nothing is ever dropped — the burst collapses into one walk per
-    // window, and the final state always resolves.
-    private int _resolveCooldown;
-    private const int ResolveCooldownTicks = 20;   // ~0.66 s at the 30 Hz loadout drain — matches the refresh gate
+    // ungated the walk ran at the full drain rate (~30 Hz) for the length of the burst — the allocation
+    // class measured at ~1.8 MB/s → 100-475 ms GC frames in the 2026-07-25 A/B. Owner report 2026-09-05:
+    // three same-loadout switches in a row overlapped their bursts into a 3,261 ms frametime spike.
+    //
+    // A LEADING-edge cooldown (walk now, then wait) still walked once per window THROUGH the burst — a
+    // ~1 s burst cost two walks, both against half-applied state. Trailing edge instead: every new arm
+    // restarts a quiet timer and the walk runs only once the burst has STOPPED, so one loadout switch =
+    // ONE walk, against the burst's final state.
+    //
+    // DEFER, NEVER DROP — the two guarantees that make that safe:
+    //   • the arm is never lost. _resolvePending is consumed per tick into _resolveArmed (our sticky
+    //     copy, cleared ONLY by the walk), which is what turns "still armed" into "armed AGAIN this
+    //     tick" — a plain bool cannot distinguish those, and the arming sites live in sibling partials.
+    //   • lateness is BOUNDED. ResolveMaxDeferTicks forces a walk during an endless delta stream, so
+    //     "late, never stale" still holds with a hard ceiling of ~2 s.
+    private bool _resolveArmed;
+    private int  _resolveQuietTicks;
+    private int  _resolveDeferTicks;
+    private const int ResolveQuietTicks    = 15;   // ~0.5 s at the 30 Hz loadout drain — burst is over
+    private const int ResolveMaxDeferTicks = 60;   // ~2 s — hard ceiling under a never-ending stream
 
-    /// <summary>Outcome of the coalescing gate on the per-class resolve — see <see cref="DecideResolve"/>.</summary>
+    // ALWAYS ON, and deliberately NOT behind StellarDiagnostics in the .Diagnostics.cs partial: the line
+    // is SELF-LIMITING (a healthy walk logs nothing at all), and it must be readable in the owner's very
+    // next log WITHOUT a diagnostics restart — its whole job is to say whether this walk is the frame
+    // spike being reported.
+    private const long SlowWalkMs = 33;   // ~2 frames at 60 Hz
+
+    /// <summary>Outcome of the debounce gate on the per-class resolve — see <see cref="DecideResolve"/>.</summary>
     internal enum ResolveOutcome { Wait, Resolve }
 
-    /// <summary>Pure decision for the coalesced per-class resolve (pinned by
+    /// <summary>Pure decision for the trailing-edge debounced per-class resolve (pinned by
     /// <c>PandaLoadoutProbeResolveGateTests</c>; origin = owner report 2026-09-05, same-loadout re-press
-    /// froze the client for 3,261 ms). The twin of <see cref="DecideRefresh"/>: a due resolve inside the
-    /// cooldown WAITS with the caller's <c>_resolvePending</c> still armed — deferred, never dropped.</summary>
-    internal static ResolveOutcome DecideResolve(bool resolvePending, bool resolverAttached, bool cooldownActive, bool hasInputs)
+    /// froze the client for 3,261 ms). An armed resolve WAITS while the delta burst is still arriving
+    /// (<paramref name="quietTicks"/> below <see cref="ResolveQuietTicks"/>) and runs once it goes quiet;
+    /// <paramref name="deferTicks"/> at <see cref="ResolveMaxDeferTicks"/> forces the walk so lateness is
+    /// bounded. Deferred, never dropped.</summary>
+    internal static ResolveOutcome DecideResolve(
+        bool resolveArmed, bool resolverAttached, bool hasInputs, int quietTicks, int deferTicks)
     {
-        if (!resolvePending || !resolverAttached) return ResolveOutcome.Wait;
-        if (cooldownActive) return ResolveOutcome.Wait;          // stays armed — the next window runs it
-        if (!hasInputs) return ResolveOutcome.Wait;              // nothing saved and nothing equipped
+        if (!resolveArmed || !resolverAttached) return ResolveOutcome.Wait;
+        if (!hasInputs) return ResolveOutcome.Wait;                     // nothing saved and nothing equipped
+        if (deferTicks >= ResolveMaxDeferTicks) return ResolveOutcome.Resolve;   // bounded lateness
+        if (quietTicks < ResolveQuietTicks) return ResolveOutcome.Wait; // burst still arriving — stays armed
         return ResolveOutcome.Resolve;
     }
 
-    /// <summary>One drain tick of the coalesced resolve: advance the window, ask
-    /// <see cref="DecideResolve"/>, and run the walk when it says so. The gate lives HERE, around the
-    /// walk, rather than inside it — <see cref="TryResolvePerClassDetails"/> stays the pure "do it now"
-    /// step the live-state / Deep-Slumber regression pins drive directly.</summary>
+    /// <summary>One drain tick of the debounced resolve: fold this tick's arm into the sticky flag,
+    /// advance the quiet/defer counters, ask <see cref="DecideResolve"/>, and run the walk when it says
+    /// so. The gate lives HERE, around the walk, rather than inside it —
+    /// <see cref="TryResolvePerClassDetails"/> stays the pure "do it now" step the live-state /
+    /// Deep-Slumber regression pins drive directly.</summary>
     private void TryResolvePerClassDetailsIfDue()
     {
-        if (_resolveCooldown > 0) _resolveCooldown--;
-        var hasInputs = _parsedPlans.Count > 0 || _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
-        if (DecideResolve(_resolvePending, _resolveGear is not null, _resolveCooldown > 0, hasInputs) == ResolveOutcome.Wait) return;
+        ObservePerClassResolveArm();
 
-        _resolveCooldown = ResolveCooldownTicks;
+        var hasInputs = _parsedPlans.Count > 0 || _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
+        if (DecideResolve(_resolveArmed, _resolveGear is not null, hasInputs, _resolveQuietTicks, _resolveDeferTicks)
+            == ResolveOutcome.Wait) return;
+
+        _resolveArmed = false;
+        _resolveQuietTicks = 0;
+        _resolveDeferTicks = 0;
+        _resolvePending = true;   // the walk's own guard — TryResolvePerClassDetails clears it again
+        RunPerClassResolveTimed();
+    }
+
+    // Consume the shared arm flag ONCE per tick. OnGearChanged sets _resolvePending from the network
+    // thread on every container merge; reading-and-clearing it here is what makes a re-arm observable to
+    // the debounce (the sibling partials that arm it are outside this file, and a bool cannot carry
+    // "again"). The arm itself is not lost — it moves into _resolveArmed, which only the walk clears.
+    private void ObservePerClassResolveArm()
+    {
+        if (_resolvePending)
+        {
+            _resolvePending = false;
+            if (!_resolveArmed) { _resolveArmed = true; _resolveDeferTicks = 0; }
+            _resolveQuietTicks = 0;   // a new delta — restart the quiet window
+        }
+        else if (_resolveArmed)
+        {
+            if (_resolveQuietTicks < ResolveQuietTicks) _resolveQuietTicks++;   // clamped — cannot overflow
+        }
+
+        // The defer cap counts EVERY armed tick, delta or not. Counting only quiet ticks would let a
+        // dense-enough stream hold the cap back indefinitely — a delta on every tick would starve the
+        // walk outright, which is the exact failure the cap exists to prevent.
+        if (_resolveArmed && _resolveDeferTicks < ResolveMaxDeferTicks) _resolveDeferTicks++;
+    }
+
+    // The walk, timed. See SlowWalkMs for why the line is always on rather than diagnostics-gated.
+    private void RunPerClassResolveTimed()
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         TryResolvePerClassDetails();
+        var ms = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000L / System.Diagnostics.Stopwatch.Frequency;
+        if (ms > SlowWalkMs) _log.Info($"[PerClassLoadout] walk {ms}ms plans={_parsedPlans.Count}");
     }
 
     private void TryResolvePerClassDetails()
