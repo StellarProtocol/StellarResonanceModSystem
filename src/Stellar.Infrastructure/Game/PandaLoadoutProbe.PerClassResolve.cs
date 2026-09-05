@@ -28,6 +28,48 @@ internal sealed partial class PandaLoadoutProbe
     private const int LiveCurrentIndex = -1;
     private const string LiveCurrentName = "Current";
 
+    // COALESCE the resolve, exactly like the SyncProjectList refresh above it (RefreshCooldownTicks).
+    // The resolve is a WHOLE-item-container walk: PandaInventoryPullReader.PerClassLoadout builds a uuid
+    // index over every item in every package and then reads a gear instance per slot per plan. It is
+    // event-driven (never polled), but the events come in BURSTS: one loadout switch = a full server
+    // re-equip = a CharSerialize delta per changed field, each one an OnGearChanged → _resolvePending, so
+    // the walk ran at the full drain rate (~30 Hz) for the length of the burst — the allocation class
+    // measured at ~1.8 MB/s → 100-475 ms GC frames in the 2026-07-25 A/B. Owner report 2026-09-05: three
+    // same-loadout switches in a row overlapped their bursts into a 3,261 ms frametime spike. The flag
+    // STAYS ARMED while cooling down, so nothing is ever dropped — the burst collapses into one walk per
+    // window, and the final state always resolves.
+    private int _resolveCooldown;
+    private const int ResolveCooldownTicks = 20;   // ~0.66 s at the 30 Hz loadout drain — matches the refresh gate
+
+    /// <summary>Outcome of the coalescing gate on the per-class resolve — see <see cref="DecideResolve"/>.</summary>
+    internal enum ResolveOutcome { Wait, Resolve }
+
+    /// <summary>Pure decision for the coalesced per-class resolve (pinned by
+    /// <c>PandaLoadoutProbeResolveGateTests</c>; origin = owner report 2026-09-05, same-loadout re-press
+    /// froze the client for 3,261 ms). The twin of <see cref="DecideRefresh"/>: a due resolve inside the
+    /// cooldown WAITS with the caller's <c>_resolvePending</c> still armed — deferred, never dropped.</summary>
+    internal static ResolveOutcome DecideResolve(bool resolvePending, bool resolverAttached, bool cooldownActive, bool hasInputs)
+    {
+        if (!resolvePending || !resolverAttached) return ResolveOutcome.Wait;
+        if (cooldownActive) return ResolveOutcome.Wait;          // stays armed — the next window runs it
+        if (!hasInputs) return ResolveOutcome.Wait;              // nothing saved and nothing equipped
+        return ResolveOutcome.Resolve;
+    }
+
+    /// <summary>One drain tick of the coalesced resolve: advance the window, ask
+    /// <see cref="DecideResolve"/>, and run the walk when it says so. The gate lives HERE, around the
+    /// walk, rather than inside it — <see cref="TryResolvePerClassDetails"/> stays the pure "do it now"
+    /// step the live-state / Deep-Slumber regression pins drive directly.</summary>
+    private void TryResolvePerClassDetailsIfDue()
+    {
+        if (_resolveCooldown > 0) _resolveCooldown--;
+        var hasInputs = _parsedPlans.Count > 0 || _liveEquipUuids.Count > 0 || _liveModUuids.Count > 0;
+        if (DecideResolve(_resolvePending, _resolveGear is not null, _resolveCooldown > 0, hasInputs) == ResolveOutcome.Wait) return;
+
+        _resolveCooldown = ResolveCooldownTicks;
+        TryResolvePerClassDetails();
+    }
+
     private void TryResolvePerClassDetails()
     {
         if (!_resolvePending || _resolveGear is null) return;

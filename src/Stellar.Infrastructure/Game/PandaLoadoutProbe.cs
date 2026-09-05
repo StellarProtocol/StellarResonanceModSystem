@@ -1,11 +1,5 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
-using System.Threading;
-using System.Threading.Tasks;
-using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 using Stellar.Abstractions.Services;
@@ -69,10 +63,8 @@ internal readonly record struct ParsedPlan(
 /// </summary>
 internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 {
-    // Loadout switch goes through the game's weapon-VM wrapper (AsyncSwitchRolePlan).
-    // Poll CurPlanId == target (authoritative success) + the wrapper's bool result
-    // global until the switch resolves or this elapses.
-    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(8);
+    // The switch WRITE path (CallApplyAsync → pre-dispatch gates → Lua dispatch → completion polling)
+    // lives in PandaLoadoutProbe.Switch.cs. This file owns the READ path + the drain orchestration.
 
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
@@ -119,15 +111,6 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     private bool _refreshedOnce;
     private bool _refreshPending;
 
-    // Single in-flight switch. The whole loadout is one server-side id, so only one
-    // switch can be outstanding at a time; a new dispatch supersedes the old.
-    private readonly object _pendingLock = new();
-    private PendingSwitch? _pending;
-
-    // Dispatches enqueued by CallApplyAsync (any thread) and drained on the Update
-    // tick — the game's Lua VM is main-thread-only (see PandaModuleEquipProbe).
-    private readonly ConcurrentQueue<PendingSwitch> _toDispatch = new();
-
     public PandaLoadoutProbe(IPluginLog log, IGameTypeRegistry typeRegistry)
     {
         _log = log;
@@ -149,44 +132,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
     // ClearSession() (logout reset) lives in PandaLoadoutProbe.Session.cs — kept out of this file to
     // stay under the 500-LoC standards gate.
 
-    public Task<LoadoutResult> CallApplyAsync(int index, CancellationToken ct)
-    {
-        if (ct.IsCancellationRequested)
-        {
-            return Task.FromResult(LoadoutResult.Cancelled);
-        }
-
-        if (!EnsureBridgeResolved())
-        {
-            return Task.FromResult(LoadoutResult.GameApiUnavailable);
-        }
-
-        // NOTE: deliberately NO "_currentId == index → no-op" fast-path here. _currentId
-        // can be stale (it only refreshes after a plugin switch, never after an in-game
-        // dropdown switch), and a stale match silently swallowed the dispatch — making the
-        // login-current loadout permanently un-switchable. Always dispatch; the game itself
-        // cheaply no-ops a switch to the already-active loadout.
-        var tcs = new TaskCompletionSource<LoadoutResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var pending = new PendingSwitch(index, tcs, Stopwatch.StartNew());
-
-        PendingSwitch? superseded;
-        lock (_pendingLock)
-        {
-            superseded = _pending;
-            _pending = pending;
-        }
-        superseded?.Complete(LoadoutResult.Cancelled, this);
-
-        if (ct.CanBeCanceled)
-        {
-            pending.AttachCancellation(ct, this);
-        }
-
-        // Defer the actual Lua call to the Update tick (main thread). Touching the
-        // Lua VM off the Unity main thread corrupts IL2CPP/Lua state.
-        _toDispatch.Enqueue(pending);
-        return tcs.Task;
-    }
+    // CallApplyAsync (the ILoadoutProbe write entry point) lives in PandaLoadoutProbe.Switch.cs.
 
     /// <summary>
     /// Called per Update tick from the Host service tick (the Unity main thread).
@@ -211,8 +157,10 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
         // container (distinct per class — correct for loadout switching). Resolves once when the loadout
         // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The
-        // CURRENT class is overlaid with its LIVE equipped set (manual edits) inside this call.
-        TryResolvePerClassDetails();
+        // CURRENT class is overlaid with its LIVE equipped set (manual edits) inside this call. COALESCED:
+        // a re-equip burst arms the resolve ~30x/s and the walk is whole-item-container, so it runs at most
+        // once per ResolveCooldownTicks window — deferred, never dropped (owner report 2026-09-05).
+        TryResolvePerClassDetailsIfDue();
         DrainPendingDispatches();
 
         PendingSwitch? pending;
@@ -307,6 +255,10 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
         var (current, plans) = ParseLoadoutData(raw!);
         _currentId = current;
+        // Cross-thread mirror of the SAME value for the pre-dispatch switch gate: CallApplyAsync may run
+        // off the main thread, and int? is not a torn-read-safe cross-thread read (see
+        // PandaLoadoutProbe.Switch.cs § _liveCurrentPlanId).
+        _liveCurrentPlanId = current ?? UnknownPlanId;
         _parsedPlans = plans;
         // CURRENT class's live equipped set + talents + equipped imagines. Shared with the merge-event
         // read path (PandaLoadoutProbe.LiveState.cs) so BOTH paths apply the same rows and run the same
@@ -355,121 +307,6 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
 
     // Per-class gear/module resolution (TryResolvePerClassDetails + _resolvePending) lives in
     // PandaLoadoutProbe.PerClassResolve.cs; served-change detection in PandaLoadoutProbe.StateChange.cs.
-
-    private void DrainPendingDispatches()
-    {
-        while (_toDispatch.TryDequeue(out var pending))
-        {
-            if (pending.IsCompleted) continue;
-
-            // Clear the stale result before dispatching so the poll only sees this
-            // switch's wrapper bool result.
-            InvokeChunk(ClearSwitchGlobalChunk);
-            if (InvokeChunk(BuildSwitchChunk(pending.TargetId)))
-            {
-                DiagDispatched(pending.TargetId);
-            }
-            else
-            {
-                pending.Complete(LoadoutResult.GameApiUnavailable, this);
-            }
-        }
-    }
-
-    // Decide an in-flight switch's outcome, or null to keep waiting. The weapon-VM
-    // wrapper (AsyncSwitchRolePlan) returns a bool (true = success), not an errCode —
-    // the game itself toasts the refusal reason (combat lock etc.), so we just need a
-    // coarse success/rejected/timeout outcome:
-    //   • CurPlanId flips to the target → Success (authoritative — the game applied it).
-    //   • else the wrapper-result global is "false" → Rejected (the game showed why).
-    //   • else after the timeout → Timeout.
-    private LoadoutResult? Evaluate(PendingSwitch pending)
-    {
-        if (pending.IsCompleted) return null;
-
-        // The wrapper bool is the AUTHORITATIVE completion signal — it's written when
-        // AsyncSwitchRolePlan returns. Check it FIRST: relying on _currentId flipping
-        // would deadlock (it only refreshes AFTER a success → it could never become the
-        // target). "true" → success + refresh the cache so _currentId catches up.
-        var ok = ReadLuaGlobalString(SwitchGlobal);
-        if (string.Equals(ok, "true", StringComparison.OrdinalIgnoreCase))
-        {
-            TriggerRefreshAfterSwitch();
-            return LoadoutResult.Success;
-        }
-        if (string.Equals(ok, "false", StringComparison.OrdinalIgnoreCase))
-        {
-            return LoadoutResult.Rejected;
-        }
-
-        // Fallback: the server-synced current id already matches (e.g. switch landed
-        // before we read the bool).
-        if (_currentId == pending.TargetId)
-        {
-            TriggerRefreshAfterSwitch();
-            return LoadoutResult.Success;
-        }
-
-        if (pending.Elapsed >= CompletionTimeout)
-        {
-            return LoadoutResult.Timeout;
-        }
-
-        return null;
-    }
-
-    // Flag the next tick to re-fire SyncProjectList so the list + current id reflect
-    // the switch promptly. This is the only re-fetch besides the first-resolve one.
-    private void TriggerRefreshAfterSwitch() => _refreshPending = true;
-
-    private void RemovePending(PendingSwitch pending)
-    {
-        lock (_pendingLock)
-        {
-            if (ReferenceEquals(_pending, pending))
-            {
-                _pending = null;
-            }
-        }
-    }
-
-    // A single in-flight switch. Completion is idempotent and clears the owning
-    // probe's pending slot; the cancellation registration is disposed on completion.
-    private sealed class PendingSwitch
-    {
-        private readonly TaskCompletionSource<LoadoutResult> _tcs;
-        private readonly Stopwatch _stopwatch;
-        private CancellationTokenRegistration _ctReg;
-        private int _completed;
-
-        public PendingSwitch(int targetId, TaskCompletionSource<LoadoutResult> tcs, Stopwatch stopwatch)
-        {
-            TargetId = targetId;
-            _tcs = tcs;
-            _stopwatch = stopwatch;
-        }
-
-        public int TargetId { get; }
-        public bool IsCompleted => Volatile.Read(ref _completed) != 0;
-        public TimeSpan Elapsed => _stopwatch.Elapsed;
-
-        public void AttachCancellation(CancellationToken ct, PandaLoadoutProbe owner)
-        {
-            _ctReg = ct.Register(static state =>
-            {
-                var (self, probe) = ((PendingSwitch, PandaLoadoutProbe))state!;
-                self.Complete(LoadoutResult.Cancelled, probe);
-            }, (this, owner));
-        }
-
-        public void Complete(LoadoutResult result, PandaLoadoutProbe owner)
-        {
-            if (Interlocked.Exchange(ref _completed, 1) != 0) return;
-            _stopwatch.Stop();
-            owner.RemovePending(this);
-            owner.DiagResult(TargetId, result, _stopwatch.ElapsedMilliseconds);
-            _tcs.TrySetResult(result);
-            try { _ctReg.Dispose(); } catch { /* registration already gone */ }
-        }
-    }
+    // The switch write path (CallApplyAsync + its gates + PendingSwitch) lives in
+    // PandaLoadoutProbe.Switch.cs.
 }
