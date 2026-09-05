@@ -42,6 +42,16 @@ internal sealed partial class PandaFashionProbe
     // "<professionId>:<skinId>" into WeaponGlobal (skin 0 = the class's default look), or "" when the
     // profession container isn't ready. pcall-guarded so a missing profession list can never break the
     // outfit capture that precedes it. No interpolation — no injection surface.
+    //
+    // ORIGIN NORMALISATION (framework 2.6.1): the Wardrobe's "no skin" tile is NOT skin 0. The tab builds
+    // its tile list with `isEmpty = value.Original == 1` and marks as worn the tile whose Id equals
+    // `weaponSkillSkinVm:GetWeaponOriginSkinId(curProfessionId)` (fashion_weapon_skin_select_view.lua:116),
+    // so picking ⊘ sends `UseProfessionSkin(pid, <that origin row id>)` and the server stores a CONCRETE
+    // WeaponSkinTable row (e.g. profession 5 → 7350002 "Mirrorlight Ring", `Original: 1`). A profession has
+    // one such row per weapon family, so storing the raw id pins the outfit to today's weapon. Report the
+    // worn skin as 0 when it equals the current weapon's origin id — matching what GetWornWeaponSkin
+    // documents and what both consumers (apply + preview) already resolve back at use time. The origin
+    // lookup gets its OWN pcall: if it fails, the raw id is kept rather than the capture lost.
     private const string WeaponCaptureLua =
         " local w=\"\"" +
         " pcall(function()" +
@@ -50,6 +60,11 @@ internal sealed partial class PandaFashionProbe
         "   if cur~=nil and cur~=0 then" +
         "    local p=(pl.professionList)[cur] local sk=0" +
         "    if p~=nil and p.UseSkinId~=nil then sk=p.UseSkinId end" +
+        "    if sk~=0 then pcall(function()" +
+        "     local svm=((Z.VMMgr).GetVM)(\"weapon_skill_skin\")" +
+        "     local origin=svm and svm:GetWeaponOriginSkinId(cur)" +
+        "     if origin~=nil and origin~=0 and sk==origin then sk=0 end" +
+        "    end) end" +
         "    w=tostring(cur)..\":\"..tostring(sk)" +
         "   end" +
         "  end" +

@@ -33,7 +33,12 @@ public interface IWardrobe
     /// <summary>The weapon skin the local player's CURRENT class is wearing, or <c>null</c> if it cannot
     /// be read yet (bridge unresolved / not in world). Weapon skins are per class in the game, so the
     /// value carries the class it belongs to; <c>SkinId</c> <c>0</c> means the class wears its weapon's
-    /// default look. Refreshed together with <see cref="GetWornOutfit"/>.</summary>
+    /// own default look ("no skin"). Refreshed together with <see cref="GetWornOutfit"/>.
+    /// <para>The game itself has no "skin 0": picking the Wardrobe's ⊘ (no skin) tile stores the id of the
+    /// current weapon's ORIGIN row, a concrete skin whose look happens to be the weapon's native one — and
+    /// a class has one such row per weapon family. This method reports that case as <c>0</c>, so an outfit
+    /// saved with no weapon skin means "no skin" and re-applies as the player's CURRENT weapon's own look
+    /// even after they change weapons, rather than pinning them to the weapon they saved with.</para></summary>
     /// <returns>The worn (class, skin) pair, or <c>null</c> when unavailable.</returns>
     WardrobeWeaponSkin? GetWornWeaponSkin();
 
