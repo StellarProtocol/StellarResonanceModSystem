@@ -26,6 +26,11 @@ internal interface IConfigStore
     /// Persists <paramref name="root"/> to disk for
     /// <paramref name="pluginGuid"/>. Records the write so the
     /// FileSystemWatcher echo for this write is suppressed.
+    /// <para>CONTRACT: <paramref name="root"/> is the caller's LIVE tree, handed over under the
+    /// caller's lock. An implementation MUST serialize it synchronously before returning and MUST
+    /// NOT retain a reference to it (or to any node inside it) past the call. Defensive-copying it
+    /// here would just re-serialize what the store serializes anyway — measured at ~200 KB of
+    /// throwaway allocation per save on a 53-outfit wardrobe config (owner report 2026-09-05).</para>
     /// </summary>
     void Save(string pluginGuid, JsonNode root);
 

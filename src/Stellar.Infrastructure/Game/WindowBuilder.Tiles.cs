@@ -29,9 +29,18 @@ internal sealed partial class WindowBuilder
 
     // Smooth icon load — high-res PNGs downscaled to 16–30px alias/pixelate WITHOUT mipmaps + trilinear (the
     // exact lesson from the IMGUI PluginIconCache). mipChain + Trilinear + Apply(updateMipmaps) = smooth.
+    //
+    // DEDUP (per window token, keyed by byte[] REFERENCE): plugins hand back stable arrays — `static readonly`
+    // icon fields, LauncherIcons' per-name cache, LauncherEntry.IconPng — so every leaf that shows the same PNG
+    // shares ONE decode+upload. Without it a pooled row's chips re-decoded per row: the wardrobe's 20-row ×
+    // 9-chip pool built ~180 Texture2Ds from 8 distinct PNGs on every window open. Sharing is safe because
+    // tinting is per-graphic (RawImage/Image .color) and sub-rect selection is per-RawImage (.uvRect) — nothing
+    // is baked into the texture, so identical bytes always mean identical pixels. IconTextures stays the single
+    // owner (added once, on the decode), so disposal is still exactly one Destroy per texture.
     private Texture2D? LoadIcon(byte[]? png, WindowToken token)
     {
         if (png is not { Length: > 0 }) return null;
+        if (token.AtlasCache.TryGetValue(png, out var cached)) return cached;
         var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: true)
         {
             filterMode = FilterMode.Trilinear,
@@ -42,6 +51,7 @@ internal sealed partial class WindowBuilder
         catch { UnityEngine.Object.Destroy(tex); return null; }
         tex.Apply(updateMipmaps: true, makeNoLongerReadable: false);
         token.IconTextures.Add(tex);
+        token.AtlasCache[png] = tex;
         return tex;
     }
 
@@ -55,21 +65,15 @@ internal sealed partial class WindowBuilder
     }
 
     // Atlas sub-sprite: a fixed-size RawImage whose uvRect selects one sub-region of a packed atlas PNG (the
-    // DrawTextureWithTexCoords analog). Reuses LoadIcon (shared mipmap-smoothed load + token texture tracking);
-    // RawImage.uvRect does the sub-rect blit natively. UV origin is bottom-left (Unity convention).
+    // DrawTextureWithTexCoords analog). Reuses LoadIcon (shared mipmap-smoothed load, token texture tracking
+    // AND the byte[]-keyed dedup, so cells sharing one atlas array upload it once); RawImage.uvRect does the
+    // sub-rect blit natively. UV origin is bottom-left (Unity convention).
     private void BuildSprite(SpriteElement sp, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("Sprite", parent);
         UGuiPrimitives.SetPreferred(go, sp.Width, sp.Height);
         var raw = go.AddComponent<RawImage>(); raw.raycastTarget = false;
-        // Dedup: cells sharing one atlas byte[] reuse the single uploaded texture (no N× decode/upload).
-        var bytes = sp.Atlas();
-        Texture2D? tex = null;
-        if (bytes is { Length: > 0 } && !token.AtlasCache.TryGetValue(bytes, out tex))
-        {
-            tex = LoadIcon(bytes, token);   // adds to IconTextures (single owner)
-            if (tex != null) token.AtlasCache[bytes] = tex;
-        }
+        var tex = LoadIcon(sp.Atlas(), token);
         if (tex != null) raw.texture = tex;
         raw.uvRect = new UnityEngine.Rect(sp.Uv.X, sp.Uv.Y, sp.Uv.W, sp.Uv.H);
         // Dynamic sub-rect: re-pull UvFunc each poll so a recycled slot's icon tracks its backing data (the
@@ -130,7 +134,7 @@ internal sealed partial class WindowBuilder
         // plugin icon that arrives AFTER this tile was built (plugins register async; the three launcher mode
         // layouts materialise at different times) then replaces the Icon("plugins") fallback instead of being
         // baked to it forever. byte[]-ref cache (shared with the atlas dedup) avoids re-decoding the same PNG.
-        var binding = new IconBinding { Raw = raw, Bytes = tile.Icon, Load = png => LoadIcon(png, token), Cache = token.AtlasCache };
+        var binding = new IconBinding { Raw = raw, Bytes = tile.Icon, Load = png => LoadIcon(png, token) };
         binding.Apply();   // seed the initial texture now (and populate the cache)
         token.Icons.Add(binding);
         return raw;
