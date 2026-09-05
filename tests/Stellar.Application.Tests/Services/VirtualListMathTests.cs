@@ -24,6 +24,26 @@ public class VirtualListMathTests
     public void FirstIndex_when_count_equals_pool_is_zero()   // the <= boundary (off-by-one zone)
         => Assert.Equal(0, VirtualListMath.FirstIndex(9999f, 22f, 10, 10));
 
+    // Origin: Discord 2026-09-04, "can't scroll past the 48th outfit" (Wardrobe plugin 1.0.0). That list
+    // was an EAGER ListElement over a fixed 48-row pool, so the pool size capped the VISIBLE list and
+    // outfits 49+ were unreachable. The virtual list must reach EVERY row: with the wardrobe's real
+    // geometry — 60 outfits, a 20-row pool, 33px rows in a 460px viewport — scrolling to the bottom
+    // (content 1980px − 460px viewport = 1520px) must window onto index 40, so the pool renders logical
+    // rows 40..59 (the 41st through the 60th outfit). A pool size must never bound what the user reaches.
+    [Fact]
+    public void FirstIndex_at_the_bottom_reaches_the_last_pool_window()
+    {
+        const int count = 60, pool = 20;
+        const float rowH = 33f, viewport = 460f;
+
+        var maxScroll = VirtualListMath.ContentHeight(count, rowH) - viewport;
+        Assert.Equal(1520f, maxScroll);
+
+        var first = VirtualListMath.FirstIndex(maxScroll, rowH, count, pool);
+        Assert.Equal(40, first);                  // window = rows 40..59 → the 60th outfit is rendered
+        Assert.Equal(count, first + pool);        // …and the window ends exactly at the list's end
+    }
+
     [Theory]
     [InlineData(100, 22f, 2200f)]
     [InlineData(0, 22f, 0f)]

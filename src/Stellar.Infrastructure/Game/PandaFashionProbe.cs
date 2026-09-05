@@ -75,11 +75,13 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
     }
 
     public Task<int> CallApplyAsync(IReadOnlyDictionary<int, int> outfit, CancellationToken ct)
-        => Dispatch(BuildApplyChunk(outfit), FormatOutfit(outfit), ct);
+        => Dispatch(BuildApplyChunk(outfit), () => FormatOutfit(outfit), ct);
 
     // Queue one game-RPC chunk (outfit or weapon skin) for the Update tick. Both kinds share the single
     // pending slot — a newer request supersedes an unfinished one (-2) — and the ApplyGlobal result read.
-    private Task<int> Dispatch(string chunk, string label, CancellationToken ct)
+    // `label` is a FACTORY, not a string: the description is only ever built inside DiagDispatched, after
+    // the StellarDiagnostics gate, so a normal (diagnostics-off) apply formats nothing.
+    private Task<int> Dispatch(string chunk, Func<string> label, CancellationToken ct)
     {
         if (ct.IsCancellationRequested) return Task.FromResult(-2);
         if (!EnsureBridgeResolved()) return Task.FromResult(-3);
@@ -212,7 +214,7 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
         private CancellationTokenRegistration _ctReg;
         private int _completed;
 
-        public PendingApply(string chunk, string label, TaskCompletionSource<int> tcs, Stopwatch stopwatch)
+        public PendingApply(string chunk, Func<string> label, TaskCompletionSource<int> tcs, Stopwatch stopwatch)
         {
             Chunk = chunk;
             Label = label;
@@ -223,8 +225,9 @@ internal sealed partial class PandaFashionProbe : IWardrobeProbe
         /// <summary>The Lua chunk to run on the Update tick.</summary>
         public string Chunk { get; }
 
-        /// <summary>Human-readable description for the (diagnostics-gated) dispatch line.</summary>
-        public string Label { get; }
+        /// <summary>Builds the human-readable description for the (diagnostics-gated) dispatch line.
+        /// Invoked ONLY behind the diagnostics gate — never on a normal apply.</summary>
+        public Func<string> Label { get; }
 
         public bool IsCompleted => Volatile.Read(ref _completed) != 0;
         public TimeSpan Elapsed => _stopwatch.Elapsed;

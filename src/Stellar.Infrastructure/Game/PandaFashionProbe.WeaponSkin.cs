@@ -26,7 +26,7 @@ internal sealed partial class PandaFashionProbe
 
     public Task<int> CallApplyWeaponSkinAsync(int professionId, int skinId, CancellationToken ct)
         => Dispatch(BuildWeaponSkinChunk(professionId, skinId),
-            string.Format(CultureInfo.InvariantCulture, "weapon skin class={0} skin={1}", professionId, skinId), ct);
+            () => string.Format(CultureInfo.InvariantCulture, "weapon skin class={0} skin={1}", professionId, skinId), ct);
 
     // Read back the weapon global the capture chunk wrote. An unparseable / empty value means "not ready"
     // — keep the last snapshot rather than blanking it (same rule as the outfit map).
