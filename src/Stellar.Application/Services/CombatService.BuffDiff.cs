@@ -50,6 +50,7 @@ internal sealed partial class CombatService
                 var merged = MergeNonZero(prev, b);
                 if (merged.Equals(prev)) continue;   // no-op refresh — emit nothing
                 set[b.BuffUuid] = merged;
+                DiagBuffChange("refreshed", entityId, merged, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, merged.BuffUuid, merged.BaseId,
                     BuffChangeKind.Refreshed, merged.Stacks, merged.Layer, merged.DurationMs,
@@ -58,6 +59,7 @@ internal sealed partial class CombatService
             else
             {
                 set[b.BuffUuid] = b;
+                DiagBuffChange("applied", entityId, b, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, b.BuffUuid, b.BaseId,
                     BuffChangeKind.Applied, b.Stacks, b.Layer, b.DurationMs,
@@ -78,6 +80,7 @@ internal sealed partial class CombatService
             int uuid = removedBuffUuids[i];
             if (set.Remove(uuid, out var old))
             {
+                DiagBuffChange("removed", entityId, old, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, old.BuffUuid, old.BaseId,
                     BuffChangeKind.Removed, old.Stacks, old.Layer, old.DurationMs,
