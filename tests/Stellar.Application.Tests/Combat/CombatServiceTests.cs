@@ -206,11 +206,82 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
+    public void ApplyBuffEvents_Applied_CarriesFirerAndSource()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var fired = new List<CombatEvent>();
+        svc.CombatEventOccurred += fired.Add;
+
+        var target = new EntityId(0x0000_0001_0000_0280L);
+        var firer  = new EntityId(0x0000_0002_0000_0280L);
+        var buff = new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, SourceKind: 10, SourceId: 2327);
+        svc.ApplyBuffEvents(target, new[] { buff }, System.Array.Empty<int>(), 1000);
+
+        svc.Drain();
+        var evt = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
+        Assert.Equal(BuffChangeKind.Applied, evt.Kind);
+        Assert.Equal(firer, evt.FirerId);
+        Assert.Equal(10,    evt.SourceKind);
+        Assert.Equal(2327,  evt.SourceId);
+    }
+
+    [Fact]
+    public void ApplyBuffEvents_PartialRefresh_KeepsFirerAndSource()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var target = new EntityId(0x0000_0001_0000_0280L);
+        var firer  = new EntityId(0x0000_0002_0000_0280L);
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, 0, 2327) }, System.Array.Empty<int>(), 1000);
+
+        var fired = new List<CombatEvent>();
+        svc.CombatEventOccurred += fired.Add;
+        svc.Drain();
+        fired.Clear();
+
+        // BuffChange partial: BaseId 0, firer None, only layer/duration — must merge, not clobber.
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 0, 0, EntityId.None, 0, 2, 0, 8000) }, System.Array.Empty<int>(), 2000);
+        svc.Drain();
+
+        var evt = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
+        Assert.Equal(BuffChangeKind.Refreshed, evt.Kind);
+        Assert.Equal(firer, evt.FirerId);
+        Assert.Equal(2327,  evt.SourceId);
+    }
+
+    [Fact]
+    public void ApplyBuffEvents_FullUpsert_ReplacesSourcePairEvenWhenKindIsSkill()
+    {
+        // FightSourceInfo (SourceKind, SourceId) must merge as a PAIR: a FULL BuffInfo
+        // upsert (non-zero BaseId) that legitimately carries SourceKind=0 (EFightSource
+        // Skill) must replace the whole pair, not just SourceId — else the two halves
+        // desync into a (kind, id) combination never seen on the wire.
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var target = new EntityId(0x0000_0001_0000_0280L);
+        var firer  = new EntityId(0x0000_0002_0000_0280L);
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, SourceKind: 10, SourceId: 9999) }, System.Array.Empty<int>(), 1000);
+
+        var fired = new List<CombatEvent>();
+        svc.CombatEventOccurred += fired.Add;
+        svc.Drain();
+        fired.Clear();
+
+        // Full BuffInfo upsert: non-zero BaseId, same firer, kind legitimately 0 (Skill).
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, SourceKind: 0, SourceId: 2327) }, System.Array.Empty<int>(), 2000);
+        svc.Drain();
+
+        var evt = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
+        Assert.Equal(BuffChangeKind.Refreshed, evt.Kind);
+        Assert.Equal(0,    evt.SourceKind);
+        Assert.Equal(2327, evt.SourceId);
+    }
+
+    [Fact]
     public void ApplyBuffEvents_Remove_EmitsRemoved_AndDropsFromSet()
     {
         var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var entityId = new EntityId(1234L);
-        var buff = new ActiveBuff(100, 9001, 1, EntityId.None, 1, 1, 1000, 5000);
+        var firer = new EntityId(0x0000_0001_0000_0280L);
+        var buff = new ActiveBuff(100, 9001, 1, firer, 1, 1, 1000, 5000, SourceKind: 10, SourceId: 2327);
         svc.ApplyBuffEvents(entityId, new[] { buff }, System.Array.Empty<int>(), 1000);
 
         var fired = new List<CombatEvent>();
@@ -223,6 +294,9 @@ public sealed class CombatServiceTests
 
         var bc = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
         Assert.Equal(BuffChangeKind.Removed, bc.Kind);
+        Assert.Equal(firer, bc.FirerId);
+        Assert.Equal(10,    bc.SourceKind);
+        Assert.Equal(2327,  bc.SourceId);
         Assert.Empty(svc.BuffsFor(entityId));
     }
 
