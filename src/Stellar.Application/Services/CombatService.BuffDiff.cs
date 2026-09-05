@@ -94,15 +94,26 @@ internal sealed partial class CombatService
     // Overwrite cur with next's non-default scalar fields. Partial BuffChange
     // upserts (BaseId=0; only layer/duration/createtime) merge onto the existing
     // entry so they never clobber the real BaseId/CreateTime set at add time.
-    private static ActiveBuff MergeNonZero(ActiveBuff cur, ActiveBuff next) => new(
-        next.BuffUuid != 0 ? next.BuffUuid : cur.BuffUuid,
-        next.BaseId   != 0 ? next.BaseId   : cur.BaseId,
-        next.Level    != 0 ? next.Level    : cur.Level,
-        next.FirerId.IsNone ? cur.FirerId  : next.FirerId,
-        next.Stacks   != 0 ? next.Stacks   : cur.Stacks,
-        next.Layer    != 0 ? next.Layer    : cur.Layer,
-        next.CreateTimeMs != 0 ? next.CreateTimeMs : cur.CreateTimeMs,
-        next.DurationMs   != 0 ? next.DurationMs   : cur.DurationMs,
-        next.SourceKind != 0 ? next.SourceKind : cur.SourceKind,
-        next.SourceId   != 0 ? next.SourceId   : cur.SourceId);
+    //
+    // FightSourceInfo is merged as a pair: a partial BuffChange upsert carries
+    // (0,0) and must not clobber; a full BuffInfo may legitimately carry kind 0
+    // = Skill. SourceKind==0 does NOT mean "absent" (Skill is EFightSource's
+    // most common value), so the two fields cannot be defaulted independently —
+    // doing so let a partial upsert's absent kind (0) survive merge next to a
+    // full upsert's real id, producing a (kind, id) pair never seen on the wire.
+    private static ActiveBuff MergeNonZero(ActiveBuff cur, ActiveBuff next)
+    {
+        bool nextHasSource = next.SourceKind != 0 || next.SourceId != 0;
+        return new ActiveBuff(
+            next.BuffUuid != 0 ? next.BuffUuid : cur.BuffUuid,
+            next.BaseId   != 0 ? next.BaseId   : cur.BaseId,
+            next.Level    != 0 ? next.Level    : cur.Level,
+            next.FirerId.IsNone ? cur.FirerId  : next.FirerId,
+            next.Stacks   != 0 ? next.Stacks   : cur.Stacks,
+            next.Layer    != 0 ? next.Layer    : cur.Layer,
+            next.CreateTimeMs != 0 ? next.CreateTimeMs : cur.CreateTimeMs,
+            next.DurationMs   != 0 ? next.DurationMs   : cur.DurationMs,
+            nextHasSource ? next.SourceKind : cur.SourceKind,
+            nextHasSource ? next.SourceId   : cur.SourceId);
+    }
 }

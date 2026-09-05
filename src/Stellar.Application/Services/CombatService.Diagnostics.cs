@@ -20,8 +20,9 @@ internal sealed partial class CombatService
         _log.Info($"[Combat.Diag] idle sweep evicted={evicted} non-player entities (ttlMs={IdleEntityTtlMs})");
     }
 
-    // Probe line for the rDPS capture spec (§ 7 checks 1, 2, 5): one line per buff change on a PLAYER target.
-    // Volume ≈ tens/s in a 5-player dungeon — diagnostics-only by construction.
+    // Probe line for the rDPS capture spec (§ 7 checks 1 and 2; check 5 is read from the
+    // plugin's uploaded dmg+buff event stream, not this log): one line per buff change on
+    // a PLAYER target. Volume ≈ tens/s in a 5-player dungeon — diagnostics-only by construction.
     private void DiagBuffChange(string kind, EntityId target, ActiveBuff b, long timestampMs)
     {
         if (!StellarDiagnostics.IsEnabled || !target.IsPlayer) return;
