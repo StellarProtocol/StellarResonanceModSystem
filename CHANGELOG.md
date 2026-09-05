@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.6.0] - 2026-09-05
+_**2.6.0** (minor) — saved outfits can now carry your weapon skin, and the outfit preview shows both head accessories. Additive, binary-compatible with plugins built against ≤2.5.0._
+### Added
+- Plugins can now read the weapon skin your current class is wearing and switch it for you, through the same game action as the Wardrobe's Weapon Skin tab. The Wardrobe plugin uses this to save and re-apply your weapon skin together with an outfit.
+### Fixed
+- The outfit 3D preview now shows both head accessories at once. An outfit with two head pieces used to preview only the second one — the first appeared for a moment and was then replaced.
+### Developer notes
+- `IWardrobe` gains `GetWornWeaponSkin()` → `WardrobeWeaponSkin(ProfessionId, SkinId)` (read from `CharSerialize.professionList.professionList[curProfessionId].UseSkinId` in the same capture chunk as the outfit) and `ApplyWeaponSkinAsync(professionId, skinId)` (drives `WorldProxy.UseProfessionSkin` exactly as `weapon_skill_skin_vm.AsyncUseProfessionSkin` does: skin 0 → the class's origin skin, `OnWeaponSkinChange` dispatch on ok; shares the single in-flight slot with `ApplyAsync`, so await the outfit before sending the skin). Weapon skins stay OUT of the outfit region map (`WardrobeRegions.All` unchanged) — they are a per-class game system. Pinned by `WardrobeWeaponSkinTests` + `WardrobeServiceTests`.
+- `PandaWardrobePreviewProbe` now stamps each `SingleWearData.SlotID` with the piece's `FashionRegion` — the shape of the game's own `fashion_vm.GetFashionWearList` (`data.SlotId = region`). SlotID routes head pieces to their mount (713 → HeadWear, 718 → HeadWear2); `SlotID=0` put both on one mount so the second overwrote the first. Pinned by `WardrobePreviewChunkTests`. Discord report 2026-09-03.
+
 ## [2.5.0] - 2026-09-01
 _**2.5.0** (minor) — the Loadout Switcher can switch your whole Deep-Slumber (tree and all), plugins get accurate raid boss health, and raid runs record as one run. Additive, binary-compatible with plugins built against ≤2.4.1._
 ### Added
