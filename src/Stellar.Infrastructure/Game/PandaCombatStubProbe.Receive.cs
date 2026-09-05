@@ -98,8 +98,7 @@ internal sealed partial class PandaCombatStubProbe
             else if (attr.Id == AttrTypeIds.AttrFightPoint)
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
-                _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
-                _attrBatch.Add(attr.Id, attr.DecodedLong);
+                StoreScalarAttr(eid, attr.Id, attr.DecodedLong);
             }
             else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
             {
@@ -139,6 +138,7 @@ internal sealed partial class PandaCombatStubProbe
     // the skill list is absent from SyncToMeDelta deltas, so this is the only path yielding self's loadout.
     private void OnEnterScene(ReadOnlySpan<byte> span)
     {
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         // Buffs are scene-scoped — the server drops them on a scene change without
         // sending per-buff remove events, so clear the accumulated set here (before
         // the self-attr parse / early-return) or stale debuffs (e.g. a lockout)
@@ -172,8 +172,7 @@ internal sealed partial class PandaCombatStubProbe
             if (attr.Id == AttrTypeIds.AttrFightPoint)
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
-                _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
-                _attrBatch.Add(attr.Id, attr.DecodedLong);
+                StoreScalarAttr(eid, attr.Id, attr.DecodedLong);
             }
             else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
             {
@@ -185,7 +184,7 @@ internal sealed partial class PandaCombatStubProbe
                 CaptureEntityDetail(eid, attr, "enter-scene-self");
             }
         }
-        FlushAttrBatch(eid, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        FlushAttrBatch(eid, ts);
     }
 
     // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
@@ -417,11 +416,7 @@ internal sealed partial class PandaCombatStubProbe
         // otherwise pad every entity's attr map. Legit zero-valued scalar attrs (rare) are simply omitted from
         // the Attributes tab — acceptable for a raw debug dump.
         var value = attr.DecodedLong;
-        if (value != 0)
-        {
-            _sink.SetEntityAttribute(eid, attr.Id, value);
-            _attrBatch.Add(attr.Id, value);
-        }
+        if (value != 0) StoreScalarAttr(eid, attr.Id, value);
     }
 
     // Route the position-family attrs (AttrPos=52 / AttrDir=50) into the wire position cache instead of

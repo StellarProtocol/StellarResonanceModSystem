@@ -44,7 +44,7 @@ internal sealed partial class PandaCombatStubProbe
         if (fightPoint is long fp)
         {
             _sink.UpdateEntityFightPoint(eid, fp);
-            _sink.SetEntityAttribute(eid, AttrTypeIds.AttrFightPoint, fp);
+            StoreScalarAttr(eid, AttrTypeIds.AttrFightPoint, fp);
         }
         DiagBossHpWire(eid, "delta", vitals.Hp, vitals.MaxHpBase, vitals.MaxHpTotal);
     }

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using Stellar.Abstractions.Domain;
 using Stellar.Infrastructure.Game;
 using Xunit;
@@ -50,5 +53,44 @@ public sealed class AttrChangeBatchTests
         var second = b.Flush(Player, 2L)!;
         Assert.Single(first.Attrs);  Assert.Equal(11710, first.Attrs[0].AttrId);
         Assert.Single(second.Attrs); Assert.Equal(11780, second.Attrs[0].AttrId);
+    }
+
+    /// <summary>Structural pin (fix round 1): the probe stores a scalar attr in exactly ONE place —
+    /// PandaCombatStubProbe.AttrEvents.cs's StoreScalarAttr, which writes the sink and records the pair
+    /// together. A bare `_sink.SetEntityAttribute(` anywhere else is an unpaired write: the attr reaches
+    /// GetAttributes but is silently missing from that packet's EntityAttributesChanged, so the rDPS
+    /// sheet drifts from what the game actually sent. That is exactly the defect this pins — Vitals.cs's
+    /// ApplyParsedDelta wrote FightPoint straight to the sink. Route new writes through the chokepoint;
+    /// do NOT relax this test to a count.</summary>
+    [Fact]
+    public void Every_scalar_attr_write_goes_through_the_StoreScalarAttr_chokepoint()
+    {
+        var probeDir = Path.Combine(RepoRoot(), "src", "Stellar.Infrastructure", "Game");
+        var probeFiles = Directory.GetFiles(probeDir, "PandaCombatStubProbe*.cs");
+        Assert.NotEmpty(probeFiles);
+
+        var hits = new List<string>();
+        foreach (var file in probeFiles)
+        {
+            var text = File.ReadAllText(file);
+            for (int i = text.IndexOf(SinkWrite, StringComparison.Ordinal); i >= 0;
+                 i = text.IndexOf(SinkWrite, i + 1, StringComparison.Ordinal))
+            {
+                hits.Add(Path.GetFileName(file));
+            }
+        }
+
+        Assert.Equal(new[] { "PandaCombatStubProbe.AttrEvents.cs" }, hits.ToArray());
+    }
+
+    const string SinkWrite = "_sink.SetEntityAttribute(";
+
+    /// <summary>Walks up from the test binary to the framework repo root (the dir holding src/Stellar.sln).</summary>
+    static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "Stellar.sln"))) dir = dir.Parent;
+        if (dir is null) throw new DirectoryNotFoundException($"No ancestor of '{AppContext.BaseDirectory}' contains src/Stellar.sln.");
+        return dir.FullName;
     }
 }

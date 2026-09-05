@@ -34,6 +34,15 @@ internal sealed partial class PandaCombatStubProbe
     // Receive-thread only (one packet at a time), reused across packets — see AttrChangeBatch.
     private readonly AttrChangeBatch _attrBatch = new();
 
+    /// <summary>The ONE place a scalar attr is stored: writes the sink, then records the pair for this packet's
+    /// EntityAttributesChanged. Every scalar write in the probe goes through here so the event payload can never
+    /// drift from what GetAttributes serves.</summary>
+    private void StoreScalarAttr(EntityId eid, int attrId, long value)
+    {
+        _sink.SetEntityAttribute(eid, attrId, value);
+        _attrBatch.Add(attrId, value);
+    }
+
     /// <summary>Called once per entity per attr-carrying packet, AFTER the loop that stored its scalars.</summary>
     private void FlushAttrBatch(EntityId eid, long timestampMs)
     {
