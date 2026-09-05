@@ -120,7 +120,8 @@ internal sealed class PandaWardrobePreviewProbe
         var wear = new StringBuilder();
         foreach (var kv in outfit)
         {
-            if (kv.Value == 0) continue;
+            // 731 is a preview-only key and is NOT a FashionWear piece — it must never reach the zList.
+            if (kv.Value == 0 || kv.Key == WardrobeRegions.WeaponSkinPreview) continue;
             IReadOnlyDictionary<int, float[]>? areaMap = null;
             dyes?.TryGetValue(kv.Key, out areaMap);
             AppendPiece(wear, kv.Key, kv.Value, areaMap);
@@ -129,6 +130,31 @@ internal sealed class PandaWardrobePreviewProbe
                "      local zList=((((ZUtil.Pool).Collections).ZList_Panda_ZGame_SingleWearData).Rent)()\n" +
                wear +
                "      m:SetLuaAttr((Z.LocalAttr).EWearFashion, zList)\n" +
+               "    end)\n" +
+               WeaponSkinLua(outfit);
+    }
+
+    // The weapon skin rides a SEPARATE system: the game's own GetFashionWearList skips region 731
+    // (fashion_vm.lua:454), so EWearFashion can never carry it. A preview model is dressed with the display
+    // OVERRIDE attr instead — fashion_weapon_skin_select_view.SelectStyle:26 and
+    // competency_rating_main_view.createPlayerModel:258 both do
+    //   model:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skinId)
+    // which Panda.ZGame.DisplayWeaponAttrWatcher (a ZModelAttrWatcher, i.e. per-MODEL, not per-entity) turns
+    // into WeaponModelComp.ChangeWeaponModel(professionId, weaponSkinId).
+    // Skin 0 means "the class's default look": the apply path resolves it through GetWeaponOriginSkinId
+    // (weapon_skill_skin_vm.AsyncUseProfessionSkin:199), so the preview mirrors that step for step rather
+    // than leaving the currently-worn skin on the model and lying about what applying would do.
+    private static string WeaponSkinLua(IReadOnlyDictionary<int, int> outfit)
+    {
+        if (!outfit.TryGetValue(WardrobeRegions.WeaponSkinPreview, out var skinId)) return string.Empty;
+        return "    pcall(function()\n" +
+               "      local skin=" + skinId.ToString(CultureInfo.InvariantCulture) + "\n" +
+               "      if skin == 0 then\n" +
+               "        local wvm=((Z.VMMgr).GetVM)('weapon')\n" +
+               "        local svm=((Z.VMMgr).GetVM)('weapon_skill_skin')\n" +
+               "        if wvm and svm then skin = svm:GetWeaponOriginSkinId((wvm.GetCurWeapon)()) end\n" +
+               "      end\n" +
+               "      m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)\n" +
                "    end)\n";
     }
 

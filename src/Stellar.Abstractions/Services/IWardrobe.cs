@@ -92,4 +92,17 @@ public static class WardrobeRegions
     {
         701, 702, 703, 711, 712, 713, 714, 715, 716, 717, 718, 721, 722, 723,
     };
+
+    /// <summary>Preview-only key for the weapon skin (<c>FashionRegion.WeapoonSkin</c> = 731).
+    /// Deliberately NOT in <see cref="All"/>: a weapon skin never travels in <c>FashionWear</c>, so it is
+    /// not part of a saved outfit's region map and <see cref="IWardrobe.ApplyAsync"/> IGNORES this key —
+    /// weapon skins are applied through <see cref="IWardrobe.ApplyWeaponSkinAsync"/>.
+    /// <para><see cref="IWardrobePreview.Show"/> alone honours it, dressing the model's weapon with the skin
+    /// carried under it. A non-zero value is that skin id; <c>0</c> means "the class's default look" and
+    /// resolves the same way applying it would; omitting the key leaves the weapon exactly as the model
+    /// renders it.</para>
+    /// <para>Weapon skins are per-class (every <c>WeaponSkinTable</c> row carries a <c>ProfessionId</c>), so
+    /// only pass a skin belonging to the player's CURRENT class — the game's own weapon-skin tab refuses to
+    /// preview another class's skins for the same reason.</para></summary>
+    public const int WeaponSkinPreview = 731;
 }

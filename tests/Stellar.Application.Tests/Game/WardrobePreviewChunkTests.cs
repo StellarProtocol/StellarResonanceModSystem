@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Stellar.Abstractions.Services;
 using Stellar.Infrastructure.Game;
 using Xunit;
 
@@ -56,11 +58,58 @@ public sealed class WardrobePreviewChunkTests
         Assert.Contains("for a=0,16 do bc:Add(dye[a] or Vector3.zero) end", chunk);
     }
 
+    // Owner, 2026-09-05: "The 3D preview does not show the weapon skin. <-- it should show if class match".
+    // The weapon skin is NOT a FashionWear piece; the game dresses a preview model through the display
+    // override attr (fashion_weapon_skin_select_view.SelectStyle:26). The plugin only puts 731 in the map
+    // when the stored skin belongs to the player's CURRENT class.
+    [Fact]
+    public void DressChunk_WeaponSkin_UsesTheDisplayOverrideAttr_AndNeverTheWearList()
+    {
+        var outfit = new Dictionary<int, int> { [701] = 333, [WardrobeRegions.WeaponSkinPreview] = 7310003 };
+
+        var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
+
+        Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
+        Assert.Contains("local skin=7310003", chunk);
+        Assert.DoesNotContain("wd.SlotID=731", chunk);        // 731 is never a SingleWearData piece
+        Assert.Equal(1, CountOf(chunk, "zList:Add(wd)"));     // only the 701 suit is dressed
+        // the weapon call sits AFTER the wear list is committed
+        Assert.True(chunk.IndexOf("EWearFashion", StringComparison.Ordinal)
+                    < chunk.IndexOf("EModelDisplayWeaponSkinId", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DressChunk_WithoutAWeaponSkin_LeavesTheModelsOwnWeaponAlone()
+    {
+        var outfit = new Dictionary<int, int> { [701] = 333, [713] = 111 };
+
+        var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
+
+        Assert.DoesNotContain("EModelDisplayWeaponSkinId", chunk);
+        Assert.DoesNotContain("GetWeaponOriginSkinId", chunk);
+    }
+
+    // Skin 0 = "the class's default look". The apply path resolves it via GetWeaponOriginSkinId
+    // (weapon_skill_skin_vm.AsyncUseProfessionSkin:199), so the preview resolves it the same way — otherwise
+    // hovering an outfit saved on the default look would keep showing the skin the player is wearing NOW.
+    [Fact]
+    public void DressChunk_WeaponSkinZero_ResolvesTheDefaultLookTheSameWayApplyingDoes()
+    {
+        var outfit = new Dictionary<int, int> { [WardrobeRegions.WeaponSkinPreview] = 0 };
+
+        var chunk = PandaWardrobePreviewProbe.BuildModelChunk(1, outfit, dyes: null);
+
+        Assert.Contains("local skin=0", chunk);
+        Assert.Contains("skin = svm:GetWeaponOriginSkinId((wvm.GetCurWeapon)())", chunk);
+        Assert.Contains("m:SetLuaIntAttr((Z.ModelAttr).EModelDisplayWeaponSkinId, skin)", chunk);
+        Assert.DoesNotContain("zList:Add(wd)", chunk);   // a bare weapon key dresses no fashion piece
+    }
+
     private static int CountOf(string haystack, string needle)
     {
         var count = 0;
-        for (var i = haystack.IndexOf(needle, System.StringComparison.Ordinal); i >= 0;
-             i = haystack.IndexOf(needle, i + needle.Length, System.StringComparison.Ordinal))
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
         {
             count++;
         }
