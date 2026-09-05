@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Stellar.Abstractions.Domain;
 
 /// <summary>Subset of <c>ESkillEventType</c> exposed on <see cref="CombatEvent.SkillUsed"/>.</summary>
@@ -88,6 +90,21 @@ public abstract record CombatEvent(long TimestampMs)
     /// falling back to <c>AttrSummonerId</c> when only that is present).</param>
     /// <param name="SummonId">The summon/pet entity that appeared.</param>
     public sealed record EntitySummonAppeared(long TimestampMs, EntityId SummonerId, EntityId SummonId) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// One entity's numeric attributes changed in ONE wire packet (AoiSyncDelta attr collection, an
+    /// appear, or the local player's enter-scene sheet). Raised for PLAYER entities only, AFTER every
+    /// value has reached <see cref="Services.IEntityDetail.GetAttributes"/> — so a subscriber that reads the
+    /// sheet on this event already sees the change (late-never-stale). <paramref name="TimestampMs"/> is the
+    /// packet's own receive stamp, the same clock its sibling <see cref="BuffChanged"/> events carry, so a
+    /// consumer may join the two streams on <c>TimestampMs</c> without a clock conversion (rDPS sheet track,
+    /// 2026-09-05 spec § 6.1). Carries only the scalar attrs stored in that packet; HP/name/team/skills ride
+    /// their own events and are not repeated here.
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time of the packet (client wall clock, Unix ms).</param>
+    /// <param name="EntityId">The entity whose attributes changed.</param>
+    /// <param name="Attrs">The stored attribute values of this packet; never empty.</param>
+    public sealed record EntityAttributesChanged(long TimestampMs, EntityId EntityId, IReadOnlyList<AttrValue> Attrs) : CombatEvent(TimestampMs);
 
     /// <summary>
     /// An entity's client-side actor/controller state machine entered a new state
