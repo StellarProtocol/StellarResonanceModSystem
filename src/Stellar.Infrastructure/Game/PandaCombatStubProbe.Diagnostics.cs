@@ -289,4 +289,10 @@ internal sealed partial class PandaCombatStubProbe
         }
     }
 
+    // rDPS sheet track (spec § 6.1): one line per player attr packet — gated, per-event repetition.
+    private void DiagAttrEvent(EntityId eid, int count, long timestampMs)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[Attr] eid={eid.Value} n={count} ms={timestampMs}");
+    }
 }

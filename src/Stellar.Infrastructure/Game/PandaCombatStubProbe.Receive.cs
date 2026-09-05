@@ -99,6 +99,7 @@ internal sealed partial class PandaCombatStubProbe
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
                 _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
+                _attrBatch.Add(attr.Id, attr.DecodedLong);
             }
             else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
             {
@@ -120,6 +121,7 @@ internal sealed partial class PandaCombatStubProbe
         }
         DiagBossHpWire(eid, "appear", hp, maxHpBase, maxHpTotal);
         EmitSummonAppeared(eid, summonerId, topSummonerId, ts);
+        FlushAttrBatch(eid, ts);
     }
 
     // Raises CombatEvent.EntitySummonAppeared when this appear carried a resolvable owner attribution
@@ -171,20 +173,19 @@ internal sealed partial class PandaCombatStubProbe
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
                 _sink.SetEntityAttribute(eid, attr.Id, attr.DecodedLong);
+                _attrBatch.Add(attr.Id, attr.DecodedLong);
             }
             else if (attr.Id == AttrTypeIds.AttrSkillLevelIdList)
             {
                 var skills = SkillLevelListReader.Read(attr.RawData.Span);
-                if (skills.Count > 0)
-                {
-                    _sink.UpdateEntitySkillLevels(eid, skills);
-                }
+                if (skills.Count > 0) _sink.UpdateEntitySkillLevels(eid, skills);
             }
             else
             {
                 CaptureEntityDetail(eid, attr, "enter-scene-self");
             }
         }
+        FlushAttrBatch(eid, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     // Run id: the server-assigned per-instance scene uuid (AttrSceneUuid=342) rides on
@@ -301,7 +302,7 @@ internal sealed partial class PandaCombatStubProbe
         // Pass 1.5 — per-entity attribute fan-out (AttrName / AttrHp / AttrMaxHp /
         // AttrTeamId). Runs BEFORE the damages loop so any value observed in
         // the same delta is queryable synchronously by downstream consumers.
-        ApplyAttrDeltas(deltas);
+        ApplyAttrDeltas(deltas, timestampMs);
 
         // Pass 2 — pre-attributed damage records from SkillEffects.Damages[].
         ApplyDamageDeltas(deltas, timestampMs);
@@ -320,16 +321,16 @@ internal sealed partial class PandaCombatStubProbe
     // ride on AttrCollection together; surface each through ICombatLookup so
     // plugins (CombatMeter, etc.) can render readable labels, live HP bars,
     // and team-coloured rows next to damage rows.
-    private void ApplyAttrDeltas(IReadOnlyList<AoiSyncDeltaMsg> deltas)
+    private void ApplyAttrDeltas(IReadOnlyList<AoiSyncDeltaMsg> deltas, long timestampMs)
     {
         foreach (var d in deltas)
         {
             if (d.Attrs is { } attrCol)
-                ApplyAttrDeltasForEntity(new EntityId(d.Uuid), attrCol);
+                ApplyAttrDeltasForEntity(new EntityId(d.Uuid), attrCol, timestampMs);
         }
     }
 
-    private void ApplyAttrDeltasForEntity(EntityId eid, AttrCollectionMsg attrCol)
+    private void ApplyAttrDeltasForEntity(EntityId eid, AttrCollectionMsg attrCol, long timestampMs)
     {
         long hp = -1, maxHpBase = -1, maxHpTotal = -1;
         long? teamId = null;
@@ -377,6 +378,7 @@ internal sealed partial class PandaCombatStubProbe
             }
         }
         ApplyParsedDelta(eid, (hp, maxHpBase, maxHpTotal), teamId, fightPoint);
+        FlushAttrBatch(eid, timestampMs);
     }
 
     // Inspector-detail capture shared by all three attr-iteration sites
@@ -415,7 +417,11 @@ internal sealed partial class PandaCombatStubProbe
         // otherwise pad every entity's attr map. Legit zero-valued scalar attrs (rare) are simply omitted from
         // the Attributes tab — acceptable for a raw debug dump.
         var value = attr.DecodedLong;
-        if (value != 0) _sink.SetEntityAttribute(eid, attr.Id, value);
+        if (value != 0)
+        {
+            _sink.SetEntityAttribute(eid, attr.Id, value);
+            _attrBatch.Add(attr.Id, value);
+        }
     }
 
     // Route the position-family attrs (AttrPos=52 / AttrDir=50) into the wire position cache instead of
