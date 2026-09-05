@@ -206,6 +206,49 @@ public sealed class CombatServiceTests
     }
 
     [Fact]
+    public void ApplyBuffEvents_Applied_CarriesFirerAndSource()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var fired = new List<CombatEvent>();
+        svc.CombatEventOccurred += fired.Add;
+
+        var target = new EntityId(0x0000_0001_0000_0280L);
+        var firer  = new EntityId(0x0000_0002_0000_0280L);
+        var buff = new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, SourceKind: 0, SourceId: 2327);
+        svc.ApplyBuffEvents(target, new[] { buff }, System.Array.Empty<int>(), 1000);
+
+        svc.Drain();
+        var evt = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
+        Assert.Equal(BuffChangeKind.Applied, evt.Kind);
+        Assert.Equal(firer, evt.FirerId);
+        Assert.Equal(0,     evt.SourceKind);
+        Assert.Equal(2327,  evt.SourceId);
+    }
+
+    [Fact]
+    public void ApplyBuffEvents_PartialRefresh_KeepsFirerAndSource()
+    {
+        var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
+        var target = new EntityId(0x0000_0001_0000_0280L);
+        var firer  = new EntityId(0x0000_0002_0000_0280L);
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 55333, 1, firer, 1, 1, 1000, 5000, 0, 2327) }, System.Array.Empty<int>(), 1000);
+
+        var fired = new List<CombatEvent>();
+        svc.CombatEventOccurred += fired.Add;
+        svc.Drain();
+        fired.Clear();
+
+        // BuffChange partial: BaseId 0, firer None, only layer/duration — must merge, not clobber.
+        svc.ApplyBuffEvents(target, new[] { new ActiveBuff(100, 0, 0, EntityId.None, 0, 2, 0, 8000) }, System.Array.Empty<int>(), 2000);
+        svc.Drain();
+
+        var evt = Assert.IsType<CombatEvent.BuffChanged>(Assert.Single(fired));
+        Assert.Equal(BuffChangeKind.Refreshed, evt.Kind);
+        Assert.Equal(firer, evt.FirerId);
+        Assert.Equal(2327,  evt.SourceId);
+    }
+
+    [Fact]
     public void ApplyBuffEvents_Remove_EmitsRemoved_AndDropsFromSet()
     {
         var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());

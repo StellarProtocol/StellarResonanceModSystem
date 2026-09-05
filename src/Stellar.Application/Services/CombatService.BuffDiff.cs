@@ -20,7 +20,7 @@ internal sealed partial class CombatService
     {
         // Touch: buff-only-refreshed entities must not be swept as idle (Task 3 idle sweep).
         _entities.Touch(entityId, System.Environment.TickCount64);
-        bool changed = false;
+        bool changed;
         lock (_buffsByEntityLock)
         {
             if (!_buffsByEntity.TryGetValue(entityId, out var set))
@@ -29,43 +29,63 @@ internal sealed partial class CombatService
                 _buffsByEntity[entityId] = set;
             }
 
-            for (int i = 0; i < upserts.Count; i++)
-            {
-                var b = upserts[i];
-                if (set.TryGetValue(b.BuffUuid, out var prev))
-                {
-                    var merged = MergeNonZero(prev, b);
-                    if (merged.Equals(prev)) continue;   // no-op refresh — emit nothing
-                    set[b.BuffUuid] = merged;
-                    EnqueueEvent(new CombatEvent.BuffChanged(
-                        timestampMs, entityId, merged.BuffUuid, merged.BaseId,
-                        BuffChangeKind.Refreshed, merged.Stacks, merged.Layer, merged.DurationMs));
-                }
-                else
-                {
-                    set[b.BuffUuid] = b;
-                    EnqueueEvent(new CombatEvent.BuffChanged(
-                        timestampMs, entityId, b.BuffUuid, b.BaseId,
-                        BuffChangeKind.Applied, b.Stacks, b.Layer, b.DurationMs));
-                }
-                changed = true;
-            }
-
-            for (int i = 0; i < removedBuffUuids.Count; i++)
-            {
-                int uuid = removedBuffUuids[i];
-                if (set.Remove(uuid, out var old))
-                {
-                    EnqueueEvent(new CombatEvent.BuffChanged(
-                        timestampMs, entityId, old.BuffUuid, old.BaseId,
-                        BuffChangeKind.Removed, old.Stacks, old.Layer, old.DurationMs));
-                    changed = true;
-                }
-            }
+            changed  = ApplyUpserts(entityId, set, upserts, timestampMs);
+            changed |= ApplyRemovals(entityId, set, removedBuffUuids, timestampMs);
 
             if (changed && entityId == _localEntityId)
                 _localBuffs = new List<ActiveBuff>(set.Values);
         }
+    }
+
+    // Caller holds _buffsByEntityLock. Returns whether any buff was added/refreshed.
+    private bool ApplyUpserts(EntityId entityId, Dictionary<int, ActiveBuff> set,
+        IReadOnlyList<ActiveBuff> upserts, long timestampMs)
+    {
+        bool changed = false;
+        for (int i = 0; i < upserts.Count; i++)
+        {
+            var b = upserts[i];
+            if (set.TryGetValue(b.BuffUuid, out var prev))
+            {
+                var merged = MergeNonZero(prev, b);
+                if (merged.Equals(prev)) continue;   // no-op refresh — emit nothing
+                set[b.BuffUuid] = merged;
+                EnqueueEvent(new CombatEvent.BuffChanged(
+                    timestampMs, entityId, merged.BuffUuid, merged.BaseId,
+                    BuffChangeKind.Refreshed, merged.Stacks, merged.Layer, merged.DurationMs,
+                    merged.FirerId, merged.SourceKind, merged.SourceId));
+            }
+            else
+            {
+                set[b.BuffUuid] = b;
+                EnqueueEvent(new CombatEvent.BuffChanged(
+                    timestampMs, entityId, b.BuffUuid, b.BaseId,
+                    BuffChangeKind.Applied, b.Stacks, b.Layer, b.DurationMs,
+                    b.FirerId, b.SourceKind, b.SourceId));
+            }
+            changed = true;
+        }
+        return changed;
+    }
+
+    // Caller holds _buffsByEntityLock. Returns whether any buff was removed.
+    private bool ApplyRemovals(EntityId entityId, Dictionary<int, ActiveBuff> set,
+        IReadOnlyList<int> removedBuffUuids, long timestampMs)
+    {
+        bool changed = false;
+        for (int i = 0; i < removedBuffUuids.Count; i++)
+        {
+            int uuid = removedBuffUuids[i];
+            if (set.Remove(uuid, out var old))
+            {
+                EnqueueEvent(new CombatEvent.BuffChanged(
+                    timestampMs, entityId, old.BuffUuid, old.BaseId,
+                    BuffChangeKind.Removed, old.Stacks, old.Layer, old.DurationMs,
+                    old.FirerId, old.SourceKind, old.SourceId));
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     // Overwrite cur with next's non-default scalar fields. Partial BuffChange
@@ -79,5 +99,7 @@ internal sealed partial class CombatService
         next.Stacks   != 0 ? next.Stacks   : cur.Stacks,
         next.Layer    != 0 ? next.Layer    : cur.Layer,
         next.CreateTimeMs != 0 ? next.CreateTimeMs : cur.CreateTimeMs,
-        next.DurationMs   != 0 ? next.DurationMs   : cur.DurationMs);
+        next.DurationMs   != 0 ? next.DurationMs   : cur.DurationMs,
+        next.SourceKind != 0 ? next.SourceKind : cur.SourceKind,
+        next.SourceId   != 0 ? next.SourceId   : cur.SourceId);
 }

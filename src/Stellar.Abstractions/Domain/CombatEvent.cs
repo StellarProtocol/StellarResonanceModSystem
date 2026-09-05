@@ -48,8 +48,12 @@ public abstract record CombatEvent(long TimestampMs)
     /// <param name="Stacks">Current stack count after the change.</param>
     /// <param name="Layer">Buff layer index.</param>
     /// <param name="DurationMs">Remaining duration in milliseconds; 0 when removed.</param>
+    /// <param name="FirerId">Entity that applied the buff (wire <c>FireUuid</c>); <see cref="EntityId.None"/> when the wire carried none.</param>
+    /// <param name="SourceKind">Origin domain (EFightSource: 0 Skill, 1 Buff, 6 Talent, 9 Mod, 10 Equip); 0 when absent.</param>
+    /// <param name="SourceId">Config id in <paramref name="SourceKind"/>'s domain (the skill id for kind 0); 0 when absent.</param>
     public sealed record BuffChanged(long TimestampMs, EntityId TargetId, int BuffUuid, int BaseId,
-        BuffChangeKind Kind, int Stacks, int Layer, int DurationMs) : CombatEvent(TimestampMs);
+        BuffChangeKind Kind, int Stacks, int Layer, int DurationMs,
+        EntityId FirerId = default, int SourceKind = 0, int SourceId = 0) : CombatEvent(TimestampMs);
 
     /// <summary>Damage or healing was dealt between two entities.</summary>
     /// <param name="TimestampMs">Server epoch timestamp of the event in milliseconds.</param>
