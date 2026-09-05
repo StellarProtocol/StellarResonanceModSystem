@@ -7,8 +7,10 @@ namespace Stellar.Abstractions.Services;
 /// <summary>Save and re-apply the local player's worn cosmetic outfit (fashion). An outfit is a
 /// map of <c>FashionRegion</c> code → cosmetic <c>fashionId</c> (<c>0</c> = empty slot); it is
 /// applied through the game's own <c>WorldProxy.FashionWear</c> dispatcher, which runs every
-/// server-side validation (combat lock, ownership) — plugins never bypass it. Dyes and weapon
-/// skins are out of scope in this version.</summary>
+/// server-side validation (combat lock, ownership) — plugins never bypass it. Dyes travel with the
+/// pieces server-side (one dye per fashionId). The weapon skin is a SEPARATE per-class game system
+/// (the Wardrobe's Weapon Skin tab, class dropdown) and is exposed alongside the outfit through
+/// <see cref="GetWornWeaponSkin"/> / <see cref="ApplyWeaponSkinAsync"/>.</summary>
 public interface IWardrobe
 {
     /// <summary>True once the game-side fashion bridge is resolved and the player is in world.</summary>
@@ -27,9 +29,34 @@ public interface IWardrobe
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The outcome of the switch.</returns>
     Task<WardrobeResult> ApplyAsync(IReadOnlyDictionary<int, int> outfit, CancellationToken ct = default);
+
+    /// <summary>The weapon skin the local player's CURRENT class is wearing, or <c>null</c> if it cannot
+    /// be read yet (bridge unresolved / not in world). Weapon skins are per class in the game, so the
+    /// value carries the class it belongs to; <c>SkinId</c> <c>0</c> means the class wears its weapon's
+    /// default look. Refreshed together with <see cref="GetWornOutfit"/>.</summary>
+    /// <returns>The worn (class, skin) pair, or <c>null</c> when unavailable.</returns>
+    WardrobeWeaponSkin? GetWornWeaponSkin();
+
+    /// <summary>Set class <paramref name="professionId"/>'s weapon skin to <paramref name="skinId"/> via
+    /// the game's own <c>UseProfessionSkin</c> RPC — the same action the Wardrobe's Weapon Skin tab
+    /// performs, so the server validates ownership. <c>skinId</c> <c>0</c> restores the class's default
+    /// weapon look, as in the game. Shares the one-apply-at-a-time rule with <see cref="ApplyAsync"/>:
+    /// await the outfit switch before sending the weapon skin.</summary>
+    /// <param name="professionId">The class whose weapon skin to set.</param>
+    /// <param name="skinId">The weapon-skin id, or <c>0</c> for the default look.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The outcome of the switch.</returns>
+    Task<WardrobeResult> ApplyWeaponSkinAsync(int professionId, int skinId, CancellationToken ct = default);
 }
 
-/// <summary>Outcome of <see cref="IWardrobe.ApplyAsync"/>.</summary>
+/// <summary>A worn weapon skin: the class (<c>professionId</c>) it is set for and the skin id
+/// (<c>0</c> = the class's default weapon look). Weapon skins are per class in the game and live
+/// outside the outfit's <c>FashionRegion</c> map.</summary>
+/// <param name="ProfessionId">The class the skin is set for.</param>
+/// <param name="SkinId">The weapon-skin id; <c>0</c> = default look.</param>
+public sealed record WardrobeWeaponSkin(int ProfessionId, int SkinId);
+
+/// <summary>Outcome of <see cref="IWardrobe.ApplyAsync"/> / <see cref="IWardrobe.ApplyWeaponSkinAsync"/>.</summary>
 public enum WardrobeResult
 {
     /// <summary>The outfit was applied (server returned ok).</summary>
@@ -65,4 +92,17 @@ public static class WardrobeRegions
     {
         701, 702, 703, 711, 712, 713, 714, 715, 716, 717, 718, 721, 722, 723,
     };
+
+    /// <summary>Preview-only key for the weapon skin (<c>FashionRegion.WeapoonSkin</c> = 731).
+    /// Deliberately NOT in <see cref="All"/>: a weapon skin never travels in <c>FashionWear</c>, so it is
+    /// not part of a saved outfit's region map and <see cref="IWardrobe.ApplyAsync"/> IGNORES this key —
+    /// weapon skins are applied through <see cref="IWardrobe.ApplyWeaponSkinAsync"/>.
+    /// <para><see cref="IWardrobePreview.Show"/> alone honours it, dressing the model's weapon with the skin
+    /// carried under it. A non-zero value is that skin id; <c>0</c> means "the class's default look" and
+    /// resolves the same way applying it would; omitting the key leaves the weapon exactly as the model
+    /// renders it.</para>
+    /// <para>Weapon skins are per-class (every <c>WeaponSkinTable</c> row carries a <c>ProfessionId</c>), so
+    /// only pass a skin belonging to the player's CURRENT class — the game's own weapon-skin tab refuses to
+    /// preview another class's skins for the same reason.</para></summary>
+    public const int WeaponSkinPreview = 731;
 }

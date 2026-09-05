@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Stellar.Abstractions.Services;
 
 namespace Stellar.Application.Abstractions;
 
@@ -22,4 +23,12 @@ internal interface IWardrobeProbe
     /// positive = a game EErrorCode); <c>&lt; 0</c> is an infrastructure outcome:
     /// <c>-1</c> = timeout, <c>-2</c> = cancelled, <c>-3</c> = bridge/dispatch failure.</summary>
     Task<int> CallApplyAsync(IReadOnlyDictionary<int, int> outfit, CancellationToken ct);
+
+    /// <summary>The current class's worn weapon skin (class, skinId; 0 = default look), or null if not
+    /// readable yet. Refreshed with <see cref="ReadWorn"/>.</summary>
+    WardrobeWeaponSkin? ReadWornWeaponSkin();
+
+    /// <summary>Dispatch <c>UseProfessionSkin(professionId, skinId)</c> and report the outcome with the
+    /// same int convention as <see cref="CallApplyAsync"/>.</summary>
+    Task<int> CallApplyWeaponSkinAsync(int professionId, int skinId, CancellationToken ct);
 }

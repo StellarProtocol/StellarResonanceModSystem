@@ -26,5 +26,10 @@ internal sealed partial class PandaLoadoutProbe
         _liveStatePendingPublish = false;   // …including one still waiting on the per-class resolve
         _mergePending = true;
         _refreshPending = true;
+        // Switch-gate state is per-character too: the next character's worn plan is unknown until its
+        // first parse (never "still plan N"), and its 3 s switch cooldown is its own.
+        _liveCurrentPlanId = UnknownPlanId;
+        System.Threading.Interlocked.Exchange(ref _lastSwitchDispatchMs, 0);
+        while (_toTip.TryDequeue(out _)) { }   // a refusal tip owed to the PREVIOUS character never fires
     }
 }

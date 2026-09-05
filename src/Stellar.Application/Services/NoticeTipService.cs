@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Reflection;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
@@ -10,36 +11,112 @@ public sealed class NoticeTipService : INoticeTips
 {
     private readonly Action<string> _log;
     private readonly IClientState _clientState;
-    private readonly ConcurrentQueue<string> _pending = new();
+    private readonly Action<string>? _runChunk;
+    private readonly ConcurrentQueue<(string Chunk, int WindowMs)> _pending = new();
     private object? _luaState;
     private MethodInfo? _luaDoString;
 
-    public NoticeTipService(Action<string> log, IClientState clientState)
+    // Repeat gate state — main thread only (written and read inside Tick).
+    private string? _lastChunk;
+    private int     _lastWindowMs;
+    private long    _lastShowStamp;
+
+    private const int  MinWindowMs = 250;
+    private const int  MaxWindowMs = 10_000;
+    private const long SlowShowMs  = 33;   // ~2 frames at 60 Hz
+
+    public NoticeTipService(Action<string> log, IClientState clientState) : this(log, clientState, null) { }
+
+    // Test seam (internal — plugins never see it): the production path binds Lua's DoString by
+    // reflection against the live game (EnsureLuaState), so Application-layer unit tests inject the
+    // invoker instead. Nothing else differs; the queue, the gate and the timing all run as shipped.
+    internal NoticeTipService(Action<string> log, IClientState clientState, Action<string>? runChunk)
     {
         _log = log;
         _clientState = clientState;
+        _runChunk = runChunk;
     }
 
     public INoticeTipBuilder Create(NoticeTipType type) => new LuaNoticeTipBuilder(this, type);
 
+    /// <summary>Outcome of the repeat gate on the show path — see <see cref="DecideShow"/>.</summary>
+    internal enum ShowDecision { Show, DropRepeat }
+
+    /// <summary>Pure decision for the repeat gate (pinned by <c>NoticeTipSpamTests</c>; origin = owner
+    /// report 2026-09-05, hotkey spam re-toasting "Switched to Beam" while the previous copy was still on
+    /// screen). A chunk BYTE-IDENTICAL to the one still inside its own display window adds nothing the
+    /// player cannot already read, so it is dropped — mirroring the game's own repeat filter
+    /// (<c>noticetip_data.lua:8-22 checkConfigRepeat</c>, which never fires for us because our tips carry
+    /// <c>Id=0</c> and so have no MessageTable row). The FIRST tip is never gated, and a tip with
+    /// DIFFERENT content always shows.</summary>
+    internal static ShowDecision DecideShow(string chunk, string? lastChunk, int lastWindowMs, long sinceLastMs)
+        => lastChunk is not null && sinceLastMs < lastWindowMs && string.Equals(chunk, lastChunk, StringComparison.Ordinal)
+            ? ShowDecision.DropRepeat
+            : ShowDecision.Show;
+
     // Called from the Unity main thread each frame — runs game Lua (DoString), so it must NOT touch the
     // game during the world-connect handshake. Self-gates on IsWorldActive.
+    //
+    // ONE tip per tick. Showing a tip is real main-thread UI work, so the drain is bounded to a single
+    // chunk per frame rather than however many a spamming caller queued between two frames (owner report
+    // 2026-09-05). A lone tip still shows on the very next tick — no added latency on a single click.
     [WorldGated]
     public void Tick()
     {
         if (!_clientState.IsWorldActive) return;
         if (_pending.IsEmpty) return;
-        EnsureLuaState();
-        if (_luaDoString is null) return;
-        while (_pending.TryDequeue(out var chunk))
-        {
-            try { _luaDoString.Invoke(_luaState, new object[] { chunk, "stellar.noticetips" }); }
-            catch (Exception ex) { _log($"[NoticeTips] Lua error: {ex.Message}"); }
-        }
+        if (!EnsureInvoker()) return;
+        if (!_pending.TryDequeue(out var tip)) return;
+        ShowOne(tip);
     }
 
+    private void ShowOne((string Chunk, int WindowMs) tip)
+    {
+        var since = _lastChunk is null ? long.MaxValue : ElapsedMs(_lastShowStamp);
+        if (DecideShow(tip.Chunk, _lastChunk, _lastWindowMs, since) == ShowDecision.DropRepeat) return;
+
+        var started = Stopwatch.GetTimestamp();
+        try { Invoke(tip.Chunk); }
+        catch (Exception ex) { _log($"[NoticeTips] Lua error: {ex.Message}"); }
+        var ms = ElapsedMs(started);
+
+        _lastChunk     = tip.Chunk;
+        _lastWindowMs  = tip.WindowMs;
+        _lastShowStamp = Stopwatch.GetTimestamp();
+
+        // ALWAYS ON, and deliberately NOT behind StellarDiagnostics in a .Diagnostics.cs partial: the line
+        // is SELF-LIMITING (nothing at all is logged under the threshold, so normal play emits zero
+        // lines), and it has to be readable in the owner's very next log WITHOUT a diagnostics restart —
+        // proving or disproving the toast as the source of a reported frame spike is the whole point.
+        if (ms > SlowShowMs) _log($"[NoticeTips] slow show {ms}ms");
+    }
+
+    private void Invoke(string chunk)
+    {
+        if (_runChunk is not null) { _runChunk(chunk); return; }
+        _luaDoString!.Invoke(_luaState, new object[] { chunk, "stellar.noticetips" });
+    }
+
+    private bool EnsureInvoker()
+    {
+        if (_runChunk is not null) return true;
+        EnsureLuaState();
+        return _luaDoString is not null;
+    }
+
+    private static long ElapsedMs(long sinceStamp)
+        => (Stopwatch.GetTimestamp() - sinceStamp) * 1000L / Stopwatch.Frequency;
+
     // Thread-safe: builds the chunk and enqueues it; Tick() dispatches on the main thread.
-    internal void Execute(LuaNoticeTipBuilder b) => _pending.Enqueue(BuildChunk(b));
+    internal void Execute(LuaNoticeTipBuilder b) => _pending.Enqueue((BuildChunk(b), WindowMsOf(b)));
+
+    // How long this tip stays on screen (delay + duration) — the repeat gate's window. Clamped so a
+    // caller cannot disable the gate with a 0 s tip or hold it open for a whole session.
+    private static int WindowMsOf(LuaNoticeTipBuilder b)
+    {
+        var ms = (int)((b.Delay + b.Duration) * 1000f);
+        return ms < MinWindowMs ? MinWindowMs : ms > MaxWindowMs ? MaxWindowMs : ms;
+    }
 
     private static string BuildChunk(LuaNoticeTipBuilder b)
     {
@@ -62,6 +139,30 @@ public sealed class NoticeTipService : INoticeTips
         };
     }
 
+    // SHOW the pop view for a tip that was just enqueued — the game's OWN append path.
+    //
+    // noticetip_pop drains data.pop_msg_data ITSELF: OnRefresh dequeues one item when it has no viewData
+    // (noticetip_pop_view.lua:80-86), showPopTip holds at most three at once and re-enqueues the overflow
+    // (:130-133), and each item's OnEnd dequeues the next (:210-214). So a SECOND tip only needs the live
+    // view refreshed — not re-opened.
+    //
+    // Z.UIMgr:OpenView on an ALREADY-OPEN view is not cheap (ui_manager.lua:112-161): GetView returns the
+    // cached instance (:114), then the list is re-ordered (:137-145), Z.UICameraHelper:OpenUICamera runs
+    // (:151), ui:Active (:152 → ui_base.lua:45-59) calls SetAsLastSibling (:53 → ui_view_base.lua:80-85 =
+    // a transform re-parent to last sibling PLUS Z.UIMgr:UpdateDepth over the layer, i.e. a canvas
+    // rebuild) before it ever reaches OnRefresh (:55), and finally ViewStatusSwitchMgr:TrySetStateActive
+    // (:158) and a global EventMgr:Dispatch(UIOpen) (:160) fire. Owner report 2026-09-05: five toasts over
+    // ~3-5 s = five of those, measured as 100-185 ms frames.
+    //
+    // So: refresh the LIVE view when there is one (SetViewData(nil) + the same CallLifeCycleFunc(OnRefresh)
+    // that Active would have reached — ui_base.lua:49,55), and pay the full OpenView only when there is no
+    // usable view. The fallback keeps this correct on the first-ever tip and after the view is torn down
+    // (DeActiveAll on a scene switch), so no tip can be stranded in the queue.
+    private const string ShowPopView =
+        " local v=Z.UIMgr:GetView('noticetip_pop')" +
+        " if v and v.IsActive and v.IsLoaded and v.IsVisible then v:SetViewData(nil); v:CallLifeCycleFunc(v.OnRefresh)" +
+        " else Z.UIMgr:OpenView('noticetip_pop') end";
+
     // Green/Red bars — EnqueuePopData path (type2AudioTable never fires in this path)
     private static string BuildPopChunk(string content, float delay, float duration, int luaType, string? audioEvent)
     {
@@ -72,7 +173,7 @@ public sealed class NoticeTipService : INoticeTips
            $" local cfg={{Id=0,Delay={F(delay)},DurationTime={F(duration)},Audio='',RepeatPlay={{1,0}},Type=10}}" +
            $" local info={{config=cfg,content='{content}',viewType={luaType}}}" +
             " data:EnqueuePopData(info)" +
-            " Z.UIMgr:OpenView('noticetip_pop')" +
+            ShowPopView +
             play +
             " end)";
     }
@@ -89,7 +190,7 @@ public sealed class NoticeTipService : INoticeTips
            $" local cfg={{Id=0,Delay={F(b.Delay)},DurationTime={F(b.Duration)},Audio='{audio}',RepeatPlay={{{rc},{ri}}},Type=10}}" +
            $" local info={{config=cfg,content='{content}',viewType=1}}" +
             " data:EnqueuePopData(info)" +
-            " Z.UIMgr:OpenView('noticetip_pop')" +
+            ShowPopView +
             " end)";
     }
 

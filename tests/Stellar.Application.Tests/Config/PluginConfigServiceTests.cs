@@ -125,6 +125,28 @@ public sealed class PluginConfigServiceTests
         Assert.Empty(fires);
     }
 
+    // Regression pin, 2026-09-05 save-click spike: SaveSection hands the store its LIVE root instead
+    // of a deep clone (ToJsonString + Parse of the whole document — ~200 KB of throwaway allocation
+    // per save on the owner's 53-outfit wardrobe config, purely to be serialized AGAIN by the store).
+    // Pinned by identity: repeated saves must hand over the SAME JsonObject instance; a re-introduced
+    // clone would produce a fresh one each time.
+    [Fact]
+    public void Save_HandsTheStoreTheLiveRoot_NotAFreshClonePerSave()
+    {
+        var (svc, store) = NewService();
+        var s = svc.GetSection("foo");
+
+        s.Set("k", 1);
+        s.Save();
+        s.Set("k", 2);
+        s.Save();
+
+        Assert.Equal(2, store.LiveNodesSeen.Count);
+        Assert.Same(store.LiveNodesSeen[0], store.LiveNodesSeen[1]);
+        // And the flush is still correct: the store's snapshot carries the latest value.
+        Assert.Equal(2, store.Files[PluginGuid]!["foo"]!["k"]!.GetValue<int>());
+    }
+
     [Fact]
     public void Get_OnMalformedSection_ReturnsDefault()
     {

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Stellar.Abstractions.Diagnostics;
@@ -33,10 +34,19 @@ internal sealed partial class PandaFashionProbe
         _log.Info($"[WardrobeCapture] worn {FormatOutfit(worn)}");
     }
 
-    private void DiagDispatched(IReadOnlyDictionary<int, int> outfit)
+    private void DiagWeaponCaptured(WardrobeWeaponSkin skin)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[WardrobeApply] dispatch {FormatOutfit(outfit)}");
+        _log.Info($"[WardrobeCapture] weapon skin class={skin.ProfessionId} skin={skin.SkinId}");
+    }
+
+    // `label` BUILDS the description — FormatOutfit(...) for an outfit apply, "weapon skin class=… skin=…"
+    // for a weapon-skin apply. It is invoked only AFTER the gate, so a diagnostics-off apply never formats
+    // the outfit map (which allocates a string per region).
+    private void DiagDispatched(Func<string> label)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[WardrobeApply] dispatch {label()}");
     }
 
     private void DiagResult(int code, long elapsedMs)
