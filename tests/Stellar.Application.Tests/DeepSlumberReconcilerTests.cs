@@ -276,6 +276,70 @@ public sealed class DeepSlumberReconcilerTests
     }
 
     [Fact]
+    public void TwoForeignAreasSameNodeId_BothWantedFactorsFreed()
+    {
+        var area5 = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var area8 = new DeepSlumberArea(8, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020777 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { area5, area8, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 }, new[] { 251, 20020777 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+
+        var free964 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141 && o.CurrentItemId == 20020964);
+        var free777 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141 && o.CurrentItemId == 20020777);
+        var socket250 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250 && o.ItemId == 20020964);
+        var socket251 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 251 && o.ItemId == 20020777);
+
+        Assert.True(free964 >= 0, "expected the wanted factor freed from area 5's node 141");
+        Assert.True(free777 >= 0, "expected the wanted factor freed from area 8's node 141 (same node id, different area)");
+        Assert.True(socket250 >= 0 && socket251 >= 0, "expected both target sockets");
+        Assert.True(free964 < socket250, "must free area 5's item before socketing it into node 250");
+        Assert.True(free777 < socket251, "must free area 8's item before socketing it into node 251");
+    }
+
+    [Fact]
+    public void SameAreaReplacePlusForeignFree_BothEmittedNoDuplicate()
+    {
+        // Target area 6 already has node 250 socketed with a DIFFERENT item (in-area replace), and
+        // separately wants a factor currently held in foreign area 5.
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 250, 111 } }, new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020777 }, new[] { 251, 20020964 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+
+        var replaceUnsocket = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 250 && o.CurrentItemId == 111);
+        var foreignUnsocket = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141 && o.CurrentItemId == 20020964);
+        var socket250 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250 && o.ItemId == 20020777);
+        var socket251 = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 251 && o.ItemId == 20020964);
+
+        Assert.True(replaceUnsocket >= 0, "expected the within-target-area replace unsocket");
+        Assert.True(foreignUnsocket >= 0, "expected the foreign-area free unsocket");
+        Assert.True(socket250 >= 0 && socket251 >= 0, "expected both sockets");
+        Assert.True(replaceUnsocket < socket250 && replaceUnsocket < socket251, "replace unsocket precedes all sockets");
+        Assert.True(foreignUnsocket < socket250 && foreignUnsocket < socket251, "foreign free precedes all sockets");
+
+        var unsocketsByKey = ops.Where(o => o.Kind == DeepSlumberOpKind.UnsocketFactor).GroupBy(o => o.Key);
+        Assert.True(unsocketsByKey.All(g => g.Count() == 1), "no node id yields two unsockets");
+    }
+
+    [Fact]
     public void SharedFactorInPriorSeasonArea_NotFreed()
     {
         // The wanted factor sits in a PRIOR-season area (lineId 2), never the current season (lineId 3).
