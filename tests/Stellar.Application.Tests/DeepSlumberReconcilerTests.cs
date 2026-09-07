@@ -226,4 +226,76 @@ public sealed class DeepSlumberReconcilerTests
         Assert.Contains(DeepSlumberOp.Unsocket(118, 111), ops); // still the ordinary factor diff
         Assert.Contains(DeepSlumberOp.Socket(118, 222), ops);
     }
+
+    [Fact]
+    public void SharedFactorInAnotherLoadoutArea_FreesItBeforeSocketingIntoTarget()
+    {
+        // Scarce single-copy factor 20020964 is socketed in the SOURCE loadout's area 5 (node 141).
+        // The target loadout binds area 6 and wants that same factor at node 250. The target apply
+        // never visits area 5, so without a cross-area free the socket into area 6 fails 7561 ("still
+        // socketed elsewhere") — Toir's report (2026-09-07). Expect one Unsocket(141) BEFORE Socket(250).
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+        var freeIdx = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141);
+        var socketIdx = ops.FindIndex(o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250);
+        Assert.True(freeIdx >= 0, "expected the shared factor freed from the source area's node 141");
+        Assert.True(socketIdx >= 0, "expected the factor socketed into the target node 250");
+        Assert.True(freeIdx < socketIdx, "must free from the source loadout before socketing into target");
+    }
+
+    [Fact]
+    public void ForeignFactorNotWanted_LeftUntouched()
+    {
+        // The other loadout's area 5 holds factor 111 which the target (area 6, wants a DIFFERENT factor
+        // 777 that is in the bag) does NOT want. The switcher must not disturb the other loadout's
+        // non-shared factor — no unsocket of node 141.
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 111 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 777 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+        Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250 && o.ItemId == 777);
+    }
+
+    [Fact]
+    public void SharedFactorInPriorSeasonArea_NotFreed()
+    {
+        // The wanted factor sits in a PRIOR-season area (lineId 2), never the current season (lineId 3).
+        // Last season reuses AreaIds and its factors must never be touched (owner smoke: bogus 7555).
+        // Target (current season area 6) wants 20020964, which is in the bag this season → plain socket,
+        // NO unsocket of the prior-season node.
+        var oldArea = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(2, 800522, new List<DeepSlumberArea> { oldArea }),
+            new(3, 800522, new List<DeepSlumberArea> { tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+        Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250);
+    }
 }
