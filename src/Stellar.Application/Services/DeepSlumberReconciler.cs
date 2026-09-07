@@ -10,7 +10,8 @@ namespace Stellar.Application.Services;
 /// target tree, then socket — so the most impactful change lands first and every load-bearing invariant
 /// holds (a line is enabled before its nodes move; a differing tree is reset before it is rebuilt; the
 /// tree is rebuilt before its factors socket; scarce factors are freed before any socket needs them).
-/// Areas/nodes not named by the target are left alone. No game contact — fully unit-tested.</summary>
+/// Areas/nodes not named by the target are left alone, except that a wanted scarce factor is freed from
+/// a non-target area holding it. No game contact — fully unit-tested.</summary>
 internal static class DeepSlumberReconciler
 {
     public static IReadOnlyList<DeepSlumberOp> Plan(DeepSlumberState current, DeepSlumberSetup target)
@@ -25,6 +26,7 @@ internal static class DeepSlumberReconciler
         var currentLine = current.Lines.Count == 0 ? int.MinValue : current.Lines.Max(l => l.LineId);
         foreach (var area in target.Areas.OrderBy(a => a.AreaId))
             PlanArea(current, currentLine, area, b);
+        FreeForeignSharedFactors(current, currentLine, target, b);   // NEW — cross-loadout factor move
         return b.Flatten();
     }
 
@@ -82,6 +84,51 @@ internal static class DeepSlumberReconciler
         foreach (var (node, cur) in liveFactors.OrderBy(kv => kv.Key))
             if (!wanted.ContainsKey(node))
                 b.Unsockets.Add(DeepSlumberOp.Unsocket(node, cur));
+    }
+
+    // A scarce factor the target wants can still be socketed in a DIFFERENT loadout's area — the game
+    // does not auto-move it (a line switch leaves the old area's factors in place), so socketing it
+    // into the target fails 7561 ("still socketed elsewhere"): the "Deep-Slumber partly applied" bug
+    // (Toir 2026-09-07). Free every WANTED factor from the current-season areas the target does NOT
+    // bind, so it is back in the bag before the socket phase. Unsocket is free + non-consuming and
+    // needs no active line (owner 2026-09-07). Scope: (a) CURRENT season only — last season reuses
+    // AreaIds and its factors must never be touched; (b) areas OUTSIDE the target — the target's own
+    // areas are fully reconciled per-area above, so re-touching them here would double-emit an unsocket;
+    // (c) items the target actually wants — never disturb the other loadout's non-shared factors. These
+    // ops go into the Unsockets bucket, which Flatten emits before every Socket, so no reordering is
+    // needed.
+    private static void FreeForeignSharedFactors(DeepSlumberState current, int currentLine, DeepSlumberSetup target, Buckets b)
+    {
+        var wanted = new HashSet<int>();
+        var targetAreas = new HashSet<int>();
+        foreach (var area in target.Areas)
+        {
+            targetAreas.Add(area.AreaId);
+            foreach (var f in area.Factors)
+                if (f.Length >= 2 && f[1] != 0) wanted.Add(f[1]);
+        }
+        if (wanted.Count == 0) return;
+
+        var freedNodes = new HashSet<(int Area, int Node)>();
+        foreach (var line in current.Lines)
+        {
+            if (line.LineId != currentLine) continue;
+            foreach (var area in line.Areas)
+            {
+                if (targetAreas.Contains(area.AreaId)) continue;   // target's own areas: reconciled per-area
+                if (area.MiddleNodes is null) continue;
+                foreach (var p in area.MiddleNodes.OrderBy(x => x.Length >= 1 ? x[0] : int.MinValue))
+                {
+                    if (p.Length < 2 || p[1] == 0) continue;       // empty socket carries itemId 0
+                    if (!wanted.Contains(p[1])) continue;          // only move a factor the target needs
+                    if (freedNodes.Add((area.AreaId, p[0])))       // one unsocket per (area, node) — a
+                                                                    // repeated node id across DIFFERENT
+                                                                    // foreign areas must each emit its own
+                                                                    // unsocket, never merge
+                        b.Unsockets.Add(DeepSlumberOp.Unsocket(p[0], p[1]));
+                }
+            }
+        }
     }
 
     private static DeepSlumberArea? FindArea(DeepSlumberState s, int currentLine, int areaId)

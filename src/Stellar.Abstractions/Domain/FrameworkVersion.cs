@@ -19,6 +19,7 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.7.1 carries the 2.6.2 Deep-Slumber loadout hotfix into the 2.7.0 (rDPS groundwork) line — no API change.
     /// 2.6.1 is a fix: <c>IWardrobe.GetWornWeaponSkin</c> reports "no weapon skin" as
     /// <c>SkinId 0</c> again. The Wardrobe's ⊘ tile is not skin 0 — the game stores the
     /// current weapon's ORIGIN row id (a concrete <c>WeaponSkinTable</c> row per weapon
@@ -152,5 +153,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.7.0";
+    public const string Value = "2.7.1";
 }
