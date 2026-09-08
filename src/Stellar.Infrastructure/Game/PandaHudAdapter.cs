@@ -211,10 +211,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             && e.LastAppliedAnchoredPos is { } la && rt.anchoredPosition == la
             && e.LastAppliedLiveSize is { } ls
             && Mathf.Abs(liveRect.Width - ls.x) <= GuardTolerancePx && Mathf.Abs(liveRect.Height - ls.y) <= GuardTolerancePx)
-        {
-            LogRoundTripGuardSkip(e, new Vector2(clamped.X, clamped.Y));   // diagnostics (gated)
             return;
-        }
 
         ApplyTranslate(e, rt, rect, liveRect, clamped);
     }
@@ -245,8 +242,9 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         rt.anchoredPosition += delta;
         e.LastAppliedTarget = new Vector2(rect.X, rect.Y);
         e.LastAppliedAnchoredPos = rt.anchoredPosition;
-        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);   // load-bearing: the SetRect guard's size-reflow term reads this to detect a post-apply reflow
-        LogRoundTripApply(e, rect, liveRect, rt.anchoredPosition);   // diagnostics (gated)
+        // Record the curated size we translated against: the SetRect guard compares the current curated size to
+        // this to detect a post-apply reflow (size grew, anchoredPosition didn't) and re-apply instead of freezing.
+        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);
     }
 
     public void RestoreOriginal(NativeUiHandle handle)
@@ -343,9 +341,10 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     // refuse it rather than fling the element off-screen.
     private const float MaxSaneDeltaPx = 6000f;
 
-    // How close (screen px) the element's live top-left must be to the clamped target before SetRect treats it as
-    // already-placed and skips. Small enough that a real size reflow (hundreds of px offset) always re-applies,
-    // large enough that sub-px WorldToScreenPoint jitter on a steady-state element doesn't thrash the translate.
+    // Tolerance (screen px) on the SetRect guard's curated-size comparison: the element is treated as un-reflowed
+    // (and the guard may skip) while its curated width/height stay within this of the last-applied size. Small
+    // enough that a real reflow (hundreds of px) always re-applies, large enough that sub-px curated-size jitter
+    // on a steady element doesn't thrash the translate.
     private const float GuardTolerancePx = 1.5f;
 
     private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
@@ -477,10 +476,9 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
         // leaving the element at the game default.
         public Vector2? LastAppliedAnchoredPos;
-        // Curated live size at the last successful SetRect apply. LOAD-BEARING: the SetRect idempotent guard
-        // compares it against the current live size so a post-apply reflow (size grew, anchoredPosition didn't)
-        // forces a re-apply instead of freezing — the resolution round-trip "quest window drops" fix. Do NOT
-        // remove this with the [NativeUi/RT] diagnostics.
+        // Curated size at the last successful SetRect apply. The SetRect idempotent guard compares it against the
+        // current curated size so a post-apply reflow (size grew, anchoredPosition didn't) forces a re-apply
+        // instead of freezing — the resolution round-trip "quest window drops" fix.
         public UnityEngine.Vector2? LastAppliedLiveSize;
 
         public NativeUiHandle ToHandle() => new()
