@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.6.3] - 2026-09-08
+_**2.6.3** (patch) — moved HUD elements stay where you put them across resolution changes and Settings toggles. Infrastructure/Application-only, binary-compatible with plugins built against ≤2.6.2._
+### Fixed
+- Fixed moved HUD elements (quest tracker, boss health bar, and others) jumping to the wrong position after you change your screen resolution.
+- Fixed the boss health bar drifting out of place after you repeatedly hide and show it in Settings.
+- HUD elements you have repositioned now fall back to their normal in-game position at a resolution you have not customized yet, instead of getting stuck off to one side.
+### Developer notes
+- All in the native game-UI repositioning path (`PandaHudAdapter` / `NativeUiService` / `INativeUiAdapter`). The `SetRect` idempotent guard was reworked to key on `(target, anchoredPosition, curatedSize)` equality, fixing three defects plus a new position-only fallback: (1) **reflow-freeze** — a moved HUD element dropped to the bottom after a resolution round-trip (translate applied against a transient/collapsed size, then froze when the element reflowed); (2) **toggle-ratchet** — the boss HP bar crept left on repeated hide/show in Settings; (3) **off-edge churn** — elements whose curated rect sits past a screen edge re-applied every tick (harmless, now skips); (4) **unconfigured-resolution fallback** — new `INativeUiAdapter.RestoreOriginalPose` returns a moved element to the game's default position at a resolution with no saved layout (previously it stayed stranded at the prior resolution's offset). Scope: `src/Stellar.Infrastructure/Game/PandaHudAdapter.cs`, `src/Stellar.Application/Services/NativeUiService.cs`, `src/Stellar.Application/Abstractions/INativeUiAdapter.cs`, `tests/Stellar.Application.Tests/NativeUi/NativeUiServiceTests.cs`. `INativeUiAdapter` is an Application-layer outbound interface, not the public plugin surface — no plugin API or behavior change outside native-UI positioning. Compile clean; 1394/1394 tests pass (incl. a new unconfigured-resolution fallback test); all four cases in-game validated by the owner. Temporary round-trip diagnostics were added during development and stripped before release (repo grep clean).
+
 ## [2.6.2] - 2026-09-08
 _**2.6.2** (patch) — switching loadouts now moves a shared Deep-Slumber factor instead of half-applying. Application-only, binary-compatible with plugins built against ≤2.6.1._
 ### Fixed
