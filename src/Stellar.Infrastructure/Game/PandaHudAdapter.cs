@@ -251,6 +251,30 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     public void RestoreOriginal(NativeUiHandle handle)
     {
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
+        WriteOriginalPose(e);
+        // Full restore ALSO reverts the active-self flag (host-shutdown mod isolation / a full Reset). The
+        // position-only RestoreOriginalPose deliberately skips this — the game owns show/hide during a resolution
+        // transition, so visibility must be left alone there.
+        if (e.GameObject != null && e.GameObject.activeSelf != e.OriginalActiveSelf)
+            e.GameObject.SetActive(e.OriginalActiveSelf);
+    }
+
+    public void RestoreOriginalPose(NativeUiHandle handle)
+    {
+        // Position/anchor-only restore, visibility untouched — see INativeUiAdapter.RestoreOriginalPose. Called
+        // when a resolution change lands on a resolution with no saved layout: the element must fall back to the
+        // game's default position for the NEW resolution (the captured pose is anchor-based ⇒ resolution-
+        // independent, so the game's canvas re-positions it correctly), but we must not toggle its visibility.
+        if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
+        WriteOriginalPose(e);
+    }
+
+    // Shared writeback for both restore paths: rewrite the captured original ANCHOR pose (anchorMin/Max, pivot,
+    // anchoredPosition, sizeDelta) and clear the last-applied cache so the next SetRect re-writes cleanly instead
+    // of short-circuiting on a stale comparison. Visibility is NOT touched here — that's the only difference
+    // between RestoreOriginal (also reverts active-self) and RestoreOriginalPose (leaves it).
+    private static void WriteOriginalPose(ResolvedEntry e)
+    {
         if (e.RectTransform != null)
         {
             e.RectTransform.anchorMin        = e.OriginalAnchorMin;
@@ -259,10 +283,6 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             e.RectTransform.anchoredPosition = e.OriginalAnchoredPos;
             e.RectTransform.sizeDelta        = e.OriginalSizeDelta;
         }
-        if (e.GameObject != null && e.GameObject.activeSelf != e.OriginalActiveSelf)
-            e.GameObject.SetActive(e.OriginalActiveSelf);
-        // Clear last-applied cache so the next SetRect call re-writes the
-        // pose instead of short-circuiting on the stale comparison.
         e.LastAppliedTarget = null;
         e.LastAppliedAnchoredPos = null;
     }
