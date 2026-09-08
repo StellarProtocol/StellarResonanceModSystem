@@ -201,7 +201,11 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // inactive/garbage-corner case that caused the off-screen fling.)
         var target = new Vector2(rect.X, rect.Y);
         if (e.LastAppliedTarget.HasValue && e.LastAppliedTarget.Value == target
-            && e.LastAppliedAnchoredPos.HasValue && rt.anchoredPosition == e.LastAppliedAnchoredPos.Value) return;
+            && e.LastAppliedAnchoredPos.HasValue && rt.anchoredPosition == e.LastAppliedAnchoredPos.Value)
+        {
+            LogRoundTripGuardSkip(e, target);   // diagnostics (gated) — smoking-gun check for a guard-skip while drifted
+            return;
+        }
 
         var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
         if (parent == null) return; // need a RectTransform parent to translate in its local space
@@ -226,6 +230,8 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         rt.anchoredPosition += delta;
         e.LastAppliedTarget = target;
         e.LastAppliedAnchoredPos = rt.anchoredPosition;
+        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);   // for the round-trip reflow diagnostic
+        LogRoundTripApply(e, rect, liveRect, rt.anchoredPosition);   // diagnostics (gated)
     }
 
     public void RestoreOriginal(NativeUiHandle handle)
@@ -430,6 +436,8 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
         // leaving the element at the game default.
         public Vector2? LastAppliedAnchoredPos;
+        // Curated live size at the last successful SetRect apply — for the round-trip reflow diagnostic (compare against the size when a guard-skip is later observed).
+        public UnityEngine.Vector2? LastAppliedLiveSize;
 
         public NativeUiHandle ToHandle() => new()
         {

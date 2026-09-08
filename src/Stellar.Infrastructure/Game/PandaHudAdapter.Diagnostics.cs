@@ -88,6 +88,39 @@ internal sealed partial class PandaHudAdapter
         }
     }
 
+    // Round-trip reflow diagnostic (hypothesis: SetRect applies a saved spot as a relative TRANSLATE against a
+    // transient/collapsed live size during a resolution round-trip, then the game reflows to full size afterward,
+    // leaving the element offset — and the idempotent guard FREEZES it because the reflow moved sizeDelta, not
+    // anchoredPosition). APPLY logs the size the translate was computed against so a later GUARD-SKIP can show it
+    // differs from the settled size.
+    private void LogRoundTripApply(ResolvedEntry e, WindowRect target, WindowRect liveRect, Vector2 anchored)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[NativeUi/RT] APPLY {e.Path} target=({target.X:0},{target.Y:0}) live=({liveRect.X:0},{liveRect.Y:0} {liveRect.Width:0}x{liveRect.Height:0}) anchored=({anchored.x:0.0},{anchored.y:0.0}) screen={Screen.width}x{Screen.height}");
+    }
+
+    // The smoking gun: the guard skipped (target unchanged AND anchoredPosition still where we left it) yet the
+    // element's visible top-left has DRIFTED from the requested spot — which can only happen if the game reflowed
+    // the element's SIZE (not its anchoredPosition) after the last apply. We log only when the drift exceeds a few
+    // px so steady-state no-op skips stay silent. Includes the size-at-last-apply vs the current live size so the
+    // reflow is visible in the same line.
+    private void LogRoundTripGuardSkip(ResolvedEntry e, Vector2 target)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        if (e.RectTransform == null) return;   // element is guaranteed active here (SetRect's activeInHierarchy check ran first)
+        var liveRect = ComputeOutlineRect(e.RectTransform, e.Camera, e.RectChildPath);
+        var dx = liveRect.X - target.x;
+        var dy = liveRect.Y - target.y;
+        if (Math.Abs(dx) <= 3f && Math.Abs(dy) <= 3f) return;   // only the anomaly — steady-state skips stay silent
+        var sizeAtApply = e.LastAppliedLiveSize.HasValue
+            ? $"{e.LastAppliedLiveSize.Value.x:0}x{e.LastAppliedLiveSize.Value.y:0}"
+            : "?";
+        var frozen = e.LastAppliedAnchoredPos.HasValue
+            ? $"({e.LastAppliedAnchoredPos.Value.x:0.0},{e.LastAppliedAnchoredPos.Value.y:0.0})"
+            : "?";
+        _log.Info($"[NativeUi/RT] GUARD-SKIP-WHILE-DRIFTED {e.Path} target=({target.x:0},{target.y:0}) live=({liveRect.X:0},{liveRect.Y:0}) drift=({dx:0.0},{dy:0.0}) liveSize={liveRect.Width:0}x{liveRect.Height:0} sizeAtApply={sizeAtApply} frozenAnchored={frozen}");
+    }
+
     private static string GraphicInfo(Transform t)
     {
         var g = t.GetComponent<Graphic>();
