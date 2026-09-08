@@ -19,6 +19,14 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.6.4 adds <c>IPlayerIdentity.CharId</c> — the local character's stable id
+    /// (char-record-backed, known before the world entity syncs; <c>0</c> when unknown),
+    /// so plugins can key per-character storage instead of colliding across characters
+    /// on one account. Additive (a new interface member + getter): binary-compatible with
+    /// plugins built against ≤2.6.3, but a plugin that CALLS <c>CharId</c> needs this
+    /// framework (LoadoutSwitcher/Wardrobe bump their min to 2.6.4). Abstractions/Application
+    /// surface only; built on v2.6.3 (native-UI layout fixes + the 2.6.2 Deep-Slumber
+    /// cross-loadout factor-move fix).
     /// 2.6.3 is a fix: native game-UI elements you have repositioned (quest tracker,
     /// boss HP bar, etc.) survive a resolution round-trip, no longer ratchet on
     /// repeated hide/show, and fall back to the game's default pose at an
@@ -159,5 +167,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.6.3";
+    public const string Value = "2.6.4";
 }

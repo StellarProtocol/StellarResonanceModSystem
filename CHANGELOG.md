@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.6.4] - 2026-09-09
+_**2.6.4** (patch) — new plugin API so mods can tell which of your characters is logged in. Additive interface member; binary-compatible with plugins built against ≤2.6.3. Requires updating LoadoutSwitcher + Wardrobe to their per-character builds to take effect._
+### Added
+- Mods can now tell which of your characters you are currently playing, so features that save things per character keep each character's data separate. This makes the LoadoutSwitcher and Wardrobe updates possible: your Deep-Slumber loadout bindings and your saved outfits are now remembered per character instead of one shared set that switching character would overwrite.
+
+### Developer notes
+- Adds `long IPlayerIdentity.CharId` (Stellar.Abstractions/Services/IPlayerState.cs): the local character's stable id, char-record-backed so it is known before the world entity syncs (like `Name`/`Level`/`Profession`), `0` when not yet resolved; NOT gated by `IsAvailable`. `PlayerStateService` exposes the already-tracked `_identityCharId` (fed from `IPlayerStateProbe.CharId`, cleared to 0 on logout / character change) — no probe change. `MockPlayerState` returns a fixed id for tests/sandbox.
+- Additive (a new interface member + getter): binary-compatible with plugins built against ≤2.6.3, but a plugin that *calls* `CharId` requires this framework — so LoadoutSwitcher and Wardrobe bump their `min` framework to 2.6.4. Abstractions/Application surface only; built on v2.6.3 (native-UI layout fixes), which also carries the 2.6.2 Deep-Slumber cross-loadout factor-move fix.
+- Pinned by `PlayerStateService` identity test `CharIdReflectsIngestedIdentityAndResetsOnLogout` (`CharId` reflects the ingested identity, resets to 0 on logout / character change).
+
 ## [2.6.3] - 2026-09-08
 _**2.6.3** (patch) — moved HUD elements stay where you put them across resolution changes and Settings toggles. Infrastructure/Application-only, binary-compatible with plugins built against ≤2.6.2._
 ### Fixed
