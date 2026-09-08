@@ -199,17 +199,18 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
         var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
 
-        // Guard: skip only when the element is ALREADY at the clamped target for its current size. Keying on the
-        // CLAMPED target (not the raw request) makes an edge-tucked window — whose saved spot the clamp pulls
-        // on-screen — a stable no-op instead of thrashing every frame. Keying on the element's LIVE position (not
-        // a cached anchoredPosition) detects a post-apply size REFLOW: after a resolution round-trip the game
-        // re-applies our translate while the element is a transient/collapsed size, then grows it to its settled
-        // size; the translate was computed against the smaller size, so the settled top-left ends up offset. The
-        // old anchoredPosition-keyed guard froze it there (the reflow moved sizeDelta, not anchoredPosition), so
-        // ReassertAll never corrected it — the "quest window drops to the bottom after a resolution change" bug,
-        // confirmed via [NativeUi/RT] logs. Comparing live position vs the target for the CURRENT size re-applies
-        // with the correct size and snaps it back.
-        if (Mathf.Abs(liveRect.X - clamped.X) <= GuardTolerancePx && Mathf.Abs(liveRect.Y - clamped.Y) <= GuardTolerancePx)
+        var target = new Vector2(rect.X, rect.Y);
+        // Skip only when the request is unchanged AND the element is still where we left it AND its curated size
+        // hasn't reflowed. (target, anchoredPosition) alone froze an element whose size grew AFTER we applied —
+        // the reflow moves sizeDelta, not anchoredPosition (the resolution round-trip "quest window drops" bug),
+        // so the size term forces a re-apply when the curated size changes. Comparing the last-applied
+        // anchoredPosition (NOT a clamped-target comparison) avoids churning an element whose on-screen rect
+        // legitimately sits past a screen edge — e.g. the boss HP bar's curated top is ~19px above y=0, which a
+        // clamp-forced target can never match, so a clamped comparison re-applied every tick.
+        if (e.LastAppliedTarget is { } lt && lt == target
+            && e.LastAppliedAnchoredPos is { } la && rt.anchoredPosition == la
+            && e.LastAppliedLiveSize is { } ls
+            && Mathf.Abs(liveRect.Width - ls.x) <= GuardTolerancePx && Mathf.Abs(liveRect.Height - ls.y) <= GuardTolerancePx)
         {
             LogRoundTripGuardSkip(e, new Vector2(clamped.X, clamped.Y));   // diagnostics (gated)
             return;
@@ -244,7 +245,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         rt.anchoredPosition += delta;
         e.LastAppliedTarget = new Vector2(rect.X, rect.Y);
         e.LastAppliedAnchoredPos = rt.anchoredPosition;
-        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);   // for the round-trip reflow diagnostic
+        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);   // load-bearing: the SetRect guard's size-reflow term reads this to detect a post-apply reflow
         LogRoundTripApply(e, rect, liveRect, rt.anchoredPosition);   // diagnostics (gated)
     }
 
@@ -285,6 +286,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         }
         e.LastAppliedTarget = null;
         e.LastAppliedAnchoredPos = null;
+        e.LastAppliedLiveSize = null;   // load-bearing: the SetRect guard reads it — a restored element must not falsely match on size
     }
 
     private static GameObject? SearchByPath(string path)
@@ -475,7 +477,10 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
         // leaving the element at the game default.
         public Vector2? LastAppliedAnchoredPos;
-        // Curated live size at the last successful SetRect apply — for the round-trip reflow diagnostic (compare against the size when a guard-skip is later observed).
+        // Curated live size at the last successful SetRect apply. LOAD-BEARING: the SetRect idempotent guard
+        // compares it against the current live size so a post-apply reflow (size grew, anchoredPosition didn't)
+        // forces a re-apply instead of freezing — the resolution round-trip "quest window drops" fix. Do NOT
+        // remove this with the [NativeUi/RT] diagnostics.
         public UnityEngine.Vector2? LastAppliedLiveSize;
 
         public NativeUiHandle ToHandle() => new()
