@@ -31,6 +31,10 @@ internal sealed class MockPlayerState : IPlayerState
     // generic level-60 fixture would project for icon / colour rendering).
     public int Profession => 1;
 
+    // Fixed fixture id — no real char record backs the mock, so plugins keying
+    // storage on CharId in a mock scenario get a stable (fake) value instead of 0.
+    public long CharId => 900001;
+
     public int Health => 12345;
     public int MaxHealth => 15000;
     public int Stamina => 80;
