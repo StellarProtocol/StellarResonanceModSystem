@@ -37,6 +37,17 @@ internal interface INativeUiAdapter
     /// </summary>
     void RestoreOriginal(NativeUiHandle handle);
 
+    /// <summary>
+    /// Restore the captured original RectTransform ANCHORING (anchorMin/Max, pivot, anchoredPosition,
+    /// sizeDelta) WITHOUT touching the active-self flag. Used when a resolution change lands on a resolution
+    /// with no saved layout: the element must return to the game's default position for the new resolution, but
+    /// the game owns show/hide during a resolution transition, so visibility must be left alone (unlike the full
+    /// <see cref="RestoreOriginal"/>). The captured pose is anchor-based ⇒ resolution-independent, so the game's
+    /// canvas positions it correctly at the new resolution; it must NOT reuse the screen-space OriginalRect,
+    /// which was captured at the old resolution.
+    /// </summary>
+    void RestoreOriginalPose(NativeUiHandle handle);
+
     /// <summary>True while the resolved element behind <paramref name="handle"/> still exists. Goes false when
     /// the game destroys it (scene change) — the service uses this to re-resolve + re-apply the saved layout to
     /// the rebuilt element (bug #4: layout lost on scene change).</summary>

@@ -19,6 +19,13 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.6.3 is a fix: native game-UI elements you have repositioned (quest tracker,
+    /// boss HP bar, etc.) survive a resolution round-trip, no longer ratchet on
+    /// repeated hide/show, and fall back to the game's default pose at an
+    /// unconfigured resolution. The <c>SetRect</c> idempotent guard now keys on
+    /// (target, anchoredPosition, curatedSize) equality; adds
+    /// <c>INativeUiAdapter.RestoreOriginalPose</c>. Infrastructure/Application-only
+    /// (native-UI positioning) — no plugin API change, binary-compatible.
     /// 2.6.1 is a fix: <c>IWardrobe.GetWornWeaponSkin</c> reports "no weapon skin" as
     /// <c>SkinId 0</c> again. The Wardrobe's ⊘ tile is not skin 0 — the game stores the
     /// current weapon's ORIGIN row id (a concrete <c>WeaponSkinTable</c> row per weapon
@@ -152,5 +159,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.6.2";
+    public const string Value = "2.6.3";
 }
