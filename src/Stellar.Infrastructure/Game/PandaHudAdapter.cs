@@ -207,6 +207,13 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             return;
         }
 
+        ApplyTranslate(e, rt, rect);
+    }
+
+    // The translate math + write, split out of SetRect to keep each method under the 50-LoC cap (STELLAR0002).
+    // Only reached for a LIVE element whose request differs from the last-applied pose (SetRect's guards ran first).
+    private void ApplyTranslate(ResolvedEntry e, RectTransform rt, WindowRect rect)
+    {
         var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
         if (parent == null) return; // need a RectTransform parent to translate in its local space
 
@@ -228,7 +235,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // thousands of px off-screen. Leave LastAppliedAnchoredPos unset so a sane frame re-applies cleanly.
         if (Mathf.Abs(delta.x) > MaxSaneDeltaPx || Mathf.Abs(delta.y) > MaxSaneDeltaPx) return;
         rt.anchoredPosition += delta;
-        e.LastAppliedTarget = target;
+        e.LastAppliedTarget = new Vector2(rect.X, rect.Y);
         e.LastAppliedAnchoredPos = rt.anchoredPosition;
         e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);   // for the round-trip reflow diagnostic
         LogRoundTripApply(e, rect, liveRect, rt.anchoredPosition);   // diagnostics (gated)
