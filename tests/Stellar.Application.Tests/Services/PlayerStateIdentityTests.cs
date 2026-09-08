@@ -191,6 +191,22 @@ public sealed class PlayerStateIdentityTests
     }
 
     [Fact]
+    public void CharIdReflectsIngestedIdentityAndResetsOnLogout()
+    {
+        var probe = new FakeProbe { SampleOk = false, IdentityOk = true, Identity = Revette(charId: 635404) };
+        var service = new PlayerStateService(new StubClientState());
+
+        service.Refresh(probe);
+
+        Assert.Equal(635404, service.CharId);
+
+        // Logout must drop it — the next account can't inherit this character id.
+        service.ClearSession();
+
+        Assert.Equal(0, service.CharId);
+    }
+
+    [Fact]
     public void IdentityStaysUnavailableWhenTheProbeHasNoRecordSource()
     {
         // Host may wire no char-record source at all; behaviour must then be

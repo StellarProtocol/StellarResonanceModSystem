@@ -40,6 +40,12 @@ public interface IPlayerIdentity
     int Level { get; }
     /// <summary>Current profession id; zero when not yet known. May be set while <see cref="IsAvailable"/> is <c>false</c>.</summary>
     int Profession { get; }
+
+    /// <summary>The local character's stable, globally-unique id (the game's char id); <c>0</c> when
+    /// not yet known. Like <see cref="Name"/>/<see cref="Level"/>/<see cref="Profession"/> it is NOT
+    /// gated by <see cref="IsAvailable"/> — it is read from the character record, so it is known even
+    /// before the world entity syncs, and resets to <c>0</c> on logout.</summary>
+    long CharId { get; }
 }
 
 /// <summary>
