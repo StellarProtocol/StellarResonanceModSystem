@@ -192,28 +192,44 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // (the reported "in-game UI disappears after a cutscene"). Skip while hidden; ReassertAll re-applies the
         // saved pose once the element is live again.
         if (!rt.gameObject.activeInHierarchy) return;
-        // Idempotent guard: skip ONLY when the request is unchanged AND the element is still where we last left
-        // it. Keying on the request alone is wrong — after a cutscene / scene transition the game resets the
-        // element back to its default pose while we still request the SAME saved spot, so a request-only guard
-        // short-circuits and the element stays at the game default (the "bars revert to bottom-left" report).
-        // Comparing the live anchoredPosition to the value we left it at re-applies the saved spot once the game
-        // has moved it. (The inactive-guard above means this only ever runs on a live element, never on the
-        // inactive/garbage-corner case that caused the off-screen fling.)
-        var target = new Vector2(rect.X, rect.Y);
-        if (e.LastAppliedTarget.HasValue && e.LastAppliedTarget.Value == target
-            && e.LastAppliedAnchoredPos.HasValue && rt.anchoredPosition == e.LastAppliedAnchoredPos.Value) return;
 
+        // Compute the live curated rect + the clamped target for the element's CURRENT size, both up front. The
+        // guard and the translate both key off these, and the size matters: an element reflows (grows to its
+        // settled size) AFTER we apply, which is the whole bug this guard fixes.
+        var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
+        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
+
+        var target = new Vector2(rect.X, rect.Y);
+        // Skip only when the request is unchanged AND the element is still where we left it AND its curated size
+        // hasn't reflowed. (target, anchoredPosition) alone froze an element whose size grew AFTER we applied —
+        // the reflow moves sizeDelta, not anchoredPosition (the resolution round-trip "quest window drops" bug),
+        // so the size term forces a re-apply when the curated size changes. Comparing the last-applied
+        // anchoredPosition (NOT a clamped-target comparison) avoids churning an element whose on-screen rect
+        // legitimately sits past a screen edge — e.g. the boss HP bar's curated top is ~19px above y=0, which a
+        // clamp-forced target can never match, so a clamped comparison re-applied every tick.
+        if (e.LastAppliedTarget is { } lt && lt == target
+            && e.LastAppliedAnchoredPos is { } la && rt.anchoredPosition == la
+            && e.LastAppliedLiveSize is { } ls
+            && Mathf.Abs(liveRect.Width - ls.x) <= GuardTolerancePx && Mathf.Abs(liveRect.Height - ls.y) <= GuardTolerancePx)
+            return;
+
+        ApplyTranslate(e, rt, rect, liveRect, clamped);
+    }
+
+    // The translate math + write, split out of SetRect to keep each method under the 50-LoC cap (STELLAR0002).
+    // Only reached for a LIVE element that isn't already at the clamped target (SetRect's guards ran first); the
+    // live curated rect + clamped target are computed once in SetRect and passed in to avoid recomputing them.
+    private void ApplyTranslate(ResolvedEntry e, RectTransform rt, WindowRect rect, WindowRect liveRect, WindowRect clamped)
+    {
         var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
         if (parent == null) return; // need a RectTransform parent to translate in its local space
 
-        // Translate RELATIVE TO THE ELEMENT'S CURRENT live position (not the resolve-time snapshot): the move
-        // is the parent-local delta from where the element is NOW to the requested top-left. This makes a
+        // Translate RELATIVE TO THE ELEMENT'S CURRENT live position (not the resolve-time snapshot): the move is
+        // the parent-local delta from where the element is NOW to the clamped target top-left. This makes a
         // zero-movement click a true no-op (target == current → delta 0) and a drag move by exactly the pointer
         // delta — robust to the element being a different size/position than at resolve (e.g. the party panel
-        // switching between the 5- and 20-person layout). Clamp the requested top-left (by the current size) so
-        // a saved spot can't push a wider layout off-screen. No-op for elements that already fit.
-        var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
-        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
+        // switching between the 5- and 20-person layout). clamped already pulled the requested top-left on-screen
+        // (by the current size) so a saved spot can't push a wider layout off-screen.
         var curTopLeft = new Vector2(liveRect.X, Screen.height - liveRect.Y);
         var newTopLeft = new Vector2(clamped.X, Screen.height - clamped.Y);
         RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, curTopLeft, e.Camera, out var localCur);
@@ -224,13 +240,40 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // thousands of px off-screen. Leave LastAppliedAnchoredPos unset so a sane frame re-applies cleanly.
         if (Mathf.Abs(delta.x) > MaxSaneDeltaPx || Mathf.Abs(delta.y) > MaxSaneDeltaPx) return;
         rt.anchoredPosition += delta;
-        e.LastAppliedTarget = target;
+        e.LastAppliedTarget = new Vector2(rect.X, rect.Y);
         e.LastAppliedAnchoredPos = rt.anchoredPosition;
+        // Record the curated size we translated against: the SetRect guard compares the current curated size to
+        // this to detect a post-apply reflow (size grew, anchoredPosition didn't) and re-apply instead of freezing.
+        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);
     }
 
     public void RestoreOriginal(NativeUiHandle handle)
     {
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
+        WriteOriginalPose(e);
+        // Full restore ALSO reverts the active-self flag (host-shutdown mod isolation / a full Reset). The
+        // position-only RestoreOriginalPose deliberately skips this — the game owns show/hide during a resolution
+        // transition, so visibility must be left alone there.
+        if (e.GameObject != null && e.GameObject.activeSelf != e.OriginalActiveSelf)
+            e.GameObject.SetActive(e.OriginalActiveSelf);
+    }
+
+    public void RestoreOriginalPose(NativeUiHandle handle)
+    {
+        // Position/anchor-only restore, visibility untouched — see INativeUiAdapter.RestoreOriginalPose. Called
+        // when a resolution change lands on a resolution with no saved layout: the element must fall back to the
+        // game's default position for the NEW resolution (the captured pose is anchor-based ⇒ resolution-
+        // independent, so the game's canvas re-positions it correctly), but we must not toggle its visibility.
+        if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
+        WriteOriginalPose(e);
+    }
+
+    // Shared writeback for both restore paths: rewrite the captured original ANCHOR pose (anchorMin/Max, pivot,
+    // anchoredPosition, sizeDelta) and clear the last-applied cache so the next SetRect re-writes cleanly instead
+    // of short-circuiting on a stale comparison. Visibility is NOT touched here — that's the only difference
+    // between RestoreOriginal (also reverts active-self) and RestoreOriginalPose (leaves it).
+    private static void WriteOriginalPose(ResolvedEntry e)
+    {
         if (e.RectTransform != null)
         {
             e.RectTransform.anchorMin        = e.OriginalAnchorMin;
@@ -239,12 +282,9 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             e.RectTransform.anchoredPosition = e.OriginalAnchoredPos;
             e.RectTransform.sizeDelta        = e.OriginalSizeDelta;
         }
-        if (e.GameObject != null && e.GameObject.activeSelf != e.OriginalActiveSelf)
-            e.GameObject.SetActive(e.OriginalActiveSelf);
-        // Clear last-applied cache so the next SetRect call re-writes the
-        // pose instead of short-circuiting on the stale comparison.
         e.LastAppliedTarget = null;
         e.LastAppliedAnchoredPos = null;
+        e.LastAppliedLiveSize = null;   // load-bearing: the SetRect guard reads it — a restored element must not falsely match on size
     }
 
     private static GameObject? SearchByPath(string path)
@@ -300,6 +340,12 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     // parent's local size (~ canvas size); anything past this is bogus geometry from a transient frame, so we
     // refuse it rather than fling the element off-screen.
     private const float MaxSaneDeltaPx = 6000f;
+
+    // Tolerance (screen px) on the SetRect guard's curated-size comparison: the element is treated as un-reflowed
+    // (and the guard may skip) while its curated width/height stay within this of the last-applied size. Small
+    // enough that a real reflow (hundreds of px) always re-applies, large enough that sub-px curated-size jitter
+    // on a steady element doesn't thrash the translate.
+    private const float GuardTolerancePx = 1.5f;
 
     private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
     {
@@ -430,6 +476,10 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
         // leaving the element at the game default.
         public Vector2? LastAppliedAnchoredPos;
+        // Curated size at the last successful SetRect apply. The SetRect idempotent guard compares it against the
+        // current curated size so a post-apply reflow (size grew, anchoredPosition didn't) forces a re-apply
+        // instead of freezing — the resolution round-trip "quest window drops" fix.
+        public UnityEngine.Vector2? LastAppliedLiveSize;
 
         public NativeUiHandle ToHandle() => new()
         {

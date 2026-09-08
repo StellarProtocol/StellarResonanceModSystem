@@ -174,8 +174,14 @@ internal sealed class NativeUiService
                 }
                 else
                 {
-                    // Resolution change: do NOT RestoreOriginal — OriginalRect was captured at the old resolution
-                    // and would mis-place the element. Leave it where the game placed it for the new resolution.
+                    // Resolution change with NO saved layout for the new resolution: return the element to the game's
+                    // captured DEFAULT anchoring so it lands where the game itself would place it at this resolution —
+                    // NOT stranded at the translate we applied for the previous resolution (the game does not re-lay-out
+                    // the node on a plain resolution change, so that stale offset otherwise persists). Position-only: the
+                    // captured anchor pose is resolution-independent, and we must not toggle visibility here (the game owns
+                    // show/hide during a resolution transition). Switching back to a configured resolution re-applies its
+                    // saved pose via the TryLoadFor hit above.
+                    _adapter.RestoreOriginalPose(e.Handle);
                     e.Rect = GetLiveRect(e);
                 }
             }

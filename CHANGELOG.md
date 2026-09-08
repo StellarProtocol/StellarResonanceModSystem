@@ -14,6 +14,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.7.2] - 2026-09-09
+_**2.7.2** (patch) — the testing-channel framework now carries the 2.6.3 and 2.6.4 fixes. Additive; binary-compatible with plugins built against ≤2.7.1._
+### Added
+- Mods can now tell which of your characters you are currently playing, so features that save things per character keep each character's data separate.
+### Fixed
+- Fixed moved HUD elements (quest tracker, boss health bar, and others) jumping to the wrong position after you change your screen resolution.
+- Fixed the boss health bar drifting out of place after you repeatedly hide and show it in Settings.
+- HUD elements you have repositioned now fall back to their normal in-game position at a resolution you have not customized yet, instead of getting stuck off to one side.
+### Developer notes
+- Merge of `v2.6.4` (`d554236`, built on `v2.6.3`) into the 2.7.x line (`feat/attr-changed-event`, on top of 2.7.1 = 2.7.0 + v2.6.2); `FrameworkVersion.Value` 2.7.2. Brings `long IPlayerIdentity.CharId` and the native game-UI repositioning fixes; the 2.7.0 `CombatEvent.EntityAttributesChanged` groundwork is unchanged. Details under the 2.6.4 / 2.6.3 entries below.
+
 ## [2.7.1] - 2026-09-08
 _**2.7.1** (patch) — the testing-channel framework now carries the 2.6.2 loadout fix. No new API; binary-compatible with plugins built against ≤2.7.0._
 ### Fixed
@@ -26,6 +37,25 @@ _**2.7.0** (minor) — no player-visible change yet; internal groundwork for an 
 ### Developer notes
 - CombatEvent.EntityAttributesChanged: a player's numeric attributes changed (one event per wire packet, stamped like the packet's buff events) — enables the CombatMeter stat-sheet track for rDPS.
 - Entity attribute capture now stores a genuine zero value (single 0x00 varint) instead of dropping it; non-varint payloads are still skipped.
+
+## [2.6.4] - 2026-09-09
+_**2.6.4** (patch) — new plugin API so mods can tell which of your characters is logged in. Additive interface member; binary-compatible with plugins built against ≤2.6.3. Requires updating LoadoutSwitcher + Wardrobe to their per-character builds to take effect._
+### Added
+- Mods can now tell which of your characters you are currently playing, so features that save things per character keep each character's data separate. This makes the LoadoutSwitcher and Wardrobe updates possible: your Deep-Slumber loadout bindings and your saved outfits are now remembered per character instead of one shared set that switching character would overwrite.
+
+### Developer notes
+- Adds `long IPlayerIdentity.CharId` (Stellar.Abstractions/Services/IPlayerState.cs): the local character's stable id, char-record-backed so it is known before the world entity syncs (like `Name`/`Level`/`Profession`), `0` when not yet resolved; NOT gated by `IsAvailable`. `PlayerStateService` exposes the already-tracked `_identityCharId` (fed from `IPlayerStateProbe.CharId`, cleared to 0 on logout / character change) — no probe change. `MockPlayerState` returns a fixed id for tests/sandbox.
+- Additive (a new interface member + getter): binary-compatible with plugins built against ≤2.6.3, but a plugin that *calls* `CharId` requires this framework — so LoadoutSwitcher and Wardrobe bump their `min` framework to 2.6.4. Abstractions/Application surface only; built on v2.6.3 (native-UI layout fixes), which also carries the 2.6.2 Deep-Slumber cross-loadout factor-move fix.
+- Pinned by `PlayerStateService` identity test `CharIdReflectsIngestedIdentityAndResetsOnLogout` (`CharId` reflects the ingested identity, resets to 0 on logout / character change).
+
+## [2.6.3] - 2026-09-08
+_**2.6.3** (patch) — moved HUD elements stay where you put them across resolution changes and Settings toggles. Infrastructure/Application-only, binary-compatible with plugins built against ≤2.6.2._
+### Fixed
+- Fixed moved HUD elements (quest tracker, boss health bar, and others) jumping to the wrong position after you change your screen resolution.
+- Fixed the boss health bar drifting out of place after you repeatedly hide and show it in Settings.
+- HUD elements you have repositioned now fall back to their normal in-game position at a resolution you have not customized yet, instead of getting stuck off to one side.
+### Developer notes
+- All in the native game-UI repositioning path (`PandaHudAdapter` / `NativeUiService` / `INativeUiAdapter`). The `SetRect` idempotent guard was reworked to key on `(target, anchoredPosition, curatedSize)` equality, fixing three defects plus a new position-only fallback: (1) **reflow-freeze** — a moved HUD element dropped to the bottom after a resolution round-trip (translate applied against a transient/collapsed size, then froze when the element reflowed); (2) **toggle-ratchet** — the boss HP bar crept left on repeated hide/show in Settings; (3) **off-edge churn** — elements whose curated rect sits past a screen edge re-applied every tick (harmless, now skips); (4) **unconfigured-resolution fallback** — new `INativeUiAdapter.RestoreOriginalPose` returns a moved element to the game's default position at a resolution with no saved layout (previously it stayed stranded at the prior resolution's offset). Scope: `src/Stellar.Infrastructure/Game/PandaHudAdapter.cs`, `src/Stellar.Application/Services/NativeUiService.cs`, `src/Stellar.Application/Abstractions/INativeUiAdapter.cs`, `tests/Stellar.Application.Tests/NativeUi/NativeUiServiceTests.cs`. `INativeUiAdapter` is an Application-layer outbound interface, not the public plugin surface — no plugin API or behavior change outside native-UI positioning. Compile clean; 1394/1394 tests pass (incl. a new unconfigured-resolution fallback test); all four cases in-game validated by the owner. Temporary round-trip diagnostics were added during development and stripped before release (repo grep clean).
 
 ## [2.6.2] - 2026-09-08
 _**2.6.2** (patch) — switching loadouts now moves a shared Deep-Slumber factor instead of half-applying. Application-only, binary-compatible with plugins built against ≤2.6.1._

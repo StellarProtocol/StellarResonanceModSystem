@@ -68,6 +68,8 @@ internal sealed class PlayerStateService : IPlayerState
         }
     }
 
+    public long CharId => _identityCharId;
+
     // Vitals + position stay strictly gated: a stale hp/position is worse than
     // a zero, and nothing can recover them from the char record.
     public int Health => _isAvailable ? _snapshot.Health : 0;

@@ -238,6 +238,26 @@ public sealed class NativeUiServiceTests
         Assert.Equal(0, adapter.SetRectCount);                 // untouched: no exact key, no close-enough key
     }
 
+    [Fact] // Switching to a resolution with NO saved layout returns the element to the game's DEFAULT anchoring
+           // (position-only) instead of stranding it at the previous resolution's translate — and never touches
+           // visibility (the game owns show/hide during a resolution transition).
+    public void ReapplyForActiveSlot_UnconfiguredResolution_RestoresPoseOnly()
+    {
+        var (svc, adapter, cfg, _) = New();
+        const string prefix = "slot0.gameui.test.1920x1080";   // saved only at 1920x1080
+        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
+
+        svc.Tick(5f, Res);                                     // resolve + apply the saved 1920x1080 pose
+        var visibleBefore = adapter.SetVisibleCount;
+
+        // Resolution change to a FAR resolution with no saved layout (and none close enough to borrow).
+        svc.ReapplyForActiveSlot(new Resolution(800, 600), applyVisibility: false);
+
+        Assert.Equal(1, adapter.RestoreOriginalPoseCount);     // fell back to the game default (pose only)
+        Assert.Equal(0, adapter.RestoreCount);                 // NOT the full restore
+        Assert.Equal(visibleBefore, adapter.SetVisibleCount);  // visibility left alone
+    }
+
     [Fact] // A canvas-generation bump (scene change) invalidates cached handles: the next Tick re-resolves against
            // the rebuilt nodes and re-applies the saved pose — on the SAME tick, because the accumulator is armed.
     public void InvalidateResolvedHandles_ForcesReResolve_OnNextTick()
@@ -256,7 +276,7 @@ public sealed class NativeUiServiceTests
 
     private sealed class FakeAdapter : INativeUiAdapter
     {
-        public int ResolveCount, SetRectCount, SetVisibleCount, RestoreCount;
+        public int ResolveCount, SetRectCount, SetVisibleCount, RestoreCount, RestoreOriginalPoseCount;
         public bool Alive = true;   // toggled by scene-change self-heal tests; resolved entries stay resolved while true
         public bool TryResolve(string allowlistPath, string? rectChildPath, out NativeUiHandle handle)
         {
@@ -272,6 +292,9 @@ public sealed class NativeUiServiceTests
         public void SetVisible(NativeUiHandle handle, bool visible) => SetVisibleCount++;
         public void SetRect(NativeUiHandle handle, WindowRect rect) => SetRectCount++;
         public void RestoreOriginal(NativeUiHandle handle) => RestoreCount++;
+        // Pose-only restore: mirror the real adapter's contract — no visibility toggle here (the game owns
+        // show/hide during a resolution transition), so this stub touches SetVisibleCount not at all.
+        public void RestoreOriginalPose(NativeUiHandle handle) => RestoreOriginalPoseCount++;
         public bool IsAlive(NativeUiHandle handle) => Alive;
         public WindowRect GetCurrentRect(NativeUiHandle handle) => handle.OriginalRect;
         public void DumpDiagnostics(System.Action<string> log) { }
