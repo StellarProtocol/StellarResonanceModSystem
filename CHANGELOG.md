@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.6.2] - 2026-09-08
+_**2.6.2** (patch) — switching loadouts now moves a shared Deep-Slumber factor instead of half-applying. Application-only, binary-compatible with plugins built against ≤2.6.1._
+### Fixed
+- Switching between two loadouts that share a Deep-Slumber (Psychoscope) factor no longer stops partway with "Deep-Slumber partly applied". Because a factor exists only once, if the loadout you are leaving is still holding one the new loadout needs, the switch now takes it out of the old loadout first and puts it into the new one — so the switch completes. Nothing is reset and it costs no season points; the factor simply moves, the same as if you had moved it by hand.
+### Developer notes
+- `DeepSlumberReconciler` gains a foreign-free pass (`FreeForeignSharedFactors`): after the per-target-area reconcile, any factor the target wants that is still socketed in a CURRENT-season area the target does not bind is unsocketed (into the existing enable→reset→unsocket→activate→socket phase, ahead of every socket), so the target socket finds it in the bag instead of failing game code 7561 ("still socketed elsewhere"). Scoped to the current season (`currentLine`), to areas OUTSIDE the target (`AreaId` not bound — the per-area logic already reconciles the target's own areas, so re-touching them would double-emit), and to items the target actually wants (never disturbs the other loadout's non-shared factors); deduped by (AreaId, node) so a node id repeated across different foreign areas never drops a wanted factor. Unsocket is free + non-consuming, so this never spends reset currency. Confirmed in-game on the owner's MAIN (2026-09-07): `worldProxy.UnInstallItemToMiddleNode({nodeId})` returns code 0 against a NON-active line's node — unsocket needs no active line, superseding the 2026-08-24 "area-relative" inference — and a real Smite↔Tank switch (12 factors) reads `[LoadoutSwitcher] DS apply -> Success`, with every DS op code 0 and no 7561/7555. Pinned by `DeepSlumberReconcilerTests` (cross-loadout free, two-foreign-areas-same-nodeid, replace+foreign coexistence, prior-season-not-freed, not-wanted-left-alone). Toir report via the owner, 2026-09-07.
+
 ## [2.6.1] - 2026-09-05
 _**2.6.1** (patch) — "no weapon skin" is saved as no weapon skin again. Infrastructure-only, binary-compatible with plugins built against ≤2.6.0._
 ### Fixed
