@@ -192,39 +192,46 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // (the reported "in-game UI disappears after a cutscene"). Skip while hidden; ReassertAll re-applies the
         // saved pose once the element is live again.
         if (!rt.gameObject.activeInHierarchy) return;
-        // Idempotent guard: skip ONLY when the request is unchanged AND the element is still where we last left
-        // it. Keying on the request alone is wrong — after a cutscene / scene transition the game resets the
-        // element back to its default pose while we still request the SAME saved spot, so a request-only guard
-        // short-circuits and the element stays at the game default (the "bars revert to bottom-left" report).
-        // Comparing the live anchoredPosition to the value we left it at re-applies the saved spot once the game
-        // has moved it. (The inactive-guard above means this only ever runs on a live element, never on the
-        // inactive/garbage-corner case that caused the off-screen fling.)
-        var target = new Vector2(rect.X, rect.Y);
-        if (e.LastAppliedTarget.HasValue && e.LastAppliedTarget.Value == target
-            && e.LastAppliedAnchoredPos.HasValue && rt.anchoredPosition == e.LastAppliedAnchoredPos.Value)
+
+        // Compute the live curated rect + the clamped target for the element's CURRENT size, both up front. The
+        // guard and the translate both key off these, and the size matters: an element reflows (grows to its
+        // settled size) AFTER we apply, which is the whole bug this guard fixes.
+        var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
+        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
+
+        // Guard: skip only when the element is ALREADY at the clamped target for its current size. Keying on the
+        // CLAMPED target (not the raw request) makes an edge-tucked window — whose saved spot the clamp pulls
+        // on-screen — a stable no-op instead of thrashing every frame. Keying on the element's LIVE position (not
+        // a cached anchoredPosition) detects a post-apply size REFLOW: after a resolution round-trip the game
+        // re-applies our translate while the element is a transient/collapsed size, then grows it to its settled
+        // size; the translate was computed against the smaller size, so the settled top-left ends up offset. The
+        // old anchoredPosition-keyed guard froze it there (the reflow moved sizeDelta, not anchoredPosition), so
+        // ReassertAll never corrected it — the "quest window drops to the bottom after a resolution change" bug,
+        // confirmed via [NativeUi/RT] logs. Comparing live position vs the target for the CURRENT size re-applies
+        // with the correct size and snaps it back.
+        if (Mathf.Abs(liveRect.X - clamped.X) <= GuardTolerancePx && Mathf.Abs(liveRect.Y - clamped.Y) <= GuardTolerancePx)
         {
-            LogRoundTripGuardSkip(e, target);   // diagnostics (gated) — smoking-gun check for a guard-skip while drifted
+            LogRoundTripGuardSkip(e, new Vector2(clamped.X, clamped.Y));   // diagnostics (gated)
             return;
         }
 
-        ApplyTranslate(e, rt, rect);
+        ApplyTranslate(e, rt, rect, liveRect, clamped);
     }
 
     // The translate math + write, split out of SetRect to keep each method under the 50-LoC cap (STELLAR0002).
-    // Only reached for a LIVE element whose request differs from the last-applied pose (SetRect's guards ran first).
-    private void ApplyTranslate(ResolvedEntry e, RectTransform rt, WindowRect rect)
+    // Only reached for a LIVE element that isn't already at the clamped target (SetRect's guards ran first); the
+    // live curated rect + clamped target are computed once in SetRect and passed in to avoid recomputing them.
+    private void ApplyTranslate(ResolvedEntry e, RectTransform rt, WindowRect rect, WindowRect liveRect, WindowRect clamped)
     {
         var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
         if (parent == null) return; // need a RectTransform parent to translate in its local space
 
-        // Translate RELATIVE TO THE ELEMENT'S CURRENT live position (not the resolve-time snapshot): the move
-        // is the parent-local delta from where the element is NOW to the requested top-left. This makes a
+        // Translate RELATIVE TO THE ELEMENT'S CURRENT live position (not the resolve-time snapshot): the move is
+        // the parent-local delta from where the element is NOW to the clamped target top-left. This makes a
         // zero-movement click a true no-op (target == current → delta 0) and a drag move by exactly the pointer
         // delta — robust to the element being a different size/position than at resolve (e.g. the party panel
-        // switching between the 5- and 20-person layout). Clamp the requested top-left (by the current size) so
-        // a saved spot can't push a wider layout off-screen. No-op for elements that already fit.
-        var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
-        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
+        // switching between the 5- and 20-person layout). clamped already pulled the requested top-left on-screen
+        // (by the current size) so a saved spot can't push a wider layout off-screen.
         var curTopLeft = new Vector2(liveRect.X, Screen.height - liveRect.Y);
         var newTopLeft = new Vector2(clamped.X, Screen.height - clamped.Y);
         RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, curTopLeft, e.Camera, out var localCur);
@@ -313,6 +320,11 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     // parent's local size (~ canvas size); anything past this is bogus geometry from a transient frame, so we
     // refuse it rather than fling the element off-screen.
     private const float MaxSaneDeltaPx = 6000f;
+
+    // How close (screen px) the element's live top-left must be to the clamped target before SetRect treats it as
+    // already-placed and skips. Small enough that a real size reflow (hundreds of px offset) always re-applies,
+    // large enough that sub-px WorldToScreenPoint jitter on a steady-state element doesn't thrash the translate.
+    private const float GuardTolerancePx = 1.5f;
 
     private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
     {
