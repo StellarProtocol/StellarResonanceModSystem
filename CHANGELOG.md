@@ -14,6 +14,38 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.7.3] - 2026-09-09
+_**2.7.3** (patch) — stable release of the 2.7 line. Identical code to the 2.7.2 testing build; the number moves only because 2.7.2 was already published to the testing channel and a taken version is never re-minted. No API change; binary-compatible with plugins built against ≤2.7.2._
+### Added
+- Stable release of the 2.7 line. Same code as the 2.7.2 testing build — the buff and stat recording the logs site's experimental raid-contribution view needs (Own / Given, and the Buffs tab), plus everything from 2.6.4. Nothing else changes for players coming from 2.6.4 beyond that recording.
+### Developer notes
+- Promotion only — no source change. The merged tree is byte-identical to `feat/attr-changed-event@73f349e` (the build on the testing channel since 2026-09-09); `origin/main` (2.6.4, `d6a51db`) contributed no content because the branch had already merged the `v2.6.4` tag lineage. `FrameworkVersion.Value` 2.7.3.
+- 2.7.2 cannot be re-used for the stable publish: `Stellar-2.7.2.zip` is already on the CDN under the bundle-immutability guard, and a GitHub pre-release tagged `v2.7.2` already exists — so the stable promotion rides a patch bump. What the 2.7 line actually adds is under the 2.7.2 / 2.7.1 / 2.7.0 entries below.
+
+## [2.7.2] - 2026-09-09
+_**2.7.2** (patch) — the testing-channel framework now carries the 2.6.3 and 2.6.4 fixes. Additive; binary-compatible with plugins built against ≤2.7.1._
+### Added
+- Mods can now tell which of your characters you are currently playing, so features that save things per character keep each character's data separate.
+### Fixed
+- Fixed moved HUD elements (quest tracker, boss health bar, and others) jumping to the wrong position after you change your screen resolution.
+- Fixed the boss health bar drifting out of place after you repeatedly hide and show it in Settings.
+- HUD elements you have repositioned now fall back to their normal in-game position at a resolution you have not customized yet, instead of getting stuck off to one side.
+### Developer notes
+- Merge of `v2.6.4` (`d554236`, built on `v2.6.3`) into the 2.7.x line (`feat/attr-changed-event`, on top of 2.7.1 = 2.7.0 + v2.6.2); `FrameworkVersion.Value` 2.7.2. Brings `long IPlayerIdentity.CharId` and the native game-UI repositioning fixes; the 2.7.0 `CombatEvent.EntityAttributesChanged` groundwork is unchanged. Details under the 2.6.4 / 2.6.3 entries below.
+
+## [2.7.1] - 2026-09-08
+_**2.7.1** (patch) — the testing-channel framework now carries the 2.6.2 loadout fix. No new API; binary-compatible with plugins built against ≤2.7.0._
+### Fixed
+- Switching between two loadouts that share a Deep-Slumber (Psychoscope) factor no longer stops partway with "Deep-Slumber partly applied" — the 2.6.2 fix, now included in the testing channel.
+### Developer notes
+- Merge of the `v2.6.2` hotfix (`hotfix/deepslumber-cross-loadout-2.6.2`, off v2.6.1) into the 2.7.0 line (`feat/attr-changed-event`); `FrameworkVersion.Value` 2.7.1; no source change beyond the merge and the version constant.
+
+## [2.7.0] - 2026-09-05
+_**2.7.0** (minor) — no player-visible change yet; internal groundwork for an upcoming raid-contribution DPS (rDPS) feature. Additive, binary-compatible with plugins built against ≤2.6.1._
+### Developer notes
+- CombatEvent.EntityAttributesChanged: a player's numeric attributes changed (one event per wire packet, stamped like the packet's buff events) — enables the CombatMeter stat-sheet track for rDPS.
+- Entity attribute capture now stores a genuine zero value (single 0x00 varint) instead of dropping it; non-varint payloads are still skipped.
+
 ## [2.6.4] - 2026-09-09
 _**2.6.4** (patch) — new plugin API so mods can tell which of your characters is logged in. Additive interface member; binary-compatible with plugins built against ≤2.6.3. Requires updating LoadoutSwitcher + Wardrobe to their per-character builds to take effect._
 ### Added

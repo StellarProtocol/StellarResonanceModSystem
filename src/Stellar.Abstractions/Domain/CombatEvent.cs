@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Stellar.Abstractions.Domain;
 
 /// <summary>Subset of <c>ESkillEventType</c> exposed on <see cref="CombatEvent.SkillUsed"/>.</summary>
@@ -48,8 +50,12 @@ public abstract record CombatEvent(long TimestampMs)
     /// <param name="Stacks">Current stack count after the change.</param>
     /// <param name="Layer">Buff layer index.</param>
     /// <param name="DurationMs">Remaining duration in milliseconds; 0 when removed.</param>
+    /// <param name="FirerId">Entity that applied the buff (wire <c>FireUuid</c>); <see cref="EntityId.None"/> when the wire carried none.</param>
+    /// <param name="SourceKind">Origin domain (EFightSource: 0 Skill, 1 Buff, 6 Talent, 9 Mod, 10 Equip); 0 when absent.</param>
+    /// <param name="SourceId">Config id in <paramref name="SourceKind"/>'s domain (the skill id for kind 0); 0 when absent.</param>
     public sealed record BuffChanged(long TimestampMs, EntityId TargetId, int BuffUuid, int BaseId,
-        BuffChangeKind Kind, int Stacks, int Layer, int DurationMs) : CombatEvent(TimestampMs);
+        BuffChangeKind Kind, int Stacks, int Layer, int DurationMs,
+        EntityId FirerId = default, int SourceKind = 0, int SourceId = 0) : CombatEvent(TimestampMs);
 
     /// <summary>Damage or healing was dealt between two entities.</summary>
     /// <param name="TimestampMs">Server epoch timestamp of the event in milliseconds.</param>
@@ -84,6 +90,21 @@ public abstract record CombatEvent(long TimestampMs)
     /// falling back to <c>AttrSummonerId</c> when only that is present).</param>
     /// <param name="SummonId">The summon/pet entity that appeared.</param>
     public sealed record EntitySummonAppeared(long TimestampMs, EntityId SummonerId, EntityId SummonId) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// One entity's numeric attributes changed in ONE wire packet (AoiSyncDelta attr collection, an
+    /// appear, or the local player's enter-scene sheet). Raised for PLAYER entities only, AFTER every
+    /// value has reached <see cref="Services.IEntityDetail.GetAttributes"/> — so a subscriber that reads the
+    /// sheet on this event already sees the change (late-never-stale). <paramref name="TimestampMs"/> is the
+    /// packet's own receive stamp, the same clock its sibling <see cref="BuffChanged"/> events carry, so a
+    /// consumer may join the two streams on <c>TimestampMs</c> without a clock conversion (rDPS sheet track,
+    /// 2026-09-05 spec § 6.1). Carries only the scalar attrs stored in that packet; HP/name/team/skills ride
+    /// their own events and are not repeated here.
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time of the packet (client wall clock, Unix ms).</param>
+    /// <param name="TargetId">The entity whose attributes changed.</param>
+    /// <param name="Attrs">The stored attribute values of this packet; never empty.</param>
+    public sealed record EntityAttributesChanged(long TimestampMs, EntityId TargetId, IReadOnlyList<AttrValue> Attrs) : CombatEvent(TimestampMs);
 
     /// <summary>
     /// An entity's client-side actor/controller state machine entered a new state
