@@ -19,12 +19,13 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
-    /// 2.7.5 is a fix: the two value labels drawn on a meter row's bar get the framework's readability
-    /// outline (the stat HUD's <c>TextElement Shadow</c> recipe: uGUI Outline, black @ 0.85, 1.1 px) so they
-    /// stay readable on bright fills — CombatMeter 2.10.0 can paint the bar with the class crest colour
-    /// (yellow / green / orange), where plain white text had a contrast of 1.4–2.0 (owner 2026-09-09:
-    /// "text on meter is barely readable"). Infrastructure-only (<c>UGuiPrimitives.AddReadabilityOutline</c>,
-    /// <c>WindowBuilder.MeterRow</c>), no API change.
+    /// 2.8.0 adds <c>MeterRowData.LabelStyle</c> (<c>MeterLabelStyle</c> Plain / Outline / Shadow): how the
+    /// two values drawn on a meter row's bar stay readable over the fill — CombatMeter 2.10.0 can paint the
+    /// bar with the class crest colour (yellow / green / orange), where plain white text had a contrast of
+    /// 1.4–2.0 (owner 2026-09-09: "text on meter is barely readable" → "it should be option for players").
+    /// Outline = the stat HUD's readability halo (<c>UGuiPrimitives.AddReadabilityOutline</c>, 1.1 px);
+    /// Shadow = a soft dark shade under the value whose strength follows the fill's luminance. Default Plain
+    /// keeps every pre-2.8 plugin's rows byte-identical. Additive API; binary-compatible.
     /// 2.7.4 is a fix: repairs Il2CppInterop's IL2CPP type injector on game builds whose
     /// <c>GameAssembly.dll</c> codegen defeats <c>InjectorHelpers.FindClassInit()</c>'s hardcoded
     /// <c>Class::Init</c> byte-signature scan — it mis-resolves to a bad pointer and hard-crashes the
@@ -189,5 +190,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.7.5";
+    public const string Value = "2.8.0";
 }

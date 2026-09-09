@@ -12,6 +12,65 @@ namespace Stellar.Infrastructure.Game;
 // types/consts (MeterRowData, ImagineCell, MeterSpineW, MeterPad, MeterNameCol, …) resolves unchanged.
 internal sealed partial class WindowBuilder
 {
+    // ----- MeterLabelStyle.Shadow: soft dark fades under the two bar values -----
+    // Two RawImages, children of the BAR (not the width-clipped fill) so they never move with the fraction,
+    // drawn above fill + sheen and below the texts. One shared 64×4 alpha ramp carries the SHAPE (full over the
+    // plateau, SmoothStep to 0; the right one samples it mirrored); the STRENGTH is the tint alpha, which the
+    // binding sets from the fill's luminance so dark fills stay almost untouched and Marksman yellow gets ≈ 0.40.
+    private const int   LabelFadeW       = 64;    // band width at font scale 1 (≈ "893.5K" + inset, then the fade)
+    private const float LabelFadePlateau = 0.50f; // fraction of the band held at full strength (under the digits)
+    private const float LabelFadeMin     = 0.12f; // strength on a black fill
+    private const float LabelFadeMax     = 0.52f; // strength on a white fill
+    private static readonly Color MeterLabelFadeRgb = new(0.04f, 0.05f, 0.07f, 1f);
+
+    private (RawImage left, RawImage right) AddLabelFades(Transform bar)
+    {
+        var tex = LabelFadeTexture();
+        return (AddLabelFade(bar, "LabelFadeL", tex, left: true), AddLabelFade(bar, "LabelFadeR", tex, left: false));
+    }
+
+    private RawImage AddLabelFade(Transform bar, string nm, Texture2D tex, bool left)
+    {
+        var go = UGuiPrimitives.NewChild(nm, bar);
+        var rt = go.GetComponent<RectTransform>();
+        float ax = left ? 0f : 1f;
+        rt.anchorMin = new Vector2(ax, 0f); rt.anchorMax = new Vector2(ax, 1f); rt.pivot = new Vector2(ax, 0.5f);
+        rt.sizeDelta = new Vector2(Scaled(LabelFadeW), 0f); rt.anchoredPosition = Vector2.zero;
+        var img = go.AddComponent<RawImage>();
+        img.texture = tex; img.color = LabelFadeTint(LabelFadeMin); img.raycastTarget = false;
+        if (!left) img.uvRect = new Rect(1f, 0f, -1f, 1f);
+        go.SetActive(false);                                                     // Plain/Outline rows never show it
+        return img;
+    }
+
+    internal static Color LabelFadeTint(ColorRgba fill)
+    {
+        float lum = Mathf.Clamp01(0.2126f * fill.R + 0.7152f * fill.G + 0.0722f * fill.B);
+        return LabelFadeTint(Mathf.Lerp(LabelFadeMin, LabelFadeMax, lum));
+    }
+
+    private static Color LabelFadeTint(float alpha)
+        => new(MeterLabelFadeRgb.r, MeterLabelFadeRgb.g, MeterLabelFadeRgb.b, alpha);
+
+    private Texture2D? _labelFadeTex;
+    private Texture2D LabelFadeTexture()
+    {
+        if (_labelFadeTex != null) return _labelFadeTex;
+        const int w = 64, h = 4;
+        var t = new Texture2D(w, h, TextureFormat.RGBA32, false)
+        { hideFlags = HideFlags.HideAndDontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+        for (var x = 0; x < w; x++)
+        {
+            float u = x / (float)(w - 1);
+            float a = u <= LabelFadePlateau ? 1f : Mathf.SmoothStep(1f, 0f, (u - LabelFadePlateau) / (1f - LabelFadePlateau));
+            var c = new Color(1f, 1f, 1f, a);
+            for (var y = 0; y < h; y++) t.SetPixel(x, y, c);
+        }
+        t.Apply();
+        _labelFadeTex = t;
+        return t;
+    }
+
     // Poll-diffed binding for one bespoke CombatMeter row. Re-pulls MeterRowData on the window refresh tick and
     // updates the bg/self-highlight, HP spine fill, crest (lazy atlas upload), name·spec·share texts, role bar
     // fill, per-second/total overlay, and offline scrim. Diffs the cheap scalar/string fields; structural
@@ -50,6 +109,11 @@ internal sealed partial class WindowBuilder
         public GameObject PrimaryGo = null!;        // per-second overlay (toggled by ShowPrimary)
         public Text Secondary = null!;
         public GameObject SecondaryGo = null!;
+        public Outline? PrimaryOutline;              // MeterLabelStyle.Outline — added disabled, enabled per row
+        public Outline? SecondaryOutline;
+        public RawImage? PrimaryFadeImg;             // MeterLabelStyle.Shadow — inactive until a row asks for it
+        public RawImage? SecondaryFadeImg;
+        private int _lastLabelStyle = -1;
         public GameObject Scrim = null!;
         public ImagineCell Imagine0Cell = null!;   // trailing Battle-Imagine cells (left=X slot, right=Z slot)
         public ImagineCell Imagine1Cell = null!;
@@ -109,18 +173,42 @@ internal sealed partial class WindowBuilder
 
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
-            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; if (!rc.Equals(_lastRoleCol)) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } }
+            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
 
             var primary = d.PrimaryValue ?? "";
             if (primary != _lastPrimary) { Primary.text = primary; _lastPrimary = primary; }
 
             var showSecondary = d.ShowSecondary && !string.IsNullOrEmpty(d.SecondaryValue);
-            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); _lastSecondaryVis = showSecondary ? 1 : 0; }
+            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(showSecondary && d.LabelStyle == MeterLabelStyle.Shadow); _lastSecondaryVis = showSecondary ? 1 : 0; }
             if (showSecondary && d.SecondaryValue != _lastSecondary) { Secondary.text = d.SecondaryValue; _lastSecondary = d.SecondaryValue; }
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
             ApplyImagineLayout(d);
             ApplyImagines(d);
+        }
+
+        // MeterRowData.LabelStyle → the two treatments built for every row: Outline enables the halo components,
+        // Shadow activates the fades (right one only while the Secondary value shows) and tints them from the
+        // fill's luminance whenever the style or the fill colour changes; Plain turns both off.
+        private void ApplyLabelStyle(MeterRowData d, ColorRgba fill, bool fillChanged)
+        {
+            var style = d.LabelStyle;
+            bool styleChanged = _lastLabelStyle != (int)style;
+            if (styleChanged)
+            {
+                bool outline = style == MeterLabelStyle.Outline, shadow = style == MeterLabelStyle.Shadow;
+                if (PrimaryOutline != null) PrimaryOutline.enabled = outline;
+                if (SecondaryOutline != null) SecondaryOutline.enabled = outline;
+                if (PrimaryFadeImg != null) PrimaryFadeImg.gameObject.SetActive(shadow);
+                if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(shadow && SecondaryGo.activeSelf);
+                _lastLabelStyle = (int)style;
+            }
+            if (style == MeterLabelStyle.Shadow && (styleChanged || fillChanged))
+            {
+                var tint = LabelFadeTint(fill);
+                if (PrimaryFadeImg != null) PrimaryFadeImg.color = tint;
+                if (SecondaryFadeImg != null) SecondaryFadeImg.color = tint;
+            }
         }
 
         // Poll-diff the per-element visibility toggles + leader flag (kept out of Apply to respect the method-LoC

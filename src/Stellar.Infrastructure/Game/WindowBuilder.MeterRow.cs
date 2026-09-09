@@ -96,7 +96,7 @@ internal sealed partial class WindowBuilder
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.UpperLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, primary, secondary, secondaryGo) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
 
         // Right-column host for the "RightColumn" imagine position — an ignore-layout cell on the row's right
         // edge spanning full height; the binding re-parents the imagine group here (vertically centred) and
@@ -121,7 +121,7 @@ internal sealed partial class WindowBuilder
             Name = name, NameStrikeGo = nameStrike,
             ClassName = className, ClassNameGo = className.gameObject, Spec = spec, SpecGo = specGo,
             Score = score, ScoreGo = scoreGo, Share = share, ShareGo = shareGo, LeaderGo = leaderGo,
-            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, Scrim = scrim,
+            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
@@ -319,7 +319,7 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, GameObject secondaryGo) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
@@ -345,10 +345,13 @@ internal sealed partial class WindowBuilder
         System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
         token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
 
+        // Label treatments (MeterRowData.LabelStyle): the Shadow fades sit above fill + sheen and below the texts,
+        // inactive until a row asks for them; the Outline component is added disabled in AddOverlayText.
+        var (fadeL, fadeR) = AddLabelFades(bar.transform);
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, primary, secondary, secondary.gameObject);
+        return (clipRt, fillImg, primary, secondary, fadeL, fadeR);
     }
 
     private const float SheenPeriod = 2.4f;
@@ -395,9 +398,8 @@ internal sealed partial class WindowBuilder
         var txt = go.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(txt, Scaled(baseSize), anchor, bold: true);
         ApplyMenuFont(txt); txt.color = Color.white; txt.alignByGeometry = true; txt.horizontalOverflow = HorizontalWrapMode.Overflow;
-        // Same readability outline as StatInspector's stat HUD (TextElement Shadow) — these two values sit ON the
-        // bar fill, which CombatMeter 2.10.0 can paint in a bright class colour (white-on-yellow contrast 1.4).
-        UGuiPrimitives.AddReadabilityOutline(go);
+        // MeterLabelStyle.Outline: the stat HUD's readability halo, added DISABLED — the binding enables it per row.
+        UGuiPrimitives.AddReadabilityOutline(go).enabled = false;
         RegisterTextSizeReskin(token, txt, baseSize);
         return txt;
     }

@@ -107,4 +107,20 @@ public struct MeterRowData
     public ImagineSize ImagineSize;
     /// <summary>Battle-Imagine cluster placement.</summary>
     public ImaginePosition ImaginePosition;
+    /// <summary>How the two values drawn ON the metric bar (per-second left, total right) are kept readable over the
+    /// bar fill — relevant when the fill is a bright class colour. <c>default</c> = <see cref="MeterLabelStyle.Plain"/>
+    /// (the pre-2.8 look), so plugins built before this field existed render unchanged.</summary>
+    public MeterLabelStyle LabelStyle;
+}
+
+/// <summary>Treatment of the value labels drawn on a meter row's bar (<see cref="MeterRowData.LabelStyle"/>).
+/// A player-facing choice (owner 2026-09-09: "it should be option for players: normal text, outline, smooth shadow").</summary>
+public enum MeterLabelStyle
+{
+    /// <summary>Plain white text straight on the fill — the pre-2.8 look.</summary>
+    Plain = 0,
+    /// <summary>The framework's readability outline (the stat HUD's dark 1.1 px halo around every glyph).</summary>
+    Outline = 1,
+    /// <summary>A soft dark shade under each value, its strength following the fill's brightness; the glyphs stay untouched.</summary>
+    Shadow = 2,
 }
