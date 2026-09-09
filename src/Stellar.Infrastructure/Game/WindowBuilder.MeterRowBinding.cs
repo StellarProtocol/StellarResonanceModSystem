@@ -50,9 +50,6 @@ internal sealed partial class WindowBuilder
         public GameObject PrimaryGo = null!;        // per-second overlay (toggled by ShowPrimary)
         public Text Secondary = null!;
         public GameObject SecondaryGo = null!;
-        public RawImage PrimaryFadeImg = null!;     // dark fades under the two values — retinted per fill luminance
-        public RawImage SecondaryFadeImg = null!;
-        public GameObject SecondaryFadeGo = null!;  // the right fade's object — shown/hidden with SecondaryGo
         public GameObject Scrim = null!;
         public ImagineCell Imagine0Cell = null!;   // trailing Battle-Imagine cells (left=X slot, right=Z slot)
         public ImagineCell Imagine1Cell = null!;
@@ -112,13 +109,13 @@ internal sealed partial class WindowBuilder
 
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
-            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; if (!rc.Equals(_lastRoleCol)) { BarFillImg.color = ToColor(rc); var ft = WindowBuilder.LabelFadeTint(rc); if (PrimaryFadeImg != null) PrimaryFadeImg.color = ft; if (SecondaryFadeImg != null) SecondaryFadeImg.color = ft; _lastRoleCol = rc; } }
+            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; if (!rc.Equals(_lastRoleCol)) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } }
 
             var primary = d.PrimaryValue ?? "";
             if (primary != _lastPrimary) { Primary.text = primary; _lastPrimary = primary; }
 
             var showSecondary = d.ShowSecondary && !string.IsNullOrEmpty(d.SecondaryValue);
-            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); if (SecondaryFadeGo != null) SecondaryFadeGo.SetActive(showSecondary); _lastSecondaryVis = showSecondary ? 1 : 0; }
+            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); _lastSecondaryVis = showSecondary ? 1 : 0; }
             if (showSecondary && d.SecondaryValue != _lastSecondary) { Secondary.text = d.SecondaryValue; _lastSecondary = d.SecondaryValue; }
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
