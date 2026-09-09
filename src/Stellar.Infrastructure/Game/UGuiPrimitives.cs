@@ -100,4 +100,17 @@ internal static class UGuiPrimitives
         }
         return "...";
     }
+
+    /// <summary>The readability outline chrome-less overlays use (StatInspector's stat HUD, HUD-halo TextElements):
+    /// a 4-direction dark halo behind the glyphs so light text reads over any background. <c>UnityEngine.UI.Shadow</c>
+    /// is stripped from the game interop; <c>Outline</c> survives. The 1.1 px offset is deliberate — at exactly 1.0 px
+    /// the four copies land pixel-aligned and a small bold glyph's halo reads as stair-stepped (owner, meter bar
+    /// values 2026-09-09: "the text looks rough"); the sub-pixel offset lets the atlas sample bilinearly and softens it.</summary>
+    public static Outline AddReadabilityOutline(GameObject go)
+    {
+        var ol = go.AddComponent<Outline>();
+        ol.effectColor = new Color(0f, 0f, 0f, 0.85f);
+        ol.effectDistance = new Vector2(1.1f, -1.1f);
+        return ol;
+    }
 }

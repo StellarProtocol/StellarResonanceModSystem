@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.8.0] - 2026-09-09
+_**2.8.0** (minor) — damage-meter bar numbers can now be drawn plain, with an outline, or on a soft shadow; the meter plugin exposes the choice. Additive API; binary-compatible with all existing plugins._
+### Added
+- Mods can now choose how the numbers drawn on a damage-meter bar stay readable over the bar colour: plain text, the same thin dark outline the stat HUD uses, or a soft dark shadow under the numbers. CombatMeter 2.10.0 offers this as an Appearance option, useful with its new class-coloured bars (yellow, green and orange fills made plain white numbers hard to read). Nothing changes until a mod asks for it.
+### Developer notes
+- `Stellar.Abstractions`: `MeterRowData.LabelStyle` (`MeterLabelStyle` Plain = 0 / Outline / Shadow). Default Plain keeps every pre-2.8 plugin's rows byte-identical.
+- `WindowBuilder.MeterRow` builds all three treatments per row and the binding toggles them from the row data: Outline = the framework's existing readability outline (`TextElement(Shadow: true)`'s recipe, StatInspector's stat HUD: uGUI `Outline`, black @ 0.85, `effectDistance (1.1, -1.1)`; factored into `UGuiPrimitives.AddReadabilityOutline` and shared by both call sites — the 1.1 px sub-pixel offset is what keeps a small bold glyph's halo smooth; exactly 1.0 px stair-steps); Shadow = two `RawImage` fades under the values (64 px × font scale, plateau + SmoothStep ramp, mirrored for the right end) whose alpha lerps 0.12 → 0.52 with the fill's relative luminance (`LabelFadeTint`, retinted whenever the fill colour changes). Measured trigger: with CombatMeter 2.10.0's class palette the fill can be `#f2dc3a` / `#5ccf36` / `#f5761c`, where white text has a WCAG contrast of 1.4–2.0. Owner 2026-09-09 after four in-game rounds: "it should be option for players: normal text, outline, smooth shadow". `FrameworkVersion.Value` 2.8.0. Design record: devkit `docs/superpowers/specs/2026-09-09-game-class-palette-and-gauge-color-design.md`.
+
 ## [2.7.4] - 2026-09-09
 _**2.7.4** (patch) — fixes a mod-caused startup crash on the Steam version of the game. Infrastructure-only; no API change, binary-compatible with all existing plugins._
 ### Fixed
