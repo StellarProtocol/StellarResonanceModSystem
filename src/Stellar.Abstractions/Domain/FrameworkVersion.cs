@@ -19,6 +19,17 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.7.4 is a fix: repairs Il2CppInterop's IL2CPP type injector on game builds whose
+    /// <c>GameAssembly.dll</c> codegen defeats <c>InjectorHelpers.FindClassInit()</c>'s hardcoded
+    /// <c>Class::Init</c> byte-signature scan — it mis-resolves to a bad pointer and hard-crashes the
+    /// CLR (<c>0x80131506</c>) at the FIRST <c>ClassInjector.RegisterTypeInIl2Cpp</c>. Observed on the
+    /// Steam <c>StarSEA_STEAM</c> build (separate SKU compile; the standalone <c>StarSEA</c> resolves
+    /// fine). The framework now pre-seeds the process-global <c>InjectorHelpers.ClassInit</c> with
+    /// Il2CppInterop's own documented substitute (<c>il2cpp_class_has_references</c>) before its first
+    /// injection, so the broken scan is skipped; harmless on builds where the scan already worked (the
+    /// substitute is the library's own fallback). Infrastructure-only (<c>Il2CppClassInitFix</c>) — no API
+    /// change, binary-compatible with all existing plugins. See
+    /// <c>docs/recon/steam-client-classinit-injection.md</c>.
     /// 2.7.3 is the STABLE release of the 2.7 line: same code as the 2.7.2 testing build, promoted
     /// to the stable channel (2.7.2's version number was already taken by that testing release, and
     /// a taken version is never re-minted — the promotion rides a patch bump). No API change.
@@ -172,5 +183,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.7.3";
+    public const string Value = "2.7.4";
 }

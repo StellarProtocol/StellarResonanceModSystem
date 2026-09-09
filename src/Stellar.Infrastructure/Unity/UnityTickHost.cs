@@ -22,6 +22,10 @@ internal sealed class UnityTickHost
     /// <summary>Install the throttled tick. <paramref name="onTick"/> receives seconds since the last tick.</summary>
     public void Install(Action<float> onTick)
     {
+        // Repair Il2CppInterop's Class::Init resolution before the framework's FIRST type injection,
+        // so builds whose GameAssembly.dll defeats FindClassInit's signature scan (e.g. StarSEA_STEAM)
+        // don't fatally crash here. No-op when already resolved. See Il2CppClassInitFix.
+        Il2CppClassInitFix.EnsureSeeded(_log);
         StellarTicker.OnTick = onTick;
         StellarTicker.OnError = m => _log.Error($"[Ticker] tick threw: {m}");
         try { ClassInjector.RegisterTypeInIl2Cpp<StellarTicker>(); }

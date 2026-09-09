@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.7.4] - 2026-09-09
+_**2.7.4** (patch) — fixes a mod-caused startup crash on the Steam version of the game. Infrastructure-only; no API change, binary-compatible with all existing plugins._
+### Fixed
+- Fixed the mod crashing the game on startup on the Steam version of Star Resonance. (The standalone launcher version was not affected.)
+### Developer notes
+- Il2CppInterop's IL2CPP type injector (`InjectorHelpers.FindClassInit`) finds native `Class::Init` by scanning `GameAssembly.dll` for a hardcoded x86-64 call-site byte-signature. The Steam `StarSEA_STEAM` build — a separate SKU compile, identical Unity 2022.3.59f1 / IL2CPP metadata v31.1 — has codegen that scan mis-resolves to a bad pointer, hard-crashing the CLR (`0x80131506`, an uncatchable `ExecutionEngineException`) at the framework's FIRST `ClassInjector.RegisterTypeInIl2Cpp` (`StellarTicker`). Reproduced identically on Il2CppInterop 1.5.1 and 1.5.3, so a BepInEx bump does not fix it.
+- Fix: new `Il2CppClassInitFix.EnsureSeeded` (Infrastructure), called at the top of `UnityTickHost.Install` before the first injection, reflectively pre-seeds the process-global `InjectorHelpers.ClassInit` with Il2CppInterop's own documented substitute export (`il2cpp_class_has_references`) so the `ClassInit ??= FindClassInit()` guard skips the broken scan. Always-on (all builds): harmless where the scan already worked — the substitute is the library's own fallback for injected classes — verified in-world on the standalone with all injections (`StellarTicker`, `WindowInteractionTicker`, `ChartGraphic`) succeeding. Idempotent, never throws. `FrameworkVersion.Value` 2.7.4; no API change. Root-cause dossier: devkit `docs/recon/steam-client-classinit-injection.md`.
+
 ## [2.7.3] - 2026-09-09
 _**2.7.3** (patch) — stable release of the 2.7 line. Identical code to the 2.7.2 testing build; the number moves only because 2.7.2 was already published to the testing channel and a taken version is never re-minted. No API change; binary-compatible with plugins built against ≤2.7.2._
 ### Added
