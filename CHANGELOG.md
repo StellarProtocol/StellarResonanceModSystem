@@ -15,11 +15,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [2.7.5] - 2026-09-09
-_**2.7.5** (patch) — meter bar numbers get a thin dark outline so they stay readable on bright bar colours. Infrastructure-only; no API change, binary-compatible with all existing plugins._
+_**2.7.5** (patch) — meter bar numbers sit on a soft dark shade so they stay readable on bright bar colours. Infrastructure-only; no API change, binary-compatible with all existing plugins._
 ### Fixed
-- The numbers drawn on a damage-meter bar now have a thin dark outline, so they stay readable when the bar is a bright colour (for example the yellow, green and orange class colours in CombatMeter's new "Bar colour: Class" option).
+- The numbers drawn on a damage-meter bar now sit on a soft dark shade at each end of the bar, so they stay readable when the bar is a bright colour (for example the yellow, green and orange class colours in CombatMeter's new "Bar colour: Class" option). The text itself is unchanged and stays smooth.
 ### Developer notes
-- `WindowBuilder.MeterRow.AddOverlayText` adds a uGUI `Outline` (`effectDistance (1,-1)`, black @ 0.85 alpha, `useGraphicAlpha`) to the Primary/Secondary bar labels. Measured trigger: with CombatMeter 2.10.0's class palette the fill can be `#f2dc3a` / `#5ccf36` / `#f5761c`, where white text has a WCAG contrast of 1.4–2.0; the outline reads on any fill and on the dark track a short bar leaves under the left label. Role-mode fills are unchanged apart from the crisper labels. `FrameworkVersion.Value` 2.7.5; no API change. Design record: devkit `docs/superpowers/specs/2026-09-09-game-class-palette-and-gauge-color-design.md`.
+- New partial `WindowBuilder.MeterRowLabelFade`: two `RawImage` fades (72 px × font scale) under the Primary/Secondary bar labels, children of the BAR (not the width-clipped fill), drawn above fill + sheen and below the texts; one shared 64×4 alpha-ramp texture (0.58 plateau over the first 60 %, then SmoothStep to 0), mirrored via `uvRect` for the right end; the right fade toggles with `SecondaryGo` (`MeterRowBinding.SecondaryFadeGo`). Measured trigger: with CombatMeter 2.10.0's class palette the fill can be `#f2dc3a` / `#5ccf36` / `#f5761c`, where white text has a WCAG contrast of 1.4–2.0. A uGUI `Outline` on the labels was deployed first and rejected in-game by the owner ("readable but the text looks rough, no smooth at all") — legacy-Text outlines are four hard-edged 1 px glyph copies. `FrameworkVersion.Value` 2.7.5; no API change. Design record: devkit `docs/superpowers/specs/2026-09-09-game-class-palette-and-gauge-color-design.md`.
 
 ## [2.7.4] - 2026-09-09
 _**2.7.4** (patch) — fixes a mod-caused startup crash on the Steam version of the game. Infrastructure-only; no API change, binary-compatible with all existing plugins._

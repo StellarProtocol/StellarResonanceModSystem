@@ -96,7 +96,7 @@ internal sealed partial class WindowBuilder
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.UpperLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, primary, secondary, secondaryGo) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, primary, secondary, secondaryGo, secondaryFadeGo) = BuildMeterBar(content.transform, token);
 
         // Right-column host for the "RightColumn" imagine position — an ignore-layout cell on the row's right
         // edge spanning full height; the binding re-parents the imagine group here (vertically centred) and
@@ -121,7 +121,7 @@ internal sealed partial class WindowBuilder
             Name = name, NameStrikeGo = nameStrike,
             ClassName = className, ClassNameGo = className.gameObject, Spec = spec, SpecGo = specGo,
             Score = score, ScoreGo = scoreGo, Share = share, ShareGo = shareGo, LeaderGo = leaderGo,
-            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, Scrim = scrim,
+            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, SecondaryFadeGo = secondaryFadeGo, Scrim = scrim,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
@@ -319,7 +319,7 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, GameObject secondaryGo) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, GameObject secondaryGo, GameObject secondaryFadeGo) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
@@ -345,10 +345,12 @@ internal sealed partial class WindowBuilder
         System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
         token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
 
+        // Soft dark fades under the two values (above fill + sheen, below the texts) — see WindowBuilder.MeterRowLabelFade.cs.
+        var secondaryFadeGo = AddLabelFades(bar.transform);
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, primary, secondary, secondary.gameObject);
+        return (clipRt, fillImg, primary, secondary, secondary.gameObject, secondaryFadeGo);
     }
 
     private const float SheenPeriod = 2.4f;
@@ -395,18 +397,9 @@ internal sealed partial class WindowBuilder
         var txt = go.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(txt, Scaled(baseSize), anchor, bold: true);
         ApplyMenuFont(txt); txt.color = Color.white; txt.alignByGeometry = true; txt.horizontalOverflow = HorizontalWrapMode.Overflow;
-        // 1 px dark outline: these two values sit ON the bar fill, and since CombatMeter 2.10.0 that fill can be a
-        // class crest colour (Marksman yellow, Verdant green, Beat Performer orange — white-on-fill contrast 1.4–2.0,
-        // owner 2026-09-09: "text on meter is barely readable"). The outline keeps the fill colour untouched and
-        // reads on any fill and on the dark track a short bar leaves under the label. Role-mode red/green gain the
-        // same crispness. uGUI Outline = 4 offset copies of the glyph mesh — negligible for two short labels per row.
-        var outline = go.AddComponent<Outline>();
-        outline.effectColor = MeterLabelOutline; outline.effectDistance = new Vector2(1f, -1f); outline.useGraphicAlpha = true;
         RegisterTextSizeReskin(token, txt, baseSize);
         return txt;
     }
-
-    private static readonly Color MeterLabelOutline = new(0f, 0f, 0f, 0.85f);   // bar value labels' outline
 
     // Font-size-only reskin: re-applies Scaled(baseSize) (+ font) on a FontScale/theme change WITHOUT touching
     // colour, so the global Font Scale slider rescales the meter live. (RegisterTextReskin can't be reused here —

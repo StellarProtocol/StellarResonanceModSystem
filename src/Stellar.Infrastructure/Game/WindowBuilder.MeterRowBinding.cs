@@ -50,6 +50,7 @@ internal sealed partial class WindowBuilder
         public GameObject PrimaryGo = null!;        // per-second overlay (toggled by ShowPrimary)
         public Text Secondary = null!;
         public GameObject SecondaryGo = null!;
+        public GameObject SecondaryFadeGo = null!;  // dark fade under the right value — shown/hidden with SecondaryGo
         public GameObject Scrim = null!;
         public ImagineCell Imagine0Cell = null!;   // trailing Battle-Imagine cells (left=X slot, right=Z slot)
         public ImagineCell Imagine1Cell = null!;
@@ -115,7 +116,7 @@ internal sealed partial class WindowBuilder
             if (primary != _lastPrimary) { Primary.text = primary; _lastPrimary = primary; }
 
             var showSecondary = d.ShowSecondary && !string.IsNullOrEmpty(d.SecondaryValue);
-            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); _lastSecondaryVis = showSecondary ? 1 : 0; }
+            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); if (SecondaryFadeGo != null) SecondaryFadeGo.SetActive(showSecondary); _lastSecondaryVis = showSecondary ? 1 : 0; }
             if (showSecondary && d.SecondaryValue != _lastSecondary) { Secondary.text = d.SecondaryValue; _lastSecondary = d.SecondaryValue; }
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
