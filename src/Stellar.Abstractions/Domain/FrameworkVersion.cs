@@ -19,6 +19,11 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.7.5 is a fix: the two value labels drawn on a meter row's bar gain a 1 px dark outline
+    /// (uGUI <c>Outline</c>) so they stay readable on bright fills — CombatMeter 2.10.0 can paint the
+    /// bar with the class crest colour (yellow / green / orange), where plain white text had a
+    /// contrast of 1.4–2.0 (owner 2026-09-09: "text on meter is barely readable"). Infrastructure-only
+    /// (<c>WindowBuilder.MeterRow</c>), no API change.
     /// 2.7.4 is a fix: repairs Il2CppInterop's IL2CPP type injector on game builds whose
     /// <c>GameAssembly.dll</c> codegen defeats <c>InjectorHelpers.FindClassInit()</c>'s hardcoded
     /// <c>Class::Init</c> byte-signature scan — it mis-resolves to a bad pointer and hard-crashes the
@@ -183,5 +188,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.7.4";
+    public const string Value = "2.7.5";
 }

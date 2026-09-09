@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.7.5] - 2026-09-09
+_**2.7.5** (patch) — meter bar numbers get a thin dark outline so they stay readable on bright bar colours. Infrastructure-only; no API change, binary-compatible with all existing plugins._
+### Fixed
+- The numbers drawn on a damage-meter bar now have a thin dark outline, so they stay readable when the bar is a bright colour (for example the yellow, green and orange class colours in CombatMeter's new "Bar colour: Class" option).
+### Developer notes
+- `WindowBuilder.MeterRow.AddOverlayText` adds a uGUI `Outline` (`effectDistance (1,-1)`, black @ 0.85 alpha, `useGraphicAlpha`) to the Primary/Secondary bar labels. Measured trigger: with CombatMeter 2.10.0's class palette the fill can be `#f2dc3a` / `#5ccf36` / `#f5761c`, where white text has a WCAG contrast of 1.4–2.0; the outline reads on any fill and on the dark track a short bar leaves under the left label. Role-mode fills are unchanged apart from the crisper labels. `FrameworkVersion.Value` 2.7.5; no API change. Design record: devkit `docs/superpowers/specs/2026-09-09-game-class-palette-and-gauge-color-design.md`.
+
 ## [2.7.4] - 2026-09-09
 _**2.7.4** (patch) — fixes a mod-caused startup crash on the Steam version of the game. Infrastructure-only; no API change, binary-compatible with all existing plugins._
 ### Fixed

@@ -395,9 +395,18 @@ internal sealed partial class WindowBuilder
         var txt = go.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(txt, Scaled(baseSize), anchor, bold: true);
         ApplyMenuFont(txt); txt.color = Color.white; txt.alignByGeometry = true; txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+        // 1 px dark outline: these two values sit ON the bar fill, and since CombatMeter 2.10.0 that fill can be a
+        // class crest colour (Marksman yellow, Verdant green, Beat Performer orange — white-on-fill contrast 1.4–2.0,
+        // owner 2026-09-09: "text on meter is barely readable"). The outline keeps the fill colour untouched and
+        // reads on any fill and on the dark track a short bar leaves under the label. Role-mode red/green gain the
+        // same crispness. uGUI Outline = 4 offset copies of the glyph mesh — negligible for two short labels per row.
+        var outline = go.AddComponent<Outline>();
+        outline.effectColor = MeterLabelOutline; outline.effectDistance = new Vector2(1f, -1f); outline.useGraphicAlpha = true;
         RegisterTextSizeReskin(token, txt, baseSize);
         return txt;
     }
+
+    private static readonly Color MeterLabelOutline = new(0f, 0f, 0f, 0.85f);   // bar value labels' outline
 
     // Font-size-only reskin: re-applies Scaled(baseSize) (+ font) on a FontScale/theme change WITHOUT touching
     // colour, so the global Font Scale slider rescales the meter live. (RegisterTextReskin can't be reused here —
