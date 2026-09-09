@@ -19,8 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
-    /// 2.7.5 is a fix: the two value labels drawn on a meter row's bar sit on a soft dark fade so they
-    /// stay readable on bright fills — CombatMeter 2.10.0 can paint the bar with the class crest colour
+    /// 2.7.5 is a fix: the two value labels drawn on a meter row's bar sit on a soft dark fade whose
+    /// strength follows the fill's brightness, so they stay readable on bright fills while dark fills are
+    /// left almost untouched — CombatMeter 2.10.0 can paint the bar with the class crest colour
     /// (yellow / green / orange), where plain white text had a contrast of 1.4–2.0 (owner 2026-09-09:
     /// "text on meter is barely readable"; a uGUI Outline was tried first and rejected as rough).
     /// Infrastructure-only (<c>WindowBuilder.MeterRowLabelFade</c>), no API change.

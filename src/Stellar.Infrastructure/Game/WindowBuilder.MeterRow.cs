@@ -96,7 +96,7 @@ internal sealed partial class WindowBuilder
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.UpperLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, primary, secondary, secondaryGo, secondaryFadeGo) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, primary, secondary, secondaryGo, fadeL, fadeR) = BuildMeterBar(content.transform, token);
 
         // Right-column host for the "RightColumn" imagine position — an ignore-layout cell on the row's right
         // edge spanning full height; the binding re-parents the imagine group here (vertically centred) and
@@ -121,7 +121,7 @@ internal sealed partial class WindowBuilder
             Name = name, NameStrikeGo = nameStrike,
             ClassName = className, ClassNameGo = className.gameObject, Spec = spec, SpecGo = specGo,
             Score = score, ScoreGo = scoreGo, Share = share, ShareGo = shareGo, LeaderGo = leaderGo,
-            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, SecondaryFadeGo = secondaryFadeGo, Scrim = scrim,
+            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondaryGo, PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR, SecondaryFadeGo = fadeR.gameObject, Scrim = scrim,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
@@ -319,7 +319,7 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, GameObject secondaryGo, GameObject secondaryFadeGo) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, GameObject secondaryGo, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
@@ -346,11 +346,11 @@ internal sealed partial class WindowBuilder
         token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
 
         // Soft dark fades under the two values (above fill + sheen, below the texts) — see WindowBuilder.MeterRowLabelFade.cs.
-        var secondaryFadeGo = AddLabelFades(bar.transform);
+        var (fadeL, fadeR) = AddLabelFades(bar.transform);
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, primary, secondary, secondary.gameObject, secondaryFadeGo);
+        return (clipRt, fillImg, primary, secondary, secondary.gameObject, fadeL, fadeR);
     }
 
     private const float SheenPeriod = 2.4f;
