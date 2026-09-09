@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.7.3] - 2026-09-09
+_**2.7.3** (patch) — stable release of the 2.7 line. Identical code to the 2.7.2 testing build; the number moves only because 2.7.2 was already published to the testing channel and a taken version is never re-minted. No API change; binary-compatible with plugins built against ≤2.7.2._
+### Added
+- Stable release of the 2.7 line. Same code as the 2.7.2 testing build — the buff and stat recording the logs site's experimental raid-contribution view needs (Own / Given, and the Buffs tab), plus everything from 2.6.4. Nothing else changes for players coming from 2.6.4 beyond that recording.
+### Developer notes
+- Promotion only — no source change. The merged tree is byte-identical to `feat/attr-changed-event@73f349e` (the build on the testing channel since 2026-09-09); `origin/main` (2.6.4, `d6a51db`) contributed no content because the branch had already merged the `v2.6.4` tag lineage. `FrameworkVersion.Value` 2.7.3.
+- 2.7.2 cannot be re-used for the stable publish: `Stellar-2.7.2.zip` is already on the CDN under the bundle-immutability guard, and a GitHub pre-release tagged `v2.7.2` already exists — so the stable promotion rides a patch bump. What the 2.7 line actually adds is under the 2.7.2 / 2.7.1 / 2.7.0 entries below.
+
 ## [2.7.2] - 2026-09-09
 _**2.7.2** (patch) — the testing-channel framework now carries the 2.6.3 and 2.6.4 fixes. Additive; binary-compatible with plugins built against ≤2.7.1._
 ### Added

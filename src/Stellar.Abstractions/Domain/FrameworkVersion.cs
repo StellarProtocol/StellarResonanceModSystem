@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.7.3 is the STABLE release of the 2.7 line: same code as the 2.7.2 testing build, promoted
+    /// to the stable channel (2.7.2's version number was already taken by that testing release, and
+    /// a taken version is never re-minted — the promotion rides a patch bump). No API change.
     /// 2.7.2 carries the 2.6.3 native-UI layout fixes and the 2.6.4 <c>IPlayerIdentity.CharId</c> API into the 2.7.x (rDPS groundwork) line — additive, binary-compatible with ≤2.7.1.
     /// 2.7.1 carries the 2.6.2 Deep-Slumber loadout hotfix into the 2.7.0 (rDPS groundwork) line — no API change.
     /// 2.6.4 adds <c>IPlayerIdentity.CharId</c> — the local character's stable id
@@ -169,5 +172,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.7.2";
+    public const string Value = "2.7.3";
 }
