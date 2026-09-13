@@ -231,6 +231,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
         _keyboardGate ??= new KeyboardInputGate(_gameTypeRegistry!, log);
         ApplyLifecyclePatches(log, typeRegistry, hooker, gameType);
         ConstructGameDataProbe(log, typeRegistry);
+        // Arm the Steam Class::Init injection guard BEFORE any user plugin constructs — a plugin that injects an
+        // IL2CPP type in its ctor (e.g. an enabled overlay) would otherwise hit the unguarded FindClassInit and
+        // fatally crash on the StarSEA_STEAM build. Idempotent; the UnityTickHost.Install call below is now a backstop.
+        Stellar.Infrastructure.Unity.Il2CppClassInitFix.EnsureSeeded(log);
         LoadUserPlugins(log);
         ApplyAutoOpenEnvVar(log);
 
