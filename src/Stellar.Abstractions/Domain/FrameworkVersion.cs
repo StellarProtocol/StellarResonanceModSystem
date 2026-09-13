@@ -26,6 +26,12 @@ public static class FrameworkVersion
     /// Outline = the stat HUD's readability halo (<c>UGuiPrimitives.AddReadabilityOutline</c>, 1.1 px);
     /// Shadow = a soft dark shade under the value whose strength follows the fill's luminance. Default Plain
     /// keeps every pre-2.8 plugin's rows byte-identical. Additive API; binary-compatible.
+    /// 2.8.1 is a fix: the Steam Class::Init injection guard (<c>Il2CppClassInitFix.EnsureSeeded</c>) is now
+    /// armed BEFORE user plugins load, not only inside the tick host's install (which ran AFTER plugin
+    /// construction). A plugin that injects an IL2CPP type in its constructor (e.g. an enabled overlay like
+    /// Minimal Nameplate) previously crashed the Steam <c>StarSEA_STEAM</c> build at boot because the guard
+    /// wasn't seeded yet. Infrastructure/boot-order only — no API change, binary-compatible with all existing
+    /// plugins.
     /// 2.7.4 is a fix: repairs Il2CppInterop's IL2CPP type injector on game builds whose
     /// <c>GameAssembly.dll</c> codegen defeats <c>InjectorHelpers.FindClassInit()</c>'s hardcoded
     /// <c>Class::Init</c> byte-signature scan — it mis-resolves to a bad pointer and hard-crashes the
@@ -190,5 +196,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.8.0";
+    public const string Value = "2.8.1";
 }

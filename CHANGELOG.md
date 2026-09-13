@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.8.1] - 2026-09-13
+_**2.8.1** (patch) — fixes a startup crash on the Steam version of the game when a mod that draws its own overlay is left enabled. Infrastructure/boot-order only; no API change, binary-compatible with all existing plugins._
+### Fixed
+- Fixed the game crashing on startup on the Steam version of Star Resonance when a mod that draws its own overlay (such as Minimal Nameplate) was left enabled. Turning it on while already in-game had always worked; only having it enabled before launch could crash. (The standalone launcher version was not affected.)
+### Developer notes
+- The 2.7.4 Steam Class::Init injection guard (`Il2CppClassInitFix.EnsureSeeded`) was armed only inside `UnityTickHost.Install()`, which `BootstrapPlugin.OnHotUpdateReady()` calls AFTER `LoadUserPlugins()`. That protected the framework's own first IL2CPP type injection (`StellarTicker`) but not a user plugin that injects a type in its constructor. Minimal Nameplate, when enabled, calls `ClassInjector.RegisterTypeInIl2Cpp<LateUpdater>()` in its ctor during `LoadUserPlugins` — the real first injection in the process — before the seed was armed, hitting the unguarded `FindClassInit` and fatally crashing the `StarSEA_STEAM` build (`0x80131506`). Fix: call `EnsureSeeded(log)` immediately before `LoadUserPlugins(log)`; it is `_seeded`-guarded/idempotent, never throws, and needs only `GameAssembly.dll` exports (available before plugins load). The existing `UnityTickHost.Install` call becomes a harmless backstop. `FrameworkVersion.Value` 2.8.1; no-op on the standalone build. Root-cause dossier: devkit `docs/recon/steam-client-classinit-injection.md`.
+
 ## [2.8.0] - 2026-09-09
 _**2.8.0** (minor) — damage-meter bar numbers can now be drawn plain, with an outline, or on a soft shadow; the meter plugin exposes the choice. Additive API; binary-compatible with all existing plugins._
 ### Added
