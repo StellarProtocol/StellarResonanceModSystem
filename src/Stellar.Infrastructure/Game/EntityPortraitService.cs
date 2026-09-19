@@ -25,6 +25,12 @@ internal sealed class EntityPortraitService : IEntityPortrait
 
     public bool IsActive { get; private set; }
 
+    /// <summary>Show/hide the subject's weapon in the portrait; forwarded to the model host (global — see interface).</summary>
+    public bool ShowWeapon { get => _host.ShowWeapon; set => _host.ShowWeapon = value; }
+
+    /// <summary>Portrait light preset (-1 = Scene, 0..4 = baked presets); forwarded to the model host (see interface).</summary>
+    public int LightPreset { get => _host.LightPreset; set => _host.LightPreset = value; }
+
     public object? Texture
     {
         get

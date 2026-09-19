@@ -1,5 +1,6 @@
 // src/Stellar.Infrastructure/Game/PortraitModelHost.Diagnostics.cs
 using System;
+using System.Reflection;
 using Il2CppInterop.Runtime.InteropTypes;
 using Stellar.Abstractions.Diagnostics;
 using UnityEngine;
@@ -13,6 +14,9 @@ namespace Stellar.Infrastructure.Game;
 /// unconditionally — keeps the render path clean of inline gates (per coding-standards § Diagnostics). These do
 /// not affect rendering; they explain WHY a portrait is/ isn't drawing. Renderer-side draw diagnostics live in
 /// <see cref="Stellar.Infrastructure.Unity.PortraitCmdRenderer"/>.
+/// <c>BodyRoot()</c> also lives here (it began as a diagnostic helper) but is now used by the production weapon
+/// exclusion in the main partial — it returns the model root <see cref="Transform"/> (transform.root of the first
+/// collected renderer), or null while renderers are still streaming.
 /// </summary>
 internal sealed partial class PortraitModelHost
 {
@@ -110,5 +114,16 @@ internal sealed partial class PortraitModelHost
         if (en is null) return null;
         if (PortraitReflect.Invoke(en, "MoveNext") is true) return PortraitReflect.Get(en, "Current");
         return null;
+    }
+
+    // transform.root of the collected renderer[0] (off _data.Renders, a ZList<Renderer>) — the whole model root, or
+    // null while renderers are still streaming. Used by the production weapon exclusion (TryCollectWeaponRenderers)
+    // in the main partial; began life here as a diagnostic helper.
+    private Transform? BodyRoot()
+    {
+        var renders = _data is null ? null : PortraitReflect.Get(_data, "Renders");
+        var first = renders is null ? null : (PortraitReflect.Invoke(renders, "get_Item", 0) ?? PortraitReflect.Invoke(renders, "Get", 0));
+        var r0 = first as Renderer ?? (first as Il2CppObjectBase)?.TryCast<Renderer>();
+        return r0 is null ? null : r0.transform.root;
     }
 }

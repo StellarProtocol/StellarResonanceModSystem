@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Il2CppInterop.Runtime.InteropTypes;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using Stellar.Infrastructure.Unity;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -14,8 +16,9 @@ namespace Stellar.Infrastructure.Game;
 /// registering with it leaked into the world render — see HANDOFF §5.) This host: creates the RT, collects the
 /// model's renderers through the game's <c>ZModel2RTData.UpdateRenderersByModel</c> (we Rent a data object ONLY
 /// for that — we never register it with the feature), faces the model at the camera and LOD-locks it, then hands
-/// the renderer set + framing to the cmd renderer. The model is lit by the current scene (the custom SRP feeds
-/// the creature shaders via a constant buffer loose-global overrides can't touch).
+/// the renderer set + framing to the cmd renderer. The portrait is creature-lit: it hands the cmd renderer a light
+/// injector (<see cref="ResolveLightInjector"/>) that writes the baked EHighNoon creature-light globals into our
+/// draw, so the portrait's lighting is independent of the surrounding scene (dark caves / night).
 /// </summary>
 internal sealed partial class PortraitModelHost
 {
@@ -44,6 +47,10 @@ internal sealed partial class PortraitModelHost
         {
             if (_data is null) return null;
             SettleTick();           // re-derive body framing + re-assert facing for the first frames after load
+            // Recompute the weapon exclusion on a coarse throttle while the portrait is shown: the WEAPON STREAMS
+            // IN AFTER THE BODY (async), so the one-shot call at setup runs before the weapon renderer exists and
+            // misses it. Not limited to the settle window — weapon load timing varies. Cheap (a small array walk).
+            if (++_weaponExclFrame % 12 == 0) RefreshWeaponExclusion();
             DiagTexturePoll();      // self-gated on StellarDiagnostics.IsEnabled (see .Diagnostics.cs)
             return _rt;
         }
@@ -71,6 +78,65 @@ internal sealed partial class PortraitModelHost
         var target = new Vector3(foot.x, (top + bottom) * 0.5f, foot.z);
         var orthoHalf = (top - bottom) * 0.5f * 1.06f;
         _cmdRenderer?.SetFraming(target, orthoHalf);
+    }
+
+    // --- Weapon exclusion (hide the weapon in the PORTRAIT only) ----------------------------------------------
+    // Our portrait is drawn by a custom CommandBuffer (PortraitCmdRenderer.DrawModel → _cmd.DrawRenderer), which
+    // IGNORES Unity render layers — so the game's SetRenderLayerMaskByRenderType / layer-mask hide does NOT reach
+    // our draw. The reliable lever is to EXCLUDE the weapon renderers from our draw set. The weapon is NOT a mount
+    // part (slots 1024/1025 confirmed empty) — it's a plain child under the model root whose renderer GameObjects
+    // are named ch_wp_*(Clone) (ch_wp_ = character-weapon prefix), parented to back attach points. The in-game
+    // diagnostic confirmed these are the ONLY renderers under the root NOT in the body set (body/face/hair/headwear
+    // use ch_f_/ch_c_ prefixes), so we exclude by GameObject-name prefix. Re-run on a throttle: the weapon streams
+    // in AFTER the body, so a one-shot at setup finds 0 — the ~12-frame Texture-poll re-assert catches it later.
+    private int  _weaponExclFrame;              // per-frame throttle counter for the Texture-poll recompute
+    private bool _weaponExclLogged;             // log the success line once per model
+    private bool _showWeapon;                   // default false = weapon hidden (matches prior always-hide behavior)
+
+    /// <summary>When false (default) the portrait hides the weapon; true shows it. Applies immediately to the live
+    /// model (re-asserts the exclusion set); safe to set with no model loaded — RefreshWeaponExclusion guards.</summary>
+    public bool ShowWeapon
+    {
+        get => _showWeapon;
+        set { if (_showWeapon == value) return; _showWeapon = value; RefreshWeaponExclusion(); }
+    }
+
+    // Throttle/entry: guard, collect the weapon renderers, push the exclusion set, log once per model.
+    private void RefreshWeaponExclusion()
+    {
+        if (_model is null || _cmdRenderer is null) return;
+        // Show-weapon: exclude nothing (draw the whole model incl. the ch_wp_* renderers) and stop re-asserting.
+        if (_showWeapon) { _cmdRenderer.SetExcludedRenderers(null); return; }
+        try
+        {
+            if (!TryCollectWeaponRenderers(out var set)) return;   // model root not ready yet (streaming)
+            _cmdRenderer.SetExcludedRenderers(set);
+            // Log ONCE per model on the first frame we actually hid something (set.Count > 0), so the weapon-still-
+            // streaming early frames (count 0) don't latch the flag and suppress the real success line.
+            if (set.Count > 0 && !_weaponExclLogged)
+            {
+                _log.Info($"[Portrait] weapon-exclude: hid {set.Count} weapon renderer(s) by name (ch_wp_*)");
+                _weaponExclLogged = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_weaponExclLogged) { Warn($"weapon-exclude failed: {PortraitReflect.Unwrap(ex)}"); _weaponExclLogged = true; }
+        }
+    }
+
+    // Collect the weapon renderers by GameObject-name prefix (ch_wp_*) under the model root and drop them from our
+    // draw set. Returns false when the model root isn't resolvable yet (renderers still streaming); an empty set is
+    // NOT a failure (weapon still loading) — the ~12-frame Texture-poll re-assert catches it once the weapon loads.
+    private bool TryCollectWeaponRenderers(out HashSet<Renderer> set)
+    {
+        set = new HashSet<Renderer>();
+        var root = BodyRoot();                 // reuse the helper (transform.root of _data.Renders[0]); in .Diagnostics.cs, same partial class
+        if (root == null) return false;        // renderers not ready yet (streaming)
+        foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            if (r != null && r.gameObject.name.StartsWith("ch_wp_", System.StringComparison.OrdinalIgnoreCase))
+                set.Add(r);
+        return true;
     }
 
     /// <summary>Resolve the game types + create the render texture (once). False if the types aren't loaded yet.</summary>
@@ -155,6 +221,13 @@ internal sealed partial class PortraitModelHost
         _cmdRenderer ??= PortraitCmdRenderer.Create(m => _log.Info(m));
         _cmdRenderer.SetActive(true);
         _cmdRenderer.SetTargets(_rt, root);
+        var injector = ResolveLightInjector();
+        _cmdRenderer.SetLightInjector(injector);   // creature-light the portrait (EHighNoon into our cmd) — null if unresolved → scene-lit
+        // Pair the after-draw scene re-push with the injector: SwitchLightType's shader globals persist past our cmd,
+        // so we must END the cmd on scene lighting or the game's world creature pass inherits our portrait profile.
+        // null when the injector is unresolved (nothing was overridden → nothing to restore).
+        _cmdRenderer.SetLightRestorer(injector is null ? null : RestoreSceneLight);
+        RefreshWeaponExclusion();              // drop the weapon from the portrait draw (re-run per frame — weapon streams in late)
         SettleTick();                          // initial framing + facing before the first Texture poll
     }
 
@@ -200,10 +273,118 @@ internal sealed partial class PortraitModelHost
         _model = null;
         _failed = false;   // each new inspection retries cleanly — a one-off PrepareModel throw must not blank the portrait for the rest of the process
         _cmdRenderer?.ClearTargets();
+        _cmdRenderer?.SetExcludedRenderers(null);   // a re-inspection starts with nothing excluded
+        _weaponExclLogged = false;                  // re-log the exclude count once on the next model
+        _lightBaseLogged = false;                   // re-capture the scene light baseline once on the next model
     }
 
     /// <summary>Show/hide the portrait renderer.</summary>
     public void SetVisible(bool on) => _cmdRenderer?.SetActive(on);
+
+    // --- Environment-independent portrait light (creature light written into OUR OWN command buffer) --------
+    // The game lights preview models with a set of global "creature RT light" shader params, pushed each frame
+    // by its OWN pass (ZModelSnapshotRenderPass). That pass never touches our custom-CommandBuffer draw, so the
+    // portrait tracked the surrounding scene (dark in caves / at night). Experiment A (the ZModelGlobalColor
+    // global-preset flip) confirmed no-op for us — it drives that separate pass, not our cmd.
+    //
+    // The guaranteed fix: write the baked creature-light globals INTO OUR cmd right before we draw, via the
+    // game's CommandBuffer variant Bokura.Rendering.ZModel2RTLight.SwitchLightType(cmd, EHighNoon, cameraPos)
+    // (dump.cs:1131107). No manual packing, no dependency on the game's pass — the method writes the correct
+    // per-preset values into whatever CommandBuffer we hand it, and nothing interleaves before our DrawModel.
+    // Resolved HERE (this host has the type registry); the injector delegate is handed to the cmd renderer,
+    // which invokes it after its view/proj set and immediately before the draw. Unresolved → null delegate →
+    // portrait stays scene-lit (no regression).
+    private MethodInfo? _switchLight;   // ZModel2RTLight.SwitchLightType(CommandBuffer, ECreatureRTLightType, Vector4)
+    private Type? _lightEnumType;       // the method's ECreatureRTLightType param type — box any preset value from it, no name guess
+    private object[]? _lightArgs;       // cached invoke args; indices 0 (cmd) + 2 (cameraPos) mutated per frame, 1 (enum) per-preset
+    private bool _lightTried;
+
+    // Light preset: -1 = Scene (skip injection → environment-lit), 0..4 = the baked creature-RT presets
+    // (0=EarlyMorning,1=Morning,2=HighNoon,3=Sunset,4=Night). Default 2 (EHighNoon) preserves prior behavior.
+    // A live change is picked up next frame by the per-frame InjectLight — no extra refresh needed.
+    private int _lightPreset = 2;
+    private object? _boxedPreset;       // cached boxing of _lightPreset (avoid re-boxing every frame when unchanged)
+    private int _boxedFor = int.MinValue;
+
+    /// <summary>Portrait light preset (-1 = Scene, 0..4 = baked presets). Live — the per-frame injector reads it.</summary>
+    public int LightPreset { get => _lightPreset; set => _lightPreset = value; }
+
+    // Resolve the CommandBuffer-variant SwitchLightType once and return the injector, or null if it can't be
+    // resolved (portrait stays scene-lit). Robust resolution avoids all enum-name guessing: match the method by
+    // {CommandBuffer, enum, Vector4} shape (Length==3, param 1 is an enum) and box EHighNoon(2) from that param's
+    // own type — the earlier FindType-by-name of the (nested) enum is exactly what broke Experiment A.
+    private Action<CommandBuffer, Vector3>? ResolveLightInjector()
+    {
+        if (_lightTried) return _switchLight is null ? null : InjectLight;
+        _lightTried = true;
+        try
+        {
+            var lightType = _types.FindType("Bokura.Rendering.ZModel2RTLight")
+                            ?? _types.FindType("ZModel2RTLight");
+            if (lightType is null) { Warn("portrait-light: ZModel2RTLight not found — portrait stays scene-lit"); return null; }
+
+            foreach (var m in lightType.GetMethods(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (m.Name != "SwitchLightType") continue;
+                var ps = m.GetParameters();
+                if (ps.Length != 3 || !ps[1].ParameterType.IsEnum) continue;
+                _switchLight = m;
+                _lightEnumType = ps[1].ParameterType;   // cache the ECreatureRTLightType — InjectLight boxes any preset from it
+                break;
+            }
+            if (_switchLight is null) { Warn("portrait-light: SwitchLightType(cmd,enum,Vector4) not found — portrait stays scene-lit"); return null; }
+            _log.Info("[Portrait] creature-light injector resolved (preset written into our cmd; -1 = scene-lit)");
+            return InjectLight;
+        }
+        catch (Exception ex) { Warn($"ResolveLightInjector threw: {PortraitReflect.Unwrap(ex)}"); return null; }
+    }
+
+    // Write the selected creature-light preset globals into OUR command buffer. Called by the cmd renderer just
+    // before DrawModel (so nothing interleaves before our draw); camPos = the portrait camera's world position.
+    private void InjectLight(CommandBuffer cmd, Vector3 camPos)
+    {
+        // Scene preset (-1): skip injection entirely so the model stays environment-lit (the game's dynamic look).
+        // NOTE: the creature-light shader globals may still hold the LAST injected preset's values from a prior
+        // frame — accepted for now (the game's own passes refresh scene lighting each frame). We deliberately do
+        // NOT try to actively restore scene lighting here; we simply stop writing our override.
+        if (_lightPreset < 0) return;
+        try
+        {
+            // Custom lighting (experiment): SwitchLightType reads STATIC value fields on ZModel2RTLight — the
+            // ECreatureRTLightType arg no longer differentiates the look. Capture the scene values ONCE for
+            // calibration, then re-assert our profile into those statics (the world volume stomps them each frame),
+            // BEFORE the SwitchLightType push below reads them into our cmd. See PortraitModelHost.Lighting.cs.
+            LogLightBaseline();               // one-shot — reads the CURRENT (scene) values before we overwrite them
+            CaptureWorldGlobals();            // capture the EXACT world creature-light GPU globals BEFORE we stomp them (restored verbatim post-draw)
+            SaveLightStatics();               // snapshot the scene values so we can restore them after the push below
+            ApplyLightProfile(_lightPreset);  // no-op if the light statics didn't resolve → falls back to prior behavior
+            if (_boxedFor != _lightPreset)   // cache the boxed enum so we don't re-box every frame when unchanged
+            {
+                _boxedPreset = Enum.ToObject(_lightEnumType!, _lightPreset);
+                _boxedFor = _lightPreset;
+            }
+            _lightArgs ??= new object[3];
+            _lightArgs[0] = cmd;
+            _lightArgs[1] = _boxedPreset!;
+            _lightArgs[2] = new Vector4(camPos.x, camPos.y, camPos.z, 1f);
+            _switchLight!.Invoke(null, _lightArgs);   // records OUR static values into cmd (captured at record time)
+            RestoreLightStatics();            // put scene values back so the game's WORLD pass isn't affected
+        }
+        catch (Exception ex) { Warn($"InjectLight threw: {PortraitReflect.Unwrap(ex)}"); }
+    }
+
+    // Restore the EXACT world creature-light GPU globals into our cmd AFTER the draw. Called by the cmd renderer
+    // immediately after DrawModel (so InjectLight has already captured the pre-stomp world values this frame via
+    // CaptureWorldGlobals). SwitchLightType's shader globals PERSIST after our cmd executes, so the game's world
+    // creature pass would otherwise render with our portrait profile. We now write the CAPTURED world values back
+    // VERBATIM (cmd.SetGlobal*) — the net recording is [SwitchLightType=OUR values][Draw][SetGlobal=WORLD values],
+    // so the GPU global state ends byte-identical to what the world left. This REPLACES the old SwitchLightType
+    // re-push, which repacked via the preview path (not byte-identical → residual tone leaked). No-op in Scene mode
+    // (-1) or when nothing was captured (ids unresolved / injector never ran). Never throws from LateUpdate.
+    private void RestoreSceneLight(CommandBuffer cmd, Vector3 camPos)
+    {
+        RestoreWorldGlobals(cmd);   // camPos no longer needed — world values are captured, not recomputed from camera
+    }
 
     /// <summary>Tuning hook (no-op — framing is computed from the model anchors).</summary>
     public void ApplyTuning() { }
