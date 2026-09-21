@@ -23,8 +23,13 @@ internal sealed partial class PandaPlayerStatsProbe
         {
             if (_notReadyStreakLogged) return;
             _notReadyStreakLogged = true;
+            // "latching nothing" stays literally true — such a pass can never create a verdict.
+            // It DOES restart the window of any id that already held one (a dark sheet must not
+            // turn an expired verdict into a per-tick re-probe), so the line says so; the ids are
+            // deliberately not listed, because this line is emitted once per streak while the
+            // refreshes recur once a window, and a first-pass list would misstate the streak.
             _log.Info($"[Stellar][PlayerStats] memo: skipped-all-miss-pass attempted={pass.Attempted} " +
-                      "(attribute sheet not ready — latching nothing)");
+                      "(attribute sheet not ready — latching nothing; existing verdicts held)");
             return;
         }
 

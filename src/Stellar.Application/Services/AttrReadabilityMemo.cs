@@ -179,7 +179,8 @@ internal sealed class AttrReadabilityMemo
     /// <paramref name="nowTicks"/> when the attribute sheet is known to be populated — either
     /// because some id in the same pass produced a live value, or because
     /// <paramref name="sheetReady"/> says so explicitly. A pass that misses everything while
-    /// the sheet is not ready is discarded untouched. An id whose earlier verdict has expired
+    /// the sheet is not ready creates no verdict; it only refreshes the ones that already exist
+    /// (see <see cref="RefreshExisting"/>). An id whose earlier verdict has expired
     /// and missed again is re-stamped (its window restarts, and it is reported as latched once
     /// more); an id that finally READ has its verdict dropped.
     /// </summary>
@@ -209,12 +210,47 @@ internal sealed class AttrReadabilityMemo
         }
         if (hits == 0 && !sheetReady)
         {
-            // Nothing read at all and the sheet is not populated yet. Latch nothing.
+            // Nothing read at all and the sheet is not populated yet. Latch nothing — but hold
+            // the verdicts that already exist, or a dark sheet would re-probe them every tick.
+            RefreshExisting(pass, nowTicks);
             return new AttrMemoPassResult(NoIds, true, pass.Count, 0);
         }
 
         var latched = ApplyPass(pass, nowTicks);
         return new AttrMemoPassResult(latched ?? NoIds, false, pass.Count, hits);
+    }
+
+    /// <summary>
+    /// The not-ready half of <see cref="Record"/>: a pass taken while the attribute sheet is
+    /// dark is no evidence FOR a verdict — it may never create one — but it is no evidence
+    /// AGAINST one either, so it must not let an existing verdict lapse. Every id that was
+    /// fully probed, missed, and ALREADY holds an entry has its window restarted at
+    /// <paramref name="nowTicks"/>; an id with no entry is left alone. Nothing is reported as
+    /// latched: no verdict is new. Without this, an id whose window expired during a dark sheet
+    /// keeps its already-expired stamp and is re-probed — three reflective invokes — on EVERY
+    /// tick until the sheet answers (PR #88 review, IMP-1).
+    /// <para>Hits are impossible here by construction (the caller reaches this only when
+    /// <c>hits == 0</c>), so no verdict can be dropped on this path.</para>
+    /// </summary>
+    private void RefreshExisting(IReadOnlyList<AttrReadOutcome> pass, long nowTicks)
+    {
+        if (Volatile.Read(ref _unreadable).Count == 0) return;   // nothing to hold — the common case
+
+        lock (_writeLock)
+        {
+            var current = _unreadable;
+            Dictionary<int, long>? next = null;
+            for (var i = 0; i < pass.Count; i++)
+            {
+                var outcome = pass[i];
+                if (!outcome.FullyProbed) continue;
+                var view = next ?? current;
+                if (!view.TryGetValue(outcome.AttrId, out var at) || at == nowTicks) continue;
+                next ??= new Dictionary<int, long>(current);
+                next[outcome.AttrId] = nowTicks;
+            }
+            if (next is not null) Volatile.Write(ref _unreadable, next);
+        }
     }
 
     /// <summary>

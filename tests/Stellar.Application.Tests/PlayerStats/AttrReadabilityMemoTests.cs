@@ -301,10 +301,77 @@ public sealed class AttrReadabilityMemoTests
         Assert.False(memo.IsUnreadable(11951, late + Seconds(3600)));
     }
 
+    [Fact]
+    public void a_not_ready_pass_refreshes_an_existing_verdict_but_never_creates_one()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11760, T0));
+
+        // The window lapses, so the probe re-probes 11760 — and this pass finds the sheet DARK
+        // (all-miss, readiness false). Discarding it untouched would leave the expired stamp in
+        // place and re-probe the id EVERY TICK until the sheet answers (PR #88 review, IMP-1).
+        var dark = T0 + Seconds(61);
+        Assert.False(memo.IsUnreadable(11760, dark));
+
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false),
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false, nowTicks: dark);
+
+        Assert.True(result.SkippedNotReady);
+        Assert.Empty(result.Latched);                                  // no NEW verdict is reported
+        Assert.True(memo.IsUnreadable(11760, dark + Seconds(1)));      // …the existing one restarts
+        Assert.True(memo.IsUnreadable(11760, dark + Seconds(59)));
+        Assert.False(memo.IsUnreadable(11760, dark + Seconds(60)));    // bounded, as always
+
+        // F1 is untouched: an id with no entry is not latched by a pass over a dark sheet.
+        Assert.False(memo.IsUnreadable(11980, dark));
+        Assert.False(memo.IsUnreadable(11980, dark + Seconds(1)));
+    }
+
+    [Fact]
+    public void the_retry_window_ends_at_exactly_sixty_seconds()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true, nowTicks: T0);
+
+        // `age < RetryAfterTicks`: the last in-window instant is 60 s minus one tick.
+        Assert.True(memo.IsUnreadable(11760, T0 + Millis(59_999)));
+        Assert.True(memo.IsUnreadable(11760, T0 + Seconds(60) - 1));
+        Assert.False(memo.IsUnreadable(11760, T0 + Seconds(60)));
+    }
+
+    [Fact]
+    public void a_clock_reading_behind_the_stamp_reads_as_expired()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11760, T0));
+
+        // A negative age fails OPEN (re-probe), never into a frozen window.
+        Assert.False(memo.IsUnreadable(11760, T0 - Millis(1)));
+        Assert.False(memo.IsUnreadable(11760, T0 - Seconds(3600)));
+
+        // …and the next miss re-stamps normally from the instant it was taken.
+        var later = T0 + Seconds(61);
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: later);
+
+        Assert.Equal(new[] { 11760 }, result.Latched);
+        Assert.True(memo.IsUnreadable(11760, later + Seconds(59)));
+        Assert.False(memo.IsUnreadable(11760, later + Seconds(60)));
+    }
+
     private static IReadOnlyList<AttrReadOutcome> Pass(params AttrReadOutcome[] outcomes) => outcomes;
 
     /// <summary>A fixed clock origin — every pin states its own instants relative to it.</summary>
     private const long T0 = 638_000_000_000_000_000L;
 
     private static long Seconds(long s) => s * TimeSpan.TicksPerSecond;
+
+    private static long Millis(long ms) => ms * TimeSpan.TicksPerMillisecond;
 }
