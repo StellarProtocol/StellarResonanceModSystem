@@ -10,14 +10,14 @@ public sealed class PlayerStatsServiceTests
     [Fact]
     public void IsAvailable_FalseByDefault()
     {
-        var svc = new PlayerStatsService();
+        var svc = new PlayerStatsService(new AttrReadabilityMemo());
         Assert.False(svc.IsAvailable);
     }
 
     [Fact]
     public void TryGetAttribute_ReturnsNull_WhenUnsubscribed()
     {
-        var svc = new PlayerStatsService();
+        var svc = new PlayerStatsService(new AttrReadabilityMemo());
         Assert.Null(svc.TryGetAttribute(11011));
     }
 
@@ -64,7 +64,7 @@ public sealed class PlayerStatsServiceTests
     [Fact]
     public void Unsubscribe_OnUnknownId_IsNoOp()
     {
-        var svc = new PlayerStatsService();
+        var svc = new PlayerStatsService(new AttrReadabilityMemo());
         // Must not throw.
         svc.Unsubscribe(99999);
     }
@@ -133,6 +133,41 @@ public sealed class PlayerStatsServiceTests
         }
     }
 
+    [Fact]
+    public void Subscribe_ForgetsAnUnreadableVerdict_SoTheIdIsReprobed()
+    {
+        // F2: re-ticking a stat in the picker is the in-game recovery from a memo that
+        // latched during the login window — it must not need a client relaunch.
+        var memo = new AttrReadabilityMemo();
+        memo.Record(new[]
+        {
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11710, read: false),
+        });
+        Assert.True(memo.IsUnreadable(11710));
+
+        new PlayerStatsService(memo).Subscribe(11710);
+
+        Assert.False(memo.IsUnreadable(11710));
+    }
+
+    [Fact]
+    public void ClearSession_DropsTheAttrReadabilityMemo()
+    {
+        // F3: a re-login inside the same process must not inherit a poisoned memo.
+        var memo = new AttrReadabilityMemo();
+        memo.Record(new[]
+        {
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11710, read: false),
+        });
+        Assert.True(memo.IsUnreadable(11710));
+
+        new PlayerStatsService(memo).ClearSession();
+
+        Assert.False(memo.IsUnreadable(11710));
+    }
+
     private static (PlayerStatsService, StubPlayerStatsProbe) NewService()
-        => (new PlayerStatsService(), new StubPlayerStatsProbe());
+        => (new PlayerStatsService(new AttrReadabilityMemo()), new StubPlayerStatsProbe());
 }
