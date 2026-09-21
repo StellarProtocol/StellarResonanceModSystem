@@ -58,6 +58,26 @@ internal sealed partial class PandaPlayerStateProbe
     }
 
     /// <summary>
+    /// The explicit "the game has populated this entity's attribute sheet" signal, judged on
+    /// the always-present vitals the snapshot path already reads (max HP, then level) — the
+    /// same evidence <c>IsUseful</c> uses for <see cref="PlayerStateSnapshot"/>.
+    ///
+    /// <para>It exists so <c>PandaPlayerStatsProbe</c> never has to INFER readiness from its
+    /// own pass. The subscribed set is the union across installed plugins, and a client may
+    /// subscribe only ids the game never publishes (a CombatMeter-only client subscribes
+    /// exactly 11760 + 11980, both absent from the wire sheet) — such a pass is all-miss
+    /// forever, so "nothing read ⇒ not ready" would keep those ids out of the unreadable memo
+    /// and re-probe them, three reflective invokes each, every tick for the process lifetime.</para>
+    ///
+    /// <para>Reads the SAME entity the caller is sampling, so it cannot disagree with the pass,
+    /// and it goes false again during a mount/blackout — nothing latches while the sheet is
+    /// dark. Costs one invoke once the storage type is memoized (<c>_attrPrefersLong</c> is
+    /// already warm: <c>CaptureSnapshot</c> reads both keys every tick).</para>
+    /// </summary>
+    internal bool IsAttrSheetPopulated(object entity)
+        => TryReadInt(entity, _attrMaxHp) > 0 || TryReadInt(entity, _attrLevel) > 0;
+
+    /// <summary>
     /// Resolves a <c>Zproto.EAttrType</c> enum value from its integer code via
     /// <see cref="Enum.ToObject"/>. Returns null when the enum type itself is
     /// missing (hot-update assemblies not loaded). Note that

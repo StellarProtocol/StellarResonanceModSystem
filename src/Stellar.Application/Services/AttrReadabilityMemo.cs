@@ -76,14 +76,24 @@ internal readonly struct AttrMemoPassResult
 /// <c>arr type err</c> line, which at 60&#160;Hz is a log flood).
 ///
 /// <para>
-/// The load-bearing rule is <b>an all-miss pass latches nothing</b>. The local-player
-/// entity exists for several ticks before its attribute sheet is populated, so a sampling
-/// pass taken inside the login window misses <i>every</i> id. Treating that as "these
-/// attributes do not exist" poisons the memo for the whole process: StatInspector then
-/// renders "&#8212;" for every tracked stat until the client is relaunched (owner report
-/// 2026-09-21). A pass in which nothing read means "the sheet is not ready", never "these
-/// ids are absent" — only a pass with at least one live read is allowed to condemn its
-/// misses, which keeps the anti-spam for genuinely absent ids (e.g. 11760 / 11980) intact.
+/// The load-bearing rule is <b>an all-miss pass latches nothing until the attribute sheet is
+/// known to be populated</b>. The local-player entity exists for several ticks before its
+/// sheet is populated, so a sampling pass taken inside the login window misses <i>every</i>
+/// id. Treating that as "these attributes do not exist" poisons the memo for the whole
+/// process: StatInspector then renders "&#8212;" for every tracked stat until the client is
+/// relaunched (owner report 2026-09-21).
+/// </para>
+///
+/// <para>
+/// Readiness is therefore an EXPLICIT input (<c>sheetReady</c>), never inferred from the pass.
+/// The pass covers only what the installed plugins subscribed to, and a client can subscribe
+/// exactly the ids the game does not publish — a CombatMeter-only client subscribes 11760 +
+/// 11980 and nothing else, both absent from the wire sheet. Inferring "not ready" from
+/// "nothing read" would make every pass on that client all-miss forever: those ids would never
+/// latch and the sampler would re-probe them (three reflective invokes each) every tick for the
+/// process lifetime — the exact log flood and cost this memo exists to prevent (PR #88 review).
+/// With readiness explicit, the login window still latches nothing and genuinely absent ids
+/// latch on their first probe after the sheet arrives.
 /// </para>
 ///
 /// <para>
@@ -108,11 +118,39 @@ internal sealed class AttrReadabilityMemo
     public bool IsUnreadable(int attrId) => Volatile.Read(ref _unreadable).Contains(attrId);
 
     /// <summary>
-    /// Commits one sampling pass. Ids whose full probe missed are added to the unreadable
-    /// set ONLY when at least one id in the same pass produced a live value; an all-miss
-    /// pass is discarded untouched.
+    /// True when <paramref name="pass"/> cannot be judged on its own evidence: it carries at
+    /// least one first-read probe that missed, and no live read anywhere. Only such a pass
+    /// needs the caller to supply <c>sheetReady</c> to <see cref="Record"/>, so the caller
+    /// pays for the readiness probe in that window and never in steady state.
     /// </summary>
-    public AttrMemoPassResult Record(IReadOnlyList<AttrReadOutcome> pass)
+    public static bool NeedsReadinessSignal(IReadOnlyList<AttrReadOutcome> pass)
+    {
+        if (pass is null) return false;
+
+        var candidate = false;
+        for (var i = 0; i < pass.Count; i++)
+        {
+            if (pass[i].Read) return false;
+            if (pass[i].FullyProbed) candidate = true;
+        }
+        return candidate;
+    }
+
+    /// <summary>
+    /// Commits one sampling pass. Ids whose full probe missed are added to the unreadable set
+    /// when the attribute sheet is known to be populated — either because some id in the same
+    /// pass produced a live value, or because <paramref name="sheetReady"/> says so explicitly.
+    /// A pass that misses everything while the sheet is not ready is discarded untouched.
+    /// </summary>
+    /// <param name="pass">The read attempts this sampling pass made.</param>
+    /// <param name="sheetReady">
+    /// The caller's explicit "the game has populated the attribute sheet" signal, read from an
+    /// always-present attribute rather than from the pass. It must NOT be derived from the
+    /// plugin-subscribed set: a client that only subscribes ids the game never publishes misses
+    /// every id on every pass forever, and inferring readiness from the pass alone would leave
+    /// those ids re-probed at the tick rate for the process lifetime.
+    /// </param>
+    public AttrMemoPassResult Record(IReadOnlyList<AttrReadOutcome> pass, bool sheetReady)
     {
         if (pass is null || pass.Count == 0)
         {
@@ -124,9 +162,9 @@ internal sealed class AttrReadabilityMemo
         {
             if (pass[i].Read) hits++;
         }
-        if (hits == 0)
+        if (hits == 0 && !sheetReady)
         {
-            // Nothing read at all — the attribute sheet is not populated yet. Latch nothing.
+            // Nothing read at all and the sheet is not populated yet. Latch nothing.
             return new AttrMemoPassResult(NoIds, true, pass.Count, 0);
         }
 

@@ -112,21 +112,34 @@ internal sealed partial class PandaPlayerStatsProbe : IPlayerStatsProbe
         {
             SampleSingleAttribute(id, entity, result);
         }
-        CommitPass();
+        CommitPass(entity);
 
         values = result;
         return true;
     }
 
     /// <summary>
-    /// Hands this tick's read outcomes to the shared <see cref="AttrReadabilityMemo"/> and
-    /// reports whatever it latched. The memo — not this probe — decides whether the pass is
-    /// evidence at all: a pass in which nothing read means the attribute sheet is still
-    /// filling (the login window), so it latches nothing.
+    /// Hands this tick's read outcomes to the shared <see cref="AttrReadabilityMemo"/>, together
+    /// with an EXPLICIT sheet-readiness signal, and reports whatever it latched. The memo — not
+    /// this probe — decides whether the pass is evidence at all.
+    ///
+    /// <para>Readiness is never inferred from the pass. The subscribed set is the union of what
+    /// the installed plugins asked for, and a client may subscribe only ids the game does not
+    /// publish (a CombatMeter-only client subscribes exactly 11760 + 11980): such a pass is
+    /// all-miss forever, so "nothing read ⇒ sheet not ready" would keep those ids out of the memo
+    /// and re-probe them — three reflective invokes each — every tick for the whole process
+    /// (PR #88 review). <see cref="PandaPlayerStateProbe.IsAttrSheetPopulated"/> answers it from
+    /// an always-present attribute on the same entity instead.</para>
+    ///
+    /// <para>That read is paid for ONLY while the pass is ambiguous — all-miss and holding a
+    /// first-read probe. A pass that read something, or that can latch nothing, decides itself;
+    /// once the absent ids are latched the pass is empty and nothing is read at all.</para>
     /// </summary>
-    private void CommitPass()
+    private void CommitPass(object entity)
     {
-        var pass = _attrMemo.Record(_passBuffer);
+        var sheetReady = AttrReadabilityMemo.NeedsReadinessSignal(_passBuffer)
+                         && _stateProbe.IsAttrSheetPopulated(entity);
+        var pass = _attrMemo.Record(_passBuffer, sheetReady);
         var latched = pass.Latched;
         for (var i = 0; i < latched.Count; i++)
         {

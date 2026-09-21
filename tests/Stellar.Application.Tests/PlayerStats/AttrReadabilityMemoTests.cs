@@ -21,13 +21,63 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: false),
             AttrReadOutcome.Probed(11340, read: false),
-            AttrReadOutcome.Probed(11710, read: false)));
+            AttrReadOutcome.Probed(11710, read: false)), sheetReady: false);
 
         Assert.True(result.SkippedNotReady);
         Assert.Empty(result.Latched);
         Assert.False(memo.IsUnreadable(11020));
         Assert.False(memo.IsUnreadable(11340));
         Assert.False(memo.IsUnreadable(11710));
+    }
+
+    [Fact]
+    public void a_pass_before_readiness_with_all_misses_latches_nothing()
+    {
+        var memo = new AttrReadabilityMemo();
+
+        // The login window: the entity exists, the attribute sheet does not yet.
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false),
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
+
+        Assert.True(result.SkippedNotReady);
+        Assert.Empty(result.Latched);
+        Assert.False(memo.IsUnreadable(11760));
+        Assert.False(memo.IsUnreadable(11980));
+    }
+
+    [Fact]
+    public void a_pass_where_only_the_readiness_signal_is_true_latches_the_misses()
+    {
+        var memo = new AttrReadabilityMemo();
+
+        // A CombatMeter-only client subscribes exactly 11760 + 11980, both absent from the
+        // wire sheet. Every pass is all-miss forever, so readiness can never be inferred from
+        // the pass — without the explicit signal these ids never latch and the probe re-probes
+        // them (3 reflective Invokes each) every tick for the process lifetime.
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11760, read: false),
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: true);
+
+        Assert.False(result.SkippedNotReady);
+        Assert.Equal(new[] { 11760, 11980 }, result.Latched);
+        Assert.True(memo.IsUnreadable(11760));
+        Assert.True(memo.IsUnreadable(11980));
+    }
+
+    [Fact]
+    public void readiness_never_latches_a_miss_through_a_locked_storage_memo()
+    {
+        var memo = new AttrReadabilityMemo();
+
+        // Sheet ready but this id missed through an already-locked storage type — a blackout,
+        // not an absent attribute. Readiness must not turn that into a permanent verdict.
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Memoized(11020, read: false),
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true);
+
+        Assert.Equal(new[] { 11760 }, result.Latched);
+        Assert.False(memo.IsUnreadable(11020));
     }
 
     [Fact]
@@ -38,7 +88,7 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)));
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
 
         Assert.False(result.SkippedNotReady);
         Assert.Equal(new[] { 11760, 11980 }, result.Latched);
@@ -53,7 +103,7 @@ public sealed class AttrReadabilityMemoTests
         var memo = new AttrReadabilityMemo();
         memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
         Assert.True(memo.IsUnreadable(11760));
 
         Assert.True(memo.Forget(11760));
@@ -69,7 +119,7 @@ public sealed class AttrReadabilityMemoTests
         memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)));
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
 
         memo.Clear();
 
@@ -86,7 +136,7 @@ public sealed class AttrReadabilityMemoTests
 
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Memoized(11340, read: false)));
+            AttrReadOutcome.Memoized(11340, read: false)), sheetReady: false);
 
         Assert.Empty(result.Latched);
         Assert.False(memo.IsUnreadable(11340));
@@ -102,7 +152,7 @@ public sealed class AttrReadabilityMemoTests
 
         var result = memo.Record(Pass(
             AttrReadOutcome.Memoized(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
 
         Assert.Equal(new[] { 11760 }, result.Latched);
         Assert.True(memo.IsUnreadable(11760));
@@ -114,12 +164,12 @@ public sealed class AttrReadabilityMemoTests
         var memo = new AttrReadabilityMemo();
         var first = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
         Assert.Single(first.Latched);
 
         var second = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
 
         Assert.Empty(second.Latched);
         Assert.True(memo.IsUnreadable(11760));
@@ -130,7 +180,7 @@ public sealed class AttrReadabilityMemoTests
     {
         var memo = new AttrReadabilityMemo();
 
-        var result = memo.Record(Pass());
+        var result = memo.Record(Pass(), sheetReady: false);
 
         Assert.False(result.SkippedNotReady);
         Assert.Empty(result.Latched);
@@ -145,10 +195,28 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Memoized(11340, read: true),
-            AttrReadOutcome.Probed(11760, read: false)));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
 
         Assert.Equal(3, result.Attempted);
         Assert.Equal(2, result.Hits);
+    }
+
+    [Fact]
+    public void only_an_all_miss_pass_holding_a_first_read_probe_needs_the_readiness_signal()
+    {
+        // The probe pays for the readiness read exactly here …
+        Assert.True(AttrReadabilityMemo.NeedsReadinessSignal(Pass(
+            AttrReadOutcome.Probed(11760, read: false),
+            AttrReadOutcome.Probed(11980, read: false))));
+
+        // … and nowhere else: a pass that read something decides itself, a pass that can
+        // latch nothing has nothing to decide, and an empty pass is inert.
+        Assert.False(AttrReadabilityMemo.NeedsReadinessSignal(Pass(
+            AttrReadOutcome.Memoized(11020, read: true),
+            AttrReadOutcome.Probed(11760, read: false))));
+        Assert.False(AttrReadabilityMemo.NeedsReadinessSignal(Pass(
+            AttrReadOutcome.Memoized(11020, read: false))));
+        Assert.False(AttrReadabilityMemo.NeedsReadinessSignal(Pass()));
     }
 
     private static IReadOnlyList<AttrReadOutcome> Pass(params AttrReadOutcome[] outcomes) => outcomes;

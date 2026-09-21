@@ -143,7 +143,7 @@ public sealed class PlayerStatsServiceTests
         {
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11710, read: false),
-        });
+        }, sheetReady: false);
         Assert.True(memo.IsUnreadable(11710));
 
         new PlayerStatsService(memo).Subscribe(11710);
@@ -160,7 +160,7 @@ public sealed class PlayerStatsServiceTests
         {
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11710, read: false),
-        });
+        }, sheetReady: false);
         Assert.True(memo.IsUnreadable(11710));
 
         new PlayerStatsService(memo).ClearSession();

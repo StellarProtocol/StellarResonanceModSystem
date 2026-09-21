@@ -30,7 +30,13 @@ internal sealed partial class PandaPlayerStatsProbe
 
         _notReadyStreakLogged = false;
         if (pass.Latched.Count == 0) return;
+
+        // via=readiness means the pass read nothing and the explicit sheet-populated signal
+        // is what allowed the latch — the CombatMeter-only case, where no subscribed id can
+        // ever read. via=hit is the ordinary mixed pass. Either way this line should appear
+        // ONCE per id set and then stop; repetition means something is forgetting verdicts.
+        var via = pass.Hits == 0 ? "readiness" : "hit";
         _log.Info($"[Stellar][PlayerStats] memo: latched={string.Join(",", pass.Latched)} " +
-                  $"hits={pass.Hits}/{pass.Attempted}");
+                  $"hits={pass.Hits}/{pass.Attempted} via={via}");
     }
 }
