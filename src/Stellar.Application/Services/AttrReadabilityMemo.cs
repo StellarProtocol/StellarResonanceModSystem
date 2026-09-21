@@ -1,4 +1,5 @@
 // src/Stellar.Application/Services/AttrReadabilityMemo.cs
+using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -97,25 +98,62 @@ internal readonly struct AttrMemoPassResult
 /// </para>
 ///
 /// <para>
+/// A verdict is a BOUNDED negative cache, not a life sentence: it expires after
+/// <see cref="RetryAfterTicks"/> and the id is probed once more. The game can publish an
+/// attribute seconds after max HP and level — 11951 (versatility %) latched on a client that
+/// had it selected, and rendered "&#8212;" for the whole session (in-game run, 2026-09-22) —
+/// and a permanent verdict makes a relaunch the only cure. A re-probe that misses again
+/// re-latches and restarts the window, so a genuinely absent id costs ~3 reflective invokes
+/// per minute instead of 3 per tick; a re-probe that reads drops the verdict outright.
+/// </para>
+///
+/// <para>
 /// Pure and BCL-only by design: the decision is unit-pinned in
 /// <c>Stellar.Application.Tests</c> while the reflection that feeds it stays in
-/// Infrastructure. Reads are lock-free (the set is swapped, never mutated in place) so the
-/// per-tick sampler pays nothing; the rare writes take a private lock because
+/// Infrastructure. The caller supplies the clock (one reading per pass) so the rule stays a
+/// function of its inputs. Reads are lock-free (the map is swapped, never mutated in place)
+/// so the per-tick sampler pays nothing; the rare writes take a private lock because
 /// <see cref="Forget"/> can arrive from any plugin thread via <c>IPlayerStats.Subscribe</c>.
 /// </para>
 /// </summary>
 internal sealed class AttrReadabilityMemo
 {
+    /// <summary>
+    /// How long an "unreadable" verdict binds before the id is probed once more (60 s).
+    /// Long enough that a genuinely absent id costs ~3 reflective invokes a minute rather
+    /// than 3 a tick; short enough that a late-arriving attribute appears within a minute.
+    /// </summary>
+    public const long RetryAfterTicks = 60 * TimeSpan.TicksPerSecond;
+
     private static readonly IReadOnlyList<int> NoIds = new int[0];
 
     private readonly object _writeLock = new();
 
-    // Treated as immutable once published: writers copy-then-swap, readers take the
-    // reference and only ever call Contains on it.
-    private HashSet<int> _unreadable = new();
+    // id -> the clock reading at which it was last found unreadable. Treated as immutable
+    // once published: writers copy-then-swap, readers take the reference and only read it.
+    private Dictionary<int, long> _unreadable = new();
 
-    /// <summary>True when <paramref name="attrId"/> is known unreadable and must be skipped.</summary>
-    public bool IsUnreadable(int attrId) => Volatile.Read(ref _unreadable).Contains(attrId);
+    /// <summary>
+    /// True when <paramref name="attrId"/> carries an unreadable verdict that is still inside
+    /// its retry window and must therefore be skipped. Past the window it reads false — the
+    /// caller probes the id again, and <see cref="Record"/> either re-latches it or (when the
+    /// attribute has since appeared) drops the verdict.
+    /// </summary>
+    /// <param name="attrId">The attribute id about to be sampled.</param>
+    /// <param name="nowTicks">
+    /// The caller's clock in 100&#160;ns ticks, read once per sampling pass. Must be monotonic:
+    /// a reading behind the stored latch is treated as an expired window (re-probe), never as
+    /// an indefinitely frozen one.
+    /// </param>
+    public bool IsUnreadable(int attrId, long nowTicks)
+        => Volatile.Read(ref _unreadable).TryGetValue(attrId, out var latchedAt)
+           && IsInsideRetryWindow(latchedAt, nowTicks);
+
+    private static bool IsInsideRetryWindow(long latchedAtTicks, long nowTicks)
+    {
+        var age = nowTicks - latchedAtTicks;
+        return age >= 0 && age < RetryAfterTicks;
+    }
 
     /// <summary>
     /// True when <paramref name="pass"/> cannot be judged on its own evidence: it carries at
@@ -137,10 +175,13 @@ internal sealed class AttrReadabilityMemo
     }
 
     /// <summary>
-    /// Commits one sampling pass. Ids whose full probe missed are added to the unreadable set
-    /// when the attribute sheet is known to be populated — either because some id in the same
-    /// pass produced a live value, or because <paramref name="sheetReady"/> says so explicitly.
-    /// A pass that misses everything while the sheet is not ready is discarded untouched.
+    /// Commits one sampling pass. Ids whose full probe missed are stamped unreadable at
+    /// <paramref name="nowTicks"/> when the attribute sheet is known to be populated — either
+    /// because some id in the same pass produced a live value, or because
+    /// <paramref name="sheetReady"/> says so explicitly. A pass that misses everything while
+    /// the sheet is not ready is discarded untouched. An id whose earlier verdict has expired
+    /// and missed again is re-stamped (its window restarts, and it is reported as latched once
+    /// more); an id that finally READ has its verdict dropped.
     /// </summary>
     /// <param name="pass">The read attempts this sampling pass made.</param>
     /// <param name="sheetReady">
@@ -150,7 +191,11 @@ internal sealed class AttrReadabilityMemo
     /// every id on every pass forever, and inferring readiness from the pass alone would leave
     /// those ids re-probed at the tick rate for the process lifetime.
     /// </param>
-    public AttrMemoPassResult Record(IReadOnlyList<AttrReadOutcome> pass, bool sheetReady)
+    /// <param name="nowTicks">
+    /// The caller's clock in 100&#160;ns ticks, read once for the whole pass (see
+    /// <see cref="IsUnreadable"/>).
+    /// </param>
+    public AttrMemoPassResult Record(IReadOnlyList<AttrReadOutcome> pass, bool sheetReady, long nowTicks)
     {
         if (pass is null || pass.Count == 0)
         {
@@ -168,22 +213,45 @@ internal sealed class AttrReadabilityMemo
             return new AttrMemoPassResult(NoIds, true, pass.Count, 0);
         }
 
+        var latched = ApplyPass(pass, nowTicks);
+        return new AttrMemoPassResult(latched ?? NoIds, false, pass.Count, hits);
+    }
+
+    /// <summary>
+    /// The write half of <see cref="Record"/>, under the write lock: stamps every fresh or
+    /// expired full-probe miss, drops the verdict of anything that read, and swaps the map in
+    /// one go. Returns the ids stamped by this pass, or null when nothing changed.
+    /// </summary>
+    private List<int>? ApplyPass(IReadOnlyList<AttrReadOutcome> pass, long nowTicks)
+    {
         List<int>? latched = null;
         lock (_writeLock)
         {
             var current = _unreadable;
-            HashSet<int>? next = null;
+            Dictionary<int, long>? next = null;
             for (var i = 0; i < pass.Count; i++)
             {
                 var outcome = pass[i];
-                if (outcome.Read || !outcome.FullyProbed || current.Contains(outcome.AttrId)) continue;
-                next ??= new HashSet<int>(current);
-                if (!next.Add(outcome.AttrId)) continue;
+                var view = next ?? current;
+                if (outcome.Read)
+                {
+                    // The attribute answered: whether it was late or the sheet had gone quiet,
+                    // the verdict is wrong now. Drop it — the storage-type memo the probe holds
+                    // is untouched, so the id keeps reading through its known-good type.
+                    if (!view.ContainsKey(outcome.AttrId)) continue;
+                    next ??= new Dictionary<int, long>(current);
+                    next.Remove(outcome.AttrId);
+                    continue;
+                }
+                if (!outcome.FullyProbed) continue;
+                if (view.TryGetValue(outcome.AttrId, out var at) && IsInsideRetryWindow(at, nowTicks)) continue;
+                next ??= new Dictionary<int, long>(current);
+                next[outcome.AttrId] = nowTicks;
                 (latched ??= new List<int>()).Add(outcome.AttrId);
             }
             if (next is not null) Volatile.Write(ref _unreadable, next);
         }
-        return new AttrMemoPassResult(latched ?? NoIds, false, pass.Count, hits);
+        return latched;
     }
 
     /// <summary>
@@ -197,8 +265,8 @@ internal sealed class AttrReadabilityMemo
         lock (_writeLock)
         {
             var current = _unreadable;
-            if (!current.Contains(attrId)) return false;
-            var next = new HashSet<int>(current);
+            if (!current.ContainsKey(attrId)) return false;
+            var next = new Dictionary<int, long>(current);
             next.Remove(attrId);
             Volatile.Write(ref _unreadable, next);
             return true;
@@ -214,7 +282,7 @@ internal sealed class AttrReadabilityMemo
         lock (_writeLock)
         {
             if (_unreadable.Count == 0) return;
-            Volatile.Write(ref _unreadable, new HashSet<int>());
+            Volatile.Write(ref _unreadable, new Dictionary<int, long>());
         }
     }
 }

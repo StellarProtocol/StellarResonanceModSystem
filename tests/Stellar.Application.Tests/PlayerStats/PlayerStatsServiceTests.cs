@@ -143,12 +143,12 @@ public sealed class PlayerStatsServiceTests
         {
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11710, read: false),
-        }, sheetReady: false);
-        Assert.True(memo.IsUnreadable(11710));
+        }, sheetReady: false, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11710, T0));
 
         new PlayerStatsService(memo).Subscribe(11710);
 
-        Assert.False(memo.IsUnreadable(11710));
+        Assert.False(memo.IsUnreadable(11710, T0));
     }
 
     [Fact]
@@ -160,13 +160,16 @@ public sealed class PlayerStatsServiceTests
         {
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11710, read: false),
-        }, sheetReady: false);
-        Assert.True(memo.IsUnreadable(11710));
+        }, sheetReady: false, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11710, T0));
 
         new PlayerStatsService(memo).ClearSession();
 
-        Assert.False(memo.IsUnreadable(11710));
+        Assert.False(memo.IsUnreadable(11710, T0));
     }
+
+    /// <summary>A fixed clock origin for the attribute-readability memo's TTL.</summary>
+    private const long T0 = 638_000_000_000_000_000L;
 
     private static (PlayerStatsService, StubPlayerStatsProbe) NewService()
         => (new PlayerStatsService(new AttrReadabilityMemo()), new StubPlayerStatsProbe());

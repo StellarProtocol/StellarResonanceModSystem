@@ -33,8 +33,10 @@ internal sealed partial class PandaPlayerStatsProbe
 
         // via=readiness means the pass read nothing and the explicit sheet-populated signal
         // is what allowed the latch — the CombatMeter-only case, where no subscribed id can
-        // ever read. via=hit is the ordinary mixed pass. Either way this line should appear
-        // ONCE per id set and then stop; repetition means something is forgetting verdicts.
+        // ever read. via=hit is the ordinary mixed pass. Expected cadence: ONCE per id set per
+        // AttrReadabilityMemo.RetryAfterTicks window (the verdict expires, the id is re-probed
+        // once, misses again and re-latches). More often than that means something is dropping
+        // verdicts early; an id that stops appearing has started reading — the retry paid off.
         var via = pass.Hits == 0 ? "readiness" : "hit";
         _log.Info($"[Stellar][PlayerStats] memo: latched={string.Join(",", pass.Latched)} " +
                   $"hits={pass.Hits}/{pass.Attempted} via={via}");

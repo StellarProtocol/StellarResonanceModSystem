@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Stellar.Application.Services;
 using Xunit;
@@ -21,13 +22,13 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: false),
             AttrReadOutcome.Probed(11340, read: false),
-            AttrReadOutcome.Probed(11710, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11710, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.True(result.SkippedNotReady);
         Assert.Empty(result.Latched);
-        Assert.False(memo.IsUnreadable(11020));
-        Assert.False(memo.IsUnreadable(11340));
-        Assert.False(memo.IsUnreadable(11710));
+        Assert.False(memo.IsUnreadable(11020, T0));
+        Assert.False(memo.IsUnreadable(11340, T0));
+        Assert.False(memo.IsUnreadable(11710, T0));
     }
 
     [Fact]
@@ -38,12 +39,12 @@ public sealed class AttrReadabilityMemoTests
         // The login window: the entity exists, the attribute sheet does not yet.
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.True(result.SkippedNotReady);
         Assert.Empty(result.Latched);
-        Assert.False(memo.IsUnreadable(11760));
-        Assert.False(memo.IsUnreadable(11980));
+        Assert.False(memo.IsUnreadable(11760, T0));
+        Assert.False(memo.IsUnreadable(11980, T0));
     }
 
     [Fact]
@@ -57,12 +58,12 @@ public sealed class AttrReadabilityMemoTests
         // them (3 reflective Invokes each) every tick for the process lifetime.
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)), sheetReady: true);
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: true, nowTicks: T0);
 
         Assert.False(result.SkippedNotReady);
         Assert.Equal(new[] { 11760, 11980 }, result.Latched);
-        Assert.True(memo.IsUnreadable(11760));
-        Assert.True(memo.IsUnreadable(11980));
+        Assert.True(memo.IsUnreadable(11760, T0));
+        Assert.True(memo.IsUnreadable(11980, T0));
     }
 
     [Fact]
@@ -74,10 +75,10 @@ public sealed class AttrReadabilityMemoTests
         // not an absent attribute. Readiness must not turn that into a permanent verdict.
         var result = memo.Record(Pass(
             AttrReadOutcome.Memoized(11020, read: false),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true);
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: true, nowTicks: T0);
 
         Assert.Equal(new[] { 11760 }, result.Latched);
-        Assert.False(memo.IsUnreadable(11020));
+        Assert.False(memo.IsUnreadable(11020, T0));
     }
 
     [Fact]
@@ -88,13 +89,13 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.False(result.SkippedNotReady);
         Assert.Equal(new[] { 11760, 11980 }, result.Latched);
-        Assert.False(memo.IsUnreadable(11020));
-        Assert.True(memo.IsUnreadable(11760));
-        Assert.True(memo.IsUnreadable(11980));
+        Assert.False(memo.IsUnreadable(11020, T0));
+        Assert.True(memo.IsUnreadable(11760, T0));
+        Assert.True(memo.IsUnreadable(11980, T0));
     }
 
     [Fact]
@@ -103,12 +104,12 @@ public sealed class AttrReadabilityMemoTests
         var memo = new AttrReadabilityMemo();
         memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
-        Assert.True(memo.IsUnreadable(11760));
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11760, T0));
 
         Assert.True(memo.Forget(11760));
 
-        Assert.False(memo.IsUnreadable(11760));
+        Assert.False(memo.IsUnreadable(11760, T0));
         Assert.False(memo.Forget(11760));   // already forgotten — no-op
     }
 
@@ -119,12 +120,12 @@ public sealed class AttrReadabilityMemoTests
         memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Probed(11760, read: false),
-            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11980, read: false)), sheetReady: false, nowTicks: T0);
 
         memo.Clear();
 
-        Assert.False(memo.IsUnreadable(11760));
-        Assert.False(memo.IsUnreadable(11980));
+        Assert.False(memo.IsUnreadable(11760, T0));
+        Assert.False(memo.IsUnreadable(11980, T0));
     }
 
     [Fact]
@@ -136,10 +137,10 @@ public sealed class AttrReadabilityMemoTests
 
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Memoized(11340, read: false)), sheetReady: false);
+            AttrReadOutcome.Memoized(11340, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.Empty(result.Latched);
-        Assert.False(memo.IsUnreadable(11340));
+        Assert.False(memo.IsUnreadable(11340, T0));
     }
 
     [Fact]
@@ -152,10 +153,10 @@ public sealed class AttrReadabilityMemoTests
 
         var result = memo.Record(Pass(
             AttrReadOutcome.Memoized(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.Equal(new[] { 11760 }, result.Latched);
-        Assert.True(memo.IsUnreadable(11760));
+        Assert.True(memo.IsUnreadable(11760, T0));
     }
 
     [Fact]
@@ -164,15 +165,15 @@ public sealed class AttrReadabilityMemoTests
         var memo = new AttrReadabilityMemo();
         var first = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
         Assert.Single(first.Latched);
 
         var second = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.Empty(second.Latched);
-        Assert.True(memo.IsUnreadable(11760));
+        Assert.True(memo.IsUnreadable(11760, T0));
     }
 
     [Fact]
@@ -180,7 +181,7 @@ public sealed class AttrReadabilityMemoTests
     {
         var memo = new AttrReadabilityMemo();
 
-        var result = memo.Record(Pass(), sheetReady: false);
+        var result = memo.Record(Pass(), sheetReady: false, nowTicks: T0);
 
         Assert.False(result.SkippedNotReady);
         Assert.Empty(result.Latched);
@@ -195,7 +196,7 @@ public sealed class AttrReadabilityMemoTests
         var result = memo.Record(Pass(
             AttrReadOutcome.Probed(11020, read: true),
             AttrReadOutcome.Memoized(11340, read: true),
-            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false);
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
 
         Assert.Equal(3, result.Attempted);
         Assert.Equal(2, result.Hits);
@@ -219,5 +220,91 @@ public sealed class AttrReadabilityMemoTests
         Assert.False(AttrReadabilityMemo.NeedsReadinessSignal(Pass()));
     }
 
+    [Fact]
+    public void a_latched_id_is_re_probed_after_the_ttl_and_not_before()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11951, read: false)), sheetReady: false, nowTicks: T0);
+
+        // Inside the window the verdict holds — that is the anti-spam the memo exists for.
+        Assert.True(memo.IsUnreadable(11951, T0));
+        Assert.True(memo.IsUnreadable(11951, T0 + Seconds(59)));
+
+        // Past it the id is probed again, so an attribute the game publishes seconds after
+        // max HP / level (11951 latched on the owner's test client, 2026-09-22 run 1) shows
+        // up within a minute instead of dashing until the client is relaunched.
+        Assert.False(memo.IsUnreadable(11951, T0 + Seconds(61)));
+    }
+
+    [Fact]
+    public void a_re_probe_that_still_misses_re_latches_and_restarts_the_window()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
+
+        var reProbe = T0 + Seconds(61);
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: reProbe);
+
+        // A genuinely absent id (11760) costs one re-probe per window, for ever — never a tick loop.
+        Assert.Equal(new[] { 11760 }, result.Latched);
+        Assert.True(memo.IsUnreadable(11760, reProbe));
+        Assert.True(memo.IsUnreadable(11760, reProbe + Seconds(59)));   // measured from the RE-probe…
+        Assert.False(memo.IsUnreadable(11760, reProbe + Seconds(61)));  // …not from the first latch
+    }
+
+    [Fact]
+    public void the_anti_spam_bound_holds_inside_the_window()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: T0);
+
+        // One window at the 60 Hz framework tick = 3 600 passes. Not one of them may re-probe
+        // or re-report the id: the retry costs ~3 reflective invokes per absent id per MINUTE.
+        const long tickTicks = TimeSpan.TicksPerSecond / 60;
+        for (var tick = 1; tick < 3600; tick++)
+        {
+            var now = T0 + (tick * tickTicks);
+            Assert.True(memo.IsUnreadable(11760, now));
+            var result = memo.Record(Pass(
+                AttrReadOutcome.Probed(11020, read: true),
+                AttrReadOutcome.Probed(11760, read: false)), sheetReady: false, nowTicks: now);
+            Assert.Empty(result.Latched);
+        }
+    }
+
+    [Fact]
+    public void a_re_probe_that_hits_clears_the_id()
+    {
+        var memo = new AttrReadabilityMemo();
+        memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11951, read: false)), sheetReady: false, nowTicks: T0);
+        Assert.True(memo.IsUnreadable(11951, T0));
+
+        // The late attribute answers on the retry pass: the verdict is dropped outright, not
+        // re-stamped, so the stat renders from here on and costs nothing more.
+        var late = T0 + Seconds(61);
+        var result = memo.Record(Pass(
+            AttrReadOutcome.Probed(11020, read: true),
+            AttrReadOutcome.Probed(11951, read: true)), sheetReady: false, nowTicks: late);
+
+        Assert.Empty(result.Latched);
+        Assert.False(memo.IsUnreadable(11951, late));
+        Assert.False(memo.IsUnreadable(11951, late + Seconds(3600)));
+    }
+
     private static IReadOnlyList<AttrReadOutcome> Pass(params AttrReadOutcome[] outcomes) => outcomes;
+
+    /// <summary>A fixed clock origin — every pin states its own instants relative to it.</summary>
+    private const long T0 = 638_000_000_000_000_000L;
+
+    private static long Seconds(long s) => s * TimeSpan.TicksPerSecond;
 }

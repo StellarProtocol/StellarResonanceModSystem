@@ -25,9 +25,12 @@ public static class FrameworkVersion
     /// window missed every subscribed id and latched them all for the life of the process — Stat
     /// Inspector then showed "—" for every tracked stat until the client was relaunched (owner
     /// report 2026-09-21). The decision moved out of the reflection probe into the pure,
-    /// unit-pinned <c>AttrReadabilityMemo</c>: only a pass with at least one live read may condemn
-    /// its misses (so the anti-spam for genuinely absent ids such as 11760 / 11980 is unchanged),
-    /// re-subscribing an attribute re-probes it, and a logout forgets every verdict.
+    /// unit-pinned <c>AttrReadabilityMemo</c>: a pass may condemn its misses only once the attribute
+    /// sheet is known populated — a live read in the same pass, or the caller's explicit readiness
+    /// signal — so the anti-spam for genuinely absent ids such as 11760 / 11980 is unchanged. The
+    /// verdict itself now EXPIRES after 60 s and the id is probed once more, so an attribute the game
+    /// publishes late (11951 on a test client) appears within a minute instead of dashing for the
+    /// session; re-subscribing an attribute re-probes it at once, and a logout forgets every verdict.
     /// Infrastructure/Application only — no API change, binary-compatible with all existing plugins.
     /// 2.8.0 adds <c>MeterRowData.LabelStyle</c> (<c>MeterLabelStyle</c> Plain / Outline / Shadow): how the
     /// two values drawn on a meter row's bar stay readable over the fill — CombatMeter 2.10.0 can paint the
