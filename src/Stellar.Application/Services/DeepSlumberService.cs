@@ -76,14 +76,13 @@ internal sealed class DeepSlumberService : IDeepSlumber
             var phaseOps = OpsOfKind(ops, phase);
             if (phaseOps.Count == 0) continue;
 
-            var tasks = new Task<int>[phaseOps.Count];
-            for (var i = 0; i < phaseOps.Count; i++) tasks[i] = DispatchWithRetry(phaseOps[i], ct);
-            var codes = await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            foreach (var code in codes)
-            {
-                if (code == DeepSlumberWriteCode.Ok) ok++; else failed++;
-            }
+            // The Activate phase converges on node prerequisites (5126); every other phase fires its ops
+            // concurrently once.
+            var (phaseOk, phaseFailed) = phase == DeepSlumberOpKind.ActivateNode
+                ? await ActivatePhaseAsync(phaseOps, ct).ConfigureAwait(false)
+                : await RunPhaseAsync(phaseOps, ct).ConfigureAwait(false);
+            ok += phaseOk;
+            failed += phaseFailed;
             if (ct.IsCancellationRequested) { cancelled = true; break; }
         }
 
@@ -109,6 +108,49 @@ internal sealed class DeepSlumberService : IDeepSlumber
         var result = new List<DeepSlumberOp>();
         foreach (var op in ops) if (op.Kind == kind) result.Add(op);
         return result;
+    }
+
+    // Fire a phase's ops concurrently, once — the barrier model for every phase except ActivateNode.
+    private async Task<(int Ok, int Failed)> RunPhaseAsync(List<DeepSlumberOp> phaseOps, CancellationToken ct)
+    {
+        var tasks = new Task<int>[phaseOps.Count];
+        for (var i = 0; i < phaseOps.Count; i++) tasks[i] = DispatchWithRetry(phaseOps[i], ct);
+        var codes = await Task.WhenAll(tasks).ConfigureAwait(false);
+        int ok = 0, failed = 0;
+        foreach (var code in codes) { if (code == DeepSlumberWriteCode.Ok) ok++; else failed++; }
+        return (ok, failed);
+    }
+
+    // Anchors form a dependency TREE: activating a node whose parent isn't active yet fails 5126
+    // (ErrTalentPreTalentNodeNotActivated) — a node's factor socket is irrelevant to activation (owner
+    // 2026-09-22). The reconciler's target anchor set is a fully-captured tree (closed under prerequisite),
+    // so retry ONLY the 5126s in passes: each pass fires the still-pending nodes concurrently, keeps the
+    // ones that landed, and requeues the 5126s — until all activate or a pass makes NO progress (a
+    // genuinely un-activatable remainder is then failed). This self-orders activation into
+    // parent-before-child WITHOUT the dependency graph, so a class round-trip rebuilds the whole tree
+    // instead of half-completing and leaving it locked. Bounded: each pass either lands ≥1 node or stops.
+    private async Task<(int Ok, int Failed)> ActivatePhaseAsync(List<DeepSlumberOp> phaseOps, CancellationToken ct)
+    {
+        var pending = phaseOps;
+        int ok = 0, failed = 0;
+        while (pending.Count > 0 && !ct.IsCancellationRequested)
+        {
+            var tasks = new Task<int>[pending.Count];
+            for (var i = 0; i < pending.Count; i++) tasks[i] = DispatchWithRetry(pending[i], ct);
+            var codes = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            var blocked = new List<DeepSlumberOp>();
+            var landed = 0;
+            for (var i = 0; i < pending.Count; i++)
+            {
+                if (codes[i] == DeepSlumberWriteCode.Ok) { ok++; landed++; }
+                else if (codes[i] == DeepSlumberWriteCode.PreTalentNodeNotActivated) blocked.Add(pending[i]);
+                else failed++;                                   // terminal, non-ordering failure
+            }
+            if (landed == 0) { failed += blocked.Count; break; } // no progress → remainder can't activate
+            pending = blocked;
+        }
+        return (ok, failed);
     }
 
     // Dispatch one op, retrying ONLY a transient (did-not-land) code — never a positive game refusal

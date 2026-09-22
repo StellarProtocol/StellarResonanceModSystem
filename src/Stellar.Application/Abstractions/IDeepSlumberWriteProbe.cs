@@ -36,6 +36,13 @@ internal static class DeepSlumberWriteCode
     public const int Timeout = -2;       // dispatched, but no reply within the completion timeout — dropped
     public const int Cancelled = -3;     // caller's token fired
 
+    // Game EErrorCode ErrTalentPreTalentNodeNotActivated (enum_e_error_code.proto = 5126): ActiveNormalNode
+    // on a node whose PREREQUISITE (parent) node is not active yet. Deterministic given the CURRENT tree
+    // state (so NOT transient — never per-op retried), but it becomes activatable once its parent lands,
+    // so the Activate phase requeues it across passes (DeepSlumberService.ActivatePhaseAsync) rather than
+    // failing the apply. A node's factor socket is irrelevant to activation (owner 2026-09-22).
+    public const int PreTalentNodeNotActivated = 5126;
+
     /// <summary>True for codes that mean "the request did not land" — the only codes safe to retry.</summary>
     public static bool IsTransient(int code) => code == Unavailable || code == Timeout;
 }
