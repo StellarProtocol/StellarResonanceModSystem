@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -31,8 +33,15 @@ namespace Stellar.Infrastructure.Game;
 /// EAttrType; downstream <c>TryGetAttr</c> simply returns false for those IDs
 /// and the result dict skips them.
 /// </para>
+///
+/// <para>
+/// The "this attribute cannot be read at all" decision does NOT live here — it is the pure
+/// <see cref="AttrReadabilityMemo"/> in <c>Stellar.Application</c> (unit-pinned), shared with
+/// <c>PlayerStatsService</c> so a plugin's <c>Subscribe</c> re-arms the probe and a logout
+/// forgets every verdict. This probe only reports what each read did; the memo decides.
+/// </para>
 /// </summary>
-internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
+internal sealed partial class PandaPlayerStatsProbe : IPlayerStatsProbe
 {
     private readonly IPluginLog _log;
     private readonly PandaPlayerStateProbe _stateProbe;
@@ -41,12 +50,23 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
     // flips on the first `arr type err` for that ID.
     private readonly Dictionary<int, bool> _attrPrefersLong = new();
 
-    // Per-attribute-id memo for IDs that neither Int64 nor Int32 can read
-    // (e.g. float-stored stats like AttrVersatilityPct). Without this, the
-    // first-read fall-through retried both T's every 60Hz tick, generating
-    // a continuous `[Error : Unity] arr type err` log spam. Memoizing on
-    // first total miss bounds the error to one line per such attr ID.
-    private readonly HashSet<int> _attrUnreadable = new();
+    // Shared with PlayerStatsService (constructed by the Host). Holds the IDs that neither
+    // Int64 nor Int32 nor Float can read, so the per-tick loop skips them instead of emitting
+    // a continuous `[Error : Unity] arr type err` flood. Its one hard rule: an all-miss pass
+    // latches nothing (see AttrReadabilityMemo).
+    private readonly AttrReadabilityMemo _attrMemo;
+
+    // Reused per-tick scratch buffer of this pass's read outcomes. Owned by the tick thread;
+    // handed to the memo read-only, never retained by it — so a steady-state sample allocates
+    // nothing beyond the result dictionary.
+    private readonly List<AttrReadOutcome> _passBuffer = new();
+
+    // Ids whose ungated "unreadable" line has already been written. The memo's verdict now
+    // EXPIRES and re-latches once a window (AttrReadabilityMemo.RetryAfterTicks), so without
+    // this every user's log would carry one line per genuinely absent id per minute for the
+    // whole session. The line is a first-sighting notice, not a per-decision trace — the
+    // per-decision trace is the STELLAR_DIAGNOSTICS-gated line in the .Diagnostics partial.
+    private readonly HashSet<int> _unreadableLogged = new();
 
     // Per-attribute-id memo for IDs that read as float (TryGetAttr<float>) — e.g. cd-reduction 11760,
     // cd-acceleration 11960/11980, versatility%. Probed after Int64/Int32 miss; the float value is stored
@@ -59,10 +79,11 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
     private static readonly IReadOnlyDictionary<int, long> EmptyDict
         = new Dictionary<int, long>(0);
 
-    public PandaPlayerStatsProbe(IPluginLog log, PandaPlayerStateProbe stateProbe)
+    public PandaPlayerStatsProbe(IPluginLog log, PandaPlayerStateProbe stateProbe, AttrReadabilityMemo attrMemo)
     {
         _log = log;
         _stateProbe = stateProbe;
+        _attrMemo = attrMemo;
     }
 
     public bool TrySample(
@@ -93,25 +114,71 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
             return false;
         }
 
+        // One clock read for the whole pass — every id is judged against the same instant.
+        // TickCount64 is monotonic (a wall-clock adjustment must not freeze or shorten a retry
+        // window), scaled into the 100 ns tick unit the memo's TTL is expressed in.
+        var nowTicks = Environment.TickCount64 * TimeSpan.TicksPerMillisecond;
         var result = new Dictionary<int, long>(subscribed.Count);
+        _passBuffer.Clear();
         foreach (var id in subscribed)
         {
-            SampleSingleAttribute(id, entity, result);
+            SampleSingleAttribute(id, entity, result, nowTicks);
         }
+        CommitPass(entity, nowTicks);
 
         values = result;
         return true;
     }
 
     /// <summary>
-    /// Read one attribute ID into <paramref name="result"/>, managing the three
-    /// per-ID memo dictionaries (<see cref="_enumBoxByInt"/>, <see cref="_attrPrefersLong"/>,
-    /// <see cref="_attrUnreadable"/>). On the first call per ID the method probes
-    /// <c>Int64</c> then <c>Int32</c> and locks the winner; subsequent calls use the
-    /// memo directly, producing no further Unity <c>arr type err</c> log lines for
-    /// that ID.
+    /// Hands this tick's read outcomes to the shared <see cref="AttrReadabilityMemo"/>, together
+    /// with an EXPLICIT sheet-readiness signal, and reports whatever it latched. The memo — not
+    /// this probe — decides whether the pass is evidence at all.
+    ///
+    /// <para>Readiness is never inferred from the pass. The subscribed set is the union of what
+    /// the installed plugins asked for, and a client may subscribe only ids the game does not
+    /// publish (a CombatMeter-only client subscribes exactly 11760 + 11980): such a pass is
+    /// all-miss forever, so "nothing read ⇒ sheet not ready" would keep those ids out of the memo
+    /// and re-probe them — three reflective invokes each — every tick for the whole process
+    /// (PR #88 review). <see cref="PandaPlayerStateProbe.IsAttrSheetPopulated"/> answers it from
+    /// an always-present attribute on the same entity instead.</para>
+    ///
+    /// <para>That read is paid for ONLY while the pass is ambiguous — all-miss and holding a
+    /// first-read probe. A pass that read something, or that can latch nothing, decides itself;
+    /// once the absent ids are latched the pass is empty and nothing is read at all.</para>
+    ///
+    /// <para>A verdict expires after <see cref="AttrReadabilityMemo.RetryAfterTicks"/> and is
+    /// re-taken, so <c>Latched</c> reports the same absent id once a window. The ungated line
+    /// below is therefore emitted once per id for the whole process — a user who is not running
+    /// diagnostics must not collect a line per absent id per minute.</para>
     /// </summary>
-    private void SampleSingleAttribute(int id, object entity, Dictionary<int, long> result)
+    private void CommitPass(object entity, long nowTicks)
+    {
+        var sheetReady = AttrReadabilityMemo.NeedsReadinessSignal(_passBuffer)
+                         && _stateProbe.IsAttrSheetPopulated(entity);
+        var pass = _attrMemo.Record(_passBuffer, sheetReady, nowTicks);
+        var latched = pass.Latched;
+        for (var i = 0; i < latched.Count; i++)
+        {
+            if (!_unreadableLogged.Add(latched[i])) continue;
+            _log.Info($"[Stellar][PlayerStats] attr {latched[i]} unreadable as Int64/Int32/Float; " +
+                      $"re-checking every {AttrReadabilityMemo.RetryAfterTicks / TimeSpan.TicksPerSecond}s");
+        }
+        LogMemoPass(pass);
+    }
+
+    /// <summary>
+    /// Read one attribute ID into <paramref name="result"/>, managing the per-ID memo
+    /// dictionaries (<see cref="_enumBoxByInt"/>, <see cref="_attrPrefersLong"/>,
+    /// <see cref="_attrFloat"/>) and appending this read's outcome to
+    /// <see cref="_passBuffer"/> for <see cref="CommitPass"/>. On the first call per ID the
+    /// method probes <c>Int64</c> then <c>Int32</c> then <c>Float</c> and locks the winner;
+    /// subsequent calls use the memo directly, producing no further Unity
+    /// <c>arr type err</c> log lines for that ID.
+    /// <paramref name="nowTicks"/> is the pass's single clock reading, against which an
+    /// "unreadable" verdict is judged expired or still binding.
+    /// </summary>
+    private void SampleSingleAttribute(int id, object entity, Dictionary<int, long> result, long nowTicks)
     {
         if (!_enumBoxByInt.TryGetValue(id, out var enumBox))
         {
@@ -123,17 +190,20 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
             return;
         }
 
-        if (_attrUnreadable.Contains(id))
+        if (_attrMemo.IsUnreadable(id, nowTicks))
         {
-            // First-read pass already found Int64, Int32 AND float miss;
-            // skip without re-probing to avoid 60Hz `arr type err` spam.
+            // A recent pass over a populated sheet found Int64, Int32 AND float all miss; skip
+            // without re-probing to avoid 60Hz `arr type err` spam. Expires after
+            // AttrReadabilityMemo.RetryAfterTicks; Subscribe (re-tick) / logout drop it at once.
             return;
         }
 
         if (_attrFloat.Contains(id))
         {
             // Float-stored attr (memo locked): read live as float, store rounded.
-            result[id] = (long)System.MathF.Round(_stateProbe.ReadAttrSingleWithHit(entity, enumBox, out _));
+            result[id] = (long)System.MathF.Round(
+                _stateProbe.ReadAttrSingleWithHit(entity, enumBox, out var floatHit));
+            _passBuffer.Add(AttrReadOutcome.Memoized(id, floatHit));
             return;
         }
 
@@ -142,9 +212,13 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
             // Memo locked in: call the known-good T directly. The wrong-T
             // branch is never taken, so no `arr type err` log line fires.
             var v = prefersLong
-                ? _stateProbe.ReadAttrInt64WithHit(entity, enumBox, out _)
-                : _stateProbe.ReadAttrInt32WithHit(entity, enumBox, out _);
+                ? _stateProbe.ReadAttrInt64WithHit(entity, enumBox, out var hit)
+                : _stateProbe.ReadAttrInt32WithHit(entity, enumBox, out hit);
             result[id] = v;
+            // A miss here is NOT evidence the attribute is absent — the storage type is
+            // already known good, so the sheet simply went quiet (e.g. mounted blackout).
+            // Memoized() reports the hit as readiness evidence but never latches the miss.
+            _passBuffer.Add(AttrReadOutcome.Memoized(id, hit));
             return;
         }
 
@@ -154,10 +228,12 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
 
     /// <summary>
     /// First-read probe for an attribute whose storage type is not yet memoized.
-    /// Tries <c>Int64</c> first (most stats), falls back to <c>Int32</c>; marks
-    /// the ID unreadable when both miss. The first wrong-T call emits one Unity
-    /// <c>arr type err</c> line; the memo lock prevents repetition on all
-    /// subsequent 60Hz ticks for this ID.
+    /// Tries <c>Int64</c> first (most stats), falls back to <c>Int32</c>, then
+    /// <c>Float</c>. Records the outcome in <see cref="_passBuffer"/>; a total miss is a
+    /// latch candidate, but only <see cref="CommitPass"/>/<see cref="AttrReadabilityMemo"/>
+    /// decides whether this pass is allowed to condemn it. The first wrong-T call emits one
+    /// Unity <c>arr type err</c> line; the memo lock prevents repetition on all subsequent
+    /// 60Hz ticks for this ID.
     /// </summary>
     private void ProbeAndMemoizeAttrType(int id, object entity, object enumBox, Dictionary<int, long> result)
     {
@@ -166,6 +242,7 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
         {
             _attrPrefersLong[id] = true;
             result[id] = longV;
+            _passBuffer.Add(AttrReadOutcome.Probed(id, read: true));
             return;
         }
         var intV = _stateProbe.ReadAttrInt32WithHit(entity, enumBox, out var intHit);
@@ -173,6 +250,7 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
         {
             _attrPrefersLong[id] = false;
             result[id] = intV;
+            _passBuffer.Add(AttrReadOutcome.Probed(id, read: true));
             return;
         }
         // Both int T's missed — try float (cd-reduction 11760, accel 11960/11980,
@@ -183,11 +261,12 @@ internal sealed class PandaPlayerStatsProbe : IPlayerStatsProbe
         {
             _attrFloat.Add(id);
             result[id] = (long)System.MathF.Round(floatV);
+            _passBuffer.Add(AttrReadOutcome.Probed(id, read: true));
             return;
         }
-        // None of Int64/Int32/Float read it — memo as unreadable so the next
-        // tick's foreach skips it and no further `arr type err` lines fire.
-        _attrUnreadable.Add(id);
-        _log.Info($"[Stellar][PlayerStats] attr {id} unreadable as Int64/Int32/Float; skipping future samples");
+        // None of Int64/Int32/Float read it. Offer it to the memo as a latch candidate —
+        // committed only once the sheet is known populated (another id in this pass read, or
+        // the explicit readiness signal), and only until the verdict's retry window expires.
+        _passBuffer.Add(AttrReadOutcome.Probed(id, read: false));
     }
 }

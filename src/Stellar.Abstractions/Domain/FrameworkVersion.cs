@@ -19,6 +19,19 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.8.2 is a fix: a player-stats sampling pass in which NO attribute read is no longer
+    /// allowed to mark those attributes permanently unreadable. The local-player entity exists for
+    /// several ticks before its attribute sheet is populated, so a pass taken inside that login
+    /// window missed every subscribed id and latched them all for the life of the process — Stat
+    /// Inspector then showed "—" for every tracked stat until the client was relaunched (owner
+    /// report 2026-09-21). The decision moved out of the reflection probe into the pure,
+    /// unit-pinned <c>AttrReadabilityMemo</c>: a pass may condemn its misses only once the attribute
+    /// sheet is known populated — a live read in the same pass, or the caller's explicit readiness
+    /// signal — so the anti-spam for genuinely absent ids such as 11760 / 11980 is unchanged. The
+    /// verdict itself now EXPIRES after 60 s and the id is probed once more, so an attribute the game
+    /// publishes late (11951 on a test client) appears within a minute instead of dashing for the
+    /// session; re-subscribing an attribute re-probes it at once, and a logout forgets every verdict.
+    /// Infrastructure/Application only — no API change, binary-compatible with all existing plugins.
     /// 2.8.0 adds <c>MeterRowData.LabelStyle</c> (<c>MeterLabelStyle</c> Plain / Outline / Shadow): how the
     /// two values drawn on a meter row's bar stay readable over the fill — CombatMeter 2.10.0 can paint the
     /// bar with the class crest colour (yellow / green / orange), where plain white text had a contrast of
@@ -196,5 +209,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.8.1";
+    public const string Value = "2.8.2";
 }

@@ -30,7 +30,10 @@ public sealed partial class BootstrapPlugin
         // BootstrapPlugin so the two construction sites can reference the same instance.
         _entityTracker = new CombatEntityTracker();
         _gameDataService = new GameDataService(_entityTracker);
-        _playerStatsService = new PlayerStatsService();
+        // One memo instance shared by the Application service (Subscribe re-arms it, logout
+        // clears it) and the Infrastructure probe (reads + records it) — see AttrReadabilityMemo.
+        _attrReadabilityMemo = new AttrReadabilityMemo();
+        _playerStatsService = new PlayerStatsService(_attrReadabilityMemo);
         // Identity source for the player-state probe. Reads name / level / current
         // profession off the live CharSerialize record so identity survives a
         // world-entity attribute blackout (relaunch-while-mounted). The lambda is
@@ -40,7 +43,7 @@ public sealed partial class BootstrapPlugin
         var charIdentityReader = new PandaCharIdentityReader(
             log, () => _inventoryProbe?.TryGetLiveCharSerialize());
         _playerStateProbe = new PandaPlayerStateProbe(log, typeRegistry, charIdentityReader);
-        _playerStatsProbe = new PandaPlayerStatsProbe(log, _playerStateProbe);
+        _playerStatsProbe = new PandaPlayerStatsProbe(log, _playerStateProbe, _attrReadabilityMemo);
         BuildCombatSocialServices(log, typeRegistry);
     }
 

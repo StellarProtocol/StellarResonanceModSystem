@@ -59,6 +59,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PlayerStateService? _playerState;
     private GameDataService? _gameDataService;
     private PlayerStatsService? _playerStatsService;
+    // Shared between PlayerStatsService (Subscribe re-arms / ClearSession clears) and
+    // PandaPlayerStatsProbe (reads + records each sampling pass).
+    private AttrReadabilityMemo? _attrReadabilityMemo;
     private PluginConfigService? _pluginConfigService;
     private FileConfigStore? _configStore;
     private Stellar.Application.Abstractions.IPluginDataStoreFactory? _pluginDataStoreFactory;
