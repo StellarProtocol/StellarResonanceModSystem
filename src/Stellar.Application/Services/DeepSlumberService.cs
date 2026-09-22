@@ -60,10 +60,16 @@ internal sealed class DeepSlumberService : IDeepSlumber
         var current = _probe.Read();
         if (current is null) return DeepSlumberApplyResult.Unavailable;
 
-        // Free inventory copies of the target's factors — so the reconciler never raids a factor from an
-        // inactive loadout when the target already has one or a spare is in the bag (owner 2026-09-22).
+        // Inventory check FIRST (owner 2026-09-22): the reconciler frees a factor from an inactive loadout
+        // only when the target can't otherwise obtain it — never when the target already has it or a spare
+        // is in the bag.
         var ops = DeepSlumberReconciler.Plan(current, target, _bag.ReadFactorBagCounts(TargetFactorIds(target)));
         if (ops.Count == 0) return DeepSlumberApplyResult.AlreadyMatched;
+
+        // Reactive backstop pool: current-season foreign copies of the target's factors the predictive pass
+        // left in place — freed ONLY if the game then refuses a socket 7561 (a copy in an inactive tree
+        // counts toward the per-type class limit, which a bag spare cannot clear).
+        var freePool = BuildForeignFreePool(current, target, ops);
 
         var ok = 0;
         var failed = 0;
@@ -76,11 +82,14 @@ internal sealed class DeepSlumberService : IDeepSlumber
             var phaseOps = OpsOfKind(ops, phase);
             if (phaseOps.Count == 0) continue;
 
-            // The Activate phase converges on node prerequisites (5126); every other phase fires its ops
-            // concurrently once.
-            var (phaseOk, phaseFailed) = phase == DeepSlumberOpKind.ActivateNode
-                ? await ActivatePhaseAsync(phaseOps, ct).ConfigureAwait(false)
-                : await RunPhaseAsync(phaseOps, ct).ConfigureAwait(false);
+            // ActivateNode converges on node prerequisites (5126); SocketFactor frees a foreign copy on a
+            // 7561 refusal and retries; every other phase fires its ops concurrently once.
+            var (phaseOk, phaseFailed) = phase switch
+            {
+                DeepSlumberOpKind.ActivateNode => await ActivatePhaseAsync(phaseOps, ct).ConfigureAwait(false),
+                DeepSlumberOpKind.SocketFactor => await SocketPhaseAsync(phaseOps, freePool, ct).ConfigureAwait(false),
+                _ => await RunPhaseAsync(phaseOps, ct).ConfigureAwait(false),
+            };
             ok += phaseOk;
             failed += phaseFailed;
             if (ct.IsCancellationRequested) { cancelled = true; break; }
@@ -151,6 +160,62 @@ internal sealed class DeepSlumberService : IDeepSlumber
             pending = blocked;
         }
         return (ok, failed);
+    }
+
+    // Socket the target factors — the REACTIVE-free backstop AFTER the predictive inventory-checked pass.
+    // A socket refused 7561 (ItemClassNumExceeded: a copy in an inactive tree counts toward the per-type
+    // limit — a bag spare can't clear it) is retried after freeing one foreign copy of that factor from the
+    // pool. Passes repeat until every socket lands or a pass frees nothing more (pool exhausted / a
+    // non-7561 refusal). Freeing strictly drains the finite pool, so it always terminates.
+    private async Task<(int Ok, int Failed)> SocketPhaseAsync(
+        List<DeepSlumberOp> phaseOps, Dictionary<int, Queue<int>> freePool, CancellationToken ct)
+    {
+        var pending = phaseOps;
+        int ok = 0, failed = 0;
+        while (pending.Count > 0 && !ct.IsCancellationRequested)
+        {
+            var tasks = new Task<int>[pending.Count];
+            for (var i = 0; i < pending.Count; i++) tasks[i] = DispatchWithRetry(pending[i], ct);
+            var codes = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            var retry = new List<DeepSlumberOp>();
+            for (var i = 0; i < pending.Count; i++)
+            {
+                if (codes[i] == DeepSlumberWriteCode.Ok) { ok++; continue; }
+                if (codes[i] == DeepSlumberWriteCode.ItemClassNumExceeded
+                    && freePool.TryGetValue(pending[i].ItemId, out var q) && q.Count > 0
+                    && await FreeForRetryAsync(q.Dequeue(), pending[i].ItemId, ct).ConfigureAwait(false))
+                    retry.Add(pending[i]);                       // freed a foreign copy → retry this socket
+                else
+                    failed++;                                    // not 7561, no copy left, or the free failed
+            }
+            if (retry.Count == 0) break;                         // nothing freed this pass → done
+            pending = retry;
+        }
+        return (ok, failed);
+    }
+
+    private async Task<bool> FreeForRetryAsync(int node, int itemId, CancellationToken ct)
+        => await DispatchWithRetry(DeepSlumberOp.Unsocket(node, itemId), ct).ConfigureAwait(false)
+           == DeepSlumberWriteCode.Ok;
+
+    // Foreign copies (itemId → node queue) the predictive pass left in place — the reactive-free pool.
+    // Excludes any (node,item) the plan already unsocketed so a reactive free never double-frees a node.
+    private static Dictionary<int, Queue<int>> BuildForeignFreePool(
+        DeepSlumberState current, DeepSlumberSetup target, IReadOnlyList<DeepSlumberOp> ops)
+    {
+        var planned = new HashSet<(int Node, int Item)>();
+        foreach (var op in ops)
+            if (op.Kind == DeepSlumberOpKind.UnsocketFactor) planned.Add((op.Key, op.CurrentItemId));
+
+        var pool = new Dictionary<int, Queue<int>>();
+        foreach (var (item, node) in DeepSlumberReconciler.ForeignSharedFactorCandidates(current, target))
+        {
+            if (planned.Contains((node, item))) continue;
+            if (!pool.TryGetValue(item, out var q)) pool[item] = q = new Queue<int>();
+            q.Enqueue(node);
+        }
+        return pool;
     }
 
     // Dispatch one op, retrying ONLY a transient (did-not-land) code — never a positive game refusal

@@ -159,6 +159,40 @@ internal static class DeepSlumberReconciler
         if (need.TryGetValue(item, out var c)) need[item] = c - by;
     }
 
+    // The REACTIVE-free candidate pool: every current-season foreign-area copy of a factor the target
+    // wants, (itemId, node), ordered by (area, node). The predictive pass above already freed the copies
+    // the target could not otherwise obtain (inventory-checked); this is the SUPERSET the service draws
+    // from when a socket is still refused 7561 (ErrSeasonTalentIntermediateNodeClassNumExceeded — a copy
+    // in an inactive tree counts toward the per-type limit, which a bag spare cannot clear). The service
+    // skips any (node,item) the predictive pass already unsocketed so it never double-frees.
+    internal static IReadOnlyList<(int ItemId, int Node)> ForeignSharedFactorCandidates(
+        DeepSlumberState current, DeepSlumberSetup target)
+    {
+        var wanted = new HashSet<int>();
+        var targetAreas = new HashSet<int>();
+        foreach (var area in target.Areas)
+        {
+            targetAreas.Add(area.AreaId);
+            foreach (var f in area.Factors)
+                if (f.Length >= 2 && f[1] != 0) wanted.Add(f[1]);
+        }
+        var result = new List<(int, int)>();
+        if (wanted.Count == 0) return result;
+
+        var currentLine = current.Lines.Count == 0 ? int.MinValue : current.Lines.Max(l => l.LineId);
+        foreach (var line in current.Lines)
+        {
+            if (line.LineId != currentLine) continue;
+            foreach (var area in line.Areas.OrderBy(a => a.AreaId))
+            {
+                if (targetAreas.Contains(area.AreaId) || area.MiddleNodes is null) continue;
+                foreach (var p in area.MiddleNodes.OrderBy(x => x.Length >= 1 ? x[0] : int.MinValue))
+                    if (p.Length >= 2 && p[1] != 0 && wanted.Contains(p[1])) result.Add((p[1], p[0]));
+            }
+        }
+        return result;
+    }
+
     private static DeepSlumberArea? FindArea(DeepSlumberState s, int currentLine, int areaId)
     {
         foreach (var line in s.Lines)

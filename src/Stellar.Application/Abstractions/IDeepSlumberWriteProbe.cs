@@ -43,6 +43,14 @@ internal static class DeepSlumberWriteCode
     // failing the apply. A node's factor socket is irrelevant to activation (owner 2026-09-22).
     public const int PreTalentNodeNotActivated = 5126;
 
+    // Game EErrorCode ErrSeasonTalentIntermediateNodeClassNumExceeded (enum_e_error_code.proto = 7561):
+    // InstallItemToMiddleNode refused because a copy of that factor socketed in ANOTHER (inactive) tree
+    // counts toward the per-type limit — NOT a bag-availability failure, so an inventory spare cannot
+    // clear it. Deterministic given the current sockets (never per-op retried), but it clears once the
+    // foreign copy is freed, so the Socket phase frees a foreign copy and retries (DeepSlumberService
+    // SocketPhaseAsync) — the reactive backstop AFTER the predictive inventory-checked free.
+    public const int ItemClassNumExceeded = 7561;
+
     /// <summary>True for codes that mean "the request did not land" — the only codes safe to retry.</summary>
     public static bool IsTransient(int code) => code == Unavailable || code == Timeout;
 }
