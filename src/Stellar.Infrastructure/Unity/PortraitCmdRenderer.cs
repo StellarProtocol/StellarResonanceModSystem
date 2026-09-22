@@ -40,6 +40,21 @@ public sealed class PortraitCmdRenderer : MonoBehaviour
         (a, b) => a.M.renderQueue.CompareTo(b.M.renderQueue);
     private static readonly ShaderTagId LightModeTag = new("LightMode");
     private Action<string>? _log;
+    // Optional per-frame creature-light injector, supplied by the host. Invoked right before the draw to write the
+    // baked EHighNoon "creature RT light" shader globals into OUR command buffer — the RT-lit shader samples ONLY
+    // those globals (scene Lights are ignored), so the portrait is lit independently of the surrounding world (dark
+    // caves / night). Null → the draw uses whatever globals happen to be set (scene-lit).
+    private System.Action<UnityEngine.Rendering.CommandBuffer, Vector3>? _lightInjector;
+    // Optional per-frame SCENE-light restorer, supplied by the host. Invoked right AFTER the draw to re-push the
+    // scene creature-light globals into OUR command buffer. SwitchLightType (the injector's mechanism) writes SHARED
+    // shader GLOBALS that PERSIST after our cmd executes — so the game's world creature pass would otherwise inherit
+    // our portrait profile. Re-recording scene lighting here makes our cmd END on scene values, so the world draws
+    // read scene, not ours. Null → no re-push (only safe when the injector is also null, i.e. scene-lit already).
+    private System.Action<UnityEngine.Rendering.CommandBuffer, Vector3>? _lightRestorer;
+    // Renderers to EXCLUDE from the draw (the weapon meshes). Our draw is a raw CommandBuffer.DrawRenderer, which
+    // IGNORES Unity render layers — so the game's SetRenderLayerMaskByRenderType / layer-mask hide can't reach it.
+    // The only reliable lever is to drop the weapon renderers from our draw set. Host-populated (WeaponR/L parts).
+    private readonly HashSet<Renderer> _excludeRenderers = new();
 
     /// <summary>Create the renderer on a hidden, dont-destroy GameObject.</summary>
     public static PortraitCmdRenderer Create(Action<string> log)
@@ -75,6 +90,27 @@ public sealed class PortraitCmdRenderer : MonoBehaviour
 
     /// <summary>Swap the render target (when the pane resizes the RT is recreated at the new size).</summary>
     public void SetRenderTexture(RenderTexture rt) => _rt = rt;
+
+    /// <summary>Replace the set of renderers EXCLUDED from the draw (the weapon renderers — the portrait hides the
+    /// weapon by dropping them from our draw, since a raw CommandBuffer draw ignores Unity render layers so a
+    /// layer-mask hide can't reach it). Null → just clear (draw everything).</summary>
+    public void SetExcludedRenderers(System.Collections.Generic.IReadOnlyCollection<Renderer>? set)
+    {
+        _excludeRenderers.Clear();
+        if (set != null)
+            foreach (var r in set) if (r != null) _excludeRenderers.Add(r);
+    }
+
+    /// <summary>Supply the host's creature-light injector (or null to clear). Invoked each frame immediately before
+    /// the draw so the baked EHighNoon creature-light globals land in our command buffer — the RT shader is lit
+    /// purely by those globals, making the portrait independent of the surrounding scene's lighting.</summary>
+    public void SetLightInjector(System.Action<UnityEngine.Rendering.CommandBuffer, Vector3>? injector) => _lightInjector = injector;
+
+    /// <summary>Supply the host's scene-light restorer (or null to clear). Invoked each frame immediately AFTER the
+    /// draw so our command buffer ENDS on scene creature-light globals — the injector's globals persist past our cmd
+    /// and the game's world creature pass reads them, so without this re-push our portrait profile bleeds into the
+    /// world. Pair it with the injector: null when the injector is null (nothing was overridden to restore).</summary>
+    public void SetLightRestorer(System.Action<UnityEngine.Rendering.CommandBuffer, Vector3>? r) => _lightRestorer = r;
 
     /// <summary>Show/hide the renderer (disabled → its LateUpdate stops drawing).</summary>
     public void SetActive(bool on) { if (this != null) gameObject.SetActive(on); }
@@ -188,18 +224,23 @@ public sealed class PortraitCmdRenderer : MonoBehaviour
         // auto-compensates culling during normal camera rendering, but for manual CommandBuffer draws we must
         // invert culling ourselves — otherwise FRONT faces get culled and we see the model's inside-out back.
         _cmd.SetInvertCulling(true);
+        // Write the fixed EHighNoon creature-light globals into our cmd right before the draw — nothing interleaves
+        // between this and DrawModel, so the isolated RT render is lit by the baked preset, not the ambient scene.
+        _lightInjector?.Invoke(_cmd, camPos);
         DrawModel(_cmd);
+        // Re-push the SCENE creature-light globals into our cmd AFTER the draw. SwitchLightType's shader globals
+        // persist once this buffer executes, so we must END the recording on scene lighting or the game's world
+        // creature pass renders with our portrait profile. Recorded here (post-draw), the portrait itself is
+        // unaffected — its draw was captured between the injector's push and this one.
+        _lightRestorer?.Invoke(_cmd, camPos);
         _cmd.SetInvertCulling(false);
-        // NOTE: the model is lit by the current SCENE — this game's custom SRP feeds the creature shaders their
-        // lighting via a per-camera constant buffer that loose-global overrides can't touch (verified by a
-        // red-light test). The portrait therefore reflects the scene's mood (day/night/menu). See HANDOFF §5.
         Graphics.ExecuteCommandBuffer(_cmd);
         // Regenerate mips after drawing so the RawImage's downscale samples a properly box-averaged level
         // (the RT is created mipmapped + Trilinear; autoGenerateMips is off because it doesn't fire for a
         // CommandBuffer draw, so we drive it explicitly each frame). This is what makes the 3×-supersampled
         // portrait read smooth rather than rough on shrink (user-flagged 2026-06-13).
         if (_rt.useMipMap) _rt.GenerateMips();
-        if (++_frame == 120) _log?.Invoke($"[Portrait] drew {_drawItems.Count} submeshes into RT (scene-lit)");
+        if (++_frame == 120) _log?.Invoke($"[Portrait] drew {_drawItems.Count} submeshes into RT (creature-lit)");
     }
 
     // Collect (renderer, material, submesh) draw items, sort by render queue, and draw in two phases.
@@ -211,6 +252,7 @@ public sealed class PortraitCmdRenderer : MonoBehaviour
             // Skip inactive renderers — LODGroup deactivates the non-current LOD GameObjects; drawing them too
             // would double-draw / flicker the weapon. (ForceLOD(0) in Rescan keeps LOD0 active.)
             if (r == null || !r.enabled || !r.gameObject.activeInHierarchy) continue;
+            if (_excludeRenderers.Count > 0 && _excludeRenderers.Contains(r)) continue;   // weapon → hidden in portrait
             var mats = r.sharedMaterials;
             var n = mats != null ? mats.Length : 0;
             for (var i = 0; i < n; i++)

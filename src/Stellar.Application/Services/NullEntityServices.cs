@@ -32,6 +32,8 @@ internal sealed class NullEntityPortrait : IEntityPortrait
     public void Show(EntityId entity) { }
     public void Hide() { }
     public object? Texture => null;
+    public bool ShowWeapon { get; set; }
+    public int LightPreset { get; set; }
     public void Orbit(float dx, float dy) { }
     public void Zoom(float delta) { }
     public void Pan(float dx, float dy) { }

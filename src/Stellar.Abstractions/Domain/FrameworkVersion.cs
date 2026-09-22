@@ -19,6 +19,19 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.8.3 adds <c>IEntityPortrait.ShowWeapon</c> (hide the subject's weapon in the 3D portrait) and
+    /// <c>IEntityPortrait.LightPreset</c> (<c>-1</c> = Scene/dynamic, <c>0..4</c> = custom,
+    /// environment-independent creature-light profiles rebased on the real HDR scene scale), with the
+    /// camera controls (<c>Orbit</c>/<c>Zoom</c>/<c>Pan</c>/<c>SetViewport</c>) factored onto a new base
+    /// <c>IEntityPortraitView</c> (<c>IEntityPortrait : IEntityPortraitView</c>) so each interface stays
+    /// under the STELLAR0005 8-member cap. The portrait's custom creature light is world-isolated: the five
+    /// shared creature-light shader globals are captured before the portrait's CommandBuffer draw and
+    /// restored byte-identical after, so in-world characters are unaffected regardless of frame timing. Also
+    /// adds <c>BarElement.LabelColor</c> (<c>ColorRgba?</c>) — a per-bar override for the inside label colour
+    /// that wins over the theme's muted tone (default <c>null</c> keeps every existing bar byte-identical).
+    /// Additive members + a new base interface; binary-compatible with plugins built against ≤2.8.2 EXCEPT a
+    /// plugin that CALLS the camera methods moved onto <c>IEntityPortraitView</c> must be recompiled (only
+    /// EntityInspector consumes them, rebuilt in tandem). Consumed by StellarEntityInspectorPlugin.
     /// 2.8.2 is a fix: a player-stats sampling pass in which NO attribute read is no longer
     /// allowed to mark those attributes permanently unreadable. The local-player entity exists for
     /// several ticks before its attribute sheet is populated, so a pass taken inside that login
@@ -209,5 +222,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.8.2";
+    public const string Value = "2.8.3";
 }
