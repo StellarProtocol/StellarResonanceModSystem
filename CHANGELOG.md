@@ -14,6 +14,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.8.4] - 2026-09-22
+_**2.8.4** (patch) — Loadout Switcher Deep-Slumber fixes: switching builds now rebuilds the whole Psychoscope tree reliably, and shared factors are no longer taken from your other build unless there's truly no other way. Application-only; binary-compatible with every existing plugin, no plugin rebuild._
+### Fixed
+- Switching between builds now rebuilds the whole Psychoscope tree properly instead of sometimes leaving part of it locked.
+- When you switch to a build, a Phantom Factor it shares with another build is no longer pulled out of that other build if you already have a spare, or if the build you're switching to already has it in place.
+### Developer notes
+- `FrameworkVersion.Value` → 2.8.4. Application + Infrastructure only; no public API change, so no plugin rebuild.
+- `DeepSlumberReconciler.FreeForeignSharedFactors` now frees a cross-loadout copy only up to a real deficit (`demand − target-area reset/replace refunds − free bag copies`); a new Application-internal `IFactorBagProbe` (`PandaInventoryProbe.ReadFactorBagCounts`, over the existing `CharSerialize.ItemPackage` walk) supplies the free-inventory counts. Elaina 2026-09-22.
+- Tree rebuild: `DeepSlumberService.ActivatePhaseAsync` converges anchor activation on the prerequisite refusal `5126` (`ErrTalentPreTalentNodeNotActivated`) — each pass requeues the blocked anchors until the tree self-orders parent-before-child; a class round-trip no longer half-builds and locks the tree. Validated in-game (18 recovered 5126 across 9 rebuilds).
+- Reactive backstop: `DeepSlumberService.SocketPhaseAsync` frees a foreign copy and retries when — and only when — a socket is refused `7561` (`ErrSeasonTalentIntermediateNodeClassNumExceeded`; a copy in an inactive tree counts toward the per-type limit, which a bag spare cannot clear). So a foreign copy is freed only when the bag lacks it (predictive) or the game itself refuses (reactive). `DeepSlumberWriteCode.PreTalentNodeNotActivated` (5126) / `ItemClassNumExceeded` (7561).
+
 ## [2.8.3] - 2026-09-22
 _**2.8.3** (patch) — new character-portrait controls for mods (hide the weapon, custom portrait lighting) and a per-bar label-colour option for mod HUDs. Additive API; binary-compatible with all existing plugins (EntityInspector is rebuilt alongside)._
 ### Added
