@@ -29,7 +29,7 @@ namespace Stellar.Infrastructure.Game;
 /// public read API, each forwarded to the owning collaborator. The Host wiring
 /// (ctor + Start surface) is unchanged by the split.</para>
 /// </summary>
-internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
+internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe, IFactorBagProbe
 {
     // Cross-thread mutable state shared by the pull-read and stub-capture
     // concerns (equipped snapshot + captured CharSerialize latch + capture-hook
@@ -178,4 +178,10 @@ internal sealed class PandaInventoryProbe : IInventoryProbe, IResonanceProbe
     /// which still owns the reflection walk.
     /// </summary>
     internal DeepSlumberState? Read() => _pullReader.ReadDeepSlumber();
+
+    /// <summary>Free inventory copies of the given Deep-Slumber factor itemIds — the cross-loadout
+    /// reconciler's bag-aware free (owner 2026-09-22). Forwarded to the pull-read collaborator, which
+    /// owns the CharSerialize item-package walk.</summary>
+    public IReadOnlyDictionary<int, int> ReadFactorBagCounts(IReadOnlyCollection<int> itemIds)
+        => _pullReader.ReadFactorBagCounts(itemIds);
 }

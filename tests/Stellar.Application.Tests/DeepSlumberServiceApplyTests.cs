@@ -144,4 +144,112 @@ public sealed class DeepSlumberServiceApplyTests
         Assert.Equal(DeepSlumberApplyResult.PartialFailure, await svc.ApplySetupAsync(Target(5, (118, 222)), cts.Token));
         Assert.Single(write.Calls);
     }
+
+    // Models the game's anchor dependency: ActiveNormalNode(n) returns 5126 until n's parent is active.
+    private sealed class PrereqFakeWrite : IDeepSlumberWriteProbe
+    {
+        private readonly Dictionary<int, int> _parent;   // node -> required parent (0 = root/none)
+        private readonly HashSet<int> _active = new();
+        public readonly List<int> ActivateOrder = new();
+        public PrereqFakeWrite(Dictionary<int, int> parent) => _parent = parent;
+        public bool IsResolved => true;
+        public Task<int> EnableLineAsync(int a, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> ResetNodesAsync(int a, CancellationToken ct) { _active.Clear(); return Task.FromResult(0); }
+        public Task<int> ActivateNodeAsync(int n, CancellationToken ct)
+        {
+            var parent = _parent.TryGetValue(n, out var p) ? p : 0;
+            if (parent != 0 && !_active.Contains(parent))
+                return Task.FromResult(DeepSlumberWriteCode.PreTalentNodeNotActivated);
+            _active.Add(n);
+            ActivateOrder.Add(n);
+            return Task.FromResult(0);
+        }
+        public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct) => Task.FromResult(0);
+    }
+
+    [Fact]
+    public async Task TreeAnchors_ActivatedOutOfDependencyOrder_ConvergeToSuccess()
+    {
+        // Anchors depend parent-first: 30 (root) <- 20 <- 10. The reconciler emits ActivateNode in
+        // ASCENDING id order (10,20,30) — the wrong order — and the game returns 5126 for a node whose
+        // parent isn't active yet. The Activate phase must requeue the 5126s until every anchor lands
+        // (owner 2026-09-22: a class round-trip rebuilds the whole tree, never half-completes+locks it).
+        var read = new FakeRead { State = LiveActiveTree(5, new[] { 999 }) };   // differs -> reset+rebuild
+        var write = new PrereqFakeWrite(new Dictionary<int, int> { [10] = 20, [20] = 30, [30] = 0 });
+        var svc = new DeepSlumberService(read, write);
+        var result = await svc.ApplySetupAsync(TargetTree(5, new[] { 10, 20, 30 }));
+        Assert.Equal(DeepSlumberApplyResult.Success, result);
+        Assert.Equal(new[] { 30, 20, 10 }, write.ActivateOrder);   // self-ordered into dependency order
+    }
+
+    [Fact]
+    public async Task TreeAnchor_WithUnsatisfiablePrereq_FailsWithoutHanging()
+    {
+        // Node 10 requires parent 40, which is NOT in the target set (a corrupt/partial binding). Once
+        // 20 and 30 land, a pass makes no further progress on 10 — it is reported failed rather than
+        // looping forever.
+        var read = new FakeRead { State = LiveActiveTree(5, new[] { 999 }) };
+        var write = new PrereqFakeWrite(new Dictionary<int, int> { [10] = 40, [20] = 0, [30] = 20 });
+        var svc = new DeepSlumberService(read, write);
+        var result = await svc.ApplySetupAsync(TargetTree(5, new[] { 10, 20, 30 }));
+        Assert.Equal(DeepSlumberApplyResult.PartialFailure, result);  // 20,30 activated; 10 cannot
+        Assert.Equal(new[] { 20, 30 }, write.ActivateOrder);
+    }
+
+    private sealed class BagStub : IFactorBagProbe
+    {
+        private readonly Dictionary<int, int> _c;
+        public BagStub(int item, int count) => _c = new Dictionary<int, int> { [item] = count };
+        public IReadOnlyDictionary<int, int> ReadFactorBagCounts(IReadOnlyCollection<int> itemIds) => _c;
+    }
+
+    // Socketing a factor is refused 7561 while a copy of it is still socketed in a foreign tree; freeing
+    // that copy clears the limit.
+    private sealed class ClassLimitFakeWrite : IDeepSlumberWriteProbe
+    {
+        private readonly HashSet<int> _foreignSocketed;
+        public readonly List<string> Calls = new();
+        public ClassLimitFakeWrite(params int[] foreignSocketedItems) => _foreignSocketed = new HashSet<int>(foreignSocketedItems);
+        public bool IsResolved => true;
+        public Task<int> EnableLineAsync(int a, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> ResetNodesAsync(int a, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> ActivateNodeAsync(int n, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> SocketFactorAsync(int n, int i, CancellationToken ct)
+        {
+            Calls.Add($"socket:{n}:{i}");
+            return Task.FromResult(_foreignSocketed.Contains(i) ? DeepSlumberWriteCode.ItemClassNumExceeded : 0);
+        }
+        public Task<int> UnsocketFactorAsync(int n, int c, CancellationToken ct)
+        {
+            Calls.Add($"unsocket:{n}:{c}");
+            _foreignSocketed.Remove(c);   // freeing the foreign copy clears the per-type limit
+            return Task.FromResult(0);
+        }
+    }
+
+    [Fact]
+    public async Task SocketRefused7561_FreesForeignCopyThenRetries_Succeeds()
+    {
+        // Target area 6 wants 20020964 at an empty node; a copy is socketed in the INACTIVE area 5, and a
+        // spare sits in the bag — so the predictive pass leaves the foreign copy in place (inventory check
+        // first). The socket then hits 7561 (a copy in an inactive tree counts toward the per-type limit —
+        // a bag spare can't clear it); the socket phase must free the foreign copy and retry, landing it.
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(), new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var read = new FakeRead
+        {
+            State = new DeepSlumberState(new List<int[]>(),
+                new List<DeepSlumberLine> { new(3, 800522, new List<DeepSlumberArea> { src, tgt }) })
+        };
+        var write = new ClassLimitFakeWrite(20020964);
+        var svc = new DeepSlumberService(read, write, new BagStub(20020964, 1));   // a spare is in the bag
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding> { new(6, new List<int[]> { new[] { 250, 20020964 } }) });
+
+        var result = await svc.ApplySetupAsync(target);
+
+        Assert.Equal(DeepSlumberApplyResult.Success, result);
+        Assert.Contains(write.Calls, c => c == "unsocket:141:20020964");   // freed the foreign copy reactively
+        Assert.Contains(write.Calls, c => c == "socket:250:20020964");
+    }
 }

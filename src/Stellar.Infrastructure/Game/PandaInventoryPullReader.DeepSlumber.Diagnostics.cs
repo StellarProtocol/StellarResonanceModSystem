@@ -52,4 +52,14 @@ internal sealed partial class PandaInventoryPullReader
             + $"nodes big={bigNodes} middle={middleNodes} normal={normalNodes}; "
             + $"{state.SeasonLevels.Count} season level(s) seasonLevels=[{seasonLevels}]");
     }
+
+    // Per-apply factor bag-count probe (owner 2026-09-22 verify pass): the free inventory copies of the
+    // target's factors the reconciler used to decide whether to raid a factor from an inactive loadout.
+    // Gated — enable STELLAR_DIAGNOSTICS to confirm the count is read correctly against a known bag.
+    private void OnFactorBagCountsLogged(IReadOnlyDictionary<int, int> counts)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        string pairs = string.Join(",", counts.Select(kv => $"{kv.Key}:{kv.Value}"));
+        _log.Info($"[Stellar][DeepSlumber] factor bag free counts=[{pairs}]");
+    }
 }
