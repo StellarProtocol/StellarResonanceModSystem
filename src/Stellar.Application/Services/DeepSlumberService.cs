@@ -39,11 +39,15 @@ internal sealed class DeepSlumberService : IDeepSlumber
 
     private readonly IDeepSlumberProbe _probe;
     private readonly IDeepSlumberWriteProbe _write;
+    private readonly IFactorBagProbe _bag;
 
-    public DeepSlumberService(IDeepSlumberProbe probe, IDeepSlumberWriteProbe write)
+    // bag defaults to the null-object probe (empty counts ⇒ the reconciler's conservative foreign-free);
+    // production wiring passes the real inventory probe so bag-aware free is active.
+    public DeepSlumberService(IDeepSlumberProbe probe, IDeepSlumberWriteProbe write, IFactorBagProbe? bag = null)
     {
         _probe = probe;
         _write = write;
+        _bag = bag ?? EmptyFactorBagProbe.Instance;
     }
 
     public bool IsAvailable => _probe.IsResolved;
@@ -56,7 +60,9 @@ internal sealed class DeepSlumberService : IDeepSlumber
         var current = _probe.Read();
         if (current is null) return DeepSlumberApplyResult.Unavailable;
 
-        var ops = DeepSlumberReconciler.Plan(current, target);
+        // Free inventory copies of the target's factors — so the reconciler never raids a factor from an
+        // inactive loadout when the target already has one or a spare is in the bag (owner 2026-09-22).
+        var ops = DeepSlumberReconciler.Plan(current, target, _bag.ReadFactorBagCounts(TargetFactorIds(target)));
         if (ops.Count == 0) return DeepSlumberApplyResult.AlreadyMatched;
 
         var ok = 0;
@@ -86,6 +92,16 @@ internal sealed class DeepSlumberService : IDeepSlumber
         if (cancelled) return ok > 0 ? DeepSlumberApplyResult.PartialFailure : DeepSlumberApplyResult.Cancelled;
         if (failed == 0) return DeepSlumberApplyResult.Success;
         return ok > 0 ? DeepSlumberApplyResult.PartialFailure : DeepSlumberApplyResult.Refused;
+    }
+
+    // The distinct factor itemIds the target socket-set could need from the bag (itemId 0 = empty).
+    private static IReadOnlyCollection<int> TargetFactorIds(DeepSlumberSetup target)
+    {
+        var ids = new HashSet<int>();
+        foreach (var area in target.Areas)
+            foreach (var f in area.Factors)
+                if (f.Length >= 2 && f[1] != 0) ids.Add(f[1]);
+        return ids;
     }
 
     private static List<DeepSlumberOp> OpsOfKind(IReadOnlyList<DeepSlumberOp> ops, DeepSlumberOpKind kind)

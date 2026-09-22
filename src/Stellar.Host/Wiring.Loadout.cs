@@ -50,7 +50,9 @@ public sealed partial class BootstrapPlugin
         // worldProxy RPCs (Approach A), a separate Lua-bridge resolution + dispatch queue from the read
         // side (docs/driving-game-actions.md § CONFIRMED spike 2026-08-24).
         _seasonTalentWriteProbe = new PandaSeasonTalentProbe(log, typeRegistry);
-        _deepSlumberService = new DeepSlumberService(_loadoutProbe, _seasonTalentWriteProbe);
+        // The inventory probe supplies free factor bag counts so a cross-loadout apply never strips a
+        // shared factor from an inactive loadout when a spare is already on hand (owner 2026-09-22).
+        _deepSlumberService = new DeepSlumberService(_loadoutProbe, _seasonTalentWriteProbe, _inventoryProbe!);
         // While a plugin DS apply is in flight, the loadout probe defers its full-container refresh walk
         // so the per-op CharSerialize burst collapses into ONE refresh after the apply settles (owner
         // 2026-09-01: reset+rebuild fired the walk 3-5× → frame hitches). Narrow: true only during a

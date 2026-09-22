@@ -362,4 +362,102 @@ public sealed class DeepSlumberReconcilerTests
         Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
         Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250);
     }
+
+    // ── Bag-aware foreign free — owner 2026-09-22 (Elaina): never strip a shared factor from the
+    // inactive loadout when the target already has it / a spare is in the bag / a reset refunds it ──────
+
+    [Fact]
+    public void SharedFactorAlreadySocketedInTargetTree_ForeignCopyNotFreed()
+    {
+        // The SAME scarce factor 20020964 is socketed in BOTH the inactive loadout's area 5 (node 141)
+        // AND the target loadout's area 6 (node 250). The target already holds its copy, so it emits no
+        // socket for it → zero demand → the inactive copy must be left in place (it read as "removes the
+        // factor from the deactivated tree even though it's already slotted in the active one").
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 250, 20020964 } }, new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 } }),
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+        Assert.Empty(ops); // target already matches; nothing socketed, nothing freed
+    }
+
+    [Fact]
+    public void SharedFactorHasBagSpare_ForeignCopyNotFreed()
+    {
+        // The target's area 6 node 250 is EMPTY and wants 20020964 (a real socket → demand 1). A copy is
+        // socketed in the inactive area 5, AND a free copy sits in the bag. The socket can consume the
+        // bag copy, so the inactive loadout must not be raided.
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 } }),
+        });
+        var bag = new Dictionary<int, int> { [20020964] = 1 };
+        var ops = DeepSlumberReconciler.Plan(state, target, bag).ToList();
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor);
+        Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250 && o.ItemId == 20020964);
+    }
+
+    [Fact]
+    public void SharedFactorBagShort_FreesOnlyTheDeficit()
+    {
+        // The target wants two copies of 20020964 (nodes 250, 251 — both empty → demand 2). The bag holds
+        // ONE free copy; two more are socketed across inactive areas 5 and 8. Exactly ONE foreign copy is
+        // freed (2 demand − 1 bag = 1); the other inactive copy is left in place.
+        var area5 = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var area8 = new DeepSlumberArea(8, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 142, 20020964 } }, new List<int[]>());
+        var tgt = new DeepSlumberArea(6, true, 0, new List<int[]>(), new List<int[]>(), new List<int[]>());
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { area5, area8, tgt }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 }, new[] { 251, 20020964 } }),
+        });
+        var bag = new Dictionary<int, int> { [20020964] = 1 };
+        var ops = DeepSlumberReconciler.Plan(state, target, bag).ToList();
+        var freed = ops.Count(o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.CurrentItemId == 20020964);
+        Assert.Equal(1, freed); // demand 2 − bag 1 = exactly one foreign copy raided
+    }
+
+    [Fact]
+    public void TargetAreaResetRefundsSharedFactor_ForeignCopyNotFreed()
+    {
+        // The target area 6's tree DIFFERS → reset + rebuild, which returns its own factor 20020964 to
+        // the bag and re-sockets it. That refund already supplies the socket, so an identical copy in the
+        // inactive area 5 must not also be freed (guards the reset-refund supply term).
+        var src = new DeepSlumberArea(5, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 141, 20020964 } }, new List<int[]>());
+        var tgtLive = new DeepSlumberArea(6, true, 0, new List<int[]>(),
+            new List<int[]> { new[] { 250, 20020964 } }, new List<int[]> { new[] { 1001, 1 }, new[] { 1002, 1 } });
+        var state = new DeepSlumberState(new List<int[]>(), new List<DeepSlumberLine>
+        {
+            new(3, 800522, new List<DeepSlumberArea> { src, tgtLive }),
+        });
+        var target = new DeepSlumberSetup(1, new List<DeepSlumberAreaBinding>
+        {
+            new(6, new List<int[]> { new[] { 250, 20020964 } }) { NormalNodes = new List<int> { 1001, 1003 } },
+        });
+        var ops = DeepSlumberReconciler.Plan(state, target).ToList();
+        Assert.Contains(ops, o => o == DeepSlumberOp.ResetNodes(6));
+        Assert.Contains(ops, o => o.Kind == DeepSlumberOpKind.SocketFactor && o.Key == 250 && o.ItemId == 20020964);
+        Assert.DoesNotContain(ops, o => o.Kind == DeepSlumberOpKind.UnsocketFactor && o.Key == 141);
+    }
 }
