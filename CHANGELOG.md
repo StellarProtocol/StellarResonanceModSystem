@@ -14,6 +14,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.8.3] - 2026-09-22
+_**2.8.3** (patch) — new character-portrait controls for mods (hide the weapon, custom portrait lighting) and a per-bar label-colour option for mod HUDs. Additive API; binary-compatible with all existing plugins (EntityInspector is rebuilt alongside)._
+### Added
+- Mods that show a 3D character portrait (such as Entity Inspector) can now hide the character's weapon and light the portrait with a custom, fixed look that doesn't change with wherever your character happens to be standing. The portrait keeps its lighting entirely to itself, so characters in the world around you look exactly the same as before.
+- Mods can now set the colour of the small number or label drawn inside a HUD bar, so it stays readable over any bar fill colour.
+### Developer notes
+- `Stellar.Abstractions`: `IEntityPortrait` gains `ShowWeapon` (bool; default hidden — matches the prior always-hide behaviour) and `LightPreset` (int; `-1` = Scene/dynamic, `0..4` = custom profiles rebased on the real HDR scene scale). The camera controls (`Orbit`/`Zoom`/`Pan`/`SetViewport`) are factored onto a new base `IEntityPortraitView` (`IEntityPortrait : IEntityPortraitView`) to keep each interface under the STELLAR0005 8-member cap. This is additive for consumers of the aggregate interface, but moving members to a base type changes their declaring interface — a plugin that CALLS the camera methods and is not recompiled would hit `MissingMethodException`; the only consumer is EntityInspector, released in tandem.
+- World isolation: creature lighting is a *global* shader register shared with in-world characters. Infrastructure (`PortraitModelHost.Lighting` / `PortraitCmdRenderer`) captures the 5 creature-light globals (`Shader.GetGlobalVector/Matrix` of `ZModel2RTLight`'s prop-id handles) before the portrait's CommandBuffer draw and restores those exact values (`cmd.SetGlobalVector/Matrix`) after, so the global state ends byte-identical to what the world left it regardless of frame timing. Weapon-hide excludes the subject's loose `ch_wp_*` MountComp GameObjects by name from the custom draw and re-asserts on a throttle (the weapon streams in after the body).
+- `Stellar.Abstractions`: `BarElement.LabelColor` (`ColorRgba?`) — a per-bar override for the inside-label colour that wins over the theme's muted reskin registration; `WindowBuilder.Preview` honours it. Default `null` keeps every existing bar byte-identical.
+- `FrameworkVersion.Value` 2.8.3. Consumed by StellarEntityInspectorPlugin (separate PR).
+
 ## [2.8.2] - 2026-09-21
 _**2.8.2** (patch) — fixes stat readouts stuck on "—" for a whole play session after a fast login. Infrastructure/Application only; no API change, binary-compatible with all existing plugins._
 ### Fixed
