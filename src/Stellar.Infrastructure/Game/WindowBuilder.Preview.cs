@@ -121,6 +121,8 @@ internal sealed partial class WindowBuilder
             txt = slot.AddComponent<Text>();
             UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleCenter, bold: false);
             txt.raycastTarget = false;
+            UGuiPrimitives.AddReadabilityOutline(txt.gameObject);   // dark halo so the centred label reads over any fill colour
+            txt.alignByGeometry = true;   // center by glyph geometry, not the font line box (digits have no descenders → otherwise sit high)
         }
         else
         {
@@ -129,8 +131,19 @@ internal sealed partial class WindowBuilder
             txt = slot.AddComponent<Text>();
             UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleRight, bold: false);
         }
-        ApplyMenuFont(txt); txt.color = _assets.MenuMuted;
-        RegisterTextReskin(token, txt, ls, muted: true);
+        ApplyMenuFont(txt);
+        // A provided LabelColor wins over the theme's muted colour. Skip the muted reskin registration for it:
+        // RegisterTextReskin(muted:true) re-applies MenuMuted on every theme switch, which would clobber the
+        // custom colour. Not registering leaves the custom colour fixed across reskins (null → today's behaviour).
+        if (b.LabelColor is { } lc)
+        {
+            txt.color = new Color(lc.R, lc.G, lc.B, lc.A);
+        }
+        else
+        {
+            txt.color = _assets.MenuMuted;
+            RegisterTextReskin(token, txt, ls, muted: true);
+        }
         return txt;
     }
 

@@ -124,6 +124,8 @@ public sealed record BarElement(
     public int   LabelFontSize { get; init; }
     /// <summary>When true, the label is overlaid centred ON the bar; false (default) keeps the beside-the-bar layout.</summary>
     public bool  LabelInside   { get; init; }
+    /// <summary>Bar label colour; null (default) = the theme's muted text colour.</summary>
+    public ColorRgba? LabelColor { get; init; }
     /// <summary>Visual style. <see cref="BarStyle.Default"/> (0) = today's rounded-pill render; <see cref="BarStyle.Modern"/>
     /// = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual
     /// left/right overlay text). Existing bars omit it → render unchanged.</summary>
