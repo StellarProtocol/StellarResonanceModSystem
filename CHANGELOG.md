@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.8.5] - 2026-09-23
+_**2.8.5** (patch) — Settings → Hotkeys now lists numbered actions in natural order, so "Apply Loadout 10" sits after 9 instead of between 1 and 2. Cosmetic; binary-compatible, no plugin rebuild._
+### Fixed
+- In Settings → Hotkeys, an action numbered 10 or higher now appears in the right place in the list (after 9), instead of being sorted as if it came right after 1.
+### Developer notes
+- `FrameworkVersion.Value` → 2.8.5. `HotkeysPanel` sorts within a plugin group by `NaturalOrder.Compare` (numeric-aware) instead of an ordinal `string.Compare` on the action id — digit runs compare as integers, so `loadout.apply.10` sorts after `loadout.apply.9`. Bindings are unaffected (keyed by id, unchanged). +8 `NaturalOrderTests`.
+
 ## [2.8.4] - 2026-09-22
 _**2.8.4** (patch) — Loadout Switcher Deep-Slumber fixes: switching builds now rebuilds the whole Psychoscope tree reliably, and shared factors are no longer taken from your other build unless there's truly no other way. Application-only; binary-compatible with every existing plugin, no plugin rebuild._
 ### Fixed

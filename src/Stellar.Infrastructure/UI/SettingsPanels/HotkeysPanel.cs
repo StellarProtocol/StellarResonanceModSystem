@@ -309,7 +309,9 @@ internal sealed partial class HotkeysPanel
                 // plugins sharing one) would emit duplicate headers for the same group.
                 var g = string.Compare(GroupKeyOf(a), GroupKeyOf(b), System.StringComparison.Ordinal);
                 if (g != 0) return g;
-                return string.Compare(a.Id, b.Id, System.StringComparison.Ordinal);
+                // NATURAL order within a group so a numbered action like "loadout.apply.10" sorts AFTER
+                // "…apply.9", not between .1 and .2 (a plain ordinal compare orders digits as text).
+                return NaturalOrder.Compare(a.Id, b.Id);
             });
             _sortedActionsCache = list;
         }
