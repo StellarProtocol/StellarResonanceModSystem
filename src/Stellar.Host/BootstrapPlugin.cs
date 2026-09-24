@@ -52,6 +52,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private FrameworkService? _framework;
     private LuaService? _luaService;                                        // shared ILua bridge (tolua# mainState)
     private Stellar.Infrastructure.Game.HarmonyHostFactory? _harmonyHostFactory;   // mints per-plugin IHarmonyHost
+    private Stellar.Abstractions.Services.IHarmonyHost? _frameworkHarmonyHost;      // framework-owned host for always-on interop patches (tone relay)
     private ClientStateService? _clientState;
     // Shared between CombatService (writes) and GameDataWorldService (reads attr-10 for GetMonsterByEntity).
     private CombatEntityTracker? _entityTracker;
@@ -274,6 +275,20 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallWireAndStubProbes(log, typeRegistry);
         HookGameLifecycleMethods(log, hooker, gameType);
         HookEntityStateSignals(log, typeRegistry, hooker);
+        InstallInstrumentToneRelay(log);
+    }
+
+    // Always-on band tone relay (2-repo feature; sender half is the Maestro plugin). Listener-side prefix on
+    // InstrumentService.onInstrumentPlayEvent that reverse-maps our small-int (0..6) guitar/bass Tone codes
+    // back to the real MusicalTimbre id (1000000+code) and applies it to the SERVER player so a remote
+    // performer's distortion tone renders here. Harmless in vanilla (which only ever puts the raw 1000xxx id
+    // in a Tone record — the server drops it — so 0..6 in a Tone record is exclusively our own signal).
+    // Uses the framework's own IHarmonyHost so the patch id is namespaced and auto-unpatches on framework
+    // teardown (no hand-rolled UnpatchSelf — see Framework-Interop-Foundation.md IHarmonyHost.Create).
+    private void InstallInstrumentToneRelay(BepInExPluginLog log)
+    {
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        Stellar.Infrastructure.Game.InstrumentToneRelayPatch.Install(_frameworkHarmonyHost, log.Info);
     }
 
     /// <summary>
