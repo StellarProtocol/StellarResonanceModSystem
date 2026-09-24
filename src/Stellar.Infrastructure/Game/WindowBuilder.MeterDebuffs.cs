@@ -24,11 +24,13 @@ internal sealed partial class WindowBuilder
     private static readonly Color MeterDebuffBg    = new(0.14f, 0.08f, 0.09f, 1f);    // dark backing while art loads / is unavailable
     private static readonly Color MeterDebuffScrim = new(0f, 0f, 0f, 0.60f);          // dark overlay on the elapsed arc
     private static readonly Color MeterDebuffMore  = new(0.90f, 0.78f, 0.42f, 1f);    // "+N" gold
+    private static readonly Color MeterDebuffEmpty = new(0.58f, 0.63f, 0.72f, 0.20f);  // faint filled square for an EMPTY slot placeholder
 
     // Handles for one debuff cell — owned by the row, mutated by the binding.
     internal sealed class DebuffCell
     {
         public GameObject Root = null!;
+        public Image Frame = null!;
         public RawImage Art = null!;
         public Image Sweep = null!;
         public Text Stacks = null!;
@@ -103,7 +105,7 @@ internal sealed partial class WindowBuilder
         more.color = MeterDebuffMore;
 
         stkGo.SetActive(false); more.gameObject.SetActive(false);
-        return new DebuffCell { Root = cellGo, Art = art, Sweep = sweep, Stacks = stacks, StacksGo = stkGo, More = more, MoreGo = more.gameObject };
+        return new DebuffCell { Root = cellGo, Frame = frame, Art = art, Sweep = sweep, Stacks = stacks, StacksGo = stkGo, More = more, MoreGo = more.gameObject };
     }
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
@@ -122,13 +124,18 @@ internal sealed partial class WindowBuilder
     {
         if (cell.Root == null) return;
         var more = overflow > 0;
-        var has = more || slot.Present;
-        cell.Root.SetActive(has);
-        if (!has) return;
+        var present = !more && slot.Present;
+        // The block is shown, so EVERY cell renders: a debuff icon, a "+N" overflow count, or (when there is
+        // no debuff for this cell) a faint empty-slot placeholder — the reserved area never reads as an empty
+        // void. The root Image is tinted red for a real debuff (shows as the 1px frame behind the inset art)
+        // and a faint neutral fill for an empty/overflow slot.
+        cell.Root.SetActive(true);
+        cell.Frame.color = present ? MeterDebuffFrame : MeterDebuffEmpty;
         cell.MoreGo.SetActive(more);
-        cell.Art.gameObject.SetActive(!more);
-        cell.Sweep.gameObject.SetActive(!more);
+        cell.Art.gameObject.SetActive(present);
+        cell.Sweep.gameObject.SetActive(present);
         if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }
+        if (!present) { cell.StacksGo.SetActive(false); return; }   // empty placeholder slot — faint square only
         cell.Art.texture = slot.IconTexture as Texture;
         cell.Art.uvRect = new Rect(slot.IconUv.X, slot.IconUv.Y, slot.IconUv.W, slot.IconUv.H);
         cell.Art.color = slot.IconTexture == null ? MeterDebuffBg : Color.white;
