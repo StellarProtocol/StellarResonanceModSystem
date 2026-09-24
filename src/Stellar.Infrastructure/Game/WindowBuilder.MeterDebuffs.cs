@@ -7,12 +7,14 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// WindowBuilder support for the meter row's trailing 2×2 debuff block (up to 4 debuff cells at the row's far
-/// right). Each cell = a 1px red frame + icon art (<see cref="RawImage"/>) + a Filled/Radial360 duration sweep
-/// (dark wedge = elapsed) + an optional ×N stacks badge; the 4th cell renders a "+N" overflow count when a
-/// member has more than four debuffs. Fixed 34px block (two 15px cells + a 4px gap) via a
-/// <see cref="GridLayoutGroup"/>, so <see cref="MeterRowBinding"/> reserves matching content padding and every
-/// row's metric bar ends at the same x. Built once per row; poll-diffed via <see cref="BindDebuffBlock"/>.
-/// Mirrors the Battle-Imagine cell recipe in <see cref="BuildImagineCell"/>/<see cref="BindImagineCell"/>.
+/// right). Each cell matches the CooldownBar tile style: a red accent frame, a dark inset body, a BRIGHT icon
+/// (game-asset art — never scrimmed, so it stays readable), a foot fill-bar showing time remaining, and an
+/// optional ×N stacks badge; the 4th cell renders a "+N" overflow count when a member has more than four
+/// debuffs. Empty cells render a faint placeholder square (never an empty void). Fixed 42px block (two 20px
+/// cells + a 2px gap) via a <see cref="GridLayoutGroup"/>, so <see cref="MeterRowBinding"/> reserves matching
+/// content padding and every row's metric bar ends at the same x. Built once per row; poll-diffed via
+/// <see cref="BindDebuffBlock"/>. Imagine-lockout debuffs (e.g. Time Stasis) carry the source imagine's card as
+/// their icon (resolved plugin-side).
 /// </summary>
 internal sealed partial class WindowBuilder
 {
@@ -20,19 +22,22 @@ internal sealed partial class WindowBuilder
     private const float MeterDebuffGap   = 2f;                                   // inter-cell gap (px) — tight
     private const float MeterDebuffBlock = MeterDebuffCell * 2f + MeterDebuffGap; // 42px fixed 2×2 block edge
 
-    private static readonly Color MeterDebuffFrame = new(0.88f, 0.32f, 0.29f, 0.90f); // red cell frame
-    private static readonly Color MeterDebuffBg    = new(0.14f, 0.08f, 0.09f, 1f);    // dark backing while art loads / is unavailable
-    private static readonly Color MeterDebuffScrim = new(0f, 0f, 0f, 0.60f);          // dark overlay on the elapsed arc
+    private static readonly Color MeterDebuffFrame = new(0.88f, 0.32f, 0.29f, 0.95f); // red cell accent frame
+    private static readonly Color MeterDebuffInset = new(0f, 0f, 0f, 0.95f);          // dark tile body behind the icon
+    private static readonly Color MeterDebuffBg    = new(0.10f, 0.06f, 0.07f, 1f);    // backing while art loads / is unavailable
+    private static readonly Color MeterDebuffFill  = new(0.90f, 0.36f, 0.33f, 0.95f); // foot fill-bar (time remaining)
     private static readonly Color MeterDebuffMore  = new(0.90f, 0.78f, 0.42f, 1f);    // "+N" gold
-    private static readonly Color MeterDebuffEmpty = new(0.58f, 0.63f, 0.72f, 0.20f);  // faint filled square for an EMPTY slot placeholder
+    private static readonly Color MeterDebuffEmpty = new(0.58f, 0.63f, 0.72f, 0.20f); // faint filled square for an EMPTY slot placeholder
 
     // Handles for one debuff cell — owned by the row, mutated by the binding.
     internal sealed class DebuffCell
     {
         public GameObject Root = null!;
-        public Image Frame = null!;
-        public RawImage Art = null!;
-        public Image Sweep = null!;
+        public Image Frame = null!;         // accent frame (red for a debuff, faint for an empty slot)
+        public GameObject InsetGo = null!;  // dark tile body (hidden for an empty slot)
+        public RawImage Art = null!;        // the icon — always bright, never scrimmed
+        public RectTransform FillRt = null!;// foot fill-bar rect (width = time-remaining fraction)
+        public Image FillImg = null!;
         public Text Stacks = null!;
         public GameObject StacksGo = null!;
         public Text More = null!;
@@ -49,7 +54,7 @@ internal sealed partial class WindowBuilder
     // Per-block poll-diff cache (block-level show flag; per-cell state is cheap enough to re-poll).
     internal struct DebuffBlockCache { public bool Init, Shown; }
 
-    // Build the fixed 2×2 block: a GridLayoutGroup pinned to 34px. Root inactive until ShowDebuffs.
+    // Build the fixed 2×2 block: a GridLayoutGroup pinned to 42px. Root inactive until ShowDebuffs.
     private DebuffBlock BuildDebuffBlock(WindowToken token, Transform host)
     {
         var root = UGuiPrimitives.NewChild("Debuffs", host);
@@ -69,26 +74,29 @@ internal sealed partial class WindowBuilder
         return block;
     }
 
-    // One debuff cell: red frame (root Image) + 1px-inset icon Art + Radial360 sweep + stacks badge + "+N".
+    // One debuff cell (CooldownBar tile style): red frame > dark inset > bright icon + foot fill-bar; stacks + "+N".
     private DebuffCell BuildDebuffCell(WindowToken token, Transform parent)
     {
         var cellGo = UGuiPrimitives.NewChild("D", parent);
         var frame = cellGo.AddComponent<Image>(); frame.color = MeterDebuffFrame; frame.raycastTarget = false;
 
-        var artGo = UGuiPrimitives.NewChild("Art", cellGo.transform);
-        var art = artGo.AddComponent<RawImage>(); art.raycastTarget = false; art.color = MeterDebuffBg;
-        var artRt = artGo.GetComponent<RectTransform>();
-        artRt.anchorMin = Vector2.zero; artRt.anchorMax = Vector2.one;
-        artRt.offsetMin = new Vector2(1f, 1f); artRt.offsetMax = new Vector2(-1f, -1f);   // 1px red frame shows through
+        // Dark inset body (1px in from the frame) — the icon and fill-bar live inside it.
+        var insetGo = UGuiPrimitives.NewChild("Inset", cellGo.transform);
+        var insetImg = insetGo.AddComponent<Image>(); insetImg.color = MeterDebuffInset; insetImg.raycastTarget = false;
+        var insetRt = insetGo.GetComponent<RectTransform>();
+        insetRt.anchorMin = Vector2.zero; insetRt.anchorMax = Vector2.one;
+        insetRt.offsetMin = new Vector2(1f, 1f); insetRt.offsetMax = new Vector2(-1f, -1f);
 
-        var sweepGo = UGuiPrimitives.NewChild("Sweep", cellGo.transform);
-        var srt = sweepGo.GetComponent<RectTransform>();
-        srt.anchorMin = Vector2.zero; srt.anchorMax = Vector2.one;
-        srt.offsetMin = new Vector2(1f, 1f); srt.offsetMax = new Vector2(-1f, -1f);
-        var sweep = sweepGo.AddComponent<Image>();
-        sweep.sprite = CooldownSprite(); sweep.color = MeterDebuffScrim; sweep.raycastTarget = false;
-        sweep.type = Image.Type.Filled; sweep.fillMethod = Image.FillMethod.Radial360;
-        sweep.fillOrigin = 2 /* Origin360.Top */; sweep.fillClockwise = true; sweep.fillAmount = 0f;
+        var artGo = UGuiPrimitives.NewChild("Art", insetGo.transform);
+        UGuiPrimitives.Stretch(artGo);
+        var art = artGo.AddComponent<RawImage>(); art.raycastTarget = false; art.color = Color.white;
+
+        // Foot fill-bar (bottom, width = remaining fraction via anchorMax.x — sprite-less, anchor-sized).
+        var fillGo = UGuiPrimitives.NewChild("Fill", insetGo.transform);
+        var fillRt = fillGo.GetComponent<RectTransform>();
+        fillRt.anchorMin = new Vector2(0f, 0f); fillRt.anchorMax = new Vector2(1f, 0f); fillRt.pivot = new Vector2(0f, 0f);
+        fillRt.sizeDelta = new Vector2(0f, 3f); fillRt.anchoredPosition = Vector2.zero;
+        var fillImg = fillGo.AddComponent<Image>(); fillImg.color = MeterDebuffFill; fillImg.raycastTarget = false;
 
         var stkGo = UGuiPrimitives.NewChild("Stk", cellGo.transform);
         var stkRt = stkGo.GetComponent<RectTransform>();
@@ -101,11 +109,15 @@ internal sealed partial class WindowBuilder
         ApplyMenuFont(stacks); stacks.color = new Color(1f, 0.86f, 0.4f, 1f);
         RegisterTextSizeReskin(token, stacks, 9);
 
-        var more = AddOverlayText(token, cellGo.transform, "More", TextAnchor.MiddleCenter, baseSize: 9);
+        var more = AddOverlayText(token, cellGo.transform, "More", TextAnchor.MiddleCenter, baseSize: 10);
         more.color = MeterDebuffMore;
 
         stkGo.SetActive(false); more.gameObject.SetActive(false);
-        return new DebuffCell { Root = cellGo, Frame = frame, Art = art, Sweep = sweep, Stacks = stacks, StacksGo = stkGo, More = more, MoreGo = more.gameObject };
+        return new DebuffCell
+        {
+            Root = cellGo, Frame = frame, InsetGo = insetGo, Art = art, FillRt = fillRt, FillImg = fillImg,
+            Stacks = stacks, StacksGo = stkGo, More = more, MoreGo = more.gameObject,
+        };
     }
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
@@ -125,21 +137,22 @@ internal sealed partial class WindowBuilder
         if (cell.Root == null) return;
         var more = overflow > 0;
         var present = !more && slot.Present;
-        // The block is shown, so EVERY cell renders: a debuff icon, a "+N" overflow count, or (when there is
-        // no debuff for this cell) a faint empty-slot placeholder — the reserved area never reads as an empty
-        // void. The root Image is tinted red for a real debuff (shows as the 1px frame behind the inset art)
-        // and a faint neutral fill for an empty/overflow slot.
+        // Every cell renders (the block is shown): a debuff tile, a "+N" count, or a faint empty-slot square.
         cell.Root.SetActive(true);
         cell.Frame.color = present ? MeterDebuffFrame : MeterDebuffEmpty;
+        cell.InsetGo.SetActive(present);          // dark body only under a real tile; empty slot = the faint frame alone
         cell.MoreGo.SetActive(more);
-        cell.Art.gameObject.SetActive(present);
-        cell.Sweep.gameObject.SetActive(present);
         if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }
-        if (!present) { cell.StacksGo.SetActive(false); return; }   // empty placeholder slot — faint square only
+        if (!present) { cell.StacksGo.SetActive(false); return; }   // empty placeholder slot
+        // Bright icon — never scrimmed, so it stays readable (owner: the radial scrim made it "barely see").
         cell.Art.texture = slot.IconTexture as Texture;
         cell.Art.uvRect = new Rect(slot.IconUv.X, slot.IconUv.Y, slot.IconUv.W, slot.IconUv.H);
         cell.Art.color = slot.IconTexture == null ? MeterDebuffBg : Color.white;
-        cell.Sweep.fillAmount = Mathf.Clamp01(1f - slot.RemainFraction);   // dark = elapsed
+        // Foot fill-bar width = time remaining (shrinks as the debuff expires); hidden for a permanent debuff.
+        var remain = Mathf.Clamp01(slot.RemainFraction);
+        var perm = remain >= 0.999f;   // permanent (or just applied) — a full bar reads as clutter, so hide it
+        cell.FillImg.enabled = !perm;
+        cell.FillRt.anchorMax = new Vector2(perm ? 0f : remain, 0f);
         var showStk = slot.Stacks > 1;
         cell.StacksGo.SetActive(showStk);
         if (showStk) cell.Stacks.text = slot.Stacks.ToString();
