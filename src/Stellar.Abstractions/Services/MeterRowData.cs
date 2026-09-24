@@ -71,6 +71,18 @@ public struct MeterRowData
     public ImagineSlot Imagine0;
     /// <summary>Second equipped Battle Imagine (right trailing icon). <see cref="ImagineSlot.None"/> when absent.</summary>
     public ImagineSlot Imagine1;
+    /// <summary>Debuff cells for the trailing 2×2 block (top-left, top-right, bottom-left, bottom-right). <see cref="DebuffSlot.None"/> when empty. Hidden unless <see cref="ShowDebuffs"/>.</summary>
+    public DebuffSlot Debuff0;
+    /// <summary>Second debuff cell. See <see cref="Debuff0"/>.</summary>
+    public DebuffSlot Debuff1;
+    /// <summary>Third debuff cell. See <see cref="Debuff0"/>.</summary>
+    public DebuffSlot Debuff2;
+    /// <summary>Fourth debuff cell. When <see cref="DebuffOverflow"/> &gt; 0 this cell renders a "+N" count instead of an icon.</summary>
+    public DebuffSlot Debuff3;
+    /// <summary>When &gt; 0, the member has more than 4 debuffs and the 4th cell shows "+N" (N = this value). 0 = no overflow.</summary>
+    public int DebuffOverflow;
+    /// <summary>When true the trailing 2×2 debuff block is shown (per-mode user toggle). Default false so plugins built before this field render unchanged.</summary>
+    public bool ShowDebuffs;
     /// <summary>When false the cooldown-seconds label beside the Imagine icon is hidden (the radial sweep on the icon stays). User toggle; also suppressed automatically at raid-20 density.</summary>
     public bool ShowImagineCooldown;
     /// <summary>When false the rank label is hidden.</summary>
