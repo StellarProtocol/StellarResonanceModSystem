@@ -2,6 +2,7 @@ using System;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
@@ -126,7 +127,23 @@ internal sealed partial class WindowBuilder
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
+            SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });
+
+        WireRowInteractions(row, voiceImg, el);
+    }
+
+    // Row-level input: the voice cell becomes a Button that invokes the row's live OnVoiceIconClick (e.g. the
+    // local player cycling their own team-voice mode) — the binding gates it by toggling voiceImg.raycastTarget
+    // per poll, so a handler-less row stays display-only (byte-identical to pre-voice-click behaviour), and
+    // transition=None adds no visual state; plus the whole-row right-click menu hook.
+    private void WireRowInteractions(GameObject row, RawImage voiceImg, MeterRowElement el)
+    {
+        var voiceBtn = voiceImg.gameObject.AddComponent<Button>();
+        voiceBtn.targetGraphic = voiceImg;
+        voiceBtn.transition = Selectable.Transition.None;
+        System.Action onVoiceClick = () => el.Data().OnVoiceIconClick?.Invoke();
+        voiceBtn.onClick.AddListener((UnityAction)onVoiceClick);
 
         if (el.OnRightClick is { } rc)
             RegisterRightClick?.Invoke(row.GetComponent<RectTransform>(), () => rc());

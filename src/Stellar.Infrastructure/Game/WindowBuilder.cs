@@ -81,6 +81,11 @@ internal sealed partial class WindowBuilder
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
 
+    // Slot-drag exclusion hook for a clickable meter-row voice icon: (cell rect, excluded) → the ticker
+    // adds/removes it from VoiceClickRects so a press on the icon reaches its EventSystem Button (cycle voice)
+    // instead of starting a raid-slot rearrange drag. The row binding calls it as the cell's clickability flips.
+    internal Action<RectTransform, bool>? SetVoiceClickExcluded { get; set; }
+
     // Line-chart pan/zoom hook: (plot rect, getWindow, setWindow, total seconds, min span) → the ticker
     // zooms the visible window on scroll-over-plot (around the cursor's time) and pans it on left-drag, all
     // clamped via ChartWindow. Null in the sandbox → the plot renders statically (gestures verified in-game).
