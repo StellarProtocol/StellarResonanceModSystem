@@ -220,6 +220,10 @@ public sealed record GameTextureElement(Func<object?> Texture, int Width, int He
 {
     /// <summary>Corner radius in px for the displayed box. 0 = square (default). Rounds via a stencil Mask.</summary>
     public int CornerRadius { get; init; }
+    /// <summary>When true the icon STRETCHES to fill the whole Width×Height box (no aspect-fit letterboxing) —
+    /// use it to render an icon exactly like a stretched RawImage cell elsewhere (e.g. the meter's debuff tiles).
+    /// Default false = aspect-preserving letterbox.</summary>
+    public bool Fill { get; init; }
 }
 
 /// <summary>Sub-rect of a packed atlas PNG — the <c>DrawTextureWithTexCoords</c> analog. <paramref name="Atlas"/> is

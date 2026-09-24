@@ -107,6 +107,7 @@ internal sealed partial class WindowBuilder
         private ColorRgba _lastRowBorder = new(-2f, -2f, -2f, -2f);
         public RectTransform BarFillRect = null!;   // width-clipped fill container (anchorMax.x = fraction)
         public Image BarFillImg = null!;            // role-colour fill inside the clip
+        public Image? BarShieldImg;                 // grey/white shield band over the main bar's HP fill (left-anchored)
         public Text Primary = null!;
         public GameObject PrimaryGo = null!;        // per-second overlay (toggled by ShowPrimary)
         public Text Secondary = null!;
@@ -119,6 +120,9 @@ internal sealed partial class WindowBuilder
         public GameObject Scrim = null!;
         public ImagineCell Imagine0Cell = null!;   // trailing Battle-Imagine cells (left=X slot, right=Z slot)
         public ImagineCell Imagine1Cell = null!;
+        public DebuffBlock DebuffBlock = null!;   // trailing 2×2 debuff block (far right)
+        public Transform DebuffColHost = null!;   // the full-height right-edge host for the block
+        public LayoutElement RowLe = null!;   // the row's LayoutElement — its height scales with the debuff size
         public Transform ImagineGroup = null!;     // the re-parentable imagine cluster (for ImaginePosition)
         public Transform TopLine = null!;          // top-line HLG host (top-right / left positions)
         public Transform RightColHost = null!;     // right-column host (RightColumn position)
@@ -130,8 +134,8 @@ internal sealed partial class WindowBuilder
         private bool _selfInit, _lastSelf;
         private ColorRgba _lastSelfAccent;
         private int _lastLeader = -1;
-        private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f, _lastShield = -1f;
-        private int _lastShieldVis = -1;
+        private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f, _lastShield = -1f, _lastBarShield = -1f;
+        private int _lastShieldVis = -1, _lastBarShieldVis = -1;
         private ColorRgba _lastHpCol, _lastRoleCol;
         private string? _lastRank, _lastName, _lastSpec, _lastShare, _lastPrimary, _lastSecondary;
         private int _lastSpecVis = -1, _lastShareVis = -1, _lastSecondaryVis = -1, _lastOffline = -1;
@@ -142,6 +146,9 @@ internal sealed partial class WindowBuilder
         private Color _lastCrestTint = new(-1f, -1f, -1f, -1f); // sentinel: forces first crest-tint apply
         private static readonly ColorRgba MeterDeadBarRgba = new(0.35f, 0.27f, 0.27f, 1f);  // greyed bar when dead
         private ImagineCellCache _img0, _img1;
+        private DebuffBlockCache _dbuff;
+        private int _lastDebuffLayout = -1;
+        private float _lastDebuffBlockW = -1f;
 
         public void Apply()
         {
@@ -170,6 +177,15 @@ internal sealed partial class WindowBuilder
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
             { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
+            // Main-bar shield band (left-anchored, width = BarShieldFraction) — the horizontal analogue of the
+            // spine shield in ApplySpine; 0 in DPS mode so the bar is unchanged there.
+            if (BarShieldImg != null)
+            {
+                var bsh = Mathf.Clamp01(d.BarShieldFraction);
+                var bshow = bsh > 0f;
+                if (_lastBarShieldVis != (bshow ? 1 : 0)) { BarShieldImg.gameObject.SetActive(bshow); _lastBarShieldVis = bshow ? 1 : 0; }
+                if (bshow && !Mathf.Approximately(bsh, _lastBarShield)) { BarShieldImg.rectTransform.anchorMax = new Vector2(bsh, 1f); _lastBarShield = bsh; }
+            }
 
             var primary = d.PrimaryValue ?? "";
             if (primary != _lastPrimary) { Primary.text = primary; _lastPrimary = primary; }
@@ -180,7 +196,9 @@ internal sealed partial class WindowBuilder
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
             ApplyImagineLayout(d);
+            ApplyDebuffLayout(d);
             ApplyImagines(d);
+            ApplyDebuffs(d);
         }
 
         // HP spine fill (bottom-anchored, height = HpFraction) + the grey/white shield band drawn OVER it
@@ -295,10 +313,52 @@ internal sealed partial class WindowBuilder
             {
                 var p = ContentVlg.padding;
                 int bottom = d.ImagineSize == ImagineSize.Large ? 1 : 5;
-                int right = d.ImaginePosition == ImaginePosition.RightColumn ? 58 + (int)MeterPad : (int)MeterPad;
-                ContentVlg.padding = new RectOffset(p.left, right, p.top, bottom);
+                // Right padding is owned by ApplyDebuffLayout (it combines the imagine right-column reserve with
+                // the debuff-block reserve); preserve it here so the two don't clobber each other.
+                ContentVlg.padding = new RectOffset(p.left, p.right, p.top, bottom);
             }
         }
+
+        // Owns the row's content RIGHT padding + the debuff/imagine right-edge hosts. Keyed on
+        // (ShowDebuffs, ImaginePosition) so it relays out only when either changes. Reserves MeterPad +
+        // (imagine right-column 58) + (debuff block 34+4), and shifts the imagine right-column left by the
+        // debuff block width when both want the right edge (so they never overlap).
+        private void ApplyDebuffLayout(in MeterRowData d)
+        {
+            float blockW = DebuffBlockPx(d);   // WIDTH — scales with cell size AND column count
+            float rowsH  = DebuffRowsPx(d);    // HEIGHT — always 2 rows (columns never change the height)
+            // Key includes the column count so a change in columns (same blockW is impossible, but be explicit) relays out.
+            int key = ((d.ShowDebuffs ? 1 : 0) * 4 + (int)d.ImaginePosition) * 8 + DebuffColsOf(d);
+            if (_lastDebuffLayout == key && Mathf.Approximately(_lastDebuffBlockW, blockW)) return;
+            _lastDebuffLayout = key;
+            _lastDebuffBlockW = blockW;
+            int imagineRight = d.ImaginePosition == ImaginePosition.RightColumn ? 58 : 0;
+            int debuffRight  = d.ShowDebuffs ? (int)(blockW + 4f) : 0;
+            if (ContentVlg != null)
+            {
+                var p = ContentVlg.padding;
+                ContentVlg.padding = new RectOffset(p.left, (int)MeterPad + imagineRight + debuffRight, p.top, p.bottom);
+            }
+            if (RightColHost != null)
+                ((RectTransform)RightColHost).anchoredPosition = new Vector2(-(MeterPad + (d.ShowDebuffs ? blockW + 4f : 0f)), 0f);
+            if (DebuffColHost != null)
+            {
+                var rt = (RectTransform)DebuffColHost;
+                rt.sizeDelta = new Vector2(blockW, rt.sizeDelta.y);
+            }
+            if (RowLe != null)
+            {
+                // "Player tile size": the row grows to fit the 2-row block height (from MeterRowData.DebuffCellSize)
+                // whether or not THIS row shows a block — so an empty/absent slot and a debuff-less member match
+                // the sized rows and the grid stays uniform. Column count widens the block, never the height.
+                // DebuffCellSize == 0 (an unsized row) keeps the base height.
+                float h = d.DebuffCellSize > 0f ? Mathf.Max(MeterRowHeight, rowsH + 6f) : MeterRowHeight;
+                RowLe.preferredHeight = RowLe.minHeight = h;
+            }
+        }
+
+        // Poll-diff the trailing 2×2 debuff block (kept out of Apply to respect the method-LoC cap).
+        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff);
 
         // Poll-diff the two trailing Imagine cells (kept out of Apply to respect the method-LoC cap).
         private void ApplyImagines(in MeterRowData d)

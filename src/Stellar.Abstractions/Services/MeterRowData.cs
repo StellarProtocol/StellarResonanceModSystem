@@ -47,6 +47,12 @@ public struct MeterRowData
     public float HpShieldFraction;
     /// <summary>Metric bar fill fraction in [0..1] normalised to the top-row value.</summary>
     public float BarFraction;
+    /// <summary>Shield overlay fraction in [0..1] for the MAIN horizontal bar, drawn as a grey/white band OVER
+    /// the fill from the bar's left edge — the horizontal analogue of <see cref="HpShieldFraction"/> on the
+    /// spine (shield / maxHp, already clamped by the plugin to <see cref="BarFraction"/>). Only meaningful when
+    /// the main bar is in HP mode; the plugin passes 0 in DPS mode, so the bar renders byte-identical to
+    /// pre-shield behaviour. Additive field — a plugin built before it existed leaves it 0.</summary>
+    public float BarShieldFraction;
     /// <summary>Opaque icon handle; MUST be a UnityEngine.Texture2D. Passed through to the uGUI image binding; a non-Texture2D silently renders nothing.</summary>
     public object? CrestTexture;
     /// <summary>Atlas sub-rect for the class crest icon (normalised UV, bottom-left origin).</summary>
@@ -71,6 +77,41 @@ public struct MeterRowData
     public ImagineSlot Imagine0;
     /// <summary>Second equipped Battle Imagine (right trailing icon). <see cref="ImagineSlot.None"/> when absent.</summary>
     public ImagineSlot Imagine1;
+    /// <summary>Debuff cells for the trailing 2×2 block (top-left, top-right, bottom-left, bottom-right). <see cref="DebuffSlot.None"/> when empty. Hidden unless <see cref="ShowDebuffs"/>.</summary>
+    public DebuffSlot Debuff0;
+    /// <summary>Second debuff cell. See <see cref="Debuff0"/>.</summary>
+    public DebuffSlot Debuff1;
+    /// <summary>Third debuff cell. See <see cref="Debuff0"/>.</summary>
+    public DebuffSlot Debuff2;
+    /// <summary>Fourth debuff cell. When <see cref="DebuffOverflow"/> &gt; 0 the LAST visible cell renders a "+N" count instead of an icon.</summary>
+    public DebuffSlot Debuff3;
+    /// <summary>Fifth..eighth cells, used only when <see cref="DebuffColumns"/> &gt; 2 (a wider block). See <see cref="Debuff0"/>.</summary>
+    public DebuffSlot Debuff4;
+    /// <summary>See <see cref="Debuff4"/>.</summary>
+    public DebuffSlot Debuff5;
+    /// <summary>See <see cref="Debuff4"/>.</summary>
+    public DebuffSlot Debuff6;
+    /// <summary>See <see cref="Debuff4"/>.</summary>
+    public DebuffSlot Debuff7;
+    /// <summary>Ninth..twelfth cells, used only when <see cref="DebuffColumns"/> &gt; 4. See <see cref="Debuff4"/>.</summary>
+    public DebuffSlot Debuff8;
+    /// <summary>See <see cref="Debuff8"/>.</summary>
+    public DebuffSlot Debuff9;
+    /// <summary>See <see cref="Debuff8"/>.</summary>
+    public DebuffSlot Debuff10;
+    /// <summary>See <see cref="Debuff8"/>.</summary>
+    public DebuffSlot Debuff11;
+    /// <summary>Number of COLUMNS in the status-effect block (block is 2 rows tall). 0 or 2 = the default 2×2
+    /// (4 cells); 3 = 6 cells; 4 = 8; 5 = 10; 6 = 12. A per-mode user option — wider rows (party-5) can show
+    /// more. More columns widen the block (narrowing the metric bar) but never change the row HEIGHT.</summary>
+    public int DebuffColumns;
+    /// <summary>When &gt; 0, the member has more effects than the visible cells hold and the LAST cell shows "+N" (N = this value). 0 = no overflow.</summary>
+    public int DebuffOverflow;
+    /// <summary>When true the trailing 2×2 debuff block is shown (per-mode user toggle). Default false so plugins built before this field render unchanged.</summary>
+    public bool ShowDebuffs;
+    /// <summary>Debuff cell edge in px (each of the 2×2 cells). 0 = the renderer default (20px). Larger values
+    /// grow the block AND the row height so the bigger icons fit — a per-mode user option.</summary>
+    public float DebuffCellSize;
     /// <summary>When false the cooldown-seconds label beside the Imagine icon is hidden (the radial sweep on the icon stays). User toggle; also suppressed automatically at raid-20 density.</summary>
     public bool ShowImagineCooldown;
     /// <summary>When false the rank label is hidden.</summary>
@@ -113,6 +154,12 @@ public struct MeterRowData
     /// null (the default) the cell is display-only and renders byte-identical to a plugin built before this
     /// field existed. Only fires while <see cref="ShowVoiceIcon"/> shows the cell.</summary>
     public Action? OnVoiceIconClick;
+    /// <summary>Optional click handler for a debuff cell in the trailing 2×2 block. When set, each cell becomes
+    /// clickable and the framework routes a left-click here with (<see cref="Id"/>, cellIndex 0..3) — the plugin
+    /// maps the index to the debuff (and treats the overflow "+N" cell as "show all"). Null (the default) leaves
+    /// the cells display-only, byte-identical to a plugin built before this field existed. Wired once at build,
+    /// so a stable (cached) delegate here allocates nothing per refresh.</summary>
+    public Action<EntityId, int>? OnDebuffClick;
     /// <summary>Optional colored box border around the whole row (e.g. green while a member is talking).
     /// <c>default</c> (alpha 0) = no border.</summary>
     public ColorRgba RowBorder;

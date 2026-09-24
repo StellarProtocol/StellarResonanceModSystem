@@ -403,6 +403,9 @@ internal sealed partial class PandaGameDataProbe
         // BuffTable.SkillId — the skill that applies this buff. Lets the CooldownBar
         // attribute an Imagine-lockout debuff to its source Imagine. 0 when absent.
         var skillId = ReadInt(row, rowType, "SkillId");
+        // BuffTable.Visible: 0 = hidden internal marker (never shown in the game UI), 1/2 = shown. The meter's
+        // party-focus debuff icons drop Visible==0 so persistent internal markers don't stick on the row.
+        var visible = ReadInt(row, rowType, "Visible");
 
         if (!_firstBuffLogged)
         {
@@ -417,7 +420,8 @@ internal sealed partial class PandaGameDataProbe
             IconPath: iconPath ?? string.Empty,
             Category: MapBuffCategory(buffTypeInt),
             IsDebuff: isDebuff,
-            SkillId: skillId));
+            SkillId: skillId,
+            Visible: visible));
     }
 
     /// <summary>
