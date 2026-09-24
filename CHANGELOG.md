@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.9.0] - 2026-09-25
+_**2.9.0** (minor) — The party meter gains shields, buffs & debuffs, and voice controls; plus a dungeon-teleport archive fix and a band-instrument tone relay. Adds render/data API for plugins (Abstractions 2.9.0)._
+### Added
+- The party meter can now show each member's **shield** (a band over their HP bar) and their active **buffs and debuffs** as icons.
+- You can **click the voice icon on your own meter row** to cycle your team-voice mode, and open a party-voice menu from the meter.
+### Fixed
+- A dungeon fight is no longer split into two separate records when you get teleported within the same instance mid-fight.
+### Developer notes
+- MeterRowData status-effect channel (DebuffSlot + IsBuff, Debuff0..11, DebuffColumns, DebuffOverflow, ShowDebuffs, DebuffCellSize, BarShieldFraction, OnDebuffClick); WindowBuilder renders the 2-row colour-coded block (variable columns, per-cell click). IGameDataCombat.AllBuffs() enumerates the buff table; GameTextureElement.Fill stretches an icon to its box. Shield via AttrShieldList → EntityVitals → HP-spine band; InstrumentToneRelayPatch relays band tone listener-side.
+
 ## [2.8.5] - 2026-09-23
 _**2.8.5** (patch) — Settings → Hotkeys now lists numbered actions in natural order, so "Apply Loadout 10" sits after 9 instead of between 1 and 2. Cosmetic; binary-compatible, no plugin rebuild._
 ### Fixed
