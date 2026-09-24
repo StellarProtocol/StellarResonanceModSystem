@@ -365,6 +365,12 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
             new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
         _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+        _builder.SetVoiceClickExcluded = (rt, on) =>
+        {
+            if (_ticker == null || rt == null) return;
+            if (on) { if (!_ticker.VoiceClickRects.Contains(rt)) _ticker.VoiceClickRects.Add(rt); }
+            else _ticker.VoiceClickRects.Remove(rt);
+        };
         _builder.RegisterChartPan = (plot, get, set, total, minSpan)
             => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
         _builder.RegisterChartNav = new WindowBuilder.ChartNavRegistrar(reg => _ticker!.ChartNavs.Add(

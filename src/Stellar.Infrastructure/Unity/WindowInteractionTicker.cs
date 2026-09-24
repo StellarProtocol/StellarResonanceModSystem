@@ -44,6 +44,12 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     // Scrollbar (EventSystem-driven) — pressing the bar on a whole-frame-draggable window (Party chrome,
     // e.g. the entity inspector) dragged the window instead of scrolling (user-flagged 2026-06-13).
     internal readonly List<RectTransform> ScrollbarRects = new();
+    // Slot-drag exclusion zones: a press on a clickable meter-row voice icon must reach its EventSystem Button
+    // (cycle the local player's voice) instead of starting a raid-slot rearrange drag — so BeginPointerDrag
+    // yields the slot grab over any registered voice cell (mirrors ScrollbarRects for the window-drag path).
+    // The row binding adds/removes its cell as clickability flips, so only clickable cells sit here; every
+    // other row's drag behaviour is byte-identical.
+    internal readonly List<RectTransform> VoiceClickRects = new();
     private readonly List<bool> _hoverState = new();
     private const float PulseSpeed = 2.6f;                  // radians/sec — matches the old IMGUI GlowPulseSpeed
     private int _activeDrag = -1;
@@ -85,6 +91,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = RenderHosts.Count - 1; i >= 0; i--) if (RenderHosts[i].Img == null) RenderHosts.RemoveAt(i);
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
+        for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         PruneChartPans(); PruneChartNavs();
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
@@ -201,7 +208,9 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (_activeChartPan >= 0) { _lastMouse = Input.mousePosition; return; }
         _activeChartNav = HitChartNav(Input.mousePosition);   // brush handle=resize / body=pan / 2-click=reset (see .ChartNav.cs)
         if (_activeChartNav >= 0) { _lastMouse = Input.mousePosition; return; }
-        _activeSlotDrag = HitSlot(Input.mousePosition);
+        // A press on a clickable voice icon belongs to its EventSystem Button (cycles voice) — never start a
+        // slot rearrange drag there, mirroring the scrollbar/editor exclusion on the window-drag path below.
+        _activeSlotDrag = PointerOverVoiceClick(Input.mousePosition) ? -1 : HitSlot(Input.mousePosition);
         if (_activeSlotDrag >= 0) BeginSlotDrag(_activeSlotDrag);
         _activeDrag = _activeSlotDrag < 0 ? HitTest(Input.mousePosition) : -1;
         _activeResize = _activeSlotDrag < 0 && _activeDrag < 0 ? HitResizeGrip(Input.mousePosition) : -1;   // grip before titlebar
@@ -404,6 +413,22 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (lp.x < r.xMin - 6f || lp.x > r.xMax + 6f || lp.y < r.yMin || lp.y > r.yMax) continue;
             // Only suppress the drag if the scrollbar's own window is the front window at this point —
             // a scrollbar in a back window must not block dragging the front window's titlebar.
+            if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
+            return true;
+        }
+        return false;
+    }
+
+    // Slot-drag exclusion (mirrors PointerOnScrollbar for the window-drag path): true when the pointer is over a
+    // registered, active voice cell. Only cells a row registered while clickable are in the list, so a
+    // display-only voice icon never suppresses a slot drag.
+    private bool PointerOverVoiceClick(Vector3 mp)
+    {
+        for (var i = 0; i < VoiceClickRects.Count; i++)
+        {
+            var rt = VoiceClickRects[i];
+            if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(rt, mp, null)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
             return true;
         }

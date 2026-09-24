@@ -1,3 +1,4 @@
+using System;
 using Stellar.Abstractions.Domain;
 
 namespace Stellar.Abstractions.Services;
@@ -106,6 +107,12 @@ public struct MeterRowData
     public ColorRgba VoiceIconTint;
     /// <summary>When true the <see cref="VoiceIcon"/> cell is shown (user toggle).</summary>
     public bool ShowVoiceIcon;
+    /// <summary>Optional click handler for the voice-status icon cell. When set (non-null) the 14×14 voice
+    /// cell becomes clickable — the framework enables the cell's raycast target and routes a click here
+    /// (e.g. the local player clicking their own row's voice icon to cycle Speak → Listen → Mute). When
+    /// null (the default) the cell is display-only and renders byte-identical to a plugin built before this
+    /// field existed. Only fires while <see cref="ShowVoiceIcon"/> shows the cell.</summary>
+    public Action? OnVoiceIconClick;
     /// <summary>Optional colored box border around the whole row (e.g. green while a member is talking).
     /// <c>default</c> (alpha 0) = no border.</summary>
     public ColorRgba RowBorder;

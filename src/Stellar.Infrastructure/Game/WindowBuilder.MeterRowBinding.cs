@@ -101,7 +101,8 @@ internal sealed partial class WindowBuilder
         public GameObject ShareGo = null!;
         public GameObject LeaderGo = null!;
         public RawImage VoiceImg = null!;           // name-line status icon (team-voice); plugin-supplied texture
-        private object? _lastVoiceTex; private Color _lastVoiceTint = new(-2f, -2f, -2f, -2f); private int _lastVoiceVis = -1;
+        public Action<bool>? SetVoiceExcluded;      // add/remove this row's voice cell in the ticker slot-drag exclusion
+        private object? _lastVoiceTex; private Color _lastVoiceTint = new(-2f, -2f, -2f, -2f); private int _lastVoiceVis = -1, _lastVoiceClickable = -1;
         public GameObject TalkBorderGo = null!;     // plugin-tinted box border (e.g. green while talking)
         private ColorRgba _lastRowBorder = new(-2f, -2f, -2f, -2f);
         public RectTransform BarFillRect = null!;   // width-clipped fill container (anchorMax.x = fraction)
@@ -394,6 +395,15 @@ internal sealed partial class WindowBuilder
             if (!vtint.Equals(_lastVoiceTint)) { VoiceImg.color = vtint; _lastVoiceTint = vtint; }
             var show = d.ShowVoiceIcon && tex != null;
             if (_lastVoiceVis != (show ? 1 : 0)) { VoiceImg.gameObject.SetActive(show); _lastVoiceVis = show ? 1 : 0; }
+            // Only a row that supplies a click handler receives pointer events; else the cell stays display-only
+            // (raycastTarget false, as BuildVoiceCell left it) so a shield-less / handler-less row is unchanged.
+            var clickable = d.OnVoiceIconClick != null;
+            if (_lastVoiceClickable != (clickable ? 1 : 0))
+            {
+                VoiceImg.raycastTarget = clickable;
+                SetVoiceExcluded?.Invoke(clickable);   // keep the ticker's slot-drag exclusion in step with clickability
+                _lastVoiceClickable = clickable ? 1 : 0;
+            }
         }
     }
 }
