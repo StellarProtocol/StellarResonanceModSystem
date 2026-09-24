@@ -83,7 +83,7 @@ internal sealed partial class PandaCombatStubProbe
     {
         if (attrsOpt is not { } attrs) return;
         long summonerId = 0, topSummonerId = 0;
-        long hp = -1, maxHpBase = -1, maxHpTotal = -1;
+        long hp = -1, maxHpBase = -1, maxHpTotal = -1, shield = -1;
         for (int i = 0; i < attrs.Items.Count; i++)
         {
             var attr = attrs.Items[i];
@@ -95,6 +95,9 @@ internal sealed partial class PandaCombatStubProbe
             else if (attr.Id == AttrTypeIds.AttrHp)         { hp = attr.DecodedLong; }
             else if (attr.Id == AttrTypeIds.AttrMaxHp)      { maxHpBase = attr.DecodedLong; }
             else if (attr.Id == AttrTypeIds.AttrMaxHpTotal) { maxHpTotal = attr.DecodedLong; }
+            // AttrShieldList (60050) is a LIST attr (repeated shield entries) — read the total current
+            // shield from RawData via ShieldListReader (Σ field-3), never DecodedLong (it's not scalar).
+            else if (attr.Id == AttrTypeIds.AttrShieldList) { shield = ShieldListReader.Read(attr.RawData.Span); }
             else if (attr.Id == AttrTypeIds.AttrFightPoint)
             {
                 _sink.UpdateEntityFightPoint(eid, attr.DecodedLong);
@@ -113,9 +116,9 @@ internal sealed partial class PandaCombatStubProbe
             }
         }
         long maxHp = ResolveMaxHp(maxHpBase, maxHpTotal);
-        if (hp >= 0 || maxHp >= 0)
+        if (hp >= 0 || maxHp >= 0 || shield >= 0)
         {
-            _sink.UpdateEntityVitals(eid, hp, maxHp);
+            _sink.UpdateEntityVitals(eid, hp, maxHp, shield);
             DiagAppearVitalsSeed(eid, hp, maxHp);
         }
         DiagBossHpWire(eid, "appear", hp, maxHpBase, maxHpTotal);
@@ -331,7 +334,7 @@ internal sealed partial class PandaCombatStubProbe
 
     private void ApplyAttrDeltasForEntity(EntityId eid, AttrCollectionMsg attrCol, long timestampMs)
     {
-        long hp = -1, maxHpBase = -1, maxHpTotal = -1;
+        long hp = -1, maxHpBase = -1, maxHpTotal = -1, shield = -1;
         long? teamId = null;
         long? fightPoint = null;
         for (int i = 0; i < attrCol.Items.Count; i++)
@@ -343,18 +346,11 @@ internal sealed partial class PandaCombatStubProbe
                 if (!string.IsNullOrEmpty(name))
                     _sink.UpdateEntityName(eid, name!);
             }
-            else if (attr.Id == AttrTypeIds.AttrHp)
-            {
-                hp = attr.DecodedLong;
-            }
-            else if (attr.Id == AttrTypeIds.AttrMaxHp)
-            {
-                maxHpBase = attr.DecodedLong;
-            }
-            else if (attr.Id == AttrTypeIds.AttrMaxHpTotal)
-            {
-                maxHpTotal = attr.DecodedLong;
-            }
+            else if (attr.Id == AttrTypeIds.AttrHp)         { hp = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrMaxHp)      { maxHpBase = attr.DecodedLong; }
+            else if (attr.Id == AttrTypeIds.AttrMaxHpTotal) { maxHpTotal = attr.DecodedLong; }
+            // AttrShieldList (60050) is a LIST attr — Σ current shield from RawData via ShieldListReader (see ReadAppearEntity), not DecodedLong.
+            else if (attr.Id == AttrTypeIds.AttrShieldList) { shield = ShieldListReader.Read(attr.RawData.Span); }
             else if (attr.Id == AttrTypeIds.AttrTeamId)
             {
                 teamId = attr.DecodedLong;
@@ -376,7 +372,7 @@ internal sealed partial class PandaCombatStubProbe
                 CaptureEntityDetail(eid, attr, "delta");
             }
         }
-        ApplyParsedDelta(eid, (hp, maxHpBase, maxHpTotal), teamId, fightPoint);
+        ApplyParsedDelta(eid, (hp, maxHpBase, maxHpTotal, shield), teamId, fightPoint);
         FlushAttrBatch(eid, timestampMs);
     }
 
@@ -410,8 +406,11 @@ internal sealed partial class PandaCombatStubProbe
         // store a garbage number: AttrName (string → UpdateEntityName), AttrSkillLevelIdList (repeated
         // message → handled via the skills path / SetEntitySkillLevels). AttrPos/AttrDir are routed to the
         // wire position cache by TryRoutePositionAttr above (previously AttrPos was dropped here).
+        // AttrShieldList is a repeated-message LIST attr (like AttrSkillLevelIdList) — the vitals write sites
+        // read it via ShieldListReader; skip it here so the EnterScene-self path can't store a junk scalar.
         if (attr.Id == AttrTypeIds.AttrName
-         || attr.Id == AttrTypeIds.AttrSkillLevelIdList) return;
+         || attr.Id == AttrTypeIds.AttrSkillLevelIdList
+         || attr.Id == AttrTypeIds.AttrShieldList) return;
         // A genuine zero (single 0x00 varint byte) IS stored: the rDPS sheet track regresses over step
         // functions, and an attribute that returns to 0 (e.g. an element damage bonus after its buff expires)
         // must be able to step back down. A non-varint (string/packed) payload also decodes to 0 via

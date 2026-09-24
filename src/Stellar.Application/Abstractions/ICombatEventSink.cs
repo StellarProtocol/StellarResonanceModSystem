@@ -92,11 +92,14 @@ internal interface ICombatEntityCache
     void UpdateEntityName(EntityId entityId, string name);
 
     /// <summary>
-    /// Update HP / MaxHP for an entity from an <c>AttrHp</c> / <c>AttrMaxHp</c>
-    /// observation. Either field may be -1 to signal "no update for this side"
-    /// (e.g. when only AttrHp was present in the current AttrCollection row).
+    /// Update HP / MaxHP / shield for an entity from an <c>AttrHp</c> / <c>AttrMaxHp</c> /
+    /// <c>AttrShieldList</c> observation. Any field may be -1 to signal "no update for this side"
+    /// (e.g. when only AttrHp was present in the current AttrCollection row); a -1 keeps the
+    /// last-known value. <paramref name="shield"/> is a full replace-on-observe value (like
+    /// <paramref name="hp"/>): a present shield attr carrying total 0 sets the shield to 0, while
+    /// an absent shield attr (-1) leaves the prior shield untouched.
     /// </summary>
-    void UpdateEntityVitals(EntityId entityId, long hp, long maxHp);
+    void UpdateEntityVitals(EntityId entityId, long hp, long maxHp, long shield);
 
     /// <summary>
     /// Update the team id for an entity from an <c>AttrTeamId</c> (id=194)

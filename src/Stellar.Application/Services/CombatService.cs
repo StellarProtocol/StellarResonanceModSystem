@@ -417,8 +417,8 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void UpdateEntityName(EntityId entityId, string name) => _entities.UpdateEntityName(entityId, name);
 
-    public void UpdateEntityVitals(EntityId entityId, long hp, long maxHp)
-        => _entities.UpdateEntityVitals(entityId, hp, maxHp);
+    public void UpdateEntityVitals(EntityId entityId, long hp, long maxHp, long shield)
+        => _entities.UpdateEntityVitals(entityId, hp, maxHp, shield);
 
     public void UpdateEntityTeamId(EntityId entityId, long teamId)
         => _entities.UpdateEntityTeamId(entityId, teamId);

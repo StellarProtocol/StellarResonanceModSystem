@@ -169,14 +169,18 @@ internal sealed class CombatEntityTracker
 
     // ── Write surface ───────────────────────────────────────────────────────
 
-    public void UpdateEntityVitals(EntityId entityId, long hp, long maxHp)
+    public void UpdateEntityVitals(EntityId entityId, long hp, long maxHp, long shield)
     {
         // -1 sentinel = "no update for this side this tick" — see ICombatEventSink.
         lock (_vitalsByEntityLock)
         {
             _vitalsByEntity.TryGetValue(entityId, out var cur);
-            var newHp    = hp    >= 0 ? hp    : cur.Hp;
-            var newMaxHp = maxHp >= 0 ? maxHp : cur.MaxHp;
+            var newHp     = hp     >= 0 ? hp     : cur.Hp;
+            var newMaxHp  = maxHp  >= 0 ? maxHp  : cur.MaxHp;
+            // Shield is a full replace-on-observe value (like Hp): a present shield attr (>= 0, incl.
+            // total 0 = depleted) replaces; an absent one (-1) keeps the last-known, so a delta that
+            // only moves HP never wipes an active shield.
+            var newShield = shield >= 0 ? shield : cur.Shield;
             _vitalsByEntity[entityId] = new EntityVitals(newHp, newMaxHp, IsKnown: true)
             {
                 // A real hp value (>= 0, incl. 0 = dead) flips the flag; a MaxHp-only delta must
@@ -184,9 +188,11 @@ internal sealed class CombatEntityTracker
                 // MaxHp-only first observation reads "alive, HP unknown" (the false-skull fix).
                 HasHpObservation = cur.HasHpObservation || hp >= 0,
                 // ANY real observation clears a prior Normal-disappear's LeftAoi latch (C1a review
-                // fix) — this call only ever fires on a genuine AttrHp/AttrMaxHp/AttrMaxHpTotal
-                // delta (both write sites gate on hp>=0||maxHp>=0 before calling), never a no-op.
+                // fix) — this call only ever fires on a genuine AttrHp/AttrMaxHp/AttrMaxHpTotal/
+                // AttrShieldList delta (both write sites gate on hp>=0||maxHp>=0||shield>=0 before
+                // calling), never a no-op.
                 LeftAoi = false,
+                Shield = newShield,
             };
         }
         Touch(entityId, System.Environment.TickCount64);

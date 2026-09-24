@@ -34,12 +34,13 @@ internal sealed partial class PandaCombatStubProbe
 
     // Post-loop apply for ApplyAttrDeltasForEntity (PandaCombatStubProbe.Receive.cs) — extracted to
     // keep that parse loop under the 50-LoC gate (and this one under the 5-param gate:
-    // hp/maxHpBase/maxHpTotal bundled into one tuple). 11320 stays primary; 11321 wins only when
-    // 11320 is absent from THIS delta (decision 1).
-    private void ApplyParsedDelta(EntityId eid, (long Hp, long MaxHpBase, long MaxHpTotal) vitals, long? teamId, long? fightPoint)
+    // hp/maxHpBase/maxHpTotal/shield bundled into one tuple). 11320 stays primary; 11321 wins only when
+    // 11320 is absent from THIS delta (decision 1). Shield (attr 60050) is -1 when absent from this
+    // delta (keep last-known); >= 0 when present (replace, incl. 0 = depleted).
+    private void ApplyParsedDelta(EntityId eid, (long Hp, long MaxHpBase, long MaxHpTotal, long Shield) vitals, long? teamId, long? fightPoint)
     {
         long maxHp = ResolveMaxHp(vitals.MaxHpBase, vitals.MaxHpTotal);
-        if (vitals.Hp >= 0 || maxHp >= 0) _sink.UpdateEntityVitals(eid, vitals.Hp, maxHp);
+        if (vitals.Hp >= 0 || maxHp >= 0 || vitals.Shield >= 0) _sink.UpdateEntityVitals(eid, vitals.Hp, maxHp, vitals.Shield);
         if (teamId is long t)             _sink.UpdateEntityTeamId(eid, t);
         if (fightPoint is long fp)
         {

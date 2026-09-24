@@ -40,7 +40,7 @@ public sealed class EntityIdleSweepTests
     {
         var svc = MakeService(out var tracker);
 
-        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100);
+        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100, shield: -1);
         tracker.Touch(Mob, nowMs: 0);
 
         svc.SweepIdleEntities(CombatService.IdleEntityTtlMs + 1);
@@ -53,7 +53,7 @@ public sealed class EntityIdleSweepTests
     {
         var svc = MakeService(out var tracker);
 
-        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100);
+        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100, shield: -1);
         tracker.Touch(Mob, nowMs: 0);
         tracker.Touch(Mob, nowMs: CombatService.IdleEntityTtlMs);
 
@@ -67,7 +67,7 @@ public sealed class EntityIdleSweepTests
     {
         var svc = MakeService(out var tracker);
 
-        svc.UpdateEntityVitals(RosterPlayer, hp: 100, maxHp: 100);
+        svc.UpdateEntityVitals(RosterPlayer, hp: 100, maxHp: 100, shield: -1);
         tracker.Touch(RosterPlayer, nowMs: 0);   // no-op: EntityId.IsPlayer short-circuits Touch
 
         // Sweep at 10x the TTL — RosterPlayer must never have entered _lastTouchedMs at all,
@@ -110,7 +110,7 @@ public sealed class EntityIdleSweepTests
         var svc = MakeService(out var tracker);
 
         // Simulate a damage-driven touch from long ago (as if the last hit predates the TTL).
-        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100);
+        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100, shield: -1);
         tracker.Touch(Mob, nowMs: 0);
 
         // The entity's ONLY subsequent activity is a buff refresh, timestamped by the real clock.
@@ -140,7 +140,7 @@ public sealed class EntityIdleSweepTests
         // entities (players) ever populate the map, and Reset() clears it on scene change.
         var svc = MakeService(out var tracker);
 
-        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100);
+        svc.UpdateEntityVitals(Mob, hp: 100, maxHp: 100, shield: -1);
         tracker.SetSubProfession(Mob, 40001);
         tracker.Touch(Mob, nowMs: 0);
 

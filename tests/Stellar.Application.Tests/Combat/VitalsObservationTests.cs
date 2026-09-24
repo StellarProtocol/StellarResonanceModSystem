@@ -17,7 +17,7 @@ public sealed class VitalsObservationTests
     public void MaxHpOnly_observation_is_known_but_has_no_hp_observation()
     {
         var t = new CombatEntityTracker();
-        t.UpdateEntityVitals(Id, hp: -1, maxHp: 350_000);
+        t.UpdateEntityVitals(Id, hp: -1, maxHp: 350_000, shield: -1);
         var v = t.GetVitals(Id);
         Assert.True(v.IsKnown);
         Assert.False(v.HasHpObservation);
@@ -30,7 +30,7 @@ public sealed class VitalsObservationTests
     {
         // hp: 0 is a REAL observation (the entity is dead) — the flag must flip.
         var t = new CombatEntityTracker();
-        t.UpdateEntityVitals(Id, hp: 0, maxHp: 350_000);
+        t.UpdateEntityVitals(Id, hp: 0, maxHp: 350_000, shield: -1);
         var v = t.GetVitals(Id);
         Assert.True(v.HasHpObservation);
         Assert.Equal(0L, v.Hp);
@@ -40,8 +40,8 @@ public sealed class VitalsObservationTests
     public void Flag_sticks_across_subsequent_maxhp_only_updates()
     {
         var t = new CombatEntityTracker();
-        t.UpdateEntityVitals(Id, hp: 200_000, maxHp: 350_000);
-        t.UpdateEntityVitals(Id, hp: -1, maxHp: 360_000);   // -1 sentinel: no hp this tick
+        t.UpdateEntityVitals(Id, hp: 200_000, maxHp: 350_000, shield: -1);
+        t.UpdateEntityVitals(Id, hp: -1, maxHp: 360_000, shield: -1);   // -1 sentinel: no hp this tick
         var v = t.GetVitals(Id);
         Assert.True(v.HasHpObservation);
         Assert.Equal(200_000L, v.Hp);
@@ -57,7 +57,7 @@ public sealed class VitalsObservationTests
     {
         var t = new CombatEntityTracker();
         var mob = new EntityId(0x0000_0001_0000_0040L);
-        t.UpdateEntityVitals(mob, hp: 100, maxHp: 100);
+        t.UpdateEntityVitals(mob, hp: 100, maxHp: 100, shield: -1);
         t.OnEntityDisappeared(mob);
         Assert.False(t.GetVitals(mob).HasHpObservation);
     }

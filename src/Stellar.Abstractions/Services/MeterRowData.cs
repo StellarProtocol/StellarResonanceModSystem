@@ -38,6 +38,12 @@ public struct MeterRowData
     public ColorRgba SelfAccent;
     /// <summary>HP fraction in [0..1] used for the vertical HP spine height.</summary>
     public float HpFraction;
+    /// <summary>Shield overlay fraction in [0..1], drawn as a grey/white band OVER the green HP fill from the
+    /// bottom of the vertical spine (shield / maxHp, already clamped by the plugin to <see cref="HpFraction"/>).
+    /// 0 (the default) hides the overlay, so a spine renders byte-identical to pre-shield behaviour. Only
+    /// meaningful when the spine is in HP mode; the plugin passes 0 in DPS/Off spine modes. Additive field —
+    /// a plugin built before it existed leaves it 0.</summary>
+    public float HpShieldFraction;
     /// <summary>Metric bar fill fraction in [0..1] normalised to the top-row value.</summary>
     public float BarFraction;
     /// <summary>Opaque icon handle; MUST be a UnityEngine.Texture2D. Passed through to the uGUI image binding; a non-Texture2D silently renders nothing.</summary>
