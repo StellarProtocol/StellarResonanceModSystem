@@ -119,6 +119,8 @@ internal sealed partial class WindowBuilder
         public GameObject Scrim = null!;
         public ImagineCell Imagine0Cell = null!;   // trailing Battle-Imagine cells (left=X slot, right=Z slot)
         public ImagineCell Imagine1Cell = null!;
+        public DebuffBlock DebuffBlock = null!;   // trailing 2×2 debuff block (far right)
+        public Transform DebuffColHost = null!;   // the full-height right-edge host for the block
         public Transform ImagineGroup = null!;     // the re-parentable imagine cluster (for ImaginePosition)
         public Transform TopLine = null!;          // top-line HLG host (top-right / left positions)
         public Transform RightColHost = null!;     // right-column host (RightColumn position)
@@ -142,6 +144,8 @@ internal sealed partial class WindowBuilder
         private Color _lastCrestTint = new(-1f, -1f, -1f, -1f); // sentinel: forces first crest-tint apply
         private static readonly ColorRgba MeterDeadBarRgba = new(0.35f, 0.27f, 0.27f, 1f);  // greyed bar when dead
         private ImagineCellCache _img0, _img1;
+        private DebuffBlockCache _dbuff;
+        private int _lastDebuffLayout = -1;
 
         public void Apply()
         {
@@ -180,7 +184,9 @@ internal sealed partial class WindowBuilder
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
             ApplyImagineLayout(d);
+            ApplyDebuffLayout(d);
             ApplyImagines(d);
+            ApplyDebuffs(d);
         }
 
         // HP spine fill (bottom-anchored, height = HpFraction) + the grey/white shield band drawn OVER it
@@ -295,10 +301,37 @@ internal sealed partial class WindowBuilder
             {
                 var p = ContentVlg.padding;
                 int bottom = d.ImagineSize == ImagineSize.Large ? 1 : 5;
-                int right = d.ImaginePosition == ImaginePosition.RightColumn ? 58 + (int)MeterPad : (int)MeterPad;
-                ContentVlg.padding = new RectOffset(p.left, right, p.top, bottom);
+                // Right padding is owned by ApplyDebuffLayout (it combines the imagine right-column reserve with
+                // the debuff-block reserve); preserve it here so the two don't clobber each other.
+                ContentVlg.padding = new RectOffset(p.left, p.right, p.top, bottom);
             }
         }
+
+        // Owns the row's content RIGHT padding + the debuff/imagine right-edge hosts. Keyed on
+        // (ShowDebuffs, ImaginePosition) so it relays out only when either changes. Reserves MeterPad +
+        // (imagine right-column 58) + (debuff block 34+4), and shifts the imagine right-column left by the
+        // debuff block width when both want the right edge (so they never overlap).
+        private void ApplyDebuffLayout(in MeterRowData d)
+        {
+            int key = (d.ShowDebuffs ? 1 : 0) * 4 + (int)d.ImaginePosition;
+            if (_lastDebuffLayout == key) return;
+            _lastDebuffLayout = key;
+            int imagineRight = d.ImaginePosition == ImaginePosition.RightColumn ? 58 : 0;
+            int debuffRight  = d.ShowDebuffs ? (int)(WindowBuilder.MeterDebuffBlock + 4f) : 0;
+            if (ContentVlg != null)
+            {
+                var p = ContentVlg.padding;
+                ContentVlg.padding = new RectOffset(p.left, (int)MeterPad + imagineRight + debuffRight, p.top, p.bottom);
+            }
+            if (RightColHost != null)
+            {
+                float imgX = -(MeterPad + (d.ShowDebuffs ? WindowBuilder.MeterDebuffBlock + 4f : 0f));
+                ((RectTransform)RightColHost).anchoredPosition = new Vector2(imgX, 0f);
+            }
+        }
+
+        // Poll-diff the trailing 2×2 debuff block (kept out of Apply to respect the method-LoC cap).
+        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff);
 
         // Poll-diff the two trailing Imagine cells (kept out of Apply to respect the method-LoC cap).
         private void ApplyImagines(in MeterRowData d)

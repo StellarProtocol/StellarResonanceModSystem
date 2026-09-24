@@ -100,17 +100,9 @@ internal sealed partial class WindowBuilder
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
         var (fillRect, fillImg, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
 
-        // Right-column host for the "RightColumn" imagine position — an ignore-layout cell on the row's right
-        // edge spanning full height; the binding re-parents the imagine group here (vertically centred) and
-        // reserves content right-padding so the bar/text don't run under it. Empty until that position is set.
-        var rightCol = UGuiPrimitives.NewChild("ImagineCol", row.transform);
-        rightCol.AddComponent<LayoutElement>().ignoreLayout = true;
-        var rcrt = rightCol.GetComponent<RectTransform>();
-        rcrt.anchorMin = new Vector2(1f, 0f); rcrt.anchorMax = new Vector2(1f, 1f); rcrt.pivot = new Vector2(1f, 0.5f);
-        rcrt.sizeDelta = new Vector2(58f, -6f); rcrt.anchoredPosition = new Vector2(-MeterPad, 0f);
-        var rcHlg = rightCol.AddComponent<HorizontalLayoutGroup>();
-        rcHlg.childControlWidth = true; rcHlg.childControlHeight = true;
-        rcHlg.childForceExpandWidth = false; rcHlg.childForceExpandHeight = false; rcHlg.childAlignment = TextAnchor.MiddleRight;
+        // Right-edge hosts: the imagine right-column + the far-right 2×2 debuff block (both ignore-layout,
+        // full height). Extracted to keep BuildMeterRow under the 50-LoC cap (STELLAR0002).
+        var (rightCol, debuffBlock, debuffCol) = BuildRowRightHosts(token, row.transform);
 
         // Offline scrim — drawn last (on top), toggled by Offline.
         var scrim = AddStretchedImage(row.transform, "Scrim", MeterScrim, ignoreLayout: true).gameObject;
@@ -125,12 +117,39 @@ internal sealed partial class WindowBuilder
             Score = score, ScoreGo = scoreGo, Share = share, ShareGo = shareGo, LeaderGo = leaderGo,
             BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
-            ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol.transform,
+            ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
+            DebuffBlock = debuffBlock, DebuffColHost = debuffCol,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });
 
         WireRowInteractions(row, voiceImg, el);
+    }
+
+    // Builds the two right-edge, ignore-layout hosts pinned to the row's right side: the 58px imagine
+    // right-column (for ImaginePosition.RightColumn) and the 34px 2×2 debuff block. Returns their transforms
+    // (+ the block). Extracted from BuildMeterRow for the LoC cap; the binding reserves content right-padding.
+    private (Transform rightCol, DebuffBlock debuffBlock, Transform debuffCol) BuildRowRightHosts(WindowToken token, Transform row)
+    {
+        var rightCol = UGuiPrimitives.NewChild("ImagineCol", row);
+        rightCol.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rcrt = rightCol.GetComponent<RectTransform>();
+        rcrt.anchorMin = new Vector2(1f, 0f); rcrt.anchorMax = new Vector2(1f, 1f); rcrt.pivot = new Vector2(1f, 0.5f);
+        rcrt.sizeDelta = new Vector2(58f, -6f); rcrt.anchoredPosition = new Vector2(-MeterPad, 0f);
+        var rcHlg = rightCol.AddComponent<HorizontalLayoutGroup>();
+        rcHlg.childControlWidth = true; rcHlg.childControlHeight = true;
+        rcHlg.childForceExpandWidth = false; rcHlg.childForceExpandHeight = false; rcHlg.childAlignment = TextAnchor.MiddleRight;
+
+        var debuffCol = UGuiPrimitives.NewChild("DebuffCol", row);
+        debuffCol.AddComponent<LayoutElement>().ignoreLayout = true;
+        var dcrt = debuffCol.GetComponent<RectTransform>();
+        dcrt.anchorMin = new Vector2(1f, 0f); dcrt.anchorMax = new Vector2(1f, 1f); dcrt.pivot = new Vector2(1f, 0.5f);
+        dcrt.sizeDelta = new Vector2(MeterDebuffBlock, -6f); dcrt.anchoredPosition = new Vector2(-MeterPad, 0f);
+        var dcHlg = debuffCol.AddComponent<HorizontalLayoutGroup>();
+        dcHlg.childControlWidth = true; dcHlg.childControlHeight = true;
+        dcHlg.childForceExpandWidth = false; dcHlg.childForceExpandHeight = false; dcHlg.childAlignment = TextAnchor.MiddleRight;
+        var debuffBlock = BuildDebuffBlock(token, debuffCol.transform);
+        return (rightCol.transform, debuffBlock, debuffCol.transform);
     }
 
     // Row-level input: the voice cell becomes a Button that invokes the row's live OnVoiceIconClick (e.g. the
