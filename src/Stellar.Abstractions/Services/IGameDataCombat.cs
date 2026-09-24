@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Stellar.Abstractions.Domain.GameData;
 
 namespace Stellar.Abstractions.Services;
@@ -10,6 +11,10 @@ public interface IGameDataCombat
 
     /// <summary>Returns the buff/debuff row for <paramref name="id"/>, or null if unknown.</summary>
     BuffInfo? GetBuff(int id);
+
+    /// <summary>Every loaded buff/debuff row (the whole BuffTable), for building a full pick-list of
+    /// available effects. Empty until the eager data load completes.</summary>
+    IReadOnlyCollection<BuffInfo> AllBuffs();
 
     /// <summary>Returns the profession row for <paramref name="id"/>, or null if unknown.</summary>
     ProfessionInfo? GetProfession(int id);

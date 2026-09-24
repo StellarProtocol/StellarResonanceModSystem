@@ -39,6 +39,12 @@ internal sealed class GameDataCombatService : IGameDataCombat
         return null;
     }
     public BuffInfo?             GetBuff(int id)             => TryGet(Volatile.Read(ref _buffs), id);
+    public IReadOnlyCollection<BuffInfo> AllBuffs()
+    {
+        var b = Volatile.Read(ref _buffs);
+        if (b is null) return System.Array.Empty<BuffInfo>();
+        return b is Dictionary<int, BuffInfo> d ? d.Values : new List<BuffInfo>(b.Values);
+    }
     public ProfessionInfo?       GetProfession(int id)       => TryGet(Volatile.Read(ref _professions), id);
     public TalentInfo?           GetTalent(int id)           => TryGet(Volatile.Read(ref _talents), id);
     // Merge policy: live (localized game-table) row wins for Name/ShortName/IconPath/Group/NumType when it

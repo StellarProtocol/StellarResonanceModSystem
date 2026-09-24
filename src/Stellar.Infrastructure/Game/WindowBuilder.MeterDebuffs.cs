@@ -20,12 +20,15 @@ internal sealed partial class WindowBuilder
 {
     private const float MeterDebuffCell  = 20f;                                  // cell square edge (px) — bigger icons
     private const float MeterDebuffGap   = 2f;                                   // inter-cell gap (px) — tight
-    private const float MeterDebuffBlock = MeterDebuffCell * 2f + MeterDebuffGap; // 42px fixed 2×2 block edge
+    private const int   MeterDebuffMaxCells = 12;                                // pool size (2 rows × up to 6 columns)
+    private const int   MeterDebuffRows  = 2;                                    // the block is always 2 rows tall
 
-    private static readonly Color MeterDebuffFrame = new(0.88f, 0.32f, 0.29f, 0.95f); // red cell accent frame
+    private static readonly Color MeterDebuffFrame = new(0.88f, 0.32f, 0.29f, 0.95f); // red cell accent frame (debuff)
+    private static readonly Color MeterBuffFrame   = new(0.35f, 0.82f, 0.45f, 0.95f); // green cell accent frame (buff) — matches CooldownBar's BuffCol
     private static readonly Color MeterDebuffInset = new(0f, 0f, 0f, 0.95f);          // dark tile body behind the icon
     private static readonly Color MeterDebuffBg    = new(0.10f, 0.06f, 0.07f, 1f);    // backing while art loads / is unavailable
-    private static readonly Color MeterDebuffFill  = new(0.90f, 0.36f, 0.33f, 0.95f); // foot fill-bar (time remaining)
+    private static readonly Color MeterDebuffFill  = new(0.90f, 0.36f, 0.33f, 0.95f); // foot fill-bar (time remaining, debuff)
+    private static readonly Color MeterBuffFill    = new(0.42f, 0.86f, 0.52f, 0.95f); // foot fill-bar (time remaining, buff)
     private static readonly Color MeterDebuffMore  = new(0.90f, 0.78f, 0.42f, 1f);    // "+N" gold
     private static readonly Color MeterDebuffEmpty = new(0.58f, 0.63f, 0.72f, 0.20f); // faint filled square for an EMPTY slot placeholder
 
@@ -44,19 +47,19 @@ internal sealed partial class WindowBuilder
         public GameObject MoreGo = null!;
     }
 
-    // The fixed 2×2 block (4 cells).
+    // The status-effect block: 2 rows × up to 4 columns (pool of 8 cells; visible count = DebuffColumns × 2).
     internal sealed class DebuffBlock
     {
         public GameObject Root = null!;
         public GridLayoutGroup Grid = null!;
         public LayoutElement Le = null!;
-        public DebuffCell[] Cells = new DebuffCell[4];
+        public DebuffCell[] Cells = new DebuffCell[MeterDebuffMaxCells];
     }
 
     // Per-block poll-diff cache (block-level show flag; per-cell state is cheap enough to re-poll).
-    internal struct DebuffBlockCache { public bool Init, Shown; public float Size; }
+    internal struct DebuffBlockCache { public bool Init, Shown; public float Size; public int Cols; }
 
-    // Build the fixed 2×2 block: a GridLayoutGroup pinned to 42px. Root inactive until ShowDebuffs.
+    // Build the block: a 2-row GridLayoutGroup, columns grow. Pool of 8 cells; Root inactive until ShowDebuffs.
     private DebuffBlock BuildDebuffBlock(WindowToken token, Transform host)
     {
         var root = UGuiPrimitives.NewChild("Debuffs", host);
@@ -64,14 +67,14 @@ internal sealed partial class WindowBuilder
         grid.cellSize = new Vector2(MeterDebuffCell, MeterDebuffCell);
         grid.spacing = new Vector2(MeterDebuffGap, MeterDebuffGap);
         grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-        grid.constraintCount = 2;
+        grid.constraintCount = 2;                    // default 2 cols (rebound per row by BindDebuffBlock)
         grid.childAlignment = TextAnchor.MiddleCenter;
         var le = root.AddComponent<LayoutElement>();
-        le.preferredWidth = le.minWidth = MeterDebuffBlock;
-        le.preferredHeight = MeterDebuffBlock;
+        le.preferredWidth = le.minWidth = MeterDebuffCell * 2f + MeterDebuffGap;
+        le.preferredHeight = MeterDebuffCell * 2f + MeterDebuffGap;
 
         var block = new DebuffBlock { Root = root, Grid = grid, Le = le };
-        for (var i = 0; i < 4; i++) block.Cells[i] = BuildDebuffCell(token, root.transform);
+        for (var i = 0; i < MeterDebuffMaxCells; i++) block.Cells[i] = BuildDebuffCell(token, root.transform);
         root.SetActive(false);
         return block;
     }
@@ -122,9 +125,33 @@ internal sealed partial class WindowBuilder
         };
     }
 
-    // The per-cell edge / whole-block edge for a row's chosen debuff size (0 = the 20px default).
+    // Make every debuff cell left-clickable → MeterRowData.OnDebuffClick(Id, cellIndex). Wired ONCE at build
+    // (the index is captured per cell; Data()/Id read live), so a cached delegate on the plugin side allocates
+    // nothing per refresh. The plugin maps the index to the debuff and treats the overflow "+N" cell as
+    // "show all". An empty placeholder cell still fires but the plugin no-ops (index beyond the kept count).
+    private void WireDebuffClicks(DebuffBlock block, MeterRowElement el)
+    {
+        for (var i = 0; i < block.Cells.Length; i++)
+        {
+            var cell = block.Cells[i];
+            var index = i;
+            cell.Frame.raycastTarget = true;   // the cell's frame is the click surface
+            var btn = cell.Root.AddComponent<Button>();
+            btn.targetGraphic = cell.Frame;
+            btn.transition = Selectable.Transition.None;
+            System.Action onClick = () => el.Data().OnDebuffClick?.Invoke(el.Data().Id, index);
+            btn.onClick.AddListener((UnityEngine.Events.UnityAction)onClick);
+        }
+    }
+
+    // The per-cell edge for a row's chosen size (0 = the 20px default).
     internal static float DebuffCellPx(in MeterRowData d) => d.DebuffCellSize > 0f ? d.DebuffCellSize : MeterDebuffCell;
-    internal static float DebuffBlockPx(in MeterRowData d) => DebuffCellPx(d) * 2f + MeterDebuffGap;
+    // Column count (2..4; 0/2 = default 2), the number of VISIBLE cells (cols × 2), the block WIDTH, and the
+    // block HEIGHT (always 2 rows — columns never change the height).
+    internal static int   DebuffColsOf(in MeterRowData d) => d.DebuffColumns <= 2 ? 2 : (d.DebuffColumns >= 6 ? 6 : d.DebuffColumns);
+    internal static int   DebuffVisibleCells(in MeterRowData d) => DebuffColsOf(d) * MeterDebuffRows;
+    internal static float DebuffBlockPx(in MeterRowData d) => DebuffColsOf(d) * DebuffCellPx(d) + (DebuffColsOf(d) - 1) * MeterDebuffGap;   // WIDTH
+    internal static float DebuffRowsPx(in MeterRowData d)  => MeterDebuffRows * DebuffCellPx(d) + (MeterDebuffRows - 1) * MeterDebuffGap;   // HEIGHT (2 rows)
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
     private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache)
@@ -133,19 +160,31 @@ internal sealed partial class WindowBuilder
         if (!cache.Init || d.ShowDebuffs != cache.Shown) { block.Root.SetActive(d.ShowDebuffs); cache.Shown = d.ShowDebuffs; cache.Init = true; }
         if (!d.ShowDebuffs) return;
         var cellPx = DebuffCellPx(d);
-        if (!Mathf.Approximately(cellPx, cache.Size))
+        var cols   = DebuffColsOf(d);
+        if (!Mathf.Approximately(cellPx, cache.Size) || cols != cache.Cols)
         {
-            var blockPx = DebuffBlockPx(d);
             block.Grid.cellSize = new Vector2(cellPx, cellPx);
-            block.Le.preferredWidth = block.Le.minWidth = blockPx;
-            block.Le.preferredHeight = blockPx;
-            cache.Size = cellPx;
+            block.Grid.constraintCount = cols;   // FixedColumnCount → 2 rows fill for cols*2 cells
+            block.Le.preferredWidth = block.Le.minWidth = DebuffBlockPx(d);
+            block.Le.preferredHeight = DebuffRowsPx(d);
+            cache.Size = cellPx; cache.Cols = cols;
         }
-        BindDebuffCell(block.Cells[0], d.Debuff0, 0);
-        BindDebuffCell(block.Cells[1], d.Debuff1, 0);
-        BindDebuffCell(block.Cells[2], d.Debuff2, 0);
-        BindDebuffCell(block.Cells[3], d.Debuff3, d.DebuffOverflow);   // 4th cell owns the "+N" overflow
+        var visible = cols * MeterDebuffRows;   // cells to show (rest hidden)
+        for (var i = 0; i < MeterDebuffMaxCells; i++)
+        {
+            if (i >= visible) { if (block.Cells[i].Root != null) block.Cells[i].Root.SetActive(false); continue; }
+            // The LAST visible cell owns the "+N" overflow; the rest never show it.
+            BindDebuffCell(block.Cells[i], SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0);
+        }
     }
+
+    // Index the (up to 12) inline debuff slots on MeterRowData.
+    private static DebuffSlot SlotAt(in MeterRowData d, int i) => i switch
+    {
+        0 => d.Debuff0, 1 => d.Debuff1, 2 => d.Debuff2, 3 => d.Debuff3,
+        4 => d.Debuff4, 5 => d.Debuff5, 6 => d.Debuff6, 7 => d.Debuff7,
+        8 => d.Debuff8, 9 => d.Debuff9, 10 => d.Debuff10, _ => d.Debuff11,
+    };
 
     private static void BindDebuffCell(DebuffCell cell, in DebuffSlot slot, int overflow)
     {
@@ -154,11 +193,12 @@ internal sealed partial class WindowBuilder
         var present = !more && slot.Present;
         // Every cell renders (the block is shown): a debuff tile, a "+N" count, or a faint empty-slot square.
         cell.Root.SetActive(true);
-        cell.Frame.color = present ? MeterDebuffFrame : MeterDebuffEmpty;
+        cell.Frame.color = present ? (slot.IsBuff ? MeterBuffFrame : MeterDebuffFrame) : MeterDebuffEmpty;
         cell.InsetGo.SetActive(present);          // dark body only under a real tile; empty slot = the faint frame alone
         cell.MoreGo.SetActive(more);
         if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }
         if (!present) { cell.StacksGo.SetActive(false); return; }   // empty placeholder slot
+        cell.FillImg.color = slot.IsBuff ? MeterBuffFill : MeterDebuffFill;   // foot fill-bar tint by kind
         // Bright icon — never scrimmed, so it stays readable (owner: the radial scrim made it "barely see").
         cell.Art.texture = slot.IconTexture as Texture;
         cell.Art.uvRect = new Rect(slot.IconUv.X, slot.IconUv.Y, slot.IconUv.W, slot.IconUv.H);

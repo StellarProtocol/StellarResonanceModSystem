@@ -21,6 +21,7 @@ internal sealed partial class WindowBuilder
         public Func<object?> Texture = null!;
         public Func<UvRect>? Uv;
         public float Width, Height;
+        public bool Fill;
         private object? _lastTex;
         private UvRect _lastUv;
         private bool _init;
@@ -39,7 +40,9 @@ internal sealed partial class WindowBuilder
             Raw.enabled  = t != null;
             if (t == null) return;
             Raw.uvRect = new Rect(uv.X, uv.Y, uv.W, uv.H);
-            // Letterbox: fit the UV sub-rect's pixel footprint into the declared box, preserving aspect.
+            // Fill = stretch to the whole box (match a stretched RawImage cell, e.g. the meter's debuff tiles);
+            // otherwise letterbox: fit the UV sub-rect's pixel footprint into the box, preserving aspect.
+            if (Fill) { Raw.rectTransform.sizeDelta = new Vector2(Width, Height); return; }
             float srcW = uv.W * t.width, srcH = uv.H * t.height;
             Raw.rectTransform.sizeDelta = AspectFit(Width, Height, srcW, srcH);
         }
@@ -74,7 +77,7 @@ internal sealed partial class WindowBuilder
         raw.raycastTarget = false;
         raw.enabled = false;   // hidden until the first non-null texture arrives
         token.GameTextures.Add(new GameTextureBinding
-            { Raw = raw, Texture = gt.Texture, Uv = gt.Uv, Width = gt.Width, Height = gt.Height });
+            { Raw = raw, Texture = gt.Texture, Uv = gt.Uv, Width = gt.Width, Height = gt.Height, Fill = gt.Fill });
     }
 
     // Builds a stencil Mask child of box whose graphic is a baked rounded-white sprite; returns its transform

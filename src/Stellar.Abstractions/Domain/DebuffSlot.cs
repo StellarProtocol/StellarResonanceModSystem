@@ -7,13 +7,16 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="IconUv">UV sub-rect of the icon within its atlas/texture (0..1, bottom-left origin).</param>
 /// <param name="Stacks">Current stack/layer count; a "×N" badge is drawn only when &gt; 1.</param>
 /// <param name="RemainFraction">Fraction of the debuff's duration still remaining: 1 = just applied (or permanent), 0 = expired. Drives the radial sweep (the renderer darkens the elapsed <c>1 - RemainFraction</c> arc).</param>
-/// <param name="Present">True when this cell has a debuff to draw.</param>
+/// <param name="Present">True when this cell has a status effect to draw.</param>
+/// <param name="IsBuff">True for a BUFF (rendered with a green accent frame); false for a DEBUFF (red frame).
+/// The block mixes both kinds — this is the per-cell colour signal (owner 2026-09-24).</param>
 public readonly record struct DebuffSlot(
     object? IconTexture,
     UvRect  IconUv,
     int     Stacks,
     float   RemainFraction,
-    bool    Present)
+    bool    Present,
+    bool    IsBuff = false)
 {
     /// <summary>Empty cell — nothing to render.</summary>
     public static readonly DebuffSlot None = new(null, new UvRect(0f, 0f, 1f, 1f), 0, 1f, false);

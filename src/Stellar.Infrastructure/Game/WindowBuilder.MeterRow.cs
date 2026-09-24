@@ -95,10 +95,13 @@ internal sealed partial class WindowBuilder
         var vlg = content.AddComponent<VerticalLayoutGroup>();
         vlg.padding = new RectOffset((int)(MeterSpineW + MeterPad), (int)MeterPad, 5, 5);
         vlg.spacing = 2f; vlg.childControlWidth = true; vlg.childControlHeight = true;
-        vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.UpperLeft;
+        // MiddleLeft so the name + bar sit centred in a taller "player tile" (Medium/Large) instead of pinned to
+        // the top with dead space below (owner 2026-09-24). At the default height the content already fills the
+        // row, so this is a no-op there.
+        vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.MiddleLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, barShield, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
 
         // Right-edge hosts: the imagine right-column + the far-right 2×2 debuff block (both ignore-layout,
         // full height). Extracted to keep BuildMeterRow under the 50-LoC cap (STELLAR0002).
@@ -115,7 +118,7 @@ internal sealed partial class WindowBuilder
             Name = name, NameStrikeGo = nameStrike,
             ClassName = className, ClassNameGo = className.gameObject, Spec = spec, SpecGo = specGo,
             Score = score, ScoreGo = scoreGo, Share = share, ShareGo = shareGo, LeaderGo = leaderGo,
-            BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
+            BarFillRect = fillRect, BarFillImg = fillImg, BarShieldImg = barShield, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
             DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le,
@@ -124,6 +127,7 @@ internal sealed partial class WindowBuilder
         });
 
         WireRowInteractions(row, voiceImg, el);
+        WireDebuffClicks(debuffBlock, el);   // per-cell left-click -> MeterRowData.OnDebuffClick (Plugin.DebuffTooltip)
     }
 
     // Builds the two right-edge, ignore-layout hosts pinned to the row's right side: the 58px imagine
@@ -144,7 +148,7 @@ internal sealed partial class WindowBuilder
         debuffCol.AddComponent<LayoutElement>().ignoreLayout = true;
         var dcrt = debuffCol.GetComponent<RectTransform>();
         dcrt.anchorMin = new Vector2(1f, 0f); dcrt.anchorMax = new Vector2(1f, 1f); dcrt.pivot = new Vector2(1f, 0.5f);
-        dcrt.sizeDelta = new Vector2(MeterDebuffBlock, -6f); dcrt.anchoredPosition = new Vector2(-MeterPad, 0f);
+        dcrt.sizeDelta = new Vector2(MeterDebuffCell * 2f + MeterDebuffGap, -6f); dcrt.anchoredPosition = new Vector2(-MeterPad, 0f);   // initial 2×2 width; ApplyDebuffLayout resizes per row
         var dcHlg = debuffCol.AddComponent<HorizontalLayoutGroup>();
         dcHlg.childControlWidth = true; dcHlg.childControlHeight = true;
         dcHlg.childForceExpandWidth = false; dcHlg.childForceExpandHeight = false; dcHlg.childAlignment = TextAnchor.MiddleRight;
@@ -317,7 +321,7 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Text primary, Text secondary, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Image barShield, Text primary, Text secondary, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
@@ -343,13 +347,24 @@ internal sealed partial class WindowBuilder
         System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
         token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
 
+        // Shield overlay for the main bar in HP mode: a grey/white band from the LEFT edge drawn OVER the fill
+        // (width = BarShieldFraction via anchorMax.x), the horizontal analogue of the spine's shield band. A
+        // direct child of the bar (not width-clipped), built inactive — the binding activates + sizes it only
+        // when the fraction > 0, so a DPS bar or a shield-less row renders byte-identical to before.
+        var shieldGo = UGuiPrimitives.NewChild("BarShield", bar.transform);
+        var shieldRt = shieldGo.GetComponent<RectTransform>();
+        shieldRt.anchorMin = new Vector2(0f, 0f); shieldRt.anchorMax = new Vector2(0f, 1f); shieldRt.pivot = new Vector2(0f, 0.5f);
+        shieldRt.offsetMin = Vector2.zero; shieldRt.offsetMax = Vector2.zero;
+        var barShield = shieldGo.AddComponent<Image>(); barShield.color = MeterSpineShield; barShield.raycastTarget = false;
+        shieldGo.SetActive(false);
+
         // Label treatments (MeterRowData.LabelStyle): the Shadow fades sit above fill + sheen and below the texts,
         // inactive until a row asks for them; the Outline component is added disabled in AddOverlayText.
         var (fadeL, fadeR) = AddLabelFades(bar.transform);
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, primary, secondary, fadeL, fadeR);
+        return (clipRt, fillImg, barShield, primary, secondary, fadeL, fadeR);
     }
 
     private const float SheenPeriod = 2.4f;
