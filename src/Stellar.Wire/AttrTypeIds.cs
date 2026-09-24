@@ -24,6 +24,10 @@ public static class AttrTypeIds
     public const int AttrSceneLevelId    = 345;   // scene-level attr: level/dungeon level id
     public const int AttrFightPoint      = 10030;  // ability/combat score ("Ability Score" in ZDPS); present per-entity in SyncNearEntities for EntChar
     public const int AttrSeasonLevel     = 10070;  // season/battle-pass level
+    public const int AttrShieldList      = 60050;  // repeated shield entries { f1, f2, f3=CURRENT shield, f4=MAX shield, f5 }
+                                                    // — a LIST attr (like the fashion/equip/skill-level lists), NOT a scalar,
+                                                    // so it never rides the scalar attr stream. Total current shield = Σ(f3)
+                                                    // over all entries; decoded by ShieldListReader (zproto EAttrType 60050).
     public const int AttrHp              = 11310;
     public const int AttrMaxHp           = 11320;
     public const int AttrMaxHpTotal      = 11321;  // Int64 (same storage-type trap as AttrHp/AttrMaxHp) — additional

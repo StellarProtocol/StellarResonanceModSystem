@@ -82,6 +82,7 @@ internal sealed partial class WindowBuilder
         public Image Bg = null!;
         public GameObject SelfBorder = null!;
         public Image SpineFill = null!;
+        public Image? ShieldFill;                    // grey/white shield band over the green HP fill (bottom-anchored)
         public GameObject SpineGo = null!;          // HP spine cell (toggled by ShowHpBar)
         public RawImage Crest = null!;
         public GameObject CrestCellGo = null!;      // 22px crest layout cell (toggled by ShowCrest)
@@ -128,7 +129,8 @@ internal sealed partial class WindowBuilder
         private bool _selfInit, _lastSelf;
         private ColorRgba _lastSelfAccent;
         private int _lastLeader = -1;
-        private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f;
+        private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f, _lastShield = -1f;
+        private int _lastShieldVis = -1;
         private ColorRgba _lastHpCol, _lastRoleCol;
         private string? _lastRank, _lastName, _lastSpec, _lastShare, _lastPrimary, _lastSecondary;
         private int _lastSpecVis = -1, _lastShareVis = -1, _lastSecondaryVis = -1, _lastOffline = -1;
@@ -146,14 +148,7 @@ internal sealed partial class WindowBuilder
             var d = Data();
 
             ApplySelfHighlight(d);
-
-            if (SpineFill != null)
-            {
-                var hp = Mathf.Clamp01(d.HpFraction);   // anchorMax.y = HP fraction (bottom-anchored); see BuildMeterBackplate
-                if (!Mathf.Approximately(hp, _lastHp)) { SpineFill.rectTransform.anchorMax = new Vector2(1f, hp); _lastHp = hp; }
-                if (!d.HpColor.Equals(_lastHpCol)) { SpineFill.color = ToColor(d.HpColor); _lastHpCol = d.HpColor; }
-            }
-
+            ApplySpine(d);
             ApplyCrest(d);
             ApplyVisibility(d);
 
@@ -185,6 +180,27 @@ internal sealed partial class WindowBuilder
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
             ApplyImagineLayout(d);
             ApplyImagines(d);
+        }
+
+        // HP spine fill (bottom-anchored, height = HpFraction) + the grey/white shield band drawn OVER it
+        // (height = HpShieldFraction, already clamped by the plugin to the HP fraction and 0 in DPS/Off spine
+        // modes). Extracted from Apply to respect the method-LoC cap. Both diff their cached fraction so an idle
+        // row writes nothing; the shield band is hidden (byte-identical to a shield-less row) when the fraction is 0.
+        private void ApplySpine(in MeterRowData d)
+        {
+            if (SpineFill != null)
+            {
+                var hp = Mathf.Clamp01(d.HpFraction);   // anchorMax.y = HP fraction (bottom-anchored); see BuildMeterBackplate
+                if (!Mathf.Approximately(hp, _lastHp)) { SpineFill.rectTransform.anchorMax = new Vector2(1f, hp); _lastHp = hp; }
+                if (!d.HpColor.Equals(_lastHpCol)) { SpineFill.color = ToColor(d.HpColor); _lastHpCol = d.HpColor; }
+            }
+            if (ShieldFill != null)
+            {
+                var sh = Mathf.Clamp01(d.HpShieldFraction);
+                var show = sh > 0f;
+                if (_lastShieldVis != (show ? 1 : 0)) { ShieldFill.gameObject.SetActive(show); _lastShieldVis = show ? 1 : 0; }
+                if (show && !Mathf.Approximately(sh, _lastShield)) { ShieldFill.rectTransform.anchorMax = new Vector2(1f, sh); _lastShield = sh; }
+            }
         }
 
         // MeterRowData.LabelStyle → the two treatments built for every row: Outline enables the halo components,

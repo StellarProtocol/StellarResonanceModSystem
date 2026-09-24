@@ -39,6 +39,20 @@ public readonly record struct EntityVitals(long Hp, long MaxHp, bool IsKnown)
     /// </summary>
     public bool LeftAoi { get; init; }
 
+    /// <summary>
+    /// Last-known CURRENT shield (absorb) total for this entity, summed across every entry of the
+    /// <c>AttrShieldList</c> attribute (<c>EAttrType</c>=60050) on the combat wire — decoded by
+    /// <c>Stellar.Wire.ShieldListReader</c>. Zero when the entity has never reported a shield, or when
+    /// its shield is fully depleted (a shield attr carrying total 0). A full replace-on-observe value
+    /// like <see cref="Hp"/>: an observation that omits the shield attr keeps the last-known value
+    /// (mirrors <see cref="MaxHp"/> absence handling), so a delta that only moves HP does not wipe an
+    /// active shield. A meter's HP spine overlays this as a grey band from the bottom (shield /
+    /// <see cref="MaxHp"/>, clamped by the HP fraction). Init-only (not a constructor parameter) so
+    /// plugins compiled against older Abstractions keep binary compatibility, same rationale as
+    /// <see cref="HasHpObservation"/> / <see cref="LeftAoi"/>. Defaults to 0.
+    /// </summary>
+    public long Shield { get; init; }
+
     /// <summary>Sentinel returned when no observation has been received for this entity yet.</summary>
     public static readonly EntityVitals Unknown = new(0, 0, false);
 }

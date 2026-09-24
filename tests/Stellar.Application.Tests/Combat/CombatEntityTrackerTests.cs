@@ -27,7 +27,7 @@ public sealed class CombatEntityTrackerTests
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0280L);
 
-        tracker.UpdateEntityVitals(id, hp: 8000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 8000, maxHp: 10000, shield: -1);
 
         var v = tracker.GetVitals(id);
         Assert.True(v.IsKnown);
@@ -41,13 +41,49 @@ public sealed class CombatEntityTrackerTests
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0280L);
 
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         // -1 sentinel = "no change for this side this tick"
-        tracker.UpdateEntityVitals(id, hp: -1, maxHp: -1);
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: -1, shield: -1);
 
         var v = tracker.GetVitals(id);
         Assert.Equal(5000L, v.Hp);
         Assert.Equal(10000L, v.MaxHp);
+    }
+
+    [Fact]
+    public void UpdateEntityVitals_Shield_ReplacesOnObserve_KeepsLastWhenAbsent_ZeroClearsIt()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        // Observe hp/maxHp with a shield present.
+        tracker.UpdateEntityVitals(id, hp: 6000, maxHp: 10000, shield: 2500);
+        Assert.Equal(2500L, tracker.GetVitals(id).Shield);
+
+        // A delta that only moves HP (shield -1 = absent) must KEEP the last-known shield.
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: -1, shield: -1);
+        var kept = tracker.GetVitals(id);
+        Assert.Equal(5000L, kept.Hp);
+        Assert.Equal(2500L, kept.Shield);   // not wiped by a shield-less delta
+
+        // A present shield of 0 (depleted) DOES clear it.
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: -1, shield: 0);
+        Assert.Equal(0L, tracker.GetVitals(id).Shield);
+    }
+
+    [Fact]
+    public void UpdateEntityVitals_ShieldOnlyObservation_MarksKnownWithoutHpObservation()
+    {
+        var tracker = new CombatEntityTracker();
+        var id = new EntityId(0x0000_0001_0000_0280L);
+
+        // A shield-only observation (no hp, no maxHp) still records the row and shield, but must NOT
+        // set HasHpObservation (so death inference doesn't read Hp:0 as dead).
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: -1, shield: 1200);
+        var v = tracker.GetVitals(id);
+        Assert.True(v.IsKnown);
+        Assert.False(v.HasHpObservation);
+        Assert.Equal(1200L, v.Shield);
     }
 
     // ── DPS ─────────────────────────────────────────────────────────────────
@@ -156,7 +192,7 @@ public sealed class CombatEntityTrackerTests
         var id = new EntityId(0x0000_0001_0000_0040L);
         Assert.False(id.IsPlayer);
 
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         tracker.AccumulateDps(id, timestampMs: 1000, amount: 5000);
         tracker.AccumulateHps(id, timestampMs: 1000, amount: 2000);
         tracker.UpdateEntityTeamId(id, teamId: 5L);
@@ -182,7 +218,7 @@ public sealed class CombatEntityTrackerTests
     {
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         tracker.SetEntityAttribute(id, attrId: 999, value: 42L);
 
         tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
@@ -202,7 +238,7 @@ public sealed class CombatEntityTrackerTests
     {
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
 
         tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
 
@@ -216,12 +252,12 @@ public sealed class CombatEntityTrackerTests
     {
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         tracker.OnEntityDisappeared(id, EntityDisappearReason.Normal);
         Assert.True(tracker.GetVitals(id).LeftAoi);
 
         // Any subsequent real observation clears it — even a MaxHp-only delta (hp=-1 sentinel).
-        tracker.UpdateEntityVitals(id, hp: -1, maxHp: 10500);
+        tracker.UpdateEntityVitals(id, hp: -1, maxHp: 10500, shield: -1);
 
         Assert.False(tracker.GetVitals(id).LeftAoi);
     }
@@ -232,7 +268,7 @@ public sealed class CombatEntityTrackerTests
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
 
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
 
         Assert.False(tracker.GetVitals(id).LeftAoi);
     }
@@ -279,7 +315,7 @@ public sealed class CombatEntityTrackerTests
     {
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         tracker.SetEntityAttribute(id, attrId: 999, value: 42L);
 
         tracker.OnEntityDisappeared(id, reason);
@@ -295,7 +331,7 @@ public sealed class CombatEntityTrackerTests
         // with no reason at all — the default must evict everything, unchanged from before this fix.
         var tracker = new CombatEntityTracker();
         var id = new EntityId(0x0000_0001_0000_0040L);
-        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
 
         tracker.OnEntityDisappeared(id);
 
@@ -355,7 +391,7 @@ public sealed class CombatEntityTrackerTests
         var tracker = new CombatEntityTracker();
         var playerId = new EntityId(0x0000_0002_0000_0280L);
 
-        tracker.UpdateEntityVitals(playerId, hp: 5000, maxHp: 10000);
+        tracker.UpdateEntityVitals(playerId, hp: 5000, maxHp: 10000, shield: -1);
         tracker.UpdateEntityName(playerId, "Doraemon");
 
         tracker.OnEntityDisappeared(playerId);
@@ -372,7 +408,7 @@ public sealed class CombatEntityTrackerTests
         var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_0280L);
 
-        svc.UpdateEntityVitals(id, hp: 3000, maxHp: 8000);
+        svc.UpdateEntityVitals(id, hp: 3000, maxHp: 8000, shield: -1);
 
         var v = svc.GetVitals(id);
         Assert.True(v.IsKnown);
@@ -431,7 +467,7 @@ public sealed class CombatEntityTrackerTests
         var id = new EntityId(0x0000_0001_0000_0040L);
         Assert.False(id.IsPlayer);
 
-        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         svc.UpdateEntityTeamId(id, teamId: 5L);
         svc.UpdateEntityName(id, "Hero");
         svc.OnEntityDisappeared(id);
@@ -449,7 +485,7 @@ public sealed class CombatEntityTrackerTests
         var svc = new CombatService(new StubLog(), new CombatEntityTracker(), new SocialDataCache(), new StubSocialRefreshRequester());
         var id = new EntityId(0x0000_0001_0000_0040L);
 
-        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000);
+        svc.UpdateEntityVitals(id, hp: 5000, maxHp: 10000, shield: -1);
         svc.OnEntityDisappeared(id, EntityDisappearReason.Normal);
 
         Assert.True(svc.GetVitals(id).IsKnown);

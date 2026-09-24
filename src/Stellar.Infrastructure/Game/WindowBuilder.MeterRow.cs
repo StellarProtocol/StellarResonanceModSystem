@@ -29,6 +29,7 @@ internal sealed partial class WindowBuilder
     private static readonly Color MeterSelfBg    = new(0.12f, 0.30f, 0.33f, 0.70f);   // dark teal — self highlight
     private static readonly Color MeterSelfBdr   = new(0.45f, 0.82f, 0.87f, 0.90f);
     private static readonly Color MeterSpineBg   = new(0f, 0f, 0f, 0.40f);
+    private static readonly Color MeterSpineShield = new(0.86f, 0.88f, 0.92f, 0.92f);  // white/grey shield band over the green HP fill (owner: "grey over green, from below")
     private static readonly Color MeterTrackBg   = new(1f, 1f, 1f, 0.07f);
     private static readonly Color MeterScrim     = new(0.05f, 0.06f, 0.08f, 0.50f);
     private static readonly Color MeterNameCol   = new(0.92f, 0.94f, 0.95f, 1f);
@@ -85,7 +86,7 @@ internal sealed partial class WindowBuilder
         var le = row.AddComponent<LayoutElement>();
         le.preferredHeight = le.minHeight = MeterRowHeight; le.flexibleWidth = 1f;
 
-        var (bg, border, talkBorder, spineFill, spine) = BuildMeterBackplate(row.transform);
+        var (bg, border, talkBorder, spineFill, shieldFill, spine) = BuildMeterBackplate(row.transform);
 
         // Content — inset past the spine; top line + bar stacked.
         var content = UGuiPrimitives.NewChild("Content", row.transform);
@@ -116,7 +117,7 @@ internal sealed partial class WindowBuilder
         token.MeterRows.Add(new MeterRowBinding
         {
             Data = el.Data, ContentVlg = vlg,
-            Bg = bg, SelfBorder = border, SpineFill = spineFill, SpineGo = spine,
+            Bg = bg, SelfBorder = border, SpineFill = spineFill, ShieldFill = shieldFill, SpineGo = spine,
             Crest = crest, CrestCellGo = crestCell, DeadMarkGo = deadMark, Rank = rank, RankGo = rank.gameObject,
             Name = name, NameStrikeGo = nameStrike,
             ClassName = className, ClassNameGo = className.gameObject, Spec = spec, SpecGo = specGo,
@@ -131,47 +132,8 @@ internal sealed partial class WindowBuilder
             RegisterRightClick?.Invoke(row.GetComponent<RectTransform>(), () => rc());
     }
 
-    // Bg (self-backing) + self-highlight border + talk border + HP spine — the ignore-layout backplate.
-    private (Image bg, GameObject border, GameObject talkBorder, Image spineFill, GameObject spine) BuildMeterBackplate(Transform row)
-    {
-        var bg = AddStretchedImage(row, "Bg", MeterRowBg, ignoreLayout: true);
-
-        var border = BuildBorder(row, "SelfBorder");
-        // Parallel 4-edge border the plugin tints (e.g. green while talking); hidden until RowBorder alpha > 0.
-        var talkBorder = BuildBorder(row, "TalkBorder");
-        talkBorder.SetActive(false);
-
-        var spine = UGuiPrimitives.NewChild("Spine", row);
-        spine.AddComponent<LayoutElement>().ignoreLayout = true;
-        var srt = spine.GetComponent<RectTransform>();
-        srt.anchorMin = new Vector2(0f, 0f); srt.anchorMax = new Vector2(0f, 1f); srt.pivot = new Vector2(0f, 0.5f);
-        srt.sizeDelta = new Vector2(MeterSpineW, -4f); srt.anchoredPosition = new Vector2(2f, 0f); // inset past the left border
-        var spineBg = spine.AddComponent<Image>(); spineBg.color = MeterSpineBg; spineBg.raycastTarget = false;
-        // HP fill: a bottom-anchored solid rect whose HEIGHT is the HP fraction (the binding drives anchorMax.y).
-        // NOT Image.Type.Filled — a uGUI Image with no sprite ignores fillAmount and draws a FULL quad, so the
-        // migrated Filled spine stayed full regardless of HP. Anchor-resize needs no sprite and mirrors how the
-        // role bar clips its width. Build-default colour is transparent: the binding paints the real HP colour
-        // only once it differs from the struct default, so an empty placeholder row keeps an invisible spine.
-        var fillGo = UGuiPrimitives.NewChild("Fill", spine.transform);
-        var frt = fillGo.GetComponent<RectTransform>();
-        frt.anchorMin = new Vector2(0f, 0f); frt.anchorMax = new Vector2(1f, 1f); frt.pivot = new Vector2(0.5f, 0f);
-        frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
-        var spineFill = fillGo.AddComponent<Image>(); spineFill.color = Color.clear; spineFill.raycastTarget = false;
-        return (bg, border, talkBorder, spineFill, spine);
-    }
-
-    // A 4-edge (1-px) box border filling its parent. Edge colour is set at apply time by the binding.
-    private static GameObject BuildBorder(Transform row, string name)
-    {
-        var border = UGuiPrimitives.NewChild(name, row);
-        border.AddComponent<LayoutElement>().ignoreLayout = true;
-        UGuiPrimitives.Stretch(border);
-        AddEdge(border.transform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f));   // top    (horizontal)
-        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 0f), new Vector2(0f, 1f));   // bottom (horizontal)
-        AddEdge(border.transform, new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(0f, 0f), new Vector2(1f, 0f));   // left   (vertical)
-        AddEdge(border.transform, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(1f, 0f), new Vector2(1f, 0f));   // right  (vertical)
-        return border;
-    }
+    // BuildMeterBackplate / AddSpineFill / BuildBorder / AddEdge moved to WindowBuilder.MeterBackplate.cs
+    // (this file crossed the 500-LoC gate when the shield overlay landed).
 
     private static readonly Color MeterLeaderCol = new(0.96f, 0.78f, 0.20f, 1f);   // gold party-leader flag
 
@@ -478,14 +440,4 @@ internal sealed partial class WindowBuilder
         });
     }
 
-    private static void AddEdge(Transform parent, Vector2 aMin, Vector2 aMax, Vector2 pivot, Vector2 size)
-    {
-        var go = UGuiPrimitives.NewChild("Edge", parent);
-        var rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = aMin; rt.anchorMax = aMax; rt.pivot = pivot;
-        // size encodes which dimension is the 1-px line: x=1 → vertical edge, y=1 → horizontal edge.
-        rt.sizeDelta = new Vector2(size.x > 0.5f ? 1f : 0f, size.y > 0.5f ? 1f : 0f);
-        rt.anchoredPosition = Vector2.zero;
-        var img = go.AddComponent<Image>(); img.color = MeterSelfBdr; img.raycastTarget = false;
-    }
 }
