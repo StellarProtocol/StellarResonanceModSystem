@@ -16,9 +16,9 @@ namespace Stellar.Infrastructure.Game;
 /// </summary>
 internal sealed partial class WindowBuilder
 {
-    private const float MeterDebuffCell  = 15f;                                  // cell square edge (px)
-    private const float MeterDebuffGap   = 4f;                                   // inter-cell gap (px)
-    private const float MeterDebuffBlock = MeterDebuffCell * 2f + MeterDebuffGap; // 34px fixed 2×2 block edge
+    private const float MeterDebuffCell  = 20f;                                  // cell square edge (px) — bigger icons
+    private const float MeterDebuffGap   = 2f;                                   // inter-cell gap (px) — tight
+    private const float MeterDebuffBlock = MeterDebuffCell * 2f + MeterDebuffGap; // 42px fixed 2×2 block edge
 
     private static readonly Color MeterDebuffFrame = new(0.88f, 0.32f, 0.29f, 0.90f); // red cell frame
     private static readonly Color MeterDebuffBg    = new(0.14f, 0.08f, 0.09f, 1f);    // dark backing while art loads / is unavailable
@@ -93,13 +93,13 @@ internal sealed partial class WindowBuilder
         var stkGo = UGuiPrimitives.NewChild("Stk", cellGo.transform);
         var stkRt = stkGo.GetComponent<RectTransform>();
         stkRt.anchorMin = stkRt.anchorMax = stkRt.pivot = new Vector2(1f, 1f);   // top-right
-        stkRt.sizeDelta = new Vector2(11f, 10f); stkRt.anchoredPosition = new Vector2(2f, 2f);
+        stkRt.sizeDelta = new Vector2(13f, 12f); stkRt.anchoredPosition = new Vector2(2f, 2f);
         var stkBg = stkGo.AddComponent<Image>(); stkBg.color = new Color(0.04f, 0.05f, 0.07f, 0.92f); stkBg.raycastTarget = false;
         var stkTxtGo = UGuiPrimitives.NewChild("T", stkGo.transform); UGuiPrimitives.Stretch(stkTxtGo);
         var stacks = stkTxtGo.AddComponent<Text>();
-        UGuiPrimitives.ConfigureText(stacks, Scaled(8), TextAnchor.MiddleCenter, bold: true);
+        UGuiPrimitives.ConfigureText(stacks, Scaled(9), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(stacks); stacks.color = new Color(1f, 0.86f, 0.4f, 1f);
-        RegisterTextSizeReskin(token, stacks, 8);
+        RegisterTextSizeReskin(token, stacks, 9);
 
         var more = AddOverlayText(token, cellGo.transform, "More", TextAnchor.MiddleCenter, baseSize: 9);
         more.color = MeterDebuffMore;
