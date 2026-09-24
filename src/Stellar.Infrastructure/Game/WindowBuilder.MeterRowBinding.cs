@@ -121,6 +121,7 @@ internal sealed partial class WindowBuilder
         public ImagineCell Imagine1Cell = null!;
         public DebuffBlock DebuffBlock = null!;   // trailing 2×2 debuff block (far right)
         public Transform DebuffColHost = null!;   // the full-height right-edge host for the block
+        public LayoutElement RowLe = null!;   // the row's LayoutElement — its height scales with the debuff size
         public Transform ImagineGroup = null!;     // the re-parentable imagine cluster (for ImaginePosition)
         public Transform TopLine = null!;          // top-line HLG host (top-right / left positions)
         public Transform RightColHost = null!;     // right-column host (RightColumn position)
@@ -146,6 +147,7 @@ internal sealed partial class WindowBuilder
         private ImagineCellCache _img0, _img1;
         private DebuffBlockCache _dbuff;
         private int _lastDebuffLayout = -1;
+        private float _lastDebuffBlockW = -1f;
 
         public void Apply()
         {
@@ -313,20 +315,30 @@ internal sealed partial class WindowBuilder
         // debuff block width when both want the right edge (so they never overlap).
         private void ApplyDebuffLayout(in MeterRowData d)
         {
+            float blockW = DebuffBlockPx(d);   // scales with the row's chosen debuff size
             int key = (d.ShowDebuffs ? 1 : 0) * 4 + (int)d.ImaginePosition;
-            if (_lastDebuffLayout == key) return;
+            if (_lastDebuffLayout == key && Mathf.Approximately(_lastDebuffBlockW, blockW)) return;
             _lastDebuffLayout = key;
+            _lastDebuffBlockW = blockW;
             int imagineRight = d.ImaginePosition == ImaginePosition.RightColumn ? 58 : 0;
-            int debuffRight  = d.ShowDebuffs ? (int)(WindowBuilder.MeterDebuffBlock + 4f) : 0;
+            int debuffRight  = d.ShowDebuffs ? (int)(blockW + 4f) : 0;
             if (ContentVlg != null)
             {
                 var p = ContentVlg.padding;
                 ContentVlg.padding = new RectOffset(p.left, (int)MeterPad + imagineRight + debuffRight, p.top, p.bottom);
             }
             if (RightColHost != null)
+                ((RectTransform)RightColHost).anchoredPosition = new Vector2(-(MeterPad + (d.ShowDebuffs ? blockW + 4f : 0f)), 0f);
+            if (DebuffColHost != null)
             {
-                float imgX = -(MeterPad + (d.ShowDebuffs ? WindowBuilder.MeterDebuffBlock + 4f : 0f));
-                ((RectTransform)RightColHost).anchoredPosition = new Vector2(imgX, 0f);
+                var rt = (RectTransform)DebuffColHost;
+                rt.sizeDelta = new Vector2(blockW, rt.sizeDelta.y);
+            }
+            if (RowLe != null)
+            {
+                // Grow the row so the (possibly bigger) 2×2 block fits; back to the base height when hidden.
+                float h = d.ShowDebuffs ? Mathf.Max(MeterRowHeight, blockW + 6f) : MeterRowHeight;
+                RowLe.preferredHeight = RowLe.minHeight = h;
             }
         }
 

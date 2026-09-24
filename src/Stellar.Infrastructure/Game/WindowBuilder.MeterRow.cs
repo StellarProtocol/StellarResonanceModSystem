@@ -118,7 +118,7 @@ internal sealed partial class WindowBuilder
             BarFillRect = fillRect, BarFillImg = fillImg, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
-            DebuffBlock = debuffBlock, DebuffColHost = debuffCol,
+            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });

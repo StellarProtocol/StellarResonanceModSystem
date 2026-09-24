@@ -83,6 +83,9 @@ public struct MeterRowData
     public int DebuffOverflow;
     /// <summary>When true the trailing 2×2 debuff block is shown (per-mode user toggle). Default false so plugins built before this field render unchanged.</summary>
     public bool ShowDebuffs;
+    /// <summary>Debuff cell edge in px (each of the 2×2 cells). 0 = the renderer default (20px). Larger values
+    /// grow the block AND the row height so the bigger icons fit — a per-mode user option.</summary>
+    public float DebuffCellSize;
     /// <summary>When false the cooldown-seconds label beside the Imagine icon is hidden (the radial sweep on the icon stays). User toggle; also suppressed automatically at raid-20 density.</summary>
     public bool ShowImagineCooldown;
     /// <summary>When false the rank label is hidden.</summary>

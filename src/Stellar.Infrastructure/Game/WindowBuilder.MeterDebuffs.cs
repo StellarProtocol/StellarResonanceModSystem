@@ -48,11 +48,13 @@ internal sealed partial class WindowBuilder
     internal sealed class DebuffBlock
     {
         public GameObject Root = null!;
+        public GridLayoutGroup Grid = null!;
+        public LayoutElement Le = null!;
         public DebuffCell[] Cells = new DebuffCell[4];
     }
 
     // Per-block poll-diff cache (block-level show flag; per-cell state is cheap enough to re-poll).
-    internal struct DebuffBlockCache { public bool Init, Shown; }
+    internal struct DebuffBlockCache { public bool Init, Shown; public float Size; }
 
     // Build the fixed 2×2 block: a GridLayoutGroup pinned to 42px. Root inactive until ShowDebuffs.
     private DebuffBlock BuildDebuffBlock(WindowToken token, Transform host)
@@ -68,7 +70,7 @@ internal sealed partial class WindowBuilder
         le.preferredWidth = le.minWidth = MeterDebuffBlock;
         le.preferredHeight = MeterDebuffBlock;
 
-        var block = new DebuffBlock { Root = root };
+        var block = new DebuffBlock { Root = root, Grid = grid, Le = le };
         for (var i = 0; i < 4; i++) block.Cells[i] = BuildDebuffCell(token, root.transform);
         root.SetActive(false);
         return block;
@@ -120,12 +122,25 @@ internal sealed partial class WindowBuilder
         };
     }
 
+    // The per-cell edge / whole-block edge for a row's chosen debuff size (0 = the 20px default).
+    internal static float DebuffCellPx(in MeterRowData d) => d.DebuffCellSize > 0f ? d.DebuffCellSize : MeterDebuffCell;
+    internal static float DebuffBlockPx(in MeterRowData d) => DebuffCellPx(d) * 2f + MeterDebuffGap;
+
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
     private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache)
     {
         if (block.Root == null) return;
         if (!cache.Init || d.ShowDebuffs != cache.Shown) { block.Root.SetActive(d.ShowDebuffs); cache.Shown = d.ShowDebuffs; cache.Init = true; }
         if (!d.ShowDebuffs) return;
+        var cellPx = DebuffCellPx(d);
+        if (!Mathf.Approximately(cellPx, cache.Size))
+        {
+            var blockPx = DebuffBlockPx(d);
+            block.Grid.cellSize = new Vector2(cellPx, cellPx);
+            block.Le.preferredWidth = block.Le.minWidth = blockPx;
+            block.Le.preferredHeight = blockPx;
+            cache.Size = cellPx;
+        }
         BindDebuffCell(block.Cells[0], d.Debuff0, 0);
         BindDebuffCell(block.Cells[1], d.Debuff1, 0);
         BindDebuffCell(block.Cells[2], d.Debuff2, 0);
