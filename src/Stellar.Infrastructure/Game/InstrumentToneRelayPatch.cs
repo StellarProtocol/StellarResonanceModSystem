@@ -17,11 +17,14 @@ namespace Stellar.Infrastructure.Game;
 /// ints in a Tone sync record but DROPS the raw <c>1000xxx</c> id (>1000), which is why vanilla tone never
 /// reaches a listener through the note stream. This prefix undoes the encode on receive.</para>
 ///
-/// <para><b>Why the swap runs here and targets the SERVER player:</b> the wire→<c>PendingInstrumentSync</c>
-/// copy happens DOWNSTREAM of <c>onInstrumentPlayEvent</c>, so mutating the <c>RepeatedField</c> in this
-/// prefix is captured. A remote performer's notes render on the listener through the entity's SERVER
-/// <c>InstrumentPlayer</c>, so the tone must be applied with <c>isLocal:false</c> — applying it to the
-/// LOCAL player is why tone never rendered in earlier attempts. See Band-Instrument-Playback.md
+/// <para><b>Why the swap runs here — and why the game's own drain applies it, not us:</b> the
+/// wire→<c>PendingInstrumentSync</c> copy happens DOWNSTREAM of <c>onInstrumentPlayEvent</c>, so mutating
+/// the <c>RepeatedField</c> in this prefix is captured. We rewrite <c>PlayParam</c> to the raw tone id and
+/// let the game's scheduled drain apply it at the record's <c>playTime</c> — we do NOT apply it immediately
+/// on receive. An earlier version did an immediate <c>EntityInstrumentSetTone</c>, but in buffered (B2) mode
+/// records arrive ~400ms AHEAD of their <c>playTime</c> (lookahead), so the immediate apply overshot and the
+/// first note rendered with the wrong tone until the on-schedule drain corrected it. Routing the tone through
+/// the rewritten <c>PlayParam</c> keeps it in sync with the notes it belongs to. See Band-Instrument-Playback.md
 /// "⭐ Tone-relay REVISITED — 3-player split".</para>
 ///
 /// <para><b>Vanilla-safe:</b> the game only ever puts the RAW <c>1000xxx</c> id in a Tone record (never
@@ -37,7 +40,6 @@ internal static class InstrumentToneRelayPatch
 
     private static Action<string>? _log;
     private static bool _resolved;
-    private static MethodInfo? _setTone;         // InstrumentService.EntityInstrumentSetTone(ZEntity, int, bool)
     private static MethodInfo? _syncTypeGetter;  // InstrumentSyncData.get_SyncType
     private static MethodInfo? _playParamGetter; // InstrumentSyncData.get_PlayParam
     private static MethodInfo? _playParamSetter; // InstrumentSyncData.set_PlayParam
@@ -80,7 +82,7 @@ internal static class InstrumentToneRelayPatch
         try
         {
             harmony.Patch(target, prefix: new HarmonyMethod(prefix));
-            log("[ToneRelay] patched InstrumentService.onInstrumentPlayEvent (PREFIX) — remaps small-int Tone codes 0..6 → 1000000+ on receive (server player)");
+            log("[ToneRelay] patched InstrumentService.onInstrumentPlayEvent (PREFIX) — remaps small-int Tone codes 0..6 → 1000000+ on receive (applied by the game's scheduled drain at playTime)");
         }
         catch (Exception ex)
         {
@@ -105,7 +107,7 @@ internal static class InstrumentToneRelayPatch
             var n = StellarInterop.Count(events);
             if (n == 0) return true;
 
-            if (!EnsureResolved(__instance, events)) return true;
+            if (!EnsureResolved(events)) return true;
 
             for (var i = 0; i < n; i++)
             {
@@ -125,14 +127,17 @@ internal static class InstrumentToneRelayPatch
 
                 var realTone = RawToneBase + code;
 
-                // (a) Rewrite PlayParam in place so the downstream wire→PendingInstrumentSync copy carries the
-                // real id. InstrumentSyncData is a reference type, so mutating the retrieved record mutates the
-                // element inside the RepeatedField — no write-back needed.
+                // Rewrite PlayParam in place so the downstream wire→PendingInstrumentSync copy carries the real
+                // id. InstrumentSyncData is a reference type, so mutating the retrieved record mutates the element
+                // inside the RepeatedField — no write-back needed. The game's OWN scheduled drain then applies the
+                // tone at the record's playTime; we deliberately do NOT apply it immediately here.
+                //
+                // Why no immediate EntityInstrumentSetTone: in buffered (B2) mode the sender ships tone/note
+                // records ~400ms AHEAD of their playTime (lookahead). An immediate receive-time SetTone raced that
+                // lookahead — it overshot, setting the tone too early/out of sync, so the first note rendered with
+                // the wrong (distorted) tone before the game's on-schedule drain corrected it. Letting the drain
+                // apply the rewritten PlayParam on schedule keeps the tone in sync with the notes it belongs to.
                 _playParamSetter!.Invoke(rec, new object[] { realTone });
-
-                // (b) Apply the tone to the SERVER player (isLocal:false) BEFORE the queued Note records drain —
-                // that is the player through which a remote performer's notes render on this machine.
-                _setTone?.Invoke(__instance, new object[] { entity, realTone, false });
             }
         }
         catch { /* swallow — never break band audio */ }
@@ -140,17 +145,15 @@ internal static class InstrumentToneRelayPatch
         return true; // always run the original
     }
 
-    // Resolves EntityInstrumentSetTone (off the live InstrumentService type) and the InstrumentSyncData
-    // property accessors (off the live element type). Returns true once all four are resolved; does NOT
-    // latch on failure so a call that happens before the types are fully loaded simply retries next batch.
-    private static bool EnsureResolved(object svc, object events)
+    // Resolves the InstrumentSyncData property accessors (off the live element type). Returns true once all
+    // three are resolved; does NOT latch on failure so a call that happens before the types are fully loaded
+    // simply retries next batch.
+    private static bool EnsureResolved(object events)
     {
         if (_resolved) return true;
 
         try
         {
-            _setTone ??= StellarInterop.FindMethod(svc.GetType(), "EntityInstrumentSetTone", 3);
-
             if (_syncTypeGetter is null || _playParamGetter is null || _playParamSetter is null)
             {
                 var sample = StellarInterop.Item(events, 0);
@@ -170,12 +173,12 @@ internal static class InstrumentToneRelayPatch
             return false;
         }
 
-        var ok = _setTone is not null && _syncTypeGetter is not null
+        var ok = _syncTypeGetter is not null
                  && _playParamGetter is not null && _playParamSetter is not null;
         if (ok)
         {
             _resolved = true;
-            _log?.Invoke("[ToneRelay] resolved EntityInstrumentSetTone + InstrumentSyncData.SyncType/PlayParam accessors");
+            _log?.Invoke("[ToneRelay] resolved InstrumentSyncData.SyncType/PlayParam accessors");
         }
         return ok;
     }
