@@ -130,6 +130,7 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:gamedata");
         TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
         DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
+        StepSpecRootBuffs();               // then the 3 talent tables for the spec-root map, one per tick
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:gamedata");
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:equiploadout");
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate

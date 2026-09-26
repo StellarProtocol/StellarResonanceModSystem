@@ -20,11 +20,15 @@ public enum SkillEventPhase
 /// <summary>How a buff's state changed, as reported by <see cref="CombatEvent.BuffChanged"/>.</summary>
 public enum BuffChangeKind
 {
-    /// <summary>Buff was freshly applied to the target.</summary>
+    /// <summary>Buff was freshly applied to the target (a live delta for a buff uuid not held yet). A buff that was
+    /// already on the entity when it was seeded (<see cref="CombatEvent.EntityBuffsSeeded"/>) never gets an
+    /// Applied — consumers that need "first application" must treat the seed as the application.</summary>
     Applied,
-    /// <summary>An already-active buff had its duration or stacks refreshed.</summary>
+    /// <summary>An already-held buff had its duration, stacks or layer refreshed. This includes the first live
+    /// delta for a buff that arrived through a seed; an identical re-send raises nothing.</summary>
     Refreshed,
-    /// <summary>Buff was removed from the target.</summary>
+    /// <summary>Buff was removed from the target — including the expiry of a buff that arrived through a
+    /// seed.</summary>
     Removed,
 }
 
@@ -41,7 +45,9 @@ public abstract record CombatEvent(long TimestampMs)
     /// <param name="Phase">Which phase of the skill lifecycle this event covers.</param>
     public sealed record SkillUsed(long TimestampMs, EntityId CasterId, int SkillId, SkillEventPhase Phase) : CombatEvent(TimestampMs);
 
-    /// <summary>A buff on an entity was applied, refreshed, or removed.</summary>
+    /// <summary>A buff on an entity was applied, refreshed, or removed by a LIVE delta. Buffs already present when
+    /// the entity appeared arrive once, together, in <see cref="EntityBuffsSeeded"/> — see <see cref="BuffChangeKind"/>
+    /// for how their later deltas are reported.</summary>
     /// <param name="TimestampMs">Server epoch timestamp of the event in milliseconds.</param>
     /// <param name="TargetId">Entity whose buff state changed.</param>
     /// <param name="BuffUuid">Per-instance unique id for this buff application.</param>
@@ -126,4 +132,53 @@ public abstract record CombatEvent(long TimestampMs)
     /// type it's typed as).</param>
     /// <param name="State">Which state the entity entered.</param>
     public sealed record EntityStateChanged(long TimestampMs, EntityId TargetId, ActorState State) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// An entity's COMPLETE buff set arrived as one snapshot — an AOI appear (<c>SyncNearEntities</c>
+    /// <c>Entity.buff_infos</c>) or the local player's <c>EnterScene</c> entity (spec-from-talent-buffs,
+    /// 2026-09-26). Snapshot semantics: <paramref name="Buffs"/> REPLACES whatever the consumer held for
+    /// <paramref name="TargetId"/> — buffs it held that are not listed are gone, listed ones are current. Raised
+    /// once per snapshot — including an empty snapshot when a set WAS held for the entity (so a consumer can
+    /// clear); an empty snapshot for an entity with nothing held (a mob/NPC appearing buff-less) raises nothing —
+    /// and INSTEAD of
+    /// per-buff <see cref="BuffChanged"/> events: a town crowd of 30 players × ~120 buffs is 30 events, not
+    /// thousands. Live changes afterwards arrive as per-buff <see cref="BuffChanged"/> events exactly as before.
+    /// By the time this event fires, <see cref="Services.ICombatLookup.BuffsFor"/> already returns the new set.
+    /// A snapshot the client could not decode completely is skipped (no event, held set untouched).
+    /// <para>Lifecycle after a seed: a later live delta for a seeded buff arrives as
+    /// <see cref="BuffChangeKind.Refreshed"/> (or nothing, if identical), never <see cref="BuffChangeKind.Applied"/>;
+    /// its expiry arrives as <see cref="BuffChangeKind.Removed"/>. A consumer that needs the "first application"
+    /// of a buff must treat its presence in the seed as that application.</para>
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time of the snapshot packet (client wall clock, Unix ms) — the same
+    /// clock its sibling <see cref="BuffChanged"/> events carry.</param>
+    /// <param name="TargetId">The entity whose buff set was seeded.</param>
+    /// <param name="Buffs">The complete buff set; empty when the entity carries none. Read-only (the same
+    /// instance <see cref="Services.ICombatLookup.BuffsFor"/> returns until the set next changes).</param>
+    public sealed record EntityBuffsSeeded(long TimestampMs, EntityId TargetId, IReadOnlyList<ActiveBuff> Buffs) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// The value <see cref="Services.ICombatSpec.GetSubProfession"/> returns for an entity changed
+    /// (spec-from-talent-buffs, 2026-09-26). Raised exactly once per REAL change of that value, whether it
+    /// came from a talent root buff or from cast inference — never for a no-op re-resolution. Holding the
+    /// previous spec across a same-class swap gap (the root buff removed before the new one arrives) is not a
+    /// change, so Smite → gap → Lifebind raises ONE event, Smite → Lifebind; a gap that outlives 10 s drops the
+    /// talent spec and raises one if the reported value changes. A class change (attr 220) with no
+    /// root buff of the new class yet DOES raise one (old spec → the new class's cast-derived spec, or 0).
+    /// Changes are evaluated on the main-thread drain, never while a wire packet is mid-ingest, so the
+    /// whole-packet net change is reported (a class swap delivering attr 220 and the new talent set together raises one
+    /// event, not an intermediate old→0→new pair). Not raised when a scene change resets every spec to 0;
+    /// specs re-announce (0 → spec) as entities reappear. Rides the existing <c>ICombatEvents</c> stream so no
+    /// combat service interface gains a member.
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time (client wall clock, Unix ms) of the update that caused the
+    /// change — the buff/attr packet, or the damage event whose cast resolved the spec.</param>
+    /// <param name="TargetId">The entity whose spec changed (named to match the <c>TargetId</c> convention of
+    /// its siblings).</param>
+    /// <param name="OldSubProfessionId">The previously reported sub-profession id (0 = none).</param>
+    /// <param name="NewSubProfessionId">The sub-profession id now returned by
+    /// <see cref="Services.ICombatSpec.GetSubProfession"/> (0 = none).</param>
+    /// <param name="FromTalent"><see langword="true"/> when the new value is talent-derived — the same meaning
+    /// as <see cref="Services.ICombatSpec.TryGetTalentSpec"/> returning <see langword="true"/>.</param>
+    public sealed record SpecChanged(long TimestampMs, EntityId TargetId, int OldSubProfessionId, int NewSubProfessionId, bool FromTalent) : CombatEvent(TimestampMs);
 }

@@ -72,6 +72,21 @@ internal sealed partial class CombatService
     {
         MaybeSweepIdleEntities();
 
+        DrainQueue();
+        // Spec changes are evaluated once per drain, after the whole batch of wire updates has landed, so a
+        // packet's net change raises one SpecChanged; they are fired in the same frame.
+        if (PublishSpecChanges()) DrainQueue();
+
+        // No idle decay: DpsAccumulator.Live is only updated on RecordDamage.
+        // When no further events arrive for a source, its Live value freezes at
+        // the most recent window-sum / 5s. UI consumers see the last observed
+        // value until the next damage/heal event for that source. This matches
+        // the user-visible expectation that the meter doesn't drift to 0 just
+        // because the source briefly stopped attacking/healing.
+    }
+
+    private void DrainQueue()
+    {
         while (_queue.TryDequeue(out var evt))
         {
             lock (_ringLock)
@@ -85,13 +100,6 @@ internal sealed partial class CombatService
             AccumulateSpec(evt);
             FireEvent(evt);
         }
-
-        // No idle decay: DpsAccumulator.Live is only updated on RecordDamage.
-        // When no further events arrive for a source, its Live value freezes at
-        // the most recent window-sum / 5s. UI consumers see the last observed
-        // value until the next damage/heal event for that source. This matches
-        // the user-visible expectation that the meter doesn't drift to 0 just
-        // because the source briefly stopped attacking/healing.
     }
 
     private void AccumulateDps(CombatEvent evt)
@@ -114,18 +122,6 @@ internal sealed partial class CombatService
         if (d.Amount <= 0) return;
         if (d.SourceId.IsNone) return;
         _entities.AccumulateHps(d.SourceId, d.TimestampMs, d.Amount);
-    }
-
-    // Resolve the caster's active spec from the CAST skill id (last-seen-wins). There is no authoritative
-    // spec field on the wire and the equipped-skill loadout carries both specs' signature skills, so casts
-    // are the only reliable signal (ZDPS-parity). Only player sources can have a spec; SubProfessionFromSkill
-    // already returns null for non-spec / non-player skills, so the IsPlayer gate just avoids spurious work.
-    private void AccumulateSpec(CombatEvent evt)
-    {
-        if (evt is not CombatEvent.DamageDealt d) return;
-        if (d.SourceId.IsNone || !d.SourceId.IsPlayer) return;
-        if (Stellar.Abstractions.Domain.GameData.ProfessionSpecs.SubProfessionFromSkill(d.SkillId) is { } sub)
-            _entities.SetSubProfession(d.SourceId, sub);
     }
 
     private void FireEvent(CombatEvent evt)

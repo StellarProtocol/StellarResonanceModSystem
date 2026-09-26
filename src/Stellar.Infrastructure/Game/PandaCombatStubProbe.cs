@@ -67,7 +67,10 @@ internal sealed partial class PandaCombatStubProbe
         _positions     = positions     ?? throw new ArgumentNullException(nameof(positions));
         _log           = log           ?? throw new ArgumentNullException(nameof(log));
         _entityVitals  = entityVitals  ?? throw new ArgumentNullException(nameof(entityVitals));
+        _route         = Route;   // cached once — no delegate allocation per packet
     }
+
+    private readonly Action<uint, byte[]> _route;
 
     /// <summary>Clear the cached local entity uuid on logout so the next account doesn't inherit the
     /// previous player's self-uuid (used by <see cref="OnNearDelta"/> to suppress duplicate self buff
@@ -95,6 +98,12 @@ internal sealed partial class PandaCombatStubProbe
     /// <see cref="WorldNtfStubDispatcher.Register"/>.
     /// </summary>
     private void Dispatch(uint methodId, byte[] payload)
+    {
+        // Bracket the whole packet so the combat drain never publishes a spec change from half a packet.
+        IngestBracket.Run(_sink, methodId, payload, _route);
+    }
+
+    private void Route(uint methodId, byte[] payload)
     {
         switch (methodId)
         {

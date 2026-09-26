@@ -66,6 +66,7 @@ internal sealed partial class PandaCombatStubProbe
             DiagAppearEntity(entity);
             var eid = new EntityId(entity.Uuid);
             ReadAppearEntity(eid, entity.Attrs, ts);
+            if (!AppearBuffSeed.Apply(_sink, eid, entity, ts)) DiagBuffSeedSkipped(eid);   // full set (field 7)
             DiagEntityLife(eid, "appear", EntityDisappearReason.Unknown);
         }
     }
@@ -167,8 +168,14 @@ internal sealed partial class PandaCombatStubProbe
         DiagEnterSceneIdentity(span);
 
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
-        if (!parsed || self.Attrs is not { } attrs) return;
+        if (!parsed) return;
         var eid = new EntityId(self.Uuid);
+        if (!AppearBuffSeed.Apply(_sink, eid, self, ts)) DiagBuffSeedSkipped(eid);   // self's full buff set (field 7)
+        if (self.Attrs is { } attrs) ReadEnterSceneSelfAttrs(eid, attrs, ts);
+    }
+
+    private void ReadEnterSceneSelfAttrs(EntityId eid, AttrCollectionMsg attrs, long ts)
+    {
         for (int i = 0; i < attrs.Items.Count; i++)
         {
             var attr = attrs.Items[i];

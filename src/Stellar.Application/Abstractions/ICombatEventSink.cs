@@ -25,6 +25,12 @@ internal interface ICombatEventIngestion
     void IngestDamage(SyncDamageInfoMsg msg, EntityId targetId, long timestampMs);
 
     void SetServerNowMs(long epochMs);
+
+    /// <summary>Bracket one wire packet's ingest (paired with <see cref="EndPacket"/>, try/finally).</summary>
+    void BeginPacket();
+
+    /// <summary>End the packet bracket opened by <see cref="BeginPacket"/>.</summary>
+    void EndPacket();
 }
 
 /// <summary>
@@ -53,6 +59,10 @@ internal interface ICombatBuffSink
     /// otherwise show stale debuffs (e.g. a lockout) after a zone transition.
     /// </summary>
     void ClearAllBuffs();
+
+    /// <summary>Full buff snapshot for one entity (AOI appear / EnterScene self); null = empty set. Contract on
+    /// <c>CombatService.ReplaceEntityBuffs</c>.</summary>
+    void ReplaceEntityBuffs(EntityId entityId, IReadOnlyList<ActiveBuff>? buffs, long timestampMs);
 }
 
 /// <summary>

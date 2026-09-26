@@ -60,7 +60,8 @@ internal sealed class CombatEntityTracker
 
     // Per-entity active sub-profession (spec) id, resolved from observed combat casts
     // (ProfessionSpecs.SubProfessionFromSkill on each damage/heal). 0 = not yet seen casting
-    // a spec-defining skill. Last-seen-wins, so a mid-fight spec change is followed.
+    // a spec-defining skill. Last-seen-wins, so a mid-fight spec change is followed. This is the CAST
+    // fallback only — TalentSpecResolver overlays the authoritative talent-root-buff spec on top of it.
     private readonly Dictionary<EntityId, int> _subProfessionByEntity = new();
     private readonly object _subProfessionByEntityLock = new();
 
@@ -248,12 +249,15 @@ internal sealed class CombatEntityTracker
     }
 
     /// <summary>Record an entity's active spec, resolved from a cast skill id. Last-seen-wins.</summary>
-    public void SetSubProfession(EntityId entityId, int subProfessionId)
+    /// <summary>Record the cast-derived spec. Returns true when the stored value changed.</summary>
+    public bool SetSubProfession(EntityId entityId, int subProfessionId)
     {
-        if (subProfessionId == 0) return;
+        if (subProfessionId == 0) return false;
         lock (_subProfessionByEntityLock)
         {
+            if (_subProfessionByEntity.TryGetValue(entityId, out var cur) && cur == subProfessionId) return false;
             _subProfessionByEntity[entityId] = subProfessionId;
+            return true;
         }
     }
 
