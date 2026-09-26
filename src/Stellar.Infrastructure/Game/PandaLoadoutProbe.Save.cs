@@ -172,10 +172,9 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutSaveProbe
         if (result == LoadoutResult.Success)
         {
             // The target's saved data changed server-side: re-fire SyncProjectList so GetSlots() and
-            // LoadoutsChanged reflect it (the same on-demand refresh a switch arms), and re-evaluate the
-            // unsaved flag against the fresh plan data when that dump lands.
+            // LoadoutsChanged reflect it (the same on-demand refresh a switch arms). That dump carries the
+            // UNSAVED row too, so the unsaved flag is re-evaluated against the fresh plan data for free.
             _refreshPending = true;
-            RefreshUnsavedFlag();
         }
         _log.Info($"[Stellar][Loadout] save to {save.TargetId} -> {result} after {save.Elapsed.TotalMilliseconds:F0}ms");
         save.Tcs.TrySetResult(result);

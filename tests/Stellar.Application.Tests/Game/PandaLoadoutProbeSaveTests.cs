@@ -97,6 +97,48 @@ public sealed class PandaLoadoutProbeSaveTests
     public void A_failed_unsaved_check_is_no_signal(string? raw)
         => Assert.Null(PandaLoadoutProbe.ParseUnsavedFlag(raw));
 
+    // ── The UNSAVED row rides the two existing chunks (perf review: no extra DoString per merge) ──
+
+    private static string ChunkConst(string name)
+    {
+        var f = typeof(PandaLoadoutProbe).GetField(name, BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(f);
+        return (string)f!.GetRawConstantValue()!;
+    }
+
+    [Fact]
+    public void The_unsaved_check_is_a_row_of_the_merge_chunk_and_the_refresh_chunk()
+    {
+        Assert.Contains(PandaLoadoutProbe.UnsavedRowFragment, ChunkConst("LiveStateChunk"));
+        var refresh = ChunkConst("RefreshChunk");
+        Assert.Contains(PandaLoadoutProbe.UnsavedRowFragment, refresh);
+        // After SyncProjectList, so it compares against FRESH saved data.
+        Assert.True(refresh.IndexOf("AsyncGetRolePlanData", StringComparison.Ordinal)
+                    < refresh.IndexOf(PandaLoadoutProbe.UnsavedRowFragment, StringComparison.Ordinal));
+        // Scoped + guarded: its locals never leak, a failure never breaks the host chunk.
+        Assert.StartsWith(" do ", PandaLoadoutProbe.UnsavedRowFragment);
+        Assert.Contains("pcall(", PandaLoadoutProbe.UnsavedRowFragment);
+    }
+
+    [Theory]
+    [InlineData("RES\t1\nLIVE\t1:2\t\t9\t0\t\nUNSAVED\t1", "1")]
+    [InlineData("CUR=4\n4\tIci-LF\t2\t0\t\t\t\nUNSAVED\t0", "0")]
+    [InlineData("RES\t\nUNSAVED\tE:attempt to index a nil value", "E:attempt to index a nil value")]
+    [InlineData("RES\t\nLIVE\t\t\t9\t0\t", null)]   // an old dump without the row → no signal
+    public void FindUnsavedRow_reads_the_row_value(string raw, string? expected)
+        => Assert.Equal(expected, PandaLoadoutProbe.FindUnsavedRow(raw));
+
+    [Fact]
+    public void The_UNSAVED_row_is_invisible_to_the_plan_and_live_parsers()
+    {
+        // Regression guard for the pinned read paths: adding a row must not create a plan or a LIVE row.
+        const string dump = "CUR=4\n4\tIci-LF\t2\t0\t\t\t\nUNSAVED\t1";
+        var (current, plans) = PandaLoadoutProbe.ParseLoadoutData(dump);
+        Assert.Equal(4, current);
+        Assert.Single(plans);
+        Assert.False(PandaLoadoutProbe.HasLiveRow("UNSAVED\t1"));
+    }
+
     [Fact]
     public void The_save_chunk_drives_the_games_own_wrapper_not_the_raw_rpc()
     {

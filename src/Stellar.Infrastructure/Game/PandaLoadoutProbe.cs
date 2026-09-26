@@ -274,7 +274,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
         LogLiveContainerProbe();   // partial-account modules/talents RE (2026-08-05) — no-op unless diagnostics
-        RefreshUnsavedFlag();      // fresh saved-plan data → re-run the game's unsaved-changes check (event-driven)
+        ApplyUnsavedRow(raw!);     // fresh saved-plan data → the dump's UNSAVED row (PandaLoadoutProbe.Unsaved.cs)
     }
 
     private static int[] KnownPlanIds(List<ParsedPlan> plans)

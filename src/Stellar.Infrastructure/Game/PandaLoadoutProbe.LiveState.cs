@@ -95,12 +95,12 @@ internal sealed partial class PandaLoadoutProbe
         if (!_mergePending) return;
         _mergePending = false;
         _refreshPending = true;   // also re-fire the on-demand SyncProjectList (cooldown-coalesced)
-        RefreshUnsavedFlag();     // the live containers moved → re-run the game's unsaved-changes check
 
         if (!InvokeChunk(LiveStateChunk)) return;
         var raw = ReadLuaGlobalString(LiveStateGlobal);
         if (string.IsNullOrEmpty(raw)) return;
         LogLiveStateRead(raw!);   // no-op unless STELLAR_DIAGNOSTICS
+        ApplyUnsavedRow(raw!);    // the game's unsaved-changes check rides this chunk (PandaLoadoutProbe.Unsaved.cs)
         if (raw == _lastLiveStateRaw) return;
         _lastLiveStateRaw = raw;
         ApplyLiveRows(raw!, ParseResonanceSlotsLine(raw!));
@@ -294,5 +294,6 @@ internal sealed partial class PandaLoadoutProbe
         " if slOk then out=out..\"\\nRESSLOT\\t\"..sl else out=out..\"\\nRESSLOTERR\\t\"..tostring(slErr) end" +
         " if lvOk then out=out..\"\\nLIVE\\t\"..le..\"\\t\"..lm..\"\\t\"..tostring(lp)..\"\\t\"..tostring(lstage)..\"\\t\"..lnodes" +
         " else out=out..\"\\nLIVEERR\\t\"..tostring(lvErr) end" +
+        UnsavedRowFragment +   // "UNSAVED" row — the game's CheckRolePlanIsChange (PandaLoadoutProbe.Unsaved.cs)
         " rawset(_G,\"" + LiveStateGlobal + "\", out)";
 }

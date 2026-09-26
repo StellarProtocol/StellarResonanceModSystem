@@ -295,6 +295,7 @@ internal sealed partial class PandaLoadoutProbe
         // LIVE Lua mirror cs.resonance.installed (the C# mirror serves the pre-swap pair — owner
         // staging run sea/445626427740520448, 2026-08-23).
         ResonanceChunkFragment +
+        UnsavedRowFragment +   // "UNSAVED" row, after SyncProjectList — fresh saved data (PandaLoadoutProbe.Unsaved.cs)
         " rawset(_G,\"" + DataGlobal + "\", out)" +
         " end))()";
 
