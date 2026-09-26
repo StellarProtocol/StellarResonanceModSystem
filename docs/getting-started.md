@@ -36,15 +36,18 @@ into `<game_mini>`:
 
 - **Windows:** download the BepInEx 6 IL2CPP be.755 build, extract it into `<game_mini>` so
   `winhttp.dll` and `BepInEx/` sit next to the game executable.
-- **Linux:** extract the same build into `<game_mini>` (`tools/setup-dev-env.sh` downloads and unpacks
-  it into `tools/BepInEx-stage/`), then add `WINEDLLOVERRIDES=winhttp=n,b` to your launcher's per-game
-  environment variables so Wine loads the Doorstop proxy.
+- **Linux:** run `tools/install-bepinex.sh`, then add `WINEDLLOVERRIDES=winhttp=n,b` to your launcher's
+  per-game environment variables so Wine loads the Doorstop proxy:
 
-`tools/install-bepinex.sh` automates the copy, but it is a maintainer helper: its source folder and its
-`release_<ver>` target are fixed inside the script, so edit them (and set `STELLAR_PREFIX` to your Wine
-prefix) before running it. It also turns BepInEx's console and disk logging **off** for performance —
-set `Enabled = true` under `[Logging.Disk]` in `<game_mini>/BepInEx/config/BepInEx.cfg` if you want
-`LogOutput.log`.
+  ```bash
+  GAME_RELEASE=/path/to/game_mini BEPINEX_DISK_LOG=1 tools/install-bepinex.sh
+  ```
+
+  The script uses the build `tools/setup-dev-env.sh` unpacked into `tools/BepInEx-stage/` (or downloads the
+  pinned be.755 build itself), copies the loader into `<game_mini>`, and is safe to re-run. Without
+  `GAME_RELEASE` it picks the highest `release_*/game_mini` under `STELLAR_PREFIX`. For performance it always
+  turns off BepInEx's Unity log listener and console window; `BEPINEX_DISK_LOG=1` keeps
+  `BepInEx/LogOutput.log`, which you want while developing (without it no log file is written).
 
 Launch the game once. BepInEx generates the IL2CPP **interop assemblies** under
 `<game_mini>/BepInEx/interop/` — the Unity/IL2CPP assemblies Infrastructure and Host compile against
@@ -124,7 +127,7 @@ variables on Windows, or your launcher's per-game env vars on Linux. A `DIAGNOST
 |---|---|
 | No `[Stellar]` lines in the log | **Windows:** is `winhttp.dll` next to the game exe? **Linux:** is `WINEDLLOVERRIDES=winhttp=n,b` set? Did BepInEx generate `BepInEx/interop/`? |
 | Build error: `Il2CppInterop` / `UnityEngine` not found | The assemblies aren't where `GameInterop` / `BepInExCore` point. Launch the game once to generate them, or build against the committed stubs (`-p:GameInterop=$PWD/refs -p:BepInExCore=$PWD/refs`). |
-| No `LogOutput.log` | BepInEx disk logging is off (`install-bepinex.sh` turns it off). Set `Enabled = true` under `[Logging.Disk]` in `BepInEx/config/BepInEx.cfg`. |
+| No `LogOutput.log` | BepInEx disk logging is off (`install-bepinex.sh` leaves it off unless run with `BEPINEX_DISK_LOG=1`). Re-run it with that, or set `Enabled = true` under `[Logging.Disk]` in `BepInEx/config/BepInEx.cfg`. |
 | Plugin doesn't load | Is the DLL under `stellar/plugins/`? Does it have a non-abstract `IStellarPlugin` with a public `(IPluginServices)` constructor? Search the log for `[PluginHost]` and `duplicate plugin id`. |
 | Nothing works after a game patch | A new game build can move the types the framework binds to. Wait for a compatibility update. |
 

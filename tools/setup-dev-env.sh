@@ -81,8 +81,8 @@ Setup complete. Next steps:
   Build the framework:
     cd src && $DOTNET_ROOT/dotnet build -c Release
 
-  Install BepInEx into your Wine prefix (one-time):
-    tools/install-bepinex.sh
+  Install BepInEx into your game folder (one-time; auto-detects release_* under STELLAR_PREFIX):
+    GAME_RELEASE=/path/to/game_mini BEPINEX_DISK_LOG=1 tools/install-bepinex.sh
     # Then set WINEDLLOVERRIDES=winhttp=n,b in your launcher.
 
   Deploy the framework + sample plugin:
