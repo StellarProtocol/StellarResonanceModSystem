@@ -33,6 +33,7 @@ const path = Astro.url.pathname;
         <a href="/changelog/" class="all">Changelog →</a>
       </div>
     </details>
+    <a class="nav-cta" href="https://github.com/StellarProtocol/StellarResonance/releases/latest">↓ Get the launcher</a>
     <div class="sl-flex social-icons"><SocialIcons /></div>
   </div>
 </div>
@@ -42,10 +43,10 @@ const path = Astro.url.pathname;
   .right-group, .social-icons { gap: 1rem; align-items: center; }
   .st-tabs { display: none; gap: 0.2rem; }
   @media (min-width: 72rem) { .st-tabs { display: flex; } }
-  .st-tabs a { padding: 0.35rem 0.7rem; border-radius: 8px; color: var(--st-muted); font-size: 0.88rem; font-weight: 500; text-decoration: none; white-space: nowrap; }
+  .st-tabs a { padding: 8px 11px; border-radius: 8px; color: var(--st-muted); font-size: 0.9rem; font-weight: 600; text-decoration: none; white-space: nowrap; transition: color .15s, background .15s; }
   .st-tabs a:hover, .st-tabs a[aria-current='page'] { color: var(--st-text); background: var(--st-panel2); }
   .st-version { position: relative; }
-  .st-version summary { list-style: none; cursor: pointer; height: 2rem; display: flex; align-items: center; gap: 0.35rem; padding: 0 0.7rem; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-panel); color: var(--st-muted); font-size: 0.8rem; white-space: nowrap; }
+  .st-version summary { list-style: none; cursor: pointer; height: 2.1rem; display: flex; align-items: center; gap: 0.35rem; padding: 0 0.75rem; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-bg2); color: var(--st-muted); font-size: 0.8rem; white-space: nowrap; }
   .st-version summary::-webkit-details-marker { display: none; }
   .st-version summary b { color: var(--st-text); font-weight: 600; }
   .st-version summary::after { content: '▾'; font-size: 0.7rem; }
@@ -56,6 +57,8 @@ const path = Astro.url.pathname;
   .st-version .menu small { color: var(--st-dim); margin-left: 0.3rem; }
   .st-version .menu .empty { color: var(--st-dim); font-size: 0.78rem; }
   .st-version .menu .all { border-top: 1px solid var(--st-line); border-radius: 0; margin-top: 0.2rem; color: var(--sl-color-text-accent); }
+  .nav-cta { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-weight: 600; font-size: 0.85rem; padding: 7px 14px; border-radius: 8px; text-decoration: none; color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; box-shadow: 0 4px 18px -6px #7c5cffaa; }
+  .nav-cta:hover { filter: brightness(1.08); color: #fff; }
   .social-icons::after { content: ''; height: 2rem; border-inline-end: 1px solid var(--sl-color-gray-5); }
   @media (min-width: 50rem) {
     :global(:root[data-has-sidebar]) { --__sidebar-pad: calc(2 * var(--sl-nav-pad-x)); }

@@ -12,7 +12,6 @@ export default defineConfig({
     starlight({
       title: 'Stellar Docs',
       description: 'Build plugins for Blue Protocol: Star Resonance with the Stellar framework.',
-      logo: { src: './src/assets/logo.svg', replacesTitle: false },
       favicon: '/favicon.svg',
       social: [
         { icon: 'github', label: 'GitHub', href: REPO },
@@ -21,12 +20,14 @@ export default defineConfig({
       editLink: { baseUrl: `${REPO}/edit/main/` },
       lastUpdated: false,
       customCss: ['./src/styles/stellar.css'],
+      head: [{ tag: 'script', attrs: { src: '/js/diagram-lightbox.js', defer: true } }],
       components: {
         ThemeProvider: './src/components/ThemeProvider.astro',
         ThemeSelect: './src/components/ThemeSelect.astro',
         EditLink: './src/components/EditLink.astro',
         Hero: './src/components/Hero.astro',
         Header: './src/components/Header.astro',
+        SiteTitle: './src/components/SiteTitle.astro',
       },
       sidebar: [
         {

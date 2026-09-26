@@ -1,55 +1,83 @@
 ---
-// Home hero, per the approved mockup: copy + actions on the left, a real plugin on the right.
-// Replaces Starlight's Hero; only the home page (template: splash) sets `hero`.
-import { Code, LinkButton } from '@astrojs/starlight/components';
+// Home hero — the logs site's `hero-v2` banner (kicker + display title with the "Stellar" gradient word +
+// tag line + stat chips; services/stellar-logs/site/src/components/home/home.css) with the marketing site's
+// code card (site/src/styles/global.css `.code`) on the right. Only the home page (template: splash) has a hero.
 import release from '../generated/release.json';
+import stats from '../generated/stats.json';
 
-const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not a public export)
 const { data } = Astro.locals.starlightRoute.entry;
-const { title = data.title, tagline, actions = [] } = data.hero || {};
-
-const sample = `using Stellar.Abstractions.Domain;
-using Stellar.Abstractions.Plugins;
-using Stellar.Abstractions.Services;
-
-public sealed class HelloSpec : IStellarPlugin
-{
-    private readonly IPluginServices _s;
-    public string Name => "Hello Spec";
-
-    public HelloSpec(IPluginServices s)
-    {
-        _s = s;
-        _s.CombatEvents.CombatEventOccurred += OnCombat;
-    }
-
-    private void OnCombat(CombatEvent e)
-    {
-        if (e is CombatEvent.SpecChanged c)
-            _s.Log.Info($"spec → {c.NewSubProfessionId}");
-    }
-
-    public void Dispose() =>
-        _s.CombatEvents.CombatEventOccurred -= OnCombat;
-}`;
+const { title, tagline, actions = [] } = data.hero || {};
+// Starlight's 404 page also has a hero — give it a plain title + tagline, not the home banner.
+const isHome = Astro.url.pathname === '/' || Astro.url.pathname === '/index.html';
+const fmt = (n: number) => n.toLocaleString('en-US');
 ---
-<div class="st-hero st-hero-grid">
-  <div class="st-copy">
-    <span class="st-chip-since">Framework {release.version} · released {release.date}</span>
-    <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
-    {tagline && <div class="tagline" set:html={tagline} />}
-    <div class="actions">
-      {actions.map(({ link: href, text, variant }) => <LinkButton {href} {variant}>{text}</LinkButton>)}
+{!isHome && (
+  <header class="hero-plain"><h1 id="_top" data-page-title set:html={title ?? data.title} />{tagline && <p class="tag" set:html={tagline} />}<div class="hero-actions"><a class="st-btn primary" href="/">Back to the docs home</a></div></header>
+)}
+{isHome && <header class="hero-v2">
+  <div>
+    <div class="hero-kicker">Stellar framework · {release.version} · plugin SDK</div>
+    <h1 id="_top" data-page-title>Build <span class="stellar">Stellar</span> plugins for Blue Protocol: Star Resonance.</h1>
+    {tagline && <p class="tag" set:html={tagline} />}
+    <div class="hero-actions">
+      {actions.map(({ link, text, variant }) => <a class:list={['st-btn', variant === 'primary' ? 'primary' : 'ghost']} href={link}>{text}</a>)}
+    </div>
+    <div class="hero-chips">
+      <span class="stat-chip"><span class="dot v"></span><b>{fmt(stats.services)}</b>services on IPluginServices</span>
+      <span class="stat-chip"><span class="dot c"></span><b>{fmt(stats.apiPages)}</b>API pages</span>
+      <span class="stat-chip"><span class="dot v"></span><b>{fmt(stats.plugins)}</b>registry plugins</span>
     </div>
   </div>
-  <div class="st-code"><Code code={sample} lang="csharp" title="HelloSpec.cs" /></div>
-</div>
+  <div class="code">
+    <div class="barc"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="fname">HelloSpec.cs</span></div>
+<pre><code><span class="k">public sealed class</span> <span class="t">HelloSpec</span> : <span class="t">IStellarPlugin</span>
+{'{'}
+    <span class="k">private readonly</span> <span class="t">IPluginServices</span> _s;
+    <span class="k">public string</span> Name =&gt; <span class="s">"Hello Spec"</span>;
+
+    <span class="k">public</span> <span class="t">HelloSpec</span>(<span class="t">IPluginServices</span> s)
+    {'{'}
+        _s = s;
+        _s.CombatEvents.CombatEventOccurred += OnCombat;
+    {'}'}
+
+    <span class="k">private void</span> OnCombat(<span class="t">CombatEvent</span> e)
+    {'{'}
+        <span class="c">// a nearby player's spec, known the moment they appear</span>
+        <span class="k">if</span> (e <span class="k">is</span> <span class="t">CombatEvent.SpecChanged</span> c)
+            _s.Log.Info(<span class="s">$"spec → {'{'}c.NewSubProfessionId{'}'}"</span>);
+    {'}'}
+
+    <span class="k">public void</span> Dispose() =&gt;
+        _s.CombatEvents.CombatEventOccurred -= OnCombat;
+{'}'}</code></pre>
+  </div>
+</header>}
+
 <style>
-  .st-hero { padding-block: clamp(2rem, 6vmin, 5rem) 1rem; }
-  .st-copy { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
-  h1 { font: 700 clamp(2.2rem, 1rem + 3.2vw, 3.2rem)/1.08 var(--st-display); color: var(--sl-color-white); margin: 0; }
-  .tagline { font-size: 1.1rem; color: var(--sl-color-gray-3); max-width: 38rem; }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
-  .st-code { min-width: 0; }
-  .st-code :global(.expressive-code) { margin: 0; }
+  .hero-plain { padding-block: clamp(40px, 10vh, 120px); text-align: center; }
+  .hero-plain .hero-actions { justify-content: center; }
+  .hero-plain .tag { margin-inline: auto; }
+  .hero-v2 { padding-block: clamp(18px, 3vh, 32px) clamp(14px, 2vh, 22px); display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, 1fr); gap: clamp(20px, 4vw, 64px); align-items: center; }
+  @media (max-width: 60rem) { .hero-v2 { grid-template-columns: 1fr; } }
+  .hero-kicker { font-size: 11.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--st-dim); margin-bottom: 10px; display: flex; align-items: center; gap: 9px; }
+  .hero-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--st-accent2); box-shadow: 0 0 10px var(--st-accent2); transform: translateY(-1px); }
+  h1 { font-family: var(--st-display); font-weight: 700; font-size: clamp(26px, 2.6vw, 38px); line-height: 1.08; letter-spacing: -0.02em; color: var(--st-text); margin: 0; }
+  h1 .stellar { background: linear-gradient(96deg, var(--st-accent) 10%, var(--st-accent2) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { margin-top: 10px; color: var(--st-muted); font-size: 14.5px; max-width: 58ch; }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .hero-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .stat-chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px; background: var(--st-panel); border: 1px solid var(--st-line); font-size: 12.5px; color: var(--st-muted); font-weight: 600; }
+  .stat-chip b { color: var(--st-text); font-weight: 800; }
+  .stat-chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .stat-chip .dot.v { background: var(--st-accent); box-shadow: 0 0 8px var(--st-accent); }
+  .stat-chip .dot.c { background: var(--st-accent2); box-shadow: 0 0 8px var(--st-accent2); }
+  .code { border-radius: 13px; overflow: hidden; border: 1px solid var(--st-line); background: #07080e; box-shadow: 0 30px 80px -30px rgba(124, 92, 255, 0.45); min-width: 0; }
+  .barc { display: flex; align-items: center; gap: 8px; padding: 11px 15px; border-bottom: 1px solid #191b28; background: rgba(0, 0, 0, 0.3); }
+  .tl { width: 10px; height: 10px; border-radius: 50%; }
+  .tl.r { background: #ff6b72; } .tl.y { background: #e8c45a; } .tl.g { background: #46c08a; }
+  .fname { margin-left: 8px; font-family: var(--sl-font-mono); font-size: 0.75rem; color: var(--st-muted); }
+  pre { margin: 0; padding: 20px; overflow-x: auto; font-family: var(--sl-font-mono); font-size: 0.8rem; line-height: 1.7; background: none; border: 0; }
+  code { color: #cdd4ff; background: none; border: 0; padding: 0; }
+  .k { color: #9b7bff; } .t { color: #37c8e0; } .s { color: #e8c45a; } .c { color: #646a87; font-style: italic; }
 </style>

@@ -36,6 +36,8 @@ if (existsSync(join(REPO, 'docs/contributing'))) {
 const SLUG_FILE = (slug) => join(CONTENT, `${slug}.md`);
 
 const log = (...a) => console.log('[gen]', ...a);
+/** Headline numbers for the home hero chips (written last, so a skipped step keeps its previous value). */
+const STATS = {};
 const write = (file, text) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text); };
 const yaml = (s) => JSON.stringify(s); // JSON strings are valid YAML scalars
 
@@ -98,10 +100,21 @@ function siteLink(repoPath, anchor) {
 }
 
 // ---------------------------------------------------------------- 1. synced docs
+/** A static diagram image in a synced doc (GitHub shows the SVG) becomes, on the site, the same image plus an
+ *  "Explore interactive" button that opens the live Archify diagram full-screen (public/js/diagram-lightbox.js). */
+function interactiveFigures(md) {
+  return md.replace(/^!\[([^\]]*)\]\(\/diagrams\/([\w-]+)\.svg\)\s*$/gm, (all, alt, name) => {
+    if (!existsSync(join(PUBLIC_DIAGRAMS, `${name}.html`))) return all;
+    const a = alt.replace(/"/g, '&quot;');
+    return `<figure class="st-fig">\n<img src="/diagrams/${name}.svg" alt="${a}" />\n` +
+      `<figcaption><button type="button" class="st-explore" data-diagram="/diagrams/${name}.html" data-title="${a}">▶ Explore interactive</button>` +
+      `<span>pan · zoom · search · click a box for its source</span></figcaption>\n</figure>`;
+  });
+}
 function syncDocs() {
   for (const [src, slug] of Object.entries(PAGES)) {
     const [title, body] = takeTitle(readFileSync(join(REPO, src), 'utf8'), slug);
-    const md = rewriteLinks(body, src, siteLink);
+    const md = interactiveFigures(rewriteLinks(body, src, siteLink));
     write(SLUG_FILE(slug), frontmatter({ title, sourcePath: src }) + md);
   }
   log(`synced ${Object.keys(PAGES).length} docs`);
@@ -169,6 +182,7 @@ async function genApi() {
       frontmatter({ title: isRoot ? 'API reference' : title, sourcePath: isRoot ? 'src/Stellar.Abstractions' : sourceFor(rel), generated: true }) + body);
     n++;
   }
+  STATS.apiPages = n;
   log(`generated ${n} API pages`);
 }
 
@@ -262,6 +276,7 @@ async function genPlugins() {
       image, imageCaption: img?.caption, apis,
     });
   }
+  STATS.plugins = plugins.length;
   write(join(GENERATED, 'plugins.json'), JSON.stringify(plugins, null, 2) + '\n');
   log(`plugin gallery: ${plugins.length} plugins`);
 }
@@ -318,10 +333,17 @@ function copyDiagrams() {
   log(`diagrams: ${svg} svg, ${html} interactive${html ? '' : ' (run docs/diagrams/build.sh to include them)'}`);
 }
 
+copyDiagrams();
 syncDocs();
 genChangelog();
-copyDiagrams();
 genWire();
 genVersions();
 if (!process.argv.includes('--skip-plugins')) await genPlugins(); else log('skipped plugin gallery (--skip-plugins)');
 if (!skipApi) await genApi(); else log('skipped API reference (--skip-api)');
+
+STATS.services = [...readFileSync(join(REPO, 'src/Stellar.Abstractions/Services/IPluginServices.cs'), 'utf8').matchAll(/^\s+I\w+\s+\w+\s*\{\s*get;\s*\}/gm)].length;
+if (STATS.plugins === undefined && existsSync(join(GENERATED, 'plugins.json'))) STATS.plugins = JSON.parse(readFileSync(join(GENERATED, 'plugins.json'), 'utf8')).length;
+STATS.wireFields = JSON.parse(readFileSync(join(GENERATED, 'wire.json'), 'utf8')).totals.fields;
+const statsFile = join(GENERATED, 'stats.json');
+const prev = existsSync(statsFile) ? JSON.parse(readFileSync(statsFile, 'utf8')) : {};
+write(statsFile, JSON.stringify({ services: 0, apiPages: 0, plugins: 0, wireFields: 0, ...prev, ...STATS }, null, 2) + '\n');

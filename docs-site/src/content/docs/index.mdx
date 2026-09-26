@@ -1,11 +1,10 @@
 ---
-title: Stellar Docs
+title: StellarDocs
 description: Build plugins for Blue Protocol Star Resonance — a Dalamud-style framework with a read-only C# API, a uGUI overlay toolkit and a launcher.
 template: splash
 editUrl: false
 tableOfContents: false
 hero:
-  title: 'Build plugins for <span class="st-gradient">Blue Protocol: Star Resonance</span>'
   tagline: Stellar is a Dalamud-style plugin framework — a read-only C# API over the live game, a native uGUI overlay toolkit, and a launcher that ships your plugin to players. Quality-of-life only; no cheating, by design.
   actions:
     - text: Write your first plugin →
@@ -18,50 +17,75 @@ hero:
       link: /contribute/
       variant: secondary
 ---
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 import { Content as WhatsNew } from '../../generated/whats-new.md';
 import release from '../../generated/release.json';
+import diagrams from '../../generated/diagrams.json';
 
-## Start where you are
+export const doors = [
+  { ic: '🎮', t: 'I want to use mods', d: 'Install the launcher, pick plugins, play. It installs and auto-updates the framework for you.', go: 'Getting started', href: '/guides/getting-started/' },
+  { ic: '🧩', t: 'I want to write a plugin', d: 'Reference Stellar.Abstractions, implement IStellarPlugin, and draw UI with HudElement trees.', go: 'Plugin guide', href: '/guides/plugin-development/' },
+  { ic: '🛠️', t: 'I want to extend the framework', d: 'Expose a new wire field or game system. Builds and tests run against committed interop stubs — no game install.', go: 'Contributor guide', href: '/contribute/' },
+];
+export const views = [
+  { id: 'framework-layers', t: 'Framework layers', d: 'Assemblies, the dependency rule, the game boundary' },
+  { id: 'wire-to-plugin', t: 'Wire packet → plugin event', d: 'Network-thread parse, main-thread fan-out' },
+  { id: 'plugin-lifecycle', t: 'Plugin lifecycle', d: 'Load, run, disable/enable, retry, dispose' },
+  { id: 'ecosystem', t: 'Ecosystem', d: 'Pull request → CI → release gate → players' },
+];
+export const more = [
+  { t: 'API reference', d: 'Every public interface, record and enum in Stellar.Abstractions — generated from the XML docs.', href: '/api/' },
+  { t: 'Wire coverage', d: 'Every server message field the framework reads: what plugins can use, what still waits for a contributor.', href: '/wire/' },
+  { t: 'Plugin gallery', d: 'Every plugin in the registry, with its source and the framework APIs it uses.', href: '/plugins/' },
+];
 
-<div class="st-doors">
-<CardGrid>
-  <Card title="I want to use mods" icon="rocket">
-    Install the [launcher](https://github.com/StellarProtocol/StellarResonance), pick plugins, play. It installs and auto-updates the framework for you.
-
-    [Getting started →](/guides/getting-started/)
-  </Card>
-  <Card title="I want to write a plugin" icon="puzzle">
-    Reference `Stellar.Abstractions` from NuGet, implement `IStellarPlugin`, and draw UI with `HudElement` trees.
-
-    [Plugin guide →](/guides/plugin-development/)
-  </Card>
-  <Card title="I want to extend the framework" icon="setting">
-    Expose a new wire field or game system. Builds and tests run against committed interop stubs — no game install.
-
-    [Contributor guide →](/contribute/)
-  </Card>
-</CardGrid>
-</div>
-
-## What's new for plugin authors <span class="st-generated">generated from CHANGELOG</span>
-
-<div class="st-relnote">
-  <div>
-    <div class="v">{release.version}</div>
-    <div class="d">{release.date}</div>
-    <a href="/changelog/">Full changelog →</a>
+<section class="home-section not-content">
+  <div class="section-head"><div><h2>Start where you are</h2><div class="sub">Three kinds of reader, three front doors</div></div></div>
+  <div class="doors">
+    {doors.map((x) => (
+      <a class="door" href={x.href}>
+        <span class="ic">{x.ic}</span>
+        <b>{x.t}</b>
+        <span class="d">{x.d}</span>
+        <span class="go">{x.go} →</span>
+      </a>
+    ))}
   </div>
-  <div><WhatsNew /></div>
-</div>
+</section>
 
-## From pull request to players
+<section class="home-section not-content">
+  <div class="section-head">
+    <div><h2>From pull request to players</h2><div class="sub">Interactive — drag to pan, scroll to zoom, click a box for its source</div></div>
+    <a class="st-btn ghost" href="/architecture/diagrams/">All diagrams →</a>
+  </div>
+  <div class="st-panel">
+    <div class="st-panel-head"><span class="title">Ecosystem</span><button type="button" class="st-explore" data-diagram="/diagrams/ecosystem.html" data-title="Ecosystem — from pull request to players">⤢ Full screen</button></div>
+    {diagrams.interactive
+      ? <iframe class="home-diagram" src="/diagrams/ecosystem.html" title="Ecosystem — from pull request to players" loading="lazy" />
+      : <img src="/diagrams/ecosystem.svg" alt="Ecosystem — from pull request to players" />}
+  </div>
+  <div class="views">
+    {views.map((v) => (
+      <button type="button" class="view" data-diagram={diagrams.interactive ? `/diagrams/${v.id}.html` : `/diagrams/${v.id}.svg`} data-title={v.t}>
+        <img src={`/diagrams/${v.id}.svg`} alt="" loading="lazy" />
+        <b>{v.t}</b><span>{v.d}</span>
+      </button>
+    ))}
+  </div>
+</section>
 
-![Stellar ecosystem — from pull request to players](/diagrams/ecosystem.svg)
+<section class="home-section">
+  <div class="section-head not-content"><div><h2>What's new for plugin authors</h2><div class="sub">Generated from the CHANGELOG's developer notes</div></div><a class="st-btn ghost" href="/changelog/">Full changelog →</a></div>
+  <div class="st-panel">
+    <div class="st-panel-head not-content"><span class="title">Framework {release.version}</span><span class="meta">{release.date}</span></div>
+    <div class="st-panel-body"><WhatsNew /></div>
+  </div>
+</section>
 
-<CardGrid>
-  <LinkCard title="Architecture" description="Layers, the dependency rule, and how a wire packet becomes a plugin event." href="/architecture/" />
-  <LinkCard title="API reference" description="Every public interface, record and enum in Stellar.Abstractions — generated from the XML docs." href="/api/" />
-  <LinkCard title="Wire coverage" description="Every server message field the framework reads: what plugins can use, and what is still waiting for a contributor." href="/wire/" />
-  <LinkCard title="Plugin gallery" description="Every plugin in the registry, with its source and the framework APIs it uses." href="/plugins/" />
-</CardGrid>
+<section class="home-section not-content">
+  <div class="section-head"><div><h2>Reference</h2><div class="sub">Rebuilt from the source on every deploy — it cannot drift</div></div></div>
+  <div class="doors">
+    {more.map((x) => (
+      <a class="door" href={x.href}><b>{x.t}</b><span class="d">{x.d}</span><span class="go">Open →</span></a>
+    ))}
+  </div>
+</section>
