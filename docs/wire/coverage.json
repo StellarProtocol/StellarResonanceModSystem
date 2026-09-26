@@ -5,23 +5,26 @@
       "fields": {
         "1": {
           "name": "BaseDelta",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "the local player's attrs, skill events, damage and buffs, same path as the near-entity delta (see AttrCollection, EventDataList, SkillEffect)"
         },
         "2": {
           "name": "SyncHateIds",
-          "status": null
+          "status": "skipped"
         },
         "3": {
           "name": "SyncSkillCDs",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatSnapshot.LocalCooldowns"
         },
         "4": {
           "name": "FightResCDs",
-          "status": null
+          "status": "skipped"
         },
         "5": {
           "name": "Uuid",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatSnapshot.LocalEntityId"
         }
       }
     },
@@ -29,11 +32,13 @@
       "fields": {
         "1": {
           "name": "Id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "CombatEvent.EntityAttributesChanged (AttrValue.AttrId); selects which ICombatLookup / IEntityDetail value an attr feeds"
         },
         "2": {
           "name": "RawData",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "CombatEvent.EntityAttributesChanged (AttrValue.Value), ICombatLookup.GetEntityName / GetVitals / GetTeamId / GetFightPoint / GetSkillLevels, IEntityDetail"
         }
       }
     },
@@ -41,11 +46,13 @@
       "fields": {
         "1": {
           "name": "Uuid",
-          "status": null
+          "status": "internal",
+          "note": "decoded but not read by any consumer; the entity id comes from the enclosing delta / entity uuid"
         },
         "2": {
           "name": "Attrs",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see Attr"
         }
       }
     },
@@ -67,35 +74,44 @@
       "fields": {
         "1": {
           "name": "state",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.CurrentFlowState / FlowStateVersion"
         },
         "2": {
           "name": "active_time",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.RunTimerStartMs (last-resort approximate source)"
         },
         "3": {
           "name": "ready_time",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "4": {
           "name": "play_time",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.RunTimerStartMs (fallback source)"
         },
         "5": {
           "name": "end_time",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "6": {
           "name": "settlement_time",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "7": {
           "name": "dungeon_times",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "8": {
           "name": "result",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.LastOutcome",
+          "note": "Reaches LastOutcome only through the method-24 dirty-delta decode (DungeonDirtyDataReader); the method-23 protobuf decode of this field is logged by diagnostics only."
         }
       }
     },
@@ -103,7 +119,9 @@
       "fields": {
         "1": {
           "name": "difficulty",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.CurrentDifficulty",
+          "note": "Semantic unconfirmed in code (see DungeonSyncResult.DungeonDifficulty)."
         }
       }
     },
@@ -111,11 +129,13 @@
       "fields": {
         "1": {
           "name": "pass_time",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.LastSettlement.PassTimeSeconds"
         },
         "5": {
           "name": "master_mode_score",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.LastSettlement.MasterModeScore"
         }
       }
     },
@@ -123,31 +143,37 @@
       "fields": {
         "1": {
           "name": "scene_uuid",
-          "status": null
+          "status": "internal",
+          "note": "structural gate only (a non-zero value is required to accept the packet); deliberately NOT used as the run id, which comes from EnterScene"
         },
         "2": {
           "name": "flow_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see DungeonFlowInfo"
         },
         "5": {
           "name": "damage",
-          "status": null
+          "status": "skipped"
         },
         "7": {
           "name": "settlement",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see DungeonSettlement"
         },
         "14": {
           "name": "dungeon_score",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.LastSettlement.TotalScore (DungeonScore.total_score)"
         },
         "15": {
           "name": "timer_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see DungeonTimerInfo"
         },
         "21": {
           "name": "dungeon_scene_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see DungeonSceneInfo"
         }
       }
     },
@@ -155,47 +181,54 @@
       "fields": {
         "1": {
           "name": "type",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "2": {
           "name": "start_time",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.RunTimerStartMs (primary source)"
         },
         "3": {
           "name": "dungeon_times",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "4": {
           "name": "direction",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "5": {
           "name": "index",
-          "status": null
+          "status": "skipped"
         },
         "6": {
           "name": "change_time",
-          "status": null
+          "status": "skipped"
         },
         "7": {
           "name": "effect_type",
-          "status": null
+          "status": "skipped"
         },
         "8": {
           "name": "pause_time",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "9": {
           "name": "pause_total_time",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         },
         "10": {
           "name": "out_look_type",
-          "status": null
+          "status": "skipped"
         },
         "11": {
           "name": "cur_pause_timestamp",
-          "status": null
+          "status": "internal",
+          "note": "decoded; logged by the dungeon diagnostics only"
         }
       }
     },
@@ -253,23 +286,26 @@
       "fields": {
         "1": {
           "name": "event_type",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "CombatEvent.SkillUsed.Phase (event types 101-105 only)"
         },
         "2": {
           "name": "int_params",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "CombatEvent.SkillUsed.SkillId (int_params[0])"
         },
         "3": {
           "name": "long_params",
-          "status": null
+          "status": "internal",
+          "note": "decoded but no consumer reads it"
         },
         "4": {
           "name": "float_params",
-          "status": null
+          "status": "skipped"
         },
         "5": {
           "name": "str_params",
-          "status": null
+          "status": "skipped"
         }
       }
     },
@@ -277,11 +313,13 @@
       "fields": {
         "1": {
           "name": "Uuid",
-          "status": null
+          "status": "internal",
+          "note": "decoded but not read; the caster id comes from the enclosing AoiSyncDelta uuid"
         },
         "2": {
           "name": "Events",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see EventData"
         }
       }
     },
@@ -289,19 +327,20 @@
       "fields": {
         "3": {
           "name": "is_end",
-          "status": null
+          "status": "skipped"
         },
         "4": {
           "name": "max_read_msg_id",
-          "status": null
+          "status": "skipped"
         },
         "5": {
           "name": "multi_msg_list",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IChat.MessageReceived / IChat.RecentMessages (ChatMessage.IsHistory = true)"
         },
         "6": {
           "name": "err_code",
-          "status": null
+          "status": "skipped"
         }
       }
     },
@@ -309,7 +348,8 @@
       "fields": {
         "1": {
           "name": "base_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartySnapshot.PartyId / LeaderCharId / PartyType / IsMatching, and the raid group layout (PartyMember.GroupId / Slot)"
         }
       }
     },
@@ -317,7 +357,8 @@
       "fields": {
         "1": {
           "name": "v_open_or_close",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.ReadyCheckPhaseChanged"
         }
       }
     },
@@ -325,15 +366,18 @@
       "fields": {
         "1": {
           "name": "v_member_name",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.ReadyCheckResponded (ReadyCheckResponse.Name)"
         },
         "2": {
           "name": "v_char_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.ReadyCheckResponded (ReadyCheckResponse.CharId)"
         },
         "3": {
           "name": "v_ready_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.ReadyCheckResponded (ReadyCheckResponse.IsReady; only DungeonReadyInfo.is_ready is read)"
         }
       }
     },
@@ -341,11 +385,12 @@
       "fields": {
         "1": {
           "name": "err_code",
-          "status": null
+          "status": "skipped"
         },
         "2": {
           "name": "team_member_group_infos",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see TeamMemberGroupInfo"
         }
       }
     },
@@ -353,11 +398,13 @@
       "fields": {
         "1": {
           "name": "member_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyRoster.GetMicStatus (the charId key)"
         },
         "2": {
           "name": "microphone_status",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyRoster.GetMicStatus (MicrophoneStatus)"
         }
       }
     },
@@ -365,7 +412,8 @@
       "fields": {
         "1": {
           "name": "mem_speak_status",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyRoster.IsSpeaking"
         }
       }
     },
@@ -373,23 +421,25 @@
       "fields": {
         "1": {
           "name": "f1",
-          "status": null
+          "status": "skipped"
         },
         "2": {
           "name": "f2",
-          "status": null
+          "status": "skipped"
         },
         "3": {
           "name": "cur",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatLookup.GetVitals(...).Shield (EntityVitals.Shield, summed over entries)",
+          "since": "2.9.0"
         },
         "4": {
           "name": "max",
-          "status": null
+          "status": "skipped"
         },
         "5": {
           "name": "f5",
-          "status": null
+          "status": "skipped"
         }
       }
     },
@@ -397,7 +447,9 @@
       "fields": {
         "1": {
           "name": "entries",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see ShieldEntry",
+          "since": "2.9.0"
         }
       }
     },
@@ -405,11 +457,12 @@
       "fields": {
         "1": {
           "name": "Uuid",
-          "status": null
+          "status": "skipped"
         },
         "2": {
           "name": "Damages",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "CombatEvent.DamageDealt"
         }
       }
     },
@@ -417,15 +470,18 @@
       "fields": {
         "1": {
           "name": "skill_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatLookup.GetSkillLevels (SkillLevel.SkillId)"
         },
         "2": {
           "name": "current_level",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatLookup.GetSkillLevels (SkillLevel.Level)"
         },
         "3": {
           "name": "remodel_level",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "ICombatLookup.GetSkillLevels (SkillLevel.Tier)"
         }
       }
     },
@@ -433,23 +489,26 @@
       "fields": {
         "1": {
           "name": "base_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartySnapshot.PartyId / LeaderCharId / PartyType / IsMatching, and the raid group layout (PartyMember.GroupId / Slot)"
         },
         "2": {
           "name": "member_data",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see TeamMemData"
         },
         "4": {
           "name": "mem_real_time_voice_infos",
-          "status": null
+          "status": "skipped"
         },
         "5": {
           "name": "team_join_type",
-          "status": null
+          "status": "skipped"
         },
         "6": {
           "name": "member_sync_datas",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see TeamMemberFastSyncData"
         }
       }
     },
@@ -457,11 +516,13 @@
       "fields": {
         "1": {
           "name": "char_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.MemberLeft (the departing PartyMember)"
         },
         "2": {
           "name": "leave_type",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyEvents.MemberLeft (PartyLeaveKind)"
         }
       }
     },
@@ -469,7 +530,8 @@
       "fields": {
         "1": {
           "name": "v_data",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see DungeonSyncData"
         }
       }
     },
@@ -491,7 +553,8 @@
       "fields": {
         "1": {
           "name": "attrs",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IDungeonState.LastDefeatedCount (only attr 348 AttrDeathCount is read)"
         }
       }
     },
@@ -499,7 +562,8 @@
       "fields": {
         "1": {
           "name": "DeltaInfo",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see AoiSyncToMeDelta"
         }
       }
     },
@@ -507,31 +571,39 @@
       "fields": {
         "1": {
           "name": "char_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.CharId",
+          "note": "Keys the update only for NoticeUpdateTeamMemberInfo; join / GetTeamInfo read the map key instead and discard this field."
         },
         "2": {
           "name": "scene_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.SceneId"
         },
         "3": {
           "name": "position",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Position"
         },
         "4": {
           "name": "hp",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Hp"
         },
         "5": {
           "name": "max_hp",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.MaxHp"
         },
         "6": {
           "name": "state",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.FastSyncState"
         },
         "7": {
           "name": "scene_area_id",
-          "status": null
+          "status": "skipped",
+          "note": "The varint is read to advance the cursor but its value is discarded."
         }
       }
     },
@@ -539,11 +611,13 @@
       "fields": {
         "1": {
           "name": "group_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.GroupId (via IPartyEvents.MemberUpdated)"
         },
         "2": {
           "name": "char_ids",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Slot (order within the group)"
         }
       }
     },
@@ -551,23 +625,27 @@
       "fields": {
         "1": {
           "name": "basic_data",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Name / Level (BasicData name = 3, level = 6)"
         },
         "2": {
           "name": "avatar_info",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.ProfileUrl / HalfBodyUrl"
         },
         "3": {
           "name": "face_data",
-          "status": null
+          "status": "skipped"
         },
         "4": {
           "name": "profession_data",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Profession",
+          "note": "ProfessionDataReader reads profession_id at field 1, which its own doc calls a placeholder best guess pending in-game confirmation; not verified here."
         },
         "5": {
           "name": "equip_data",
-          "status": null
+          "status": "skipped"
         }
       }
     },
@@ -575,39 +653,47 @@
       "fields": {
         "1": {
           "name": "char_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.CharId / EntityId"
         },
         "2": {
           "name": "enter_time",
-          "status": null
+          "status": "internal",
+          "note": "stored on the Application member slot; not surfaced on PartyMember"
         },
         "3": {
           "name": "call_status",
-          "status": null
+          "status": "skipped"
         },
         "4": {
           "name": "talent_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.Talent"
         },
         "5": {
           "name": "online_status",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.IsOnline"
         },
         "6": {
           "name": "scene_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.SceneId"
         },
         "7": {
           "name": "voice_is_open",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "IPartyRoster.GetMicStatus (coarse open/closed base state)"
         },
         "8": {
           "name": "group_id",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "PartyMember.GroupId"
         },
         "9": {
           "name": "social_data",
-          "status": null
+          "status": "exposed",
+          "exposedAs": "see TeamMemberSocialData"
         }
       }
     }
