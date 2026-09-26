@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.11.0] - 2026-09-26
+_**2.11.0** (minor) — Mods can now tell which spec nearby players are playing, the moment they come near you, and know the buffs players already have when they arrive. Adds API for plugins (Abstractions 2.11.0)._
+### Added
+- Mods can now see which spec a nearby player is playing as soon as they come near you, even in town before any fight. Combat Meter uses this to show specs straight away.
+- Mods now know the buffs a player already has the moment they come near you, instead of only after those buffs change.
+### Developer notes
+- Spec from talent root buffs: each of the 18 specs has exactly one root talent buff ("<Spec> Spec"); the map is derived at runtime from TalentStage → TalentTree → TalentTable effects (18 pinned fallback constants). Buff-derived spec is authoritative over cast inference; the swap gap holds the previous spec (expires after 10 s); a snapshot with no root clears it; Battle Imagine transform ids are not class changes. Evidence: devkit `docs/recon/spec-from-public-wire-data.md` (2,111/2,111 snapshots; owner-confirmed live).
+- New API (additive): `ICombatSpec.TryGetTalentSpec(EntityId, out int)`; `CombatEvent.SpecChanged(TimestampMs, TargetId, OldSubProfessionId, NewSubProfessionId, FromTalent)` (once per real change, never for the swap gap); `CombatEvent.EntityBuffsSeeded(TimestampMs, TargetId, Buffs)` — `SyncNearEntities` / EnterScene now decode `Entity.buff_infos` and replace the entity's buff set silently, one seed event per entity (live deltas unchanged; a later delta for a seeded buff arrives as Refreshed, its expiry as Removed). `BuffsFor`/`LocalBuffs` return cached read-only snapshots.
+- `STELLAR_WIRECAP` debug capture is now lossless for large frames (node budget 4096 → 262144, hex for short opaque byte fields, raw base64 when a frame still truncates).
+
 ## [2.10.0] - 2026-09-26
 _**2.10.0** (minor) — Lets plugins save the loadout you're wearing into another loadout slot through the game's own Save, and tell whether you have unsaved loadout changes. Powers Loadout Switcher's new copy button. Adds API for plugins (Abstractions 2.10.0)._
 ### Added
