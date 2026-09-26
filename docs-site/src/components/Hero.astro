@@ -1,0 +1,55 @@
+---
+// Home hero, per the approved mockup: copy + actions on the left, a real plugin on the right.
+// Replaces Starlight's Hero; only the home page (template: splash) sets `hero`.
+import { Code, LinkButton } from '@astrojs/starlight/components';
+import release from '../generated/release.json';
+
+const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not a public export)
+const { data } = Astro.locals.starlightRoute.entry;
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+
+const sample = `using Stellar.Abstractions.Domain;
+using Stellar.Abstractions.Plugins;
+using Stellar.Abstractions.Services;
+
+public sealed class HelloSpec : IStellarPlugin
+{
+    private readonly IPluginServices _s;
+    public string Name => "Hello Spec";
+
+    public HelloSpec(IPluginServices s)
+    {
+        _s = s;
+        _s.CombatEvents.CombatEventOccurred += OnCombat;
+    }
+
+    private void OnCombat(CombatEvent e)
+    {
+        if (e is CombatEvent.SpecChanged c)
+            _s.Log.Info($"spec → {c.NewSubProfessionId}");
+    }
+
+    public void Dispose() =>
+        _s.CombatEvents.CombatEventOccurred -= OnCombat;
+}`;
+---
+<div class="st-hero st-hero-grid">
+  <div class="st-copy">
+    <span class="st-chip-since">Framework {release.version} · released {release.date}</span>
+    <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
+    {tagline && <div class="tagline" set:html={tagline} />}
+    <div class="actions">
+      {actions.map(({ link: href, text, variant }) => <LinkButton {href} {variant}>{text}</LinkButton>)}
+    </div>
+  </div>
+  <div class="st-code"><Code code={sample} lang="csharp" title="HelloSpec.cs" /></div>
+</div>
+<style>
+  .st-hero { padding-block: clamp(2rem, 6vmin, 5rem) 1rem; }
+  .st-copy { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+  h1 { font: 700 clamp(2.2rem, 1rem + 3.2vw, 3.2rem)/1.08 var(--st-display); color: var(--sl-color-white); margin: 0; }
+  .tagline { font-size: 1.1rem; color: var(--sl-color-gray-3); max-width: 38rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+  .st-code { min-width: 0; }
+  .st-code :global(.expressive-code) { margin: 0; }
+</style>
