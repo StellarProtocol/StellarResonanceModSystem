@@ -34,6 +34,7 @@ internal static class ProtoJson
                 break;
             case ProtoKind.Bytes:
                 sb.Append(",\"len\":").Append(f.ByteLength);
+                if (f.Hex is not null) sb.Append(",\"hex\":\"").Append(f.Hex).Append('"');
                 break;
             case ProtoKind.Message:
                 sb.Append(",\"msg\":").Append(Node(f.Message!));

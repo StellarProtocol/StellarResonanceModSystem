@@ -10,7 +10,12 @@ namespace Stellar.Infrastructure.Game.Capture;
 /// </summary>
 internal static class ProtobufStructuralWalker
 {
-    private const int MaxNodes = 4096;
+    // Sized for the largest real frames: a town-crowd SyncNearEntities burst (~107 KB) needs
+    // tens of thousands of nodes; 4096 truncated it after 8 entities (2026-09-26).
+    private const int MaxNodes = 262_144;
+
+    /// <summary>Opaque byte fields up to this length also carry their hex (names, packed attrs).</summary>
+    private const int MaxHexBytes = 512;
     private const int MaxDepth = 16;
 
     /// <summary>
@@ -116,7 +121,11 @@ internal static class ProtobufStructuralWalker
                 return true;
             }
 
-            node.Fields.Add(new ProtoField { FieldNumber = tag.Field, Kind = ProtoKind.Bytes, ByteLength = inner.Length });
+            node.Fields.Add(new ProtoField
+            {
+                FieldNumber = tag.Field, Kind = ProtoKind.Bytes, ByteLength = inner.Length,
+                Hex = inner.Length <= MaxHexBytes ? Convert.ToHexString(inner).ToLowerInvariant() : null,
+            });
             return true;
         }
 

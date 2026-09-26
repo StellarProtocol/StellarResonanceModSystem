@@ -91,6 +91,8 @@ internal sealed partial class WirePacketCapture
         var sb = new StringBuilder(256);
         AppendHeader(sb, v, ctx);
         sb.Append("\"decoded\":").Append(ProtoJson.Node(node));
+        // Lossless fallback: a frame the walker could not fully decode still ships its bytes.
+        if (node.Truncated) sb.Append(",\"raw\":\"").Append(Convert.ToBase64String(v.Payload.Span)).Append('"');
         if (typed is not null) sb.Append(",\"typed\":").Append(ProtoJson.Typed(typed));
         sb.Append('}');
         return sb.ToString();

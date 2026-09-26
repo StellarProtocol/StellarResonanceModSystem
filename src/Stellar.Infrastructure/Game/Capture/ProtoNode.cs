@@ -26,5 +26,6 @@ internal sealed class ProtoField
     public ulong FixedValue { get; init; }
     public string? StringValue { get; init; }
     public int ByteLength { get; init; }
+    public string? Hex { get; init; }
     public ProtoNode? Message { get; init; }
 }
