@@ -11,3 +11,6 @@ src/content/docs/guides/
 src/content/docs/contribute.md
 src/content/docs/architecture.md
 src/content/docs/changelog.md
+public/plugins/
+.plugins-cache/
+src/content/docs/contribute/

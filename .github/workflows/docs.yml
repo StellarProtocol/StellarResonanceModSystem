@@ -2,15 +2,18 @@ name: docs
 
 # Builds docs.stellarresonance.app (docs-site/, Starlight) and deploys it to Cloudflare Pages.
 #   push to main   → production (docs.stellarresonance.app)
-#   pull request   → a preview deployment (<branch>.stellar-docs.pages.dev), linked from the run summary
+#   tag vX.Y.Z     → a frozen snapshot at vX-Y-Z.stellar-docs-bs5.pages.dev (listed in the site's version menu)
+#   pull request   → a preview deployment (<branch>.stellar-docs-bs5.pages.dev)
 # Everything the site shows is regenerated from this repo on every run: the synced guides, the API reference
 # (from Stellar.Abstractions XML docs), the changelog, and the interactive diagrams (Archify).
 on:
+  # No path filter on push: the site reads reader sources (wire coverage), FrameworkVersion.cs and the plugin
+  # registry too, and a release tag must always publish its snapshot.
   push:
     branches: [main]
-    paths: ['docs/**', 'docs-site/**', 'src/Stellar.Abstractions/**', 'CHANGELOG.md', 'CONTRIBUTING.md', '.github/workflows/docs.yml']
+    tags: ['v*']
   pull_request:
-    paths: ['docs/**', 'docs-site/**', 'src/Stellar.Abstractions/**', 'CHANGELOG.md', 'CONTRIBUTING.md', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'docs-site/**', 'src/**', 'CHANGELOG.md', 'CONTRIBUTING.md', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 concurrency:

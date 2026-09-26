@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readWireSchema } from './wire-schema.mjs';
 
 const SITE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = resolve(SITE, '..');
@@ -26,6 +27,12 @@ const PAGES = {
   'docs/architecture.md': 'architecture',
   'CONTRIBUTING.md': 'contribute',
 };
+// Every contributor guide under docs/contributing/ is published as /contribute/<name>/.
+if (existsSync(join(REPO, 'docs/contributing'))) {
+  for (const f of readdirSync(join(REPO, 'docs/contributing')).filter((f) => f.endsWith('.md')).sort()) {
+    PAGES[`docs/contributing/${f}`] = `contribute/${f.replace(/\.md$/, '')}`;
+  }
+}
 const SLUG_FILE = (slug) => join(CONTENT, `${slug}.md`);
 
 const log = (...a) => console.log('[gen]', ...a);
@@ -184,6 +191,119 @@ function genChangelog() {
   log(`changelog + what's new (${version})`);
 }
 
+// ---------------------------------------------------------------- 7. versions
+/** Production (docs.stellarresonance.app) is built from main. Every release tag vX.Y.Z also deploys a frozen
+ *  snapshot as the Pages branch alias vX-Y-Z — the version menu lists the tags newer than the site's launch. */
+const SNAPSHOTS_AFTER = '2.11.0'; // the site launched after 2.11.0; older tags have no docs-site/ to build
+const PAGES_HOST = 'stellar-docs-bs5.pages.dev';
+function genVersions() {
+  const current = readFileSync(join(REPO, 'src/Stellar.Abstractions/Domain/FrameworkVersion.cs'), 'utf8')
+    .match(/const string Value\s*=\s*"([^"]+)"/)[1];
+  const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+  let tags = [];
+  try { tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO }).toString().split('\n'); } catch { /* no git */ }
+  const snapshots = tags.map((t) => t.trim().match(/^v(\d+\.\d+\.\d+)$/)?.[1]).filter(Boolean)
+    .filter((v) => cmp(v, SNAPSHOTS_AFTER) > 0).sort((a, b) => cmp(b, a))
+    .map((v) => ({ version: v, url: `https://v${v.replace(/\./g, '-')}.${PAGES_HOST}/` }));
+  write(join(GENERATED, 'versions.json'), JSON.stringify({ current, snapshots }, null, 2) + '\n');
+  log(`versions: current ${current}, ${snapshots.length} snapshots`);
+}
+
+// ---------------------------------------------------------------- 6. plugin gallery
+/** Every plugin in the public registry (StellarResonancePlugins — manifests only, each pinning a source repo +
+ *  commit). Plugins that must never be published are absent from the registry by design, so none can leak here.
+ *  "APIs used" = IPluginServices members referenced in the plugin's source at its pinned commit. */
+async function genPlugins() {
+  const cache = join(SITE, '.plugins-cache');
+  mkdirSync(cache, { recursive: true });
+  const git = (args, cwd) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+  const fetchAt = (dir, url, ref) => { // shallow fetch of one commit, cached by directory
+    if (existsSync(join(dir, '.git'))) { try { git(['cat-file', '-e', `${ref}^{commit}`], dir); git(['checkout', '-q', ref], dir); return; } catch { /* refetch */ } }
+    mkdirSync(dir, { recursive: true });
+    if (!existsSync(join(dir, '.git'))) git(['init', '-q'], dir);
+    git(['fetch', '-q', '--depth', '1', url, ref], dir);
+    git(['checkout', '-q', 'FETCH_HEAD'], dir);
+  };
+
+  const registry = process.env.PLUGINS_REGISTRY || join(cache, 'registry');
+  if (!process.env.PLUGINS_REGISTRY) fetchAt(registry, 'https://github.com/StellarProtocol/StellarResonancePlugins.git', 'main');
+
+  const services = [...readFileSync(join(REPO, 'src/Stellar.Abstractions/Services/IPluginServices.cs'), 'utf8')
+    .matchAll(/^\s+(I\w+)\s+(\w+)\s*\{\s*get;\s*\}/gm)].map((m) => ({ iface: m[1], prop: m[2] }));
+  const byProp = new Map(services.map((s) => [s.prop, s.iface]));
+
+  const media = join(SITE, 'public/plugins');
+  rmSync(media, { recursive: true, force: true });
+  const plugins = [];
+  for (const id of readdirSync(join(registry, 'plugins')).sort()) {
+    const dir = join(registry, 'plugins', id);
+    if (!existsSync(join(dir, 'manifest.json'))) continue;
+    const m = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+    let apis = [];
+    try {
+      const src = join(cache, 'src', id);
+      fetchAt(src, m.repository, m.commit);
+      const code = walk(join(src, m.projectPath ?? '.')).filter((f) => f.endsWith('.cs')).map((f) => readFileSync(f, 'utf8')).join('\n');
+      // `<something>Services.Prop` / `_s.Prop` style member access on the services aggregate.
+      const seen = new Set([...code.matchAll(/\b\w*(?:[Ss]ervices?|[Ss]vc|_s)\.(\w+)/g)].map((x) => x[1]).filter((p) => byProp.has(p)));
+      apis = [...seen].sort().map((p) => ({ prop: p, iface: byProp.get(p) }));
+    } catch (e) { console.warn(`[gen] plugin ${id}: source scan skipped (${e.message.split('\n')[0]})`); }
+    const img = (m.media ?? []).find((x) => x.type === 'image');
+    let image;
+    if (img && existsSync(join(dir, img.file))) {
+      image = `/plugins/${id}/${posix.basename(img.file)}`;
+      mkdirSync(join(media, id), { recursive: true });
+      copyFileSync(join(dir, img.file), join(SITE, 'public', image));
+    }
+    plugins.push({
+      id, name: m.name, description: m.description, version: m.version, author: m.author, tags: m.tags ?? [],
+      date: m.date, minFramework: m.minModSystemVersion, homepage: m.homepage,
+      source: m.repository.replace(/\.git$/, ''), sourceAtCommit: `${m.repository.replace(/\.git$/, '')}/tree/${m.commit}`,
+      image, imageCaption: img?.caption, apis,
+    });
+  }
+  write(join(GENERATED, 'plugins.json'), JSON.stringify(plugins, null, 2) + '\n');
+  log(`plugin gallery: ${plugins.length} plugins`);
+}
+
+// ---------------------------------------------------------------- 5. wire coverage
+/** Joins the schemas the readers document (wire-schema.mjs) with docs/wire/coverage.json. The coverage file must
+ *  classify EVERY documented field and nothing else — drift fails the build (in CI; warns locally). */
+function genWire() {
+  const schema = readWireSchema(REPO);
+  const coverage = JSON.parse(readFileSync(join(REPO, 'docs/wire/coverage.json'), 'utf8')).messages;
+  const problems = [];
+  const messages = schema.map((m) => {
+    const cov = coverage[m.message]?.fields ?? {};
+    if (!coverage[m.message]) problems.push(`${m.message}: documented in ${m.source} but missing from docs/wire/coverage.json`);
+    for (const num of Object.keys(cov)) if (!m.fields.some((f) => String(f.num) === num)) problems.push(`${m.message}.${num}: in coverage.json but not in the schema at ${m.source}`);
+    return {
+      message: m.message, source: m.source, line: m.line,
+      url: `${GITHUB}/${m.source}#L${m.line}`,
+      fields: m.fields.map((f) => {
+        const c = cov[String(f.num)];
+        if (!c) problems.push(`${m.message}.${f.num} (${f.name}): not classified in docs/wire/coverage.json`);
+        else if (!c.status) problems.push(`${m.message}.${f.num} (${f.name}): status is empty`);
+        return { ...f, status: c?.status ?? 'unclassified', exposedAs: c?.exposedAs, note: c?.note, since: c?.since, goodFirstIssue: c?.goodFirstIssue ?? false };
+      }),
+    };
+  });
+  for (const m of Object.keys(coverage)) if (!schema.some((s) => s.message === m)) problems.push(`${m}: in coverage.json but no reader documents it`);
+  if (problems.length) {
+    const msg = `wire coverage out of date (${problems.length}):\n  ${problems.join('\n  ')}`;
+    if (process.env.CI) throw new Error(msg);
+    console.warn(`[gen] WARNING ${msg}`);
+  }
+  const all = messages.flatMap((m) => m.fields);
+  const count = (s) => all.filter((f) => f.status === s).length;
+  write(join(GENERATED, 'wire.json'), JSON.stringify({
+    totals: { fields: all.length, messages: messages.length, exposed: count('exposed'), internal: count('internal'),
+      skipped: count('skipped'), unclassified: count('unclassified'), goodFirstIssue: all.filter((f) => f.goodFirstIssue).length },
+    messages,
+  }, null, 2) + '\n');
+  log(`wire coverage: ${messages.length} messages, ${all.length} fields (${count('exposed')} exposed, ${count('skipped')} skipped)`);
+}
+
 // ---------------------------------------------------------------- 4. diagrams
 function copyDiagrams() {
   const src = join(REPO, 'docs/diagrams');
@@ -201,4 +321,7 @@ function copyDiagrams() {
 syncDocs();
 genChangelog();
 copyDiagrams();
+genWire();
+genVersions();
+if (!process.argv.includes('--skip-plugins')) await genPlugins(); else log('skipped plugin gallery (--skip-plugins)');
 if (!skipApi) await genApi(); else log('skipped API reference (--skip-api)');

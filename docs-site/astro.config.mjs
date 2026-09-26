@@ -26,6 +26,7 @@ export default defineConfig({
         ThemeSelect: './src/components/ThemeSelect.astro',
         EditLink: './src/components/EditLink.astro',
         Hero: './src/components/Hero.astro',
+        Header: './src/components/Header.astro',
       },
       sidebar: [
         {
@@ -43,7 +44,12 @@ export default defineConfig({
         {
           label: 'Contribute',
           items: [
-            { label: 'Contributing', slug: 'contribute' },
+            { label: 'Overview', slug: 'contribute' },
+            { label: 'Dev environment', link: '/contribute/dev-environment/' },
+            { label: 'Coding standards', link: '/contribute/coding-standards/' },
+            { label: 'Expose a wire field', link: '/contribute/expose-a-wire-field/' },
+            { label: 'Testing', link: '/contribute/testing/' },
+            { label: 'Changing the public API', link: '/contribute/api-changes/' },
           ],
         },
         {
@@ -57,6 +63,8 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'API reference', slug: 'api', badge: { text: 'gen', variant: 'tip' } },
+            { label: 'Wire coverage', link: '/wire/', badge: { text: 'gen', variant: 'tip' } },
+            { label: 'Plugin gallery', link: '/plugins/', badge: { text: 'gen', variant: 'tip' } },
             { label: 'Changelog', slug: 'changelog', badge: { text: 'gen', variant: 'tip' } },
           ],
         },
