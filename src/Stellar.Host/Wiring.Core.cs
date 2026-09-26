@@ -65,7 +65,7 @@ public sealed partial class BootstrapPlugin
         // AsyncGetSocialData(self) RPC via Lua reflection (same bridge as PandaPortraitModelProbe).
         // typeRegistry is already available here (passed in by Load()), so no wiring-order issue.
         var socialRefresh = new PandaSocialRefresh(typeRegistry, log);
-        _combatService = new CombatService(log, _entityTracker, _socialDataCache, socialRefresh);
+        _combatService = new CombatService(log, _entityTracker, _socialDataCache, socialRefresh, BuildSpecRootBuffMap(log));
         _partyService = new PartyService(_combatService, _clientState, log);
         // Dungeon run state (WorldNtf SyncDungeonData → IDungeonState). Read+write
         // sides on one service; the Infrastructure probe (Wiring.Wire.cs) pushes via IDungeonStateSink.

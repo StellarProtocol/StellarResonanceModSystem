@@ -53,6 +53,10 @@ internal interface ICombatBuffSink
     /// otherwise show stale debuffs (e.g. a lockout) after a zone transition.
     /// </summary>
     void ClearAllBuffs();
+
+    /// <summary>Replace an entity's buff set with a full snapshot (AOI appear / EnterScene self);
+    /// null = no buff list on the snapshot = empty set.</summary>
+    void ReplaceEntityBuffs(EntityId entityId, IReadOnlyList<ActiveBuff>? buffs, long timestampMs);
 }
 
 /// <summary>

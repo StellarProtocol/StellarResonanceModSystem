@@ -33,6 +33,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private readonly CombatEntityTracker          _entities;
     private readonly SocialDataCache              _social;
     private readonly ISocialRefreshRequester      _socialRefresh;
+    private readonly TalentSpecResolver           _spec;
     private readonly ConcurrentQueue<CombatEvent> _queue   = new();
     private readonly Queue<CombatEvent>           _ring    = new(RingCapacity);
     private readonly object                       _ringLock = new();
@@ -80,12 +81,20 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private static int _firstHitsLogged;
     private const  int DiagFirstHits = 3;
 
+    /// <summary>Uses the built-in spec-root-buff constants (tests / callers without game tables).</summary>
     public CombatService(IPluginLog log, CombatEntityTracker entities, SocialDataCache social, ISocialRefreshRequester socialRefresh)
+        : this(log, entities, social, socialRefresh, new SpecRootBuffMap(log ?? throw new ArgumentNullException(nameof(log))))
+    {
+    }
+
+    public CombatService(IPluginLog log, CombatEntityTracker entities, SocialDataCache social, ISocialRefreshRequester socialRefresh,
+        SpecRootBuffMap specRoots)
     {
         _log           = log           ?? throw new ArgumentNullException(nameof(log));
         _entities      = entities      ?? throw new ArgumentNullException(nameof(entities));
         _social        = social        ?? throw new ArgumentNullException(nameof(social));
         _socialRefresh = socialRefresh ?? throw new ArgumentNullException(nameof(socialRefresh));
+        _spec          = new TalentSpecResolver(specRoots ?? throw new ArgumentNullException(nameof(specRoots)), entities);
     }
 
     // --- ICombatSnapshot / ICombatLookup / ICombatEvents read surface ---
@@ -261,9 +270,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public IReadOnlyList<SkillLevel> GetSkillLevels(EntityId entityId) => _entities.GetSkillLevels(entityId);
 
-    // --- ICombatSpec ---
-
-    public int GetSubProfession(EntityId entityId) => _entities.GetSubProfession(entityId);
+    // --- ICombatSpec --- (CombatService.Spec.cs)
 
     // --- IEntityDetail ---
 
@@ -306,8 +313,14 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void SetLocalEntityId(EntityId entityId)
     {
-        if (_localEntityId.IsNone && !entityId.IsNone)
+        if (!_localEntityId.IsNone || entityId.IsNone) return;
+        lock (_buffsByEntityLock)
+        {
             _localEntityId = entityId;
+            // The EnterScene buff seed can land before self's id is known — surface it now.
+            if (_buffsByEntity.TryGetValue(entityId, out var set) && set.Count > 0)
+                _localBuffs = new List<ActiveBuff>(set.Values);
+        }
     }
 
     /// <summary>
@@ -329,6 +342,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     {
         RemoveEntityBuffs(entityId);
         _entities.OnEntityDisappeared(entityId, reason);
+        _spec.MarkDirtyIfKnown(entityId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     // Shared by OnEntityDisappeared (AOI-disappear) and SweepIdleEntities (idle-TTL eviction) —
@@ -357,6 +371,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         {
             _entities.EvictIdleEntity(idle[i]);
             RemoveEntityBuffs(idle[i]);
+            _spec.MarkDirtyIfKnown(idle[i], nowMs);
         }
         LogIdleSweep(idle.Count);
     }
@@ -371,7 +386,11 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         SweepIdleEntities(now);
     }
 
-    public void ResetEntities() => _entities.Reset();
+    public void ResetEntities()
+    {
+        _entities.Reset();
+        _spec.Reset();
+    }
 
     public void ClearAllBuffs()
     {
@@ -430,7 +449,11 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         => _entities.UpdateEntitySkillLevels(entityId, skills);
 
     public void SetEntityAttribute(EntityId entityId, int attrId, long value)
-        => _entities.SetEntityAttribute(entityId, attrId, value);
+    {
+        _entities.SetEntityAttribute(entityId, attrId, value);
+        if (attrId == TalentSpecResolver.AttrProfessionId)
+            _spec.MarkDirty(entityId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    }
 
     public void SetEntityEquipment(EntityId entityId, IReadOnlyList<EquipNineEntry> equip)
         => _entities.SetEntityEquipment(entityId, equip);

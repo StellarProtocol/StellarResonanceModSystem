@@ -23,6 +23,14 @@ internal sealed partial class CombatService
     // Probe line for the rDPS capture spec (§ 7 checks 1 and 2; check 5 is read from the
     // plugin's uploaded dmg+buff event stream, not this log): one line per buff change on
     // a PLAYER target. Volume ≈ tens/s in a 5-player dungeon — diagnostics-only by construction.
+    // One line per spec resolution change (spec-from-talent-buffs).
+    private void DiagSpecChange(CombatEvent.SpecChanged c)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var source = c.NewSubProfessionId == 0 ? "none" : c.FromTalent ? "buff" : "cast";
+        _log.Info($"[CombatSpec] {c.TargetId.Uid} spec={c.NewSubProfessionId} source={source} (was {c.OldSubProfessionId})");
+    }
+
     private void DiagBuffChange(string kind, EntityId target, ActiveBuff b, long timestampMs)
     {
         if (!StellarDiagnostics.IsEnabled || !target.IsPlayer) return;

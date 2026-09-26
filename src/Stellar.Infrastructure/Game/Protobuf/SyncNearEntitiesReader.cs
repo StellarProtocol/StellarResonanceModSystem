@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Stellar.Abstractions.Domain;
 using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game.Protobuf;
@@ -7,14 +8,15 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 /// <summary>
 /// One <c>appear</c> entity entry surfaced by
 /// <see cref="SyncNearEntitiesReader.TryReadAppearAndDisappear"/>. Only the
-/// fields the combat probe actually consumes are projected — currently the
-/// uuid (field 1) and, when present, the <c>AttrCollection</c> sub-message
-/// (field 3) used to extract <c>AttrName</c>. Everything else on the wire
-/// Entity (ent_type, temp_attrs, body_part_infos, passive_skill_infos, buffs,
-/// appear_type, magnetic queue) is skipped — adding more is a trivial
-/// extension when a consumer needs it.
+/// fields the combat probe actually consumes are projected — the uuid (field 1),
+/// when present the <c>AttrCollection</c> sub-message (field 3) used to extract
+/// <c>AttrName</c> etc., and the entity's FULL buff set from <c>buff_infos</c>
+/// (field 7, <c>BuffInfoSync{uuid=1, buff_infos=2 repeated BuffInfo}</c>) — null when
+/// field 7 is absent. Everything else on the wire Entity (ent_type, temp_attrs,
+/// body_part_infos, passive_skill_infos, buff_effect, appear_type, magnetic queue)
+/// is skipped.
 /// </summary>
-internal readonly record struct AppearEntityMsg(long Uuid, AttrCollectionMsg? Attrs);
+internal readonly record struct AppearEntityMsg(long Uuid, AttrCollectionMsg? Attrs, IReadOnlyList<ActiveBuff>? Buffs = null);
 
 /// <summary>
 /// One <c>disappear</c> entity entry. <see cref="DisappearType"/> is the raw
@@ -98,9 +100,9 @@ internal static class SyncNearEntitiesReader
     /// <summary>
     /// Parse both <c>appear</c> (field 1, repeated Entity) and <c>disappear</c>
     /// (field 2, repeated DisappearEntity) at once. Inside each appear Entity we
-    /// extract only the uuid (field 1) and the <c>AttrCollection</c> sub-message
-    /// (field 3, via <see cref="AttrCollectionReader.TryRead"/>); every other
-    /// Entity field is skipped. A malformed inner sub-message is silently
+    /// extract the uuid (field 1), the <c>AttrCollection</c> sub-message
+    /// (field 3, via <see cref="AttrCollectionReader.TryRead"/>) and the buff set
+    /// (field 7, via <see cref="BuffInfoReader"/>); every other Entity field is skipped. A malformed inner sub-message is silently
     /// dropped — top-level returns true with whatever was successfully parsed.
     /// </summary>
     public static bool TryReadAppearAndDisappear(
@@ -182,57 +184,65 @@ internal static class SyncNearEntitiesReader
         return true;
     }
 
-    /// <summary>Parse one wire <c>Entity</c> (uuid field 1 + AttrCollection field 3) — used for both AOI
-    /// appears and EnterScene's PlayerEnt. Other Entity fields are skipped.</summary>
+    /// <summary>Parse one wire <c>Entity</c> (uuid field 1 + AttrCollection field 3 + BuffInfoSync field 7) —
+    /// used for both AOI appears and EnterScene's PlayerEnt. Other Entity fields are skipped.</summary>
     internal static bool TryReadEntity(ReadOnlySpan<byte> payload, out AppearEntityMsg entity)
     {
+        entity = default;
         long uuid = 0;
         AttrCollectionMsg? attrs = null;
+        IReadOnlyList<ActiveBuff>? buffs = null;
         int pos = 0;
         while (pos < payload.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire))
-            {
-                entity = default;
-                return false;
-            }
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return false;
             switch ((field, wire))
             {
                 case (1, 0):
-                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u))
-                    {
-                        entity = default;
-                        return false;
-                    }
+                    if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) return false;
                     uuid = (long)u;
                     break;
 
                 case (3, 2):
-                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var attrBytes))
-                    {
-                        entity = default;
-                        return false;
-                    }
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var attrBytes)) return false;
                     // Silently drop a malformed AttrCollection — we still want
                     // the uuid surfaced so the caller can register the entity.
                     // ToArray: one copy per collection (memory-based reader; appear bursts are bounded).
-                    if (AttrCollectionReader.TryRead(attrBytes.ToArray(), out var ac))
-                    {
-                        attrs = ac;
-                    }
+                    if (AttrCollectionReader.TryRead(attrBytes.ToArray(), out var ac)) attrs = ac;
+                    break;
+
+                case (7, 2):
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var buffSync)) return false;
+                    buffs = ReadBuffInfoSync(buffSync);
                     break;
 
                 default:
-                    if (!WireProtocol.SkipField(payload, ref pos, wire))
-                    {
-                        entity = default;
-                        return false;
-                    }
+                    if (!WireProtocol.SkipField(payload, ref pos, wire)) return false;
                     break;
             }
         }
-        entity = new AppearEntityMsg(uuid, attrs);
+        entity = new AppearEntityMsg(uuid, attrs, buffs);
         return true;
+    }
+
+    /// <summary>Decode <c>BuffInfoSync{uuid=1, buff_infos=2 repeated BuffInfo}</c> with the shared
+    /// <see cref="BuffInfoReader"/>. A malformed <c>BuffInfo</c> is dropped (siblings survive); a malformed
+    /// outer framing returns what was read so far.</summary>
+    private static IReadOnlyList<ActiveBuff> ReadBuffInfoSync(ReadOnlySpan<byte> payload)
+    {
+        var list = new List<ActiveBuff>(8);
+        int pos = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) break;
+            if (field == 2 && wire == 2)
+            {
+                if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bi)) break;
+                if (BuffInfoReader.TryRead(bi, out var buff)) list.Add(buff);
+            }
+            else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
+        }
+        return list;
     }
 
     private static bool TryReadDisappearUuid(ReadOnlySpan<byte> payload, out long uuid)

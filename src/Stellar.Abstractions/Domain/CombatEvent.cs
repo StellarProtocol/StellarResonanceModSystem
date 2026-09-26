@@ -126,4 +126,28 @@ public abstract record CombatEvent(long TimestampMs)
     /// type it's typed as).</param>
     /// <param name="State">Which state the entity entered.</param>
     public sealed record EntityStateChanged(long TimestampMs, EntityId TargetId, ActorState State) : CombatEvent(TimestampMs);
+
+    /// <summary>
+    /// The value <see cref="Services.ICombatSpec.GetSubProfession"/> returns for an entity changed
+    /// (spec-from-talent-buffs, 2026-09-26). Raised exactly once per REAL change of that value, whether it
+    /// came from a talent root buff or from cast inference — never for a no-op re-resolution. Holding the
+    /// previous spec across a same-class swap gap (the root buff removed before the new one arrives) is not a
+    /// change, so Smite → gap → Lifebind raises ONE event, Smite → Lifebind. A class change (attr 220) with no
+    /// root buff of the new class yet DOES raise one (old spec → the new class's cast-derived spec, or 0).
+    /// Changes are evaluated on the main-thread drain after each batch of wire updates, so the whole-packet
+    /// net change is reported (a class swap delivering attr 220 and the new talent set together raises one
+    /// event, not an intermediate old→0→new pair). Not raised when a scene change resets every spec to 0;
+    /// specs re-announce (0 → spec) as entities reappear. Rides the existing <c>ICombatEvents</c> stream so no
+    /// combat service interface gains a member.
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time (client wall clock, Unix ms) of the update that caused the
+    /// change — the buff/attr packet, or the damage event whose cast resolved the spec.</param>
+    /// <param name="TargetId">The entity whose spec changed (named to match the <c>TargetId</c> convention of
+    /// its siblings).</param>
+    /// <param name="OldSubProfessionId">The previously reported sub-profession id (0 = none).</param>
+    /// <param name="NewSubProfessionId">The sub-profession id now returned by
+    /// <see cref="Services.ICombatSpec.GetSubProfession"/> (0 = none).</param>
+    /// <param name="FromTalent"><see langword="true"/> when the new value is talent-derived — the same meaning
+    /// as <see cref="Services.ICombatSpec.TryGetTalentSpec"/> returning <see langword="true"/>.</param>
+    public sealed record SpecChanged(long TimestampMs, EntityId TargetId, int OldSubProfessionId, int NewSubProfessionId, bool FromTalent) : CombatEvent(TimestampMs);
 }
