@@ -52,19 +52,7 @@ public sealed partial class BootstrapPlugin
     /// </summary>
     private void ConstructPluginServices(BepInExPluginLog log, PluginConfigFactory configFactory)
     {
-        // Phase 9a.5 visual verification toolkit: three env vars can swap
-        // production services for deterministic mocks so visual scenarios can
-        // render CooldownBar / PlayerHUD / StatInspector / ModuleOptimizer
-        // outside of real gameplay (title screen, character select). Silent
-        // no-op when env vars are absent — production probes + services still
-        // construct and tick; only the aggregator-input interface changes.
-        ICombatSnapshot combatSnapshot = SelectMockOrReal<ICombatSnapshot>(
-            "STELLAR_MOCK_COOLDOWNS", static () => new MockCombatSnapshot(), _combatService!, log);
-        IPlayerState playerState = SelectMockOrReal<IPlayerState>(
-            "STELLAR_MOCK_STATS", static () => new MockPlayerState(), _playerState!, log);
-        IInventory inventory = SelectMockOrReal<IInventory>(
-            "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log);
-
+        var (combatSnapshot, playerState, inventory) = SelectVisualMocks(log);
         var (gameAssets, entityTransforms, entityVitals, portraitService, wardrobePreview) = BuildInfraServices(log);
         var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
@@ -96,11 +84,28 @@ public sealed partial class BootstrapPlugin
             _wardrobeService!,
             wardrobePreview,
             _dungeonStateService!,
-            entityVitals);
+            entityVitals,
+            _loadoutSaveService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
     }
+
+    /// <summary>
+    /// Phase 9a.5 visual verification toolkit: three env vars can swap production services for
+    /// deterministic mocks so visual scenarios can render CooldownBar / PlayerHUD / StatInspector /
+    /// ModuleOptimizer outside of real gameplay (title screen, character select). Silent no-op when the
+    /// env vars are absent — production probes + services still construct and tick; only the
+    /// aggregator-input interface changes. Extracted to keep <see cref="ConstructPluginServices"/> under
+    /// the 50-LoC analyzer gate.
+    /// </summary>
+    private (ICombatSnapshot CombatSnapshot, IPlayerState PlayerState, IInventory Inventory) SelectVisualMocks(BepInExPluginLog log)
+        => (SelectMockOrReal<ICombatSnapshot>(
+                "STELLAR_MOCK_COOLDOWNS", static () => new MockCombatSnapshot(), _combatService!, log),
+            SelectMockOrReal<IPlayerState>(
+                "STELLAR_MOCK_STATS", static () => new MockPlayerState(), _playerState!, log),
+            SelectMockOrReal<IInventory>(
+                "STELLAR_MOCK_INVENTORY", static () => new MockInventory(), _inventoryService!, log));
 
     /// <summary>
     /// Constructs the <see cref="PluginRegistry"/> (fully initialised in one step — B-05) and the

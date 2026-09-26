@@ -31,5 +31,8 @@ internal sealed partial class PandaLoadoutProbe
         _liveCurrentPlanId = UnknownPlanId;
         System.Threading.Interlocked.Exchange(ref _lastSwitchDispatchMs, 0);
         while (_toTip.TryDequeue(out _)) { }   // a refusal tip owed to the PREVIOUS character never fires
+        // Loadout SAVE state is per-character too (PandaLoadoutProbe.Save.cs / .Unsaved.cs).
+        CancelPendingSaveForLogout();
+        _hasUnsavedChanges = false;
     }
 }

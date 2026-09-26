@@ -19,6 +19,11 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.10.0 adds <c>ILoadoutSave</c> (<c>IPluginServices.LoadoutSave</c>): <c>SaveCurrentToAsync(index)</c> saves the
+    /// WORN setup into another saved loadout through the game's own <c>AsyncSaveRolePlan</c> wrapper (refused
+    /// without dispatch for the worn / unknown loadout or while a switch or save is in flight), and
+    /// <c>HasUnsavedChanges</c> — the game's own <c>CheckRolePlanIsChange</c>, cached and re-evaluated on the
+    /// container-merge event, the loadout-list re-read and after a save (never on a timer). Additive only.
     /// 2.8.3 adds <c>IEntityPortrait.ShowWeapon</c> (hide the subject's weapon in the 3D portrait) and
     /// <c>IEntityPortrait.LightPreset</c> (<c>-1</c> = Scene/dynamic, <c>0..4</c> = custom,
     /// environment-independent creature-light profiles rebased on the real HDR scene scale), with the
@@ -222,5 +227,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.9.0";
+    public const string Value = "2.10.0";
 }

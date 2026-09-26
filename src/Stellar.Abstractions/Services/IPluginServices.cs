@@ -22,6 +22,8 @@ public interface IPluginServices
     IModuleEquip ModuleEquip { get; }
     /// <summary>Read and apply the player's saved in-game loadouts (class + gear + spec + modules).</summary>
     ILoadout Loadout { get; }
+    /// <summary>Save the worn setup into another saved loadout (the game's own loadout Save). See <see cref="ILoadoutSave"/>.</summary>
+    ILoadoutSave LoadoutSave { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>

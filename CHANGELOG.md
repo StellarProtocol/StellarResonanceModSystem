@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.10.0] - 2026-09-26
+_**2.10.0** (minor) — Lets plugins save the loadout you're wearing into another loadout slot through the game's own Save, and tell whether you have unsaved loadout changes. Powers Loadout Switcher's new copy button. Adds API for plugins (Abstractions 2.10.0)._
+### Added
+- Plugins can now copy the loadout you're wearing into another of your loadout slots, using the game's own Save, so the game confirms it with its usual "Loadout saved successfully!" message.
+### Developer notes
+- New `ILoadoutSave` on `IPluginServices` (`LoadoutSave`): `SaveCurrentToAsync(index)` runs `weapon.AsyncSaveRolePlan(index)` on the main-thread drain (refuses without dispatch when the target is the worn plan, unknown, or a switch/save is in flight; 8 s timeout; re-arms the SyncProjectList refresh on success). `HasUnsavedChanges` = the game's `CheckRolePlanIsChange()`, carried as an `UNSAVED` row on the existing LiveStateChunk/RefreshChunk (event-driven, no timer). Measured on the owner's client: `SaveProject` accepts a non-current plan id and copies the LIVE setup (class, gear, modules, skills, talents, Battle Imagines); the plan name is not copied.
+
 ## [2.9.0] - 2026-09-25
 _**2.9.0** (minor) — The party meter gains shields, buffs & debuffs, and voice controls; plus a dungeon-teleport archive fix and a band-instrument tone relay. Adds render/data API for plugins (Abstractions 2.9.0)._
 ### Added
