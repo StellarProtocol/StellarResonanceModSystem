@@ -34,5 +34,22 @@ tracing, and (on the layer diagram) clickable links to the source files.
    `docs/diagrams/out/`, which is gitignored; open it in a browser to explore.
 3. Commit the JSON and the regenerated SVGs together.
 
+## Authoring tips (measured while building these seven)
+
+- **Width drives readability.** The `showcase` check projects the diagram into the ~930 px panel a 1440×900
+  laptop gives it and fails if any text drops below ~6 px. An architecture layout 1,790 units wide failed (scale
+  0.52); ~1,320–1,360 wide passes. Keep nodes ~150–170 wide and put a second row underneath rather than
+  stretching one row across.
+- **Labelled arrows need room.** The gap between two nodes must be wider than the label on the arrow joining them
+  — about 110 units for labels like `implements ports`. For vertical arrows, set `fromSide`/`toSide` and a
+  `labelAt` beside the line; the auto-placed label otherwise sits on a node.
+- **Sequence diagrams:** with seven participants at a 1,080-unit viewBox a participant box is ~118 units, too
+  narrow for long type names — use a short label and put the class name in `sublabel`. Message `y` values must
+  stay between 160 and the viewBox height minus ~83; set `meta.viewBox` height accordingly.
+- **Source links** (`sources` on architecture components) must be *files* that exist at the pinned
+  `meta.repository.revision`; `build.sh` verifies them with `--repo-root`, which only architecture diagrams accept.
+- After `build.sh`, open `out/<name>.html` and look: `visual-check` (Archify's browser pass) catches overflow, but a
+  label that sits away from its arrow still passes every check.
+
 Set `ARCHIFY=/path/to/archify/bin/archify.mjs` if Archify is not installed at the default skill
 path, and `CHROME=/path/to/chrome` if Chrome is not on `PATH` as `google-chrome`.
