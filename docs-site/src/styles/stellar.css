@@ -73,7 +73,8 @@ h1#_top,
   padding: 0.05em 0.35em;
   color: #d8d2ff;
 }
-.sl-markdown-content table { border: 1px solid var(--st-line); border-radius: 10px; display: table; width: 100%; overflow: hidden; }
+/* Keep Starlight's block + overflow-x so wide tables scroll inside the column instead of spilling out. */
+.sl-markdown-content table { border: 1px solid var(--st-line); border-radius: 10px; }
 .sl-markdown-content th { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--st-dim); background: var(--st-bg2); }
 .sl-markdown-content :is(th, td) { border-color: var(--st-line); }
 
