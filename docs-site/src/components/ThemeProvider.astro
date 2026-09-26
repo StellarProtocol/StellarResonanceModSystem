@@ -1,0 +1,7 @@
+---
+// Stellar Docs is always dark, like the logs site: pin the theme and keep Starlight's picker API as a no-op.
+---
+<script is:inline>
+  document.documentElement.dataset.theme = 'dark';
+  window.StarlightThemeProvider = { updatePickers() {} };
+</script>

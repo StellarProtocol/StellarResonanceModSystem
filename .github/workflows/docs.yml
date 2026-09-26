@@ -1,0 +1,75 @@
+name: docs
+
+# Builds docs.stellarresonance.app (docs-site/, Starlight) and deploys it to Cloudflare Pages.
+#   push to main   → production (docs.stellarresonance.app)
+#   tag vX.Y.Z     → a frozen snapshot at vX-Y-Z.stellar-docs-bs5.pages.dev (listed in the site's version menu)
+#   pull request   → a preview deployment (<branch>.stellar-docs-bs5.pages.dev)
+# Everything the site shows is regenerated from this repo on every run: the synced guides, the API reference
+# (from Stellar.Abstractions XML docs), the changelog, and the interactive diagrams (Archify).
+on:
+  # No path filter on push: the site reads reader sources (wire coverage), FrameworkVersion.cs and the plugin
+  # registry too, and a release tag must always publish its snapshot.
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths: ['docs/**', 'docs-site/**', 'src/**', 'CHANGELOG.md', 'CONTRIBUTING.md', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  ARCHIFY_REPO: https://github.com/tt-a1i/archify
+  ARCHIFY_COMMIT: 9e35d2b0b39b155553ba9fcfe0b4f2a5198dd993   # 2.17.0-dev.1 — bump deliberately
+  XMLDOCMD_VERSION: 2.9.0
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the layer diagram's source links are verified against a pinned commit
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install xmldocmd
+        run: dotnet tool install -g xmldocmd --version "$XMLDOCMD_VERSION"
+
+      - name: Render interactive diagrams (Archify)
+        run: |
+          git init -q /tmp/archify && cd /tmp/archify
+          git fetch -q --depth 1 "$ARCHIFY_REPO" "$ARCHIFY_COMMIT" && git checkout -q FETCH_HEAD
+          cd "$GITHUB_WORKSPACE"
+          ARCHIFY=/tmp/archify/archify/bin/archify.mjs docs/diagrams/build.sh
+
+      - name: Build site
+        working-directory: docs-site
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Deploy to Cloudflare Pages
+        # Fork PRs get no secrets — they still build (above), they just don't deploy.
+        if: ${{ env.HAS_TOKEN == 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy docs-site/dist --project-name=stellar-docs --branch=${{ github.head_ref || github.ref_name }} --commit-hash=${{ github.sha }}

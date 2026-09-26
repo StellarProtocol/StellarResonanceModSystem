@@ -1,0 +1,68 @@
+---
+// Starlight's header plus the approved mockup's section tabs and version switcher.
+import Search from 'virtual:starlight/components/Search';
+import SiteTitle from 'virtual:starlight/components/SiteTitle';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+import versions from '../generated/versions.json';
+
+const TABS = [
+  { label: 'Guides', href: '/guides/plugin-development/', match: ['/guides/'] },
+  { label: 'Contribute', href: '/contribute/', match: ['/contribute/'] },
+  { label: 'API reference', href: '/api/', match: ['/api/'] },
+  { label: 'Wire coverage', href: '/wire/', match: ['/wire/'] },
+  { label: 'Architecture', href: '/architecture/', match: ['/architecture/'] },
+  { label: 'Plugins', href: '/plugins/', match: ['/plugins/'] },
+];
+const path = Astro.url.pathname;
+---
+<div class="header">
+  <div class="title-wrapper sl-flex">
+    <SiteTitle />
+    <nav class="st-tabs" aria-label="Sections">
+      {TABS.map((t) => <a href={t.href} aria-current={t.match.some((m) => path.startsWith(m)) ? 'page' : undefined}>{t.label}</a>)}
+    </nav>
+  </div>
+  <div class="sl-flex print:hidden"><Search /></div>
+  <div class="sl-hidden md:sl-flex print:hidden right-group">
+    <details class="st-version">
+      <summary>Version <b>{versions.current}</b></summary>
+      <div class="menu">
+        <a href="https://docs.stellarresonance.app/" aria-current="page">{versions.current} <small>latest · main</small></a>
+        {versions.snapshots.map((v) => <a href={v.url}>{v.version} <small>snapshot</small></a>)}
+        {versions.snapshots.length === 0 && <span class="empty">Release snapshots start with the next framework release.</span>}
+        <a href="/changelog/" class="all">Changelog →</a>
+      </div>
+    </details>
+    <a class="nav-cta" href="https://github.com/StellarProtocol/StellarResonance/releases/latest">↓ Get the launcher</a>
+    <div class="sl-flex social-icons"><SocialIcons /></div>
+  </div>
+</div>
+<style>
+  .header { display: flex; gap: var(--sl-nav-gap); justify-content: space-between; align-items: center; height: 100%; }
+  .title-wrapper { overflow: clip; padding: 0.25rem; margin: -0.25rem; min-width: 0; align-items: center; gap: 1.25rem; }
+  .right-group, .social-icons { gap: 1rem; align-items: center; }
+  .st-tabs { display: none; gap: 0.2rem; }
+  @media (min-width: 72rem) { .st-tabs { display: flex; } }
+  .st-tabs a { padding: 8px 11px; border-radius: 8px; color: var(--st-muted); font-size: 0.9rem; font-weight: 600; text-decoration: none; white-space: nowrap; transition: color .15s, background .15s; }
+  .st-tabs a:hover, .st-tabs a[aria-current='page'] { color: var(--st-text); background: var(--st-panel2); }
+  .st-version { position: relative; }
+  .st-version summary { list-style: none; cursor: pointer; height: 2.1rem; display: flex; align-items: center; gap: 0.35rem; padding: 0 0.75rem; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-bg2); color: var(--st-muted); font-size: 0.8rem; white-space: nowrap; }
+  .st-version summary::-webkit-details-marker { display: none; }
+  .st-version summary b { color: var(--st-text); font-weight: 600; }
+  .st-version summary::after { content: '▾'; font-size: 0.7rem; }
+  .st-version .menu { position: absolute; right: 0; top: 2.4rem; min-width: 15rem; padding: 0.4rem; border: 1px solid var(--st-line); border-radius: 10px; background: var(--st-panel); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); display: grid; gap: 0.1rem; z-index: 30; }
+  .st-version .menu a, .st-version .menu .empty { padding: 0.45rem 0.6rem; border-radius: 7px; font-size: 0.85rem; color: var(--st-text); text-decoration: none; }
+  .st-version .menu a:hover { background: var(--st-acc-soft); }
+  .st-version .menu a[aria-current='page'] { background: var(--st-acc-soft); color: #d8d2ff; }
+  .st-version .menu small { color: var(--st-dim); margin-left: 0.3rem; }
+  .st-version .menu .empty { color: var(--st-dim); font-size: 0.78rem; }
+  .st-version .menu .all { border-top: 1px solid var(--st-line); border-radius: 0; margin-top: 0.2rem; color: var(--sl-color-text-accent); }
+  .nav-cta { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-weight: 600; font-size: 0.85rem; padding: 7px 14px; border-radius: 8px; text-decoration: none; color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; box-shadow: 0 4px 18px -6px #7c5cffaa; }
+  .nav-cta:hover { filter: brightness(1.08); color: #fff; }
+  .social-icons::after { content: ''; height: 2rem; border-inline-end: 1px solid var(--sl-color-gray-5); }
+  @media (min-width: 50rem) {
+    :global(:root[data-has-sidebar]) { --__sidebar-pad: calc(2 * var(--sl-nav-pad-x)); }
+    :global(:root:not([data-has-toc])) { --__toc-width: 0rem; }
+    .header { --__sidebar-width: max(0rem, var(--sl-content-inline-start, 0rem) - var(--sl-nav-pad-x)); --__main-column-fr: calc((100% + var(--__sidebar-pad, 0rem) - var(--__toc-width, var(--sl-sidebar-width)) - (2 * var(--__toc-width, var(--sl-nav-pad-x))) - var(--sl-content-inline-start, 0rem) - var(--sl-content-width)) / 2); display: grid; grid-template-columns: minmax(calc(var(--__sidebar-width) + max(0rem, var(--__main-column-fr) - var(--sl-nav-gap))), auto) 1fr auto; align-content: center; }
+  }
+</style>

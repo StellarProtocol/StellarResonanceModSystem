@@ -1,0 +1,157 @@
+/* StellarDocs theme — the logs site's design system (services/stellar-logs/site/DESIGN.md + global.css +
+   components/home/home.css) and the marketing site's brand, mapped onto Starlight. Owner rule: the docs must
+   look like logs.stellarresonance.app and stellarresonance.app — reuse their recipes, don't invent new ones.
+   Approved layout mockup: devkit docs/superpowers/specs/assets/2026-09-26-docs-site-mockup.html */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root,
+:root[data-theme='dark'] {
+  /* logs tokens (DESIGN.md §2) */
+  --st-bg: #08080c;
+  --st-bg2: #0c0d13;
+  --st-panel: #12131c;
+  --st-panel2: #171927;
+  --st-line: #23263a;
+  --st-text: #eceefb;
+  --st-muted: #9aa0bd;
+  --st-dim: #646a87;
+  --st-accent: #7c5cff;
+  --st-accent2: #37c8e0;
+  --st-acc-soft: #1a1733;
+  --st-ok: #46c08a;
+  --st-warn: #e8c45a;
+  --st-pink: #ff7bca;
+  --st-display: 'Space Grotesk Variable', -apple-system, sans-serif;
+
+  --sl-color-accent-low: #1a1733;
+  --sl-color-accent: #7c5cff;
+  --sl-color-accent-high: #d8d2ff;
+  --sl-color-white: #eceefb;
+  --sl-color-gray-1: #dfe2f3;
+  --sl-color-gray-2: #c3c7dd;
+  --sl-color-gray-3: #9aa0bd;
+  --sl-color-gray-4: #646a87;
+  --sl-color-gray-5: #23263a;
+  --sl-color-gray-6: #12131c;
+  --sl-color-gray-7: #0c0d13;
+  --sl-color-black: #08080c;
+  --sl-color-bg: transparent;
+  --sl-color-bg-nav: var(--st-panel);
+  --sl-color-bg-sidebar: transparent;
+  --sl-color-hairline: var(--st-line);
+  --sl-color-hairline-light: var(--st-line);
+  --sl-color-hairline-shade: var(--st-line);
+  --sl-color-text-accent: #b9a8ff;
+  --sl-color-bg-inline-code: var(--st-panel2);
+  --sl-font: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --sl-font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: dark;
+}
+
+/* Page ground — the logs site's two faint radial glows over near-black (never flat black). */
+body {
+  background:
+    radial-gradient(1100px 500px at 80% -10%, #15123180 0%, transparent 60%),
+    radial-gradient(900px 400px at -10% 0%, #0d2a3360 0%, transparent 55%),
+    var(--st-bg);
+  background-attachment: fixed;
+  font-variant-numeric: tabular-nums;
+}
+header.header { background: var(--st-panel); border-bottom: 1px solid var(--st-line); }
+.sidebar-pane { background: transparent; }
+
+/* Search trigger = the logs `.nav-search` field. */
+site-search button[data-open-modal] { background: var(--st-bg2); border: 1px solid var(--st-line); border-radius: 8px; color: var(--st-dim); }
+site-search button[data-open-modal]:hover { border-color: var(--st-accent); color: var(--st-muted); }
+
+/* Headings: display face (DESIGN.md §3). */
+.sl-markdown-content :is(h1, h2, h3), h1#_top { font-family: var(--st-display); letter-spacing: -0.01em; }
+.sl-markdown-content h2 { font-weight: 700; }
+
+/* Sidebar: group labels as the logs `.sectionhead` (11px uppercase dim), active item = soft accent row. */
+.sidebar-content .group-label .large { font: 700 11px var(--sl-font); letter-spacing: 0.7px; text-transform: uppercase; color: var(--st-dim); }
+.sidebar-content a { border-radius: 8px; }
+.sidebar-content a[aria-current='page'] { background: var(--st-acc-soft); color: #d8d2ff; font-weight: 600; }
+
+/* Inline code + tables (tables keep Starlight's block+overflow so they scroll in-column). */
+.sl-markdown-content code:not(pre code) { border: 1px solid var(--st-line); border-radius: 5px; padding: 0.05em 0.35em; color: #d8d2ff; }
+.sl-markdown-content table { border: 1px solid var(--st-line); border-radius: 13px; background: var(--st-panel); }
+.sl-markdown-content th { font: 700 12px var(--sl-font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--st-muted); background: var(--st-panel2); }
+.sl-markdown-content :is(th, td) { border-color: var(--st-line); padding: 10px 14px; }
+/* Starlight zeroes the first/last column's outer padding — inside a bordered panel that leaves text touching
+   the border (owner report). Logs rows pad 18px from the panel edge; match it. */
+.sl-markdown-content :is(th, td):first-child { padding-inline-start: 18px; }
+.sl-markdown-content :is(th, td):last-child { padding-inline-end: 18px; }
+.sl-markdown-content .expressive-code .frame { border-radius: 13px; }
+
+/* Buttons = logs `.btn` / `.nav-upload` recipes: radius 8px, gradient primary, violet-soft ghost. */
+.st-btn { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font: 600 0.9rem var(--sl-font); padding: 9px 16px; border-radius: 8px; text-decoration: none; transition: filter 0.15s, border-color 0.15s; }
+.st-btn:hover { text-decoration: none; filter: brightness(1.08); }
+.st-btn.primary { color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; box-shadow: 0 4px 18px -6px #7c5cffaa; }
+.st-btn.ghost { color: #cdbcff; background: var(--st-acc-soft); border: 1px solid #34306a; }
+.sl-link-button { border-radius: 8px; }
+
+/* Panels = logs `.feed-panel`: panel surface, 13px radius, panel2 header bar with an uppercase title. */
+.st-panel { background: var(--st-panel); border: 1px solid var(--st-line); border-radius: 13px; overflow: hidden; }
+.st-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--st-panel2); border-bottom: 1px solid var(--st-line); padding: 12px 18px; }
+.st-panel-head .title { font-size: 12px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase; color: var(--st-muted); }
+.st-panel-head .meta { font-size: 12px; color: var(--st-dim); font-weight: 600; }
+.st-panel-body { padding: 16px 20px; }
+.st-panel-body ul { margin: 0; }
+.st-panel > img { display: block; width: 100%; }
+
+/* "Generated" note chip. */
+.st-generated { display: inline-flex; align-items: center; font: 700 10.5px/1 var(--sl-font); letter-spacing: 0.4px; text-transform: uppercase; color: var(--st-accent2); border: 1px solid rgba(55, 200, 224, 0.35); background: rgba(55, 200, 224, 0.08); border-radius: 5px; padding: 4px 8px; vertical-align: middle; }
+
+/* Cards (Starlight Card/LinkCard) as logs panels. */
+.card, .sl-link-card { background: var(--st-panel); border: 1px solid var(--st-line); border-radius: 13px; }
+.sl-link-card:hover { border-color: #34306a; background: var(--st-panel2); }
+
+/* ---- Home (splash) — logs home layout: 1700px column, section-head, panels ---- */
+/* Beats Starlight's `html:not([data-has-sidebar]) { --sl-content-width: 67.5rem }` (logs column = 1700px). */
+html[data-has-hero]:not([data-has-sidebar]) { --sl-content-width: 1700px; }
+.home-section { padding-block: clamp(14px, 2.4vh, 26px); }
+.section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.section-head h2 { font: 700 clamp(22px, 2.6vw, 30px)/1.15 var(--st-display); letter-spacing: -0.01em; color: var(--st-text); margin: 0; }
+.section-head .sub { color: var(--st-dim); font-size: 13px; margin-top: 4px; }
+.doors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 60rem) { .doors { grid-template-columns: 1fr; } }
+.door { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; background: var(--st-panel); border: 1px solid var(--st-line); border-radius: 13px; text-decoration: none; color: var(--st-text); transition: border-color 0.15s, background 0.15s; }
+.door:hover { border-color: #34306a; background: var(--st-panel2); text-decoration: none; }
+.door .ic { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: var(--st-acc-soft); border: 1px solid #34306a; font-size: 18px; margin-bottom: 4px; }
+.door b { font: 700 17px var(--st-display); }
+.door .d { color: var(--st-muted); font-size: 13.5px; }
+.door .go { margin-top: auto; padding-top: 6px; color: var(--st-accent2); font-size: 13px; font-weight: 600; }
+.home-diagram { display: block; width: 100%; height: min(78vh, 860px); border: 0; background: var(--st-bg); }
+.views { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+@media (max-width: 60rem) { .views { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.view { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 10px 12px; background: var(--st-panel); border: 1px solid var(--st-line); border-radius: 13px; cursor: pointer; color: var(--st-text); font-family: var(--sl-font); transition: border-color 0.15s, background 0.15s; }
+.view:hover { border-color: #34306a; background: var(--st-panel2); }
+.view img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; object-position: top; border-radius: 9px; border: 1px solid var(--st-line); background: #07080e; margin-bottom: 6px; }
+.view b { font: 700 14px var(--st-display); padding-inline: 4px; }
+.view span { font-size: 12px; color: var(--st-dim); padding-inline: 4px; }
+
+/* ---- Diagrams: static figure + "Explore interactive" (guides), frames (diagrams page), lightbox ---- */
+.st-fig { margin: 1.25rem 0; border: 1px solid var(--st-line); border-radius: 13px; overflow: hidden; background: var(--st-panel); }
+.st-fig img { display: block; width: 100%; background: #07080e; }
+.st-fig-open { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.st-fig-badge { position: absolute; top: 12px; right: 12px; font: 700 11px var(--sl-font); letter-spacing: 0.06em; text-transform: uppercase; color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; border-radius: 8px; padding: 6px 10px; box-shadow: 0 4px 18px -6px #7c5cffaa; opacity: 0.9; transition: opacity 0.15s, transform 0.15s; }
+.st-fig-open:hover .st-fig-badge { opacity: 1; transform: translateY(-1px); }
+.st-fig-open:hover img { filter: brightness(1.08); }
+.st-fig figcaption { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--st-line); background: var(--st-panel2); font-size: 12px; color: var(--st-dim); }
+.st-explore { display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px var(--sl-font); color: #cdbcff; background: var(--st-acc-soft); border: 1px solid #34306a; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.st-explore:hover { filter: brightness(1.12); }
+.st-diagram { border: 1px solid var(--st-line); border-radius: 13px; overflow: hidden; background: var(--st-panel); margin: 1.25rem 0; }
+.st-diagram .bar { display: flex; align-items: center; gap: 0.75rem; padding: 10px 14px; border-bottom: 1px solid var(--st-line); background: var(--st-panel2); font-size: 0.82rem; color: var(--st-muted); }
+.st-diagram .bar b { color: var(--st-text); }
+.st-diagram .bar a { margin-left: auto; white-space: nowrap; }
+.st-diagram iframe { display: block; width: 100%; height: 900px; border: 0; background: var(--st-bg); }
+dialog.st-lightbox { margin: auto; inset: 0; width: min(96vw, 1800px); height: 92vh; max-width: none; max-height: none; padding: 0; border: 1px solid var(--st-line); border-radius: 13px; background: var(--st-bg); color: var(--st-text); overflow: hidden; }
+dialog.st-lightbox::backdrop { background: rgba(4, 4, 8, 0.72); backdrop-filter: blur(3px); }
+.st-lb-bar { display: flex; align-items: center; gap: 14px; height: 46px; padding: 0 14px; background: var(--st-panel2); border-bottom: 1px solid var(--st-line); font-size: 13px; }
+.st-lb-bar b { font: 700 14px var(--st-display); }
+.st-lb-bar a { margin-left: auto; color: var(--sl-color-text-accent); }
+.st-lb-bar button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--st-line); background: var(--st-panel); color: var(--st-muted); cursor: pointer; }
+dialog.st-lightbox iframe { display: block; width: 100%; height: calc(100% - 46px); border: 0; }

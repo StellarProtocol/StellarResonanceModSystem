@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Two build paths — CI stubs or your own game",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "no-game",
+        "label": "No game needed",
+        "focus": [
+          "clone",
+          "stubs",
+          "gates",
+          "pr"
+        ],
+        "note": "Build the whole solution against the committed refs/ stubs, run the gates, open a PR."
+      },
+      {
+        "id": "own-game",
+        "label": "Test in your game",
+        "focus": [
+          "clone",
+          "interop",
+          "deploy",
+          "game",
+          "logs"
+        ],
+        "note": "Build against your client's interop, deploy, and watch the log."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "clone",
+      "type": "external",
+      "label": "Your clone",
+      "sublabel": ".NET 8 SDK",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "stubs",
+      "type": "backend",
+      "label": "Stub build",
+      "sublabel": "-p:GameInterop=refs",
+      "pos": [
+        310,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "what CI does"
+    },
+    {
+      "id": "gates",
+      "type": "security",
+      "label": "Gates",
+      "sublabel": "dotnet test + standards",
+      "pos": [
+        590,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "pr",
+      "type": "frontend",
+      "label": "Pull request",
+      "sublabel": "CI re-runs the gates",
+      "pos": [
+        870,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "interop",
+      "type": "backend",
+      "label": "Interop build",
+      "sublabel": "BepInEx/interop",
+      "pos": [
+        310,
+        490
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "or .local/"
+    },
+    {
+      "id": "deploy",
+      "type": "backend",
+      "label": "Deploy",
+      "sublabel": "install-stellar.sh / copy",
+      "pos": [
+        590,
+        490
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "game",
+      "type": "external",
+      "label": "Your game",
+      "sublabel": "Stellar.Framework/",
+      "pos": [
+        870,
+        490
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "logs",
+      "type": "database",
+      "label": "Logs + captures",
+      "sublabel": "DIAGNOSTICS / WIRECAP",
+      "pos": [
+        1150,
+        490
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "a1",
+      "from": "clone",
+      "to": "stubs",
+      "label": "no game",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelAt": [
+        202,
+        276
+      ]
+    },
+    {
+      "id": "a2",
+      "from": "stubs",
+      "to": "gates",
+      "label": "then",
+      "variant": "emphasis"
+    },
+    {
+      "id": "a3",
+      "from": "gates",
+      "to": "pr",
+      "label": "green",
+      "variant": "emphasis"
+    },
+    {
+      "id": "b1",
+      "from": "clone",
+      "to": "interop",
+      "label": "own client",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "labelAt": [
+        140,
+        380
+      ]
+    },
+    {
+      "id": "b2",
+      "from": "interop",
+      "to": "deploy"
+    },
+    {
+      "id": "b3",
+      "from": "deploy",
+      "to": "game",
+      "label": "7 DLLs"
+    },
+    {
+      "id": "b4",
+      "from": "game",
+      "to": "logs",
+      "label": "writes",
+      "variant": "dashed"
+    },
+    {
+      "id": "b5",
+      "from": "logs",
+      "to": "pr",
+      "label": "what you saw",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right",
+      "labelAt": [
+        1146,
+        466
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "No game install",
+      "items": [
+        "refs/ holds API-only interop stubs",
+        "Same build CI runs on every PR"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Your own client",
+      "items": [
+        "Pass -p:GameInterop / -p:BepInExCore",
+        "Or drop the interop in .local/ once"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Say what you tested",
+      "items": [
+        "Put the log lines in the PR",
+        "STELLAR_DIAGNOSTICS=1 for per-event logs"
+      ]
+    }
+  ]
+}

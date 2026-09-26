@@ -2,37 +2,42 @@
 
 This is the developer guide for writing a plugin against the framework. It covers project setup, the plugin lifecycle, the public service surface (`IPluginServices`), and — most importantly — how you draw UI: Stellar renders **native uGUI** from a declarative element tree you describe once. There is no IMGUI/`OnGUI`/`GUI.Window` in the plugin API; the framework owns rendering, layout, theming, input gating, and persistence.
 
-For framework-internal architecture, see [`architecture.md`](architecture.md). For the complete generated **API reference** of the plugin surface (every public interface, record, and enum), see [`api/`](api/) — start at [`IPluginServices`](api/Stellar.Abstractions.Services/IPluginServices.md).
+For framework-internal architecture, see [`architecture.md`](architecture.md). For the complete generated **API reference** of the plugin surface (every public interface, record, and enum), see the [API reference](https://docs.stellarresonance.app/api/) — start at [`IPluginServices`](https://docs.stellarresonance.app/api/stellar-abstractions-services/ipluginservices/).
 
 ## What a plugin is
 
-A plugin is a single .NET 6 class library that:
+A plugin is a single .NET 6 (`net6.0`) class library that:
 
-- References **only** `Stellar.Abstractions` (plus the `UnityEngine.*` interop assemblies, if you touch any Unity type directly — most plugins don't need to).
+- References the plugin SDK only: the `Stellar.Abstractions` package, plus `Stellar.Plugin.InteropRefs` (compile-time Unity / IL2CPP / BepInEx / HarmonyX stubs) and, if it talks to another plugin, `Stellar.PluginContracts`.
 - Exports exactly one public type implementing `IStellarPlugin`.
 - Is discovered at runtime when its DLL is dropped into `<game_mini>/stellar/plugins/<PluginName>/`.
 
-Plugins **never** reference `Stellar.Application`, `Stellar.Infrastructure`, BepInEx, HarmonyX, Il2CppInterop, or any `Panda.*` assembly. Those are framework internals; the framework hides them behind the abstractions.
+Plugins **never** reference `Stellar.Application`, `Stellar.Wire`, `Stellar.Infrastructure`, `Stellar.Host`, or any `Panda.*` game assembly. Those are framework internals; the framework hides them behind the abstractions. The Unity / IL2CPP / BepInEx / HarmonyX surface comes only from the `Stellar.Plugin.InteropRefs` stubs, which are never copied into your output (the game supplies the real assemblies). If you patch game methods yourself, get your `Harmony` instance from `Services.Harmony` so it is unpatched when your plugin is disposed.
 
 ## Project setup
 
-Create a `net6.0` class library that references `Stellar.Abstractions`. Mirror a sample's csproj — e.g. `Stellar.PlayerHUD.csproj`:
+Create a `net6.0` class library that references the SDK packages from NuGet.org. Each framework release publishes `Stellar.Abstractions`, `Stellar.PluginContracts` and `Stellar.Plugin.InteropRefs` at the framework's version (2.11.0 today). Reference the version whose API you need (the [CHANGELOG](../CHANGELOG.md) lists what each release added). The shape follows the shipping plugins (e.g. `Stellar.PlayerHUD.csproj`):
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
     <RootNamespace>MyMod</RootNamespace>
     <AssemblyName>MyMod</AssemblyName>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../Stellar.Abstractions/Stellar.Abstractions.csproj" />
+    <PackageReference Include="Stellar.Abstractions"       Version="2.11.0" />
+    <PackageReference Include="Stellar.Plugin.InteropRefs" Version="2.11.0" />
+    <!-- Only if you consume / provide an inter-plugin contract via Services.Exchange: -->
+    <!-- <PackageReference Include="Stellar.PluginContracts" Version="2.11.0" /> -->
   </ItemGroup>
 </Project>
 ```
 
-Most plugins need nothing more — the declarative UI toolkit means you usually never touch `UnityEngine` directly. Add the Unity interop `<Reference>` lines (see the sample csproj) only if you genuinely call a Unity API yourself.
+`Stellar.Plugin.InteropRefs` wires its stubs in as `Private=false` references, so none of them land in `bin/`. Keep it even if you never touch `UnityEngine`: some `Stellar.Abstractions` signatures (e.g. `IHarmonyHost.Create`) name HarmonyX types. The declarative UI toolkit means most plugins never call Unity directly. Your lowercased `AssemblyName` is your plugin id: the framework keys your config and data folders on it, so don't change it between releases.
 
 ## The single contract: `IStellarPlugin`
 
@@ -43,13 +48,13 @@ public interface IStellarPlugin : IDisposable
 }
 ```
 
-`Name` is **user-visible UI text**, not a log string: the framework adopts it as your plugin's display name the first time it constructs you, and shows it in **Settings → Plugins**, the per-plugin rate rows in **Settings → Performance**, and as the group header for your hotkeys in **Settings → Hotkeys**. Give it a human-readable name (`"Mahiru Utility"`, not `"StellarMahiruUtilityPlugin"`); keep it short, since those columns are fixed-width and clip. Return empty and the framework falls back to your assembly's short name.
+`Name` is **user-visible UI text**, not a log string: the framework adopts it as your plugin's display name the first time it constructs you, and shows it in **Settings → Plugins**, the per-plugin rate rows in **Settings → Performance**, and as the group header for your hotkeys in **Settings → Hotkeys**. Give it a human-readable name (`"Combat Meter"`, not `"StellarCombatMeterPlugin"`); keep it short, since those columns are fixed-width and clip. Return empty and the framework falls back to your assembly's short name.
 
 The framework constructs your plugin once via constructor injection of `IPluginServices`, and calls `Dispose()` on shutdown or when the user disables the plugin in **Settings → Plugins**. Everything you do — registering windows/HUDs, subscribing to events, declaring hotkeys, owning colours — happens in the constructor; everything you registered must be released in `Dispose()`.
 
 ## What's in the toolbox: `IPluginServices`
 
-`IPluginServices` is the single object handed to your constructor. It aggregates every framework capability as a sub-service. Read whichever ones you need:
+`IPluginServices` is the single object handed to your constructor. It aggregates every framework capability as a sub-service (about fifty of them). The table covers the ones most plugins use. For the full list, including loadouts, the market, wardrobe, dungeon state, notifications, Lua and the inter-plugin `Exchange`, see the [`IPluginServices` reference](https://docs.stellarresonance.app/api/stellar-abstractions-services/ipluginservices/).
 
 | Sub-service | What it gives you |
 |---|---|
@@ -61,9 +66,10 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | `PlayerStats` (`IPlayerStats`) | Live character attribute snapshot (ATK, DEF, crit, etc.). |
 | `Chat` (`IChat`) | `RecentMessages`, `MessageReceived` event, and `Send(target, text)`. |
 | `CombatSnapshot` / `CombatLookup` / `CombatEvents` | Polled combat state, per-entity buff/skill lookups, and the real-time `CombatEventOccurred` stream. |
-| `PartySnapshot` / `PartyRoster` / `PartyEvents` | Party roster + member vitals, and `MemberJoined`/`MemberLeft`/leader-change events. |
-| `Inventory` (`IInventory`) | Read-only module inventory + equipped set (1 Hz polled) + `InventoryChanged` + `GetSelfGear()` (own gear instances: actual rolls / refine / perfection / enchant, refreshed on full container syncs). |
-| `EntityDetail` (`IEntityDetail`) | Per-AOI-entity broadcast detail: `GetAttributes` (scalar attr map), `GetEquipment` (slot+itemId), `GetFashion` (worn cosmetics + dye colours). |
+| `CombatSpec` (`ICombatSpec`) | Each entity's active spec (sub-profession): from talent buffs when a player appears, otherwise inferred from casts. |
+| `PartySnapshot` / `PartyRoster` / `PartyEvents` | Party roster + member vitals, and `MemberJoined` / `MemberLeft` / `MemberUpdated` / `PartyDissolved` plus ready-check events. |
+| `Inventory` (`IInventory`) | Read-only module inventory + equipped set (1 Hz polled) + `InventoryChanged`; `GetSelfGear()` (own gear instances: actual rolls / refine / perfection / enchant, refreshed on full container syncs), `GetLiveEquipped()` (live gear + modules), and `SelfGearChanged` (fires on the **network thread**, see [Threading](#threading)). |
+| `EntityDetail` (`IEntityDetail`) | Per-AOI-entity broadcast detail: `GetAttributes` / `GetAttribute` (scalar attr map), `GetEquipment` (slot+itemId), `GetFashion` (worn cosmetics + dye colours), `GetSocialSnapshot`. |
 | `EntityContextMenu` (`IEntityContextMenu`) | Register items into the CombatMeter's right-click row menu. |
 | `EntityPortrait` (`IEntityPortrait`) | The live 3D character portrait (show/hide/orbit/zoom/pan + render texture). |
 | `ModuleEquip` (`IModuleEquip`) | Install / uninstall equipment modules via the game's own dispatcher. |
@@ -75,9 +81,11 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | `Windows` (`IWindowHost`) | Register uGUI **windows** — both interactive panels (draggable, closable, themed chrome) *and* on-screen HUD overlays (borderless, `Surface = SurfaceStyle.HudOverlay`, position-persisted). |
 | `NativeUi` (`INativeUiHost`) | Inject your own uGUI into the game's own UI anchors. |
 | `Launcher` (`ILauncher`) | Register a tile in the Stellar launcher menu. |
-| `GameAssets` (`IGameAssets`) | Async-load game-supplied icons by id: profession crests (atlas Sprite + UV), Battle Imagine, item (gear/cosmetic), and skill icons. Poll per frame; null until loaded. Pair with `GameTextureElement`. |
+| `GameAssets` (`IGameAssets`) | Async-load game-supplied icons by id: profession crests (atlas Sprite + UV), Battle Imagine, item (gear/cosmetic), skill and buff icons, or any asset by path (`LoadByPath`). Poll per frame; null until loaded. Pair with `GameTextureElement`. |
+| `Localization` (`ILocalization`) | Your plugin's own UI text in the active language. See [Localizing your plugin](#localizing-your-plugin). |
+| `Harmony` (`IHarmonyHost`) | `Create(suffix)` a `HarmonyLib.Harmony` namespaced to your plugin and automatically unpatched on `Dispose`. |
 
-All event invocations happen on the Unity main thread. You do **not** need to marshal back to the main thread inside a handler.
+Event invocations happen on the Unity main thread, so you do **not** need to marshal back inside a handler. The one exception is `Inventory.SelfGearChanged`, which is raised on the network/sync thread (see [Threading](#threading)).
 
 ## Drawing UI the uGUI way
 
@@ -220,17 +228,21 @@ You read whatever you want inside the predicate, via your captured `_services`. 
 
 | Signal | Type | Use it for | Across an in-world zone load |
 |---|---|---|---|
-| `Phase` | `GamePhase` (`TitleScreen`/`CharSelect`/`World`) | **visibility** — what to draw in `ShouldRender` | stays `World` (window stays up) |
+| `Phase` | `GamePhase` (`Startup`/`TitleScreen`/`CharSelect`/`World`) | **visibility** — what to draw in `ShouldRender` | stays `World` (window stays up) |
 | `IsWorldActive` | `bool` | **game-state access** — guard raw reads in your `Update` | dips `false` during the handshake — skip the read |
-| `UiState` | `[Flags] GameUIState` | in-world UI detail (menu covering the HUD, cutscene, loading) | `None` at title/char-select |
+| `UiState` | `[Flags] GameUIState` | in-world UI detail (menu covering the HUD, cutscene, loading) | `None` at the title screen |
 
 `Phase` is a signal the framework gates nothing on; it coexists with session state (`IsLoggedIn`/`Login`/`Logout`) and answers a different question ("which client screen"). Read `Phase` for the initial state (e.g. in your ctor) and subscribe to `PhaseChanged` (`event Action<PhaseChange>`, where `PhaseChange` is a `readonly record struct(From, To)`) for transitions — unsubscribe in `Dispose`, same hygiene as `Framework.Update`.
 
 Typical `ShouldRender` values:
 
 ```csharp
-// A login-screen tool (account switcher, server picker) — always visible, incl. the title screen:
+// Always-on chrome — visible in every phase, including boot:
 ShouldRender = () => true;
+
+// A login-screen tool (account switcher, server picker) — only once the login screen is up
+// (`Startup` is the boot phase before the login view exists):
+ShouldRender = () => _services.ClientState.Phase == GamePhase.TitleScreen;
 
 // A gameplay window — only in a world scene:
 ShouldRender = () => _services.ClientState.Phase == GamePhase.World;
@@ -240,7 +252,7 @@ ShouldRender = () => _services.ClientState.Phase == GamePhase.World
                   && (_services.ClientState.UiState & GameUIState.GameHudHidden) == 0;
 ```
 
-`GameUIState` is flat co-occurring flags (`GameHud`, `FullScreenMenu`, `MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`) plus preset masks (`GameHudHidden`, `AnyMenu`, `Blocking`) so you don't memorize bits — prefer the masks. It is informational only.
+`GameUIState` is flat co-occurring flags (`GameHud`, `FullScreenMenu`, `MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`, `Popup`) plus preset masks (`GameHudHidden`, `AnyMenu`, `Blocking`) so you don't memorize bits — prefer the masks. It is informational only.
 
 ### Do you need to gate your `Update`?
 
@@ -260,7 +272,7 @@ A plugin that only **draws UI, does HTTP, or reads framework-cached data** touch
 
 SDK 2.0.0 is a **breaking** release. For each existing plugin:
 
-1. Bump every `Stellar.*` reference (`Stellar.Abstractions`, and the other `Stellar.*` SDK packages you use) to **`2.0.0`**.
+1. Bump every `Stellar.*` reference (`Stellar.Abstractions`, and the other `Stellar.*` SDK packages you use) to **`2.0.0`** or later.
 2. **Migrate every HUD to a window.** `IHudHost` / `HudSpec` / `IHudHandle` / `HudAnchor` are **removed** — the HUD path is now the window path. Replace `Hud.Register(new HudSpec(...))` with `Windows.Register(new WindowRegistration(new WindowSpec(..., WindowCategory.HUD, WindowPanelStyle.Borderless) { Surface = SurfaceStyle.HudOverlay, Draggable = true, EditModeDragOnly = true, ShouldRender = ... }, root))` (see "An on-screen HUD overlay" above). `Surface = SurfaceStyle.HudOverlay` reproduces the old borderless HUD look pixel-for-pixel; the returned `IWindowControl` replaces `IHudHandle`.
 3. Add a `ShouldRender` to **every** `WindowSpec` — the build fails until you do. For a window that used to be always-on, `ShouldRender = () => true`; for one that used `HideUntilInWorld`, `ShouldRender = () => _services.ClientState.Phase == GamePhase.World`.
 4. **Delete** `HideUntilInWorld` and `AutoHideBehindGameMenus` — both are removed. Fold the "hide behind a menu" behaviour into `ShouldRender` via `UiState` (see the gameplay-HUD example above).
@@ -313,7 +325,7 @@ need to know how often you're currently ticking.
 
 The framework runs a single variable-speed clock at `max(global, every plugin's rate)`; expensive draw work
 stays gated to the global rate, so a faster plugin doesn't make the whole HUD redraw faster — only *your*
-`Update` (and the Lua-bridge RPC drains your calls depend on) speed up.
+`Update` (and the market/exchange drain that `Market` calls go through) speed up.
 
 ### Temporarily ramping your own rate
 
@@ -326,11 +338,11 @@ using var fast = _services.Framework.RequestUpdateRate(PerfControls.MaxUpdateRat
 ```
 
 Rules:
-- It's **permission-gated.** `RequestUpdateRate` returns an inert (no-op) scope unless the user enabled
-  "Self-rate" for your plugin in Settings → Performance — so calling it is always safe, but may do nothing.
-- **Always dispose** (a `using`, or release it on your end-of-work event). A held scope auto-expires after a
-  10 s safety cap (logged as a leak) — unless the user picked "Self-managed", which lets you hold it
-  indefinitely. Prefer scoping the ramp tightly to the work that needs it.
+- It's **permission-gated.** `RequestUpdateRate` returns an inert (no-op) scope unless the user set your
+  plugin's "Self-rate" (Settings → Performance) to Boost or Self-managed — so calling it is always safe,
+  but may do nothing.
+- **Always dispose** (a `using`, or release it on your end-of-work event). Under Boost a held scope
+  auto-expires after a 10 s safety cap (logged as a leak); "Self-managed" lets you hold it indefinitely. Prefer scoping the ramp tightly to the work that needs it.
 - Requests **stack** (max wins) and clamp to `[10, 240]`; the realized rate never exceeds the render frame rate.
 - A ramp costs game FPS while held (you're crossing into managed more often) — keep it short.
 
@@ -352,7 +364,7 @@ _hpSlot = _services.Theme.ColorRegistry.Register(
     });
 ```
 
-Read the resolved colour via `_hpSlot.Value` (it honours the active preset and any user override). **Cache the slot handle, not the value** — `Value` re-resolves each read, so a `Func<ColorRgba>` like `() => _hpSlot.Value` keeps a bar correctly recoloured as the user switches themes. Dispose the slot in `Dispose()`.
+Read the resolved colour via `_hpSlot.Value` (it honours the active preset and any user override). **Cache the slot handle, not the value** — `Value` re-resolves each read. Colour parameters that take a `Func` (`TextElement.Color`, `PillElement.Color`) follow a theme switch live when you pass `() => _hpSlot.Value`. `BarElement.Fill` is a plain `ColorRgba`, read once when the element is built. Dispose the slot in `Dispose()`.
 
 ## Settings (config)
 
@@ -392,9 +404,10 @@ Every plugin MUST implement `Dispose()` correctly. The **Settings → Plugins** 
 **Release everything you acquired in the constructor:**
 
 - `-=` every event handler you `+=` (`Framework.Update`, `ClientState.Login/Logout/SceneChanged/PhaseChanged`, `Chat.MessageReceived`, `CombatEvents.CombatEventOccurred`, `Inventory.InventoryChanged`, `Config.SectionChanged`, …). **Capture handlers in fields** — inline lambdas (`X += () => ...;`) leak because `-=` can't find the same delegate instance later.
-- `Remove()` every `IWindowControl`.
+- `Remove()` every `IWindowControl` and every `INativeUiElementHandle`.
 - `Dispose()` every `IColorSlot` and every `IHotkeyAction`.
-- `Dispose()` every token returned by `IGameEvents.Subscribe(...)` and `ILauncher.Register(...)`.
+- `Dispose()` every token returned by `IGameEvents.Subscribe(...)`, `ILauncher.Register(...)`, `IEntityContextMenu.Register(...)`, `Framework.Every(...)` and `Framework.RequestUpdateRate(...)`.
+- Harmony instances you got from `Services.Harmony` are unpatched for you.
 
 A clean `Dispose()` for the window-plus-colours pattern:
 
@@ -421,9 +434,10 @@ public void Dispose()
 | Element `Func`/`Action` callbacks | Unity main thread (during the framework's poll/build) |
 | `IChat.MessageReceived` | Unity main thread (drained from an I/O queue once per `Update`) |
 | `IClientState` / `IPartyEvents` / `ICombatEvents` | Unity main thread |
+| `IInventory.SelfGearChanged` | **Network/sync thread.** Keep the handler minimal (set a volatile flag) and read game state later on your `Update` |
 | `IGameEvents` subscriptions | Same thread the underlying game event fires on — usually main |
 
-You can assume single-threaded handlers. If you start your own threads, marshal back to the main thread (enqueue and drain from your `Update` handler) before touching any framework or Unity state.
+Apart from `SelfGearChanged`, you can assume single-threaded handlers. If you start your own threads, marshal back to the main thread before touching any framework or Unity state: `Framework.Post(action)` is the thread-safe way to run work on your next `Update`.
 
 ## Logging conventions
 
@@ -433,12 +447,12 @@ You can assume single-threaded handlers. If you start your own threads, marshal 
 
 ## Localizing your plugin
 
-Stellar's own UI ships in English, 日本語, ไทย and Bahasa Indonesia; your plugin can too, via
+Stellar's own UI ships in English, 日本語, ไทย, Bahasa Indonesia and Filipino; your plugin can too, via
 `Services.Localization` (`ILocalization`). It's scoped to your plugin (like `Log`) — your keys never
 collide with another plugin's.
 
-**1. Ship four catalogs.** Add `Lang/en.json`, `Lang/ja.json`, `Lang/th.json`, `Lang/id.json` to your
-project as embedded resources. `en.json` is the source of truth; the others are keyed by the same ids.
+**1. Ship five catalogs.** Add `Lang/en.json`, `Lang/ja.json`, `Lang/th.json`, `Lang/id.json`,
+`Lang/fil.json` to your project as embedded resources. `en.json` is the source of truth; the others are keyed by the same ids.
 Values may carry positional placeholders (`{0}`) so other languages can reorder them:
 
 ```jsonc
@@ -455,7 +469,8 @@ In your `.csproj`:
 </ItemGroup>
 ```
 
-The framework auto-discovers these at load — **no registration code**.
+The framework auto-discovers these at load — **no registration code**. It matches any resource name ending in
+`Lang.<code>.json`, so the default MSBuild logical name (`<RootNamespace>.Lang.en.json`) works too.
 
 **2. Resolve at draw-time.** Call `T` / `TFormat` inside your element `Func<string>` labels so they
 re-render live when the user switches language:
@@ -468,19 +483,14 @@ new TextElement(() => s.TFormat("dps.line", dps));   // string.Format on the act
 
 Resolution is **active-language → English → the key literal**: a key you forgot to translate falls back
 to English; a key that exists nowhere renders as the key itself (so it's obvious in-game, never a crash).
-`Services.Localization.Language` is the active code (`"en"/"ja"/"th"/"id"`), and `LanguageChanged` fires
+`Services.Localization.Language` is the active code (`"en"/"ja"/"th"/"id"/"fil"`), and `LanguageChanged` fires
 on a switch (subscribe only if you cache built text; draw-time labels need no handler). Plugins **read**
 the language — they never set it (that's the framework's Settings → Themes → Language control).
 
-**3. Validate before you commit.** Run the catalog checker from the devkit:
-
-```
-python3 tools/i18n-catalog.py <your-plugin-repo>
-```
-
-It fails on a key used in code but missing from `en.json` (`undefined`) or a key in `en.json` missing
-from ja/th/id (`incomplete`); `--seed` copies `en` into the other catalogs as placeholders for a
-translation pass. Keep it green in CI.
+**3. Validate before you commit.** The framework never fails on a missing key, so check your catalogs
+yourself (a small script in CI is enough): every key your code passes to `T` / `TFormat` should exist
+in `en.json`, and every `en.json` key should exist in ja/th/id/fil. Copying the English text in as a
+placeholder is better than leaving a key out.
 
 ## The no-cheating boundary
 
@@ -488,25 +498,36 @@ Stellar holds the same line Dalamud does — QoL, not exploitation:
 
 - **Events are read-only.** Observe `PlayerState`, `Chat`, combat, party, inventory; do not try to mutate game state by writing back through them.
 - **No packet construction.** Never assemble protobuf bytes, modify in-flight packet bodies, or send custom-built messages.
-- **Game actions go through the game's own dispatcher.** `IChat.Send` and `IModuleEquip` install/uninstall are permitted because the *game's* code builds the request and runs its own validation (slot lock, type conflict, max-count). Supply the inputs; never short-circuit a lower layer to bypass a game-side check.
+- **Game actions go through the game's own dispatcher.** `IChat.Send`, `IModuleEquip` install/uninstall and the other action services (loadout apply/save, market buy, party size, wardrobe) are permitted because the *game's* code builds the request and runs its own validation (slot lock, type conflict, max-count). Supply the inputs; never short-circuit a lower layer to bypass a game-side check.
 
 ## Build and deploy
 
 ```bash
-cd (local reference)
-(local reference) build Stellar.sln -c Release
-(local reference)    # the game must be closed
+dotnet build MyMod.csproj -c Release
 ```
 
-`install-stellar.sh` deploys the framework into `BepInEx/plugins/Stellar.Framework/` and each sample plugin into `stellar/plugins/<PluginName>/`. If you add a new sample, extend the `USER_PLUGINS` array near the top of the script.
+Copy `bin/Release/MyMod.dll` into its own folder under the game, with the game closed:
 
-Launch via Heroic (do **not** invoke Wine directly — Heroic sets `WINEDLLOVERRIDES=winhttp=n,b`, which BepInEx needs). Watch the log:
-
-```bash
-tail -f /opt/game/BlueProtocol2/drive_c/Star/StarLauncher/game/release_*/game_mini/BepInEx/LogOutput.log
 ```
+<game_mini>/stellar/plugins/mymod/MyMod.dll
+```
+
+Use a lowercase folder name (the launcher does), and keep exactly one copy. A second copy anywhere under
+`stellar/plugins/`, including an old backup folder, is a duplicate plugin id and only the first one found
+loads. The framework and SDK DLLs must **not** be copied next to your plugin; they live in
+`BepInEx/plugins/Stellar.Framework/`. See [Getting started](getting-started.md) for installing the
+framework itself.
+
+Launch the game as usual (on Linux the launcher must set `WINEDLLOVERRIDES=winhttp=n,b`, which BepInEx
+needs) and watch `<game_mini>/BepInEx/LogOutput.log`. `[PluginHost] discovered: <YourType>` means the
+framework found your plugin.
 
 ## Reference plugins
+
+The plugins below are not in this repository. `Stellar.DebugInfo` and `Stellar.AutoNav` are in the
+`samples/` folder of the [public plugin registry](https://github.com/StellarProtocol/StellarResonancePlugins);
+the shipping plugins each have their own source repo (e.g. `StellarProtocol/StellarPlayerHUDPlugin`),
+linked from the [plugin gallery](https://docs.stellarresonance.app/plugins/).
 
 | Plugin | Purpose | What to learn from it |
 |---|---|---|

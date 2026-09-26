@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Two ways to install — launcher or manual",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "launcher", "label": "Launcher (recommended)", "focus": ["player", "launcher", "fwdir", "plugdir"], "note": "One click installs BepInEx, the framework and your plugins, and keeps them updated." },
+      { "id": "manual", "label": "Manual / developer", "focus": ["you", "bepinex", "build", "fwdir", "plugdir", "log"], "note": "Install the loader once, build the framework, copy the DLLs, then verify in the log." }
+    ]
+  },
+  "components": [
+    { "id": "player", "type": "external", "label": "Player", "sublabel": "just wants mods", "pos": [40, 110], "size": [160, 64] },
+    { "id": "launcher", "type": "frontend", "label": "Launcher", "sublabel": "install + auto-update", "pos": [580, 110], "size": [160, 64], "tag": "recommended" },
+    { "id": "you", "type": "external", "label": "Developer", "sublabel": "manual install", "pos": [40, 300], "size": [160, 64] },
+    { "id": "bepinex", "type": "backend", "label": "BepInEx loader", "sublabel": "6.0.0-be.755", "pos": [310, 300], "size": [160, 64], "tag": "once" },
+    { "id": "build", "type": "backend", "label": "dotnet build", "sublabel": "stubs or own interop", "pos": [580, 300], "size": [160, 64] },
+    { "id": "fwdir", "type": "database", "label": "Stellar.Framework/", "sublabel": "BepInEx/plugins", "pos": [850, 300], "size": [170, 64], "tag": "7 DLLs" },
+    { "id": "plugdir", "type": "database", "label": "stellar/plugins/", "sublabel": "one lowercase folder each", "pos": [850, 490], "size": [170, 64] },
+    { "id": "log", "type": "security", "label": "LogOutput.log", "sublabel": "look for [Stellar]", "pos": [1120, 300], "size": [160, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "<game_mini> — your game folder", "wraps": ["fwdir", "plugdir", "log"] }
+  ],
+  "connections": [
+    { "id": "use", "from": "player", "to": "launcher", "label": "one click", "variant": "emphasis" },
+    { "id": "installs", "from": "launcher", "to": "fwdir", "label": "installs", "variant": "emphasis", "fromSide": "right", "toSide": "top", "labelAt": [860, 142] },
+    { "id": "m1", "from": "you", "to": "bepinex", "label": "extract" },
+    { "id": "m2", "from": "bepinex", "to": "build", "label": "then" },
+    { "id": "m3", "from": "build", "to": "fwdir", "label": "copy" },
+    { "id": "plugins", "from": "fwdir", "to": "plugdir", "label": "loads", "fromSide": "bottom", "toSide": "top", "labelAt": [975, 427] },
+    { "id": "verify", "from": "fwdir", "to": "log", "label": "boot log", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Launcher", "items": ["Windows and Linux", "Installs and updates everything", "Vanilla is one toggle away"] },
+    { "dot": "violet", "title": "Manual", "items": ["BepInEx 6 IL2CPP, installed once", "Copy all seven framework DLLs, incl. PluginContracts", "Linux: WINEDLLOVERRIDES=winhttp=n,b"] },
+    { "dot": "rose", "title": "Keep one copy", "items": ["No backups inside BepInEx/plugins", "One folder per plugin — letter case counts"] }
+  ]
+}

@@ -1,6 +1,6 @@
 # Framework architecture
 
-**Status: implemented as `src/Stellar.{Abstractions,Application,Infrastructure,Host}/`.**
+**Status: implemented as `src/Stellar.{Abstractions,Wire,Application,Infrastructure,Host,PluginContracts,Analyzers}/` (framework 2.11.0).**
 This document records the architectural decisions and the discoveries that drove them.
 
 ## Critical discovery from the IL2CPP dump: **HybridCLR**
@@ -23,7 +23,7 @@ Compared to a typical IL2CPP game where everything is native AOT and you fight I
 | Access to game types | Generated proxy wrappers | Direct `Type.GetType` / reflection works |
 | Patches survive game updates | Brittle (signatures shift) | More robust — HarmonyX matches by name/signature |
 
-**This makes the target much more Dalamud-shaped than initially assumed.** The actual technique stops being "wrap IL2CPP" and starts being "wait for HybridCLR to finish, then HarmonyX-patch as if it were a Mono game." Empirically confirmed: all six HarmonyX patches on `Panda.Core.Game.*` succeed on the hot-update managed code.
+**This makes the target much more Dalamud-shaped than initially assumed.** The actual technique stops being "wrap IL2CPP" and starts being "wait for HybridCLR to finish, then HarmonyX-patch as if it were a Mono game." Empirically confirmed: the framework's HarmonyX postfixes on `Panda.Core.Game` lifecycle methods apply cleanly to the hot-update managed code.
 
 ## Stack decision
 
@@ -34,7 +34,7 @@ Compared to a typical IL2CPP game where everything is native AOT and you fight I
 | Method patching | **HarmonyX** | Works directly on HybridCLR-loaded managed assemblies. Same library Dalamud uses. |
 | Overlay | **Native Unity uGUI** — a canvas hierarchy driven by `WindowService` | Renders through the game's own Canvas/UI system with zero native hooks. (The original v0.2 shipping path used Unity IMGUI via an injected `OverlayBehaviour.OnGUI`; that was deleted in Phase E because the per-frame `OnGUI` crossing cost ~13 fps.) |
 | Plugin DI | Custom service locator (`IPluginServices`) | Game uses VContainer internally; we expose a small, explicit surface rather than wrapping the container directly. |
-| Event bus to plugins | Composed `IGameEventBridge` strategy: MessagePipe (preferred, currently disabled) → HarmonyX fallback | Plugins use the same `IGameEvents.Subscribe(typeName, handler)` API regardless of which bridge is active. |
+| Event bus to plugins | Composed `IGameEventBridge` strategy (`GameEventsService`): MessagePipe first (`MessagePipeContainerBridge`, using the game's VContainer once it is resolved off `Game.GameRoot`, plus root-scope / `GlobalMessagePipe` routes), then a HarmonyX fallback (`HarmonyEventBridge`) | Plugins use the same `IGameEvents.Subscribe(typeName, handler)` API regardless of which bridge serves a subscription; subscriptions made before a bridge is ready are buffered and replayed. |
 
 The overlay is built from native uGUI: plugins register windows via `IWindowHost` (backed by `WindowService`), composing element trees rather than issuing immediate-mode draw calls. On-screen HUD overlays are the same windows registered borderless with `Surface = SurfaceStyle.HudOverlay` — there is no separate HUD service.
 
@@ -48,11 +48,12 @@ How a server packet becomes a plugin event: parsed and queued on the network thr
 
 _Diagram sources and the build are in [`diagrams/`](diagrams/README.md)._
 
-Clean Architecture across five assemblies plus samples. Dependency rule is **enforced** by project references + `InternalsVisibleTo`:
+Clean Architecture across five runtime assemblies, plus a shared plugin-contracts assembly and a Roslyn analyzer. Dependency rule is **enforced** by project references + `InternalsVisibleTo`:
 
 ```
 src/
-├── Stellar.Abstractions/    plugin-facing contracts (public). Zero external deps.
+├── Stellar.Abstractions/    plugin-facing contracts (public). BCL only, plus a compile-time
+│                            reference to the 0Harmony stub (IHarmonyHost returns HarmonyLib.Harmony).
 ├── Stellar.Wire/            internal wire protocol (frame parse / stub routing / method IDs).
 │                            depends on: Abstractions (BCL + Abstractions only)
 ├── Stellar.Application/     services + outbound interfaces (internal).
@@ -61,20 +62,25 @@ src/
 │                            depends on: Abstractions, Application, Wire + external runtimes
 ├── Stellar.Host/            composition root. The only place that says `new ConcreteThing(...)`.
 │                            depends on: Abstractions, Application, Infrastructure
-└── samples/
-    └── Stellar.DebugInfo/   reference plugin. depends on: Abstractions only.
+├── Stellar.PluginContracts/ shared inter-plugin contracts brokered via IPluginExchange.
+│                            depends on: Abstractions. The framework never references it
+│                            (it brokers purely by Type) but ships it in the bundle.
+└── Stellar.Analyzers/       Roslyn analyzer (STELLAR0001–0006) injected into every src/ project.
+tests/                       Stellar.Application.Tests, Stellar.Analyzers.Tests
 ```
 
-Plugin authors reference `Stellar.Abstractions.dll` only. They physically cannot touch internals — the compiler stops them.
+Sample and shipping plugins live outside this repo (the public plugin registry and per-plugin repos).
+
+Plugin authors reference the SDK packages only — `Stellar.Abstractions`, optionally `Stellar.PluginContracts`, and the `Stellar.Plugin.InteropRefs` compile-time stubs (all published to NuGet.org by the release workflow). They physically cannot touch internals — the compiler stops them.
 
 ## Bootstrap sequence (high level)
 
 The startup sequence at a glance:
 
-1. BepInEx loads `Stellar.Host` (and the .NET runtime resolves the other three framework DLLs).
-2. `BootstrapPlugin.Load()` constructs all services and adapters, wires them via constructor injection.
+1. BepInEx loads `Stellar.Host` (and the .NET runtime resolves the other framework DLLs next to it: Infrastructure, Application, Abstractions, Wire).
+2. `BootstrapPlugin.Load()` constructs all services and adapters (including the uGUI `WindowService` stack), wires them via constructor injection.
 3. `AppDomainHotUpdateWatcher` waits for all 8 hot-update Panda assemblies to load.
-4. On all-loaded: create the native uGUI canvas hierarchy (`HudService` + `WindowService` attach), apply 6 HarmonyX postfix patches on `Panda.Core.Game.*` lifecycle methods, load user plugins from `<game>/stellar/plugins/**/*.dll`.
+4. On all-loaded: register the framework's own uGUI windows (settings hub, launcher, perf overlay), install the wire probes and 5 HarmonyX postfixes on `Panda.Core.Game` lifecycle methods (`Init`, `OnLogin`, `OnLogout`, `OnEnterScene`, `OnLeaveScene` — deliberately **not** `Update`), load user plugins from `<game>/stellar/plugins/**/*.dll`, then start the `StellarTicker` clock.
 
 ## Framework tick — single variable-speed clock (v1.7.0+)
 
@@ -87,12 +93,13 @@ realized at ≤ the render frame rate.
 A `TickScheduler` (Application) owns the rate math and gates each consumer behind a per-consumer
 accumulator (`RateGate`), so consumers tick at their own rate off the shared clock. Each beat runs three bands:
 
-1. **Every beat** — the Lua-bridge probe drains (exchange/equip/loadout). Cheap when idle; riding the master
-   clock means a ramped plugin's main-thread RPC round-trips complete proportionally faster (the lever behind
+1. **Every beat** — the exchange (market) Lua-bridge drain only. Cheap when idle; riding the master
+   clock means a ramped plugin's market round-trips complete proportionally faster (the lever behind
    the market-snipe feature).
 2. **Per-plugin Updates** — each plugin's `IFramework.Update` fires at its own configured/dynamic rate.
 3. **Global-gated** — the expensive draw/refresh/input work, pinned to the global rate via an accumulator, so
-   raising the clock for one plugin never multiplies HUD draw cost.
+   raising the clock for one plugin never multiplies HUD draw cost. The equip and loadout Lua-bridge drains
+   also run here (they have no latency need).
 
 Plugins set a persistent per-plugin rate (Settings → Performance) or temporarily ramp via
 `IFramework.RequestUpdateRate` (permission-gated, leak-guarded). Idle (nothing ramped) the clock rests at the
@@ -110,7 +117,7 @@ handshake) was never isolated from the *safe* work (drawing UI, polling input).
 SDK 2.0 splits those two concerns and drives everything off **two independent signals**, both exposed on
 `IClientState`:
 
-- **`GamePhase Phase`** (`TitleScreen` → `CharSelect` → `World`, in `Stellar.Abstractions.Domain`) — a
+- **`GamePhase Phase`** (`Startup` → `TitleScreen` → `CharSelect` → `World`, in `Stellar.Abstractions.Domain`) — a
   first-class client-lifecycle **signal**. The framework **gates nothing** on it; it exists purely for plugins
   to read. It is distinct from session state (`IsLoggedIn`/`Login`/`Logout`) and coexists with it — `Phase`
   answers "which client screen are we on," session state answers "are we logged in." `Phase` stays steady
@@ -142,8 +149,8 @@ by default.
 
 **`GameUIState`** (`[Flags]`, in `Stellar.Abstractions.Domain`) is an **informational** in-world UI signal the
 framework detects and exposes but never gates on. Flat co-occurring bits (`GameHud`, `FullScreenMenu`,
-`MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`) plus preset masks
-(`GameHudHidden`, `AnyMenu`, `Blocking`); `None` at `TitleScreen`/`CharSelect`. A gameplay HUD's `ShouldRender`
+`MainMenu`, `LineSelector`, `Dialogue`, `Cutscene`, `Loading`, `Matchmaking`, `Popup`) plus preset masks
+(`GameHudHidden`, `AnyMenu`, `Blocking`); `None` at the title screen. A gameplay HUD's `ShouldRender`
 reads it to hide itself when a menu covers the HUD.
 
 **Safety-net (framework `src/` only):** a framework game-state unit that forgets its `IsWorldActive` guard
@@ -162,6 +169,6 @@ Full design, decision table, and the in-game validation record: [`game-phases-de
 
 ## Open questions (post-v0.2)
 
-1. **MessagePipe container path.** `Panda.Core.Game.GameRoot` does not expose the VContainer `IObjectResolver`. Where is it?
-2. **Friendly scene names.** `OnEnterScene` delivers numeric scene IDs (`"1"`, `"7"`). Looking up names probably requires reading from `Panda.Table` data.
+1. **MessagePipe container path — RESOLVED.** The VContainer `IObjectResolver` is reached through `Game.GameRoot`'s container once it is populated: the Host probes it on the in-world framework tick until it is found (`ProbeGameRootOnce` + `ResolverProbe`), then hands it to the MessagePipe bridge and the inventory probe.
+2. **Friendly scene names — RESOLVED for plugins.** `OnEnterScene` still delivers numeric scene IDs (`"1"`, `"7"`), and that is what `IClientState.CurrentSceneName` carries. The name comes from the scene table: `IGameData.World.GetScene(id)` returns a `SceneInfo` with `Name` and `MapId`.
 3. **Overlay technology — RESOLVED.** The original v0.2 question asked whether Unity IMGUI would prove limiting (no images, ugly styling). It did, and it also cost ~13 fps via the per-frame `OnGUI` crossing. Resolved in Phase E: the IMGUI overlay was deleted and the framework migrated to native Unity uGUI. A Dear ImGui DX12 swapchain hook is no longer being considered.
