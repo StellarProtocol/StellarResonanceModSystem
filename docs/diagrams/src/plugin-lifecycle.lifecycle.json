@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Plugin lifecycle",
+    "viewBox": [
+      1030,
+      590
+    ],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "Load to shutdown",
+        "focus": [
+          "discovered",
+          "registered",
+          "constructed",
+          "running",
+          "disposed"
+        ],
+        "note": "Every DLL under stellar/plugins is scanned, constructed with IPluginServices, ticked, then disposed once."
+      },
+      {
+        "id": "toggle",
+        "label": "User disable / enable",
+        "focus": [
+          "registered",
+          "running",
+          "disabled",
+          "constructed"
+        ],
+        "note": "Disabling disposes the instance; enabling runs the constructor again on a fresh instance."
+      },
+      {
+        "id": "failure",
+        "label": "Constructor failure",
+        "focus": [
+          "constructed",
+          "errored"
+        ],
+        "note": "A throwing constructor marks the plugin errored; Retry re-runs it."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Lifecycle"
+    },
+    {
+      "id": "waiting",
+      "label": "User-disabled"
+    },
+    {
+      "id": "exceptions",
+      "label": "Load failure"
+    }
+  ],
+  "states": [
+    {
+      "id": "discovered",
+      "type": "start",
+      "label": "Discovered",
+      "sublabel": "PluginHost scans *.dll",
+      "lane": "main",
+      "col": 0,
+      "step": "01"
+    },
+    {
+      "id": "registered",
+      "type": "decision",
+      "label": "Registered",
+      "sublabel": "PluginRegistry slot",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "unique id"
+    },
+    {
+      "id": "constructed",
+      "type": "active",
+      "label": "Constructed",
+      "sublabel": "new(IPluginServices)",
+      "lane": "main",
+      "col": 2,
+      "step": "03"
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "Running",
+      "sublabel": "events + Update ticks",
+      "lane": "main",
+      "col": 3,
+      "step": "04"
+    },
+    {
+      "id": "disposed",
+      "type": "success",
+      "label": "Disposed",
+      "sublabel": "framework shutdown",
+      "lane": "main",
+      "col": 4,
+      "step": "05"
+    },
+    {
+      "id": "errored",
+      "type": "failure",
+      "label": "Errored",
+      "sublabel": "constructor threw",
+      "lane": "exceptions",
+      "col": 0,
+      "tag": "retryable"
+    },
+    {
+      "id": "disabled",
+      "type": "waiting",
+      "label": "Disabled",
+      "sublabel": "instance disposed",
+      "lane": "waiting",
+      "col": 1,
+      "tag": "persisted"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "user-disable",
+      "from": "running",
+      "to": "disabled",
+      "label": "disable",
+      "variant": "default",
+      "labelAt": [
+        556,
+        206
+      ]
+    },
+    {
+      "id": "user-enable",
+      "from": "disabled",
+      "to": "constructed",
+      "label": "enable",
+      "variant": "emphasis",
+      "labelAt": [
+        498,
+        262
+      ]
+    },
+    {
+      "id": "ctor-throws",
+      "from": "constructed",
+      "to": "errored",
+      "label": "throws",
+      "variant": "security",
+      "labelAt": [
+        362,
+        232
+      ]
+    },
+    {
+      "id": "retry",
+      "from": "errored",
+      "to": "constructed",
+      "label": "Retry",
+      "variant": "emphasis",
+      "labelAt": [
+        446,
+        232
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Your contract",
+      "items": [
+        "One public IStellarPlugin with a ctor taking IPluginServices",
+        "Subscribe in the constructor, detach everything in Dispose",
+        "Dispose may run mid-session, not only at shutdown"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Failure handling",
+      "items": [
+        "A throwing constructor never crashes the framework",
+        "Duplicate plugin ids: the second copy is ignored",
+        "Disabled state persists across restarts"
+      ]
+    }
+  ]
+}

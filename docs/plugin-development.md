@@ -385,6 +385,8 @@ _toggleAction = _services.Hotkeys.DeclareAction(
 
 ## Lifecycle and the Dispose contract
 
+![Plugin lifecycle](diagrams/plugin-lifecycle.svg)
+
 Every plugin MUST implement `Dispose()` correctly. The **Settings → Plugins** panel lets the user disable / re-enable any plugin at runtime by calling `Dispose()` then re-constructing it. If `Dispose` leaks a subscription, the re-enabled plugin's handler fires twice on every event.
 
 **Release everything you acquired in the constructor:**
@@ -410,6 +412,8 @@ public void Dispose()
 **Disposal must not throw.** Wrap any detach that might race framework shutdown in `try { ... } catch { /* swallow */ }`. Test soft-cycle correctness yourself: toggle your plugin off and on a few times in Settings → Plugins and confirm the log stays clean and behaviour matches a fresh load.
 
 ## Threading
+
+![From a wire packet to a plugin event](diagrams/wire-to-plugin.svg)
 
 | Surface | Thread |
 |---|---|
