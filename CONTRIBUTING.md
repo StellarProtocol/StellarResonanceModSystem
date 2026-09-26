@@ -2,11 +2,19 @@
 
 The StellarResonance mod framework. Clean-architecture layers under `src/` (see
 [`docs/architecture.md`](docs/architecture.md)); coding standards are mechanically enforced (file/method
-size, layer rules, analyzer `STELLAR0001-0005`) — read `docs/coding-standards.md` before non-trivial work.
+size, layer rules, analyzer `STELLAR0001-0005`) — read [`docs/contributing/coding-standards.md`](docs/contributing/coding-standards.md) before non-trivial work.
 
 ![Stellar ecosystem — from pull request to players](docs/diagrams/ecosystem.svg)
 
 _All architecture diagrams, and how to edit them: [`docs/diagrams/`](docs/diagrams/README.md)._
+
+## Contributor guides
+
+- [Development environment](docs/contributing/dev-environment.md) — clone, build against the interop stubs or your own game, test, deploy, diagnostics and wire capture.
+- [Coding standards](docs/contributing/coding-standards.md) — layer rules, the analyzer and text gate, diagnostics partials, naming.
+- [Exposing a wire field to plugins](docs/contributing/expose-a-wire-field.md) — a real change walked through, from captured bytes to a public API.
+- [Testing](docs/contributing/testing.md) — the test projects, byte-fixture reader tests, what CI runs and what it can't check.
+- [Changing the plugin API](docs/contributing/api-changes.md) — additive-only rules, version bumps, XML docs and changelog entries.
 
 ## How CI builds this repo (no game install needed)
 
