@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Stellar framework — layers and dependency rule",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/StellarProtocol/StellarResonanceModSystem",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "7853ece8abdba1c3230e4df2515a7d0b179e1be7"
+    },
+    "views": [
+      {
+        "id": "plugin-surface",
+        "label": "What a plugin sees",
+        "focus": [
+          "plugins",
+          "abstractions",
+          "contracts",
+          "ugui"
+        ],
+        "note": "Plugins compile against Abstractions only, plus optional shared contracts and Unity uGUI."
+      },
+      {
+        "id": "dependency-rule",
+        "label": "Dependency rule",
+        "focus": [
+          "host",
+          "infrastructure",
+          "application",
+          "wire",
+          "abstractions"
+        ],
+        "note": "Arrows point inward: every layer depends on the one nearer Abstractions, never outward."
+      },
+      {
+        "id": "game-boundary",
+        "label": "Game boundary",
+        "focus": [
+          "bepinex",
+          "host",
+          "infrastructure",
+          "game"
+        ],
+        "note": "Only Infrastructure touches BepInEx, HarmonyX, IL2CPP interop and the game's Panda.* assemblies."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "bepinex",
+      "type": "external",
+      "label": "BepInEx 6 IL2CPP",
+      "sublabel": "loader + HarmonyX",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "tools/install-bepinex.sh",
+          "label": "install script"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Stellar.Host",
+      "sublabel": "composition root",
+      "pos": [
+        40,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "no business logic",
+      "sources": [
+        {
+          "path": "src/Stellar.Host/BootstrapPlugin.cs",
+          "label": "BepInPlugin entry"
+        },
+        {
+          "path": "src/Stellar.Host/Wiring.Wire.cs",
+          "label": "Wiring.*.cs partials"
+        }
+      ]
+    },
+    {
+      "id": "infrastructure",
+      "type": "backend",
+      "label": "Stellar.Infrastructure",
+      "sublabel": "game adapters",
+      "pos": [
+        310,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/Stellar.Infrastructure/Game/WorldNtfStubDispatcher.cs",
+          "label": "wire stub hook"
+        },
+        {
+          "path": "src/Stellar.Infrastructure/Game/Protobuf/SyncNearEntitiesReader.cs",
+          "label": "protobuf readers"
+        }
+      ]
+    },
+    {
+      "id": "application",
+      "type": "backend",
+      "label": "Stellar.Application",
+      "sublabel": "services + use cases",
+      "pos": [
+        580,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/Stellar.Application/Services/CombatService.cs",
+          "label": "CombatService"
+        },
+        {
+          "path": "src/Stellar.Application/Hosting/PluginHost.cs",
+          "label": "PluginHost"
+        }
+      ]
+    },
+    {
+      "id": "abstractions",
+      "type": "security",
+      "label": "Stellar.Abstractions",
+      "sublabel": "public plugin API",
+      "pos": [
+        850,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "BCL only",
+      "sources": [
+        {
+          "path": "src/Stellar.Abstractions/Services/IPluginServices.cs",
+          "label": "IPluginServices"
+        }
+      ]
+    },
+    {
+      "id": "plugins",
+      "type": "frontend",
+      "label": "Plugins",
+      "sublabel": "IStellarPlugin DLLs",
+      "pos": [
+        1120,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/Stellar.Abstractions/Plugins/IStellarPlugin.cs",
+          "label": "IStellarPlugin"
+        }
+      ]
+    },
+    {
+      "id": "wire",
+      "type": "backend",
+      "label": "Stellar.Wire",
+      "sublabel": "wire ids + routing",
+      "pos": [
+        580,
+        480
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "BCL only",
+      "sources": [
+        {
+          "path": "src/Stellar.Wire/WorldNtfMethodIds.cs",
+          "label": "method ids"
+        }
+      ]
+    },
+    {
+      "id": "contracts",
+      "type": "messagebus",
+      "label": "Stellar.PluginContracts",
+      "sublabel": "plugin-to-plugin types",
+      "pos": [
+        1120,
+        480
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "src/Stellar.PluginContracts/IFrozenEntityViewer.cs",
+          "label": "example contract"
+        }
+      ]
+    },
+    {
+      "id": "game",
+      "type": "external",
+      "label": "Game runtime",
+      "sublabel": "Unity IL2CPP + Panda.*",
+      "pos": [
+        310,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "HybridCLR hot-update"
+    },
+    {
+      "id": "ugui",
+      "type": "external",
+      "label": "Unity uGUI",
+      "sublabel": "overlay rendering",
+      "pos": [
+        1120,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Stellar.Framework bundle",
+      "wraps": [
+        "host",
+        "infrastructure",
+        "application",
+        "abstractions",
+        "wire",
+        "contracts"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "BCL-only core",
+      "wraps": [
+        "application",
+        "abstractions",
+        "wire"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "loads-host",
+      "from": "bepinex",
+      "to": "host",
+      "label": "loads",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        150,
+        237
+      ]
+    },
+    {
+      "id": "host-wires",
+      "from": "host",
+      "to": "infrastructure",
+      "label": "wires"
+    },
+    {
+      "id": "infra-implements",
+      "from": "infrastructure",
+      "to": "application",
+      "label": "implements ports",
+      "variant": "emphasis"
+    },
+    {
+      "id": "app-implements",
+      "from": "application",
+      "to": "abstractions",
+      "label": "implements API",
+      "variant": "emphasis"
+    },
+    {
+      "id": "plugin-refs",
+      "from": "plugins",
+      "to": "abstractions",
+      "label": "IPluginServices",
+      "variant": "emphasis"
+    },
+    {
+      "id": "infra-wire",
+      "from": "infrastructure",
+      "to": "wire",
+      "label": "parses via"
+    },
+    {
+      "id": "wire-abs",
+      "from": "wire",
+      "to": "abstractions",
+      "label": "domain types"
+    },
+    {
+      "id": "infra-game",
+      "from": "infrastructure",
+      "to": "game",
+      "label": "patches + reflects",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "plugin-contracts",
+      "from": "plugins",
+      "to": "contracts",
+      "label": "optional",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1240,
+        422
+      ]
+    },
+    {
+      "id": "plugin-ugui",
+      "from": "plugins",
+      "to": "ugui",
+      "label": "optional draw",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Dependency rule",
+      "items": [
+        "Arrows point inward toward Abstractions",
+        "Application and Wire reference Abstractions only",
+        "Host references everything but decides nothing"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Game boundary",
+      "items": [
+        "Only Infrastructure may touch BepInEx, HarmonyX, IL2CPP or Panda.*",
+        "Plugins cannot reach it — the build fails"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Enforced by CI",
+      "items": [
+        "Stellar.Analyzers STELLAR0001-0005 at error",
+        "check-standards.sh layer + size rules",
+        "CS1591: every public API member documented"
+      ]
+    }
+  ]
+}

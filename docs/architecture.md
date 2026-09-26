@@ -40,6 +40,14 @@ The overlay is built from native uGUI: plugins register windows via `IWindowHost
 
 ## Component layout
 
+![Stellar framework layers and dependency rule](diagrams/framework-layers.svg)
+
+How a server packet becomes a plugin event: parsed and queued on the network thread, fanned out on the main thread.
+
+![From a wire packet to a plugin event](diagrams/wire-to-plugin.svg)
+
+_Diagram sources and the build are in [`diagrams/`](diagrams/README.md)._
+
 Clean Architecture across five assemblies plus samples. Dependency rule is **enforced** by project references + `InternalsVisibleTo`:
 
 ```
