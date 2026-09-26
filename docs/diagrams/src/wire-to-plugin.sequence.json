@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "From a wire packet to a plugin event",
+    "viewBox": [
+      1080,
+      700
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "network-thread",
+        "label": "Network thread",
+        "focus": [
+          "game",
+          "dispatcher",
+          "probe",
+          "reader",
+          "combat"
+        ],
+        "note": "Packets are parsed off the main thread and only queued; nothing reaches a plugin here."
+      },
+      {
+        "id": "main-thread",
+        "label": "Main-thread fan-out",
+        "focus": [
+          "game",
+          "tick",
+          "combat",
+          "plugin"
+        ],
+        "note": "Once per Game.Update the queue drains and plugins receive events on the main thread."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "game",
+      "type": "external",
+      "label": "Game client",
+      "sublabel": "ZRpc + Update"
+    },
+    {
+      "id": "dispatcher",
+      "type": "backend",
+      "label": "Stub dispatcher",
+      "sublabel": "WorldNtfStubDispatcher"
+    },
+    {
+      "id": "probe",
+      "type": "backend",
+      "label": "Combat probe",
+      "sublabel": "PandaCombatStubProbe"
+    },
+    {
+      "id": "reader",
+      "type": "backend",
+      "label": "Entity reader",
+      "sublabel": "SyncNearEntitiesReader"
+    },
+    {
+      "id": "combat",
+      "type": "messagebus",
+      "label": "CombatService",
+      "sublabel": "Application"
+    },
+    {
+      "id": "tick",
+      "type": "backend",
+      "label": "Service tick",
+      "sublabel": "Host"
+    },
+    {
+      "id": "plugin",
+      "type": "frontend",
+      "label": "Your plugin",
+      "sublabel": "IPluginServices"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 384,
+      "label": "Network receive thread"
+    },
+    {
+      "from": 400,
+      "to": 630,
+      "label": "Main thread"
+    }
+  ],
+  "messages": [
+    {
+      "from": "game",
+      "to": "dispatcher",
+      "y": 180,
+      "label": "OnCallStub postfix",
+      "variant": "emphasis",
+      "note": "one HarmonyX hook; header read once, unsubscribed method ids rejected"
+    },
+    {
+      "from": "dispatcher",
+      "to": "probe",
+      "y": 224,
+      "label": "route SyncNearEntities",
+      "variant": "emphasis"
+    },
+    {
+      "from": "probe",
+      "to": "reader",
+      "y": 268,
+      "label": "TryReadAppearAndDisappear",
+      "variant": "default"
+    },
+    {
+      "from": "reader",
+      "to": "probe",
+      "y": 312,
+      "label": "appears + disappears",
+      "variant": "return"
+    },
+    {
+      "from": "probe",
+      "to": "combat",
+      "y": 358,
+      "label": "ICombatEventSink calls",
+      "variant": "emphasis",
+      "note": "e.g. ReplaceEntityBuffs → EnqueueEvent onto a ConcurrentQueue"
+    },
+    {
+      "from": "game",
+      "to": "tick",
+      "y": 428,
+      "label": "Game.Update postfix",
+      "variant": "default"
+    },
+    {
+      "from": "tick",
+      "to": "combat",
+      "y": 472,
+      "label": "Drain()",
+      "variant": "emphasis"
+    },
+    {
+      "from": "combat",
+      "to": "plugin",
+      "y": 516,
+      "label": "CombatEventOccurred",
+      "variant": "emphasis",
+      "note": "e.g. CombatEvent.EntityBuffsSeeded, SpecChanged"
+    },
+    {
+      "from": "plugin",
+      "to": "combat",
+      "y": 560,
+      "label": "BuffsFor / TryGetTalentSpec",
+      "variant": "dashed"
+    },
+    {
+      "from": "combat",
+      "to": "plugin",
+      "y": 604,
+      "label": "read-only snapshot",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "dispatcher",
+      "from": 174,
+      "to": 230,
+      "type": "backend"
+    },
+    {
+      "participant": "probe",
+      "from": 218,
+      "to": 366,
+      "type": "backend"
+    },
+    {
+      "participant": "reader",
+      "from": 262,
+      "to": 320,
+      "type": "backend"
+    },
+    {
+      "participant": "combat",
+      "from": 352,
+      "to": 612,
+      "type": "messagebus"
+    },
+    {
+      "participant": "tick",
+      "from": 422,
+      "to": 480,
+      "type": "backend"
+    },
+    {
+      "participant": "plugin",
+      "from": 510,
+      "to": 612,
+      "type": "frontend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "Network thread",
+      "items": [
+        "Parse and queue only — never call plugins",
+        "Never throw across the IL2CPP boundary",
+        "Readers are pure functions over bytes, so they unit-test offline"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Main thread",
+      "items": [
+        "One Drain per Game.Update fans events out",
+        "Plugins may touch Unity safely here",
+        "Snapshots handed to plugins are read-only"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Adding a wire field",
+      "items": [
+        "Decode it in the Protobuf reader",
+        "Carry it through ICombatEventSink",
+        "Expose it as a CombatEvent or service member in Abstractions"
+      ]
+    }
+  ]
+}

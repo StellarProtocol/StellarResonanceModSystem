@@ -4,6 +4,10 @@ The StellarResonance mod framework. Clean-architecture layers under `src/` (see
 [`docs/architecture.md`](docs/architecture.md)); coding standards are mechanically enforced (file/method
 size, layer rules, analyzer `STELLAR0001-0005`) — read `docs/coding-standards.md` before non-trivial work.
 
+![Stellar ecosystem — from pull request to players](docs/diagrams/ecosystem.svg)
+
+_All architecture diagrams, and how to edit them: [`docs/diagrams/`](docs/diagrams/README.md)._
+
 ## How CI builds this repo (no game install needed)
 
 `Infrastructure`/`Host` reference the game's IL2CPP interop, which can't live on public CI. So CI builds

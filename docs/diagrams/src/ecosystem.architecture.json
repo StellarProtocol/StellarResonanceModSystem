@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Stellar ecosystem — from pull request to players",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "contribute",
+        "label": "Contribute",
+        "focus": [
+          "contributor",
+          "repos",
+          "ci"
+        ],
+        "note": "Every pull request builds against committed interop stubs — no game install needed."
+      },
+      {
+        "id": "release",
+        "label": "Release",
+        "focus": [
+          "ci",
+          "release",
+          "cdn",
+          "nuget",
+          "registry"
+        ],
+        "note": "A framework tag or a registry change builds from source in CI; framework publishes wait on an in-game smoke approval."
+      },
+      {
+        "id": "players",
+        "label": "Reach players",
+        "focus": [
+          "cdn",
+          "launcher",
+          "game",
+          "logs"
+        ],
+        "note": "The launcher installs and auto-updates the framework and plugins from the CDN."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "contributor",
+      "type": "external",
+      "label": "Contributor",
+      "sublabel": "you",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "repos",
+      "type": "backend",
+      "label": "GitHub repos",
+      "sublabel": "framework + plugins",
+      "pos": [
+        300,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "ci",
+      "type": "backend",
+      "label": "ci.yml",
+      "sublabel": "stub build + tests",
+      "pos": [
+        570,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "every PR"
+    },
+    {
+      "id": "release",
+      "type": "security",
+      "label": "release.yml",
+      "sublabel": "Production approval",
+      "pos": [
+        840,
+        110
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "in-game smoke"
+    },
+    {
+      "id": "nuget",
+      "type": "cloud",
+      "label": "NuGet.org",
+      "sublabel": "plugin SDK",
+      "pos": [
+        1110,
+        110
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "database",
+      "label": "Plugin registry",
+      "sublabel": "pins plugin sources",
+      "pos": [
+        300,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "cdn",
+      "type": "cloud",
+      "label": "Release CDN",
+      "sublabel": "bundles + manifests",
+      "pos": [
+        840,
+        300
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "launcher",
+      "type": "frontend",
+      "label": "Launcher",
+      "sublabel": "install + auto-update",
+      "pos": [
+        1110,
+        300
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "game",
+      "type": "frontend",
+      "label": "Player's game",
+      "sublabel": "framework + plugins",
+      "pos": [
+        1110,
+        490
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "logs",
+      "type": "external",
+      "label": "StellarLogs",
+      "sublabel": "run uploads",
+      "pos": [
+        840,
+        490
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "GitHub Actions",
+      "wraps": [
+        "ci",
+        "release"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "pr",
+      "from": "contributor",
+      "to": "repos",
+      "label": "pull request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "checks",
+      "from": "repos",
+      "to": "ci",
+      "label": "on push",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tag",
+      "from": "ci",
+      "to": "release",
+      "label": "tag vX.Y.Z",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sdk",
+      "from": "release",
+      "to": "nuget",
+      "label": "SDK",
+      "variant": "dashed"
+    },
+    {
+      "id": "bundle",
+      "from": "release",
+      "to": "cdn",
+      "label": "bundle",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        950,
+        237
+      ]
+    },
+    {
+      "id": "plugin-release",
+      "from": "repos",
+      "to": "registry",
+      "label": "pin commit",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        420,
+        237
+      ]
+    },
+    {
+      "id": "manifests",
+      "from": "registry",
+      "to": "cdn",
+      "label": "builds + publishes"
+    },
+    {
+      "id": "download",
+      "from": "cdn",
+      "to": "launcher",
+      "label": "download",
+      "variant": "emphasis"
+    },
+    {
+      "id": "install",
+      "from": "launcher",
+      "to": "game",
+      "label": "install",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1215,
+        427
+      ]
+    },
+    {
+      "id": "upload",
+      "from": "game",
+      "to": "logs",
+      "label": "CombatMeter",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Contribute",
+      "items": [
+        "Fork, branch, open a PR",
+        "CI builds the full solution against refs/ stubs",
+        "Standards gate + unit tests must be green"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Release gate",
+      "items": [
+        "Releases publish only from CI, never a laptop",
+        "A human approves after an in-game smoke",
+        "Published bundles are immutable"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Players",
+      "items": [
+        "The launcher auto-updates framework + plugins",
+        "Plugin authors build against the NuGet SDK"
+      ]
+    }
+  ]
+}

@@ -23,6 +23,8 @@ Pull requests adding cheat-shaped capabilities will be rejected.
 
 ## Architecture
 
+![Stellar framework layers and dependency rule](docs/diagrams/framework-layers.svg)
+
 Five assemblies, Clean Architecture, with the dependency rule enforced at compile time by project references:
 
 ```
