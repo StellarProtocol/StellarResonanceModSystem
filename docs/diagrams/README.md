@@ -1,6 +1,6 @@
 # Architecture diagrams
 
-Four diagrams describe the framework end to end. Each one is authored as a small JSON spec in
+Seven diagrams describe the framework and how to work on it. Each one is authored as a small JSON spec in
 [`src/`](src) and rendered with [Archify](https://github.com/tt-a1i/archify). The committed `.svg`
 files are the static exports the Markdown docs embed. Running the build also produces an
 **interactive** HTML version of each diagram, with pan/zoom, search, guided views, relationship
@@ -8,10 +8,13 @@ tracing, and (on the layer diagram) clickable links to the source files.
 
 | Diagram | Shows | Used in |
 |---|---|---|
-| [Framework layers](framework-layers.svg) | The assemblies, the dependency rule, and the game boundary | [README](../../README.md#architecture), [architecture.md](../architecture.md#component-layout) |
+| [Framework layers](framework-layers.svg) | The assemblies, the dependency rule, and the game boundary | [README](../../README.md#architecture), [architecture.md](../architecture.md#component-layout), [coding-standards.md](../contributing/coding-standards.md) |
 | [Wire packet → plugin event](wire-to-plugin.svg) | How a server packet is hooked, parsed and queued on the network thread, then fanned out to plugins on the main thread | [architecture.md](../architecture.md#component-layout), [plugin-development.md](../plugin-development.md#threading) |
 | [Plugin lifecycle](plugin-lifecycle.svg) | Discovery, construction, running, disable/enable, constructor failure and retry, shutdown | [plugin-development.md](../plugin-development.md#lifecycle-and-the-dispose-contract) |
-| [Ecosystem](ecosystem.svg) | How a pull request becomes a release that players get through the launcher | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+| [Ecosystem](ecosystem.svg) | How a pull request becomes a release that players get through the launcher | [CONTRIBUTING.md](../../CONTRIBUTING.md), [api-changes.md](../contributing/api-changes.md#versioning) |
+| [Install paths](install-paths.svg) | Launcher vs. manual install, and what lands in the game folder | [getting-started.md](../getting-started.md) |
+| [Build paths](build-paths.svg) | Stub build (what CI runs) vs. building against your own client and deploying | [dev-environment.md](../contributing/dev-environment.md) |
+| [Test gates](test-gates.svg) | What local tests, CI and the release gate each prove | [testing.md](../contributing/testing.md#what-ci-runs) |
 
 ## Editing a diagram
 

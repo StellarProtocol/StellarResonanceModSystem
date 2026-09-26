@@ -1,0 +1,19 @@
+---
+// Generated pages edit their SOURCE file (a doc under ../docs, or the C# file for API pages),
+// not the generated Markdown, which is never committed.
+const { entry, editUrl } = Astro.locals.starlightRoute;
+const REPO = 'https://github.com/StellarProtocol/StellarResonanceModSystem';
+const source = entry.data.sourcePath;
+const href = source ? `${REPO}/${entry.data.generated ? 'blob' : 'edit'}/main/${source}` : editUrl?.href;
+const label = entry.data.generated ? 'View source on GitHub' : 'Edit this page on GitHub';
+---
+{href && (
+  <a href={href} class="sl-flex print:hidden stellar-edit">
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 16.78v2.45A2.77 2.77 0 0 1 17.23 22H4.77A2.77 2.77 0 0 1 2 19.23V6.77A2.77 2.77 0 0 1 4.77 4h2.45a1 1 0 0 1 0 2H4.77a.77.77 0 0 0-.77.77v12.46c0 .42.35.77.77.77h12.46c.42 0 .77-.35.77-.77v-2.45a1 1 0 1 1 2 0Zm1.71-12.07-2.42-2.42a1 1 0 0 0-1.42 0l-9.5 9.5a1 1 0 0 0-.28.54l-.5 3a1 1 0 0 0 1.15 1.15l3-.5a1 1 0 0 0 .54-.28l9.43-9.57a1 1 0 0 0 0-1.42Z"/></svg>
+    {label}
+  </a>
+)}
+<style>
+  .stellar-edit { gap: 0.5rem; align-items: center; text-decoration: none; color: var(--sl-color-gray-3); }
+  .stellar-edit:hover { color: var(--sl-color-white); }
+</style>

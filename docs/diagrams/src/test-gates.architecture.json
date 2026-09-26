@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "What proves a change — local, CI, release gate",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ci",
+        "label": "What CI proves",
+        "focus": [
+          "local",
+          "ci",
+          "docs",
+          "merge"
+        ],
+        "note": "Compiles against the stub API surface and the managed tests pass — not that it works in game."
+      },
+      {
+        "id": "release",
+        "label": "Release gate",
+        "focus": [
+          "merge",
+          "tag",
+          "smoke",
+          "publish"
+        ],
+        "note": "Publishing waits for a human approval given only after an in-game smoke test."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "local",
+      "type": "external",
+      "label": "Your machine",
+      "sublabel": "dotnet test + standards",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "ci",
+      "type": "backend",
+      "label": "ci.yml",
+      "sublabel": "standards · build · tests",
+      "pos": [
+        320,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "every PR"
+    },
+    {
+      "id": "docs",
+      "type": "backend",
+      "label": "docs.yml",
+      "sublabel": "docs site build + preview",
+      "pos": [
+        320,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "src/docs PRs"
+    },
+    {
+      "id": "merge",
+      "type": "frontend",
+      "label": "Review + merge",
+      "sublabel": "maintainers",
+      "pos": [
+        600,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "tag",
+      "type": "backend",
+      "label": "release.yml",
+      "sublabel": "bundle from stubs",
+      "pos": [
+        880,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "tag vX.Y.Z"
+    },
+    {
+      "id": "smoke",
+      "type": "security",
+      "label": "Production approval",
+      "sublabel": "in-game smoke test",
+      "pos": [
+        880,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "human"
+    },
+    {
+      "id": "publish",
+      "type": "cloud",
+      "label": "Published",
+      "sublabel": "CDN · GitHub · NuGet",
+      "pos": [
+        1160,
+        300
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "push",
+      "from": "local",
+      "to": "ci",
+      "label": "open PR",
+      "variant": "emphasis"
+    },
+    {
+      "id": "docsrun",
+      "from": "ci",
+      "to": "docs",
+      "label": "in parallel",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        405,
+        237
+      ]
+    },
+    {
+      "id": "green",
+      "from": "ci",
+      "to": "merge",
+      "label": "green",
+      "variant": "emphasis"
+    },
+    {
+      "id": "release",
+      "from": "merge",
+      "to": "tag",
+      "label": "release",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gate",
+      "from": "tag",
+      "to": "smoke",
+      "label": "waits",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        965,
+        237
+      ]
+    },
+    {
+      "id": "ship",
+      "from": "smoke",
+      "to": "publish",
+      "label": "approved",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "CI proves",
+      "items": [
+        "Standards gate + analyzers at error",
+        "Full solution compiles against refs/",
+        "Unit + analyzer tests pass"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "CI cannot prove",
+      "items": [
+        "Reflection-bound game types resolve",
+        "Real threading, timing, server data"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Your part",
+      "items": [
+        "Pin behaviour with unit tests",
+        "Say in the PR what you ran in game"
+      ]
+    }
+  ]
+}

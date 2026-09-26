@@ -6,6 +6,9 @@
 
 A Dalamud-style plugin framework for **Blue Protocol: Star Resonance** (Tencent SEA, executable `StarSEA.exe`). It loads via BepInEx 6 IL2CPP, drives an in-game **uGUI** overlay, and hosts third-party C# plugins behind a clean, read-only service API.
 
+
+**📖 Documentation: [docs.stellarresonance.app](https://docs.stellarresonance.app)** — guides, the full API reference, wire coverage, architecture diagrams and the plugin gallery.
+
 > ⚠️ **Experimental.** Verified against Unity 2022.3.59f1 LTS, IL2CPP. Future game patches may break the framework. You are responsible for understanding your game's Terms of Service before installing any client-side modifications.
 
 > **Not affiliated with, endorsed by, or connected to the game's publisher or developer.** "Stellar" and "StellarResonance" refer to *this framework*, not to the game. This project ships **no game code, assets, or binaries** (see [Disclaimers](#disclaimers)) and exists purely for interoperability and quality-of-life research, in the spirit of FFXIV's Dalamud.
@@ -82,7 +85,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 
 A typical HUD plugin describes its layout as a `HudElement` tree, registers it with `IPluginServices.Hud` (or `.Windows` for an interactive window), and updates state on the `IFramework.Update` tick or in response to a domain event. See **PlayerHUD** and **DebugInfo** for the smallest complete examples.
 
-The full developer guide — every service interface, the plugin lifecycle, the uGUI toolkit, and the mandatory IL2CPP-aware quirks — is in [**`docs/plugin-development.md`**](docs/plugin-development.md). For the complete generated **API reference** (every public interface/type you can consume), see [**`docs/api/`**](docs/api/) — start at [`IPluginServices`](docs/api/Stellar.Abstractions.Services/IPluginServices.md).
+The full developer guide — every service interface, the plugin lifecycle, the uGUI toolkit, and the mandatory IL2CPP-aware quirks — is in [**`docs/plugin-development.md`**](docs/plugin-development.md). For the complete generated **API reference** (every public interface/type you can consume), see [**docs.stellarresonance.app/api**](https://docs.stellarresonance.app/api/) — start at [`IPluginServices`](https://docs.stellarresonance.app/api/stellar-abstractions-services/ipluginservices/).
 
 Drop the built DLL into a subfolder of `<game_mini>/stellar/plugins/`; the framework scans `stellar/plugins/**/*.dll` at startup, finds your `IStellarPlugin`, and constructs it.
 
@@ -120,20 +123,11 @@ dotnet build src/Stellar.sln -c Release -p:GameInterop=/your/path/to/game_mini/B
 
 ### Install
 
-**Linux:**
+**Easiest (Windows + Linux):** the [StellarResonance Launcher](https://github.com/StellarProtocol/StellarResonance) installs BepInEx and the framework and keeps them updated.
 
-```bash
-tools/install-bepinex.sh   # one-time — installs the BepInEx loader
-tools/install-stellar.sh   # deploy the framework to the game
-```
-
-Set `WINEDLLOVERRIDES=winhttp=n,b` in your launcher's per-game env vars so Wine loads the Doorstop proxy.
-
-**Windows:** copy the built DLLs from `src/Stellar.Host/bin/Release/` (Host, Infrastructure, Application, Abstractions, Wire + `ZstdSharp.dll`) into `<game_mini>\BepInEx\plugins\Stellar.Framework\`; the BepInEx `winhttp.dll` proxy loads natively (no env var needed). You can also run the bash scripts from Git Bash / WSL.
+**Manual / developer install:** follow **[Getting started](https://docs.stellarresonance.app/guides/getting-started/)** ([source](docs/getting-started.md)) — it lists the BepInEx build to use, the framework DLLs to copy (including `Stellar.PluginContracts.dll`), the Linux `WINEDLLOVERRIDES=winhttp=n,b` setting and the `tools/install-stellar.sh` options.
 
 Either way, the framework DLLs live in `<game_mini>/BepInEx/plugins/Stellar.Framework/` and plugin DLLs go under `<game_mini>/stellar/plugins/<plugin>/`. The BepInEx log is at `<game_mini>/BepInEx/LogOutput.log` — start there if anything's wrong.
-
-> The easiest install on **both** platforms is the [StellarResonance Launcher](https://github.com/StellarProtocol/StellarResonance), which does all of the above for you.
 
 ---
 

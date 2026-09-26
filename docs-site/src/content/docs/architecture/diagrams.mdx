@@ -1,0 +1,37 @@
+---
+title: Interactive diagrams
+description: The framework's architecture diagrams — pan, zoom, search, trace relationships and open the source behind each box.
+sourcePath: docs/diagrams/src
+tableOfContents: false
+---
+import diagrams from '../../../generated/diagrams.json';
+
+export const list = [
+  { id: 'framework-layers', title: 'Framework layers and the dependency rule', note: 'Click a box to see the source files behind it (pinned to a commit).' },
+  { id: 'wire-to-plugin', title: 'From a wire packet to a plugin event', note: 'Network-thread parsing, then the main-thread fan-out to plugins.' },
+  { id: 'plugin-lifecycle', title: 'Plugin lifecycle', note: 'Discovery, construction, disable/enable, constructor failure and retry.' },
+  { id: 'ecosystem', title: 'Ecosystem — from pull request to players', note: 'CI, the release gate, the CDN, NuGet and the launcher.' },
+  { id: 'install-paths', title: 'Two ways to install — launcher or manual', note: 'What each path puts in your game folder.' },
+  { id: 'build-paths', title: 'Two build paths — CI stubs or your own game', note: 'Build without the game like CI does, or against your client to test in game.' },
+  { id: 'test-gates', title: 'What proves a change — local, CI, release gate', note: 'What CI proves, what it cannot, and the in-game release gate.' },
+];
+
+<style>{`:root { --sl-content-width: 72rem; }`}</style>
+
+Each diagram is authored as a small JSON spec in [`docs/diagrams/src`](https://github.com/StellarProtocol/StellarResonanceModSystem/tree/main/docs/diagrams/src) and rendered with [Archify](https://github.com/tt-a1i/archify). Drag to pan, scroll to zoom, and try the guided views across the top of each one.
+
+{list.map((d) => (
+  <section>
+    <h2 id={d.id}>{d.title}</h2>
+    <div class="st-diagram">
+      <div class="bar"><b>{diagrams.interactive ? 'Interactive' : 'Static'}</b><span>{d.note}</span><a href={diagrams.interactive ? `/diagrams/${d.id}.html` : `/diagrams/${d.id}.svg`} target="_blank">Open full screen ↗</a></div>
+      {diagrams.interactive
+        ? <iframe src={`/diagrams/${d.id}.html`} title={d.title} loading="lazy" />
+        : <img src={`/diagrams/${d.id}.svg`} alt={d.title} />}
+    </div>
+  </section>
+))}
+
+## Editing a diagram
+
+Edit the JSON under `docs/diagrams/src/`, then run `docs/diagrams/build.sh --svg` to re-validate every diagram, re-render the interactive versions and refresh the committed SVGs. See [`docs/diagrams/README.md`](https://github.com/StellarProtocol/StellarResonanceModSystem/blob/main/docs/diagrams/README.md).

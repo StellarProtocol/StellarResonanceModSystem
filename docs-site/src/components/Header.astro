@@ -1,0 +1,61 @@
+---
+// Starlight's header plus the approved mockup's section tabs and version switcher.
+import Search from 'virtual:starlight/components/Search';
+import SiteTitle from 'virtual:starlight/components/SiteTitle';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+import versions from '../generated/versions.json';
+
+const TABS = [
+  { label: 'Guides', href: '/guides/plugin-development/', match: ['/guides/'] },
+  { label: 'Contribute', href: '/contribute/', match: ['/contribute/'] },
+  { label: 'API reference', href: '/api/', match: ['/api/'] },
+  { label: 'Wire coverage', href: '/wire/', match: ['/wire/'] },
+  { label: 'Architecture', href: '/architecture/', match: ['/architecture/'] },
+  { label: 'Plugins', href: '/plugins/', match: ['/plugins/'] },
+];
+const path = Astro.url.pathname;
+// Where every page re-reads the version list at load (production). Overridable at build time for testing only.
+const liveVersions = process.env.DOCS_VERSIONS_URL || 'https://docs.stellarresonance.app/versions.json';
+---
+<div class="header">
+  <div class="title-wrapper sl-flex">
+    <SiteTitle />
+    <nav class="st-tabs" aria-label="Sections">
+      {TABS.map((t) => <a href={t.href} aria-current={t.match.some((m) => path.startsWith(m)) ? 'page' : undefined}>{t.label}</a>)}
+    </nav>
+  </div>
+  <div class="sl-flex print:hidden"><Search /></div>
+  <div class="sl-hidden md:sl-flex print:hidden right-group">
+    <details class="st-version" data-st-version data-live={liveVersions}>
+      <script type="application/json" set:html={JSON.stringify(versions)} />
+      <summary>Version <b>{versions.main.ahead ? 'main' : versions.build.version}</b></summary>
+      <div class="menu">
+        <a href={versions.main.url} aria-current={versions.build.kind === 'main' ? 'page' : undefined}>
+          {versions.main.ahead ? <>main <small>in development · {versions.main.version}</small></> : <>{versions.main.version} <small>latest release</small></>}
+        </a>
+        {versions.snapshots.filter((v) => versions.main.ahead || v.version !== versions.latestRelease).map((v) => <a href={v.url}>{v.version} <small>{v.version === versions.latestRelease ? 'latest release' : 'snapshot'}</small></a>)}
+        {versions.snapshots.length === 0 && <span class="empty">Release snapshots start with the next framework release.</span>}
+        <a href="/changelog/" class="all">Changelog →</a>
+      </div>
+    </details>
+    <a class="nav-cta" href="https://github.com/StellarProtocol/StellarResonance/releases/latest">↓ Get the launcher</a>
+    <div class="sl-flex social-icons"><SocialIcons /></div>
+  </div>
+</div>
+<style>
+  .header { display: flex; gap: var(--sl-nav-gap); justify-content: space-between; align-items: center; height: 100%; }
+  .title-wrapper { overflow: clip; padding: 0.25rem; margin: -0.25rem; min-width: 0; align-items: center; gap: 1.25rem; }
+  .right-group, .social-icons { gap: 1rem; align-items: center; }
+  .st-tabs { display: none; gap: 0.2rem; }
+  @media (min-width: 72rem) { .st-tabs { display: flex; } }
+  .st-tabs a { padding: 8px 11px; border-radius: 8px; color: var(--st-muted); font-size: 0.9rem; font-weight: 600; text-decoration: none; white-space: nowrap; transition: color .15s, background .15s; }
+  .st-tabs a:hover, .st-tabs a[aria-current='page'] { color: var(--st-text); background: var(--st-panel2); }
+  .nav-cta { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-weight: 600; font-size: 0.85rem; padding: 7px 14px; border-radius: 8px; text-decoration: none; color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; box-shadow: 0 4px 18px -6px #7c5cffaa; }
+  .nav-cta:hover { filter: brightness(1.08); color: #fff; }
+  .social-icons::after { content: ''; height: 2rem; border-inline-end: 1px solid var(--sl-color-gray-5); }
+  @media (min-width: 50rem) {
+    :global(:root[data-has-sidebar]) { --__sidebar-pad: calc(2 * var(--sl-nav-pad-x)); }
+    :global(:root:not([data-has-toc])) { --__toc-width: 0rem; }
+    .header { --__sidebar-width: max(0rem, var(--sl-content-inline-start, 0rem) - var(--sl-nav-pad-x)); --__main-column-fr: calc((100% + var(--__sidebar-pad, 0rem) - var(--__toc-width, var(--sl-sidebar-width)) - (2 * var(--__toc-width, var(--sl-nav-pad-x))) - var(--sl-content-inline-start, 0rem) - var(--sl-content-width)) / 2); display: grid; grid-template-columns: minmax(calc(var(--__sidebar-width) + max(0rem, var(--__main-column-fr) - var(--sl-nav-gap))), auto) 1fr auto; align-content: center; }
+  }
+</style>
