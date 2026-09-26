@@ -211,21 +211,34 @@ function genChangelog() {
 }
 
 // ---------------------------------------------------------------- 7. versions
-/** Production (docs.stellarresonance.app) is built from main. Every release tag vX.Y.Z also deploys a frozen
- *  snapshot as the Pages branch alias vX-Y-Z — the version menu lists the tags newer than the site's launch. */
+/** One version list for every page. Production (docs.stellarresonance.app) is built from main; each release tag
+ *  vX.Y.Z (not -rc) also deploys a frozen snapshot as the Pages branch alias vX-Y-Z. The list is BAKED into each
+ *  build (fallback) and PUBLISHED as /versions.json; every page's header re-reads production's copy at load time,
+ *  so old snapshots and a production build that predates a tag still show the current list.
+ *  Build identity comes from the workflow: DOCS_BUILD_KIND = main | snapshot | preview, DOCS_VERSION for snapshots. */
 const SNAPSHOTS_AFTER = '2.11.0'; // the site launched after 2.11.0; older tags have no docs-site/ to build
 const PAGES_HOST = 'stellar-docs-bs5.pages.dev';
+const semverCmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+export const snapshotUrl = (v) => `https://v${v.replace(/\./g, '-')}.${PAGES_HOST}/`;
 function genVersions() {
   const current = readFileSync(join(REPO, 'src/Stellar.Abstractions/Domain/FrameworkVersion.cs'), 'utf8')
     .match(/const string Value\s*=\s*"([^"]+)"/)[1];
-  const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
   let tags = [];
   try { tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO }).toString().split('\n'); } catch { /* no git */ }
-  const snapshots = tags.map((t) => t.trim().match(/^v(\d+\.\d+\.\d+)$/)?.[1]).filter(Boolean)
-    .filter((v) => cmp(v, SNAPSHOTS_AFTER) > 0).sort((a, b) => cmp(b, a))
-    .map((v) => ({ version: v, url: `https://v${v.replace(/\./g, '-')}.${PAGES_HOST}/` }));
-  write(join(GENERATED, 'versions.json'), JSON.stringify({ current, snapshots }, null, 2) + '\n');
-  log(`versions: current ${current}, ${snapshots.length} snapshots`);
+  const releases = tags.map((t) => t.trim().match(/^v(\d+\.\d+\.\d+)$/)?.[1]).filter(Boolean).sort((a, b) => semverCmp(b, a));
+  const latestRelease = releases[0] ?? null;
+  const kind = ['main', 'snapshot', 'preview'].includes(process.env.DOCS_BUILD_KIND) ? process.env.DOCS_BUILD_KIND : 'main';
+  const data = {
+    generatedAt: new Date().toISOString(),
+    latestRelease,
+    main: { version: current, ahead: latestRelease ? semverCmp(current, latestRelease) > 0 : false, url: SITE_URL },
+    snapshots: releases.filter((v) => semverCmp(v, SNAPSHOTS_AFTER) > 0).map((v) => ({ version: v, url: snapshotUrl(v) })),
+    build: { kind, version: kind === 'snapshot' ? (process.env.DOCS_VERSION || current) : current },
+  };
+  const json = JSON.stringify(data, null, 2) + '\n';
+  write(join(GENERATED, 'versions.json'), json);
+  write(join(SITE, 'public/versions.json'), json);
+  log(`versions: build ${kind} ${data.build.version}; latest release ${latestRelease}; main ${current}${data.main.ahead ? ' (ahead)' : ''}; ${data.snapshots.length} snapshots`);
 }
 
 // ---------------------------------------------------------------- 6. plugin gallery

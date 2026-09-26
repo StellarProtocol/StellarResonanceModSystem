@@ -44,7 +44,9 @@ a *changed/removed* signature can compile green yet break in-game. That's why re
    (incl. `Stellar.PluginContracts.dll`, which cooperating plugins load at runtime) against stubs and
    writes `version.json`; the `publish` job uploads the bundle and manifest to the release CDN (an S3-compatible
    bucket served at `cdn.revette.io`) and creates the GitHub release — **after the `Production` environment approval**, which is the mandatory real-interop /
-   in-game smoke. Don't approve on a green stub build alone.
+   in-game smoke. Don't approve on a green stub build alone. The same tag also publishes a frozen docs
+   snapshot (`vX-Y-Z.stellar-docs-bs5.pages.dev`) and rebuilds docs.stellarresonance.app so its version menu
+   lists the release (`.github/workflows/docs.yml`).
 
 Required repo config: secrets `S3_ACCESS_KEY`/`S3_SECRET_KEY` and `RELEASE_ASSETS_SSH_KEY` (read-only
 deploy key for the private `stellar-release-assets` repo that holds the BepInEx stage), plus a

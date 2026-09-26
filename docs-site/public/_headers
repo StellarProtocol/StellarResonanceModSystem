@@ -1,0 +1,5 @@
+# /versions.json is read cross-origin by the frozen release snapshots (vX-Y-Z.stellar-docs-bs5.pages.dev),
+# so their version menu always shows the current list. Short cache so a new release appears within minutes.
+/versions.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300

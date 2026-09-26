@@ -20,7 +20,10 @@ export default defineConfig({
       editLink: { baseUrl: `${REPO}/edit/main/` },
       lastUpdated: false,
       customCss: ['./src/styles/stellar.css'],
-      head: [{ tag: 'script', attrs: { src: '/js/diagram-lightbox.js', defer: true } }],
+      head: [
+        { tag: 'script', attrs: { src: '/js/diagram-lightbox.js', defer: true } },
+        { tag: 'script', attrs: { src: '/js/version-menu.js', defer: true } },
+      ],
       components: {
         ThemeProvider: './src/components/ThemeProvider.astro',
         ThemeSelect: './src/components/ThemeSelect.astro',

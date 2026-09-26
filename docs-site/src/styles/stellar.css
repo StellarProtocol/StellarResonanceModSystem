@@ -155,3 +155,20 @@ dialog.st-lightbox::backdrop { background: rgba(4, 4, 8, 0.72); backdrop-filter:
 .st-lb-bar a { margin-left: auto; color: var(--sl-color-text-accent); }
 .st-lb-bar button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--st-line); background: var(--st-panel); color: var(--st-muted); cursor: pointer; }
 dialog.st-lightbox iframe { display: block; width: 100%; height: calc(100% - 46px); border: 0; }
+
+/* Version menu (Header.astro). GLOBAL, not component-scoped: public/js/version-menu.js re-renders the menu
+   from the live /versions.json, and script-rendered HTML carries no Astro scope attribute. */
+.st-version { position: relative; }
+.st-version summary { list-style: none; cursor: pointer; height: 2.1rem; display: flex; align-items: center; gap: 0.35rem; padding: 0 0.75rem; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-bg2); color: var(--st-muted); font-size: 0.8rem; white-space: nowrap; }
+.st-version summary::-webkit-details-marker { display: none; }
+.st-version summary b { color: var(--st-text); font-weight: 600; }
+.st-version summary::after { content: '▾'; font-size: 0.7rem; }
+.st-version .menu { position: absolute; right: 0; top: 2.4rem; min-width: 15rem; padding: 0.4rem; border: 1px solid var(--st-line); border-radius: 10px; background: var(--st-panel); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); display: grid; gap: 0.1rem; z-index: 30; }
+.st-version .menu a, .st-version .menu .empty { padding: 0.45rem 0.6rem; border-radius: 7px; font-size: 0.85rem; color: var(--st-text); text-decoration: none; }
+.st-version .menu a:hover { background: var(--st-acc-soft); }
+.st-version .menu a[aria-current='page'] { background: var(--st-acc-soft); color: #d8d2ff; }
+.st-version .menu small { color: var(--st-dim); margin-left: 0.3rem; }
+.st-version summary em { font-style: normal; font: 700 10px var(--sl-font); letter-spacing: 0.06em; text-transform: uppercase; color: #1a1400; background: var(--st-warn); border-radius: 5px; padding: 2px 5px; }
+.st-version.is-old summary { border-color: rgba(232, 196, 90, 0.5); }
+.st-version .menu .empty { color: var(--st-dim); font-size: 0.78rem; }
+.st-version .menu .all { border-top: 1px solid var(--st-line); border-radius: 0; margin-top: 0.2rem; color: var(--sl-color-text-accent); }
