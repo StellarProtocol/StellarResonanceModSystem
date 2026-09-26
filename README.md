@@ -123,20 +123,11 @@ dotnet build src/Stellar.sln -c Release -p:GameInterop=/your/path/to/game_mini/B
 
 ### Install
 
-**Linux:**
+**Easiest (Windows + Linux):** the [StellarResonance Launcher](https://github.com/StellarProtocol/StellarResonance) installs BepInEx and the framework and keeps them updated.
 
-```bash
-tools/install-bepinex.sh   # one-time — installs the BepInEx loader
-tools/install-stellar.sh   # deploy the framework to the game
-```
-
-Set `WINEDLLOVERRIDES=winhttp=n,b` in your launcher's per-game env vars so Wine loads the Doorstop proxy.
-
-**Windows:** copy the built DLLs from `src/Stellar.Host/bin/Release/` (Host, Infrastructure, Application, Abstractions, Wire + `ZstdSharp.dll`) into `<game_mini>\BepInEx\plugins\Stellar.Framework\`; the BepInEx `winhttp.dll` proxy loads natively (no env var needed). You can also run the bash scripts from Git Bash / WSL.
+**Manual / developer install:** follow **[Getting started](https://docs.stellarresonance.app/guides/getting-started/)** ([source](docs/getting-started.md)) — it lists the BepInEx build to use, the framework DLLs to copy (including `Stellar.PluginContracts.dll`), the Linux `WINEDLLOVERRIDES=winhttp=n,b` setting and the `tools/install-stellar.sh` options.
 
 Either way, the framework DLLs live in `<game_mini>/BepInEx/plugins/Stellar.Framework/` and plugin DLLs go under `<game_mini>/stellar/plugins/<plugin>/`. The BepInEx log is at `<game_mini>/BepInEx/LogOutput.log` — start there if anything's wrong.
-
-> The easiest install on **both** platforms is the [StellarResonance Launcher](https://github.com/StellarProtocol/StellarResonance), which does all of the above for you.
 
 ---
 
