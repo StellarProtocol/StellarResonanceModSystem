@@ -8,6 +8,7 @@
 
 # Tooling downloads (re-acquirable)
 tools/BepInEx-IL2CPP.zip
+tools/BepInEx-IL2CPP.zip.part
 tools/BepInEx-stage/
 tools/Cpp2IL
 tools/.venv/
