@@ -140,4 +140,45 @@ public sealed class SyncNearEntitiesBuffSeedTests
         Assert.Equal(2207180, b.BaseId);
         Assert.Equal(6, b.SourceKind);
     }
+
+    // m4(b): protobuf merge semantics — an embedded message field that occurs more than once is merged, so the
+    // repeated buff_infos of every occurrence of field 7 accumulate, and one bad occurrence taints the whole set.
+    private static byte[] EntityWithTwoField7(byte[] first, byte[] second) =>
+        new WireBytes().Tag(1, 0).Varint(PlayerUuid)
+            .Tag(7, 2).LengthDelimited(first)
+            .Tag(3, 2).LengthDelimited(new WireBytes().ToArray())
+            .Tag(7, 2).LengthDelimited(second)
+            .ToArray();
+
+    [Fact]
+    public void Appear_Field7Twice_AccumulatesEntries()
+    {
+        var entity = EntityWithTwoField7(
+            BuffInfoSync(TalentBuff(11, 2202110, 510)),
+            BuffInfoSync(TalentBuff(12, 2202111, 511), TalentBuff(13, 2202112, 512)));
+        var payload = new WireBytes().Tag(1, 2).LengthDelimited(entity).ToArray();
+
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
+        var e = Assert.Single(appears);
+        Assert.False(e.BuffsUnknown);
+        Assert.Equal(new[] { 2202110, 2202111, 2202112 }, System.Linq.Enumerable.Select(e.Buffs!, b => b.BaseId));
+    }
+
+    [Fact]
+    public void Appear_Field7Twice_OneMalformed_IsUnknown()
+    {
+        var entity = EntityWithTwoField7(
+            BuffInfoSync(TalentBuff(11, 2202110, 510)),
+            BuffInfoSync(new byte[] { 0x08, 0x80 }));
+        var payload = new WireBytes().Tag(1, 2).LengthDelimited(entity).ToArray();
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
+        Assert.True(Assert.Single(appears).BuffsUnknown);
+
+        var reversed = EntityWithTwoField7(
+            BuffInfoSync(new byte[] { 0x08, 0x80 }),
+            BuffInfoSync(TalentBuff(11, 2202110, 510)));
+        payload = new WireBytes().Tag(1, 2).LengthDelimited(reversed).ToArray();
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out appears, out _));
+        Assert.True(Assert.Single(appears).BuffsUnknown);   // a later good occurrence never clears the flag
+    }
 }

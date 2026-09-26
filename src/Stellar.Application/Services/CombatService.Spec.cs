@@ -29,33 +29,55 @@ internal sealed partial class CombatService
             _spec.MarkDirty(d.SourceId, d.TimestampMs);
     }
 
+    // Packet bracket. The network thread holds _packetLock for the whole ingest of one WorldNtf packet
+    // (re-entrant: Monitor), _ingestDepth counts nested brackets (only touched under the lock). The main-thread
+    // publish TryEnters the same lock and never blocks: a busy frame is skipped and the dirty set waits.
+    private readonly object _packetLock = new();
     private int _ingestDepth;
 
     /// <summary>Test seam: the wall clock the talent-spec gap timer reads.</summary>
     internal Func<long> SpecClock { set => _spec.Clock = value; }
 
-    /// <summary>The wire probe brackets each packet's ingest; spec changes are not published mid-packet, so a
-    /// packet carrying attr 220 AND the new root (a class swap) yields exactly one SpecChanged even when the
-    /// main-thread drain runs concurrently with the network-thread ingest.</summary>
-    public void BeginPacket() => Interlocked.Increment(ref _ingestDepth);
+    /// <summary>The wire probe brackets each packet's ingest (paired with <see cref="EndPacket"/> in
+    /// try/finally). Spec changes are never published while a bracket is open on ANY thread, so a packet carrying
+    /// attr 220 AND the new root (a class swap) yields exactly one SpecChanged; <see cref="ResetEntities"/> takes
+    /// the same lock, so a scene reset cannot interleave with a publish either.</summary>
+    public void BeginPacket()
+    {
+        Monitor.Enter(_packetLock);
+        _ingestDepth++;
+    }
 
     /// <inheritdoc cref="BeginPacket"/>
-    public void EndPacket() => Interlocked.Decrement(ref _ingestDepth);
+    public void EndPacket()
+    {
+        _ingestDepth--;
+        Monitor.Exit(_packetLock);
+    }
 
     // Re-resolve entities whose inputs changed since the last drain and publish only REAL value changes.
-    // Skipped while a packet is mid-ingest (the dirty set simply waits for the next drain). Returns true when
+    // Skipped while a packet is mid-ingest (the dirty set simply waits for the next drain); the lock is held
+    // across TakeDirty → Publish → EnqueueEvent so neither a packet nor a reset can land in between. Returns true when
     // events were enqueued (the caller drains them in the same frame).
     private bool PublishSpecChanges()
     {
-        if (Volatile.Read(ref _ingestDepth) > 0) return false;
-        var changes = _spec.Publish(_spec.TakeDirty());
-        if (changes is null) return false;
-        for (var i = 0; i < changes.Count; i++)
+        if (!Monitor.TryEnter(_packetLock)) return false;   // a packet is mid-ingest on another thread
+        try
         {
-            var c = changes[i];
-            DiagSpecChange(c);
-            EnqueueEvent(c);
+            if (_ingestDepth > 0) return false;             // … or on this thread (nested call)
+            var changes = _spec.Publish(_spec.TakeDirty());
+            if (changes is null) return false;
+            for (var i = 0; i < changes.Count; i++)
+            {
+                var c = changes[i];
+                DiagSpecChange(c);
+                EnqueueEvent(c);
+            }
+            return true;
         }
-        return true;
+        finally
+        {
+            Monitor.Exit(_packetLock);
+        }
     }
 }

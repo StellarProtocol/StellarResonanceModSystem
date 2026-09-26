@@ -4,6 +4,10 @@ using Stellar.Abstractions.Domain;
 using Stellar.Application.Services;
 using Xunit;
 
+// Cross-thread pins deliberately block on a bounded Task.Wait: the point is to prove a lock is (or is not)
+// held by another thread, which an async test cannot express deterministically.
+#pragma warning disable xUnit1031
+
 namespace Stellar.Application.Tests.Combat;
 
 /// <summary>
@@ -172,5 +176,93 @@ public sealed class CombatServiceBuffReplaceTests
         Assert.NotSame(first, second);
         Assert.Equal(3, second.Count);
         Assert.Equal(2, first.Count);   // a handed-out snapshot never mutates under the caller
+    }
+
+    // ---- final review round (2026-09-26) ------------------------------------------------------------------
+
+    [Fact]
+    public void Snapshots_AreReadOnly_AndSharedAcrossBuffsForLocalBuffsAndSeedPayload()
+    {
+        // m3: BuffsFor, LocalBuffs and EntityBuffsSeeded.Buffs hand out ONE cached read-only wrapper per change —
+        // no consumer can cast it back to a mutable array and corrupt what the others see.
+        var (svc, events) = Make();
+        svc.SetLocalEntityId(Player);
+        svc.ReplaceEntityBuffs(Player, new[] { B(1, 9001), B(2, 9002) }, 1000);
+        svc.Drain();
+
+        var viaLookup = svc.BuffsFor(Player);
+        var seedPayload = Assert.Single(Of<CombatEvent.EntityBuffsSeeded>(events)).Buffs;
+        Assert.Same(viaLookup, seedPayload);
+        Assert.Same(viaLookup, svc.LocalBuffs);
+        Assert.IsNotType<ActiveBuff[]>(viaLookup);
+        Assert.Null(viaLookup as ActiveBuff[]);
+        Assert.Throws<System.NotSupportedException>(() => ((IList<ActiveBuff>)viaLookup)[0] = default);
+        Assert.Throws<System.NotSupportedException>(() => ((IList<ActiveBuff>)viaLookup).Clear());
+    }
+
+    [Fact]
+    public void MobAppear_NothingHeld_EmptySnapshot_RaisesNoSeedEvent()
+    {
+        // n1: a mob/NPC appearing with no buffs (nothing held for it) has nothing to seed or clear.
+        var (svc, events) = Make();
+        var mob = new EntityId((77L << 16) | 64L);
+
+        svc.ReplaceEntityBuffs(mob, null, 1000);
+        svc.ReplaceEntityBuffs(mob, System.Array.Empty<ActiveBuff>(), 1100);
+        svc.Drain();
+
+        Assert.Empty(events);
+        Assert.Empty(svc.BuffsFor(mob));
+    }
+
+    [Fact]
+    public void LocalBuffs_ReadNeverWaitsOnTheBuffLock()
+    {
+        // n2: LocalBuffs is read every frame on the main thread; the network thread holds the buff lock while it
+        // applies deltas (and, with STELLAR_DIAGNOSTICS=1, while it logs every buff). The read must be a volatile
+        // snapshot reference, not a lock acquisition. Deterministic: hold the lock on another thread for the
+        // whole read.
+        var (svc, _) = Make();
+        svc.SetLocalEntityId(Player);
+        svc.ReplaceEntityBuffs(Player, new[] { B(1, 9001) }, 1000);
+        var gate = typeof(CombatService).GetField("_buffsByEntityLock",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(svc)!;
+
+        using var held = new System.Threading.ManualResetEventSlim();
+        using var release = new System.Threading.ManualResetEventSlim();
+        var holder = new System.Threading.Thread(() =>
+        {
+            lock (gate) { held.Set(); release.Wait(); }
+        });
+        holder.Start();
+        held.Wait();
+        try
+        {
+            var read = System.Threading.Tasks.Task.Run(() => svc.LocalBuffs.Count);
+            Assert.True(read.Wait(System.TimeSpan.FromSeconds(5)), "LocalBuffs blocked on the buff lock");
+            Assert.Equal(1, read.Result);
+        }
+        finally
+        {
+            release.Set();
+            holder.Join();
+        }
+    }
+
+    [Fact]
+    public void LocalBuffs_TracksDeltasRemovalsAndClear()
+    {
+        var (svc, _) = Make();
+        svc.SetLocalEntityId(Player);
+        svc.ApplyBuffEvents(Player, new[] { B(1, 9001), B(2, 9002) }, System.Array.Empty<int>(), 1000);
+        Assert.Equal(2, svc.LocalBuffs.Count);
+        svc.ApplyBuffEvents(Player, System.Array.Empty<ActiveBuff>(), new[] { 1 }, 2000);
+        Assert.Equal(9002, Assert.Single(svc.LocalBuffs).BaseId);
+        svc.OnEntityDisappeared(Player, EntityDisappearReason.Normal);
+        Assert.Empty(svc.LocalBuffs);
+        svc.ApplyBuffEvents(Player, new[] { B(3, 9003) }, System.Array.Empty<int>(), 3000);
+        Assert.Single(svc.LocalBuffs);
+        svc.ClearAllBuffs();
+        Assert.Empty(svc.LocalBuffs);
     }
 }

@@ -4,6 +4,10 @@ using Stellar.Abstractions.Domain;
 using Stellar.Application.Services;
 using Xunit;
 
+// Cross-thread pins deliberately block on a bounded Task.Wait: the point is to prove a lock is (or is not)
+// held by another thread, which an async test cannot express deterministically.
+#pragma warning disable xUnit1031
+
 namespace Stellar.Application.Tests.Combat;
 
 /// <summary>
@@ -239,5 +243,62 @@ public sealed class TalentSpecLifecycleTests
         Assert.Equal(0, svc.GetSubProfession(Mob));
         Assert.False(svc.TryGetTalentSpec(Mob, out _));
         Assert.Empty(ev);
+    }
+
+    // ---- m2: cross-thread packet bracket (final review round 2026-09-26) ----------------------------------
+
+    private static void OnOtherThread(System.Action action)
+    {
+        var t = System.Threading.Tasks.Task.Run(action);
+        Assert.True(t.Wait(System.TimeSpan.FromSeconds(5)), "other-thread action did not finish");
+    }
+
+    [Fact]
+    public void M2_DrainOnAnotherThreadDuringPacket_PublishesNothing_ThenOneEventAfterEnd()
+    {
+        var (svc, ev, _) = Make();
+        svc.SetEntityAttribute(P, AttrProfessionId, 11);
+        svc.ApplyBuffEvents(P, new[] { Talent(1, FalconryRoot) }, None, 1000);
+        svc.Drain();
+        ev.Clear();
+
+        svc.BeginPacket();                                   // "network thread" = this test thread
+        svc.SetEntityAttribute(P, AttrProfessionId, 13);
+        OnOtherThread(svc.Drain);                            // main-thread drain: TryEnter fails → skips, never blocks
+        Assert.Empty(ev);
+        svc.ApplyBuffEvents(P, new[] { Talent(2, ConcertoRoot) }, new[] { 1 }, 2000);
+        svc.EndPacket();
+        OnOtherThread(svc.Drain);
+
+        Assert.Equal(new[] { (110002, 130002, true) }, Triples(ev));
+    }
+
+    [Fact]
+    public void M2_ResetEntities_WaitsForAnInFlightPacket()
+    {
+        // A reset from another thread (logout ClearSession) must not interleave with a packet / publish.
+        var (svc, _, _) = Make();
+        svc.BeginPacket();
+        var reset = System.Threading.Tasks.Task.Run(svc.ResetEntities);
+        Assert.False(reset.Wait(200), "ResetEntities ran inside another thread's packet bracket");
+        svc.EndPacket();
+        Assert.True(reset.Wait(System.TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void M2_NestedBrackets_AreReentrant()
+    {
+        var (svc, ev, _) = Make();
+        svc.BeginPacket();
+        svc.BeginPacket();
+        svc.ApplyBuffEvents(P, new[] { Talent(1, SmiteRoot) }, None, 1000);
+        svc.ResetEntities();                                 // same thread, inside the bracket: no deadlock
+        svc.ApplyBuffEvents(P, new[] { Talent(2, SmiteRoot) }, None, 1100);
+        svc.EndPacket();
+        OnOtherThread(svc.Drain);
+        Assert.Empty(ev);                                    // still inside the outer bracket
+        svc.EndPacket();
+        OnOtherThread(svc.Drain);
+        Assert.Equal(new[] { (0, 50001, true) }, Triples(ev));
     }
 }

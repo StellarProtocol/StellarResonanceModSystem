@@ -20,11 +20,15 @@ public enum SkillEventPhase
 /// <summary>How a buff's state changed, as reported by <see cref="CombatEvent.BuffChanged"/>.</summary>
 public enum BuffChangeKind
 {
-    /// <summary>Buff was freshly applied to the target.</summary>
+    /// <summary>Buff was freshly applied to the target (a live delta for a buff uuid not held yet). A buff that was
+    /// already on the entity when it was seeded (<see cref="CombatEvent.EntityBuffsSeeded"/>) never gets an
+    /// Applied — consumers that need "first application" must treat the seed as the application.</summary>
     Applied,
-    /// <summary>An already-active buff had its duration or stacks refreshed.</summary>
+    /// <summary>An already-held buff had its duration, stacks or layer refreshed. This includes the first live
+    /// delta for a buff that arrived through a seed; an identical re-send raises nothing.</summary>
     Refreshed,
-    /// <summary>Buff was removed from the target.</summary>
+    /// <summary>Buff was removed from the target — including the expiry of a buff that arrived through a
+    /// seed.</summary>
     Removed,
 }
 
@@ -41,7 +45,9 @@ public abstract record CombatEvent(long TimestampMs)
     /// <param name="Phase">Which phase of the skill lifecycle this event covers.</param>
     public sealed record SkillUsed(long TimestampMs, EntityId CasterId, int SkillId, SkillEventPhase Phase) : CombatEvent(TimestampMs);
 
-    /// <summary>A buff on an entity was applied, refreshed, or removed.</summary>
+    /// <summary>A buff on an entity was applied, refreshed, or removed by a LIVE delta. Buffs already present when
+    /// the entity appeared arrive once, together, in <see cref="EntityBuffsSeeded"/> — see <see cref="BuffChangeKind"/>
+    /// for how their later deltas are reported.</summary>
     /// <param name="TimestampMs">Server epoch timestamp of the event in milliseconds.</param>
     /// <param name="TargetId">Entity whose buff state changed.</param>
     /// <param name="BuffUuid">Per-instance unique id for this buff application.</param>
@@ -132,16 +138,23 @@ public abstract record CombatEvent(long TimestampMs)
     /// <c>Entity.buff_infos</c>) or the local player's <c>EnterScene</c> entity (spec-from-talent-buffs,
     /// 2026-09-26). Snapshot semantics: <paramref name="Buffs"/> REPLACES whatever the consumer held for
     /// <paramref name="TargetId"/> — buffs it held that are not listed are gone, listed ones are current. Raised
-    /// exactly once per snapshot, including when the set is empty (so a consumer can clear), and INSTEAD of
+    /// once per snapshot — including an empty snapshot when a set WAS held for the entity (so a consumer can
+    /// clear); an empty snapshot for an entity with nothing held (a mob/NPC appearing buff-less) raises nothing —
+    /// and INSTEAD of
     /// per-buff <see cref="BuffChanged"/> events: a town crowd of 30 players × ~120 buffs is 30 events, not
     /// thousands. Live changes afterwards arrive as per-buff <see cref="BuffChanged"/> events exactly as before.
     /// By the time this event fires, <see cref="Services.ICombatLookup.BuffsFor"/> already returns the new set.
     /// A snapshot the client could not decode completely is skipped (no event, held set untouched).
+    /// <para>Lifecycle after a seed: a later live delta for a seeded buff arrives as
+    /// <see cref="BuffChangeKind.Refreshed"/> (or nothing, if identical), never <see cref="BuffChangeKind.Applied"/>;
+    /// its expiry arrives as <see cref="BuffChangeKind.Removed"/>. A consumer that needs the "first application"
+    /// of a buff must treat its presence in the seed as that application.</para>
     /// </summary>
     /// <param name="TimestampMs">Wire receive time of the snapshot packet (client wall clock, Unix ms) — the same
     /// clock its sibling <see cref="BuffChanged"/> events carry.</param>
     /// <param name="TargetId">The entity whose buff set was seeded.</param>
-    /// <param name="Buffs">The complete buff set; empty when the entity carries none. Treat as read-only.</param>
+    /// <param name="Buffs">The complete buff set; empty when the entity carries none. Read-only (the same
+    /// instance <see cref="Services.ICombatLookup.BuffsFor"/> returns until the set next changes).</param>
     public sealed record EntityBuffsSeeded(long TimestampMs, EntityId TargetId, IReadOnlyList<ActiveBuff> Buffs) : CombatEvent(TimestampMs);
 
     /// <summary>

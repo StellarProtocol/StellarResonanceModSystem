@@ -29,7 +29,9 @@ internal sealed partial class CombatService
 
             bool changed = ApplyUpserts(entityId, set.Map, upserts, timestampMs);
             changed |= ApplyRemovals(entityId, set.Map, removedBuffUuids, timestampMs);
-            if (changed) set.Invalidate();
+            if (!changed) return;
+            set.Invalidate();
+            PublishLocalSnapshot(entityId, set);
         }
     }
 

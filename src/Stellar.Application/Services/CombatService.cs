@@ -302,10 +302,13 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void SetLocalEntityId(EntityId entityId)
     {
-        // LocalBuffs reads the held set lazily, so an EnterScene seed that landed before self's id is known
-        // surfaces as soon as the id is set.
-        if (_localEntityId.IsNone && !entityId.IsNone)
+        if (!_localEntityId.IsNone || entityId.IsNone) return;
+        lock (_buffsByEntityLock)
+        {
             _localEntityId = entityId;
+            // An EnterScene seed can land before self's id is known — publish it as the local snapshot now.
+            PublishLocalSnapshot(entityId, _buffsByEntity.TryGetValue(entityId, out var set) ? set : null);
+        }
     }
 
     /// <summary>
@@ -362,8 +365,12 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void ResetEntities()
     {
-        _entities.Reset();
-        _spec.Reset();
+        // Same lock as the packet bracket / spec publish (re-entrant: the probe resets inside its bracket).
+        lock (_packetLock)
+        {
+            _entities.Reset();
+            _spec.Reset();
+        }
     }
 
     /// <summary>
