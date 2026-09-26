@@ -98,4 +98,42 @@ public sealed class ProtobufStructuralWalkerTests
         Assert.Equal(ProtoKind.String, f1.Kind);
         Assert.Equal("张三", f1.StringValue);
     }
+    [Fact]
+    public void Walk_CrowdSizedAppearBurst_DecodesEveryEntity()
+    {
+        // Regression 2026-09-26: a 107 KB SyncNearEntities burst (a town crowd entering
+        // range in one tick) hit the old 4096-node budget after 8 entities, dropping the rest.
+        var outer = new WireBytes();
+        for (int e = 0; e < 40; e++)
+        {
+            var buffs = new WireBytes();
+            for (int b = 0; b < 150; b++)
+            {
+                var info = new WireBytes().Tag(1, 0).Varint((ulong)b).Tag(2, 0).Varint(2010008)
+                    .Tag(3, 0).Varint(1).Tag(6, 0).Varint(1786862842421).ToArray();
+                buffs.Tag(2, 2).LengthDelimited(info);
+            }
+            var entity = new WireBytes().Tag(1, 0).Varint((ulong)((e + 1) << 16 | 640))
+                .Tag(7, 2).LengthDelimited(buffs.ToArray()).ToArray();
+            outer.Tag(1, 2).LengthDelimited(entity);
+        }
+
+        var node = ProtobufStructuralWalker.Walk(outer.ToArray());
+
+        Assert.False(node.Truncated);
+        var entities = node.Fields.Where(f => f.FieldNumber == 1).ToList();
+        Assert.Equal(40, entities.Count);
+        Assert.All(entities, f => Assert.Equal(ProtoKind.Message, f.Kind));
+    }
+
+    [Fact]
+    public void Walk_ShortOpaqueBytes_CarryHex()
+    {
+        var bytes = new WireBytes().Tag(4, 2).LengthDelimited(new byte[] { 0xFF, 0xFE, 0x00 }).ToArray();
+
+        var node = ProtobufStructuralWalker.Walk(bytes);
+
+        Assert.Equal("fffe00", node.Fields.Single(f => f.FieldNumber == 4).Hex);
+        Assert.Contains("\"hex\":\"fffe00\"", ProtoJson.Node(node));
+    }
 }

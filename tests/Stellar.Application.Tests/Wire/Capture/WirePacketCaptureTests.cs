@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using Stellar.Application.Tests.Wire;
 using Stellar.Infrastructure.Game.Capture;
@@ -68,5 +69,29 @@ public sealed class WirePacketCaptureTests
         cap.DrainOnceForTest();
 
         Assert.Contains(sink.Lines, l => l.Contains("\"svcSource\":\"correlated\"") && l.Contains("\"svc\":103198054"));
+    }
+    [Fact]
+    public void Record_TruncatedDecode_CarriesRawPayloadBase64()
+    {
+        var sink = new MemSink();
+        var cap = new WirePacketCapture(CaptureFilter.Parse("all"), sink);
+        var malformed = new byte[] { 0x0A, 0x0A, 0x01, 0x02 };   // LD field claims 10 bytes, has 2
+
+        cap.RecordForTest("in", FrameBytes.ReturnFrame(1, 5, 0, malformed));
+        cap.DrainOnceForTest();
+
+        Assert.Contains("\"raw\":\"CgoBAg==\"", sink.Lines.Single());
+    }
+
+    [Fact]
+    public void Record_CleanDecode_OmitsRawPayload()
+    {
+        var sink = new MemSink();
+        var cap = new WirePacketCapture(CaptureFilter.Parse("all"), sink);
+
+        cap.RecordForTest("in", FrameBytes.ReturnFrame(1, 5, 0, new byte[] { 0x08, 0x96, 0x01 }));
+        cap.DrainOnceForTest();
+
+        Assert.DoesNotContain("\"raw\"", sink.Lines.Single());
     }
 }
