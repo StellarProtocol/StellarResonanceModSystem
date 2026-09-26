@@ -196,7 +196,7 @@ public sealed class PandaLoadoutProbeSaveTests
     }
 
     [Fact]
-    public void A_valid_save_queues_exactly_one_and_a_second_is_refused_as_busy()
+    public async Task A_valid_save_queues_exactly_one_and_a_second_is_refused_as_busy()
     {
         var probe = Probe(4, 3, 4, 5);
         var first = ((ILoadoutSaveProbe)probe).CallSaveAsync(3, CancellationToken.None);
@@ -204,11 +204,11 @@ public sealed class PandaLoadoutProbeSaveTests
         Assert.False(first.IsCompleted);   // waits for the game's wrapper result on the main-thread drain
         Assert.True(HasPendingSave(probe));
         Assert.True(second.IsCompleted);
-        Assert.Equal(LoadoutResult.Rejected, second.GetAwaiter().GetResult());
+        Assert.Equal(LoadoutResult.Rejected, await second);
     }
 
     [Fact]
-    public void A_save_is_refused_while_a_switch_is_in_flight()
+    public async Task A_save_is_refused_while_a_switch_is_in_flight()
     {
         var probe = Probe(4, 3, 4, 5);
         SetField(probe, "_lastSwitchDispatchMs", 0L);
@@ -217,7 +217,7 @@ public sealed class PandaLoadoutProbeSaveTests
 
         var save = ((ILoadoutSaveProbe)probe).CallSaveAsync(3, CancellationToken.None);
         Assert.True(save.IsCompleted);
-        Assert.Equal(LoadoutResult.Rejected, save.GetAwaiter().GetResult());
+        Assert.Equal(LoadoutResult.Rejected, await save);
         Assert.False(HasPendingSave(probe));
     }
 
@@ -232,7 +232,7 @@ public sealed class PandaLoadoutProbeSaveTests
     }
 
     [Fact]
-    public void Logout_cancels_a_queued_save_and_clears_the_unsaved_flag()
+    public async Task Logout_cancels_a_queued_save_and_clears_the_unsaved_flag()
     {
         var probe = Probe(4, 3, 4);
         SetField(probe, "_hasUnsavedChanges", true);
@@ -241,7 +241,7 @@ public sealed class PandaLoadoutProbeSaveTests
         probe.ClearSession();
 
         Assert.True(task.IsCompleted);
-        Assert.Equal(LoadoutResult.Cancelled, task.GetAwaiter().GetResult());
+        Assert.Equal(LoadoutResult.Cancelled, await task);
         Assert.False(probe.HasUnsavedChanges);
         Assert.False(HasPendingSave(probe));
     }
