@@ -11,6 +11,9 @@ export const list = [
   { id: 'wire-to-plugin', title: 'From a wire packet to a plugin event', note: 'Network-thread parsing, then the main-thread fan-out to plugins.' },
   { id: 'plugin-lifecycle', title: 'Plugin lifecycle', note: 'Discovery, construction, disable/enable, constructor failure and retry.' },
   { id: 'ecosystem', title: 'Ecosystem — from pull request to players', note: 'CI, the release gate, the CDN, NuGet and the launcher.' },
+  { id: 'install-paths', title: 'Two ways to install — launcher or manual', note: 'What each path puts in your game folder.' },
+  { id: 'build-paths', title: 'Two build paths — CI stubs or your own game', note: 'Build without the game like CI does, or against your client to test in game.' },
+  { id: 'test-gates', title: 'What proves a change — local, CI, release gate', note: 'What CI proves, what it cannot, and the in-game release gate.' },
 ];
 
 <style>{`:root { --sl-content-width: 72rem; }`}</style>

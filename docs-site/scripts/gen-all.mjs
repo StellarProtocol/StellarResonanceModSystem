@@ -107,12 +107,13 @@ function siteLink(repoPath, anchor) {
 /** A static diagram image in a synced doc (GitHub shows the SVG) becomes, on the site, the same image plus an
  *  "Explore interactive" button that opens the live Archify diagram full-screen (public/js/diagram-lightbox.js). */
 function interactiveFigures(md) {
-  return md.replace(/^!\[([^\]]*)\]\(\/diagrams\/([\w-]+)\.svg\)\s*$/gm, (all, alt, name) => {
+  return md.replace(/^!\[([^\]]*)\]\(\/diagrams\/([\w-]+)\.svg\)[ \t]*$/gm, (all, alt, name) => {
     if (!existsSync(join(PUBLIC_DIAGRAMS, `${name}.html`))) return all;
     const a = alt.replace(/"/g, '&quot;');
-    return `<figure class="st-fig">\n<img src="/diagrams/${name}.svg" alt="${a}" />\n` +
+    return `<figure class="st-fig">\n<button type="button" class="st-fig-open" data-diagram="/diagrams/${name}.html" data-title="${a}" aria-label="Open the interactive diagram: ${a}">` +
+      `<img src="/diagrams/${name}.svg" alt="${a}" /><span class="st-fig-badge">▶ Interactive</span></button>\n` +
       `<figcaption><button type="button" class="st-explore" data-diagram="/diagrams/${name}.html" data-title="${a}">▶ Explore interactive</button>` +
-      `<span>pan · zoom · search · click a box for its source</span></figcaption>\n</figure>`;
+      `<span>pan · zoom · search · click a box for its source</span></figcaption>\n</figure>\n`;
   });
 }
 function syncDocs() {

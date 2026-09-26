@@ -115,6 +115,8 @@ expected diagnostic id is written inline around the identifier it should flag, f
 `void {|STELLAR0002:M|}()` for a method over 50 lines. Add a test here when you change a rule or an
 exemption.
 
+![What proves a change — local, CI, release gate](../diagrams/test-gates.svg)
+
 ## What CI runs
 
 [`../../.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every pull request and every

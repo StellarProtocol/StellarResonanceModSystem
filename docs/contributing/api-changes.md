@@ -28,6 +28,10 @@ its docs promised.
 
 ## Versioning
 
+A public API change reaches plugin authors through the release path below: the tag builds the bundle and the NuGet SDK packages, and publishing waits on the in-game smoke approval.
+
+![Stellar ecosystem — from pull request to players](../diagrams/ecosystem.svg)
+
 The framework uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (see the header of
 [`../../CHANGELOG.md`](../../CHANGELOG.md)):
 

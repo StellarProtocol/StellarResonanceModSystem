@@ -9,6 +9,8 @@ or assets** — you generate the IL2CPP interop locally from your own install (s
 > kind. If a future game patch adds anti-cheat, stop using it. See the
 > [README policy](../README.md#purpose-quality-of-life-only--no-cheating).
 
+![Two ways to install — launcher or manual](diagrams/install-paths.svg)
+
 ## Easiest path — the launcher (Windows + Linux)
 
 For most users, use the [**StellarResonance Launcher**](https://github.com/StellarProtocol/StellarResonance).

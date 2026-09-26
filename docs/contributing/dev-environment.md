@@ -4,6 +4,10 @@ This guide gets you from a fresh clone to a framework build running in your own 
 Windows and Linux (Wine/Proton). For the plugin side (writing a plugin, not changing the framework), see
 [`../plugin-development.md`](../plugin-development.md).
 
+There are two build paths: the **stub build** needs no game and is exactly what CI runs; the **interop build** targets your own client so you can deploy and test in game.
+
+![Two build paths — CI stubs or your own game](../diagrams/build-paths.svg)
+
 ## What you need
 
 | Tool | Why |

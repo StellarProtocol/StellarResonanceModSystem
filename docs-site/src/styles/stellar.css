@@ -136,6 +136,10 @@ html[data-has-hero]:not([data-has-sidebar]) { --sl-content-width: 1700px; }
 /* ---- Diagrams: static figure + "Explore interactive" (guides), frames (diagrams page), lightbox ---- */
 .st-fig { margin: 1.25rem 0; border: 1px solid var(--st-line); border-radius: 13px; overflow: hidden; background: var(--st-panel); }
 .st-fig img { display: block; width: 100%; background: #07080e; }
+.st-fig-open { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.st-fig-badge { position: absolute; top: 12px; right: 12px; font: 700 11px var(--sl-font); letter-spacing: 0.06em; text-transform: uppercase; color: #fff; background: linear-gradient(180deg, #8a6bff, #6f4cf5); border: 1px solid #6f4cf5; border-radius: 8px; padding: 6px 10px; box-shadow: 0 4px 18px -6px #7c5cffaa; opacity: 0.9; transition: opacity 0.15s, transform 0.15s; }
+.st-fig-open:hover .st-fig-badge { opacity: 1; transform: translateY(-1px); }
+.st-fig-open:hover img { filter: brightness(1.08); }
 .st-fig figcaption { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--st-line); background: var(--st-panel2); font-size: 12px; color: var(--st-dim); }
 .st-explore { display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px var(--sl-font); color: #cdbcff; background: var(--st-acc-soft); border: 1px solid #34306a; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .st-explore:hover { filter: brightness(1.12); }

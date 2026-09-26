@@ -12,6 +12,8 @@ This page lists what is checked, where, and the conventions reviewers look for o
 
 ## Layers and the dependency rule
 
+![Stellar framework layers and dependency rule](../diagrams/framework-layers.svg)
+
 The framework is split into assemblies under `src/`. The rule is enforced by what each `.csproj` is
 allowed to reference; see [`../architecture.md`](../architecture.md) for the reasoning.
 
