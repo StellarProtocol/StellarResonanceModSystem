@@ -96,6 +96,14 @@ internal sealed partial class PandaCombatStubProbe
     /// </summary>
     private void Dispatch(uint methodId, byte[] payload)
     {
+        // Bracket the whole packet so the combat drain never publishes a spec change from half a packet.
+        _sink.BeginPacket();
+        try { Route(methodId, payload); }
+        finally { _sink.EndPacket(); }
+    }
+
+    private void Route(uint methodId, byte[] payload)
+    {
         switch (methodId)
         {
             case WorldNtfMethodIds.EnterScene:        OnEnterScene(payload);    break;

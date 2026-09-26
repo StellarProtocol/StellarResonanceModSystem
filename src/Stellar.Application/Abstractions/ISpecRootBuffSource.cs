@@ -6,13 +6,21 @@ namespace Stellar.Application.Abstractions;
 /// Outbound port: reads the three game talent tables the spec-root-buff map is derived from
 /// (spec-from-talent-buffs, 2026-09-26). Implemented in Infrastructure against the live
 /// <c>Bokura.TalentStageTableBase</c> / <c>TalentTreeTableBase</c> / <c>TalentTableBase</c>; the derivation itself
-/// is pure Application logic (<see cref="Services.SpecRootBuffs.Derive"/>). Called once, on the game thread,
-/// after the deferred game-data drain completes.
+/// is pure Application logic (<see cref="Services.SpecRootBuffs.Derive"/>). <see cref="Services.SpecRootBuffMap"/>
+/// calls ONE member per game-thread tick (stages → trees → effects) once the deferred game-data drain is done,
+/// and narrows each later read to the ids the previous table named, so only the 18 roots are projected.
+/// Every member returns an empty dictionary when its table is unavailable.
 /// </summary>
 internal interface ISpecRootBuffSource
 {
-    /// <summary>False when any table is unavailable (type missing, reflection failed, zero rows).</summary>
-    bool TryReadTalentTables(out SpecTalentTables tables);
+    /// <summary>All <c>TalentStageTable</c> rows, keyed by row id.</summary>
+    IReadOnlyDictionary<int, TalentStageRow> ReadTalentStages();
+
+    /// <summary><c>TalentTreeTable</c> id → <c>TalentId</c>, for the listed tree ids only.</summary>
+    IReadOnlyDictionary<int, int> ReadTalentTreeTalentIds(IReadOnlyCollection<int> treeIds);
+
+    /// <summary><c>TalentTable</c> id → <c>TalentEffect</c> rows, for the listed talent ids only.</summary>
+    IReadOnlyDictionary<int, TalentEffectRow> ReadTalentEffects(IReadOnlyCollection<int> talentIds);
 }
 
 /// <summary>One <c>TalentStageTable</c> row: <paramref name="WeaponType"/> = profession id,

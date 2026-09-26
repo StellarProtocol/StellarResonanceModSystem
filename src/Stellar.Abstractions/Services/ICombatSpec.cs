@@ -10,7 +10,8 @@ namespace Stellar.Abstractions.Services;
 /// AOI appear and on every change. When an entity carries a spec root buff, that spec is AUTHORITATIVE:
 /// it is known from the moment the player appears (in town, before any cast) and cast inference cannot
 /// overwrite it. During a same-class spec swap the root is removed ~2 s before the new one arrives; the
-/// previous spec is held across that gap (no flicker, no 0). If the class (attr 220) changes and no root of
+/// previous spec is held across that gap (no flicker, no 0) for at most 10 s, after which it is dropped. A fresh
+/// full buff snapshot (the player re-entering view) without a root clears it. If the class (attr 220) changes and no root of
 /// the new class is present yet, the old class's spec is not reported. The root-buff map is derived from
 /// the game's own talent tables at load (with built-in constants as the fallback).
 /// </para>
@@ -36,9 +37,10 @@ public interface ICombatSpec
 
     /// <summary>
     /// Returns <see langword="true"/> only while the entity's spec is talent-derived: a spec root buff is
-    /// present, OR the entity is inside a same-class swap gap and still holds its last talent-derived spec.
-    /// Returns <see langword="false"/> when the spec is cast-derived or unknown — including after a class
-    /// change with no root buff of the new class yet. Use this when only an authoritative spec is acceptable
+    /// present, OR the entity is inside a same-class swap gap (≤ 10 s) and still holds its last talent-derived
+    /// spec. Returns <see langword="false"/> when the spec is cast-derived or unknown — including after a class
+    /// change with no root buff of the new class yet, and once the entity has left view (its last value may
+    /// still be returned by <see cref="GetSubProfession"/> until it reappears or the scene changes). Use this when only an authoritative spec is acceptable
     /// (e.g. uploading it); a cast guess never satisfies it.
     /// </summary>
     /// <param name="entityId">The entity to query.</param>

@@ -78,15 +78,53 @@ public sealed class SyncNearEntitiesBuffSeedTests
     }
 
     [Fact]
-    public void Appear_MalformedBuffInfo_IsDroppedButSiblingsSurvive()
+    public void Appear_MalformedBuffInfo_MarksBuffsUnknown()
     {
-        var bad = new byte[] { 0x08, 0x80 };   // truncated varint
+        // Review fix D (m4): a snapshot missing an entry is NOT complete — signal "unknown" so the
+        // consumer skips the replace instead of wiping buffs it cannot see.
+        var bad = new byte[] { 0x08, 0x80 };   // truncated varint inside one BuffInfo
         var sync = BuffInfoSync(TalentBuff(11, 2202110, 510), bad, TalentBuff(13, 2202112, 512));
         var payload = new WireBytes().Tag(1, 2).LengthDelimited(Entity(sync)).ToArray();
 
         Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
         var e = Assert.Single(appears);
-        Assert.Equal(new[] { 2202110, 2202112 }, new[] { e.Buffs![0].BaseId, e.Buffs[1].BaseId });
+        Assert.True(e.BuffsUnknown);
+        Assert.Equal((long)PlayerUuid, e.Uuid);   // the entity itself still surfaces
+    }
+
+    [Fact]
+    public void Appear_TruncatedBuffInfoSyncFrame_MarksBuffsUnknown()
+    {
+        // Outer BuffInfoSync framing broken: a length prefix that runs past the end of field 7.
+        var good = TalentBuff(11, 2202110, 510);
+        var truncatedSync = new WireBytes().Tag(1, 0).Varint(PlayerUuid).Tag(2, 2).LengthDelimited(good)
+            .Tag(2, 2).Raw(0x7F).Raw(0x08).ToArray();   // claims 127 bytes, has 1
+        var payload = new WireBytes().Tag(1, 2).LengthDelimited(Entity(truncatedSync)).ToArray();
+
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
+        Assert.True(Assert.Single(appears).BuffsUnknown);
+    }
+
+    [Fact]
+    public void Appear_WellFormed_IsNotUnknown()
+    {
+        var payload = new WireBytes().Tag(1, 2).LengthDelimited(Entity(BuffInfoSync(TalentBuff(11, 2202110, 510)))).ToArray();
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
+        Assert.False(Assert.Single(appears).BuffsUnknown);
+    }
+
+    [Fact]
+    public void Appear_ManyBuffs_AllDecoded()
+    {
+        // Sized-from-payload list (perf G) must still hold every entry of a large snapshot.
+        var buffs = new byte[150][];
+        for (int i = 0; i < buffs.Length; i++) buffs[i] = TalentBuff(i + 1, 2200000 + i, 1);
+        var payload = new WireBytes().Tag(1, 2).LengthDelimited(Entity(BuffInfoSync(buffs))).ToArray();
+
+        Assert.True(SyncNearEntitiesReader.TryReadAppearAndDisappear(payload, out var appears, out _));
+        var e = Assert.Single(appears);
+        Assert.Equal(150, e.Buffs!.Count);
+        Assert.Equal(2200149, e.Buffs[149].BaseId);
     }
 
     [Fact]

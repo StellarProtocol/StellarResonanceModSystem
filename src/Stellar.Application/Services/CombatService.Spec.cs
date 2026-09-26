@@ -1,3 +1,5 @@
+using System;
+using System.Threading;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Domain.GameData;
 
@@ -27,11 +29,26 @@ internal sealed partial class CombatService
             _spec.MarkDirty(d.SourceId, d.TimestampMs);
     }
 
+    private int _ingestDepth;
+
+    /// <summary>Test seam: the wall clock the talent-spec gap timer reads.</summary>
+    internal Func<long> SpecClock { set => _spec.Clock = value; }
+
+    /// <summary>The wire probe brackets each packet's ingest; spec changes are not published mid-packet, so a
+    /// packet carrying attr 220 AND the new root (a class swap) yields exactly one SpecChanged even when the
+    /// main-thread drain runs concurrently with the network-thread ingest.</summary>
+    public void BeginPacket() => Interlocked.Increment(ref _ingestDepth);
+
+    /// <inheritdoc cref="BeginPacket"/>
+    public void EndPacket() => Interlocked.Decrement(ref _ingestDepth);
+
     // Re-resolve entities whose inputs changed since the last drain and publish only REAL value changes.
-    // Returns true when events were enqueued (the caller drains them in the same frame).
+    // Skipped while a packet is mid-ingest (the dirty set simply waits for the next drain). Returns true when
+    // events were enqueued (the caller drains them in the same frame).
     private bool PublishSpecChanges()
     {
-        var changes = _spec.CollectChanges();
+        if (Volatile.Read(ref _ingestDepth) > 0) return false;
+        var changes = _spec.Publish(_spec.TakeDirty());
         if (changes is null) return false;
         for (var i = 0; i < changes.Count; i++)
         {

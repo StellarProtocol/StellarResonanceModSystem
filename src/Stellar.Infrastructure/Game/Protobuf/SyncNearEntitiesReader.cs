@@ -12,11 +12,14 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 /// when present the <c>AttrCollection</c> sub-message (field 3) used to extract
 /// <c>AttrName</c> etc., and the entity's FULL buff set from <c>buff_infos</c>
 /// (field 7, <c>BuffInfoSync{uuid=1, buff_infos=2 repeated BuffInfo}</c>) — null when
-/// field 7 is absent. Everything else on the wire Entity (ent_type, temp_attrs,
+/// field 7 is absent. <c>BuffsUnknown</c> is true when field 7 was present but could not be decoded
+/// completely (truncated framing or a malformed <c>BuffInfo</c>): the snapshot is then NOT complete and the
+/// consumer must not replace the entity's buffs with it. Everything else on the wire Entity (ent_type, temp_attrs,
 /// body_part_infos, passive_skill_infos, buff_effect, appear_type, magnetic queue)
 /// is skipped.
 /// </summary>
-internal readonly record struct AppearEntityMsg(long Uuid, AttrCollectionMsg? Attrs, IReadOnlyList<ActiveBuff>? Buffs = null);
+internal readonly record struct AppearEntityMsg(
+    long Uuid, AttrCollectionMsg? Attrs, IReadOnlyList<ActiveBuff>? Buffs = null, bool BuffsUnknown = false);
 
 /// <summary>
 /// One <c>disappear</c> entity entry. <see cref="DisappearType"/> is the raw
@@ -192,6 +195,7 @@ internal static class SyncNearEntitiesReader
         long uuid = 0;
         AttrCollectionMsg? attrs = null;
         IReadOnlyList<ActiveBuff>? buffs = null;
+        bool buffsUnknown = false;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -213,7 +217,7 @@ internal static class SyncNearEntitiesReader
 
                 case (7, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var buffSync)) return false;
-                    buffs = ReadBuffInfoSync(buffSync);
+                    buffs = ReadBuffInfoSync(buffSync, out buffsUnknown);
                     break;
 
                 default:
@@ -221,28 +225,47 @@ internal static class SyncNearEntitiesReader
                     break;
             }
         }
-        entity = new AppearEntityMsg(uuid, attrs, buffs);
+        entity = new AppearEntityMsg(uuid, attrs, buffs, buffsUnknown);
         return true;
     }
 
     /// <summary>Decode <c>BuffInfoSync{uuid=1, buff_infos=2 repeated BuffInfo}</c> with the shared
-    /// <see cref="BuffInfoReader"/>. A malformed <c>BuffInfo</c> is dropped (siblings survive); a malformed
-    /// outer framing returns what was read so far.</summary>
-    private static IReadOnlyList<ActiveBuff> ReadBuffInfoSync(ReadOnlySpan<byte> payload)
+    /// <see cref="BuffInfoReader"/>. All-or-nothing: any framing or <c>BuffInfo</c> failure sets
+    /// <paramref name="unknown"/> and returns null — a partial list must never pass for the full set. The list
+    /// is sized exactly by a framing-only pre-count pass (no per-buff decoding, no regrowth).</summary>
+    private static IReadOnlyList<ActiveBuff>? ReadBuffInfoSync(ReadOnlySpan<byte> payload, out bool unknown)
     {
-        var list = new List<ActiveBuff>(8);
+        unknown = true;
+        int count = CountBuffInfos(payload);
+        if (count < 0) return null;
+        var list = new List<ActiveBuff>(count);
         int pos = 0;
         while (pos < payload.Length)
         {
-            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) break;
+            WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire);
             if (field == 2 && wire == 2)
             {
-                if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bi)) break;
-                if (BuffInfoReader.TryRead(bi, out var buff)) list.Add(buff);
+                WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bi);
+                if (!BuffInfoReader.TryRead(bi, out var buff)) return null;
+                list.Add(buff);
             }
-            else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
+            else WireProtocol.SkipField(payload, ref pos, wire);
         }
+        unknown = false;
         return list;
+    }
+
+    // Framing-only pass: number of buff_infos entries, or -1 when the frame is malformed/truncated.
+    private static int CountBuffInfos(ReadOnlySpan<byte> payload)
+    {
+        int count = 0, pos = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) return -1;
+            if (field == 2 && wire == 2) count++;
+            if (!WireProtocol.SkipField(payload, ref pos, wire)) return -1;
+        }
+        return count;
     }
 
     private static bool TryReadDisappearUuid(ReadOnlySpan<byte> payload, out long uuid)

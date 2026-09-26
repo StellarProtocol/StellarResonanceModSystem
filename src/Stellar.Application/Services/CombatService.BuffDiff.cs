@@ -6,9 +6,8 @@ namespace Stellar.Application.Services;
 /// <summary>
 /// Buff event accumulation. AoiSyncDelta field 10 (BuffEffectSync) is an EVENT
 /// stream — each delta carries only the buffs added/refreshed/removed this tick,
-/// keyed by BuffUuid. We maintain a per-entity buff set, emit BuffChanged events,
-/// and refresh the cached local-buff snapshot. Split from CombatService.cs to
-/// keep that file under the 500-LoC threshold.
+/// keyed by BuffUuid. We maintain a per-entity buff set and emit per-buff BuffChanged
+/// events. Full snapshots (appear seeds) and the read side live in CombatService.BuffSeed.cs.
 /// </summary>
 internal sealed partial class CombatService
 {
@@ -20,59 +19,18 @@ internal sealed partial class CombatService
     {
         // Touch: buff-only-refreshed entities must not be swept as idle (Task 3 idle sweep).
         _entities.Touch(entityId, System.Environment.TickCount64);
-        bool changed;
         lock (_buffsByEntityLock)
         {
             if (!_buffsByEntity.TryGetValue(entityId, out var set))
             {
-                set = new Dictionary<int, ActiveBuff>();
+                set = new EntityBuffSet(upserts.Count);
                 _buffsByEntity[entityId] = set;
             }
 
-            changed  = ApplyUpserts(entityId, set, upserts, timestampMs);
-            changed |= ApplyRemovals(entityId, set, removedBuffUuids, timestampMs);
-
-            if (changed && entityId == _localEntityId)
-                _localBuffs = new List<ActiveBuff>(set.Values);
+            bool changed = ApplyUpserts(entityId, set.Map, upserts, timestampMs);
+            changed |= ApplyRemovals(entityId, set.Map, removedBuffUuids, timestampMs);
+            if (changed) set.Invalidate();
         }
-    }
-
-    /// <summary>
-    /// Seed from a FULL buff snapshot — an AOI appear (<c>SyncNearEntities</c> <c>Entity.buff_infos</c>) or the
-    /// local player's <c>EnterScene</c> entity. Replaces the entity's set: Applied for new uuids, Removed for
-    /// uuids no longer present, nothing for unchanged ones (a changed entry is a Refreshed, as on the delta
-    /// path). <paramref name="buffs"/> null = the snapshot carried no buff list = empty set, so a re-appear
-    /// can never keep stale buffs (spec-from-talent-buffs, 2026-09-26).
-    /// </summary>
-    public void ReplaceEntityBuffs(EntityId entityId, IReadOnlyList<ActiveBuff>? buffs, long timestampMs)
-    {
-        buffs ??= System.Array.Empty<ActiveBuff>();
-        lock (_buffsByEntityLock)
-        {
-            if (!_buffsByEntity.TryGetValue(entityId, out var set))
-            {
-                if (buffs.Count == 0) return;   // nothing held, nothing arriving — no allocation
-                set = new Dictionary<int, ActiveBuff>();
-                _buffsByEntity[entityId] = set;
-            }
-
-            bool changed = ApplyRemovals(entityId, set, UuidsNotIn(set, buffs), timestampMs);
-            changed |= ApplyUpserts(entityId, set, buffs, timestampMs);
-
-            if (changed && entityId == _localEntityId)
-                _localBuffs = new List<ActiveBuff>(set.Values);
-        }
-    }
-
-    private static IReadOnlyList<int> UuidsNotIn(Dictionary<int, ActiveBuff> set, IReadOnlyList<ActiveBuff> snapshot)
-    {
-        if (set.Count == 0) return System.Array.Empty<int>();
-        var keep = new HashSet<int>();
-        for (int i = 0; i < snapshot.Count; i++) keep.Add(snapshot[i].BuffUuid);
-        List<int>? gone = null;
-        foreach (var uuid in set.Keys)
-            if (!keep.Contains(uuid)) (gone ??= new List<int>()).Add(uuid);
-        return (IReadOnlyList<int>?)gone ?? System.Array.Empty<int>();
     }
 
     // Caller holds _buffsByEntityLock. Returns whether any buff was added/refreshed.
@@ -88,7 +46,7 @@ internal sealed partial class CombatService
                 var merged = MergeNonZero(prev, b);
                 if (merged.Equals(prev)) continue;   // no-op refresh — emit nothing
                 set[b.BuffUuid] = merged;
-                _spec.NoteBuff(entityId, merged.BaseId, timestampMs);
+                _spec.NoteBuff(entityId, merged.BaseId, merged.SourceKind, timestampMs);
                 DiagBuffChange("refreshed", entityId, merged, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, merged.BuffUuid, merged.BaseId,
@@ -98,7 +56,7 @@ internal sealed partial class CombatService
             else
             {
                 set[b.BuffUuid] = b;
-                _spec.NoteBuff(entityId, b.BaseId, timestampMs);
+                _spec.NoteBuff(entityId, b.BaseId, b.SourceKind, timestampMs);
                 DiagBuffChange("applied", entityId, b, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, b.BuffUuid, b.BaseId,
@@ -120,6 +78,7 @@ internal sealed partial class CombatService
             int uuid = removedBuffUuids[i];
             if (set.Remove(uuid, out var old))
             {
+                _spec.NoteBuffRemoved(entityId, old.BaseId, old.SourceKind);
                 DiagBuffChange("removed", entityId, old, timestampMs);
                 EnqueueEvent(new CombatEvent.BuffChanged(
                     timestampMs, entityId, old.BuffUuid, old.BaseId,

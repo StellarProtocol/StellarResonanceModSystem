@@ -69,7 +69,6 @@ public sealed partial class BootstrapPlugin
         {
             _gameDataAllLoaded = true;
             _gameDataLog.Info("[Stellar][GameData] all tables loaded");
-            LoadSpecRootBuffs();   // talent tables → spec root buffs (Wiring.CombatSpec.cs)
         }
     }
 }

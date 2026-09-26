@@ -56,7 +56,6 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private SkillCooldown[]                         _cooldownsSnapshot  = Array.Empty<SkillCooldown>();
     private int                                     _cooldownsVersion;
     private int                                     _cooldownsSnapshotVersion = -1;
-    private IReadOnlyList<ActiveBuff>    _localBuffs     = Array.Empty<ActiveBuff>();
     // Anchor + capture timestamp form the server-time interpolation pair.
     // SyncServerTime (WorldNtf method 43) fires only every ~5s, so reading
     // _serverNowMs directly would freeze the cooldown countdown for 5s at a
@@ -68,7 +67,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     private long                         _serverNowMs;
     private long                         _serverTimeCapturedAtTicks;
 
-    private readonly Dictionary<EntityId, Dictionary<int, ActiveBuff>> _buffsByEntity = new();
+    private readonly Dictionary<EntityId, EntityBuffSet> _buffsByEntity = new();
     private readonly object _buffsByEntityLock = new();
 
     // One-shot diagnostic: log the raw damage fields of the first N hits after
@@ -170,7 +169,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         }
     }
 
-    public IReadOnlyList<ActiveBuff>    LocalBuffs     => _localBuffs;
+    // LocalBuffs / BuffsFor / RemoveEntityBuffs / ClearAllBuffs: CombatService.BuffSeed.cs
 
     /// <summary>
     /// Interpolated server clock. Returns the last anchor (set by
@@ -246,16 +245,6 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         }
     }
 
-    public IReadOnlyList<ActiveBuff> BuffsFor(EntityId entityId)
-    {
-        lock (_buffsByEntityLock)
-        {
-            return _buffsByEntity.TryGetValue(entityId, out var set) && set.Count > 0
-                ? new List<ActiveBuff>(set.Values)
-                : Array.Empty<ActiveBuff>();
-        }
-    }
-
     public string? GetEntityName(EntityId entityId) => _entities.GetEntityName(entityId);
 
     public EntityVitals GetVitals(EntityId entityId) => _entities.GetVitals(entityId);
@@ -313,14 +302,10 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     public void SetLocalEntityId(EntityId entityId)
     {
-        if (!_localEntityId.IsNone || entityId.IsNone) return;
-        lock (_buffsByEntityLock)
-        {
+        // LocalBuffs reads the held set lazily, so an EnterScene seed that landed before self's id is known
+        // surfaces as soon as the id is set.
+        if (_localEntityId.IsNone && !entityId.IsNone)
             _localEntityId = entityId;
-            // The EnterScene buff seed can land before self's id is known — surface it now.
-            if (_buffsByEntity.TryGetValue(entityId, out var set) && set.Count > 0)
-                _localBuffs = new List<ActiveBuff>(set.Values);
-        }
     }
 
     /// <summary>
@@ -342,18 +327,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     {
         RemoveEntityBuffs(entityId);
         _entities.OnEntityDisappeared(entityId, reason);
-        _spec.MarkDirtyIfKnown(entityId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-    }
-
-    // Shared by OnEntityDisappeared (AOI-disappear) and SweepIdleEntities (idle-TTL eviction) —
-    // same buff-cache cleanup, two different triggers for "this entity is gone".
-    private void RemoveEntityBuffs(EntityId entityId)
-    {
-        lock (_buffsByEntityLock)
-        {
-            _buffsByEntity.Remove(entityId);
-            if (entityId == _localEntityId) _localBuffs = Array.Empty<ActiveBuff>();
-        }
+        _spec.NoteDeparted(entityId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     /// <summary>
@@ -371,7 +345,7 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
         {
             _entities.EvictIdleEntity(idle[i]);
             RemoveEntityBuffs(idle[i]);
-            _spec.MarkDirtyIfKnown(idle[i], nowMs);
+            _spec.NoteDeparted(idle[i], nowMs);
         }
         LogIdleSweep(idle.Count);
     }
@@ -390,15 +364,6 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
     {
         _entities.Reset();
         _spec.Reset();
-    }
-
-    public void ClearAllBuffs()
-    {
-        lock (_buffsByEntityLock)
-        {
-            _buffsByEntity.Clear();
-            _localBuffs = Array.Empty<ActiveBuff>();
-        }
     }
 
     /// <summary>

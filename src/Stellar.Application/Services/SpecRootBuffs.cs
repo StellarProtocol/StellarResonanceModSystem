@@ -42,8 +42,8 @@ internal static class SpecRootBuffs
     /// <summary>
     /// <c>TalentStageTable</c> rows with <c>TalentStage == 1</c> → <c>RootId</c> (TalentTreeTable id) → its
     /// <c>TalentId</c> → <c>TalentTable.TalentEffect</c> entry <c>[3, buffId, level]</c>. A stage whose chain
-    /// is broken, or whose root talent grants zero or several buffs, is skipped; a buff claimed by two specs
-    /// is dropped. The caller checks the count against <see cref="ExpectedCount"/>.
+    /// is broken, or whose root talent grants zero or several buffs, is skipped; a buff claimed by two DIFFERENT specs
+    /// is dropped (the same spec named twice is kept). The caller checks the count against <see cref="ExpectedCount"/>.
     /// </summary>
     public static Dictionary<int, int> Derive(SpecTalentTables tables)
     {
@@ -53,11 +53,27 @@ internal static class SpecRootBuffs
         {
             if (stage.TalentStage != ExpertiseTwoStage || stage.RootId == 0) continue;
             if (!TryRootBuff(tables, stage.RootId, out var buffId)) continue;
+            int specId = SpecIdFor(stage.WeaponType, stage.BdType);
             if (collided.Contains(buffId)) continue;
-            if (result.Remove(buffId)) { collided.Add(buffId); continue; }
-            result[buffId] = SpecIdFor(stage.WeaponType, stage.BdType);
+            if (result.TryGetValue(buffId, out var existing))
+            {
+                if (existing == specId) continue;              // duplicate row naming the same spec — keep
+                result.Remove(buffId);                          // two specs claim one buff — ambiguous, drop
+                collided.Add(buffId);
+                continue;
+            }
+            result[buffId] = specId;
         }
         return result;
+    }
+
+    /// <summary>The <c>RootId</c>s of every Expertise-II stage — the only tree nodes the derivation reads.</summary>
+    public static HashSet<int> RootTreeIds(IReadOnlyDictionary<int, TalentStageRow> stages)
+    {
+        var ids = new HashSet<int>();
+        foreach (var s in stages.Values)
+            if (s.TalentStage == ExpertiseTwoStage && s.RootId != 0) ids.Add(s.RootId);
+        return ids;
     }
 
     private static bool TryRootBuff(SpecTalentTables tables, int rootTreeId, out int buffId)

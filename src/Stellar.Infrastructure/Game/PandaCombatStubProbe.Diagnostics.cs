@@ -295,4 +295,11 @@ internal sealed partial class PandaCombatStubProbe
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[Attr] eid={eid.Value} n={count} ms={timestampMs}");
     }
+
+    // A decode-incomplete appear buff snapshot was skipped (held set untouched) — review fix D.
+    private void DiagBuffSeedSkipped(EntityId eid)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[Buff] seed {eid.Uid} skipped: buff snapshot not fully decodable");
+    }
 }

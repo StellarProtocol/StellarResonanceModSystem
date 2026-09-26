@@ -66,7 +66,7 @@ internal sealed partial class PandaCombatStubProbe
             DiagAppearEntity(entity);
             var eid = new EntityId(entity.Uuid);
             ReadAppearEntity(eid, entity.Attrs, ts);
-            _sink.ReplaceEntityBuffs(eid, entity.Buffs, ts);   // full buff set (field 7) — talent buffs incl.
+            if (!AppearBuffSeed.Apply(_sink, eid, entity, ts)) DiagBuffSeedSkipped(eid);   // full set (field 7)
             DiagEntityLife(eid, "appear", EntityDisappearReason.Unknown);
         }
     }
@@ -170,7 +170,7 @@ internal sealed partial class PandaCombatStubProbe
         bool parsed = EnterSceneReader.TryReadPlayerEntity(span, out var self);
         if (!parsed) return;
         var eid = new EntityId(self.Uuid);
-        _sink.ReplaceEntityBuffs(eid, self.Buffs, ts);   // self's full buff set (field 7)
+        if (!AppearBuffSeed.Apply(_sink, eid, self, ts)) DiagBuffSeedSkipped(eid);   // self's full buff set (field 7)
         if (self.Attrs is { } attrs) ReadEnterSceneSelfAttrs(eid, attrs, ts);
     }
 

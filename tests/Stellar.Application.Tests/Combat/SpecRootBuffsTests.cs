@@ -87,15 +87,44 @@ public sealed class SpecRootBuffsTests
         Assert.Equal(new[] { 111 }, derived.Keys);
     }
 
+    // Staged source (perf G): one table per LoadStep, the tree/effect reads filtered to the ids the previous
+    // stage needs. Fake serves a SpecTalentTables and records what was asked for.
     private sealed class FakeSource : ISpecRootBuffSource
     {
-        public Func<(bool ok, SpecTalentTables tables)> Impl = () => (false, default!);
-        public bool TryReadTalentTables(out SpecTalentTables tables)
+        public SpecTalentTables? Tables;
+        public Exception? Throw;
+        public List<int> TreeIdsAsked = new(), TalentIdsAsked = new();
+        public int Calls;
+
+        public IReadOnlyDictionary<int, TalentStageRow> ReadTalentStages()
         {
-            var (ok, t) = Impl();
-            tables = t;
-            return ok;
+            Calls++;
+            if (Throw is not null) throw Throw;
+            return Tables?.Stages ?? new Dictionary<int, TalentStageRow>();
         }
+
+        public IReadOnlyDictionary<int, int> ReadTalentTreeTalentIds(IReadOnlyCollection<int> treeIds)
+        {
+            Calls++;
+            TreeIdsAsked.AddRange(treeIds);
+            return (Tables?.TreeTalentIds ?? new Dictionary<int, int>())
+                .Where(kv => treeIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        }
+
+        public IReadOnlyDictionary<int, TalentEffectRow> ReadTalentEffects(IReadOnlyCollection<int> talentIds)
+        {
+            Calls++;
+            TalentIdsAsked.AddRange(talentIds);
+            return (Tables?.Talents ?? new Dictionary<int, TalentEffectRow>())
+                .Where(kv => talentIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        }
+    }
+
+    private static int LoadAll(SpecRootBuffMap map, ISpecRootBuffSource src)
+    {
+        int steps = 0;
+        while (!map.LoadStep(src)) { if (++steps > 10) throw new InvalidOperationException("LoadStep never finished"); }
+        return steps + 1;
     }
 
     [Fact]
@@ -108,21 +137,26 @@ public sealed class SpecRootBuffsTests
     }
 
     [Fact]
-    public void Map_Load18FromTables_SourceTables_LogsOnce()
+    public void Map_Load18FromTables_SourceTables_LogsOnce_OneTablePerStep()
     {
         var log = new StubLog();
         var map = new SpecRootBuffMap(log);
         var moved = Expected.ToDictionary(kv => kv.Key + 1, kv => kv.Value);   // a "patched" table set
-        var src = new FakeSource { Impl = () => (true, FakeTables(moved)) };
+        var src = new FakeSource { Tables = FakeTables(moved) };
 
-        map.LoadFrom(src);
-        map.LoadFrom(src);   // second call is a no-op
+        Assert.Equal(3, LoadAll(map, src));   // stages, trees, effects — spread over three ticks
+        Assert.Equal(3, src.Calls);
+        Assert.True(map.LoadStep(src));        // further steps are no-ops
+        Assert.Equal(3, src.Calls);
 
         Assert.Equal("tables", map.Source);
         Assert.True(map.TryGetSpec(2202111, out var spec));
         Assert.Equal(50001, spec);
         Assert.False(map.TryGetSpec(2202110, out _));
         Assert.Single(log.InfoLines, l => l == "[CombatSpec] spec root buffs: 18 (source=tables)");
+        // Only the 18 Expertise-II roots are fetched, never the whole tree / talent table.
+        Assert.Equal(18, src.TreeIdsAsked.Count);
+        Assert.Equal(18, src.TalentIdsAsked.Count);
     }
 
     [Fact]
@@ -130,7 +164,7 @@ public sealed class SpecRootBuffsTests
     {
         var log = new StubLog();
         var map = new SpecRootBuffMap(log);
-        map.LoadFrom(new FakeSource { Impl = () => (true, FakeTables(new Dictionary<int, int> { { 111, 50001 } })) });
+        LoadAll(map, new FakeSource { Tables = FakeTables(new Dictionary<int, int> { { 111, 50001 } }) });
 
         Assert.Equal("fallback", map.Source);
         Assert.True(map.TryGetSpec(2202110, out _));
@@ -143,7 +177,7 @@ public sealed class SpecRootBuffsTests
     {
         var log = new StubLog();
         var map = new SpecRootBuffMap(log);
-        map.LoadFrom(new FakeSource());
+        LoadAll(map, new FakeSource());
         Assert.Equal("fallback", map.Source);
         Assert.Contains("[CombatSpec] spec root buffs: 18 (source=fallback)", log.InfoLines);
     }
@@ -153,10 +187,23 @@ public sealed class SpecRootBuffsTests
     {
         var log = new StubLog();
         var map = new SpecRootBuffMap(log);
-        map.LoadFrom(new FakeSource { Impl = () => throw new InvalidOperationException("boom") });
+        LoadAll(map, new FakeSource { Throw = new InvalidOperationException("boom") });
         Assert.Equal("fallback", map.Source);
         Assert.True(map.TryGetSpec(2207180, out var spec));
         Assert.Equal(130002, spec);
+    }
+
+    [Fact]
+    public void Derive_SameBuffSameSpecTwice_IsKept()
+    {
+        // n2: a duplicated stage row naming the SAME spec is not a collision.
+        var t = FakeTables(new Dictionary<int, int> { { 111, 50001 }, { 222, 50002 } });
+        var stages = new Dictionary<int, TalentStageRow>(t.Stages);
+        var root = stages.Values.First(s => s.TalentStage == 1 && s.WeaponType == 5 && s.BdType == 0);
+        stages[99_999] = root;
+        var derived = SpecRootBuffs.Derive(t with { Stages = stages });
+        Assert.Equal(50001, derived[111]);
+        Assert.Equal(2, derived.Count);
     }
 
     [Fact]

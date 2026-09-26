@@ -128,14 +128,32 @@ public abstract record CombatEvent(long TimestampMs)
     public sealed record EntityStateChanged(long TimestampMs, EntityId TargetId, ActorState State) : CombatEvent(TimestampMs);
 
     /// <summary>
+    /// An entity's COMPLETE buff set arrived as one snapshot — an AOI appear (<c>SyncNearEntities</c>
+    /// <c>Entity.buff_infos</c>) or the local player's <c>EnterScene</c> entity (spec-from-talent-buffs,
+    /// 2026-09-26). Snapshot semantics: <paramref name="Buffs"/> REPLACES whatever the consumer held for
+    /// <paramref name="TargetId"/> — buffs it held that are not listed are gone, listed ones are current. Raised
+    /// exactly once per snapshot, including when the set is empty (so a consumer can clear), and INSTEAD of
+    /// per-buff <see cref="BuffChanged"/> events: a town crowd of 30 players × ~120 buffs is 30 events, not
+    /// thousands. Live changes afterwards arrive as per-buff <see cref="BuffChanged"/> events exactly as before.
+    /// By the time this event fires, <see cref="Services.ICombatLookup.BuffsFor"/> already returns the new set.
+    /// A snapshot the client could not decode completely is skipped (no event, held set untouched).
+    /// </summary>
+    /// <param name="TimestampMs">Wire receive time of the snapshot packet (client wall clock, Unix ms) — the same
+    /// clock its sibling <see cref="BuffChanged"/> events carry.</param>
+    /// <param name="TargetId">The entity whose buff set was seeded.</param>
+    /// <param name="Buffs">The complete buff set; empty when the entity carries none. Treat as read-only.</param>
+    public sealed record EntityBuffsSeeded(long TimestampMs, EntityId TargetId, IReadOnlyList<ActiveBuff> Buffs) : CombatEvent(TimestampMs);
+
+    /// <summary>
     /// The value <see cref="Services.ICombatSpec.GetSubProfession"/> returns for an entity changed
     /// (spec-from-talent-buffs, 2026-09-26). Raised exactly once per REAL change of that value, whether it
     /// came from a talent root buff or from cast inference — never for a no-op re-resolution. Holding the
     /// previous spec across a same-class swap gap (the root buff removed before the new one arrives) is not a
-    /// change, so Smite → gap → Lifebind raises ONE event, Smite → Lifebind. A class change (attr 220) with no
+    /// change, so Smite → gap → Lifebind raises ONE event, Smite → Lifebind; a gap that outlives 10 s drops the
+    /// talent spec and raises one if the reported value changes. A class change (attr 220) with no
     /// root buff of the new class yet DOES raise one (old spec → the new class's cast-derived spec, or 0).
-    /// Changes are evaluated on the main-thread drain after each batch of wire updates, so the whole-packet
-    /// net change is reported (a class swap delivering attr 220 and the new talent set together raises one
+    /// Changes are evaluated on the main-thread drain, never while a wire packet is mid-ingest, so the
+    /// whole-packet net change is reported (a class swap delivering attr 220 and the new talent set together raises one
     /// event, not an intermediate old→0→new pair). Not raised when a scene change resets every spec to 0;
     /// specs re-announce (0 → spec) as entities reappear. Rides the existing <c>ICombatEvents</c> stream so no
     /// combat service interface gains a member.
