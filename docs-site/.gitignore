@@ -14,3 +14,4 @@ src/content/docs/changelog.md
 public/plugins/
 .plugins-cache/
 src/content/docs/contribute/
+src/content/docs/architecture/game-phases.md

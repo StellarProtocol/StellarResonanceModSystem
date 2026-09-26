@@ -2,7 +2,7 @@
 
 This is the developer guide for writing a plugin against the framework. It covers project setup, the plugin lifecycle, the public service surface (`IPluginServices`), and — most importantly — how you draw UI: Stellar renders **native uGUI** from a declarative element tree you describe once. There is no IMGUI/`OnGUI`/`GUI.Window` in the plugin API; the framework owns rendering, layout, theming, input gating, and persistence.
 
-For framework-internal architecture, see [`architecture.md`](architecture.md). For the complete generated **API reference** of the plugin surface (every public interface, record, and enum), see [`api/`](api/) — start at [`IPluginServices`](api/Stellar.Abstractions.Services/IPluginServices.md).
+For framework-internal architecture, see [`architecture.md`](architecture.md). For the complete generated **API reference** of the plugin surface (every public interface, record, and enum), see the [API reference](https://docs.stellarresonance.app/api/) — start at [`IPluginServices`](https://docs.stellarresonance.app/api/stellar-abstractions-services/ipluginservices/).
 
 ## What a plugin is
 

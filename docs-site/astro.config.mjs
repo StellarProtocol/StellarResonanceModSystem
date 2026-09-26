@@ -58,6 +58,7 @@ export default defineConfig({
           items: [
             { label: 'Overview', slug: 'architecture' },
             { label: 'Interactive diagrams', slug: 'architecture/diagrams' },
+            { label: 'Game phases (design)', slug: 'architecture/game-phases' },
           ],
         },
         {

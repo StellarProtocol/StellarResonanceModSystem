@@ -17,6 +17,7 @@ const CONTENT = join(SITE, 'src/content/docs');
 const GENERATED = join(SITE, 'src/generated');
 const PUBLIC_DIAGRAMS = join(SITE, 'public/diagrams');
 const GITHUB = 'https://github.com/StellarProtocol/StellarResonanceModSystem/blob/main';
+const SITE_URL = 'https://docs.stellarresonance.app/';
 const skipApi = process.argv.includes('--skip-api');
 const HARMONYX_VERSION = '2.10.2'; // must match refs/0Harmony.dll (AssemblyVersion 2.10.2.0)
 
@@ -25,6 +26,7 @@ const PAGES = {
   'docs/getting-started.md': 'guides/getting-started',
   'docs/plugin-development.md': 'guides/plugin-development',
   'docs/architecture.md': 'architecture',
+  'docs/game-phases-design.md': 'architecture/game-phases',
   'CONTRIBUTING.md': 'contribute',
 };
 // Every contributor guide under docs/contributing/ is published as /contribute/<name>/.
@@ -73,6 +75,8 @@ function rewriteLinks(md, fromRepoPath, map) {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
     if (inFence) { out.push(line); continue; }
     out.push(escapePlaceholders(line).replace(/(!?\[[^\]]*\])\(([^)\s]+)(\s+"[^"]*")?\)/g, (all, text, target, title = '') => {
+      // Absolute links to this site become root-relative, so a version snapshot links within itself.
+      if (target.startsWith(SITE_URL)) return `${text}(${target.slice(SITE_URL.length - 1)}${title})`;
       if (/^(https?:|mailto:|#)/.test(target)) return all;
       const [path, anchor = ''] = target.split('#');
       const repoPath = posix.normalize(posix.join(fromDir, path));

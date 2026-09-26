@@ -117,8 +117,8 @@ runs `xmldocmd` over it, and publishes the result. It runs on any pull request o
 `src/Stellar.Abstractions/`, so the reference for your new member appears with your change (pull requests from
 branches of this repository also get a preview deployment). Your job is to write good XML docs; there is nothing else to update by hand.
 
-The repo also carries a generated copy under [`../api/`](../api/README.md) for browsing on GitHub. Its
-files are marked "DO NOT EDIT"; if you refresh it, regenerate it with `xmldocmd` rather than editing it.
+The reference is published at <https://docs.stellarresonance.app/api/>; the repo no longer carries a committed Markdown
+copy (it drifted), so there is nothing to regenerate by hand.
 
 ## Checklist
 
