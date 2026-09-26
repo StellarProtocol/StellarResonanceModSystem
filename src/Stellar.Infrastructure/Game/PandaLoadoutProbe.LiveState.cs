@@ -95,6 +95,7 @@ internal sealed partial class PandaLoadoutProbe
         if (!_mergePending) return;
         _mergePending = false;
         _refreshPending = true;   // also re-fire the on-demand SyncProjectList (cooldown-coalesced)
+        RefreshUnsavedFlag();     // the live containers moved → re-run the game's unsaved-changes check
 
         if (!InvokeChunk(LiveStateChunk)) return;
         var raw = ReadLuaGlobalString(LiveStateGlobal);

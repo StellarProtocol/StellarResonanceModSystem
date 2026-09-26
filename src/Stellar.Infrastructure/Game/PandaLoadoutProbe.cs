@@ -162,6 +162,8 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // whole-item-container, so it runs ONCE after the burst goes quiet (ResolveQuietTicks) with a hard
         // ResolveMaxDeferTicks ceiling — deferred, never dropped (owner report 2026-09-05).
         TryResolvePerClassDetailsIfDue();
+        // A queued loadout SAVE (PandaLoadoutProbe.Save.cs) goes out before a switch queued the same tick.
+        DrainPendingSave();
         DrainPendingDispatches();
 
         PendingSwitch? pending;
@@ -261,6 +263,7 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // PandaLoadoutProbe.Switch.cs § _liveCurrentPlanId).
         _liveCurrentPlanId = current ?? UnknownPlanId;
         _parsedPlans = plans;
+        _knownPlanIds = KnownPlanIds(plans);   // the save path's "is the target a saved loadout" gate
         // CURRENT class's live equipped set + talents + equipped imagines. Shared with the merge-event
         // read path (PandaLoadoutProbe.LiveState.cs) so BOTH paths apply the same rows and run the same
         // structural change detection — this dump carries no "RESSLOT" row, hence slotsRow: null (the
@@ -271,6 +274,14 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         _resolvePending = true;                // new data → resolve (event-driven; runs next tick)
         LogEquipProbe();   // per-class gear RE — no-op unless STELLAR_DIAGNOSTICS; data is populated here
         LogLiveContainerProbe();   // partial-account modules/talents RE (2026-08-05) — no-op unless diagnostics
+        RefreshUnsavedFlag();      // fresh saved-plan data → re-run the game's unsaved-changes check (event-driven)
+    }
+
+    private static int[] KnownPlanIds(List<ParsedPlan> plans)
+    {
+        var ids = new int[plans.Count];
+        for (var i = 0; i < ids.Length; i++) ids[i] = plans[i].Index;
+        return ids;
     }
 
     // The CURRENT class's LIVE equipped set + talents (from cs.equip.equipList / cs.mod.modSlots /

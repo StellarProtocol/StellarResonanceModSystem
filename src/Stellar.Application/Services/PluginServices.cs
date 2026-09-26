@@ -13,6 +13,7 @@ internal sealed class PluginServices : IPluginServices
     public IInventory Inventory { get; }
     public IModuleEquip ModuleEquip { get; }
     public ILoadout Loadout { get; }
+    public ILoadoutSave LoadoutSave { get; }
     public IExchange Market { get; }
     public INotifications Notifications { get; }
     public IPluginConfig Config { get; }
@@ -104,7 +105,8 @@ internal sealed class PluginServices : IPluginServices
         IWardrobe wardrobe,
         IWardrobePreview wardrobePreview,
         IRunTimer runTimer,
-        IBossVitals bossVitals)
+        IBossVitals bossVitals,
+        ILoadoutSave loadoutSave)
     {
         Log = log;
         Framework = framework;
@@ -155,5 +157,6 @@ internal sealed class PluginServices : IPluginServices
         WardrobePreview = wardrobePreview;
         RunTimer = runTimer;
         BossVitals = bossVitals;
+        LoadoutSave = loadoutSave;
     }
 }

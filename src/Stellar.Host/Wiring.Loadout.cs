@@ -9,6 +9,8 @@ public sealed partial class BootstrapPlugin
     // ── Loadout services (Wiring.Loadout.cs) ────────────────────────────────
     private PandaLoadoutProbe? _loadoutProbe;
     private LoadoutService? _loadoutService;
+    // Loadout SAVE (copy the worn setup into another loadout) — the same probe, its own service/interface.
+    private LoadoutSaveService? _loadoutSaveService;
     // Deep-Slumber write verbs (enable line / socket / unsocket a factor) — drives the raw worldProxy
     // RPCs (Approach A) over the SAME Lua bridge shape as the loadout probe. Self-resolves lazily;
     // drained world-gated in DrainEquipAndLoadout (Wiring.ServiceTick.cs) alongside the loadout probe.
@@ -40,6 +42,7 @@ public sealed partial class BootstrapPlugin
         // handler only flips a flag (network-thread-safe). _inventoryService is built before this.
         _inventoryService!.SelfGearChanged += _loadoutProbe.OnGearChanged;
         _loadoutService = new LoadoutService(_loadoutProbe);
+        _loadoutSaveService = new LoadoutSaveService(_loadoutProbe);
 
         // Deep-Slumber Psychoscope (season cultivate) — the SAME loadout probe (IDeepSlumberProbe) reads
         // it via the Lua bridge's on-demand refresh chunk (DSLV/DSA rows), NOT the C# CharSerialize
