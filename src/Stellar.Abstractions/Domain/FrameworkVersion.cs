@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.12.0 adds <c>HitchProbe</c> (diagnostics-gated render-frame hitch attribution) and makes windows cheaper:
+    /// a hidden window is parked (deactivated) rather than destroyed, ConditionalElement branches build on first
+    /// show, and meter debuff cells are created on demand. Additive only.
     /// 2.11.0 adds player spec from talent root buffs: <c>ICombatSpec.TryGetTalentSpec</c>, <c>CombatEvent.SpecChanged</c>
     /// and <c>CombatEvent.EntityBuffsSeeded</c> (a player's full buff set when they appear). Additive only.
     /// 2.10.0 adds <c>ILoadoutSave</c> (<c>IPluginServices.LoadoutSave</c>): <c>SaveCurrentToAsync(index)</c> saves the
@@ -229,5 +232,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.11.0";
+    public const string Value = "2.12.0";
 }
