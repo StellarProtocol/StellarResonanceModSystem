@@ -144,13 +144,11 @@ internal sealed partial class WindowBuilder
         token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
         var hitchT = HitchProbe.Begin();   // [Hitch] build-phase buckets (diagnostics only)
         var (root, content) = BuildChrome(reg, parent, token);
-        token.Root = root.gameObject;
-        token.Rect = root;
+        token.Root = root.gameObject; token.Rect = root;
         hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
         hitchT = HitchProbe.Lap("build:tree", hitchT);
-        token.Apply();   // first paint
-        HitchProbe.End("build:firstApply", hitchT);
+        token.Apply(); HitchProbe.End("build:firstApply", hitchT);   // first paint (builds the active Cond branches)
         return token;
     }
 
@@ -237,7 +235,9 @@ internal sealed partial class WindowBuilder
             // uGUI does NOT auto-rebuild a ContentSizeFitter-sized window on a descendant SetActive — so a
             // content-sized window (AutoSizeWidth launcher: Full↔Minimal↔horizontal) would keep its old size and
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
+            var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
             for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
+            for (var i = vlBuilt; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
             for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first

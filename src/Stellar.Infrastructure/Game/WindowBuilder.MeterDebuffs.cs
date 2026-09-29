@@ -53,7 +53,11 @@ internal sealed partial class WindowBuilder
         public GameObject Root = null!;
         public GridLayoutGroup Grid = null!;
         public LayoutElement Le = null!;
-        public DebuffCell[] Cells = new DebuffCell[MeterDebuffMaxCells];
+        // Cells are created on first need (BindDebuffBlock), not all 12 per row at build: a row usually shows only
+        // cols×2 of them, and a hidden block none — the eager pool was ~72 GameObjects/row, the bulk of a meter
+        // mount (owner report 2026-09-30). Null = not built yet.
+        public DebuffCell?[] Cells = new DebuffCell?[MeterDebuffMaxCells];
+        public System.Func<int, DebuffCell>? CreateCell;
     }
 
     // Per-block poll-diff cache (block-level show flag; per-cell state is cheap enough to re-poll).
@@ -74,7 +78,7 @@ internal sealed partial class WindowBuilder
         le.preferredHeight = MeterDebuffCell * 2f + MeterDebuffGap;
 
         var block = new DebuffBlock { Root = root, Grid = grid, Le = le };
-        for (var i = 0; i < MeterDebuffMaxCells; i++) block.Cells[i] = BuildDebuffCell(token, root.transform);
+        block.CreateCell = _ => BuildDebuffCell(token, root.transform);   // WireDebuffClicks wraps it with the click
         root.SetActive(false);
         return block;
     }
@@ -125,23 +129,24 @@ internal sealed partial class WindowBuilder
         };
     }
 
-    // Make every debuff cell left-clickable → MeterRowData.OnDebuffClick(Id, cellIndex). Wired ONCE at build
-    // (the index is captured per cell; Data()/Id read live), so a cached delegate on the plugin side allocates
+    // Make every debuff cell left-clickable → MeterRowData.OnDebuffClick(Id, cellIndex). Wired ONCE per cell as it
+    // is created (the index is captured per cell; Data()/Id read live), so a cached delegate on the plugin side allocates
     // nothing per refresh. The plugin maps the index to the debuff and treats the overflow "+N" cell as
     // "show all". An empty placeholder cell still fires but the plugin no-ops (index beyond the kept count).
     private void WireDebuffClicks(DebuffBlock block, MeterRowElement el)
     {
-        for (var i = 0; i < block.Cells.Length; i++)
-        {
-            var cell = block.Cells[i];
-            var index = i;
-            cell.Frame.raycastTarget = true;   // the cell's frame is the click surface
-            var btn = cell.Root.AddComponent<Button>();
-            btn.targetGraphic = cell.Frame;
-            btn.transition = Selectable.Transition.None;
-            System.Action onClick = () => el.Data().OnDebuffClick?.Invoke(el.Data().Id, index);
-            btn.onClick.AddListener((UnityEngine.Events.UnityAction)onClick);
-        }
+        var create = block.CreateCell!;
+        block.CreateCell = i => { var cell = create(i); WireDebuffClick(cell, i, el); return cell; };
+    }
+
+    private static void WireDebuffClick(DebuffCell cell, int index, MeterRowElement el)
+    {
+        cell.Frame.raycastTarget = true;   // the cell's frame is the click surface
+        var btn = cell.Root.AddComponent<Button>();
+        btn.targetGraphic = cell.Frame;
+        btn.transition = Selectable.Transition.None;
+        System.Action onClick = () => el.Data().OnDebuffClick?.Invoke(el.Data().Id, index);
+        btn.onClick.AddListener((UnityEngine.Events.UnityAction)onClick);
     }
 
     // The per-cell edge for a row's chosen size (0 = the 20px default).
@@ -172,9 +177,11 @@ internal sealed partial class WindowBuilder
         var visible = cols * MeterDebuffRows;   // cells to show (rest hidden)
         for (var i = 0; i < MeterDebuffMaxCells; i++)
         {
-            if (i >= visible) { if (block.Cells[i].Root != null) block.Cells[i].Root.SetActive(false); continue; }
+            var cell = block.Cells[i];
+            if (i >= visible) { if (cell != null && cell.Root != null) cell.Root.SetActive(false); continue; }
+            cell ??= block.Cells[i] = block.CreateCell!(i);   // first time this slot is visible
             // The LAST visible cell owns the "+N" overflow; the rest never show it.
-            BindDebuffCell(block.Cells[i], SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0);
+            BindDebuffCell(cell, SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0);
         }
     }
 
