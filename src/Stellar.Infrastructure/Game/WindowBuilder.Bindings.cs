@@ -237,11 +237,16 @@ internal sealed partial class WindowBuilder
         public Func<bool> When = null!;
         public GameObject Then = null!;
         public GameObject? Else;
+        public Action? BuildThen, BuildElse;   // pending lazy branch builds; cleared once run (WindowBuilder.Layout)
         private bool _init, _last;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
             var b = When();
             if (_init && b == _last) return false;
+            // Build the branch about to show, once (cleared BEFORE invoking so a throwing build can't retry forever).
+            var build = b ? BuildThen : BuildElse;
+            if (b) BuildThen = null; else BuildElse = null;
+            build?.Invoke();
             if (Then != null) Then.SetActive(b);
             if (Else != null) Else.SetActive(!b);
             _last = b; _init = true;

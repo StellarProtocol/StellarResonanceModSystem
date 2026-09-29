@@ -71,6 +71,7 @@ public sealed partial class BootstrapPlugin
 
         // Time the whole per-tick Update path (plugin Updates + service refreshes). No-op unless PERFHUD.
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginUpdate();
+        var hitchT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // [Hitch] attribution (diagnostics only)
         try
         {
             // Band 1 — every master beat (exchange only; cheap when idle — empty-queue dequeue + empty active-list loop).
@@ -90,6 +91,7 @@ public sealed partial class BootstrapPlugin
         finally
         {
             Stellar.Abstractions.Diagnostics.PerfProbe.EndUpdate();
+            Stellar.Abstractions.Diagnostics.HitchProbe.End("fw:tick", hitchT);
         }
 
         // Commit timings (no-op unless PERFHUD). masterDt is the master tick interval; [Perf] avgFps

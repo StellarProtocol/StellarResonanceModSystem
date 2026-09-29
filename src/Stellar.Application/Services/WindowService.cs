@@ -15,13 +15,14 @@ internal sealed partial class WindowService : IWindowHost
     private const float ApplyInterval = 0.1f;
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
+    private readonly IWindowParking? _parking;   // hide = deactivate the built tree, not destroy it (see IWindowParking)
     private readonly IPluginLog _log;
     private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _log = log; _layoutEditor = layoutEditor; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _log = log; _layoutEditor = layoutEditor; }
 
     /// <inheritdoc/>
     public bool IsLayoutEditing => _layoutEditor?.IsEditing ?? false;
@@ -124,9 +125,10 @@ internal sealed partial class WindowService : IWindowHost
 
     private void TickEntry(Entry e, bool applyNow)
     {
-        if (!e.Visible) { DestroyIfMounted(e); return; }
+        if (!e.Visible) { ParkOrDestroy(e); return; }
         if (e.Token is null || !_renderer.IsAlive(e.Token))
         {
+            e.Parked = false;
             if (!_renderer.IsCanvasAvailable()) { e.Token = null; return; }
             e.Token = SafeMount(e);
             if (e.Token is null) return;
@@ -135,6 +137,7 @@ internal sealed partial class WindowService : IWindowHost
             SafeApply(e);
             e.Dirty = false; return;
         }
+        if (e.Parked) { _parking!.Unpark(e.Token); e.Parked = false; e.Dirty = true; }   // re-show: paint this tick
         // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
         // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
         // that scale is live so the saved rect clamps against the correct canvas-unit bound.
@@ -144,7 +147,12 @@ internal sealed partial class WindowService : IWindowHost
     }
 
     private object? SafeMount(Entry e)
-    { try { return _renderer.Mount(e.Reg); } catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; } }
+    {
+        var hitchT = HitchProbe.Begin();
+        try { return _renderer.Mount(e.Reg); }
+        catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; }
+        finally { if (hitchT != 0L) HitchProbe.End(e.HitchKey(0), hitchT); }
+    }
     private void SafeApply(Entry e)
     {
         // Visibility gate: the plugin-owned ShouldRender() predicate is the single source of truth
@@ -157,11 +165,30 @@ internal sealed partial class WindowService : IWindowHost
         try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
         catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
+        var hitchT = HitchProbe.Begin();
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }
-        finally { PerfProbe.EndWindow(e.Reg.Spec.Id); }
+        finally { PerfProbe.EndWindow(e.Reg.Spec.Id); if (hitchT != 0L) HitchProbe.End(e.HitchKey(1), hitchT); }
     }
-    private void DestroyIfMounted(Entry e) { if (e.Token is null) return; _renderer.Destroy(e.Token); e.Token = null; }
+    // A hidden window keeps its built tree, deactivated, when the renderer can park it: rebuilding the combat meter
+    // on every show cost a 350-385 ms frame (owner report 2026-09-30). Parked once per hide, not every hidden tick.
+    private void ParkOrDestroy(Entry e)
+    {
+        if (e.Token is null || e.Parked) return;
+        if (_parking is null) { DestroyIfMounted(e); return; }
+        _parking.Park(e.Token);
+        e.Parked = true;
+    }
+
+    private void DestroyIfMounted(Entry e)
+    {
+        e.Parked = false;
+        if (e.Token is null) return;
+        var hitchT = HitchProbe.Begin();
+        _renderer.Destroy(e.Token);
+        e.Token = null;
+        if (hitchT != 0L) HitchProbe.End(e.HitchKey(2), hitchT);
+    }
 
     private void PruneRemoved()
     {
@@ -178,12 +205,17 @@ internal sealed partial class WindowService : IWindowHost
         public WindowRegistration Reg { get; }
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
+        public bool Parked;   // mounted but deactivated by a SetVisible(false) (IWindowParking)
         public bool BringToFrontPending;
         // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);
         // TickEntry re-applies once CanvasScaleReady. PendingApplyVisibility carries the deferred call's flag.
         public bool ApplyPending; public bool PendingApplyVisibility = true;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
+        // [Hitch] bucket names (mount/apply/destroy), built once per window on first use — diagnostics only.
+        private string[]? _hitchKeys;
+        public string HitchKey(int kind)
+            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id })[kind];
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
         public void SetVisible(bool visible) => Visible = visible;
@@ -203,7 +235,9 @@ internal sealed partial class WindowService : IWindowHost
             if (Token == null) return;
             Owner._renderer.SetRect(Token, rect);
             // Persist the explicit set immediately (the per-mode geometry restore path) — don't wait for a drag.
-            if (Owner._storage != null && Owner._resolution != null)
+            // Skip when the rect already IS the persisted one: per-tick callers (the layout toolbar's re-centre)
+            // otherwise rewrote the whole framework config ~30x/s for nothing (owner report 2026-09-30).
+            if (Owner._storage != null && Owner._resolution != null && !RectClose(rect, LastSavedRect))
             {
                 Owner._storage.Save(Owner._storage.ActiveSlot, Reg.Spec.Id, Owner._resolution(), rect, Visible);
                 LastRect = LastSavedRect = rect;

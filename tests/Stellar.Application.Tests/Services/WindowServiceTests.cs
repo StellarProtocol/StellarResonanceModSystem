@@ -207,6 +207,76 @@ public class WindowServiceTests
         Assert.Equal(0, r.Mounts);
     }
 
+    // Owner report 2026-09-30 (layout edit mode ran at ~2 FPS): the layout toolbar re-centres itself every edit
+    // tick via IWindowControl.SetRect, and SetRect persisted UNCONDITIONALLY — a full framework-config rewrite
+    // (21 KB serialize + SHA-256 + file write, measured ~28 saves/s on the owner's client) for a rect that never
+    // changed. An unchanged SetRect must not persist; a changed one still must (per-mode geometry restore).
+    [Fact]
+    public void SetRect_with_unchanged_rect_does_not_persist_again()
+    {
+        var r = new FakeRenderer();
+        var config = new InMemoryConfig();
+        var storage = new LayoutStorage(config, new NullLog());
+        var svc = new WindowService(r, new NullLog());
+        svc.AttachLayout(storage, () => new Resolution(1920, 1080));
+        var h = svc.Register(Reg("w"));
+        svc.Tick(0.2f);                                           // mount
+        var section = config.Section("ui.layout");
+        var before = section.Saves;
+
+        var rect = new WindowRect(640f, 12f, 1180f, 0f);
+        for (var i = 0; i < 30; i++) { h.SetRect(rect); svc.Tick(0.2f); }   // one second of edit-mode ticks
+        Assert.Equal(before + 1, section.Saves);                  // persisted once, not 30 times
+
+        h.SetRect(new WindowRect(700f, 12f, 1180f, 0f));          // a real move still persists
+        Assert.Equal(before + 2, section.Saves);
+    }
+
+    // Owner report 2026-09-30, measured on the MAIN client: every combat-meter unhide was a 350-385 ms frame
+    // ([Hitch] mount:combatmeter.main=348..385ms, 5/5 toggles) because SetVisible(false) DESTROYED the window and
+    // SetVisible(true) rebuilt its whole uGUI tree (44 meter rows) through IL2CPP. A renderer that can park keeps
+    // the built tree: hide deactivates it, show reactivates it — no destroy, no remount.
+    private sealed class ParkingRenderer : IWindowRenderer, IWindowParking
+    {
+        public int Mounts, Destroys, Parks, Unparks, Applies;
+        public bool IsCanvasAvailable() => true;
+        public object? Mount(WindowRegistration reg) { Mounts++; return 1; }
+        public bool IsAlive(object? token) => token != null;
+        public void ApplyValues(object? token, WindowRegistration reg, bool hide) => Applies++;
+        public void SetRect(object? token, WindowRect rect) { }
+        public WindowRect GetRect(object? token) => default;
+        public bool HasFocusedField(object? token) => false;
+        public void Destroy(object? token) => Destroys++;
+        public void Park(object? token) => Parks++;
+        public void Unpark(object? token) => Unparks++;
+    }
+
+    [Fact]
+    public void Hide_parks_and_show_reactivates_without_remount()
+    {
+        var r = new ParkingRenderer();
+        var svc = new WindowService(r, new NullLog());
+        var h = svc.Register(Reg("w"));
+        svc.Tick(0.2f);                                   // first show → the one and only mount
+        for (var i = 0; i < 3; i++)
+        {
+            h.SetVisible(false); svc.Tick(0.2f); svc.Tick(0.2f);
+            h.SetVisible(true);  svc.Tick(0.2f);
+        }
+        Assert.Equal(1, r.Mounts);                        // never rebuilt
+        Assert.Equal(0, r.Destroys);
+        Assert.Equal(3, r.Parks);                         // parked once per hide (not every hidden tick)
+        Assert.Equal(3, r.Unparks);
+
+        var applies = r.Applies;
+        h.SetVisible(false); svc.Tick(0.2f);
+        h.SetVisible(true);  svc.Tick(0.01f);             // below ApplyInterval: a re-shown window still paints now
+        Assert.True(r.Applies > applies);
+
+        h.Remove(); svc.Tick(0.2f);                       // removal still frees the tree
+        Assert.Equal(1, r.Destroys);
+    }
+
     private sealed class NullLog : IPluginLog
     { public void Info(string m){} public void Warning(string m){} public void Error(string m){} public void Debug(string m){} }
 
@@ -214,6 +284,7 @@ public class WindowServiceTests
     private sealed class InMemoryConfig : IPluginConfig
     {
         private readonly System.Collections.Generic.Dictionary<string, InMemorySection> _sections = new();
+        public InMemorySection Section(string name) => (InMemorySection)GetSection(name);
 #pragma warning disable CS0067
         public event System.Action<string>? SectionChanged;
 #pragma warning restore CS0067
@@ -229,7 +300,8 @@ public class WindowServiceTests
         private readonly System.Collections.Generic.Dictionary<string, object?> _store = new();
         public T? Get<T>(string key, T? defaultValue) => _store.TryGetValue(key, out var v) && v is T t ? t : defaultValue;
         public void Set<T>(string key, T value) => _store[key] = value;
-        public void Save() { }
+        public int Saves;
+        public void Save() => Saves++;
         public void SaveQuiet() { }
         public void RemoveByPrefix(string prefix)
         {

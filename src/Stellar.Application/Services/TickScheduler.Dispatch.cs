@@ -61,8 +61,10 @@ internal sealed partial class TickScheduler
                 var e = _entries[i];
                 expired |= ExpireStaleRamps(e, masterDt);
                 var rate = EffectiveRate(e);
-                if (e.Gate.Crossed(masterDt, rate))
-                    e.RaiseUpdate?.Invoke(e.Gate.LastDt);
+                if (!e.Gate.Crossed(masterDt, rate)) continue;
+                var hitchT = HitchProbe.Begin();
+                e.RaiseUpdate?.Invoke(e.Gate.LastDt);
+                HitchProbe.End(e.Guid, hitchT);   // per-plugin Update cost in a hitch frame (diagnostics only)
             }
         }
         finally

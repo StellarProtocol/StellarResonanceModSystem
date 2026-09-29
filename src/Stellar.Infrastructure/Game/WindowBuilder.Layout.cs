@@ -1,10 +1,12 @@
+using System;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
 
-// Structural layout elements: ConditionalElement (both-subtrees-built SetActive toggle) and ListElement
+// Structural layout elements: ConditionalElement (SetActive toggle; each branch built on first show) and ListElement
 // (variable-length slot pool). Extracted from WindowBuilder.cs for the file-size gate.
 internal sealed partial class WindowBuilder
 {
@@ -40,21 +42,40 @@ internal sealed partial class WindowBuilder
         var thenGo = UGuiPrimitives.NewChild("Then", go.transform);
         UGuiPrimitives.AddLayout(thenGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(thenGo);
         if (cond.Fill && thenGo.GetComponent<VerticalLayoutGroup>() is { } tv) tv.childForceExpandHeight = true;
-        BuildElement(cond.Then, thenGo.transform, token);
+        // Branch CONTENT is built lazily — the first time its branch becomes active (CondBinding.Apply), not at
+        // mount. A never-shown branch costs nothing: the CombatMeter main window eagerly built its list view AND
+        // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
+        // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
+        var surface = _surface;
+        var then = cond.Then;
+        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, surface);
+        Action? buildElse = null;
         GameObject? elseGo = null;
         if (cond.Else != null)
         {
             elseGo = UGuiPrimitives.NewChild("Else", go.transform);
             UGuiPrimitives.AddLayout(elseGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(elseGo);
             if (cond.Fill && elseGo.GetComponent<VerticalLayoutGroup>() is { } ev) ev.childForceExpandHeight = true;
-            BuildElement(cond.Else, elseGo.transform, token);
+            var elseEl = cond.Else; var elseT = elseGo.transform;
+            buildElse = () => BuildDeferred(elseEl, elseT, token, surface);
         }
         // With NO else-branch, toggle the WHOLE Cond container (not just its inner Then). Otherwise the
         // container stays an active 0-height child and the parent column still adds section-spacing around it —
         // 5 collapsed tab-Conditionals = a big empty gap above the active tab's content. Collapsing the
         // container removes it from the layout entirely. (With an else-branch the container must stay active to
         // show one of the two arms, so we keep toggling Then/Else.)
-        token.Conds.Add(new CondBinding { When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo });
+        token.Conds.Add(new CondBinding
+            { When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse });
+    }
+
+    // A deferred branch build runs later, from the window's Apply — restore the per-window surface the shared
+    // builder had when this window was built (it is the only per-build builder state).
+    private void BuildDeferred(HudElement el, Transform parent, WindowToken token, SurfaceStyle surface)
+    {
+        var prev = _surface;
+        _surface = surface;
+        try { BuildElement(el, parent, token); }
+        finally { _surface = prev; }
     }
 
     // Variable-length list bounded by Slots.Count; first VisibleCount() slots shown via SetActive.

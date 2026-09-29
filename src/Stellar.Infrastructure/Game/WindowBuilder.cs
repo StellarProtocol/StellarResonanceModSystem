@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Diagnostics;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
@@ -141,11 +142,13 @@ internal sealed partial class WindowBuilder
         // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
         // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
         token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
+        var hitchT = HitchProbe.Begin();   // [Hitch] build-phase buckets (diagnostics only)
         var (root, content) = BuildChrome(reg, parent, token);
-        token.Root = root.gameObject;
-        token.Rect = root;
+        token.Root = root.gameObject; token.Rect = root;
+        hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
-        token.Apply();   // first paint
+        hitchT = HitchProbe.Lap("build:tree", hitchT);
+        token.Apply(); HitchProbe.End("build:firstApply", hitchT);   // first paint (builds the active Cond branches)
         return token;
     }
 
@@ -232,7 +235,9 @@ internal sealed partial class WindowBuilder
             // uGUI does NOT auto-rebuild a ContentSizeFitter-sized window on a descendant SetActive — so a
             // content-sized window (AutoSizeWidth launcher: Full↔Minimal↔horizontal) would keep its old size and
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
+            var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
             for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
+            for (var i = vlBuilt; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
             for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
@@ -346,7 +351,8 @@ internal sealed partial class WindowBuilder
             case BrandLogoElement bl: BuildBrandLogo(bl, parent, token); break;  // .Tiles.cs
             case CellElement cell:  BuildCell(cell, parent, token); break;        // .Table.cs
             case SelectableElement sel: BuildSelectable(sel, parent, token); break; // .Table.cs
-            case MeterRowElement mr: BuildMeterRow(mr, parent, token); break;      // .MeterRow.cs
+            case MeterRowElement mr:                                               // .MeterRow.cs
+                var mrT = HitchProbe.Begin(); BuildMeterRow(mr, parent, token); HitchProbe.End("build:meterRow", mrT); break;
             case AccentRowElement ar: BuildAccentRow(ar, parent, token); break;    // .MeterRow.cs
             case CooldownTileElement ct: BuildCooldownTile(ct, parent, token); break;  // .CooldownTile.cs
             case DragSlotElement ds: BuildDragSlot(ds, parent, token); break;      // .DragSlot.cs

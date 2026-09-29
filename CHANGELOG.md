@@ -14,6 +14,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.12.0] - 2026-09-30
+_**2.12.0** (minor) — Showing and hiding the Combat Meter no longer freezes the game, the meter opens much faster, and layout edit mode no longer lags. Adds a diagnostics API for plugins (Abstractions 2.12.0); binary-compatible, no plugin rebuild._
+### Fixed
+- Hiding and showing the Combat Meter (or any mod window) no longer freezes the game for a moment. Toggling it quickly is now instant.
+- The Combat Meter appears much faster when it first opens, without the short freeze it used to cause.
+- Layout edit mode no longer makes the game lag while it is open.
+### Developer notes
+- Measured on the owner's client with the new `[Hitch]` recorder: every meter show was a 350-476 ms frame (`mount:combatmeter.main`, 9/9 toggles, no GC) and CooldownBar 57-72 ms. After: the meter's first build is 14.7 ms for its 20 raid rows (29 ms first paint), and hide/show triggers no rebuild.
+- `WindowRenderer` implements `IWindowParking`: `SetVisible(false)` deactivates the built tree instead of destroying it; a re-show reactivates it on top of its stacking tier. `Remove()` still destroys.
+- `ConditionalElement` branch content is built the first time its branch becomes active (the active branch still builds inside the first paint). The CombatMeter main window previously built its list view and both party layouts (49 meter rows) to show one of them.
+- Meter-row debuff cells are created the first time a slot is visible (default 4 of the 12-cell pool; none while the block is hidden), with their click wiring.
+- `IWindowControl.SetRect` skips the persist when the rect equals the saved one: the layout toolbar's per-tick re-centre was rewriting the whole framework config ~28x/s.
+- New `HitchProbe` (Abstractions, diagnostics-gated via `STELLAR_DIAGNOSTICS` or a `HITCH` flag): a rendered frame over 60 ms logs a `[Hitch]` line with the framework tick and its segments, each plugin's Update, window mount/apply/destroy and build phases, font-atlas refreshes, config saves, hook time, and managed + IL2CPP GC counts.
+
 ## [2.11.0] - 2026-09-26
 _**2.11.0** (minor) — Mods can now tell which spec nearby players are playing, the moment they come near you, and know the buffs players already have when they arrive. Adds API for plugins (Abstractions 2.11.0)._
 ### Added
