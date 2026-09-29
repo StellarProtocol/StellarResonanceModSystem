@@ -53,6 +53,14 @@ public static class HitchProbe
         b.Calls++;
     }
 
+    /// <summary><see cref="End"/> then return a fresh start stamp — for back-to-back phases.</summary>
+    public static long Lap(string bucket, long startTicks)
+    {
+        if (!_enabled) return 0L;
+        End(bucket, startTicks);
+        return Stopwatch.GetTimestamp();
+    }
+
     private static readonly Dictionary<string, long> _segStart = new();
 
     /// <summary>Open a named segment (main thread); pairs with <see cref="EndSeg"/>. Fed by

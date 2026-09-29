@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -161,6 +161,22 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     }
 
     public bool IsAlive(object? token) => token is WindowToken t && t.Root != null;
+
+    // IWindowParking: a SetVisible(false) window keeps its built tree, deactivated (the ticker skips every
+    // !activeInHierarchy drag/hover/dismiss/field entry, exactly as for a ShouldRender-hidden window). The next
+    // ApplyValues re-activates it (and re-arms its first layout via ResetLayout).
+    public void Park(object? token)
+    {
+        if (token is WindowToken t && t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+    }
+
+    // A fresh mount used to land on top of its stacking tier (new ZSeq); a re-shown parked window does the same.
+    public void Unpark(object? token)
+    {
+        if (token is not WindowToken t) return;
+        t.ZSeq = _zseq++;
+        ReorderWindows();
+    }
 
     public void BringToFront(object? token)
     {

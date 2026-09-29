@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Diagnostics;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
@@ -141,11 +142,15 @@ internal sealed partial class WindowBuilder
         // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
         // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
         token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
+        var hitchT = HitchProbe.Begin();   // [Hitch] build-phase buckets (diagnostics only)
         var (root, content) = BuildChrome(reg, parent, token);
         token.Root = root.gameObject;
         token.Rect = root;
+        hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
+        hitchT = HitchProbe.Lap("build:tree", hitchT);
         token.Apply();   // first paint
+        HitchProbe.End("build:firstApply", hitchT);
         return token;
     }
 
@@ -346,7 +351,8 @@ internal sealed partial class WindowBuilder
             case BrandLogoElement bl: BuildBrandLogo(bl, parent, token); break;  // .Tiles.cs
             case CellElement cell:  BuildCell(cell, parent, token); break;        // .Table.cs
             case SelectableElement sel: BuildSelectable(sel, parent, token); break; // .Table.cs
-            case MeterRowElement mr: BuildMeterRow(mr, parent, token); break;      // .MeterRow.cs
+            case MeterRowElement mr:                                               // .MeterRow.cs
+                var mrT = HitchProbe.Begin(); BuildMeterRow(mr, parent, token); HitchProbe.End("build:meterRow", mrT); break;
             case AccentRowElement ar: BuildAccentRow(ar, parent, token); break;    // .MeterRow.cs
             case CooldownTileElement ct: BuildCooldownTile(ct, parent, token); break;  // .CooldownTile.cs
             case DragSlotElement ds: BuildDragSlot(ds, parent, token); break;      // .DragSlot.cs

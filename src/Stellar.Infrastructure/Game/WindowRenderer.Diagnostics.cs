@@ -18,6 +18,7 @@ internal sealed partial class WindowRenderer
     private void DumpRects(WindowBuilder.WindowToken token, string id)
     {
         if (!StellarDiagnostics.IsEnabled || token.Root == null) return;
+        var hitchT = HitchProbe.Begin();   // kept out of the build buckets: this dump is diagnostics-only cost
         try
         {
             // uGUI lays out at end-of-frame; force it now so the rects we read are the real laid-out values.
@@ -30,6 +31,7 @@ internal sealed partial class WindowRenderer
             _log.Info(sb.ToString());
         }
         catch (System.Exception ex) { _log.Warning($"[Window/Diag] rect dump '{id}' threw: {ex.Message}"); }
+        finally { HitchProbe.End("diag:rectDump", hitchT); }
     }
 
     // Recursive width dump. Caps depth + node count so a large panel can't flood the log.
