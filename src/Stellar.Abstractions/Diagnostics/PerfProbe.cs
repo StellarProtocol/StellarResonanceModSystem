@@ -134,6 +134,7 @@ public static class PerfProbe
     /// <summary>Start timing a named segment within the Update path (identifies per-plugin cost).</summary>
     public static void BeginSeg(string name)
     {
+        HitchProbe.BeginSeg(name);
         if (!_enabled) return;
         if (!_segSw.TryGetValue(name, out var sw)) _segSw[name] = sw = new Stopwatch();
         sw.Restart();
@@ -142,6 +143,7 @@ public static class PerfProbe
     /// <summary>Stop timing the named segment; accumulates into per-frame totals reported in the log summary.</summary>
     public static void EndSeg(string name)
     {
+        HitchProbe.EndSeg(name);
         if (!_enabled) return;
         if (!_segSw.TryGetValue(name, out var sw)) return;
         sw.Stop();
@@ -185,7 +187,7 @@ public static class PerfProbe
     private static long _intervalHookRewiredCalls;
 
     /// <summary>Returns a start timestamp (ticks) for a hook, or 0 when disabled.</summary>
-    public static long HookBegin() => _enabled ? Stopwatch.GetTimestamp() : 0L;
+    public static long HookBegin() => _enabled || HitchProbe.IsEnabled ? Stopwatch.GetTimestamp() : 0L;
 
     /// <summary>Per-thread allocated-bytes baseline for a hook (call on the hook's thread).</summary>
     public static long HookBeginAlloc() => _enabled ? System.GC.GetAllocatedBytesForCurrentThread() : 0L;
@@ -193,6 +195,7 @@ public static class PerfProbe
     /// <summary>Accumulate one combat-hook invocation's wall-time + this-thread allocation.</summary>
     public static void HookEndCombat(long startTicks, long startAlloc)
     {
+        HitchProbe.AddHook(0, startTicks);
         if (!_enabled) return;
         System.Threading.Interlocked.Add(ref _hookCombatTicks, Stopwatch.GetTimestamp() - startTicks);
         System.Threading.Interlocked.Add(ref _hookCombatAlloc, System.GC.GetAllocatedBytesForCurrentThread() - startAlloc);
@@ -202,6 +205,7 @@ public static class PerfProbe
     /// <summary>Accumulate one wire-tap (TCP/UDP recv) invocation's time + this-thread allocation.</summary>
     public static void HookEndWire(long startTicks, long startAlloc)
     {
+        HitchProbe.AddHook(1, startTicks);
         if (!_enabled) return;
         System.Threading.Interlocked.Add(ref _hookWireTicks, Stopwatch.GetTimestamp() - startTicks);
         System.Threading.Interlocked.Add(ref _hookWireAlloc, System.GC.GetAllocatedBytesForCurrentThread() - startAlloc);

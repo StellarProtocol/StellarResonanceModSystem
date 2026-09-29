@@ -116,7 +116,13 @@ internal sealed partial class FileConfigStore : IConfigStore, IDisposable
     public void Save(string pluginGuid, JsonNode root)
     {
         if (!TryResolvePath(pluginGuid, out var path)) return;
+        var hitchT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
+        try { SaveCore(pluginGuid, path, root); }
+        finally { Stellar.Abstractions.Diagnostics.HitchProbe.End("cfg-save", hitchT); }
+    }
 
+    private void SaveCore(string pluginGuid, string path, JsonNode root)
+    {
         var serialized = root.ToJsonString(SaveJsonOptions);
         // Hash BEFORE the write so a watcher event that races File.WriteAllText is still recognised.
         _selfWrites.RecordPending(pluginGuid, ComputeHash(serialized), DateTime.UtcNow);

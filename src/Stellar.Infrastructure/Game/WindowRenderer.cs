@@ -60,7 +60,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private void OnFontTextureRebuilt(Font f)
     {
         if (_assets.MenuFont == null || f != _assets.MenuFont) return;
+        var hitchT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // count + cost of atlas rebuilds per hitch frame
         for (var i = 0; i < _tokens.Count; i++) _tokens[i].RefreshFontTexture();
+        Stellar.Abstractions.Diagnostics.HitchProbe.End("font-rebuild", hitchT);
     }
 
     public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IThemeHudColors hudColors, IChromeStyle chrome)
@@ -321,6 +323,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             _ticker = go.AddComponent<WindowInteractionTicker>();
             // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
             _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
+            _ticker.HitchLog = _log.Info;   // per-render-frame [Hitch] attribution sink (diagnostics only)
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
             _canvasComp = canvas;

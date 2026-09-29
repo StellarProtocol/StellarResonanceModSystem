@@ -144,7 +144,12 @@ internal sealed partial class WindowService : IWindowHost
     }
 
     private object? SafeMount(Entry e)
-    { try { return _renderer.Mount(e.Reg); } catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; } }
+    {
+        var hitchT = HitchProbe.Begin();
+        try { return _renderer.Mount(e.Reg); }
+        catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] mount: {ex.Message}"); return null; }
+        finally { if (hitchT != 0L) HitchProbe.End(e.HitchKey(0), hitchT); }
+    }
     private void SafeApply(Entry e)
     {
         // Visibility gate: the plugin-owned ShouldRender() predicate is the single source of truth
@@ -157,11 +162,19 @@ internal sealed partial class WindowService : IWindowHost
         try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
         catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
+        var hitchT = HitchProbe.Begin();
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }
-        finally { PerfProbe.EndWindow(e.Reg.Spec.Id); }
+        finally { PerfProbe.EndWindow(e.Reg.Spec.Id); if (hitchT != 0L) HitchProbe.End(e.HitchKey(1), hitchT); }
     }
-    private void DestroyIfMounted(Entry e) { if (e.Token is null) return; _renderer.Destroy(e.Token); e.Token = null; }
+    private void DestroyIfMounted(Entry e)
+    {
+        if (e.Token is null) return;
+        var hitchT = HitchProbe.Begin();
+        _renderer.Destroy(e.Token);
+        e.Token = null;
+        if (hitchT != 0L) HitchProbe.End(e.HitchKey(2), hitchT);
+    }
 
     private void PruneRemoved()
     {
@@ -184,6 +197,10 @@ internal sealed partial class WindowService : IWindowHost
         public bool ApplyPending; public bool PendingApplyVisibility = true;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
+        // [Hitch] bucket names (mount/apply/destroy), built once per window on first use — diagnostics only.
+        private string[]? _hitchKeys;
+        public string HitchKey(int kind)
+            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id })[kind];
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
         public void SetVisible(bool visible) => Visible = visible;
@@ -203,7 +220,9 @@ internal sealed partial class WindowService : IWindowHost
             if (Token == null) return;
             Owner._renderer.SetRect(Token, rect);
             // Persist the explicit set immediately (the per-mode geometry restore path) — don't wait for a drag.
-            if (Owner._storage != null && Owner._resolution != null)
+            // Skip when the rect already IS the persisted one: per-tick callers (the layout toolbar's re-centre)
+            // otherwise rewrote the whole framework config ~30x/s for nothing (owner report 2026-09-30).
+            if (Owner._storage != null && Owner._resolution != null && !RectClose(rect, LastSavedRect))
             {
                 Owner._storage.Save(Owner._storage.ActiveSlot, Reg.Spec.Id, Owner._resolution(), rect, Visible);
                 LastRect = LastSavedRect = rect;

@@ -150,6 +150,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
 
     private void Update()
     {
+        TickHitch();   // .Diagnostics.cs — reports the frame that just ended if it was a hitch
         SyncUiScale();
         SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)

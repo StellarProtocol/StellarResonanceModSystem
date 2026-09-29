@@ -207,6 +207,31 @@ public class WindowServiceTests
         Assert.Equal(0, r.Mounts);
     }
 
+    // Owner report 2026-09-30 (layout edit mode ran at ~2 FPS): the layout toolbar re-centres itself every edit
+    // tick via IWindowControl.SetRect, and SetRect persisted UNCONDITIONALLY — a full framework-config rewrite
+    // (21 KB serialize + SHA-256 + file write, measured ~28 saves/s on the owner's client) for a rect that never
+    // changed. An unchanged SetRect must not persist; a changed one still must (per-mode geometry restore).
+    [Fact]
+    public void SetRect_with_unchanged_rect_does_not_persist_again()
+    {
+        var r = new FakeRenderer();
+        var config = new InMemoryConfig();
+        var storage = new LayoutStorage(config, new NullLog());
+        var svc = new WindowService(r, new NullLog());
+        svc.AttachLayout(storage, () => new Resolution(1920, 1080));
+        var h = svc.Register(Reg("w"));
+        svc.Tick(0.2f);                                           // mount
+        var section = config.Section("ui.layout");
+        var before = section.Saves;
+
+        var rect = new WindowRect(640f, 12f, 1180f, 0f);
+        for (var i = 0; i < 30; i++) { h.SetRect(rect); svc.Tick(0.2f); }   // one second of edit-mode ticks
+        Assert.Equal(before + 1, section.Saves);                  // persisted once, not 30 times
+
+        h.SetRect(new WindowRect(700f, 12f, 1180f, 0f));          // a real move still persists
+        Assert.Equal(before + 2, section.Saves);
+    }
+
     private sealed class NullLog : IPluginLog
     { public void Info(string m){} public void Warning(string m){} public void Error(string m){} public void Debug(string m){} }
 
@@ -214,6 +239,7 @@ public class WindowServiceTests
     private sealed class InMemoryConfig : IPluginConfig
     {
         private readonly System.Collections.Generic.Dictionary<string, InMemorySection> _sections = new();
+        public InMemorySection Section(string name) => (InMemorySection)GetSection(name);
 #pragma warning disable CS0067
         public event System.Action<string>? SectionChanged;
 #pragma warning restore CS0067
@@ -229,7 +255,8 @@ public class WindowServiceTests
         private readonly System.Collections.Generic.Dictionary<string, object?> _store = new();
         public T? Get<T>(string key, T? defaultValue) => _store.TryGetValue(key, out var v) && v is T t ? t : defaultValue;
         public void Set<T>(string key, T value) => _store[key] = value;
-        public void Save() { }
+        public int Saves;
+        public void Save() => Saves++;
         public void SaveQuiet() { }
         public void RemoveByPrefix(string prefix)
         {
