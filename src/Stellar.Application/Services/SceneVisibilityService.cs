@@ -15,6 +15,7 @@ internal sealed class SceneVisibilityService : ISceneVisibility
     public SceneVisibilityService(IVisibilityBackend backend) => _backend = backend;
 
     public VisibilityLayers Hidden { get; private set; }
+    public VisibilityLayers Available => _backend.Available;
     public event Action<VisibilityLayers>? Changed;
 
     public IDisposable Hide(VisibilityLayers layers) => Hide(layers, owner: null);

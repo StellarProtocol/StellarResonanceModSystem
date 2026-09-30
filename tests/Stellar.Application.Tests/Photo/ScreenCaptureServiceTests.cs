@@ -55,6 +55,7 @@ public sealed class ScreenCaptureServiceTests : IDisposable
         public int Live;
         public IDisposable Hide(VisibilityLayers layers) { Live++; return new D(() => Live--); }
         public VisibilityLayers Hidden => Live > 0 ? VisibilityLayers.GameHud : VisibilityLayers.None;
+        public VisibilityLayers Available => VisibilityLayers.GameHud;
         public event Action<VisibilityLayers>? Changed { add { } remove { } }
         private sealed class D : IDisposable { private Action? _a; public D(Action a) => _a = a; public void Dispose() { _a?.Invoke(); _a = null; } }
     }
@@ -69,6 +70,7 @@ public sealed class ScreenCaptureServiceTests : IDisposable
             return new NullToken();
         }
         public VisibilityLayers Hidden => VisibilityLayers.None;
+        public VisibilityLayers Available => VisibilityLayers.GameHud;
         public event Action<VisibilityLayers>? Changed { add { } remove { } }
         private sealed class NullToken : IDisposable { public void Dispose() { } }
     }

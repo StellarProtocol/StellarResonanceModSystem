@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 namespace Stellar.Infrastructure.Game;
 
@@ -47,6 +48,49 @@ internal sealed partial class GameVisibilityBackend
                 hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { _entityShow.Reset(); TargetRebuilt?.Invoke(); });
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
+    }
+
+    /// <summary>
+    /// Probe-only: resolves the same reflection target each setter below caches, but never invokes it and never
+    /// touches game state. Overlay is the framework's own canvas set (no external game reflection involved), so it
+    /// is always reported available; a hot-update type not yet loaded is optimistic true, and a loaded type missing
+    /// the expected member is a definitive false.
+    /// </summary>
+    public VisibilityLayers Available =>
+        (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
+        | VisibilityLayers.StellarOverlay
+        | (ProbeNameplates() ? VisibilityLayers.Nameplates : VisibilityLayers.None)
+        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty : VisibilityLayers.None);
+
+    private bool ProbeGameHud()
+    {
+        if (_setUiInvisible is not null) return true;
+        var t = _types.FindType(ZUiRootType);
+        if (t is null) return true; // hot-update assemblies not loaded yet — optimistic
+        _setUiInvisible = t.GetMethod("SetUIInvisible", AnyInstance, null, new[] { typeof(bool) }, null);
+        return _setUiInvisible is not null;
+    }
+
+    private bool ProbeNameplates()
+    {
+        if (_setHudSwitch is not null) return true;
+        var t = _types.FindType(HudMgrType);
+        if (t is null) return true;
+        var m = StellarInterop.FindMethod(t, "SetHudSwitch", 2);
+        var sourceType = m?.GetParameters()[1].ParameterType;
+        if (m is null || sourceType is not { IsEnum: true }) return false;
+        _hudSourceStellar = Enum.ToObject(sourceType, PrivateHudSource);
+        _setHudSwitch = m;
+        return true;
+    }
+
+    private bool ProbeOtherPlayers()
+    {
+        if (_setEntityShow is not null) return true;
+        var t = _types.FindType(CameraFrameCtrlType);
+        if (t is null) return true;
+        _setEntityShow = t.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
+        return _setEntityShow is not null;
     }
 
     private void OnGameSetEntityShow(object? instance, object?[] args)

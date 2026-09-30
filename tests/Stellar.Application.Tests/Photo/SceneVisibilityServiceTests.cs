@@ -13,6 +13,7 @@ public sealed class SceneVisibilityServiceTests
     private sealed class FakeBackend : IVisibilityBackend
     {
         public VisibilityLayers Unsupported;
+        public VisibilityLayers Available = (VisibilityLayers)31; // every defined bit, by default
         public readonly List<VisibilityLayers> Calls = new();
         public readonly List<VisibilityLayers> Reasserts = new();
         public VisibilityLayers Apply(VisibilityLayers requested)
@@ -25,6 +26,7 @@ public sealed class SceneVisibilityServiceTests
             Reasserts.Add(requested);
             return requested & ~Unsupported;
         }
+        VisibilityLayers IVisibilityBackend.Available => Available;
     }
 
     [Fact]
@@ -178,5 +180,45 @@ public sealed class SceneVisibilityServiceTests
         s.Reassert();
         Assert.Equal(VisibilityLayers.GameHud, s.Hidden);
         Assert.Equal(new[] { VisibilityLayers.GameHud }, seen);
+    }
+
+    // Task: ISceneVisibility.Available — sourced from the backend probe, forwarded verbatim (no recomputation).
+    [Fact]
+    public void Available_forwards_the_backends_probe()
+    {
+        var b = new FakeBackend { Available = VisibilityLayers.GameHud | VisibilityLayers.Nameplates };
+        var s = new SceneVisibilityService(b);
+        Assert.Equal(VisibilityLayers.GameHud | VisibilityLayers.Nameplates, s.Available);
+    }
+
+    [Fact]
+    public void Available_reflects_the_backend_live_not_a_snapshot()
+    {
+        var b = new FakeBackend { Available = VisibilityLayers.None };
+        var s = new SceneVisibilityService(b);
+        Assert.Equal(VisibilityLayers.None, s.Available);
+        b.Available = VisibilityLayers.OtherPlayers; // e.g. the reflection target resolved after construction
+        Assert.Equal(VisibilityLayers.OtherPlayers, s.Available);
+    }
+
+    [Fact]
+    public void Available_is_independent_of_Hidden()
+    {
+        // A layer can be available (drivable) without being held hidden by anyone right now.
+        var b = new FakeBackend { Available = VisibilityLayers.GameHud };
+        var s = new SceneVisibilityService(b);
+        Assert.Equal(VisibilityLayers.None, s.Hidden);
+        Assert.Equal(VisibilityLayers.GameHud, s.Available);
+    }
+
+    [Fact]
+    public void Plugin_facade_forwards_Available()
+    {
+        var b = new FakeBackend { Available = VisibilityLayers.Nameplates };
+        var s = new SceneVisibilityService(b);
+        var p = new PluginSceneVisibility(s, owner: "plugin.a");
+        Assert.Equal(VisibilityLayers.Nameplates, p.Available);
+        b.Available = VisibilityLayers.None;
+        Assert.Equal(VisibilityLayers.None, p.Available);
     }
 }

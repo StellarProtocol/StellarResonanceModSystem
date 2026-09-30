@@ -24,6 +24,7 @@ internal sealed class PluginSceneVisibility : ISceneVisibility
 
     public IDisposable Hide(VisibilityLayers layers) => _inner.Hide(layers, _owner);
     public VisibilityLayers Hidden => _inner.Hidden;
+    public VisibilityLayers Available => _inner.Available;
     public event Action<VisibilityLayers>? Changed
     {
         add
