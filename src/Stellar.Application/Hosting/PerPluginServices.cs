@@ -31,6 +31,10 @@ internal sealed class PerPluginServices : IPluginServices
     // Per-plugin scene-visibility façade (tokens + Changed handlers released on unload). Null in a bare test
     // host — falls back to the shared service.
     private readonly ISceneVisibility? _sceneVisibility;
+    // Per-plugin look / photo-mode façades (live handles disposed + handlers dropped on unload). Null in a bare
+    // test host — fall back to the shared services.
+    private readonly IRenderLook? _renderLook;
+    private readonly IPhotoModeState? _photoMode;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -42,6 +46,8 @@ internal sealed class PerPluginServices : IPluginServices
         _harmony = scope.Harmony;
         _localization = scope.Localization;
         _sceneVisibility = scope.SceneVisibility;
+        _renderLook = scope.RenderLook;
+        _photoMode = scope.PhotoMode;
     }
 
     public IPluginConfig Config { get; }
@@ -97,8 +103,8 @@ internal sealed class PerPluginServices : IPluginServices
     public IBossVitals BossVitals => _shared.BossVitals;
     public IScreenCapture ScreenCapture => _shared.ScreenCapture;
     public ISceneVisibility SceneVisibility => _sceneVisibility ?? _shared.SceneVisibility;
-    public IRenderLook RenderLook => _shared.RenderLook;
-    public IPhotoModeState PhotoMode => _shared.PhotoMode;
+    public IRenderLook RenderLook => _renderLook ?? _shared.RenderLook;
+    public IPhotoModeState PhotoMode => _photoMode ?? _shared.PhotoMode;
 }
 
 /// <summary>
@@ -112,4 +118,6 @@ internal readonly record struct PerPluginScope(
     IHotkeys? Hotkeys,
     IHarmonyHost? Harmony,
     ILocalization? Localization,
-    ISceneVisibility? SceneVisibility = null);
+    ISceneVisibility? SceneVisibility = null,
+    IRenderLook? RenderLook = null,
+    IPhotoModeState? PhotoMode = null);

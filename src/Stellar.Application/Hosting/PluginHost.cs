@@ -99,7 +99,7 @@ internal sealed class PluginHost : IDisposable
         // Shared mutable holder: both the factory lambda (writer) and the onDispose
         // lambda (reader) capture the same instance so each soft-cycle enable
         // updates the references that onDispose will release (scheduler unregister,
-        // scene-visibility tokens + handlers, unpatch every Harmony instance the plugin created).
+        // scene-visibility tokens + handlers, live look handles + photo-mode handlers, unpatch every Harmony instance the plugin created).
         var lifetime = new PluginLifetime();
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
@@ -151,9 +151,13 @@ internal sealed class PluginHost : IDisposable
         lifetime.Visibility = sharedServices.SceneVisibility is SceneVisibilityService svc
             ? new PluginSceneVisibility(svc, owner: new object())
             : null;
+        // Look handles disposed + photo-mode handlers dropped on unload (spec § 6 framework backstop).
+        lifetime.Look = sharedServices.RenderLook is { } look ? new PluginRenderLook(look) : null;
+        lifetime.PhotoMode = sharedServices.PhotoMode is { } photo ? new PluginPhotoModeState(photo) : null;
         var perPluginServices = new PerPluginServices(sharedServices,
             new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
-                               bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility));
+                               bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
+                               lifetime.Look, lifetime.PhotoMode));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -171,11 +175,15 @@ internal sealed class PluginHost : IDisposable
         public PerPluginFramework? Framework;
         public IHarmonyHost? Harmony;
         public PluginSceneVisibility? Visibility;
+        public PluginRenderLook? Look;
+        public PluginPhotoModeState? PhotoMode;
 
         public void Release()
         {
             Framework?.Unregister();
             Visibility?.ReleaseAll();
+            Look?.ReleaseAll();
+            PhotoMode?.ReleaseAll();
             (Harmony as IDisposable)?.Dispose();
         }
     }
