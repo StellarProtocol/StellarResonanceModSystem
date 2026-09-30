@@ -84,4 +84,17 @@ public sealed class EntityShowPlanTests
         p.Apply(true, false, Write);
         Assert.Equal(new[] { (11, false), (3, false) }, _calls);
     }
+
+    // Fix round 2 (minor 3): CameraFrameCtrl re-init may reset the game's flags; the plan forgets its mirror and the
+    // next apply re-writes the held state instead of trusting a stale "already hidden".
+    [Fact]
+    public void Reset_forgets_the_mirror_so_the_hold_is_rewritten()
+    {
+        var p = new EntityShowPlan();
+        p.Apply(true, false, Write);
+        p.Reset();
+        _calls.Clear();
+        p.Apply(true, false, Write);
+        Assert.Equal(new[] { (11, false), (3, false) }, _calls);
+    }
 }

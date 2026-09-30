@@ -85,6 +85,8 @@ public sealed class RenderLookServiceTests
         Assert.Equal(applies, b.Applied.Count);     // no full re-apply from the focus path
     }
 
+    // Fix round 2 (minor 1): an Update while tracking keeps the TRACKED distance (4 m), not the settings' default 3 m,
+    // even when the measurement is momentarily unavailable.
     [Fact]
     public void A_later_update_keeps_the_tracked_focus_distance()
     {
@@ -95,6 +97,18 @@ public sealed class RenderLookServiceTests
         b.Focus = null;                              // measurement lost this frame
         h.Update(new LookSettings { Dof = new DofLook { FocusOnLocalPlayer = true }, Color = new ColorLook() });
         Assert.NotNull(b.Applied[^1]!.Color);
+        Assert.Equal(4f, b.Applied[^1]!.Dof!.FocusDistance);
+    }
+
+    [Fact]
+    public void An_update_without_tracking_uses_its_own_focus_distance()
+    {
+        var b = new FakeBackend { Focus = 4f };
+        var s = new RenderLookService(b, _ => { });
+        var h = s.Apply(new LookSettings { Dof = new DofLook { FocusOnLocalPlayer = true } });
+        s.Tick();
+        h.Update(new LookSettings { Dof = new DofLook { FocusDistance = 7f } });
+        Assert.Equal(7f, b.Applied[^1]!.Dof!.FocusDistance);
     }
 
     [Fact]

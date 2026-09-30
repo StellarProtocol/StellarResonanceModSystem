@@ -11,6 +11,7 @@ internal sealed class RenderLookService : IRenderLook
     private readonly Action<string> _warn;
     private Handle? _active;
     private LookSettings? _current;
+    private float? _trackedFocus;   // last measured camera→player distance while a look tracks the player
 
     public RenderLookService(ILookBackend backend, Action<string> warn)
     {
@@ -37,6 +38,7 @@ internal sealed class RenderLookService : IRenderLook
         if (_current?.Dof is not { FocusOnLocalPlayer: true } dof) return;
         if (_backend.MeasureFocusDistance() is not float d) return;
         if (Math.Abs(d - dof.FocusDistance) < FocusEpsilon) return;
+        _trackedFocus = d;
         _current = _current with { Dof = dof with { FocusDistance = d } };
         _backend.UpdateFocus(d);
     }
@@ -59,6 +61,8 @@ internal sealed class RenderLookService : IRenderLook
 
     private void Push(LookSettings s)
     {
+        // An update while tracking keeps the tracked distance (no one-frame jump to the settings' default).
+        if (s.Dof is { FocusOnLocalPlayer: true } d && _trackedFocus is float f) s = s with { Dof = d with { FocusDistance = f } };
         _current = Effective(s, _backend.Capabilities.Supported);
         _backend.Apply(_current);
     }
@@ -68,6 +72,7 @@ internal sealed class RenderLookService : IRenderLook
         if (!ReferenceEquals(h, _active)) return;
         _active = null;
         _current = null;
+        _trackedFocus = null;
         _backend.Apply(null);
     }
 

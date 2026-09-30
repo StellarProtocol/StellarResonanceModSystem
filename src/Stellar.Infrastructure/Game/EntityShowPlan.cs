@@ -25,6 +25,16 @@ internal sealed class EntityShowPlan
         _current[type] = show;
     }
 
+    /// <summary>
+    /// Forgets the mirror (the game re-initialised CameraFrameCtrl and may have reset its flags to the defaults), so
+    /// the next <see cref="Apply"/> re-writes the held state instead of trusting a stale "already hidden".
+    /// </summary>
+    public void Reset()
+    {
+        _game.Clear();
+        _current.Clear();
+    }
+
     /// <summary>True when <see cref="Apply"/> would write anything.</summary>
     public bool NeedsWrite(bool hideOthers, bool keepParty) =>
         Current(OtherPlayer) != Want(OtherPlayer, hideOthers, keepParty) || Current(Team) != Want(Team, hideOthers, keepParty);

@@ -71,6 +71,7 @@ internal sealed partial class LayoutEditorOverlay
         _theme = theme;
         _log = log;
         _clientState = clientState;
+        _chrome.Warn = log.Warning;
     }
 
     /// <summary>True while layout edit-mode is active — its chrome draws through OnGUI,

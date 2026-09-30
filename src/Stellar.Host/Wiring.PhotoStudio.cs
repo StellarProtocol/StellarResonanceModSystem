@@ -19,6 +19,7 @@ public sealed partial class BootstrapPlugin
     private PandaPhotoModeProbe? _photoModeProbe;
     private GameVisibilityBackend? _visibilityBackend;
     private ZRenderLookBackend? _lookBackend;
+    private UnityFrameGrabber? _frameGrabber;   // its late resumes are drained from RunGlobalRateWork (main thread, un-gated)
     private bool _photoReassertPending;   // set by game signals, drained on the next framework tick
     // Set in BuildInfraServices; read lazily by the focus meter (constructed later than the photo services).
     private EntityTransformsService? _entityTransforms;
@@ -34,7 +35,8 @@ public sealed partial class BootstrapPlugin
         _sceneVisibility = new SceneVisibilityService(_visibilityBackend);
         _lookBackend = new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log);
         _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));
-        _screenCapture = new ScreenCaptureService(new UnityFrameGrabber(log), _sceneVisibility, new CaptureFileSink(),
+        _frameGrabber = new UnityFrameGrabber(log);
+        _screenCapture = new ScreenCaptureService(_frameGrabber, _sceneVisibility, new CaptureFileSink(),
             m => log.Warning("[PhotoStudio] capture: " + m));
         _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, _clientState!, log);
         _photoMode = new PhotoModeService(_photoModeProbe);
@@ -45,7 +47,7 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>
     /// Our hides share switches with the game's own camera mode / cutscenes, and their targets can be rebuilt.
-    /// Game signals (photo-mode exit, cutscene end, ZUiRoot.Init) re-assert on the NEXT framework tick so the game's
+    /// Game signals (photo-mode exit, cutscene end, ZUiRoot/HudMgr/CameraFrameCtrl init, HudMgr scene entry) re-assert on the NEXT framework tick so the game's
     /// own restore path finishes first; our own canvases re-assert immediately (no one-tick flash). Event-driven only.
     /// </summary>
     private void WirePhotoReassert()

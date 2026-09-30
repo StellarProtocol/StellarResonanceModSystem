@@ -57,6 +57,9 @@ internal sealed class LayoutEditChrome
     /// <summary>Raised (main thread) when the edit-chrome canvas is created (layout edit mode entered).</summary>
     public event System.Action? CanvasCreated;
 
+    /// <summary>Optional warning sink (the chrome has no logger of its own).</summary>
+    public System.Action<string>? Warn { get; set; }
+
     /// <summary>Optional label font (the menu OS font); null falls back to the builtin.</summary>
     public void SetFont(Font? font) => _font = font;
 
@@ -72,7 +75,8 @@ internal sealed class LayoutEditChrome
         EnsureSprites();
         _canvas = go;
         _root = go.transform;
-        CanvasCreated?.Invoke();
+        try { CanvasCreated?.Invoke(); }
+        catch (System.Exception ex) { Warn?.Invoke($"[Layout] CanvasCreated handler threw: {ex.Message}"); }
         return true;
     }
 

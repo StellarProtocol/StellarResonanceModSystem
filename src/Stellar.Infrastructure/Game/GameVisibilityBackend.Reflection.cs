@@ -20,7 +20,8 @@ internal sealed partial class GameVisibilityBackend
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
     private bool _selfEntityShowWrite;     // true while WE call SetEntityShow, so the observer ignores it
 
-    /// <summary>Raised (main thread) after the game (re)initialised a hide target — <c>ZUiRoot.Init</c>.</summary>
+    /// <summary>Raised (main thread) after the game (re)initialised a hide target — <c>ZUiRoot.Init</c>,
+    /// <c>HudMgr.Init</c> / <c>HudMgr.OnEnterScene</c>, <c>CameraFrameCtrl.Init</c>.</summary>
     public event Action? TargetRebuilt;
 
     /// <summary>
@@ -35,6 +36,15 @@ internal sealed partial class GameVisibilityBackend
             if (_types.FindType(CameraFrameCtrlType) is { } cf) hooker.PostfixAllOverloads(cf, "SetEntityShow", OnGameSetEntityShow);
             else WarnOnce("hook:SetEntityShow", $"Hide OtherPlayers: {CameraFrameCtrlType} not found; game camera-mode writes are not tracked.");
             if (_types.FindType(ZUiRootType) is { } ui) hooker.PostfixAllOverloads(ui, "Init", (_, _) => TargetRebuilt?.Invoke());
+            // HudMgr owns hudDisabledFlag_ (our nameplate bit): a re-init or scene entry may reset it.
+            if (_types.FindType(HudMgrType) is { } hud)
+            {
+                hooker.PostfixAllOverloads(hud, "Init", (_, _) => TargetRebuilt?.Invoke());
+                hooker.PostfixAllOverloads(hud, "OnEnterScene", (_, _) => TargetRebuilt?.Invoke());
+            }
+            // A CameraFrameCtrl re-init may reset its entity-show flags: forget the mirror, then re-assert.
+            if (_types.FindType(CameraFrameCtrlType) is { } cfi)
+                hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { _entityShow.Reset(); TargetRebuilt?.Invoke(); });
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
     }

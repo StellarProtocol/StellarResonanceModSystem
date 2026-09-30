@@ -20,22 +20,20 @@ namespace Stellar.Infrastructure.Rendering;
 ///
 /// <para>Threading: <see cref="GrabAsync"/> is called on the main thread; <see cref="ResumeOnMainThreadAsync"/> is
 /// usually called from a thread-pool thread (after the off-thread encode/write). Unity APIs (StartCoroutine, the
-/// host GameObject) are only ever touched on the main thread: after a grab its coroutine keeps PUMPING for
-/// <see cref="PumpIdleSeconds"/>, draining resume requests queued from other threads. An off-thread resume with no
-/// pump alive fails fast rather than touching Unity. Every returned task always completes (faulted with
-/// <see cref="FrameGrabException"/> when the host is gone).</para>
+/// host GameObject) are only ever touched on the main thread. Each successful grab expects exactly one resume, and its
+/// coroutine keeps PUMPING (draining <see cref="ResumeQueue"/>) only until that resume is served — no idle per-frame
+/// work. A resume that arrives with no pump live is completed by <see cref="DrainQueuedResumes"/>, which the host calls
+/// from its main-thread tick; a request is never completed on the requesting thread. Every returned task always
+/// completes (faulted with <see cref="FrameGrabException"/> when the host is gone).</para>
 /// </summary>
 internal sealed partial class UnityFrameGrabber : IFrameGrabber
 {
-    private const float PumpIdleSeconds = 60f;   // covers a 4× PNG encode + write (measured ~2 s) with a wide margin
-
     private readonly IPluginLog _log;
     private readonly int _mainThreadId;
     private readonly object _gate = new();
-    private readonly List<Action<Exception>> _pending = new();                 // guarded by _gate
-    private readonly List<TaskCompletionSource<bool>> _resumes = new();       // guarded by _gate
-    private int _pumps;                                                        // guarded by _gate
-    private StellarCaptureHost? _host;                                         // main thread only
+    private readonly List<Action<Exception>> _pending = new();   // guarded by _gate
+    private readonly ResumeQueue _resumes = new();
+    private StellarCaptureHost? _host;                           // main thread only
     private bool _registered;
 
     /// <summary>Construct on the Unity main thread (the framework's Load()); its thread id is the main-thread id.</summary>
@@ -43,6 +41,18 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     {
         _log = log;
         _mainThreadId = Environment.CurrentManagedThreadId;
+    }
+
+    /// <summary>Live resume pumps (0 when idle). Diagnostics / smoke evidence.</summary>
+    internal int PumpCount => _resumes.Pumps;
+
+    /// <summary>
+    /// Main-thread tick hook: completes resumes that arrived while no pump was live. A single volatile read when idle.
+    /// </summary>
+    public void DrainQueuedResumes()
+    {
+        if (!_resumes.HasQueued || !OnMainThread) return;
+        OnTickDrain(_resumes.Drain());
     }
 
     public (int Width, int Height) ScreenSize => (Screen.width, Screen.height);
@@ -58,17 +68,13 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
 
     public Task ResumeOnMainThreadAsync()
     {
-        var tcs = new TaskCompletionSource<bool>(); // completed on the main thread (coroutine or pump)
-        if (OnMainThread)
+        var tcs = new TaskCompletionSource<bool>(); // completed on the main thread (pump coroutine or host tick)
+        if (OnMainThread && _resumes.Pumps == 0)
         {
             Run(ex => tcs.TrySetException(ex), NextFrame(tcs));
             return tcs.Task;
         }
-        lock (_gate)
-        {
-            if (_pumps > 0) { _resumes.Add(tcs); return tcs.Task; }
-        }
-        tcs.TrySetException(new FrameGrabException("The capture host is not running on the main thread."));
+        _resumes.Enqueue(tcs);   // a live pump serves it next frame; otherwise the host's main-thread tick drains it
         return tcs.Task;
     }
 
@@ -117,37 +123,33 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
 
     private IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, int scale, int settle, CaptureFormat format, int q)
     {
-        lock (_gate) _pumps++;
+        for (var i = 0; i < settle; i++) yield return null;
+        yield return new WaitForEndOfFrame();
+        var grab = Capture(scale, format, q);   // a throw faults the grab (Tracked) and expects no resume
+        _resumes.Expect();
+        _resumes.PumpStarted();
         try
         {
-            for (var i = 0; i < settle; i++) yield return null;
-            yield return new WaitForEndOfFrame();
-            tcs.TrySetResult(Capture(scale, format, q));
-            var idleUntil = Time.realtimeSinceStartup + PumpIdleSeconds;
-            while (Time.realtimeSinceStartup < idleUntil)
+            tcs.TrySetResult(grab);   // continuation runs inline; it resumes later from the pool thread
+            var startedAt = Time.realtimeSinceStartup;
+            while (_resumes.PumpShouldRun)
             {
-                DrainResumes();
+                _resumes.Drain();
+                if (!_resumes.PumpShouldRun) break;
+                if (ResumeQueue.LeakGuardExpired(startedAt, Time.realtimeSinceStartup))
+                {
+                    _log.Error($"[PhotoStudio] capture resume never arrived after {ResumeQueue.LeakGuardSeconds:F0} s; pump stopped (leak guard).");
+                    _resumes.Abandon();
+                    break;
+                }
                 yield return null;
             }
         }
         finally
         {
-            lock (_gate) _pumps = Math.Max(0, _pumps - 1);
-            DrainResumes();   // a resume queued between the last drain and the decrement still completes
+            _resumes.PumpStopped();
+            OnPumpStopped(_resumes.Pumps);
         }
-    }
-
-    // Completes queued off-thread resumes on the main thread (outside the lock: continuations run inline).
-    private void DrainResumes()
-    {
-        TaskCompletionSource<bool>[] ready;
-        lock (_gate)
-        {
-            if (_resumes.Count == 0) return;
-            ready = _resumes.ToArray();
-            _resumes.Clear();
-        }
-        foreach (var r in ready) r.TrySetResult(true);
     }
 
     private StellarCaptureHost EnsureHost()
@@ -172,16 +174,12 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     {
         _host = null;
         Action<Exception>[] pending;
-        TaskCompletionSource<bool>[] resumes;
         lock (_gate)
         {
             pending = _pending.ToArray();
-            resumes = _resumes.ToArray();
             _pending.Clear();
-            _resumes.Clear();
-            _pumps = 0;
         }
         foreach (var fail in pending) fail(new FrameGrabException("The capture was interrupted."));
-        foreach (var r in resumes) r.TrySetException(new FrameGrabException("The capture was interrupted."));
+        _resumes.FailAll(new FrameGrabException("The capture was interrupted."));
     }
 }
