@@ -106,4 +106,34 @@ public sealed class SceneVisibilityServiceTests
         other.Dispose();
         Assert.Equal(VisibilityLayers.None, s.Hidden);
     }
+
+    // Tasks 1-5 review carry-over (b): an unloaded plugin must never be called back through Changed.
+    [Fact]
+    public void Plugin_facade_unsubscribes_its_changed_handlers_on_release()
+    {
+        var s = new SceneVisibilityService(new FakeBackend());
+        var p = new PluginSceneVisibility(s, owner: "plugin.a");
+        var calls = 0;
+        p.Changed += _ => calls++;
+        var t = p.Hide(VisibilityLayers.GameHud);
+        Assert.Equal(1, calls);
+        p.ReleaseAll();                         // releases the token without calling back the unloaded plugin
+        Assert.Equal(1, calls);
+        s.Hide(VisibilityLayers.Nameplates);    // later changes by others never reach it
+        Assert.Equal(1, calls);
+        t.Dispose();
+    }
+
+    [Fact]
+    public void Plugin_facade_remove_detaches_a_handler()
+    {
+        var s = new SceneVisibilityService(new FakeBackend());
+        var p = new PluginSceneVisibility(s, owner: "plugin.a");
+        var calls = 0;
+        void H(VisibilityLayers _) => calls++;
+        p.Changed += H;
+        p.Changed -= H;
+        s.Hide(VisibilityLayers.GameHud);
+        Assert.Equal(0, calls);
+    }
 }

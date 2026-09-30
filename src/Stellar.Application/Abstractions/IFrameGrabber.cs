@@ -21,6 +21,9 @@ internal interface IFrameGrabber
     /// Resumes the caller on the main thread. Infrastructure implements this as a one-frame
     /// coroutine backed by a TCS created without RunContinuationsAsynchronously, so the
     /// continuation runs synchronously on the main thread when the coroutine completes it.
+    /// The implementation MUST always complete the returned task (fault it when the coroutine
+    /// host is gone) — a task that never completes wedges <c>IScreenCapture.IsCapturing</c>.
+    /// The same holds for <see cref="GrabAsync"/>.
     /// </summary>
     Task ResumeOnMainThreadAsync();
 }

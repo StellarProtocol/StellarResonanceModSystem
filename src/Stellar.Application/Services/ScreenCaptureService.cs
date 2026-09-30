@@ -13,14 +13,14 @@ internal sealed class ScreenCaptureService : IScreenCapture
     private readonly IFrameGrabber _grabber;
     private readonly ISceneVisibility _visibility;
     private readonly CaptureFileSink _sink;
-    private readonly Action<string>? _log;
+    private readonly Action<string> _log;
 
-    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string>? log = null)
+    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string> log)
     {
         _grabber = grabber;
         _visibility = visibility;
         _sink = sink;
-        _log = log;
+        _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
     public bool IsCapturing { get; private set; }
@@ -42,13 +42,13 @@ internal sealed class ScreenCaptureService : IScreenCapture
             var ext = request.Format == CaptureFormat.Jpg ? ".jpg" : ".png";
             var bytes = grab.Jpeg ?? await Task.Run(() => PngEncoder.Encode(grab));
             var path = await Task.Run(() => _sink.Write(request.Directory, request.FileStem, ext, bytes));
-            await _grabber.ResumeOnMainThreadAsync();
+            await ResumeQuietly(); // never throws, so the catch below can never resume a second time
             return CaptureResult.Ok(path, grab.Width, grab.Height);
         }
         catch (Exception ex)
         {
-            await _grabber.ResumeOnMainThreadAsync();
-            _log?.Invoke(ex.ToString());
+            await ResumeQuietly();
+            _log(ex.ToString());
             return CaptureResult.Fail(MapError(ex));
         }
         finally
@@ -56,6 +56,14 @@ internal sealed class ScreenCaptureService : IScreenCapture
             hide?.Dispose();
             IsCapturing = false;
         }
+    }
+
+    // A faulting/throwing resume must not escape CaptureAsync: the file (if any) is already written and the
+    // caller is owed a result. The grabber contract says the resume always completes; this is the backstop.
+    private async Task ResumeQuietly()
+    {
+        try { await _grabber.ResumeOnMainThreadAsync(); }
+        catch (Exception ex) { _log("Capture could not resume on the main thread: " + ex); }
     }
 
     private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int scale, int settle)

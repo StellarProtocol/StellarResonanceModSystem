@@ -51,10 +51,17 @@ public sealed class CaptureRequestValidatorTests
     [Theory]
     [InlineData(0)] [InlineData(101)] [InlineData(-1)]
     public void Rejects_jpg_quality_outside_1_to_100(int quality) =>
-        Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { JpgQuality = quality }, 1920, 1080).Error);
+        Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { Format = CaptureFormat.Jpg, JpgQuality = quality }, 1920, 1080).Error);
+
+    // Tasks 1-5 review carry-over (d): JpgQuality is documented as "ignored for PNG", so a PNG request with an
+    // out-of-range quality must not be rejected.
+    [Theory]
+    [InlineData(0)] [InlineData(101)] [InlineData(-1)]
+    public void Png_ignores_jpg_quality(int quality) =>
+        Assert.Null(CaptureRequestValidator.Validate(R(1) with { Format = CaptureFormat.Png, JpgQuality = quality }, 1920, 1080).Error);
 
     [Theory]
     [InlineData(1)] [InlineData(100)] [InlineData(92)]
     public void Accepts_jpg_quality_within_1_to_100(int quality) =>
-        Assert.Null(CaptureRequestValidator.Validate(R(1) with { JpgQuality = quality }, 1920, 1080).Error);
+        Assert.Null(CaptureRequestValidator.Validate(R(1) with { Format = CaptureFormat.Jpg, JpgQuality = quality }, 1920, 1080).Error);
 }

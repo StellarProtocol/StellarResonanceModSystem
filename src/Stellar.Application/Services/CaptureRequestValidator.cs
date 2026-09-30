@@ -18,7 +18,7 @@ internal static class CaptureRequestValidator
     public static (int Scale, string? Error) Validate(CaptureRequest r, int screenW, int screenH)
     {
         if (r.Scale is not (1 or 2 or 4)) return (0, "Capture scale must be 1×, 2× or 4×.");
-        if (r.JpgQuality is < 1 or > 100) return (0, "JPEG quality must be between 1 and 100.");
+        if (r.Format == CaptureFormat.Jpg && r.JpgQuality is < 1 or > 100) return (0, "JPEG quality must be between 1 and 100.");
         if (string.IsNullOrWhiteSpace(r.Directory)) return (0, "No screenshot folder is set.");
         if (!IsValidStem(r.FileStem)) return (0, "The screenshot file name is not valid.");
         var scale = r.Scale;

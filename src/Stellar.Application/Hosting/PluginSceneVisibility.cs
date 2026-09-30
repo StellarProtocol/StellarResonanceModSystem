@@ -1,14 +1,20 @@
 using System;
+using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Services;
 namespace Stellar.Application.Hosting;
 
-/// <summary>Per-plugin view of <see cref="SceneVisibilityService"/>; tokens are released when the plugin unloads.</summary>
+/// <summary>
+/// Per-plugin view of <see cref="SceneVisibilityService"/>. On plugin unload <see cref="ReleaseAll"/> releases the
+/// plugin's hide tokens AND unsubscribes every <see cref="Changed"/> handler it added through this façade, so an
+/// unloaded plugin is never called back.
+/// </summary>
 internal sealed class PluginSceneVisibility : ISceneVisibility
 {
     private readonly SceneVisibilityService _inner;
     private readonly object _owner;
+    private readonly List<Action<VisibilityLayers>> _handlers = new();
 
     public PluginSceneVisibility(SceneVisibilityService inner, object owner)
     {
@@ -20,8 +26,23 @@ internal sealed class PluginSceneVisibility : ISceneVisibility
     public VisibilityLayers Hidden => _inner.Hidden;
     public event Action<VisibilityLayers>? Changed
     {
-        add => _inner.Changed += value;
-        remove => _inner.Changed -= value;
+        add
+        {
+            if (value is null) return;
+            _handlers.Add(value);
+            _inner.Changed += value;
+        }
+        remove
+        {
+            if (value is null || !_handlers.Remove(value)) return;
+            _inner.Changed -= value;
+        }
     }
-    public void ReleaseAll() => _inner.ReleaseOwner(_owner);
+
+    public void ReleaseAll()
+    {
+        foreach (var h in _handlers) _inner.Changed -= h;
+        _handlers.Clear();
+        _inner.ReleaseOwner(_owner);
+    }
 }
