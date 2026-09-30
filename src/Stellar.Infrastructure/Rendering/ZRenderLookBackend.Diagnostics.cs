@@ -15,4 +15,10 @@ internal sealed partial class ZRenderLookBackend
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[PhotoLook] write {write.Component}.{write.Field}={value}");
     }
+
+    partial void OnFocusWritten(float distance)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoLook] focus {LookParameterPlan.FocusField}={distance:F2}");
+    }
 }

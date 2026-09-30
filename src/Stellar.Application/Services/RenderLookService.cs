@@ -37,9 +37,9 @@ internal sealed class RenderLookService : IRenderLook
     {
         if (_current?.Dof is not { FocusOnLocalPlayer: true } dof) return;
         if (_backend.MeasureFocusDistance() is not float d) return;
-        if (Math.Abs(d - dof.FocusDistance) < FocusEpsilon) return;
+        // Compared against the last TRACKED distance, so a moving camera costs no LookSettings/DofLook copy per tick.
+        if (Math.Abs(d - (_trackedFocus ?? dof.FocusDistance)) < FocusEpsilon) return;
         _trackedFocus = d;
-        _current = _current with { Dof = dof with { FocusDistance = d } };
         _backend.UpdateFocus(d);
     }
 

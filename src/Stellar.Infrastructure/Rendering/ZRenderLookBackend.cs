@@ -27,6 +27,12 @@ internal sealed partial class ZRenderLookBackend : ILookBackend, IDisposable
     private readonly IPluginLog _log;
     private readonly HashSet<string> _warnedOnce = new(StringComparer.Ordinal);
     private LookCapabilities? _capabilities;
+    // The writes currently live on our components (the diff baseline). Only meaningful while _appliedValid;
+    // false (fresh volume, a released look, a failed apply) makes the next Apply clear every override first.
+    private readonly List<ParamWrite> _applied = new();
+    private bool _appliedValid;
+    private bool _dofLive;             // the applied look carries the Dof group (the only time focus may be written)
+    private float? _focusSinceApply;   // focus written by UpdateFocus after the last Apply (patched into _applied)
 
     public ZRenderLookBackend(IGameTypeRegistry types, Func<float?> focusDistance, IPluginLog log)
     {
@@ -48,26 +54,58 @@ internal sealed partial class ZRenderLookBackend : ILookBackend, IDisposable
     {
         try
         {
-            if (settings is null) { SetVolumeEnabled(false); return; }
+            if (settings is null) { Release(); return; }
             if (!EnsureVolume()) return;
-            ClearOverrides();
             // A rejected LUT drops the whole Lut group (LoadLut warns once and caches the good ones).
-            foreach (var w in LookParameterPlan.Build(settings, path => LoadLut(path) is not null)) WriteParam(w);
+            var next = LookParameterPlan.Build(settings, path => LoadLut(path) is not null);
+            if (!_appliedValid) { ClearAllOverrides(); _applied.Clear(); _focusSinceApply = null; }
+            PatchTrackedFocus();
+            // Write only what changed; clear only a group that turned off (perf review: no full re-apply per update).
+            var diff = LookParameterPlan.Diff(_applied, next);
+            foreach (var c in diff.ClearComponents) ClearOverrides(c);
+            foreach (var w in diff.Writes) WriteParam(w);
+            _applied.Clear();
+            _applied.AddRange(next);
+            _dofLive = _applied.Exists(w => w.Component == LookParameterPlan.DofComponent);
+            _appliedValid = true;
             SetVolumeEnabled(true);
         }
         catch (Exception ex)
         {
+            _appliedValid = false;
             WarnOnce("apply:" + ex.GetType().Name + ":" + ex.Message, "Photo look could not be applied: " + ex.Message);
             try { SetVolumeEnabled(false); } catch { /* the volume itself is gone — nothing to disable */ }
         }
     }
 
-    /// <summary>Focus tracking: writes only <c>ZDofVolume.FocusDistance</c> on the live look, never a full re-apply.</summary>
+    /// <summary>Focus tracking: writes only <c>ZDofVolume.FocusDistance</c> on the live look, never a full re-apply.
+    /// Allocation-free after the first call (cached parameter slot + setter delegates).</summary>
     public void UpdateFocus(float distance)
     {
-        if (_volume == null || _volumeGo == null || !_components.ContainsKey(LookParameterPlan.DofComponent)) return;
-        try { WriteParam(LookParameterPlan.FocusWrite(distance)); }
+        if (_volume == null || _volumeGo == null || !_appliedValid || !_dofLive) return;
+        try
+        {
+            WriteFocus(distance);
+            _focusSinceApply = distance;
+        }
         catch (Exception ex) { WarnOnce("focus:" + ex.GetType().Name, "Photo look focus could not be updated: " + ex.Message); }
+    }
+
+    // Our volume stays (disabled) with its components; the next Apply starts from a clean slate.
+    private void Release()
+    {
+        SetVolumeEnabled(false);
+        _appliedValid = false;
+    }
+
+    // The focus path wrote FocusDistance behind the diff baseline's back: make the baseline say so, or the next
+    // Apply would skip a FocusDistance that equals the stale baseline value while the component holds another.
+    private void PatchTrackedFocus()
+    {
+        if (_focusSinceApply is not float f) return;
+        _focusSinceApply = null;
+        var i = _applied.FindIndex(w => w.Component == LookParameterPlan.DofComponent && w.Field == LookParameterPlan.FocusField);
+        if (i >= 0) _applied[i] = LookParameterPlan.FocusWrite(f);
     }
 
     /// <summary>Destroys our Volume, its runtime profile + components and the cached LUT textures (framework teardown).</summary>

@@ -34,6 +34,7 @@ internal sealed partial class ZRenderLookBackend
 
     partial void OnVolumeCreated();
     partial void OnParamWritten(ParamWrite write, object value);
+    partial void OnFocusWritten(float distance);
 
     private Type? ResolveType(string fullName, string assembly)
     {
@@ -89,6 +90,8 @@ internal sealed partial class ZRenderLookBackend
         foreach (var comp in _components.Values)
             if (comp is UnityEngine.Object o && o != null) UnityEngine.Object.Destroy(o);
         _components.Clear();
+        _params.Clear();          // param wrappers belong to the destroyed components
+        _appliedValid = false;    // a fresh volume starts with nothing applied
         if (_profileObject != null) UnityEngine.Object.Destroy(_profileObject);
         if (_volumeGo != null) UnityEngine.Object.Destroy(_volumeGo);
         foreach (var tex in _luts.Values)
@@ -106,17 +109,6 @@ internal sealed partial class ZRenderLookBackend
         if (_volume != null) _volume.enabled = on;
     }
 
-    /// <summary>Drops every override on every component we added, so a group the new settings omit reverts to the game's value.</summary>
-    private void ClearOverrides()
-    {
-        foreach (var comp in _components.Values)
-        {
-            var m = StellarInterop.FindMethod(comp.GetType(), "SetAllOverridesTo", 1)
-                ?? throw new InvalidOperationException("VolumeComponent.SetAllOverridesTo not found");
-            m.Invoke(comp, new object[] { false });
-        }
-    }
-
     private object GetOrAddComponent(string typeName)
     {
         if (_components.TryGetValue(typeName, out var cached)) return cached;
@@ -126,24 +118,6 @@ internal sealed partial class ZRenderLookBackend
         SetProp(typed, "active", true);
         _components[typeName] = typed;
         return typed;
-    }
-
-    private void WriteParam(ParamWrite w)
-    {
-        var comp = GetOrAddComponent(w.Component);
-        var param = StellarInterop.FindPropertyUp(comp.GetType(), w.Field)?.GetValue(comp);
-        if (param is null)
-        {
-            WarnOnce(w.Component + "." + w.Field, $"Photo look setting {w.Component}.{w.Field} not found; skipped.");
-            return;
-        }
-        var valueProp = StellarInterop.FindPropertyUp(param.GetType(), "value")
-            ?? throw new InvalidOperationException($"{w.Field}.value not found");
-        var value = ToUnity(w.Value, valueProp.PropertyType);
-        if (value is null) return;   // e.g. an unreadable LUT — already warned, leave the game's value
-        valueProp.SetValue(param, value);
-        SetProp(param, "overrideState", true);
-        OnParamWritten(w, value);
     }
 
     private object? ToUnity(object v, Type target) => v switch
@@ -180,9 +154,9 @@ internal sealed partial class ZRenderLookBackend
         return tex;
     }
 
-    private static void SetProp(object target, string name, object value)
+    private void SetProp(object target, string name, object value)
     {
-        var p = StellarInterop.FindPropertyUp(target.GetType(), name)
+        var p = FindProp(target.GetType(), name)
             ?? throw new InvalidOperationException($"{target.GetType().Name}.{name} not found");
         p.SetValue(target, value);
     }
