@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.13.0 — photo services: <c>IScreenCapture</c>, <c>ISceneVisibility</c>, <c>IRenderLook</c>, <c>IPhotoModeState</c>
+    /// (<c>IPluginServices.ScreenCapture</c> / <c>.SceneVisibility</c> / <c>.RenderLook</c> / <c>.PhotoMode</c>). Additive only.
     /// 2.12.0 adds <c>HitchProbe</c> (diagnostics-gated render-frame hitch attribution) and makes windows cheaper:
     /// a hidden window is parked (deactivated) rather than destroyed, ConditionalElement branches build on first
     /// show, and meter debuff cells are created on demand. Additive only.
@@ -232,5 +234,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.12.0";
+    public const string Value = "2.13.0";
 }

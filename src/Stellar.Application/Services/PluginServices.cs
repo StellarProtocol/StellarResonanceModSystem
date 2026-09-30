@@ -55,6 +55,10 @@ internal sealed class PluginServices : IPluginServices
     public ILocalization Localization { get; }
     public IDeepSlumber DeepSlumber { get; }
     public IBossVitals BossVitals { get; }
+    public IScreenCapture ScreenCapture { get; }
+    public ISceneVisibility SceneVisibility { get; }
+    public IRenderLook RenderLook { get; }
+    public IPhotoModeState PhotoMode { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -106,7 +110,11 @@ internal sealed class PluginServices : IPluginServices
         IWardrobePreview wardrobePreview,
         IRunTimer runTimer,
         IBossVitals bossVitals,
-        ILoadoutSave loadoutSave)
+        ILoadoutSave loadoutSave,
+        IScreenCapture screenCapture,
+        ISceneVisibility sceneVisibility,
+        IRenderLook renderLook,
+        IPhotoModeState photoMode)
     {
         Log = log;
         Framework = framework;
@@ -158,5 +166,9 @@ internal sealed class PluginServices : IPluginServices
         RunTimer = runTimer;
         BossVitals = bossVitals;
         LoadoutSave = loadoutSave;
+        ScreenCapture = screenCapture;
+        SceneVisibility = sceneVisibility;
+        RenderLook = renderLook;
+        PhotoMode = photoMode;
     }
 }

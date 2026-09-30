@@ -28,6 +28,9 @@ internal sealed class PerPluginServices : IPluginServices
     // Per-plugin localization façade (namespaced to this plugin's GUID). Null in a bare test host — falls
     // back to the shared bag's façade (the framework's own).
     private readonly ILocalization? _localization;
+    // Per-plugin scene-visibility façade (tokens + Changed handlers released on unload). Null in a bare test
+    // host — falls back to the shared service.
+    private readonly ISceneVisibility? _sceneVisibility;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -38,6 +41,7 @@ internal sealed class PerPluginServices : IPluginServices
         _hotkeys = scope.Hotkeys;
         _harmony = scope.Harmony;
         _localization = scope.Localization;
+        _sceneVisibility = scope.SceneVisibility;
     }
 
     public IPluginConfig Config { get; }
@@ -91,6 +95,10 @@ internal sealed class PerPluginServices : IPluginServices
     public ILocalization Localization => _localization ?? _shared.Localization;
     public IDeepSlumber DeepSlumber => _shared.DeepSlumber;
     public IBossVitals BossVitals => _shared.BossVitals;
+    public IScreenCapture ScreenCapture => _shared.ScreenCapture;
+    public ISceneVisibility SceneVisibility => _sceneVisibility ?? _shared.SceneVisibility;
+    public IRenderLook RenderLook => _shared.RenderLook;
+    public IPhotoModeState PhotoMode => _shared.PhotoMode;
 }
 
 /// <summary>
@@ -103,4 +111,5 @@ internal readonly record struct PerPluginScope(
     IFramework Framework,
     IHotkeys? Hotkeys,
     IHarmonyHost? Harmony,
-    ILocalization? Localization);
+    ILocalization? Localization,
+    ISceneVisibility? SceneVisibility = null);

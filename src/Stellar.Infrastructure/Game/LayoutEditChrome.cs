@@ -51,6 +51,9 @@ internal sealed class LayoutEditChrome
         public bool EyeInteractive;  // false for unsafe-to-hide (greyed) elements
     }
 
+    /// <summary>The edit-chrome canvas root (<c>StellarLayoutEditCanvas</c>), or null outside layout edit mode.</summary>
+    public GameObject? CanvasObject => _canvas;
+
     /// <summary>Optional label font (the menu OS font); null falls back to the builtin.</summary>
     public void SetFont(Font? font) => _font = font;
 

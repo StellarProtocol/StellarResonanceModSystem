@@ -159,6 +159,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     //   6. BuildWindowServices       — WindowRenderer, WindowService
     //   7. BuildLauncherServices     — LauncherRegistry
     //   8. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
+    //   8b. WirePhotoStudio          — scene visibility, render look, screen capture, photo-mode state
     //   9. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
     //
     // Wiring call order in OnHotUpdateReady():
@@ -207,6 +208,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         // GameAssetsService takes IGameDataResonance via its constructor. Cheap +
         // idempotent; the post-hot-update ConstructGameDataProbe shares the result.
         ConstructResonanceData(log, typeRegistry);
+        WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
         WireGameEventsAndPluginHost(log, configFactory);
 
         watcher.WaitForAll(ExpectedHotUpdateAssemblies, () => OnHotUpdateReady(log, typeRegistry, hooker));
@@ -275,6 +277,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallWireAndStubProbes(log, typeRegistry);
         HookGameLifecycleMethods(log, hooker, gameType);
         HookEntityStateSignals(log, typeRegistry, hooker);
+        InstallPhotoModeHooks(hooker);
         InstallInstrumentToneRelay(log);
     }
 

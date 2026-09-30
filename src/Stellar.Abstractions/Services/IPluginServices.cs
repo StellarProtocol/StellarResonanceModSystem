@@ -24,6 +24,16 @@ public interface IPluginServices
     ILoadout Loadout { get; }
     /// <summary>Save the worn setup into another saved loadout (the game's own loadout Save). See <see cref="ILoadoutSave"/>.</summary>
     ILoadoutSave LoadoutSave { get; }
+    /// <summary>Capture the rendered scene to a PNG/JPG file at 1×, 2× or 4× (clean: no game UI or overlay). See <see cref="IScreenCapture"/>.</summary>
+    IScreenCapture ScreenCapture { get; }
+    /// <summary>Reference-counted hiding of the game HUD, the Stellar overlay, nameplates and other players. Tokens a
+    /// plugin still holds are released when it unloads. See <see cref="ISceneVisibility"/>.</summary>
+    ISceneVisibility SceneVisibility { get; }
+    /// <summary>Apply a camera look (depth of field, colour, LUT, bloom, vignette, grain) through the game's own
+    /// renderer effects; one active look framework-wide. See <see cref="IRenderLook"/>.</summary>
+    IRenderLook RenderLook { get; }
+    /// <summary>The game's own photo / selfie mode and cutscene state. See <see cref="IPhotoModeState"/>.</summary>
+    IPhotoModeState PhotoMode { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>

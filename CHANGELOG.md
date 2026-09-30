@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.13.0] - 2026-09-30
+_**2.13.0** (minor) — Screenshot support for plugins. Adds API for plugins (Abstractions 2.13.0); additive, no plugin rebuild._
+### Added
+- Screenshot support for plugins: hide the interface, take high-resolution screenshots and apply camera looks.
+### Developer notes
+- Four new services on `IPluginServices`: `ScreenCapture` (`IScreenCapture` — PNG/JPG at 1×/2×/4×, long side capped at 16384 px, a 4× failure retries once at 2×, never throws), `SceneVisibility` (`ISceneVisibility` — reference-counted hiding of the game HUD, the Stellar overlay, nameplates and other players; a plugin's tokens and `Changed` handlers are released when it unloads), `RenderLook` (`IRenderLook` — one active look framework-wide; `PlayMode` strips depth of field and film grain) and `PhotoMode` (`IPhotoModeState` — the game's camera / selfie mode and cutscene state).
+- Looks: the framework owns one global `Volume` (priority 10000, runtime `VolumeProfile`) and writes the game's own `ZRenderPipeline` components into it — `ZDofVolume` (Bokeh), `ZColorAdjustmentVolume`, `ZWhiteBalanceVolume`, `ZColorLookupVolume` (256×16 / 1024×32 PNG strips), `ZBloomVolume` (`intensity_UE`/`threshold_UE`), `ZUnityVignetteVolume`, `ZFilmGrainVolume`. It never edits the game's profiles; omitted groups drop their overrides and revert to the game's value. Evidence: devkit `docs/recon/photo-studio-render-recon.md` (DXVK section).
+- Capture renders the main camera into an N× `RenderTexture` at end of frame (clean: no game UI, nameplates or overlay) and reads it back as RGBA32; PNG encoding is a managed encoder run off the main thread; the result completes on the main thread.
+- Hide switches: `ZUiRoot.SetUIInvisible`, `HudMgr.SetHudSwitch(…, ECamera)`, `CameraFrameCtrl.SetEntityShow(11/3, …)` (other-player effect not yet measured in a crowd), and the framework's window + layout-edit canvases (the toast canvas stays visible). Photo mode: `CameraFrameCtrl.Record/ResetCameraInitialParameters` + `CameraStateSelfPhoto.OnEnter/OnExit`; cutscene: `CutsceneManager.Play` / `afterStop`, seeded from `InCutscene`. Every game member is resolved by name at runtime and fails open with one warning.
+
 ## [2.12.0] - 2026-09-30
 _**2.12.0** (minor) — Showing and hiding the Combat Meter no longer freezes the game, the meter opens much faster, and layout edit mode no longer lags. Adds a diagnostics API for plugins (Abstractions 2.12.0); binary-compatible, no plugin rebuild._
 ### Fixed

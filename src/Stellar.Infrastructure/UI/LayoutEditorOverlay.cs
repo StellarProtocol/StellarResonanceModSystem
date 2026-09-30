@@ -77,6 +77,9 @@ internal sealed partial class LayoutEditorOverlay
     /// so the host counts it as live IMGUI content for the overlay lifecycle.</summary>
     public bool IsEditing => _editor.IsEditing;
 
+    /// <summary>The layout-edit chrome canvas root, or null outside edit mode (photo overlay hide).</summary>
+    public GameObject? ChromeCanvas => _chrome.CanvasObject;
+
     /// <summary>Phase 9a: bind the native-UI service so Shift+` also outlines + drags game HUD elements.</summary>
     public void SetNativeUi(NativeUiService nativeUi) => _nativeUi = nativeUi;
 
