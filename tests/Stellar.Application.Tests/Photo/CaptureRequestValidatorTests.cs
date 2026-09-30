@@ -30,4 +30,31 @@ public sealed class CaptureRequestValidatorTests
     [Fact]
     public void Rejects_empty_directory() =>
         Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { Directory = "" }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData("CON")] [InlineData("con")] [InlineData("PRN")] [InlineData("Aux")] [InlineData("nul")]
+    [InlineData("COM1")] [InlineData("com9")] [InlineData("LPT1")] [InlineData("lpt9")]
+    [InlineData("CON.png")] [InlineData("con.txt.bak")]
+    public void Rejects_windows_reserved_stems(string stem) =>
+        Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { FileStem = stem }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData("CONcert")] [InlineData("NULLable")] [InlineData("PRNScreen")] [InlineData("LPT10")]
+    public void Accepts_stems_that_merely_start_with_a_reserved_word(string stem) =>
+        Assert.Null(CaptureRequestValidator.Validate(R(1) with { FileStem = stem }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData("BPSR_a.")] [InlineData("BPSR_a ")]
+    public void Rejects_stems_ending_in_dot_or_space(string stem) =>
+        Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { FileStem = stem }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData(0)] [InlineData(101)] [InlineData(-1)]
+    public void Rejects_jpg_quality_outside_1_to_100(int quality) =>
+        Assert.NotNull(CaptureRequestValidator.Validate(R(1) with { JpgQuality = quality }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData(1)] [InlineData(100)] [InlineData(92)]
+    public void Accepts_jpg_quality_within_1_to_100(int quality) =>
+        Assert.Null(CaptureRequestValidator.Validate(R(1) with { JpgQuality = quality }, 1920, 1080).Error);
 }
