@@ -8,8 +8,8 @@ namespace Stellar.Application.Abstractions;
 /// </summary>
 internal enum ProbeOutcome
 {
-    /// <summary>The hot-update type hasn't loaded yet — report the layer available (optimistic); there is
-    /// nothing to cache, since the next probe must look again.</summary>
+    /// <summary>The hot-update type hasn't loaded yet (hot-update not ready) — report the layer available
+    /// (optimistic); there is nothing to cache, since the next probe must look again.</summary>
     Optimistic,
 
     /// <summary>The type loaded and the expected member resolved — report available. The caller caches the
@@ -17,9 +17,9 @@ internal enum ProbeOutcome
     /// cache of its own.</summary>
     Available,
 
-    /// <summary>The type loaded and the expected member is genuinely missing — report unavailable, and the
-    /// caller should CACHE this negative (a loaded type's shape does not change at runtime), so later probes
-    /// skip re-resolving it.</summary>
+    /// <summary>The type loaded and the expected member is genuinely missing, OR hot-update is ready and the type
+    /// itself is missing (a game patch renamed/removed it) — report unavailable, and the caller should CACHE this
+    /// negative under its TTL, so later probes skip re-resolving it.</summary>
     DefinitivelyUnavailable,
 }
 
@@ -29,9 +29,10 @@ internal static class VisibilityProbeDecision
     /// <param name="typeLoaded">The hot-update type was found (<c>IGameTypeRegistry.FindType</c> returned non-null).</param>
     /// <param name="memberFound">Only meaningful when <paramref name="typeLoaded"/> is true: whether the expected
     /// reflection member (method/property) resolved on that type.</param>
-    public static ProbeOutcome Decide(bool typeLoaded, bool memberFound)
+    /// <param name="hotUpdateReady">All hot-update assemblies have loaded: a type still missing now will not appear.</param>
+    public static ProbeOutcome Decide(bool typeLoaded, bool memberFound, bool hotUpdateReady = false)
     {
-        if (!typeLoaded) return ProbeOutcome.Optimistic;
+        if (!typeLoaded) return hotUpdateReady ? ProbeOutcome.DefinitivelyUnavailable : ProbeOutcome.Optimistic;
         return memberFound ? ProbeOutcome.Available : ProbeOutcome.DefinitivelyUnavailable;
     }
 }

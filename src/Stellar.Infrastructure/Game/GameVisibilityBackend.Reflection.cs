@@ -21,6 +21,12 @@ internal sealed partial class GameVisibilityBackend
     private object? _hudSourceStellar;     // (EHudAvailableSource)PrivateHudSource
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
     private bool _selfEntityShowWrite;     // true while WE call SetEntityShow, so the observer ignores it
+    // Set by InstallHooks (called once hot-update is ready): from then on a missing TYPE is a definitive negative
+    // (a game patch renamed/removed it), cached under the same TTL instead of re-probed optimistically every call.
+    private bool _hotUpdateReady;
+    // Each hide target's resolved Type + static IsCreated getter, so a hide/re-assert re-walks no base chain.
+    // Cleared with the negative probes (the same re-init boundaries).
+    private readonly System.Collections.Generic.Dictionary<string, (Type Type, MethodInfo? IsCreated)> _singletons = new(StringComparer.Ordinal);
 
     // Bounded negative caches for Available's probes (docs/il2cpp-probing-safety.md § negative-cache races: a
     // negative verdict must expire, never latch permanently). N = 5s: long enough that a panel polling Available
@@ -48,6 +54,8 @@ internal sealed partial class GameVisibilityBackend
     /// </summary>
     public void InstallHooks(Stellar.Infrastructure.Hooks.HarmonyGameMethodHooker hooker)
     {
+        _hotUpdateReady = true;
+        ClearNegativeProbes();   // anything cached before ready was an optimistic miss — start clean
         try
         {
             if (_types.FindType(CameraFrameCtrlType) is { } cf) hooker.PostfixAllOverloads(cf, "SetEntityShow", OnGameSetEntityShow);
@@ -73,6 +81,7 @@ internal sealed partial class GameVisibilityBackend
         _gameHudNegative.Reset();
         _nameplatesNegative.Reset();
         _otherPlayersNegative.Reset();
+        _singletons.Clear();
     }
 
     /// <summary>
@@ -94,14 +103,14 @@ internal sealed partial class GameVisibilityBackend
         if (_gameHudNegative.IsSuppressed) return false;
         var t = _types.FindType(ZUiRootType);
         var method = t?.GetMethod("SetUIInvisible", AnyInstance, null, new[] { typeof(bool) }, null);
-        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null, _hotUpdateReady))
         {
             case ProbeOutcome.Available:
                 _setUiInvisible = method;
                 if (_gameHudNegative.MarkRecovered()) _log.Info(Tag + "GameHud recovered: ZUiRoot.SetUIInvisible resolved.");
                 return true;
             case ProbeOutcome.DefinitivelyUnavailable:
-                if (_gameHudNegative.MarkNegative()) _log.Warning(Tag + $"GameHud unavailable: {ZUiRootType}.SetUIInvisible(bool) not found.");
+                if (_gameHudNegative.MarkNegative()) _log.Warning(Tag + $"GameHud unavailable: {Missing(t, ZUiRootType, "SetUIInvisible(bool)")} not found.");
                 return false;
             default: return true; // Optimistic — type not loaded yet, nothing to cache
         }
@@ -115,7 +124,7 @@ internal sealed partial class GameVisibilityBackend
         var m = t is null ? null : StellarInterop.FindMethod(t, "SetHudSwitch", 2);
         var sourceType = m?.GetParameters()[1].ParameterType;
         var memberFound = m is not null && sourceType is { IsEnum: true };
-        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: memberFound))
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: memberFound, _hotUpdateReady))
         {
             case ProbeOutcome.Available:
                 _hudSourceStellar = Enum.ToObject(sourceType!, PrivateHudSource);
@@ -123,7 +132,7 @@ internal sealed partial class GameVisibilityBackend
                 if (_nameplatesNegative.MarkRecovered()) _log.Info(Tag + "Nameplates recovered: HudMgr.SetHudSwitch resolved.");
                 return true;
             case ProbeOutcome.DefinitivelyUnavailable:
-                if (_nameplatesNegative.MarkNegative()) _log.Warning(Tag + $"Nameplates unavailable: {HudMgrType}.SetHudSwitch(bool, EHudAvailableSource) not found.");
+                if (_nameplatesNegative.MarkNegative()) _log.Warning(Tag + $"Nameplates unavailable: {Missing(t, HudMgrType, "SetHudSwitch(bool, EHudAvailableSource)")} not found.");
                 return false;
             default: return true;
         }
@@ -135,18 +144,21 @@ internal sealed partial class GameVisibilityBackend
         if (_otherPlayersNegative.IsSuppressed) return false;
         var t = _types.FindType(CameraFrameCtrlType);
         var method = t?.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
-        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null, _hotUpdateReady))
         {
             case ProbeOutcome.Available:
                 _setEntityShow = method;
                 if (_otherPlayersNegative.MarkRecovered()) _log.Info(Tag + "OtherPlayers recovered: CameraFrameCtrl.SetEntityShow resolved.");
                 return true;
             case ProbeOutcome.DefinitivelyUnavailable:
-                if (_otherPlayersNegative.MarkNegative()) _log.Warning(Tag + $"OtherPlayers unavailable: {CameraFrameCtrlType}.SetEntityShow(int, bool) not found.");
+                if (_otherPlayersNegative.MarkNegative()) _log.Warning(Tag + $"OtherPlayers unavailable: {Missing(t, CameraFrameCtrlType, "SetEntityShow(int, bool)")} not found.");
                 return false;
             default: return true;
         }
     }
+
+    // "Type" when the type itself is gone (post-ready), "Type.Member" when only the member is.
+    private static string Missing(Type? t, string typeName, string member) => t is null ? typeName : typeName + "." + member;
 
     private void OnGameSetEntityShow(object? instance, object?[] args)
     {
@@ -214,14 +226,20 @@ internal sealed partial class GameVisibilityBackend
     /// </summary>
     private object? CreatedSingleton(string typeName, string layer, out Type? type)
     {
-        type = _types.FindType(typeName);
-        if (type is null)
+        if (!_singletons.TryGetValue(typeName, out var target))
         {
-            WarnOnce("t:" + layer, $"Hide {layer} unavailable: {typeName} not found.");
-            return null;
+            var t = _types.FindType(typeName);
+            if (t is null)
+            {
+                type = null;
+                WarnOnce("t:" + layer, $"Hide {layer} unavailable: {typeName} not found.");
+                return null;
+            }
+            target = (t, StellarInterop.FindPropertyUp(t, "IsCreated")?.GetGetMethod(nonPublic: true));
+            _singletons[typeName] = target;
         }
-        var isCreated = StellarInterop.FindPropertyUp(type, "IsCreated")?.GetGetMethod(nonPublic: true);
-        if (isCreated is { IsStatic: true } && isCreated.Invoke(null, null) is false) return null;
+        type = target.Type;
+        if (target.IsCreated is { IsStatic: true } isCreated && isCreated.Invoke(null, null) is false) return null;
         var instance = StellarInterop.GetSingleton(type);
         if (instance is null) WarnOnce("i:" + layer, $"Hide {layer} unavailable: {typeName}.Instance is not available.");
         return instance;

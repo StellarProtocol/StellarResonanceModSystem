@@ -220,6 +220,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         HarmonyGameMethodHooker hooker)
     {
         log.Info("[boot] all hot-update assemblies loaded; wiring services");
+        typeRegistry.MarkHotUpdateReady();   // forget pre-ready misses; FindType memoizes from here on
 
         var gameType = typeRegistry.FindType(GameTypeFullName);
         if (gameType is null)
