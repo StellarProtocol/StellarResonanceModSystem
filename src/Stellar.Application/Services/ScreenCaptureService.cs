@@ -36,14 +36,20 @@ internal sealed class ScreenCaptureService : IScreenCapture
             var (scale, error) = CaptureRequestValidator.Validate(request, w, h);
             if (error is not null) return CaptureResult.Fail(error);
             hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
-            var grab = await GrabWithFallback(request, scale, hide is null ? 0 : SettleFramesWhenHiding);
+            FrameGrab? grab = await GrabWithFallback(request, scale, hide is null ? 0 : SettleFramesWhenHiding);
             hide?.Dispose(); // still on the main thread (grabber contract)
             hide = null;
-            var ext = request.Format == CaptureFormat.Jpg ? ".jpg" : ".png";
-            var bytes = grab.Jpeg ?? await Task.Run(() => PngEncoder.Encode(grab));
-            var path = await Task.Run(() => _sink.Write(request.Directory, request.FileStem, ext, bytes));
+            var (width, height) = (grab.Width, grab.Height);
+            // Off-thread: stream the PNG straight into the file (or write the JPG bytes). The frame reference is
+            // dropped the moment the write returns, so the pixel buffer is collectable before the main-thread resume.
+            var path = await Task.Run(() =>
+            {
+                var g = grab!;
+                grab = null;
+                return Save(g, request);
+            });
             await ResumeQuietly(); // never throws, so the catch below can never resume a second time
-            return CaptureResult.Ok(path, grab.Width, grab.Height);
+            return CaptureResult.Ok(path, width, height);
         }
         catch (Exception ex)
         {
@@ -56,6 +62,13 @@ internal sealed class ScreenCaptureService : IScreenCapture
             hide?.Dispose();
             IsCapturing = false;
         }
+    }
+
+    private string Save(FrameGrab g, CaptureRequest r)
+    {
+        if (g.Jpeg is { } jpeg) return _sink.Write(r.Directory, r.FileStem, ".jpg", jpeg);
+        PngEncoder.EnsureEncodable(g);   // a bad frame fails before a file is created
+        return _sink.WriteNew(r.Directory, r.FileStem, ".png", s => PngEncoder.Encode(g, s));
     }
 
     // A faulting/throwing resume must not escape CaptureAsync: the file (if any) is already written and the
@@ -72,7 +85,8 @@ internal sealed class ScreenCaptureService : IScreenCapture
         {
             return await _grabber.GrabAsync(scale, settle, r.Format, r.JpgQuality);
         }
-        catch (FrameGrabException) when (scale > 2)
+        // A 4× frame can also run the managed heap out (OutOfMemoryException) — 2× gets the same second chance.
+        catch (Exception ex) when (scale > 2 && ex is FrameGrabException or OutOfMemoryException)
         {
             return await _grabber.GrabAsync(2, settle, r.Format, r.JpgQuality);
         }

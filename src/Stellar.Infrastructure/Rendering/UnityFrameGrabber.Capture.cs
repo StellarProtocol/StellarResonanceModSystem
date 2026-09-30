@@ -28,8 +28,9 @@ internal sealed partial class UnityFrameGrabber
             cam.targetTexture = prevTarget;
             RenderTexture.active = rt;
             tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            // ReadPixels fills the texture's CPU copy, which is all the readback/JPG encode read — no Apply()
+            // (that would upload the whole frame back to the GPU for nothing).
             tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
-            tex.Apply(false);
             return Encode(tex, w, h, format, q);
         }
         finally
@@ -42,6 +43,9 @@ internal sealed partial class UnityFrameGrabber
         }
     }
 
+    // JPG stays on the main thread: EncodeToJPG reads the texture in place, while the thread-safe
+    // EncodeArrayToJPG would need a second full-frame IL2CPP array AND an il2cpp_thread_attach'ed pool thread —
+    // neither BepInEx nor Il2CppInterop attaches managed threads (see IScreenCapture remarks for the evidence).
     private FrameGrab Encode(Texture2D tex, int w, int h, CaptureFormat format, int q)
     {
         byte[]? jpeg = format == CaptureFormat.Jpg ? CopyIl2Cpp(ImageConversion.EncodeToJPG(tex, q)) : null;

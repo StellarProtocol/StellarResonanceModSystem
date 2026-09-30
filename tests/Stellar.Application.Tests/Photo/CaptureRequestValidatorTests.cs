@@ -19,6 +19,27 @@ public sealed class CaptureRequestValidatorTests
         Assert.Equal(2, scale);
     }
 
+    // Photo Studio fw fix round (perf review): 4K at 4× is 15360×8640 = 133 MP (a 531 MB RGBA frame) — under the
+    // 16384 long-side cap but far over the 64 MP total-pixel cap, so it drops to 2× (33 MP).
+    [Fact]
+    public void Caps_total_pixels_at_64_megapixels_by_lowering_scale()
+    {
+        var (scale, err) = CaptureRequestValidator.Validate(R(4), 3840, 2160);
+        Assert.Null(err);
+        Assert.Equal(2, scale);
+    }
+
+    [Fact]
+    public void Pixel_cap_keeps_lowering_until_it_fits()
+    {
+        // 6000×6000 at 2× = 144 MP > 64 MP → 1× (36 MP); the long side (12000) alone would have allowed 2×.
+        Assert.Equal(1, CaptureRequestValidator.Validate(R(2), 6000, 6000).Scale);
+    }
+
+    [Fact]
+    public void Exactly_at_the_pixel_cap_is_allowed() =>
+        Assert.Equal(2, CaptureRequestValidator.Validate(R(2), 4000, 4000).Scale);   // 8000×8000 = 64,000,000
+
     [Fact]
     public void Keeps_scale_when_within_cap() => Assert.Equal(4, CaptureRequestValidator.Validate(R(4), 2560, 1440).Scale);
 

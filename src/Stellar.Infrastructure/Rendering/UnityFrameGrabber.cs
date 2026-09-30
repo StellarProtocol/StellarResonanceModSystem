@@ -131,6 +131,10 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
         try
         {
             tcs.TrySetResult(grab);   // continuation runs inline; it resumes later from the pool thread
+            // This coroutine keeps pumping until the resume: drop its hold on the frame (the local AND the
+            // completed task's Result) so the pixel buffer is collectable as soon as the encode/write finishes.
+            grab = null!;
+            tcs = null!;
             var startedAt = Time.realtimeSinceStartup;
             while (_resumes.PumpShouldRun)
             {

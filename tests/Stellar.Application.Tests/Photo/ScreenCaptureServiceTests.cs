@@ -17,6 +17,7 @@ public sealed class ScreenCaptureServiceTests : IDisposable
     {
         public (int Width, int Height) ScreenSize { get; set; } = (4, 2);
         public int FailAtScale = -1;
+        public bool FailWithOutOfMemory;
         public readonly List<(int scale, int settle)> Calls = new();
         public Func<bool>? HiddenDuringGrab;
         public bool SawHidden;
@@ -32,7 +33,7 @@ public sealed class ScreenCaptureServiceTests : IDisposable
         {
             Calls.Add((scale, settleFrames));
             SawHidden = HiddenDuringGrab?.Invoke() ?? false;
-            if (scale == FailAtScale) throw new FrameGrabException("oom");
+            if (scale == FailAtScale) throw FailWithOutOfMemory ? new OutOfMemoryException() : new FrameGrabException("oom");
             if (Pending is not null) return Pending.Task;
             var w = ScreenSize.Width * scale; var h = ScreenSize.Height * scale;
             var rgba = new byte[ShortBuffer ? 1 : w * h * 4];
@@ -118,6 +119,32 @@ public sealed class ScreenCaptureServiceTests : IDisposable
         var r = await s.CaptureAsync(new CaptureRequest { Scale = 4, Directory = TempDir(), FileStem = "t" });
         Assert.True(r.Success, r.Error);
         Assert.Equal(new[] { 4, 2 }, g.Calls.Select(c => c.scale));
+    }
+
+    // Photo Studio fw fix round (perf review): a 4× grab that runs the managed heap out must also fall back to 2×.
+    [Fact]
+    public async Task Four_x_out_of_memory_retries_once_at_two_x()
+    {
+        var g = new FakeGrabber { FailAtScale = 4, FailWithOutOfMemory = true };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog);
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 4, Directory = TempDir(), FileStem = "t" });
+        Assert.True(r.Success, r.Error);
+        Assert.Equal(new[] { 4, 2 }, g.Calls.Select(c => c.scale));
+    }
+
+    [Fact]
+    public async Task Png_is_streamed_to_a_decodable_file_and_a_failed_encode_leaves_no_file()
+    {
+        var dir = TempDir();
+        var ok = await new ScreenCaptureService(new FakeGrabber(), new FakeVisibility(), new CaptureFileSink(), NoLog)
+            .CaptureAsync(new CaptureRequest { Scale = 1, Directory = dir, FileStem = "t" });
+        Assert.True(ok.Success, ok.Error);
+        Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, File.ReadAllBytes(ok.Path!)[..8]);
+
+        var bad = await new ScreenCaptureService(new FakeGrabber { ShortBuffer = true }, new FakeVisibility(), new CaptureFileSink(), NoLog)
+            .CaptureAsync(new CaptureRequest { Scale = 1, Directory = dir, FileStem = "u" });
+        Assert.False(bad.Success);
+        Assert.Equal(new[] { ok.Path }, Directory.GetFiles(dir));
     }
 
     [Fact]

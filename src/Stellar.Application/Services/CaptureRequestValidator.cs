@@ -6,6 +6,9 @@ namespace Stellar.Application.Services;
 internal static class CaptureRequestValidator
 {
     public const int MaxLongSide = 16384;
+    /// <summary>Total output pixels (64 MP = a 256 MB RGBA frame): above it a supersampled grab risks OOM even
+    /// when the long side fits (4K at 4× = 133 MP). Lowered the same way as the long-side cap.</summary>
+    public const long MaxPixels = 64_000_000;
     private static readonly char[] BadStemChars = { '/', '\\', ':', '*', '?', '"', '<', '>', '|' };
 
     private static readonly string[] ReservedStems =
@@ -23,7 +26,7 @@ internal static class CaptureRequestValidator
         if (!IsValidStem(r.FileStem)) return (0, "The screenshot file name is not valid.");
         var scale = r.Scale;
         var longSide = Math.Max(screenW, screenH);
-        while (scale > 1 && longSide * scale > MaxLongSide) scale /= 2;
+        while (scale > 1 && (longSide * scale > MaxLongSide || (long)screenW * screenH * scale * scale > MaxPixels)) scale /= 2;
         return (scale, null);
     }
 
