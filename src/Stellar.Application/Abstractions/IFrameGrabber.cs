@@ -16,4 +16,11 @@ internal interface IFrameGrabber
 {
     (int Width, int Height) ScreenSize { get; }
     Task<FrameGrab> GrabAsync(int scale, int settleFrames, CaptureFormat format, int jpgQuality);
+
+    /// <summary>
+    /// Resumes the caller on the main thread. Infrastructure implements this as a one-frame
+    /// coroutine backed by a TCS created without RunContinuationsAsynchronously, so the
+    /// continuation runs synchronously on the main thread when the coroutine completes it.
+    /// </summary>
+    Task ResumeOnMainThreadAsync();
 }

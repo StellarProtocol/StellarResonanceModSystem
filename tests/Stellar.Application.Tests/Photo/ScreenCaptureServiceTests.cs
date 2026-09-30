@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Stellar.Abstractions.Domain;
@@ -10,7 +11,7 @@ using Stellar.Application.Services;
 using Xunit;
 namespace Stellar.Application.Tests.Photo;
 
-public sealed class ScreenCaptureServiceTests
+public sealed class ScreenCaptureServiceTests : IDisposable
 {
     private sealed class FakeGrabber : IFrameGrabber
     {
@@ -19,13 +20,29 @@ public sealed class ScreenCaptureServiceTests
         public readonly List<(int scale, int settle)> Calls = new();
         public Func<bool>? HiddenDuringGrab;
         public bool SawHidden;
+        public byte[]? JpegBytes;
+        public bool ShortBuffer;
+        public TaskCompletionSource<FrameGrab>? Pending;
+        public int ResumeCallCount;
+        public Action? OnResume;
+
         public Task<FrameGrab> GrabAsync(int scale, int settleFrames, CaptureFormat format, int jpgQuality)
         {
             Calls.Add((scale, settleFrames));
             SawHidden = HiddenDuringGrab?.Invoke() ?? false;
             if (scale == FailAtScale) throw new FrameGrabException("oom");
+            if (Pending is not null) return Pending.Task;
             var w = ScreenSize.Width * scale; var h = ScreenSize.Height * scale;
-            return Task.FromResult(new FrameGrab(new byte[w * h * 4], w, h, null));
+            var rgba = new byte[ShortBuffer ? 1 : w * h * 4];
+            var jpeg = format == CaptureFormat.Jpg ? JpegBytes : null;
+            return Task.FromResult(new FrameGrab(rgba, w, h, jpeg));
+        }
+
+        public Task ResumeOnMainThreadAsync()
+        {
+            ResumeCallCount++;
+            OnResume?.Invoke();
+            return Task.CompletedTask;
         }
     }
 
@@ -38,7 +55,37 @@ public sealed class ScreenCaptureServiceTests
         private sealed class D : IDisposable { private Action? _a; public D(Action a) => _a = a; public void Dispose() { _a?.Invoke(); _a = null; } }
     }
 
-    private static string TempDir() => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "photo-svc-" + Guid.NewGuid().ToString("N"));
+    /// <summary>Throws once (the next Hide call), then behaves like a normal, working visibility.</summary>
+    private sealed class ThrowOnceVisibility : ISceneVisibility
+    {
+        public bool ThrowNext = true;
+        public IDisposable Hide(VisibilityLayers layers)
+        {
+            if (ThrowNext) { ThrowNext = false; throw new InvalidOperationException("boom"); }
+            return new NullToken();
+        }
+        public VisibilityLayers Hidden => VisibilityLayers.None;
+        public event Action<VisibilityLayers>? Changed { add { } remove { } }
+        private sealed class NullToken : IDisposable { public void Dispose() { } }
+    }
+
+    private readonly List<string> _tempDirs = new();
+
+    private string TempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "photo-svc-" + Guid.NewGuid().ToString("N"));
+        _tempDirs.Add(dir);
+        return dir;
+    }
+
+    public void Dispose()
+    {
+        foreach (var dir in _tempDirs)
+        {
+            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
 
     [Fact]
     public async Task Hides_during_grab_and_restores_after()
@@ -66,6 +113,16 @@ public sealed class ScreenCaptureServiceTests
     }
 
     [Fact]
+    public async Task Two_x_failure_is_not_retried()
+    {
+        var g = new FakeGrabber { FailAtScale = 2 };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t" });
+        Assert.False(r.Success);
+        Assert.Equal(new[] { 2 }, g.Calls.Select(c => c.scale));
+    }
+
+    [Fact]
     public async Task Failure_returns_error_and_clears_busy_and_hide()
     {
         var vis = new FakeVisibility();
@@ -85,5 +142,121 @@ public sealed class ScreenCaptureServiceTests
             .CaptureAsync(new CaptureRequest { Scale = 3, Directory = TempDir(), FileStem = "t" });
         Assert.False(r.Success);
         Assert.Empty(g.Calls);
+    }
+
+    [Fact]
+    public async Task Already_capturing_fails_fast_without_waiting_for_the_first_capture()
+    {
+        var pending = new TaskCompletionSource<FrameGrab>();
+        var g = new FakeGrabber { Pending = pending };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        var first = s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t1" });
+        Assert.True(s.IsCapturing);
+
+        var second = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t2" });
+        Assert.False(second.Success);
+        Assert.Equal("A screenshot is already being taken.", second.Error);
+
+        // Let the first capture complete so it doesn't leak into another test.
+        pending.SetResult(new FrameGrab(new byte[4 * 2 * 4], 4, 2, null));
+        var completedFirst = await first;
+        Assert.True(completedFirst.Success, completedFirst.Error);
+    }
+
+    [Fact]
+    public async Task Jpg_format_uses_grab_jpeg_bytes_and_writes_jpg_extension()
+    {
+        var g = new FakeGrabber { JpegBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 } };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Format = CaptureFormat.Jpg, Directory = TempDir(), FileStem = "t" });
+        Assert.True(r.Success, r.Error);
+        Assert.EndsWith(".jpg", r.Path);
+        Assert.Equal(g.JpegBytes, await File.ReadAllBytesAsync(r.Path!));
+    }
+
+    [Fact]
+    public async Task Resumes_on_main_thread_before_clearing_busy_on_success()
+    {
+        var g = new FakeGrabber();
+        ScreenCaptureService? svc = null;
+        bool? capturingDuringResume = null;
+        g.OnResume = () => capturingDuringResume = svc!.IsCapturing;
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        svc = s;
+
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t" });
+
+        Assert.True(r.Success, r.Error);
+        Assert.Equal(1, g.ResumeCallCount);
+        Assert.True(capturingDuringResume, "IsCapturing must still be true while ResumeOnMainThreadAsync runs.");
+        Assert.False(s.IsCapturing);
+    }
+
+    [Fact]
+    public async Task Resumes_on_main_thread_before_clearing_busy_on_encode_failure()
+    {
+        var g = new FakeGrabber { ShortBuffer = true }; // triggers an exception inside the off-thread PNG encode
+        ScreenCaptureService? svc = null;
+        bool? capturingDuringResume = null;
+        g.OnResume = () => capturingDuringResume = svc!.IsCapturing;
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        svc = s;
+
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t" });
+
+        Assert.False(r.Success);
+        Assert.Equal(1, g.ResumeCallCount);
+        Assert.True(capturingDuringResume, "IsCapturing must still be true while ResumeOnMainThreadAsync runs.");
+        Assert.False(s.IsCapturing);
+    }
+
+    [Fact]
+    public async Task Hide_throwing_fails_cleanly_and_a_later_capture_still_works()
+    {
+        var vis = new ThrowOnceVisibility();
+        var g = new FakeGrabber();
+        var s = new ScreenCaptureService(g, vis, new CaptureFileSink());
+
+        var r1 = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t1", HideDuringCapture = VisibilityLayers.GameHud });
+        Assert.False(r1.Success);
+        Assert.False(s.IsCapturing);
+
+        var r2 = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t2", HideDuringCapture = VisibilityLayers.GameHud });
+        Assert.True(r2.Success, r2.Error);
+        Assert.False(s.IsCapturing);
+    }
+
+    [Fact]
+    public async Task Grab_failure_maps_to_a_player_readable_message()
+    {
+        // Scale 1 has no fallback, so the FrameGrabException surfaces directly as a grab failure.
+        var g = new FakeGrabber { FailAtScale = 1 };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t" });
+        Assert.False(r.Success);
+        Assert.Equal("The screen could not be captured.", r.Error);
+    }
+
+    [Fact]
+    public async Task Unexpected_failure_maps_to_a_generic_player_readable_message()
+    {
+        var g = new FakeGrabber { ShortBuffer = true };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink());
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t" });
+        Assert.False(r.Success);
+        Assert.Equal("The screenshot failed unexpectedly.", r.Error);
+    }
+
+    [Fact]
+    public async Task Failure_never_leaks_raw_exception_text_but_logs_it()
+    {
+        var g = new FakeGrabber { FailAtScale = 1 };
+        var logged = new List<string>();
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), logged.Add);
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 1, Directory = TempDir(), FileStem = "t" });
+        Assert.False(r.Success);
+        Assert.DoesNotContain("FrameGrabException", r.Error);
+        Assert.Single(logged);
+        Assert.Contains("FrameGrabException", logged[0]);
     }
 }

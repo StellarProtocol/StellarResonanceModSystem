@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
@@ -12,12 +13,14 @@ internal sealed class ScreenCaptureService : IScreenCapture
     private readonly IFrameGrabber _grabber;
     private readonly ISceneVisibility _visibility;
     private readonly CaptureFileSink _sink;
+    private readonly Action<string>? _log;
 
-    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink)
+    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string>? log = null)
     {
         _grabber = grabber;
         _visibility = visibility;
         _sink = sink;
+        _log = log;
     }
 
     public bool IsCapturing { get; private set; }
@@ -25,24 +28,28 @@ internal sealed class ScreenCaptureService : IScreenCapture
     public async Task<CaptureResult> CaptureAsync(CaptureRequest request)
     {
         if (IsCapturing) return CaptureResult.Fail("A screenshot is already being taken.");
-        var (w, h) = _grabber.ScreenSize;
-        var (scale, error) = CaptureRequestValidator.Validate(request, w, h);
-        if (error is not null) return CaptureResult.Fail(error);
-        IsCapturing = true;
-        var hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
+        IDisposable? hide = null;
         try
         {
+            IsCapturing = true;
+            var (w, h) = _grabber.ScreenSize;
+            var (scale, error) = CaptureRequestValidator.Validate(request, w, h);
+            if (error is not null) return CaptureResult.Fail(error);
+            hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
             var grab = await GrabWithFallback(request, scale, hide is null ? 0 : SettleFramesWhenHiding);
             hide?.Dispose(); // still on the main thread (grabber contract)
             hide = null;
             var ext = request.Format == CaptureFormat.Jpg ? ".jpg" : ".png";
             var bytes = grab.Jpeg ?? await Task.Run(() => PngEncoder.Encode(grab));
             var path = await Task.Run(() => _sink.Write(request.Directory, request.FileStem, ext, bytes));
+            await _grabber.ResumeOnMainThreadAsync();
             return CaptureResult.Ok(path, grab.Width, grab.Height);
         }
         catch (Exception ex)
         {
-            return CaptureResult.Fail(ex.Message);
+            await _grabber.ResumeOnMainThreadAsync();
+            _log?.Invoke(ex.ToString());
+            return CaptureResult.Fail(MapError(ex));
         }
         finally
         {
@@ -62,4 +69,11 @@ internal sealed class ScreenCaptureService : IScreenCapture
             return await _grabber.GrabAsync(2, settle, r.Format, r.JpgQuality);
         }
     }
+
+    private static string MapError(Exception ex) => ex switch
+    {
+        FrameGrabException => "The screen could not be captured.",
+        IOException or UnauthorizedAccessException => "The screenshot could not be saved to that folder.",
+        _ => "The screenshot failed unexpectedly.",
+    };
 }
