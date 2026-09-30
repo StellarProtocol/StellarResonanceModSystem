@@ -250,8 +250,6 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 Mathf.RoundToInt(Screen.width / s), Mathf.RoundToInt(Screen.height / s)));
     }
 
-    // Screen px per canvas unit. GetRect/SetRect speak canvas units (the CanvasScaler applies this factor); the
-    // layout editor is uniformly screen-px, so WindowService scales editor rects by this. Mirrors the ClampToScreen guard.
     /// <summary>The window canvas root (<c>StellarWindowCanvas</c>, HideAndDontSave — not findable by
     /// FindObjectsOfType), or null before the first mount. Read by the photo visibility backend.</summary>
     internal GameObject? CanvasObject => _canvas;
@@ -267,6 +265,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         catch (Exception ex) { _log.Warning($"[Window] CanvasCreated handler threw: {ex.Message}"); }
     }
 
+    // Screen px per canvas unit. GetRect/SetRect speak canvas units (the CanvasScaler applies this factor); the
+    // layout editor is uniformly screen-px, so WindowService scales editor rects by this. Mirrors the ClampToScreen guard.
     public float CanvasScale => _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
 
     // A freshly-added CanvasScaler reports the DEFAULT scaleFactor (1.0) on its create frame; the real value lands

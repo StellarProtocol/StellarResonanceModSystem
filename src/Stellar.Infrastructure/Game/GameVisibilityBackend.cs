@@ -67,6 +67,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         if (!want) _applied &= ~layer;         // restore attempted — never report a layer we tried to show
         else if (ok) _applied |= layer;
         else if (!force) _applied &= ~layer;   // a failed re-assert keeps the last known state
+        OnLayerSet(layer, want, ok);           // after the update, so a successful hide logs its applied bit
     }
 
     private void StepOtherPlayers(VisibilityLayers requested)
@@ -75,9 +76,10 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         var want = (requested & VisibilityLayers.OtherPlayers) != 0;
         var keep = want && (requested & VisibilityLayers.KeepParty) != 0;
         var target = want ? VisibilityLayers.OtherPlayers | (keep ? VisibilityLayers.KeepParty : 0) : VisibilityLayers.None;
-        var ok = !_entityShow.NeedsWrite(want, keep)
-                 || Invoke(VisibilityLayers.OtherPlayers, want, () => SetOtherPlayersHidden(want, keep));
+        var wrote = _entityShow.NeedsWrite(want, keep);
+        var ok = !wrote || Invoke(VisibilityLayers.OtherPlayers, want, () => SetOtherPlayersHidden(want, keep));
         _applied = (_applied & ~both) | (want && !ok ? VisibilityLayers.None : target);
+        if (wrote) OnLayerSet(VisibilityLayers.OtherPlayers, want, ok);
     }
 
     private bool Invoke(VisibilityLayers layer, bool hide, Func<bool> call)
@@ -89,7 +91,6 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
             WarnOnce("throw:" + layer, $"Hide {layer} failed: {(ex.InnerException ?? ex).Message}");
             ok = false;
         }
-        OnLayerSet(layer, hide, ok);
         return ok;
     }
 
