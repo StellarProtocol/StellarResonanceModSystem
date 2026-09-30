@@ -14,6 +14,12 @@ namespace Stellar.Infrastructure.Game;
 // (The bespoke CombatMeter MeterRowBinding lives in the sibling partial WindowBuilder.MeterRowBinding.cs.)
 internal sealed partial class WindowBuilder
 {
+    // The chrome-default text colours, as cached providers for the colour bindings' restore-on-null (read at restore
+    // time, so a theme change between the override and its release restores the CURRENT default, not a stale one).
+    private Func<Color>? _menuTextColorFn, _hudTextColorFn;
+    private Func<Color> MenuTextColorFn => _menuTextColorFn ??= () => _assets.MenuText;
+    private Func<Color> HudTextColorFn => _hudTextColorFn ??= () => HudTextColor;
+
     internal sealed class SliderBinding
     {
         public Slider S = null!;
@@ -37,6 +43,11 @@ internal sealed partial class WindowBuilder
         public Text? Shadow;
         public Func<string> TextFn = null!;
         public Func<ColorRgba?>? ColorFn;
+        // The element's chrome default colour, restored when ColorFn flips from a colour back to null. Null → the
+        // colour the Text had on its first poll (its build-time colour — no override has been painted yet).
+        public Func<Color>? DefaultColor;
+        private Color? _buildColor;
+        private ColorOverrideTracker _color;
         // HudOverlay only: live font size (TextElement.DynamicFontSize, e.g. ScreenHeight/19), re-pulled per apply
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
@@ -79,12 +90,24 @@ internal sealed partial class WindowBuilder
                     if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
                 }
             }
-            if (ColorFn != null && ColorFn() is { } v)
+            if (ColorFn != null) ApplyColor(ColorFn());
+        }
+
+        private void ApplyColor(ColorRgba? v)
+        {
+            if (DefaultColor == null && _buildColor == null) _buildColor = C.color;
+            switch (_color.Next(v.HasValue))
             {
-                C.color = new Color(v.R, v.G, v.B, v.A);
-                // Keep the shadow's dark rgb, track only the foreground alpha — matches HudElementBuilder's twin.
-                if (Shadow != null) { var sc = Shadow.color; Shadow.color = new Color(sc.r, sc.g, sc.b, v.A); }
+                case ColorStep.Override: Paint(new Color(v!.Value.R, v.Value.G, v.Value.B, v.Value.A)); break;
+                case ColorStep.RestoreDefault: Paint(DefaultColor?.Invoke() ?? _buildColor!.Value); break;
             }
+        }
+
+        private void Paint(Color c)
+        {
+            C.color = c;
+            // Keep the shadow's dark rgb, track only the foreground alpha — matches HudElementBuilder's twin.
+            if (Shadow != null) { var sc = Shadow.color; Shadow.color = new Color(sc.r, sc.g, sc.b, c.a); }
         }
     }
 
@@ -95,6 +118,8 @@ internal sealed partial class WindowBuilder
         public IStyledTextHandle H = null!;
         public Func<string> TextFn = null!;
         public Func<ColorRgba?>? ColorFn;
+        public Func<Color>? DefaultColor;   // restored when ColorFn flips back to null (see TextBinding)
+        private ColorOverrideTracker _color;
         private string? _last;
         private int _applies;
 
@@ -104,7 +129,13 @@ internal sealed partial class WindowBuilder
             if (go == null || !go.activeInHierarchy) return;
             var s = TextFn();
             if (s != _last) { _last = s; H.SetText(s); }
-            if (ColorFn != null && ColorFn() is { } v) H.SetColor(new Color(v.R, v.G, v.B, v.A));
+            if (ColorFn != null)
+            {
+                var v = ColorFn();
+                var step = _color.Next(v.HasValue);
+                if (step == ColorStep.Override) H.SetColor(new Color(v!.Value.R, v.Value.G, v.Value.B, v.Value.A));
+                else if (step == ColorStep.RestoreDefault && DefaultColor != null) H.SetColor(DefaultColor());
+            }
             // One forced regeneration on the SECOND poll (post-first-paint): the game's TMP build drops
             // the underline segment on a text's first post-layout generation — see IStyledTextHandle.Refresh.
             if (_applies < 2 && ++_applies == 2) H.Refresh();

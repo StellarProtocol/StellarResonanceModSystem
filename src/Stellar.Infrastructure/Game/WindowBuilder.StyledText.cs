@@ -30,7 +30,7 @@ internal sealed partial class WindowBuilder
         var le = h.Go.AddComponent<LayoutElement>();
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
-        token.StyledTexts.Add(new StyledTextBinding { H = h, TextFn = t.Text, ColorFn = t.Color });
+        token.StyledTexts.Add(new StyledTextBinding { H = h, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn });
         token.ReskinActions.Add(() => { h.SetFontSize(Scaled(size)); h.SetColor(_assets.MenuText); });
         return true;
     }
