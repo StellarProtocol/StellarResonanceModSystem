@@ -4,6 +4,8 @@
     <AssemblyName>Stellar.Infrastructure</AssemblyName>
     <Description>Adapters to BepInEx / HarmonyX / Unity IL2CPP / game internals. Implements outbound interfaces declared in Application.</Description>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- UnityFrameGrabber reads Texture2D pixels through the NativeArray view's raw pointer (one copy at 4×). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

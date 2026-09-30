@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using BepInEx.Unity.IL2CPP.Utils.Collections;
 using Il2CppInterop.Runtime.Injection;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -12,24 +11,43 @@ using Stellar.Infrastructure.Unity;
 using UnityEngine;
 namespace Stellar.Infrastructure.Rendering;
 
+// Frame capture + readback lives in UnityFrameGrabber.Capture.cs; diagnostics in UnityFrameGrabber.Diagnostics.cs.
+
 /// <summary>
 /// Grabs at end of frame via a coroutine and completes on the main thread (TCSes are created WITHOUT
 /// RunContinuationsAsynchronously, so the awaiting continuation runs inline inside the coroutine).
-/// Capture strategy = CameraRender (docs/recon/photo-studio-render-recon.md): the main camera renders once into an
-/// N× RenderTexture and is read back as RGBA32 — clean (no game UI, no nameplates, no Stellar overlay) and a true
-/// N× render. Every returned task always completes: a missing host, a failed StartCoroutine, a throwing capture or
-/// the host's destruction all fault it with <see cref="FrameGrabException"/>.
+/// Capture strategy = CameraRender (docs/recon/photo-studio-render-recon.md).
+///
+/// <para>Threading: <see cref="GrabAsync"/> is called on the main thread; <see cref="ResumeOnMainThreadAsync"/> is
+/// usually called from a thread-pool thread (after the off-thread encode/write). Unity APIs (StartCoroutine, the
+/// host GameObject) are only ever touched on the main thread: after a grab its coroutine keeps PUMPING for
+/// <see cref="PumpIdleSeconds"/>, draining resume requests queued from other threads. An off-thread resume with no
+/// pump alive fails fast rather than touching Unity. Every returned task always completes (faulted with
+/// <see cref="FrameGrabException"/> when the host is gone).</para>
 /// </summary>
-internal sealed class UnityFrameGrabber : IFrameGrabber
+internal sealed partial class UnityFrameGrabber : IFrameGrabber
 {
+    private const float PumpIdleSeconds = 60f;   // covers a 4× PNG encode + write (measured ~2 s) with a wide margin
+
     private readonly IPluginLog _log;
-    private readonly List<Action<Exception>> _pending = new();
-    private StellarCaptureHost? _host;
+    private readonly int _mainThreadId;
+    private readonly object _gate = new();
+    private readonly List<Action<Exception>> _pending = new();                 // guarded by _gate
+    private readonly List<TaskCompletionSource<bool>> _resumes = new();       // guarded by _gate
+    private int _pumps;                                                        // guarded by _gate
+    private StellarCaptureHost? _host;                                         // main thread only
     private bool _registered;
 
-    public UnityFrameGrabber(IPluginLog log) => _log = log;
+    /// <summary>Construct on the Unity main thread (the framework's Load()); its thread id is the main-thread id.</summary>
+    public UnityFrameGrabber(IPluginLog log)
+    {
+        _log = log;
+        _mainThreadId = Environment.CurrentManagedThreadId;
+    }
 
     public (int Width, int Height) ScreenSize => (Screen.width, Screen.height);
+
+    private bool OnMainThread => Environment.CurrentManagedThreadId == _mainThreadId;
 
     public Task<FrameGrab> GrabAsync(int scale, int settleFrames, CaptureFormat format, int jpgQuality)
     {
@@ -40,8 +58,17 @@ internal sealed class UnityFrameGrabber : IFrameGrabber
 
     public Task ResumeOnMainThreadAsync()
     {
-        var tcs = new TaskCompletionSource<bool>(); // completes inside the coroutine = main thread
-        Run(ex => tcs.TrySetException(ex), NextFrame(tcs));
+        var tcs = new TaskCompletionSource<bool>(); // completed on the main thread (coroutine or pump)
+        if (OnMainThread)
+        {
+            Run(ex => tcs.TrySetException(ex), NextFrame(tcs));
+            return tcs.Task;
+        }
+        lock (_gate)
+        {
+            if (_pumps > 0) { _resumes.Add(tcs); return tcs.Task; }
+        }
+        tcs.TrySetException(new FrameGrabException("The capture host is not running on the main thread."));
         return tcs.Task;
     }
 
@@ -49,13 +76,14 @@ internal sealed class UnityFrameGrabber : IFrameGrabber
     {
         try
         {
+            if (!OnMainThread) throw new FrameGrabException("Captures must be started on the main thread.");
             var host = EnsureHost();
-            _pending.Add(fail);
+            lock (_gate) _pending.Add(fail);
             host.StartCoroutine(Tracked(body, fail).WrapToIl2Cpp());
         }
         catch (Exception ex)
         {
-            _pending.Remove(fail);
+            lock (_gate) _pending.Remove(fail);
             fail(ex as FrameGrabException ?? new FrameGrabException(ex.Message));
         }
     }
@@ -78,7 +106,7 @@ internal sealed class UnityFrameGrabber : IFrameGrabber
             }
             yield return current;
         }
-        _pending.Remove(fail);
+        lock (_gate) _pending.Remove(fail);
     }
 
     private static IEnumerator NextFrame(TaskCompletionSource<bool> tcs)
@@ -87,11 +115,39 @@ internal sealed class UnityFrameGrabber : IFrameGrabber
         tcs.TrySetResult(true);
     }
 
-    private static IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, int scale, int settle, CaptureFormat format, int q)
+    private IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, int scale, int settle, CaptureFormat format, int q)
     {
-        for (var i = 0; i < settle; i++) yield return null;
-        yield return new WaitForEndOfFrame();
-        tcs.TrySetResult(Capture(scale, format, q));
+        lock (_gate) _pumps++;
+        try
+        {
+            for (var i = 0; i < settle; i++) yield return null;
+            yield return new WaitForEndOfFrame();
+            tcs.TrySetResult(Capture(scale, format, q));
+            var idleUntil = Time.realtimeSinceStartup + PumpIdleSeconds;
+            while (Time.realtimeSinceStartup < idleUntil)
+            {
+                DrainResumes();
+                yield return null;
+            }
+        }
+        finally
+        {
+            lock (_gate) _pumps = Math.Max(0, _pumps - 1);
+            DrainResumes();   // a resume queued between the last drain and the decrement still completes
+        }
+    }
+
+    // Completes queued off-thread resumes on the main thread (outside the lock: continuations run inline).
+    private void DrainResumes()
+    {
+        TaskCompletionSource<bool>[] ready;
+        lock (_gate)
+        {
+            if (_resumes.Count == 0) return;
+            ready = _resumes.ToArray();
+            _resumes.Clear();
+        }
+        foreach (var r in ready) r.TrySetResult(true);
     }
 
     private StellarCaptureHost EnsureHost()
@@ -115,54 +171,17 @@ internal sealed class UnityFrameGrabber : IFrameGrabber
     private void FailPending()
     {
         _host = null;
-        var pending = _pending.ToArray();
-        _pending.Clear();
+        Action<Exception>[] pending;
+        TaskCompletionSource<bool>[] resumes;
+        lock (_gate)
+        {
+            pending = _pending.ToArray();
+            resumes = _resumes.ToArray();
+            _pending.Clear();
+            _resumes.Clear();
+            _pumps = 0;
+        }
         foreach (var fail in pending) fail(new FrameGrabException("The capture was interrupted."));
-    }
-
-    private static FrameGrab Capture(int scale, CaptureFormat format, int q)
-    {
-        var cam = Camera.main;
-        if (cam == null) throw new FrameGrabException("No camera is rendering the scene.");
-        int w = Screen.width * scale, h = Screen.height * scale;
-        var rt = new RenderTexture(w, h, 24);
-        var prevTarget = cam.targetTexture;
-        var prevActive = RenderTexture.active;
-        Texture2D? tex = null;
-        try
-        {
-            if (!rt.Create()) throw new FrameGrabException($"A {w}x{h} render target could not be created.");
-            cam.targetTexture = rt;
-            cam.Render();
-            cam.targetTexture = prevTarget;
-            RenderTexture.active = rt;
-            tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
-            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
-            tex.Apply(false);
-            return Encode(tex, w, h, format, q);
-        }
-        finally
-        {
-            cam.targetTexture = prevTarget;
-            RenderTexture.active = prevActive;
-            rt.Release();
-            UnityEngine.Object.Destroy(rt);
-            if (tex != null) UnityEngine.Object.Destroy(tex);
-        }
-    }
-
-    private static FrameGrab Encode(Texture2D tex, int w, int h, CaptureFormat format, int q)
-    {
-        byte[]? jpeg = format == CaptureFormat.Jpg ? Copy(ImageConversion.EncodeToJPG(tex, q)) : null;
-        var raw = jpeg is null ? Copy(tex.GetRawTextureData()) : Array.Empty<byte>();
-        if (jpeg is null && raw.Length != w * h * 4) throw new FrameGrabException("The captured frame has an unexpected pixel format.");
-        return new FrameGrab(raw, w, h, jpeg);
-    }
-
-    // One memcpy over the native buffer (AsSpan) — never enumerate an Il2Cpp array element-by-element (132 MB at 4×).
-    private static byte[] Copy(Il2CppStructArray<byte>? src)
-    {
-        if (src is null) throw new FrameGrabException("The frame could not be read back.");
-        return src.AsSpan().ToArray();
+        foreach (var r in resumes) r.TrySetException(new FrameGrabException("The capture was interrupted."));
     }
 }
