@@ -22,13 +22,17 @@ internal sealed partial class GameVisibilityBackend
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
     private bool _selfEntityShowWrite;     // true while WE call SetEntityShow, so the observer ignores it
 
-    // Cached DEFINITIVE negatives for Available's probes: set once a loaded type is conclusively missing the
-    // expected member (a loaded type's shape never changes at runtime), so later probes skip re-resolving it.
-    // A positive resolution is cached in the setter's own field above instead (_setUiInvisible etc.) — these three
-    // exist only for the negative case, which has nowhere else to live.
-    private bool _gameHudUnavailable;
-    private bool _nameplatesUnavailable;
-    private bool _otherPlayersUnavailable;
+    // Bounded negative caches for Available's probes (docs/il2cpp-probing-safety.md § negative-cache races: a
+    // negative verdict must expire, never latch permanently). N = 5s: long enough that a panel polling Available
+    // every frame doesn't re-run FindType/GetMethod more than a couple of times a minute once a layer is known
+    // missing, short enough that a hot-update reload mid-session (or a transient miss during boot) self-heals
+    // within a few seconds rather than needing a relaunch. A positive resolution is still cached permanently in
+    // the setter's own field above (_setUiInvisible etc.) — these three exist only for the negative case, which
+    // has nowhere else to live. Cleared on the SAME re-init hooks that already re-assert held hides below.
+    private const long NegativeProbeTtlMs = 5_000;
+    private readonly NegativeProbeCache _gameHudNegative = new(() => Environment.TickCount64, NegativeProbeTtlMs);
+    private readonly NegativeProbeCache _nameplatesNegative = new(() => Environment.TickCount64, NegativeProbeTtlMs);
+    private readonly NegativeProbeCache _otherPlayersNegative = new(() => Environment.TickCount64, NegativeProbeTtlMs);
 
     /// <summary>Raised (main thread) after the game (re)initialised a hide target — <c>ZUiRoot.Init</c>,
     /// <c>HudMgr.Init</c> / <c>HudMgr.OnEnterScene</c>, <c>CameraFrameCtrl.Init</c>.</summary>
@@ -37,7 +41,10 @@ internal sealed partial class GameVisibilityBackend
     /// <summary>
     /// Observes the game's own <c>CameraFrameCtrl.SetEntityShow</c> writes (so a release restores the game's value,
     /// not a guess) and <c>ZUiRoot.Init</c> (a rebuilt UI root loses our SetUIInvisible). Call once, after the
-    /// hot-update assemblies load.
+    /// hot-update assemblies load. The same re-init points also clear the bounded negative probe caches (scene
+    /// change / hot-update-ready is exactly the "session boundary" docs/il2cpp-probing-safety.md calls for) —
+    /// clearing all three on any one of them is deliberately coarse: a spurious extra reflection lookup costs
+    /// nothing, an under-clear risks re-latching stale unavailability past a fix.
     /// </summary>
     public void InstallHooks(Stellar.Infrastructure.Hooks.HarmonyGameMethodHooker hooker)
     {
@@ -45,18 +52,27 @@ internal sealed partial class GameVisibilityBackend
         {
             if (_types.FindType(CameraFrameCtrlType) is { } cf) hooker.PostfixAllOverloads(cf, "SetEntityShow", OnGameSetEntityShow);
             else WarnOnce("hook:SetEntityShow", $"Hide OtherPlayers: {CameraFrameCtrlType} not found; game camera-mode writes are not tracked.");
-            if (_types.FindType(ZUiRootType) is { } ui) hooker.PostfixAllOverloads(ui, "Init", (_, _) => TargetRebuilt?.Invoke());
+            if (_types.FindType(ZUiRootType) is { } ui) hooker.PostfixAllOverloads(ui, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
             // HudMgr owns hudDisabledFlag_ (our nameplate bit): a re-init or scene entry may reset it.
             if (_types.FindType(HudMgrType) is { } hud)
             {
-                hooker.PostfixAllOverloads(hud, "Init", (_, _) => TargetRebuilt?.Invoke());
-                hooker.PostfixAllOverloads(hud, "OnEnterScene", (_, _) => TargetRebuilt?.Invoke());
+                hooker.PostfixAllOverloads(hud, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
+                hooker.PostfixAllOverloads(hud, "OnEnterScene", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
             }
             // A CameraFrameCtrl re-init may reset its entity-show flags: forget the mirror, then re-assert.
             if (_types.FindType(CameraFrameCtrlType) is { } cfi)
-                hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { _entityShow.Reset(); TargetRebuilt?.Invoke(); });
+                hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { _entityShow.Reset(); ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
+    }
+
+    /// <summary>Forgets every bounded negative probe result — called from the re-init hooks above. A relaunch is
+    /// never the only reset available in-game (docs/il2cpp-probing-safety.md rule 4).</summary>
+    private void ClearNegativeProbes()
+    {
+        _gameHudNegative.Reset();
+        _nameplatesNegative.Reset();
+        _otherPlayersNegative.Reset();
     }
 
     /// <summary>
@@ -75,21 +91,26 @@ internal sealed partial class GameVisibilityBackend
     private bool ProbeGameHud()
     {
         if (_setUiInvisible is not null) return true;
-        if (_gameHudUnavailable) return false;
+        if (_gameHudNegative.IsSuppressed) return false;
         var t = _types.FindType(ZUiRootType);
         var method = t?.GetMethod("SetUIInvisible", AnyInstance, null, new[] { typeof(bool) }, null);
         switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
         {
-            case ProbeOutcome.Available: _setUiInvisible = method; return true;
-            case ProbeOutcome.DefinitivelyUnavailable: _gameHudUnavailable = true; return false;
-            default: return true; // Optimistic
+            case ProbeOutcome.Available:
+                _setUiInvisible = method;
+                if (_gameHudNegative.MarkRecovered()) _log.Info(Tag + "GameHud recovered: ZUiRoot.SetUIInvisible resolved.");
+                return true;
+            case ProbeOutcome.DefinitivelyUnavailable:
+                if (_gameHudNegative.MarkNegative()) _log.Warning(Tag + $"GameHud unavailable: {ZUiRootType}.SetUIInvisible(bool) not found.");
+                return false;
+            default: return true; // Optimistic — type not loaded yet, nothing to cache
         }
     }
 
     private bool ProbeNameplates()
     {
         if (_setHudSwitch is not null) return true;
-        if (_nameplatesUnavailable) return false;
+        if (_nameplatesNegative.IsSuppressed) return false;
         var t = _types.FindType(HudMgrType);
         var m = t is null ? null : StellarInterop.FindMethod(t, "SetHudSwitch", 2);
         var sourceType = m?.GetParameters()[1].ParameterType;
@@ -99,8 +120,11 @@ internal sealed partial class GameVisibilityBackend
             case ProbeOutcome.Available:
                 _hudSourceStellar = Enum.ToObject(sourceType!, PrivateHudSource);
                 _setHudSwitch = m;
+                if (_nameplatesNegative.MarkRecovered()) _log.Info(Tag + "Nameplates recovered: HudMgr.SetHudSwitch resolved.");
                 return true;
-            case ProbeOutcome.DefinitivelyUnavailable: _nameplatesUnavailable = true; return false;
+            case ProbeOutcome.DefinitivelyUnavailable:
+                if (_nameplatesNegative.MarkNegative()) _log.Warning(Tag + $"Nameplates unavailable: {HudMgrType}.SetHudSwitch(bool, EHudAvailableSource) not found.");
+                return false;
             default: return true;
         }
     }
@@ -108,13 +132,18 @@ internal sealed partial class GameVisibilityBackend
     private bool ProbeOtherPlayers()
     {
         if (_setEntityShow is not null) return true;
-        if (_otherPlayersUnavailable) return false;
+        if (_otherPlayersNegative.IsSuppressed) return false;
         var t = _types.FindType(CameraFrameCtrlType);
         var method = t?.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
         switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
         {
-            case ProbeOutcome.Available: _setEntityShow = method; return true;
-            case ProbeOutcome.DefinitivelyUnavailable: _otherPlayersUnavailable = true; return false;
+            case ProbeOutcome.Available:
+                _setEntityShow = method;
+                if (_otherPlayersNegative.MarkRecovered()) _log.Info(Tag + "OtherPlayers recovered: CameraFrameCtrl.SetEntityShow resolved.");
+                return true;
+            case ProbeOutcome.DefinitivelyUnavailable:
+                if (_otherPlayersNegative.MarkNegative()) _log.Warning(Tag + $"OtherPlayers unavailable: {CameraFrameCtrlType}.SetEntityShow(int, bool) not found.");
+                return false;
             default: return true;
         }
     }
