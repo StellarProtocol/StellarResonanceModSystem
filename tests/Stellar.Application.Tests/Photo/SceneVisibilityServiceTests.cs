@@ -70,6 +70,17 @@ public sealed class SceneVisibilityServiceTests
     }
 
     [Fact]
+    public void KeepParty_is_masked_out_when_backend_cannot_achieve_OtherPlayers()
+    {
+        // The backend can't hide OtherPlayers at all; it can only ever hand back the
+        // KeepParty bit alone, which is meaningless without OtherPlayers actually hidden.
+        var b = new FakeBackend { Unsupported = VisibilityLayers.OtherPlayers };
+        var s = new SceneVisibilityService(b);
+        s.Hide(VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty);
+        Assert.Equal(VisibilityLayers.None, s.Hidden);
+    }
+
+    [Fact]
     public void Changed_fires_only_on_real_change()
     {
         var s = new SceneVisibilityService(new FakeBackend());

@@ -44,9 +44,10 @@ public sealed class RenderLookServiceTests
         Assert.False(first.IsActive);
         Assert.True(second.IsActive);
         Assert.Single(warnings);
+        var countBeforeStaleOps = b.Applied.Count;
         first.Update(Full);
         first.Dispose();
-        Assert.NotNull(b.Applied[^1]);
+        Assert.Equal(countBeforeStaleOps, b.Applied.Count);
     }
 
     [Fact]

@@ -51,6 +51,8 @@ internal sealed class SceneVisibilityService : ISceneVisibility
         if (union == _requested) return;
         _requested = union;
         var achieved = _backend.Apply(union);
+        // KeepParty only means anything alongside an actually-achieved OtherPlayers hide.
+        if ((achieved & VisibilityLayers.OtherPlayers) == 0) achieved &= ~VisibilityLayers.KeepParty;
         if (achieved == Hidden) return;
         Hidden = achieved;
         Changed?.Invoke(achieved);
