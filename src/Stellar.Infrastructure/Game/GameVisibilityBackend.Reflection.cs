@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>The three game switches (recon rows HUD_HIDE / NAMEPLATE_HIDE / OTHER_PLAYERS_HIDE), resolved by name.</summary>
@@ -20,6 +21,14 @@ internal sealed partial class GameVisibilityBackend
     private object? _hudSourceStellar;     // (EHudAvailableSource)PrivateHudSource
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
     private bool _selfEntityShowWrite;     // true while WE call SetEntityShow, so the observer ignores it
+
+    // Cached DEFINITIVE negatives for Available's probes: set once a loaded type is conclusively missing the
+    // expected member (a loaded type's shape never changes at runtime), so later probes skip re-resolving it.
+    // A positive resolution is cached in the setter's own field above instead (_setUiInvisible etc.) — these three
+    // exist only for the negative case, which has nowhere else to live.
+    private bool _gameHudUnavailable;
+    private bool _nameplatesUnavailable;
+    private bool _otherPlayersUnavailable;
 
     /// <summary>Raised (main thread) after the game (re)initialised a hide target — <c>ZUiRoot.Init</c>,
     /// <c>HudMgr.Init</c> / <c>HudMgr.OnEnterScene</c>, <c>CameraFrameCtrl.Init</c>.</summary>
@@ -53,8 +62,9 @@ internal sealed partial class GameVisibilityBackend
     /// <summary>
     /// Probe-only: resolves the same reflection target each setter below caches, but never invokes it and never
     /// touches game state. Overlay is the framework's own canvas set (no external game reflection involved), so it
-    /// is always reported available; a hot-update type not yet loaded is optimistic true, and a loaded type missing
-    /// the expected member is a definitive false.
+    /// is always reported available; a hot-update type not yet loaded is optimistic true (re-probed every call —
+    /// nothing to cache yet), and a loaded type missing the expected member is a definitive false, cached so later
+    /// calls skip re-resolving it (see <see cref="VisibilityProbeDecision"/>).
     /// </summary>
     public VisibilityLayers Available =>
         (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
@@ -65,32 +75,48 @@ internal sealed partial class GameVisibilityBackend
     private bool ProbeGameHud()
     {
         if (_setUiInvisible is not null) return true;
+        if (_gameHudUnavailable) return false;
         var t = _types.FindType(ZUiRootType);
-        if (t is null) return true; // hot-update assemblies not loaded yet — optimistic
-        _setUiInvisible = t.GetMethod("SetUIInvisible", AnyInstance, null, new[] { typeof(bool) }, null);
-        return _setUiInvisible is not null;
+        var method = t?.GetMethod("SetUIInvisible", AnyInstance, null, new[] { typeof(bool) }, null);
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
+        {
+            case ProbeOutcome.Available: _setUiInvisible = method; return true;
+            case ProbeOutcome.DefinitivelyUnavailable: _gameHudUnavailable = true; return false;
+            default: return true; // Optimistic
+        }
     }
 
     private bool ProbeNameplates()
     {
         if (_setHudSwitch is not null) return true;
+        if (_nameplatesUnavailable) return false;
         var t = _types.FindType(HudMgrType);
-        if (t is null) return true;
-        var m = StellarInterop.FindMethod(t, "SetHudSwitch", 2);
+        var m = t is null ? null : StellarInterop.FindMethod(t, "SetHudSwitch", 2);
         var sourceType = m?.GetParameters()[1].ParameterType;
-        if (m is null || sourceType is not { IsEnum: true }) return false;
-        _hudSourceStellar = Enum.ToObject(sourceType, PrivateHudSource);
-        _setHudSwitch = m;
-        return true;
+        var memberFound = m is not null && sourceType is { IsEnum: true };
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: memberFound))
+        {
+            case ProbeOutcome.Available:
+                _hudSourceStellar = Enum.ToObject(sourceType!, PrivateHudSource);
+                _setHudSwitch = m;
+                return true;
+            case ProbeOutcome.DefinitivelyUnavailable: _nameplatesUnavailable = true; return false;
+            default: return true;
+        }
     }
 
     private bool ProbeOtherPlayers()
     {
         if (_setEntityShow is not null) return true;
+        if (_otherPlayersUnavailable) return false;
         var t = _types.FindType(CameraFrameCtrlType);
-        if (t is null) return true;
-        _setEntityShow = t.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
-        return _setEntityShow is not null;
+        var method = t?.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
+        switch (VisibilityProbeDecision.Decide(typeLoaded: t is not null, memberFound: method is not null))
+        {
+            case ProbeOutcome.Available: _setEntityShow = method; return true;
+            case ProbeOutcome.DefinitivelyUnavailable: _otherPlayersUnavailable = true; return false;
+            default: return true;
+        }
     }
 
     private void OnGameSetEntityShow(object? instance, object?[] args)
