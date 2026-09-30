@@ -50,7 +50,18 @@ internal sealed class SceneVisibilityService : ISceneVisibility
         if ((union & VisibilityLayers.OtherPlayers) != 0 && keepParty) union |= VisibilityLayers.KeepParty;
         if (union == _requested) return;
         _requested = union;
-        var achieved = _backend.Apply(union);
+        Publish(_backend.Apply(union));
+    }
+
+    /// <summary>Re-issues the held set (the game's photo mode ended, or a hide target was rebuilt). No-op when nothing is held.</summary>
+    internal void Reassert()
+    {
+        if (_requested == VisibilityLayers.None) return;
+        Publish(_backend.Reassert(_requested));
+    }
+
+    private void Publish(VisibilityLayers achieved)
+    {
         // KeepParty only means anything alongside an actually-achieved OtherPlayers hide.
         if ((achieved & VisibilityLayers.OtherPlayers) == 0) achieved &= ~VisibilityLayers.KeepParty;
         if (achieved == Hidden) return;

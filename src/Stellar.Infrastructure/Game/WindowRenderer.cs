@@ -256,6 +256,17 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     /// FindObjectsOfType), or null before the first mount. Read by the photo visibility backend.</summary>
     internal GameObject? CanvasObject => _canvas;
 
+    /// <summary>Raised (main thread) each time the window canvas is (re)created — e.g. so a held photo overlay hide
+    /// is re-applied to the new canvas.</summary>
+    internal event Action? CanvasCreated;
+
+    private void OnCanvasCreated()
+    {
+        _log.Info("[Window] Stellar window canvas created");
+        try { CanvasCreated?.Invoke(); }
+        catch (Exception ex) { _log.Warning($"[Window] CanvasCreated handler threw: {ex.Message}"); }
+    }
+
     public float CanvasScale => _canvasComp != null && _canvasComp.scaleFactor > 0f ? _canvasComp.scaleFactor : 1f;
 
     // A freshly-added CanvasScaler reports the DEFAULT scaleFactor (1.0) on its create frame; the real value lands
@@ -364,7 +375,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
                 registerPulse: p => _ticker!.Pulses.Add(p));
             WireBuilderHooks();
-            _log.Info("[Window] Stellar window canvas created");
+            OnCanvasCreated();
             return true;
         }
         catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }

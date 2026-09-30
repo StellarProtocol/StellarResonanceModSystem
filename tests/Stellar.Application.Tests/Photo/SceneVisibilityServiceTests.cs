@@ -14,9 +14,15 @@ public sealed class SceneVisibilityServiceTests
     {
         public VisibilityLayers Unsupported;
         public readonly List<VisibilityLayers> Calls = new();
+        public readonly List<VisibilityLayers> Reasserts = new();
         public VisibilityLayers Apply(VisibilityLayers requested)
         {
             Calls.Add(requested);
+            return requested & ~Unsupported;
+        }
+        public VisibilityLayers Reassert(VisibilityLayers requested)
+        {
+            Reasserts.Add(requested);
             return requested & ~Unsupported;
         }
     }
@@ -135,5 +141,42 @@ public sealed class SceneVisibilityServiceTests
         p.Changed -= H;
         s.Hide(VisibilityLayers.GameHud);
         Assert.Equal(0, calls);
+    }
+
+    // Fix round 1 (#2/#4): the game's own camera mode and rebuilt targets (canvas, ZUiRoot) can undo a held hide;
+    // the host calls Reassert on those signals and the held set is re-issued.
+    [Fact]
+    public void Reassert_reissues_the_held_set()
+    {
+        var b = new FakeBackend();
+        var s = new SceneVisibilityService(b);
+        using var t = s.Hide(VisibilityLayers.Nameplates | VisibilityLayers.OtherPlayers);
+        s.Reassert();
+        Assert.Equal(new[] { VisibilityLayers.Nameplates | VisibilityLayers.OtherPlayers }, b.Reasserts);
+    }
+
+    [Fact]
+    public void Reassert_with_nothing_held_touches_nothing()
+    {
+        var b = new FakeBackend();
+        var s = new SceneVisibilityService(b);
+        s.Hide(VisibilityLayers.GameHud).Dispose();
+        s.Reassert();
+        Assert.Empty(b.Reasserts);
+    }
+
+    [Fact]
+    public void Reassert_updates_hidden_when_a_layer_becomes_achievable()
+    {
+        var b = new FakeBackend { Unsupported = VisibilityLayers.GameHud };
+        var s = new SceneVisibilityService(b);
+        var seen = new List<VisibilityLayers>();
+        s.Changed += seen.Add;
+        using var t = s.Hide(VisibilityLayers.GameHud);
+        Assert.Equal(VisibilityLayers.None, s.Hidden);
+        b.Unsupported = VisibilityLayers.None;   // e.g. ZUiRoot now exists
+        s.Reassert();
+        Assert.Equal(VisibilityLayers.GameHud, s.Hidden);
+        Assert.Equal(new[] { VisibilityLayers.GameHud }, seen);
     }
 }

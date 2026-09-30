@@ -10,4 +10,16 @@ internal sealed partial class GameVisibilityBackend
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[PhotoVis] {layer} hide={hide} ok={ok} applied={_applied}");
     }
+
+    private void OnEntityShowWritten(int type, bool show)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoVis] SetEntityShow({type},{show}) by Stellar");
+    }
+
+    private void OnGameEntityShow(int type, bool show)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoVis] SetEntityShow({type},{show}) by the game (tracked as prior)");
+    }
 }

@@ -17,29 +17,61 @@ public sealed partial class BootstrapPlugin
     private ScreenCaptureService? _screenCapture;
     private PhotoModeService? _photoMode;
     private PandaPhotoModeProbe? _photoModeProbe;
+    private GameVisibilityBackend? _visibilityBackend;
+    private ZRenderLookBackend? _lookBackend;
+    private bool _photoReassertPending;   // set by game signals, drained on the next framework tick
     // Set in BuildInfraServices; read lazily by the focus meter (constructed later than the photo services).
     private EntityTransformsService? _entityTransforms;
 
     /// <summary>
     /// Constructs the four photo services. Runs in <c>Load()</c> before <see cref="ConstructPluginServices"/> — every
     /// game-facing adapter resolves its game types lazily, so nothing here touches a hot-update type yet; the
-    /// photo-mode hooks install later from <see cref="InstallPhotoModeHooks"/> (OnHotUpdateReady).
+    /// game hooks install later from <see cref="InstallPhotoModeHooks"/> (OnHotUpdateReady).
     /// </summary>
     private void WirePhotoStudio(BepInExPluginLog log)
     {
-        _sceneVisibility = new SceneVisibilityService(new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log));
-        _renderLook = new RenderLookService(
-            new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log),
-            m => log.Warning("[PhotoStudio] " + m));
+        _visibilityBackend = new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log);
+        _sceneVisibility = new SceneVisibilityService(_visibilityBackend);
+        _lookBackend = new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log);
+        _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));
         _screenCapture = new ScreenCaptureService(new UnityFrameGrabber(log), _sceneVisibility, new CaptureFileSink(),
             m => log.Warning("[PhotoStudio] capture: " + m));
-        _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, log);
+        _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, _clientState!, log);
         _photoMode = new PhotoModeService(_photoModeProbe);
+        WirePhotoReassert();
         var renderLook = _renderLook;
-        _framework!.Update += _ => renderLook.Tick();   // no-op unless a look keeps focus on the local player
+        _framework!.Update += _ => { renderLook.Tick(); DrainPhotoReassert(); };   // Tick is a no-op unless a look tracks the player
     }
 
-    private void InstallPhotoModeHooks(HarmonyGameMethodHooker hooker) => _photoModeProbe?.Install(hooker);
+    /// <summary>
+    /// Our hides share switches with the game's own camera mode / cutscenes, and their targets can be rebuilt.
+    /// Game signals (photo-mode exit, cutscene end, ZUiRoot.Init) re-assert on the NEXT framework tick so the game's
+    /// own restore path finishes first; our own canvases re-assert immediately (no one-tick flash). Event-driven only.
+    /// </summary>
+    private void WirePhotoReassert()
+    {
+        _photoMode!.Exited += () => _photoReassertPending = true;
+        _photoMode.CutsceneChanged += on => { if (!on) _photoReassertPending = true; };
+        _visibilityBackend!.TargetRebuilt += () => _photoReassertPending = true;
+        var visibility = _sceneVisibility!;
+        if (_windowRenderer is not null) _windowRenderer.CanvasCreated += visibility.Reassert;
+        if (_layoutOverlay is not null) _layoutOverlay.ChromeCanvasCreated += visibility.Reassert;
+    }
+
+    private void DrainPhotoReassert()
+    {
+        if (!_photoReassertPending) return;
+        _photoReassertPending = false;
+        _sceneVisibility?.Reassert();
+    }
+
+    private void InstallPhotoModeHooks(HarmonyGameMethodHooker hooker)
+    {
+        _photoModeProbe?.Install(hooker);
+        _visibilityBackend?.InstallHooks(hooker);
+    }
+
+    private void DisposePhotoStudio() => _lookBackend?.Dispose();
 
     // The framework's own overlay canvases (HideAndDontSave, so taken from their owners, never searched for).
     // The toast canvas is deliberately absent: toasts stay visible (capture feedback).

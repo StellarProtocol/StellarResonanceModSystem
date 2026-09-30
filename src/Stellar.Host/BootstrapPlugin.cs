@@ -370,6 +370,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         catch (Exception ex) { log.Warning($"[Bootstrap] WireTap DisposeCapture threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _pluginRegistry?.DisposeAll(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] PluginRegistry DisposeAll threw: {ex.GetType().Name}: {ex.Message}"); }
+        try { DisposePhotoStudio(); }
+        catch (Exception ex) { log.Warning($"[Bootstrap] photo services (after plugins released their looks) dispose threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _themeRenderer?.DestroyBakedTextures(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] ThemeRenderer DestroyBakedTextures threw: {ex.GetType().Name}: {ex.Message}"); }
         return base.Unload();

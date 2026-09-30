@@ -54,6 +54,9 @@ internal sealed class LayoutEditChrome
     /// <summary>The edit-chrome canvas root (<c>StellarLayoutEditCanvas</c>), or null outside layout edit mode.</summary>
     public GameObject? CanvasObject => _canvas;
 
+    /// <summary>Raised (main thread) when the edit-chrome canvas is created (layout edit mode entered).</summary>
+    public event System.Action? CanvasCreated;
+
     /// <summary>Optional label font (the menu OS font); null falls back to the builtin.</summary>
     public void SetFont(Font? font) => _font = font;
 
@@ -69,6 +72,7 @@ internal sealed class LayoutEditChrome
         EnsureSprites();
         _canvas = go;
         _root = go.transform;
+        CanvasCreated?.Invoke();
         return true;
     }
 

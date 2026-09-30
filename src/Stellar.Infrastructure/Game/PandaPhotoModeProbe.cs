@@ -28,10 +28,13 @@ internal sealed class PandaPhotoModeProbe : IPhotoModeProbe
     private bool _inCamera;
     private bool _selfie;
 
-    public PandaPhotoModeProbe(IGameTypeRegistry types, IPluginLog log)
+    public PandaPhotoModeProbe(IGameTypeRegistry types, IClientState clientState, IPluginLog log)
     {
         _types = types;
         _log = log;
+        // Leaving the scene / logging out while in the game's photo mode never runs its exit hooks — reset the latches.
+        clientState.SceneChanged += scene => { if (scene is null) ResetLatches(); };
+        clientState.Logout += ResetLatches;
     }
 
     public event Action<PhotoModeKind>? KindChanged;
@@ -42,10 +45,10 @@ internal sealed class PandaPhotoModeProbe : IPhotoModeProbe
     {
         try
         {
-            Hook(hooker, CameraFrameCtrlType, "RecordCameraInitialParameters", (_, _) => { _inCamera = true; RaiseKind(); });
-            Hook(hooker, CameraFrameCtrlType, "ResetCameraInitialParameters", (_, _) => { _inCamera = false; RaiseKind(); });
-            Hook(hooker, SelfPhotoStateType, "OnEnter", (_, _) => { _selfie = true; RaiseKind(); });
-            Hook(hooker, SelfPhotoStateType, "OnExit", (_, _) => { _selfie = false; RaiseKind(); });
+            Hook(hooker, CameraFrameCtrlType, "RecordCameraInitialParameters", (_, _) => OnCameraMode(true));
+            Hook(hooker, CameraFrameCtrlType, "ResetCameraInitialParameters", (_, _) => OnCameraMode(false));
+            Hook(hooker, SelfPhotoStateType, "OnEnter", (_, _) => OnSelfie(true));
+            Hook(hooker, SelfPhotoStateType, "OnExit", (_, _) => OnSelfie(false));
             Hook(hooker, CutsceneManagerType, "Play", (_, _) => CutsceneChanged?.Invoke(true));
             Hook(hooker, CutsceneManagerType, "afterStop", (_, _) => CutsceneChanged?.Invoke(false));
             SeedCutscene();
@@ -54,6 +57,18 @@ internal sealed class PandaPhotoModeProbe : IPhotoModeProbe
         {
             _log.Warning(Tag + $"photo-mode signals disabled: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    internal void OnCameraMode(bool on) { _inCamera = on; RaiseKind(); }
+
+    internal void OnSelfie(bool on) { _selfie = on; RaiseKind(); }
+
+    private void ResetLatches()
+    {
+        if (!_inCamera && !_selfie) return;
+        _inCamera = false;
+        _selfie = false;
+        RaiseKind();
     }
 
     private void RaiseKind() =>

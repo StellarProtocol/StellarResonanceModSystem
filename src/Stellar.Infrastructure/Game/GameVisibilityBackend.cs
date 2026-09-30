@@ -23,14 +23,12 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     private const string ZUiRootType = "Panda.ZUi.ZUiRoot";
     private const string HudMgrType = "Panda.Hud.HudMgr";
     private const string CameraFrameCtrlType = "Panda.ZGame.CameraFrameCtrl";
-    // E.CameraSystemShowEntityType (lua/common/enum_define.lua): Team = 3, OtherPlayer = 11.
-    private const int EntityTypeTeam = 3;
-    private const int EntityTypeOtherPlayer = 11;
 
     private readonly IGameTypeRegistry _types;
     private readonly Func<IReadOnlyList<GameObject>> _overlayRoots;
     private readonly IPluginLog _log;
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
+    private readonly EntityShowPlan _entityShow = new();
     private VisibilityLayers _applied;
 
     public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log)
@@ -42,20 +40,33 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
 
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
-        Step(VisibilityLayers.GameHud, requested, SetGameHudHidden);
-        Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden);
-        Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden);
+        Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: false);
+        Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: false);
+        Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepOtherPlayers(requested);
         return _applied;
     }
 
-    private void Step(VisibilityLayers layer, VisibilityLayers requested, Func<bool, bool> setter)
+    /// <summary>Re-issues every held layer's game call (the game's own photo mode / cutscene / a rebuilt target may
+    /// have undone it). Other players go through the entity-show plan, which rewrites only what differs.</summary>
+    public VisibilityLayers Reassert(VisibilityLayers requested)
+    {
+        Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: true);
+        Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: true);
+        Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
+        StepOtherPlayers(requested);
+        return _applied;
+    }
+
+    private void Step(VisibilityLayers layer, VisibilityLayers requested, Func<bool, bool> setter, bool force)
     {
         var want = (requested & layer) != 0;
-        if (want == ((_applied & layer) != 0)) return;
+        var have = (_applied & layer) != 0;
+        if (want == have && !(force && want)) return;
         var ok = Invoke(layer, want, () => setter(want));
         if (!want) _applied &= ~layer;         // restore attempted — never report a layer we tried to show
         else if (ok) _applied |= layer;
+        else if (!force) _applied &= ~layer;   // a failed re-assert keeps the last known state
     }
 
     private void StepOtherPlayers(VisibilityLayers requested)
@@ -64,8 +75,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         var want = (requested & VisibilityLayers.OtherPlayers) != 0;
         var keep = want && (requested & VisibilityLayers.KeepParty) != 0;
         var target = want ? VisibilityLayers.OtherPlayers | (keep ? VisibilityLayers.KeepParty : 0) : VisibilityLayers.None;
-        if ((_applied & both) == target) return;
-        var ok = Invoke(VisibilityLayers.OtherPlayers, want, () => SetOtherPlayersHidden(want, keep));
+        var ok = !_entityShow.NeedsWrite(want, keep)
+                 || Invoke(VisibilityLayers.OtherPlayers, want, () => SetOtherPlayersHidden(want, keep));
         _applied = (_applied & ~both) | (want && !ok ? VisibilityLayers.None : target);
     }
 
