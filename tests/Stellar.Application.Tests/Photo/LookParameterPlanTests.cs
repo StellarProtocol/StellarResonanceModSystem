@@ -63,4 +63,23 @@ public sealed class LookParameterPlanTests
     [InlineData(16, 256, false)]
     public void Lut_strip_sizes_are_limited_to_the_two_standard_strips(int w, int h, bool ok) =>
         Assert.Equal(ok, LookParameterPlan.IsLutSize(w, h));
+
+    // Fix round 1 (#5): a rejected LUT drops the WHOLE Lut group — no contribution write against the game's texture.
+    [Fact]
+    public void Rejected_lut_skips_the_whole_lut_group()
+    {
+        var settings = new LookSettings { Lut = new LutLook { FilePath = "/x/bad.png", Contribution = 0.6f }, Color = new ColorLook() };
+        var w = LookParameterPlan.Build(settings, lutUsable: _ => false);
+        Assert.DoesNotContain(w, x => x.Component == LookParameterPlan.LutComponent);
+        Assert.Contains(w, x => x.Component == LookParameterPlan.ColorComponent);
+    }
+
+    [Fact]
+    public void Usable_lut_keeps_the_lut_group() =>
+        Assert.Contains(LookParameterPlan.Build(new LookSettings { Lut = new LutLook { FilePath = "/x/ok.png" } }, lutUsable: _ => true),
+            x => x.Component == LookParameterPlan.LutComponent && x.Field == "contribution");
+
+    [Fact]
+    public void Focus_write_targets_only_the_dof_focus_distance() =>
+        Assert.Equal(new ParamWrite(LookParameterPlan.DofComponent, "FocusDistance", 5.5f), LookParameterPlan.FocusWrite(5.5f));
 }

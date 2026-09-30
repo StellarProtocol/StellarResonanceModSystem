@@ -14,7 +14,9 @@ public sealed class RenderLookServiceTests
         public LookCapabilities Capabilities { get; set; } = new((LookGroups)127);
         public readonly List<LookSettings?> Applied = new();
         public float? Focus;
+        public readonly List<float> FocusUpdates = new();
         public void Apply(LookSettings? settings) => Applied.Add(settings);
+        public void UpdateFocus(float distance) => FocusUpdates.Add(distance);
         public float? MeasureFocusDistance() => Focus;
     }
 
@@ -68,17 +70,31 @@ public sealed class RenderLookServiceTests
         Assert.NotNull(e.Color);
     }
 
+    // Fix round 1 (#6): a moved focus writes ONLY the focus distance (UpdateFocus), never a full re-apply per frame.
     [Fact]
     public void Tick_updates_focus_only_when_tracking_and_moved()
     {
         var b = new FakeBackend { Focus = 4f };
         var s = new RenderLookService(b, _ => { });
         s.Apply(new LookSettings { Dof = new DofLook { FocusOnLocalPlayer = true } });
-        var before = b.Applied.Count;
+        var applies = b.Applied.Count;
         s.Tick();
-        Assert.Equal(4f, b.Applied[^1]!.Dof!.FocusDistance);
+        Assert.Equal(new[] { 4f }, b.FocusUpdates);
+        s.Tick();                                   // not moved → nothing
+        Assert.Equal(new[] { 4f }, b.FocusUpdates);
+        Assert.Equal(applies, b.Applied.Count);     // no full re-apply from the focus path
+    }
+
+    [Fact]
+    public void A_later_update_keeps_the_tracked_focus_distance()
+    {
+        var b = new FakeBackend { Focus = 4f };
+        var s = new RenderLookService(b, _ => { });
+        var h = s.Apply(new LookSettings { Dof = new DofLook { FocusOnLocalPlayer = true } });
         s.Tick();
-        Assert.Equal(before + 1, b.Applied.Count);
+        b.Focus = null;                              // measurement lost this frame
+        h.Update(new LookSettings { Dof = new DofLook { FocusOnLocalPlayer = true }, Color = new ColorLook() });
+        Assert.NotNull(b.Applied[^1]!.Color);
     }
 
     [Fact]
@@ -90,5 +106,6 @@ public sealed class RenderLookServiceTests
         var before = b.Applied.Count;
         s.Tick();
         Assert.Equal(before, b.Applied.Count);
+        Assert.Empty(b.FocusUpdates);
     }
 }

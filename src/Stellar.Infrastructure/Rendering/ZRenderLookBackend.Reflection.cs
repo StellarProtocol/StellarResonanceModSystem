@@ -27,6 +27,7 @@ internal sealed partial class ZRenderLookBackend
     private GameObject? _volumeGo;
     private Behaviour? _volume;
     private object? _profile;
+    private ScriptableObject? _profileObject;
     private MethodInfo? _profileAdd;
     private readonly Dictionary<string, object> _components = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Texture2D> _luts = new(StringComparer.Ordinal);
@@ -44,7 +45,7 @@ internal sealed partial class ZRenderLookBackend
     private bool EnsureVolume()
     {
         if (_volume != null && _volumeGo != null) return true;
-        _components.Clear();
+        DestroyVolumeObjects();   // something destroyed our volume: drop the orphaned profile / components / LUTs first
         var volType = ResolveType(VolumeTypeName, CoreRuntimeAssembly);
         var profileType = ResolveType(ProfileTypeName, CoreRuntimeAssembly);
         if (volType is null || profileType is null)
@@ -64,6 +65,7 @@ internal sealed partial class ZRenderLookBackend
             SetProp(volume, "weight", 1f);
             var so = ScriptableObject.CreateInstance(Il2CppType.From(profileType));
             so.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            _profileObject = so;
             _profile = Activator.CreateInstance(profileType, so.Pointer)!;
             SetProp(volume, "sharedProfile", _profile);
             _profileAdd = profileType.GetMethod("Add", new[] { typeof(Il2CppSystem.Type), typeof(bool) })
@@ -80,6 +82,23 @@ internal sealed partial class ZRenderLookBackend
         }
         OnVolumeCreated();
         return true;
+    }
+
+    private void DestroyVolumeObjects()
+    {
+        foreach (var comp in _components.Values)
+            if (comp is UnityEngine.Object o && o != null) UnityEngine.Object.Destroy(o);
+        _components.Clear();
+        if (_profileObject != null) UnityEngine.Object.Destroy(_profileObject);
+        if (_volumeGo != null) UnityEngine.Object.Destroy(_volumeGo);
+        foreach (var tex in _luts.Values)
+            if (tex != null) UnityEngine.Object.Destroy(tex);
+        _luts.Clear();
+        _profileObject = null;
+        _profile = null;
+        _profileAdd = null;
+        _volume = null;
+        _volumeGo = null;
     }
 
     private void SetVolumeEnabled(bool on)

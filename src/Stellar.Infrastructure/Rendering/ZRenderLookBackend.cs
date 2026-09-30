@@ -15,7 +15,7 @@ namespace Stellar.Infrastructure.Rendering;
 /// types. Every miss fails open: one warning, the group is reported unsupported, the game's look stays.
 /// Main thread only.
 /// </summary>
-internal sealed partial class ZRenderLookBackend : ILookBackend
+internal sealed partial class ZRenderLookBackend : ILookBackend, IDisposable
 {
     private const string Tag = "[PhotoStudio] ";
 
@@ -51,14 +51,30 @@ internal sealed partial class ZRenderLookBackend : ILookBackend
             if (settings is null) { SetVolumeEnabled(false); return; }
             if (!EnsureVolume()) return;
             ClearOverrides();
-            foreach (var w in LookParameterPlan.Build(settings)) WriteParam(w);
+            // A rejected LUT drops the whole Lut group (LoadLut warns once and caches the good ones).
+            foreach (var w in LookParameterPlan.Build(settings, path => LoadLut(path) is not null)) WriteParam(w);
             SetVolumeEnabled(true);
         }
         catch (Exception ex)
         {
-            _log.Warning(Tag + "Photo look could not be applied: " + ex.Message);
+            WarnOnce("apply:" + ex.GetType().Name + ":" + ex.Message, "Photo look could not be applied: " + ex.Message);
             try { SetVolumeEnabled(false); } catch { /* the volume itself is gone — nothing to disable */ }
         }
+    }
+
+    /// <summary>Focus tracking: writes only <c>ZDofVolume.FocusDistance</c> on the live look, never a full re-apply.</summary>
+    public void UpdateFocus(float distance)
+    {
+        if (_volume == null || _volumeGo == null || !_components.ContainsKey(LookParameterPlan.DofComponent)) return;
+        try { WriteParam(LookParameterPlan.FocusWrite(distance)); }
+        catch (Exception ex) { WarnOnce("focus:" + ex.GetType().Name, "Photo look focus could not be updated: " + ex.Message); }
+    }
+
+    /// <summary>Destroys our Volume, its runtime profile + components and the cached LUT textures (framework teardown).</summary>
+    public void Dispose()
+    {
+        try { DestroyVolumeObjects(); }
+        catch (Exception ex) { _log.Warning(Tag + "Photo look teardown failed: " + ex.Message); }
     }
 
     private LookGroups DetectSupported()

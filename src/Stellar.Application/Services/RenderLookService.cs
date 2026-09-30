@@ -38,7 +38,7 @@ internal sealed class RenderLookService : IRenderLook
         if (_backend.MeasureFocusDistance() is not float d) return;
         if (Math.Abs(d - dof.FocusDistance) < FocusEpsilon) return;
         _current = _current with { Dof = dof with { FocusDistance = d } };
-        _backend.Apply(_current);
+        _backend.UpdateFocus(d);
     }
 
     internal static LookSettings Effective(LookSettings s, LookGroups supported)

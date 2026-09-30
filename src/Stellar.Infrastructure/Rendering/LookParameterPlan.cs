@@ -39,13 +39,20 @@ internal static class LookParameterPlan
     /// <summary>The two LUT strip layouts the pipeline accepts (16³ and 32³).</summary>
     public static bool IsLutSize(int width, int height) => (width, height) is (256, 16) or (1024, 32);
 
-    public static IReadOnlyList<ParamWrite> Build(LookSettings s)
+    /// <summary>The single write the focus-tracking path makes.</summary>
+    public static ParamWrite FocusWrite(float distance) => new(DofComponent, "FocusDistance", distance);
+
+    public static IReadOnlyList<ParamWrite> Build(LookSettings s) => Build(s, static _ => true);
+
+    /// <summary>As <see cref="Build(LookSettings)"/>, but a LUT <paramref name="lutUsable"/> rejects drops the WHOLE
+    /// Lut group (no contribution write against the game's own texture).</summary>
+    public static IReadOnlyList<ParamWrite> Build(LookSettings s, Func<string, bool> lutUsable)
     {
         var w = new List<ParamWrite>();
         if (s.Dof is { } d) AddDof(w, d);
         if (s.Color is { } c) AddColor(w, c);
         if (s.WhiteBalance is { } wb) AddAll(w, WhiteBalanceComponent, ("Enabled", true), ("Temperature", wb.Temperature), ("Tint", wb.Tint));
-        if (s.Lut is { } l) AddAll(w, LutComponent, ("texture", new LutPath(l.FilePath)), ("contribution", l.Contribution));
+        if (s.Lut is { } l && lutUsable(l.FilePath)) AddAll(w, LutComponent, ("texture", new LutPath(l.FilePath)), ("contribution", l.Contribution));
         // Recon (DXVK): only the _UE pair is live; plain intensity > 0 keeps ZBloomVolume.IsActive() true.
         if (s.Bloom is { } b) AddAll(w, BloomComponent, ("Enabled", true), ("intensity", Math.Max(b.Intensity, 0.01f)), ("intensity_UE", b.Intensity), ("threshold_UE", b.Threshold));
         if (s.Vignette is { } v) AddAll(w, VignetteComponent, ("intensity", v.Intensity), ("smoothness", v.Smoothness));
