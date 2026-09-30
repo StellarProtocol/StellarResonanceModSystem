@@ -30,6 +30,10 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly EntityShowPlan _entityShow = new();
     private VisibilityLayers _applied;
+    // Layers whose restore (show) call failed because the target singleton was briefly unavailable. Reassert
+    // (and, transitively, TargetRebuilt via the host's drain) retries these even though nothing is held, so a
+    // restore never silently strands the layer hidden — see LayerStepDecision.
+    private VisibilityLayers _restorePending;
 
     public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log)
     {
@@ -48,7 +52,11 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     }
 
     /// <summary>Re-issues every held layer's game call (the game's own photo mode / cutscene / a rebuilt target may
-    /// have undone it). Other players go through the entity-show plan, which rewrites only what differs.</summary>
+    /// have undone it), AND retries any layer whose earlier restore (show) call failed because its singleton was
+    /// briefly unavailable — even though that failure already cleared the layer from <c>_applied</c>, so nothing
+    /// looks "held" for it. This is the path <c>TargetRebuilt</c> drives (via the host's one-tick-later drain),
+    /// which is exactly when a previously-missing singleton is likely to have appeared. Other players go through
+    /// the entity-show plan, which rewrites only what differs.</summary>
     public VisibilityLayers Reassert(VisibilityLayers requested)
     {
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: true);
@@ -62,11 +70,15 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     {
         var want = (requested & layer) != 0;
         var have = (_applied & layer) != 0;
-        if (want == have && !(force && want)) return;
+        var restorePending = (_restorePending & layer) != 0;
+        if (!LayerStepDecision.ShouldInvoke(want, have, force, restorePending)) return;
         var ok = Invoke(layer, want, () => setter(want));
         if (!want) _applied &= ~layer;         // restore attempted — never report a layer we tried to show
         else if (ok) _applied |= layer;
         else if (!force) _applied &= ~layer;   // a failed re-assert keeps the last known state
+        _restorePending = LayerStepDecision.NextRestorePending(want, ok, restorePending)
+            ? _restorePending | layer
+            : _restorePending & ~layer;
         OnLayerSet(layer, want, ok);           // after the update, so a successful hide logs its applied bit
     }
 

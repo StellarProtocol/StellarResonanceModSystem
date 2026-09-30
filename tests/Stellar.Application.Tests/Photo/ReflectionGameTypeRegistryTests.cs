@@ -64,4 +64,28 @@ public sealed class ReflectionGameTypeRegistryTests
         Assert.Same(typeof(int), reg.FindType("Late"));
         Assert.False(reg.IsHotUpdateReady);
     }
+
+    // Regression: a positive lookup used to be able to return a racing thread's null that hadn't been removed
+    // yet, because FindType's positive branch used _memo.GetOrAdd(fullName, type) — which returns the EXISTING
+    // entry when one is already there instead of overwriting it. Reproduced deterministically (no real threads,
+    // so no flake) by making the resolver itself perform the racing negative write reentrantly, mid-resolution,
+    // exactly as a second thread's TryAdd(fullName, null) could land between this thread's resolve() call and
+    // its memo write.
+    [Fact]
+    public void A_racing_negative_written_during_resolution_never_shadows_the_positive()
+    {
+        ReflectionGameTypeRegistry? reg = null;
+        var callCount = 0;
+        Type? Resolve(string name)
+        {
+            callCount++;
+            if (callCount != 1) return null;               // the racing (negative) thread's resolve
+            Assert.Null(reg!.FindType(name));               // racing thread lands its null in the memo first
+            return typeof(string);                          // this (positive) thread's own resolve succeeds
+        }
+        reg = new ReflectionGameTypeRegistry(Resolve);
+
+        Assert.Same(typeof(string), reg.FindType("X"));     // must win over the racing null, not return it
+        Assert.Same(typeof(string), reg.FindType("X"));     // and the positive must stick for later lookups
+    }
 }

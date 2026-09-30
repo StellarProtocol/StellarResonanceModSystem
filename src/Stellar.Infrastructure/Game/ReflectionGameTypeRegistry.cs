@@ -37,7 +37,9 @@ internal sealed class ReflectionGameTypeRegistry : IGameTypeRegistry
         if (_memo.TryGetValue(fullName, out var cached)) return cached;
         var generation = Volatile.Read(ref _generation);
         var type = _resolve(fullName);
-        if (type is not null) return _memo.GetOrAdd(fullName, type);
+        // Always write a positive unconditionally — GetOrAdd would return a racing thread's not-yet-removed
+        // null instead of overwriting it, handing back a false negative for a type we just found.
+        if (type is not null) { _memo[fullName] = type; return type; }
         _memo.TryAdd(fullName, null);
         // An assembly loaded while we scanned: this null may already be stale — don't keep it.
         if (Volatile.Read(ref _generation) != generation) RemoveNegative(fullName);
