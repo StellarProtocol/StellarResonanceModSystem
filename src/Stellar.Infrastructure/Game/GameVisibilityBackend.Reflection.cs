@@ -15,12 +15,16 @@ internal sealed partial class GameVisibilityBackend
     // re-show nameplates we hold (and ours re-show the game's). An unused high bit composes with every game
     // source (fix round 1, measured in-game — see docs/recon/photo-studio-render-recon.md).
     internal const int PrivateHudSource = 1 << 10;
+    // Panda.ZGame.EVisibleSource.ETakePhotos — the source every CameraFrameCtrl.SetEntityShow case writes (recon).
+    private const int PhotoVisibleSource = 4;
+    private const string ZEntityMgrType = "Panda.ZGame.ZEntityMgr";
 
     private MethodInfo? _setUiInvisible;   // ZUiRoot.SetUIInvisible(bool)
     private MethodInfo? _setHudSwitch;     // HudMgr.SetHudSwitch(bool, EHudAvailableSource)
     private object? _hudSourceStellar;     // (EHudAvailableSource)PrivateHudSource
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
-    private bool _selfEntityShowWrite;     // true while WE call SetEntityShow, so the observer ignores it
+    private MethodInfo? _forceRefreshCharVisible;   // ZEntityMgr.ForceRefreshCharVisible(EVisibleSource, bool)
+    private object? _photoVisibleSource;            // (EVisibleSource)ETakePhotos — the source SetEntityShow drives
     // Set by InstallHooks (called once hot-update is ready): from then on a missing TYPE is a definitive negative
     // (a game patch renamed/removed it), cached under the same TTL instead of re-probed optimistically every call.
     private bool _hotUpdateReady;
@@ -45,8 +49,9 @@ internal sealed partial class GameVisibilityBackend
     public event Action? TargetRebuilt;
 
     /// <summary>
-    /// Observes the game's own <c>CameraFrameCtrl.SetEntityShow</c> writes (so a release restores the game's value,
-    /// not a guess) and <c>ZUiRoot.Init</c> (a rebuilt UI root loses our SetUIInvisible). Call once, after the
+    /// Observes the game's re-init points (<c>ZUiRoot.Init</c>: a rebuilt UI root loses our SetUIInvisible; HudMgr;
+    /// CameraFrameCtrl). The entity-show switches are refcounts in ZEntityMgr that compose with the game's own
+    /// writes, so the game's <c>SetEntityShow</c> calls are deliberately NOT observed (recon-party-grain.md). Call once, after the
     /// hot-update assemblies load. The same re-init points also clear the bounded negative probe caches (scene
     /// change / hot-update-ready is exactly the "session boundary" docs/il2cpp-probing-safety.md calls for) —
     /// clearing all three on any one of them is deliberately coarse: a spurious extra reflection lookup costs
@@ -58,8 +63,6 @@ internal sealed partial class GameVisibilityBackend
         ClearNegativeProbes();   // anything cached before ready was an optimistic miss — start clean
         try
         {
-            if (_types.FindType(CameraFrameCtrlType) is { } cf) hooker.PostfixAllOverloads(cf, "SetEntityShow", OnGameSetEntityShow);
-            else WarnOnce("hook:SetEntityShow", $"Hide OtherPlayers: {CameraFrameCtrlType} not found; game camera-mode writes are not tracked.");
             if (_types.FindType(ZUiRootType) is { } ui) hooker.PostfixAllOverloads(ui, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
             // HudMgr owns hudDisabledFlag_ (our nameplate bit): a re-init or scene entry may reset it.
             if (_types.FindType(HudMgrType) is { } hud)
@@ -67,9 +70,10 @@ internal sealed partial class GameVisibilityBackend
                 hooker.PostfixAllOverloads(hud, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
                 hooker.PostfixAllOverloads(hud, "OnEnterScene", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
             }
-            // A CameraFrameCtrl re-init may reset its entity-show flags: forget the mirror, then re-assert.
+            // CameraFrameCtrl re-init: re-probe + re-assert. The entity-show counters live in ZEntityMgr, so held types
+            // are NOT re-hidden (a second hide would need a second show) — EntityShowPlan never double-hides.
             if (_types.FindType(CameraFrameCtrlType) is { } cfi)
-                hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { _entityShow.Reset(); ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
+                hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
     }
@@ -160,13 +164,6 @@ internal sealed partial class GameVisibilityBackend
     // "Type" when the type itself is gone (post-ready), "Type.Member" when only the member is.
     private static string Missing(Type? t, string typeName, string member) => t is null ? typeName : typeName + "." + member;
 
-    private void OnGameSetEntityShow(object? instance, object?[] args)
-    {
-        if (_selfEntityShowWrite || args.Length < 2 || args[0] is not int type || args[1] is not bool show) return;
-        _entityShow.ObserveGame(type, show);
-        OnGameEntityShow(type, show);
-    }
-
     /// <summary>HUD_HIDE: <c>Panda.ZUi.ZUiRoot.Instance.SetUIInvisible(bool)</c> hides the whole game UI canvas.</summary>
     private bool SetGameHudHidden(bool hidden)
     {
@@ -200,9 +197,9 @@ internal sealed partial class GameVisibilityBackend
         return true;
     }
 
-    /// <summary>OTHER_PLAYERS_HIDE: <c>Panda.ZGame.CameraFrameCtrl.Instance.SetEntityShow(type, show)</c> for
-    /// OtherPlayer (11) and Team (3), driven by <see cref="EntityShowPlan"/> so a release restores the game's own
-    /// values. Mechanism proven; effect on real other players still UNMEASURED (recon).</summary>
+    /// <summary>OTHER_PLAYERS_HIDE: <c>Panda.ZGame.CameraFrameCtrl.Instance.SetEntityShow(type, show)</c> — OtherPlayer
+    /// (11) to hide everyone, Stranger/Chum/Union (6/2/4) to keep the party — driven by <see cref="EntityShowPlan"/>
+    /// (one show per hide we issued; refcount semantics from the disassembly, recon-party-grain.md).</summary>
     private bool SetOtherPlayersHidden(bool hidden, bool keepParty)
     {
         var ctrl = CreatedSingleton(CameraFrameCtrlType, "OtherPlayers", out var t);
@@ -212,12 +209,40 @@ internal sealed partial class GameVisibilityBackend
         var setter = _setEntityShow;
         return _entityShow.Apply(hidden, keepParty, (type, show) =>
         {
-            _selfEntityShowWrite = true;
-            try { setter.Invoke(ctrl, new object[] { type, show }); }
-            finally { _selfEntityShowWrite = false; }
+            setter.Invoke(ctrl, new object[] { type, show });
             OnEntityShowWritten(type, show);
             return true;
         });
+    }
+
+    /// <summary>
+    /// While the keep-party set is held, asks the game to re-evaluate every character's photo-source visibility
+    /// (<c>ZEntityMgr.Instance.ForceRefreshCharVisible(ETakePhotos, false)</c>): party membership is read live, so a
+    /// member who joined (or left) during the hide is shown (or hidden) without waiting for the next switch write.
+    /// No-op otherwise; fails open with one warning. Main thread.
+    /// </summary>
+    public void RefreshPartyVisibility()
+    {
+        if (!_entityShow.HoldsKeepPartySet) return;
+        try
+        {
+            var mgr = CreatedSingleton(ZEntityMgrType, "OtherPlayers", out var t);
+            if (mgr is null) return;
+            if (_forceRefreshCharVisible is null)
+            {
+                var m = StellarInterop.FindMethod(t, "ForceRefreshCharVisible", 2);
+                var sourceType = m?.GetParameters()[0].ParameterType;
+                if (m is null || sourceType is not { IsEnum: true })
+                {
+                    WarnOnce("m:PartyRefresh", "Party visibility refresh unavailable: ZEntityMgr.ForceRefreshCharVisible not found.");
+                    return;
+                }
+                _photoVisibleSource = Enum.ToObject(sourceType, PhotoVisibleSource);
+                _forceRefreshCharVisible = m;
+            }
+            _forceRefreshCharVisible.Invoke(mgr, new[] { _photoVisibleSource!, (object)false });
+        }
+        catch (Exception ex) { WarnOnce("x:PartyRefresh", "Party visibility refresh failed: " + (ex.InnerException ?? ex).Message); }
     }
 
     /// <summary>

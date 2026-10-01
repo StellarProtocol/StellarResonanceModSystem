@@ -21,6 +21,8 @@ public sealed partial class BootstrapPlugin
     private ZRenderLookBackend? _lookBackend;
     private UnityFrameGrabber? _frameGrabber;   // its late resumes are drained from RunGlobalRateWork (main thread, un-gated)
     private bool _photoReassertPending;   // set by game signals, drained on the next framework tick
+    // Party roster changed while the keep-party hide is held: refresh character visibility once the world is stable.
+    private readonly ReassertGate _partyVisibilityRefresh = new();
     // Set in BuildInfraServices; read lazily by the focus meter (constructed later than the photo services).
     private EntityTransformsService? _entityTransforms;
 
@@ -59,10 +61,14 @@ public sealed partial class BootstrapPlugin
         var visibility = _sceneVisibility!;
         if (_windowRenderer is not null) _windowRenderer.CanvasCreated += visibility.Reassert;
         if (_layoutOverlay is not null) _layoutOverlay.ChromeCanvasCreated += visibility.Reassert;
+        _partyService!.MemberJoined += _ => _partyVisibilityRefresh.Request();
+        _partyService.MemberLeft += (_, _) => _partyVisibilityRefresh.Request();
+        _partyService.PartyDissolved += _partyVisibilityRefresh.Request;
     }
 
     private void DrainPhotoReassert()
     {
+        if (_partyVisibilityRefresh.TryTake(_clientState!.IsWorldActive)) _visibilityBackend?.RefreshPartyVisibility();
         if (!_photoReassertPending) return;
         _photoReassertPending = false;
         _sceneVisibility?.Reassert();

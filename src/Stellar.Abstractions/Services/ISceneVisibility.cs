@@ -9,9 +9,10 @@ namespace Stellar.Abstractions.Services;
 /// game's photo mode or a cutscene ends, when the game re-initialises the UI root, the nameplate manager or the
 /// camera-frame controller, on the nameplate manager's scene entry, and when a Stellar canvas is rebuilt.
 /// Known limits: a game path that resets one of these switches WITHOUT any of those signals can undo a hide until
-/// the next re-apply; other-player visibility restores the last value the game itself set through the camera-frame
-/// switch (changes the game makes through any other mechanism are not seen), and treats a type the game never set
-/// as shown.
+/// the next re-apply. Other players are hidden through the game's camera-mode entity switches, which count holds:
+/// the framework adds exactly one hold per switch it uses and removes exactly that one, so a switch the player also
+/// turned off in the game's own camera panel stays off. With <see cref="VisibilityLayers.KeepParty"/>, party members
+/// stay visible and every other player (strangers, friends and guildmates outside the party) is hidden.
 /// </remarks>
 public interface ISceneVisibility
 {

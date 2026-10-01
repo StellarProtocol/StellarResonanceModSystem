@@ -1,70 +1,69 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Arbitrates <c>CameraFrameCtrl.SetEntityShow</c>, a switch our other-players / party hide SHARES with the game's own
-/// camera mode (its UI toggles write the same per-type flags). The game exposes no getter, so the plan mirrors every
-/// value the GAME writes (observed through a postfix; our own writes are excluded) and treats a never-written type as
-/// shown (the game's default). Hiding moves a type away from that value; releasing restores it exactly. Pure — no
-/// Unity/game types — so it is unit-tested.
+/// Arbitrates <c>CameraFrameCtrl.SetEntityShow</c> for the other-players / keep-party hide. Recon (devkit
+/// .superpowers/sdd/recon-party-grain.md, from the release_3.7 disassembly): each call moves a per-type
+/// <b>refcount</b> in <c>ZEntityMgr</c> for the photo source (hide +1, show −1 clamped at 0) — shared with the game's
+/// own camera Show panel — and <c>OtherPlayer</c> (11) is a master switch checked before every relation, so
+/// <c>Team</c> (3) cannot rescue a teammate while 11 is hidden. Hence:
+/// <list type="bullet">
+/// <item>hide everyone: <c>11</c>;</item>
+/// <item>hide others but keep the party: <c>Stranger 6 + Chum 2 + Union 4</c> (the game's own way: a character is
+/// visible when any relation they belong to is shown; party members keep Team, which we never write);</item>
+/// </list>
+/// The plan keeps hide-once / show-once bookkeeping of only the types WE hid. The game's own writes are not mirrored —
+/// the counter composes them for us — and a held type is never hidden twice (every extra hide would need a matching
+/// show). Pure — no Unity/game types — so it is unit-tested.
 /// </summary>
 internal sealed class EntityShowPlan
 {
-    // E.CameraSystemShowEntityType / Panda.ZGame.ECamerasysShowEntityType: Team = 3, OtherPlayer = 11.
-    public const int Team = 3;
+    // E.CameraSystemShowEntityType / Panda.ZGame.ECamerasysShowEntityType.
+    public const int Chum = 2;
+    public const int Union = 4;
+    public const int Stranger = 6;
     public const int OtherPlayer = 11;
 
-    private readonly Dictionary<int, bool> _game = new();      // last value the game itself wrote
-    private readonly Dictionary<int, bool> _current = new();   // last value on the switch (anyone)
+    private static readonly int[] KeepPartySet = { Stranger, Chum, Union };
+    private static readonly int[] EveryoneSet = { OtherPlayer };
 
-    /// <summary>The game wrote <paramref name="show"/> for <paramref name="type"/> (not one of our own writes).</summary>
-    public void ObserveGame(int type, bool show)
-    {
-        _game[type] = show;
-        _current[type] = show;
-    }
+    private readonly List<int> _held = new();   // types WE hid, in hide order
 
-    /// <summary>
-    /// Forgets the mirror (the game re-initialised CameraFrameCtrl and may have reset its flags to the defaults), so
-    /// the next <see cref="Apply"/> re-writes the held state instead of trusting a stale "already hidden".
-    /// </summary>
-    public void Reset()
-    {
-        _game.Clear();
-        _current.Clear();
-    }
+    /// <summary>True while the party-preserving set (6/2/4) is what we hold — party changes then need a refresh.</summary>
+    public bool HoldsKeepPartySet => _held.Count > 0 && _held.All(t => Array.IndexOf(KeepPartySet, t) >= 0);
 
     /// <summary>True when <see cref="Apply"/> would write anything.</summary>
-    public bool NeedsWrite(bool hideOthers, bool keepParty) =>
-        Current(OtherPlayer) != Want(OtherPlayer, hideOthers, keepParty) || Current(Team) != Want(Team, hideOthers, keepParty);
+    public bool NeedsWrite(bool hideOthers, bool keepParty)
+    {
+        var target = Target(hideOthers, keepParty);
+        return _held.Count != target.Length || _held.Any(t => Array.IndexOf(target, t) < 0);
+    }
 
     /// <summary>
-    /// Moves the switch to the target state: others hidden (and the team too unless <paramref name="keepParty"/>),
-    /// otherwise the game's own values. Only differing types are written; a failed write is retried next time.
+    /// Moves to the target set: first one show for every held type the target drops, then one hide for every target
+    /// type not yet held. A failed hide is not held (retried next time); a failed show stays held (retried next
+    /// time, so a hide is never stranded). Returns false when any write failed.
     /// </summary>
     public bool Apply(bool hideOthers, bool keepParty, Func<int, bool, bool> write)
     {
-        var ok = Reach(OtherPlayer, Want(OtherPlayer, hideOthers, keepParty), write);
-        return Reach(Team, Want(Team, hideOthers, keepParty), write) && ok;
+        var target = Target(hideOthers, keepParty);
+        var ok = true;
+        foreach (var type in _held.Where(t => Array.IndexOf(target, t) < 0).ToList())
+        {
+            if (write(type, true)) _held.Remove(type);
+            else ok = false;
+        }
+        foreach (var type in target)
+        {
+            if (_held.Contains(type)) continue;
+            if (write(type, false)) _held.Add(type);
+            else ok = false;
+        }
+        return ok;
     }
 
-    private bool Want(int type, bool hideOthers, bool keepParty) => type switch
-    {
-        OtherPlayer when hideOthers => false,
-        Team when hideOthers && !keepParty => false,
-        _ => Game(type),
-    };
-
-    private bool Game(int type) => !_game.TryGetValue(type, out var v) || v;
-
-    private bool Current(int type) => _current.TryGetValue(type, out var v) ? v : Game(type);
-
-    private bool Reach(int type, bool want, Func<int, bool, bool> write)
-    {
-        if (Current(type) == want) return true;
-        if (!write(type, want)) return false;
-        _current[type] = want;
-        return true;
-    }
+    private static int[] Target(bool hideOthers, bool keepParty) =>
+        !hideOthers ? Array.Empty<int>() : keepParty ? KeepPartySet : EveryoneSet;
 }
