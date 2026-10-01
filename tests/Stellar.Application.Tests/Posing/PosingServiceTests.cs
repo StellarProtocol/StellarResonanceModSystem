@@ -259,18 +259,43 @@ public sealed class PosingServiceTests
         Assert.Equal(PoseTargetState.Ready, r.Target(2).State);
     }
 
+    // Review F2 (RE-PINS the earlier contract — before the fix this test, "read once found and defaults to 30 until
+    // then", pinned a re-read on every single call while the limit stayed <= 0; the panel polls MemberLimit at 10 Hz,
+    // so that bug meant the Lua query ran every frame instead of at most once per 5 s). The fallback default is now
+    // cached behind the same retry latch as Expressions (F1): a read <= 0 is an answer too, not "try again now".
     [Fact]
-    public void The_member_limit_is_read_once_found_and_defaults_to_30_until_then()
+    public void The_member_limit_retries_at_most_every_5_seconds_until_found()
     {
         var r = new PosingRig();
         r.Backend.Limit = 0;   // Lua not ready yet
         Assert.Equal(30, r.Svc.MemberLimit);
-        Assert.Equal(30, r.Svc.MemberLimit);
+        Assert.Equal(30, r.Svc.MemberLimit);          // still within the 5s retry window: no re-read
+        Assert.Equal(1, r.Backend.LimitReads);
+        r.Backend.Limit = 12;                          // becomes ready mid-window
+        Assert.Equal(30, r.Svc.MemberLimit);           // not seen yet — the window hasn't elapsed
+        Assert.Equal(1, r.Backend.LimitReads);
+        r.NowMs += 5_000;                              // retry window elapses
+        Assert.Equal(12, r.Svc.MemberLimit);
+        Assert.Equal(12, r.Svc.MemberLimit);           // found — cached permanently, no further reads
         Assert.Equal(2, r.Backend.LimitReads);
+    }
+
+    // Review F2: a throwing backend must warn once per incident, not once per 10 Hz poll.
+    [Fact]
+    public void A_throwing_member_limit_read_warns_once_per_retry_window()
+    {
+        var r = new PosingRig();
+        r.Backend.ThrowOnMemberLimit = true;
+        Assert.Equal(30, r.Svc.MemberLimit);
+        Assert.Equal(30, r.Svc.MemberLimit);
+        Assert.Equal(30, r.Svc.MemberLimit);
+        Assert.Equal(1, r.Backend.LimitReads);                                // one query across many reads
+        Assert.Single(r.Warnings, w => w.Contains("photo-member limit"));     // warned exactly once
+        r.NowMs += 5_000;
+        r.Backend.ThrowOnMemberLimit = false;
         r.Backend.Limit = 12;
-        Assert.Equal(12, r.Svc.MemberLimit);
-        Assert.Equal(12, r.Svc.MemberLimit);
-        Assert.Equal(3, r.Backend.LimitReads);
+        Assert.Equal(12, r.Svc.MemberLimit);                                  // self-heals once the window elapses
+        Assert.Equal(2, r.Backend.LimitReads);
     }
 
     [Fact]
@@ -338,13 +363,42 @@ public sealed class PosingServiceTests
         Assert.Equal(new[] { "face 1015 hold=False", "face 0 hold=True" }, r.Backend.Model(2).Calls);
     }
 
+    // Review F1 (RE-PINS the earlier contract — before the fix this test, "read again next time", pinned a re-read on
+    // every single call while the list stayed empty; the panel polls Expressions at 10 Hz, so that bug meant the Lua
+    // query ran every frame instead of at most once per 5 s). An empty answer (no unlocked expressions, or the VM
+    // genuinely not ready) is an answer: it is cached and retried at most every 5 s.
     [Fact]
-    public void An_empty_expression_list_is_read_again_next_time()
+    public void An_empty_expression_list_retries_at_most_every_5_seconds()
     {
         var r = new PosingRig();
         r.Backend.ExpressionList = new();
         Assert.Empty(r.Svc.Expressions);
         Assert.Empty(r.Svc.Expressions);
+        Assert.Equal(1, r.Backend.ExpressionReads);     // still within the 5s retry window: no re-read
+        r.Backend.ExpressionList = new() { new(1003, "Angry", 303, 403) };
+        Assert.Empty(r.Svc.Expressions);                 // not seen yet — the window hasn't elapsed
+        Assert.Equal(1, r.Backend.ExpressionReads);
+        r.NowMs += 5_000;                                // retry window elapses
+        Assert.Single(r.Svc.Expressions);
+        Assert.Equal(2, r.Backend.ExpressionReads);
+        Assert.Single(r.Svc.Expressions);
+        Assert.Equal(2, r.Backend.ExpressionReads);      // found — cached permanently, no further reads
+    }
+
+    // Review F1: a throwing backend must warn once per incident, not once per 10 Hz poll.
+    [Fact]
+    public void A_throwing_expressions_read_warns_once_per_retry_window()
+    {
+        var r = new PosingRig();
+        r.Backend.ThrowOnReadExpressions = true;
+        Assert.Empty(r.Svc.Expressions);
+        Assert.Empty(r.Svc.Expressions);
+        Assert.Empty(r.Svc.Expressions);
+        Assert.Equal(1, r.Backend.ExpressionReads);      // one query across many reads
+        Assert.Single(r.Warnings, w => w.Contains("could not read the expressions"));
+        r.NowMs += 5_000;
+        r.Backend.ThrowOnReadExpressions = false;
+        Assert.Equal(2, r.Svc.Expressions.Count);        // self-heals once the window elapses
         Assert.Equal(2, r.Backend.ExpressionReads);
     }
 

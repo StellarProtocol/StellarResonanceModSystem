@@ -42,6 +42,7 @@ internal sealed class FakePosingBackend : IPosingBackend
     public readonly List<Action<bool>> PendingLoads = new();
     public List<ExpressionInfo> ExpressionList = new() { new(1003, "Angry", 303, 403), new(1015, "Startled", 315, 415) };
     public bool AsyncNpc = true, FailOpen, RefuseActions, RefuseOpen;
+    public bool ThrowOnReadExpressions, ThrowOnMemberLimit;
     public int ExpressionReads, Limit = 30, LimitReads;
     public event Action<long>? PersonRemoved;
 
@@ -53,9 +54,19 @@ internal sealed class FakePosingBackend : IPosingBackend
         into.Add(new PersonInfo(new EntityId(2), "Celia", PersonKind.Player, 3f));
     }
 
-    public IReadOnlyList<ExpressionInfo> ReadExpressions() { ExpressionReads++; return ExpressionList; }
+    public IReadOnlyList<ExpressionInfo> ReadExpressions()
+    {
+        ExpressionReads++;
+        if (ThrowOnReadExpressions) throw new InvalidOperationException("the Lua VM is not ready");
+        return ExpressionList;
+    }
 
-    public int MemberLimit() { LimitReads++; return Limit; }
+    public int MemberLimit()
+    {
+        LimitReads++;
+        if (ThrowOnMemberLimit) throw new InvalidOperationException("the Lua VM is not ready");
+        return Limit;
+    }
 
     public IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded)
     {
@@ -92,10 +103,14 @@ internal sealed class PosingRig
     public readonly object CameraOwner = new();
     public ICameraControl? Control;
 
+    /// <summary>Fake monotonic clock (ms) fed to <see cref="PosingService"/>'s retry latches (review F1/F2) — advance it
+    /// to simulate the 5 s retry window elapsing.</summary>
+    public long NowMs;
+
     public PosingRig(bool acquire = true)
     {
         Camera = new CameraOverrideService(CameraBackend, new LookAtService(new CameraOverrideServiceTests.FakeLookAt(), Warnings.Add), false, Warnings.Add);
-        Svc = new PosingService(Backend, Camera, Freeze, Warnings.Add);
+        Svc = new PosingService(Backend, Camera, Freeze, Warnings.Add, () => NowMs);
         if (acquire) Acquire();
     }
 

@@ -41,8 +41,12 @@ _**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugin
   `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
   model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
 - `IEntityPicker` also returns NPCs. `HarmonyGameMethodHooker` skips abstract overloads (they cannot be patched).
-- Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, and `[Posing.Send]
-  svc=… method=…` for every outgoing RPC while a person is selected.
+- Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, a
+  `[Posing] despawn prefix fired on managed thread …` line on every `ZEntityMgr.RemoveEntity` prefix, and
+  `[Posing.Send] svc=… method=…` for every outgoing RPC while a person is selected.
+- Whole-feature review: `Expressions` and the photo-member limit read are each behind a bounded retry latch
+  (`NegativeProbeCache`, same pattern as `GameVisibilityBackend`'s probes) — an empty/zero answer or a throw is cached
+  and retried at most every 5 s instead of re-running the Lua query (and re-warning) on every 10 Hz panel poll.
 
 ## [2.14.0] - 2026-10-01
 _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._

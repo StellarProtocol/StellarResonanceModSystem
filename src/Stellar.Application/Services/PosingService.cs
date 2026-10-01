@@ -20,20 +20,31 @@ internal sealed class PosingService : IPosing
     /// until the live value can be read.</summary>
     internal const int DefaultMemberLimit = 30;
 
+    // A Lua-backed read (expressions, the member limit) that comes back empty/zero or throws is retried at most this
+    // often — an empty answer IS an answer (no unlocked expressions, or the VM genuinely isn't ready yet); without a
+    // latch the panel's 10 Hz poll re-runs the Lua query, and re-warns on a throw, on every single frame (review F1/F2).
+    // Same pattern as GameVisibilityBackend's negative probes (docs/il2cpp-probing-safety.md § negative-cache races).
+    private const long RetryTtlMs = 5_000;
+
     private readonly CameraOverrideService _camera;
     private readonly Action<string> _warn;
     private readonly Dictionary<long, PoseTarget> _targets = new();
     private readonly List<PersonInfo> _people = new();
+    private readonly NegativeProbeCache _expressionsRetry;
+    private readonly NegativeProbeCache _memberLimitRetry;
     private IReadOnlyList<ExpressionInfo> _expressions = Array.Empty<ExpressionInfo>();
     private int _memberLimit;
     private bool _frozen;
 
-    public PosingService(IPosingBackend backend, CameraOverrideService camera, ISceneFreeze freeze, Action<string> warn)
+    public PosingService(IPosingBackend backend, CameraOverrideService camera, ISceneFreeze freeze, Action<string> warn, Func<long>? nowMs = null)
     {
         Backend = backend;
         _camera = camera;
         _warn = warn;
         _frozen = freeze.IsFrozen;
+        var clock = nowMs ?? (() => Environment.TickCount64);
+        _expressionsRetry = new NegativeProbeCache(clock, RetryTtlMs);
+        _memberLimitRetry = new NegativeProbeCache(clock, RetryTtlMs);
         camera.Released += _ => ResetAll();
         freeze.Changed += OnFreezeChanged;
         backend.PersonRemoved += OnPersonRemoved;
@@ -54,10 +65,20 @@ internal sealed class PosingService : IPosing
         get
         {
             if (_memberLimit > 0) return _memberLimit;
+            if (_memberLimitRetry.IsSuppressed) return DefaultMemberLimit;
             var read = 0;
             try { read = Backend.MemberLimit(); }
-            catch (Exception ex) { _warn("posing: could not read the photo-member limit: " + ex.Message); }
-            if (read <= 0) return DefaultMemberLimit;
+            catch (Exception ex)
+            {
+                if (_memberLimitRetry.MarkNegative()) _warn("posing: could not read the photo-member limit: " + ex.Message);
+                return DefaultMemberLimit;
+            }
+            if (read <= 0)
+            {
+                _memberLimitRetry.MarkNegative();
+                return DefaultMemberLimit;
+            }
+            _memberLimitRetry.MarkRecovered();
             _memberLimit = read;
             return read;
         }
@@ -72,8 +93,15 @@ internal sealed class PosingService : IPosing
         get
         {
             if (_expressions.Count > 0) return _expressions;
+            if (_expressionsRetry.IsSuppressed) return _expressions;
             try { _expressions = Backend.ReadExpressions(); }
-            catch (Exception ex) { _warn("posing: could not read the expressions: " + ex.Message); }
+            catch (Exception ex)
+            {
+                if (_expressionsRetry.MarkNegative()) _warn("posing: could not read the expressions: " + ex.Message);
+                return _expressions;
+            }
+            if (_expressions.Count > 0) _expressionsRetry.MarkRecovered();
+            else _expressionsRetry.MarkNegative();
             return _expressions;
         }
     }
@@ -187,6 +215,11 @@ internal sealed class PosingService : IPosing
         if (!frozen) ReapplyPauses();
     }
 
+    // Review F3 (verified, not stripped): ReapplyPause() runs the same shape of backend call as SetFrozen above
+    // (PoseTarget.Run -> IPoseModel.SetMoment) — opaque game/model code that can itself raise RaiseChanged
+    // (PersonRemoved, a load completing) and so can just as well drive a reentrant Select() insert into _targets.
+    // Kept as a snapshot for the same reason as OnFreezeChanged; do not drop it without re-proving no call in the
+    // loop can mutate _targets.
     private void ReapplyPauses()
     {
         foreach (var t in _targets.Values.ToList()) t.ReapplyPause();

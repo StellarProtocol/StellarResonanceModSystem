@@ -177,10 +177,12 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     // args[0] is the uuid; the entity is still alive. PosingService closes only that uuid's person (if selected).
     private void OnRemoveEntity(object? _, object?[] args)
     {
+        OnDespawnPrefixFired();
         if (PersonRemoved is not { } removed || args.Length == 0 || args[0] is not long uuid) return;
         removed(uuid);
     }
 
     partial void OnOpened(PersonKind kind, long uuid, long started);
     partial void OnNpcLoaded(long uuid, bool ok, long started);
+    partial void OnDespawnPrefixFired();
 }
