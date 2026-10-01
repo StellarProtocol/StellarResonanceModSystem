@@ -179,12 +179,15 @@ internal sealed class PosingService : IPosing
     {
         if (frozen == _frozen) return;
         _frozen = frozen;
-        foreach (var t in _targets.Values) t.SetFrozen(frozen);
+        // Snapshot (like CloseWhere): SetFrozen runs backend code and can RaiseChanged (PersonRemoved, a load
+        // completing); a Changed subscriber reacting by Select()-ing a new person would otherwise insert into
+        // _targets mid-enumeration (Dictionary<,> throws on the next MoveNext after an insert during a foreach).
+        foreach (var t in _targets.Values.ToList()) t.SetFrozen(frozen);
         if (!frozen) ReapplyPauses();
     }
 
     private void ReapplyPauses()
     {
-        foreach (var t in _targets.Values) t.ReapplyPause();
+        foreach (var t in _targets.Values.ToList()) t.ReapplyPause();
     }
 }

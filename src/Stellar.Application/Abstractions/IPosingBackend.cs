@@ -34,7 +34,8 @@ internal interface IPosingBackend
 
     /// <summary>Prepares <paramref name="uuid"/>: the live model (self), a photo copy with the real player hidden
     /// (player), or a generated model with the real NPC hidden (NPC). <paramref name="loaded"/> runs exactly once —
-    /// inside this call for self and players, later (async load) for NPCs — with false when it failed.</summary>
+    /// inside this call for self and players, later (async load) for NPCs — with false when it failed. On throw,
+    /// nothing is hidden or loading: the caller treats the open as failed and has no model to close.</summary>
     IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded);
 
     /// <summary>Raised (main thread) just before the game removes an entity.</summary>
@@ -57,7 +58,10 @@ internal interface IPoseBody
 /// <summary>One opened person: the controls. Every call is a no-op once the model is gone. Main thread.</summary>
 internal interface IPoseModel : IPoseBody
 {
-    /// <summary>Plays an action without telling the server; false when the game's own check refuses it.</summary>
+    /// <summary>Plays an action without telling the server; false when the game's own check refuses it. The caller
+    /// clears a held moment (<see cref="SetMoment"/> -1) first when the person was paused — the game's own
+    /// play-from-paused path always resets the persist time before the next <c>PlayAction</c> (recon
+    /// docs/recon/photo-posing-recon.md "Pose play from paused").</summary>
     bool PlayAction(int actionId);
 
     /// <summary>Holds the current action at <paramref name="fraction"/> (0–1) of its length; −1 lets it play.</summary>

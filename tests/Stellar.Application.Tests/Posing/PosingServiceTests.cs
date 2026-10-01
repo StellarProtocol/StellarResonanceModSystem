@@ -382,4 +382,78 @@ public sealed class PosingServiceTests
         Assert.Equal(PoseTargetState.Released, mine.State);
         Assert.Equal(PoseTargetState.Ready, theirs.State);
     }
+
+    // Review round 1, finding 1: the game's own play-from-paused path always clears the held persist time
+    // (SetActionPersistTime(-1)) before the next play (recon docs/recon/photo-posing-recon.md "Pose play from
+    // paused"). A new action on a paused, Ready person must do the same before PlayAction.
+    [Fact]
+    public void Playing_a_new_action_while_paused_clears_the_held_moment_first()
+    {
+        var r = new PosingRig();
+        var t = r.Target(2);
+        t.PlayAction(9020);
+        t.Moment = 0.5f;
+        r.Backend.Model(2).Live = -1f;   // the fresh play reports no progress yet
+        t.PlayAction(9021);
+        Assert.Equal(-1f, t.Moment);
+        Assert.Equal(new[] { "play 9020", "moment 0.50", "moment -1.00", "play 9021", "read" }, r.Backend.Model(2).Calls);
+    }
+
+    // Review round 1, finding 2: a synchronous open failure (self/player) still hands back a model — the half-made
+    // copy keeps hiding the real person until it is closed, so a camera release must still unhide it exactly once.
+    [Fact]
+    public void A_failed_open_on_a_player_still_gets_closed_on_camera_release()
+    {
+        var r = new PosingRig();
+        r.Backend.FailOpen = true;
+        var copy = r.Target(2);
+        copy.PlayAction(9020);
+        Assert.Equal(PoseTargetState.Failed, copy.State);
+        r.Camera.ReleaseAll(CameraReleaseReason.SceneChanged);
+        Assert.Equal(1, r.Backend.Model(2).CloseCount);
+    }
+
+    // Review round 1, finding 2 (cap decision, pinned): the half-made copy behind a Failed target still holds a
+    // photo-member slot (it still hides a player) until Reset() closes it — a second player must see Full, and
+    // resetting the failed one frees the slot.
+    [Fact]
+    public void A_failed_open_still_counts_toward_the_cap_until_reset()
+    {
+        var r = new PosingRig();
+        r.Backend.Limit = 2;   // other players cap at limit - 1 = 1
+        r.Backend.FailOpen = true;
+        var failed = r.Target(2);
+        failed.PlayAction(9020);
+        Assert.Equal(PoseTargetState.Failed, failed.State);
+        r.Backend.FailOpen = false;
+        var another = r.Target(4);
+        Assert.Equal(PoseResult.Full, another.PlayAction(9020));
+        failed.Reset();
+        Assert.Equal(PoseResult.Applied, another.PlayAction(9020));
+        Assert.Equal(PoseTargetState.Ready, another.State);
+    }
+
+    // Review round 1, finding 4: OnFreezeChanged / ReapplyPauses iterate _targets while running backend code
+    // (SetFrozen / ReapplyPause). A plugin reacting to Changed (or a despawn's RaiseChanged) can reentrantly Select()
+    // a new person, which ADDS to _targets mid-enumeration — a Dictionary<,> enumerator throws
+    // InvalidOperationException on the next MoveNext after an insert (measured: a bare Remove alone does not throw,
+    // but an Add during enumeration reliably does). Snapshot (like CloseWhere) so it cannot.
+    [Fact]
+    public void A_reentrant_Select_from_inside_the_freeze_loop_does_not_corrupt_it()
+    {
+        var r = new PosingRig();
+        var a = r.Target(2);
+        var b = r.Target(4);
+        a.Yaw = 1f;
+        b.Yaw = 1f;
+        r.Backend.Model(2).OnFrozenCalled = () =>
+        {
+            var extra = r.Svc.Select(new EntityId(5));   // a plugin reacting mid-call, adding a brand-new target
+            extra!.Yaw = 1f;
+        };
+        r.Freeze.Raise(true);   // must not throw "Collection was modified"
+        Assert.Equal(PoseTargetState.Ready, a.State);
+        Assert.Equal(PoseTargetState.Ready, b.State);
+        Assert.Contains("frozen True", r.Backend.Model(4).Calls);
+    }
 }

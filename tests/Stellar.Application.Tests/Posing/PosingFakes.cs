@@ -17,8 +17,9 @@ internal sealed class FakePoseModel : IPoseModel
     public Position3D? Visible = new Position3D(3, 0, 4);
     public PoseTouches? Closed;
     public int CloseCount;
+    public Action? OnFrozenCalled;
     public Position3D? Position => Visible;
-    public void SetFrozen(bool frozen) => Calls.Add($"frozen {frozen}");
+    public void SetFrozen(bool frozen) { Calls.Add($"frozen {frozen}"); OnFrozenCalled?.Invoke(); }
     private static string N(float v) => v.ToString("0.00", CultureInfo.InvariantCulture);
     public bool PlayAction(int actionId) { Calls.Add($"play {actionId}"); return !Refuse; }
     public void SetMoment(float fraction) => Calls.Add($"moment {N(fraction)}");

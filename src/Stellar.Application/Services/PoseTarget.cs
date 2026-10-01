@@ -39,16 +39,23 @@ internal sealed class PoseTarget : IPoseTarget
     public PoseTargetState State { get; private set; } = PoseTargetState.Idle;
     internal PoseTouches Touched => _intent.Touched;
 
-    /// <summary>Takes one of the photo-member slots (a copy or model exists or is on its way).</summary>
-    internal bool HoldsModel => State is PoseTargetState.Loading or PoseTargetState.Ready;
+    /// <summary>Takes one of the photo-member slots: a copy or model exists, is on its way, or failed to finish
+    /// opening while the backend still handed back a model (a half-made copy can still hold a hidden player, so it
+    /// keeps the slot until <see cref="Reset"/> closes it). Not held when the open threw (no model was ever made —
+    /// see <c>IPosingBackend.Open</c>) or while merely <see cref="PoseTargetState.Full"/>.</summary>
+    internal bool HoldsModel => _model is not null;
 
     private bool Usable => _svc.IsAvailable && State is not (PoseTargetState.Failed or PoseTargetState.Released);
 
     public PoseResult PlayAction(int actionId)
     {
         if (!Usable || actionId <= 0) return PoseResult.Unavailable;
+        var wasPaused = State == PoseTargetState.Ready && _intent.Paused;
         _intent.SetAction(actionId);
         if (!Prepare()) return Pending();
+        // The game's own play-from-paused path always clears the held persist time before the next play
+        // (recon docs/recon/photo-posing-recon.md "Pose play from paused": FreezeFrameCtrl(-1) then ExpressionSinglePlay).
+        if (wasPaused) Run(m => { m.SetMoment(-1f); return true; });
         _lastPlayOk = Run(m => m.PlayAction(actionId));
         return _lastPlayOk ? PoseResult.Applied : PoseResult.Refused;
     }
