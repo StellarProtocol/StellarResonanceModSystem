@@ -283,6 +283,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         HookGameLifecycleMethods(log, hooker, gameType);
         HookEntityStateSignals(log, typeRegistry, hooker);
         InstallPhotoModeHooks(hooker);
+        InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
     }
 

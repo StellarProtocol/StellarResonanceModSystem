@@ -10,7 +10,8 @@ namespace Stellar.Infrastructure.Hooks;
 /// <summary>
 /// HarmonyX adapter. Patches every overload of a named method with a shared
 /// static trampoline; the trampoline dispatches to the per-method callback
-/// stored in <see cref="Callbacks"/>.
+/// stored in <see cref="Callbacks"/> (postfixes) or <see cref="PrefixCallbacks"/> (prefixes — a separate table so
+/// one method can carry both).
 /// </summary>
 internal sealed class HarmonyGameMethodHooker
 {
@@ -19,9 +20,12 @@ internal sealed class HarmonyGameMethodHooker
 
     // Shared lookup is required because HarmonyX postfixes must be static methods.
     internal static readonly Dictionary<MethodBase, Action<object?, object?[]>> Callbacks = new();
+    internal static readonly Dictionary<MethodBase, Action<object?, object?[]>> PrefixCallbacks = new();
 
     private static readonly MethodInfo TrampolineMethod =
         typeof(HarmonyGameMethodHooker).GetMethod(nameof(Trampoline), BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static readonly MethodInfo PrefixTrampolineMethod =
+        typeof(HarmonyGameMethodHooker).GetMethod(nameof(PrefixTrampoline), BindingFlags.Static | BindingFlags.NonPublic)!;
 
     private readonly IPluginLog _log;
     private readonly Harmony _harmony;
@@ -33,13 +37,18 @@ internal sealed class HarmonyGameMethodHooker
     }
 
     public void PostfixAllOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
-        PostfixMatching(type, methodName, InstanceMembers, callback);
+        PatchMatching(type, methodName, InstanceMembers, callback, prefix: false);
+
+    /// <summary>Patches every instance overload with a PREFIX that runs <paramref name="callback"/> before the game's
+    /// body (never skips it). Coexists with a postfix on the same method.</summary>
+    public void PrefixAllOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
+        PatchMatching(type, methodName, InstanceMembers, callback, prefix: true);
 
     /// <summary>Same as <see cref="PostfixAllOverloads"/> for STATIC methods (the callback's instance is null).</summary>
     public void PostfixStaticOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
-        PostfixMatching(type, methodName, StaticMembers, callback);
+        PatchMatching(type, methodName, StaticMembers, callback, prefix: false);
 
-    private void PostfixMatching(Type type, string methodName, BindingFlags flags, Action<object?, object?[]> callback)
+    private void PatchMatching(Type type, string methodName, BindingFlags flags, Action<object?, object?[]> callback, bool prefix)
     {
         var methods = type.GetMethods(flags)
             .Where(m => m.Name == methodName && !m.IsGenericMethodDefinition)
@@ -55,9 +64,17 @@ internal sealed class HarmonyGameMethodHooker
         {
             try
             {
-                Callbacks[method] = callback;
-                _harmony.Patch(method, postfix: new HarmonyMethod(TrampolineMethod));
-                _log.Info($"[Hooker] patched {type.FullName}.{method.Name}");
+                if (prefix)
+                {
+                    PrefixCallbacks[method] = callback;
+                    _harmony.Patch(method, prefix: new HarmonyMethod(PrefixTrampolineMethod));
+                }
+                else
+                {
+                    Callbacks[method] = callback;
+                    _harmony.Patch(method, postfix: new HarmonyMethod(TrampolineMethod));
+                }
+                _log.Info($"[Hooker] patched {type.FullName}.{method.Name}{(prefix ? " (prefix)" : "")}");
             }
             catch (Exception ex)
             {
@@ -67,15 +84,23 @@ internal sealed class HarmonyGameMethodHooker
     }
 
     // HarmonyX postfix signature: `__instance`, `__originalMethod`, `__args` are injected by Harmony.
-    private static void Trampoline(object? __instance, MethodBase __originalMethod, object[] __args)
+    private static void Trampoline(object? __instance, MethodBase __originalMethod, object[] __args) =>
+        Dispatch(Callbacks, __instance, __originalMethod, __args);
+
+    // HarmonyX prefix: void return = the original always runs. Same injected arguments as the postfix.
+    private static void PrefixTrampoline(object? __instance, MethodBase __originalMethod, object[] __args) =>
+        Dispatch(PrefixCallbacks, __instance, __originalMethod, __args);
+
+    private static void Dispatch(Dictionary<MethodBase, Action<object?, object?[]>> table, object? instance,
+        MethodBase original, object[] args)
     {
-        if (!Callbacks.TryGetValue(__originalMethod, out var callback))
+        if (!table.TryGetValue(original, out var callback))
         {
             return;
         }
         try
         {
-            callback(__instance, __args);
+            callback(instance, args);
         }
         catch
         {

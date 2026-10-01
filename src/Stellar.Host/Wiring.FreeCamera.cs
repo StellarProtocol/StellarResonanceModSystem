@@ -25,6 +25,8 @@ public sealed partial class BootstrapPlugin
     private PandaCombatFlagSource? _combatFlags;
     private GameFreezeBackend? _freezeBackend;
     private FrameDriverHost? _frameDriver;
+    private FreeCameraReleaser? _freeCamReleaser;
+    private SceneLeavePrefix? _sceneLeave;
     // Armed on login / zone change, drained on the first framework tick in a stable world (never a timer).
     private readonly ReassertGate _emoteRefresh = new();
 
@@ -49,6 +51,8 @@ public sealed partial class BootstrapPlugin
         _combatFlags = new PandaCombatFlagSource(_gameTypeRegistry!, entities, log);
         _combatState = new CombatStateService(_combatService!, _combatService!, _combatFlags, _framework!.Post);
         _entityPicker = new EntityPickerService(entities, camera.MainCamera);
+        _freeCamReleaser = new FreeCameraReleaser(_cameraOverride, _sceneFreeze, _inputShield, warn);
+        _sceneLeave = new SceneLeavePrefix(log);
         WireFreeCameraReleases();
         WireFreeCameraKeyboardGate(log);
     }
@@ -68,18 +72,21 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>The framework's half of the one release path (spec § 7): zone change, cutscene, the game's camera mode,
     /// disconnect. Plugins see <c>ICameraOverride.Released</c> with the reason and release the rest themselves.
-    /// <para><c>SceneChanged</c> fires twice per switch: with <c>null</c> from the <c>Game.OnLeaveScene</c> postfix
-    /// (Wiring.Wire.cs — the earliest scene-leave signal the framework has, the same one that gates the tick) and with
-    /// the new name from <c>OnEnterScene</c>. The leave fire is the one that releases, so the camera, the position
-    /// hold (its late driver goes off with it) and the freeze are handed back before the old scene's entities are torn
-    /// down; the enter fire finds nothing to release and only re-asserts a held shield mask. The combat reseed is a
-    /// live read of the local entity, so it runs on the enter fire only — never mid-teardown.</para></summary>
+    /// <para>Scene leave releases FIRST from a PREFIX on <c>Game.OnLeaveScene</c> (<see cref="SceneLeavePrefix"/>), before
+    /// the game's leave code runs, while every entity of the old scene is still alive — so the camera hand-back, the
+    /// freeze's restores and the position hold's release snap (its late driver goes off with it) write only live
+    /// models. <c>SceneChanged</c> then fires twice: <c>null</c> from the lifecycle postfix on the same method and the
+    /// new name from <c>OnEnterScene</c>; both call the same idempotent release as a backstop (a no-op with nothing
+    /// held — <see cref="FreeCameraReleaser"/>), which re-asserts a held shield mask. The combat reseed (a live read
+    /// of the local entity) and the emote refresh run on the enter fire only — never mid-teardown.</para></summary>
     private void WireFreeCameraReleases()
     {
+        _sceneLeave!.Leaving += () => ReleaseFreeCamera(CameraReleaseReason.SceneChanged);
         _clientState!.SceneChanged += scene =>
         {
-            ReleaseFreeCamera(CameraReleaseReason.SceneChanged);
-            if (scene is not null) _combatState!.Reseed();
+            ReleaseFreeCamera(CameraReleaseReason.SceneChanged);   // backstop; no-op after the leave prefix
+            if (scene is null) return;
+            _combatState!.Reseed();
             _emoteRefresh.Request();
         };
         _clientState.Logout += () => ReleaseFreeCamera(CameraReleaseReason.Disconnected);
@@ -89,13 +96,12 @@ public sealed partial class BootstrapPlugin
         _framework!.Update += _ => { if (_emoteRefresh.TryTake(_clientState.IsWorldActive)) _emotes!.Refresh(); };
     }
 
-    private void ReleaseFreeCamera(CameraReleaseReason reason)
-    {
-        _cameraOverride?.ReleaseAll(reason);
-        _sceneFreeze?.ReleaseAll();
-        if (reason == CameraReleaseReason.SceneChanged) _inputShield?.Reassert();
-        else _inputShield?.ReleaseAll();
-    }
+    private void ReleaseFreeCamera(CameraReleaseReason reason) => _freeCamReleaser?.Release(reason);
+
+    /// <summary>Installs the <c>Game.OnLeaveScene</c> PREFIX (same method + hooker as the lifecycle postfix) once the
+    /// game type resolves.</summary>
+    private void InstallFreeCameraLeaveHook(HarmonyGameMethodHooker hooker, Type gameType) =>
+        _sceneLeave?.Install(hooker, gameType);
 
     // Arms (does not install): the effect-creation and combat-flag postfixes install on first use.
     private void InstallFreeCameraHooks(HarmonyGameMethodHooker hooker)
