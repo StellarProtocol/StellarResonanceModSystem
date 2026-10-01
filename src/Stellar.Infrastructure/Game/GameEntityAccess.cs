@@ -98,7 +98,11 @@ internal sealed class GameEntityAccess
         catch { return null; }
     }
 
-    private object? Live(object? entity) => entity is null || _entDestroying!.GetValue(entity) is true ? null : entity;
+    /// <summary>The <c>IsDestroying</c> liveness check alone, for a caller that already holds the entity object
+    /// (e.g. a hook's own postfix argument) and wants to skip the <c>GetEntity(uuid)</c> re-lookup — which is not
+    /// proven to find the entity at the exact same instant it was just added (Task 9 round 2). Public so
+    /// <c>GameFreezeBackend</c> can apply it directly.</summary>
+    public object? Live(object? entity) => entity is not null && Resolve() && _entDestroying!.GetValue(entity) is not true ? entity : null;
 
     private object? Invoke1(MethodInfo method, object target, long arg)
     {

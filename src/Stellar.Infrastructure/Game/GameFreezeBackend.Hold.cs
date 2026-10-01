@@ -80,15 +80,24 @@ internal sealed partial class GameFreezeBackend
     private Vector3? HoldOrigin() =>
         _entities.LiveModel(_entities.LocalEntity()) is { } me ? _entities.AttrPosition(me) : null;
 
-    /// <summary>Holds <paramref name="uuid"/> at its drawn position when it is a movable kind within the radius,
-    /// looked up fresh. The whole lookup runs inside one try: an interop failure for this entity is caught and
-    /// warned once, never aborting the caller's loop over the rest of <c>_ids</c>.</summary>
-    private void TryHold(long uuid, Vector3 origin)
+    /// <summary>Holds <paramref name="uuid"/> at its drawn position, looked up fresh by uuid. See the
+    /// <c>(uuid, origin, entity)</c> overload.</summary>
+    private void TryHold(long uuid, Vector3 origin) => TryHold(uuid, origin, null);
+
+    /// <summary>Holds <paramref name="uuid"/> at its drawn position when it is a movable kind within the radius.
+    /// When <paramref name="entity"/> is given — a hook's own postfix argument, already proven live at the hook
+    /// site (recon run 3) — it is used directly under the same <see cref="GameEntityAccess.Live"/> check as a
+    /// fresh lookup, instead of re-finding it via <c>GetEntity(uuid)</c>, which recon never proved succeeds at
+    /// that same instant (Task 9 round 2). Falls back to the uuid lookup when null. The whole lookup runs inside
+    /// one try: an interop failure for this entity is caught and warned once, never aborting the caller's loop
+    /// over the rest of <c>_ids</c>.</summary>
+    private void TryHold(long uuid, Vector3 origin, object? entity)
     {
         try
         {
-            if (_entities.EntityByUuid(uuid) is not { } entity) return;
-            if (!FreezeKinds.Movable(_entities.EntType(entity)) || _entities.LiveModel(entity) is not { } m) return;
+            var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);
+            if (live is not { } e) return;
+            if (!FreezeKinds.Movable(_entities.EntType(e)) || _entities.LiveModel(e) is not { } m) return;
             if (_entities.AttrPosition(m) is not { } at || Vector3.Distance(at, origin) > FreezeKinds.HoldRadius) return;
             if (_held.Exists(h => h.Uuid == uuid)) return;   // re-appeared while still held
             if (_goComp!(m) is { } comp) _held.Add((uuid, _getPos!(comp)));

@@ -56,17 +56,22 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     public void EnsureHooks() => _hooks.Request();
 
     /// <summary>Freezes effects, stage-1 animation and (optionally) the position hold for every entity read this
-    /// press. Each phase runs through <see cref="FreezeStepRunner"/>: a phase that throws partway still lets the
-    /// later phases run (best-effort per entity inside each phase too — see <c>FreezeFactor</c>/<c>TryHold</c>),
-    /// so <see cref="_frozen"/>, the late driver and the diagnostics line stay consistent, and a later
-    /// <see cref="UnfreezeAll"/> fully restores whatever this call actually froze.</summary>
+    /// press. The entity-list read itself is the step runner's first step, same as the phases after it: it used to
+    /// run after <see cref="_frozen"/> was already set to <c>true</c> but outside <see cref="FreezeStepRunner"/>,
+    /// so a throw there (e.g. the manager singleton not resolving) propagated straight out of <c>FreezeAll</c>
+    /// while the backend stayed frozen — <c>SceneFreezeService</c> never learned the call had "succeeded" (review
+    /// finding, Task 9 round 2). Each step runs through <see cref="FreezeStepRunner"/>: a step that throws partway
+    /// still lets the later ones run (best-effort per entity inside each phase too — see
+    /// <c>FreezeFactor</c>/<c>TryHold</c>), so <see cref="_frozen"/>, the late driver and the diagnostics line stay
+    /// consistent, and a later <see cref="UnfreezeAll"/> fully restores whatever this call actually froze.</summary>
     public void FreezeAll(bool holdPositions)
     {
         if (_frozen) return;
         _frozen = true;
         _ledger.Clear();
-        _entities.EntityUuids(_ids);   // "everything on screen" = every entity, read once per press
-        if (FreezeStepRunner.RunAll(FreezeEffects, FreezeAnimation, () => { if (holdPositions) StartHold(); }) is { } ex)
+        // "everything on screen" = every entity, read once per press.
+        if (FreezeStepRunner.RunAll(() => _entities.EntityUuids(_ids), FreezeEffects, FreezeAnimation,
+                () => { if (holdPositions) StartHold(); }) is { } ex)
             WarnOnce("freezeall", "freeze applied best-effort after an error: " + ex.Message);
         _stage2Due = Stage2Delay;
         SyncLate();

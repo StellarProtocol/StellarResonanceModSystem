@@ -55,19 +55,27 @@ internal sealed partial class GameFreezeBackend
         foreach (var uuid in _ids) FreezeFactor(uuid);
     }
 
-    /// <summary>Stage 1 for one entity, looked up fresh. Skipped for kinds where the attr path throws
-    /// (<see cref="FreezeKinds.AttrSupported"/>). The lookup and the write both run inside one try, so this
-    /// entity's failure is caught and skipped without aborting the caller's loop over the rest.</summary>
-    private void FreezeFactor(long uuid)
+    /// <summary>Stage 1 for one entity, looked up fresh by uuid. See the <c>(uuid, entity)</c> overload.</summary>
+    private void FreezeFactor(long uuid) => FreezeFactor(uuid, null);
+
+    /// <summary>Stage 1 for one entity. Skipped for kinds where the attr path throws
+    /// (<see cref="FreezeKinds.AttrSupported"/>). When <paramref name="entity"/> is given — a hook's own postfix
+    /// argument, already proven live at the hook site (recon run 3) — it is used directly under the same
+    /// <see cref="GameEntityAccess.Live"/> check as a fresh lookup, instead of re-finding it via
+    /// <c>GetEntity(uuid)</c>, which recon never proved succeeds at that same instant (Task 9 round 2). Falls back
+    /// to the uuid lookup when null. Every interop read runs inside this one try, so this entity's failure is
+    /// caught and skipped without aborting the caller's loop over the rest.</summary>
+    private void FreezeFactor(long uuid, object? entity)
     {
         if (_recalc is null || _ledger.Factors.ContainsKey(uuid)) return;
         try
         {
-            if (_entities.EntityByUuid(uuid) is not { } entity || !FreezeKinds.AttrSupported(_entities.EntType(entity))) return;
-            var prior = Convert.ToSingle(_getFactor!.Invoke(null, new[] { entity }));
-            _setFactor!.Invoke(null, new object[] { entity, FreezeLedger.FrozenFactor });
+            var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);
+            if (live is not { } e || !FreezeKinds.AttrSupported(_entities.EntType(e))) return;
+            var prior = Convert.ToSingle(_getFactor!.Invoke(null, new[] { e }));
+            _setFactor!.Invoke(null, new object[] { e, FreezeLedger.FrozenFactor });
             _ledger.SaveFactor(uuid, prior);   // saved before the recalc, so a recalc failure is still restored
-            Recalc(entity);
+            Recalc(e);
         }
         catch (Exception ex) { WarnOnce("animone", "could not freeze an entity's animation: " + (ex.InnerException ?? ex).Message); }
     }

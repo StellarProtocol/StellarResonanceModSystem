@@ -10,7 +10,10 @@ namespace Stellar.Infrastructure.Game;
 /// (the game resets some players' factor right after <c>AddEntity</c>) and stage 2 is applied. Event-driven: the hook
 /// returns at once unless frozen. <c>onAddEntity</c> and <c>OnModelLoadFinish</c> never fired in the probe and are not
 /// hooked. <see cref="TickOneAppeared"/> isolates each watched entity's re-check in its own try so one failure drops
-/// only that entity from the watch, never the rest (review finding, Task 9 round 1).</summary>
+/// only that entity from the watch, never the rest (review finding, Task 9 round 1). <see cref="OnEntityAdded"/>
+/// passes the hook's own <c>args[0]</c> entity into stage 1 and the hold instead of re-finding it via
+/// <c>GetEntity(uuid)</c> — recon proves the model is live at the postfix, not that the manager's dictionary
+/// already serves the uuid back at that same instant (review finding, Task 9 round 2).</summary>
 internal sealed partial class GameFreezeBackend
 {
     private const int AppearWatchFrames = 30;
@@ -33,8 +36,10 @@ internal sealed partial class GameFreezeBackend
         {
             var uuid = _entities.Uuid(entity);
             if (uuid == _entities.PlayerUuid() || _appeared.Exists(a => a.Uuid == uuid)) return;
-            FreezeFactor(uuid);
-            if (_holding && HoldOrigin() is { } origin) TryHold(uuid, origin);
+            // Pass the hook's own entity through (not just the uuid): recon only proves the model is live at the
+            // AddEntity postfix, not that a GetEntity(uuid) re-lookup already finds it (Task 9 round 2).
+            FreezeFactor(uuid, entity);
+            if (_holding && HoldOrigin() is { } origin) TryHold(uuid, origin, entity);
             _appeared.Add((uuid, 0));
             OnAppearFrozen(uuid, _entities.EntType(entity));
             SyncLate();
