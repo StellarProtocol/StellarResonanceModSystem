@@ -34,8 +34,9 @@ internal interface IPosingBackend
 
     /// <summary>Prepares <paramref name="uuid"/>: the live model (self), a photo copy with the real player hidden
     /// (player), or a generated model with the real NPC hidden (NPC). <paramref name="loaded"/> runs exactly once —
-    /// inside this call for self and players, later (async load) for NPCs — with false when it failed. On throw,
-    /// nothing is hidden or loading: the caller treats the open as failed and has no model to close.</summary>
+    /// inside this call for self and players, later (async load) for NPCs — with false when it failed. On throw, or
+    /// when it returns <see cref="DeadPoseModel.Instance"/>, nothing is hidden or loading: the caller treats the open as
+    /// failed and has no model to close (and the person holds no photo-member slot).</summary>
     IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded);
 
     /// <summary>Raised (main thread) just before the game removes an entity.</summary>

@@ -14,6 +14,36 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.15.0] - 2026-10-01
+_**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
+### Added
+- Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see, and everyone returns to normal when you leave the free camera.
+- The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
+### Changed
+- In the free camera you can now click NPCs to orbit them, not just players.
+### Developer notes
+- New `IPluginServices.Posing` (`IPosing`: `IsAvailable`, `NearbyPeople`, `Expressions`, `Select`, `ResetAll`, `Changed`;
+  `IPoseTarget`: `State`, `PlayAction`, `Moment`, `SetExpression`, `SetLook`, `Aim`, `Yaw`, `Reset`) and domain types
+  `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`. Targets exist only
+  while a camera override is held; every `CameraReleaseReason` resets every touched person (`PosingService` subscribes to
+  the camera arbiter), a `ZEntityMgr.RemoveEntity` prefix releases a despawning person, the per-plugin facade releases a
+  plugin's people on unload, and a scene-freeze end re-applies held pauses.
+- Game calls (devkit `docs/recon/photo-posing-recon.md` runs 4–5): you = live model, `ZAnimActionPlayMgr.PlayAction(id,
+  syncServer: false, …)` / `SetActionPersistTime` / `ResetAction` and `LuaAsyncBridge.SetEntityRotation` (an action start
+  and a reset each ride one NewMove — the game's own photo behaviour); players = `CloneModelForPhoto` +
+  `CameraFrameCtrl.SetTargetEntityVisible(e, false)` … `RecyclePhotoModel`; NPCs = `NpcTable.ModelID` →
+  `LuaAsyncBridge.GenerateNormalModelAsyncByLua(…, isCameraScene: true)` with `ApplyModelBaseIdleByLua`, removed by
+  `ZModelManager.RecycleModelByLua` (the live NPC is never posed); held expression = `ZModel.SetLuaAttrEmoteInfo(faceId, -1,
+  true)`; head/eyes = `ZModelHelper.SetLookAtIKParam` / `SetLookAtTransform` / `SetLookAtPos` / `LuaWorldPosToLocal`. Copies
+  and NPC models send nothing.
+- `IPosing.TryGetVisiblePosition` (the copy / stand-in position for an orbit centre, allocation-free); copies are capped
+  at the game's `PhotographTeamMemberLimit` (PC `[1]`, 30 in release_3.7: you + 29 players; NPC models 30) with
+  `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
+  model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
+- `IEntityPicker` also returns NPCs. `HarmonyGameMethodHooker` skips abstract overloads (they cannot be patched).
+- Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, and `[Posing.Send]
+  svc=… method=…` for every outgoing RPC while a person is selected.
+
 ## [2.14.0] - 2026-10-01
 _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._
 ### Added

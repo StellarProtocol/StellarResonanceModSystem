@@ -456,4 +456,33 @@ public sealed class PosingServiceTests
         Assert.Equal(PoseTargetState.Ready, b.State);
         Assert.Contains("frozen True", r.Backend.Model(4).Calls);
     }
+
+    // Task 6 review carry-over (C): a refused open (the backend made nothing — e.g. inside the scene-change settle
+    // window it hands back the shared DeadPoseModel) must NOT hold a photo-member slot, unlike the half-made copy above.
+    [Fact]
+    public void A_refused_open_does_not_hold_a_cap_slot()
+    {
+        var r = new PosingRig();
+        r.Backend.Limit = 2;   // other players cap at limit - 1 = 1
+        r.Backend.RefuseOpen = true;
+        var refused = r.Target(2);
+        refused.PlayAction(9020);
+        Assert.Equal(PoseTargetState.Failed, refused.State);
+        r.Backend.RefuseOpen = false;
+        var another = r.Target(4);
+        Assert.Equal(PoseResult.Applied, another.PlayAction(9020));
+        Assert.Equal(PoseTargetState.Ready, another.State);
+    }
+
+    // Task 6 review carry-over (B): a despawn with no one selected is the cheap path (every entity removal reaches it).
+    [Fact]
+    public void A_despawn_with_no_targets_does_nothing()
+    {
+        var r = new PosingRig();
+        var changed = 0;
+        r.Svc.Changed += () => changed++;
+        r.Backend.Remove(2);
+        Assert.Equal(0, changed);
+        Assert.Empty(r.Warnings);
+    }
 }

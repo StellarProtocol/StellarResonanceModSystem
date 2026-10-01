@@ -41,7 +41,7 @@ internal sealed class FakePosingBackend : IPosingBackend
     public readonly List<(long Uuid, PersonKind Kind, FakePoseModel Model)> Opened = new();
     public readonly List<Action<bool>> PendingLoads = new();
     public List<ExpressionInfo> ExpressionList = new() { new(1003, "Angry", 303, 403), new(1015, "Startled", 315, 415) };
-    public bool AsyncNpc = true, FailOpen, RefuseActions;
+    public bool AsyncNpc = true, FailOpen, RefuseActions, RefuseOpen;
     public int ExpressionReads, Limit = 30, LimitReads;
     public event Action<long>? PersonRemoved;
 
@@ -59,6 +59,7 @@ internal sealed class FakePosingBackend : IPosingBackend
 
     public IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded)
     {
+        if (RefuseOpen) { loaded(false); return DeadPoseModel.Instance; }   // e.g. the scene-change settle window
         var m = new FakePoseModel { Refuse = RefuseActions };
         Opened.Add((uuid, kind, m));
         if (kind == PersonKind.Npc && AsyncNpc) PendingLoads.Add(loaded);

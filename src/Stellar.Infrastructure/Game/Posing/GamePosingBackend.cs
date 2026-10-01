@@ -60,7 +60,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
 
     public int MemberLimit() => _calls.Lua.MemberLimit();
 
-    /// <summary>Never throws: a failure is <c>loaded(false)</c> + a dead model, with whatever the failed open had made
+    /// <summary>Never throws: a failure is <c>loaded(false)</c> + <see cref="DeadPoseModel.Instance"/> (holds no member slot), with whatever the failed open had made
     /// (copy, hidden player, requested model) already undone. <c>loaded</c> runs exactly once (<see cref="LoadedOnce"/>).</summary>
     public IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded)
     {
@@ -151,7 +151,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     {
         _log.Warning("[Posing] " + message);
         loaded.Report(false);
-        return new DeadPoseModel();
+        return DeadPoseModel.Instance;
     }
 
     private void Undo(Action step, string what)

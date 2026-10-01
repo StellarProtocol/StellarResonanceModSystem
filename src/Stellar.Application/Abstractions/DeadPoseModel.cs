@@ -1,10 +1,17 @@
 using Stellar.Abstractions.Domain;
-using Stellar.Application.Abstractions;
-namespace Stellar.Infrastructure.Game.Posing;
+namespace Stellar.Application.Abstractions;
 
-/// <summary>The model returned when a person could not be prepared (the open already reported failure).</summary>
+/// <summary>The model a backend returns when it made nothing for a person (the open already reported failure and nothing
+/// is hidden or loading — e.g. inside the scene-change settle window). <see cref="Stellar.Application.Services.PoseTarget"/>
+/// treats it as "no model", so a refusal never holds a photo-member slot (unlike a half-made copy). Stateless; one shared
+/// instance.</summary>
 internal sealed class DeadPoseModel : IPoseModel
 {
+    /// <summary>The shared instance.</summary>
+    public static readonly DeadPoseModel Instance = new();
+
+    private DeadPoseModel() { }
+
     public bool PlayAction(int actionId) => false;
     public void SetMoment(float fraction) { }
     public float ReadMoment() => -1f;

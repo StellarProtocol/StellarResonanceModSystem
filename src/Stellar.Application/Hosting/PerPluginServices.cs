@@ -121,6 +121,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IEmotes Emotes => (IEmotes?)_freeCam?.Emotes ?? _shared.Emotes;
     public ICombatState CombatState => (ICombatState?)_freeCam?.Combat ?? _shared.CombatState;
     public IEntityPicker EntityPicker => _shared.EntityPicker;
+    public IPosing Posing => (IPosing?)_freeCam?.Posing ?? _shared.Posing;
 }
 
 /// <summary>

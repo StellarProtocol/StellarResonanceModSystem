@@ -14,7 +14,8 @@ internal sealed record FreeCameraScope(
         shared.InputShield is InputShieldService s ? new PluginInputShield(s, new object()) : null,
         shared.SceneFreeze is SceneFreezeService f ? new PluginSceneFreeze(f, new object()) : null,
         shared.Emotes is { } e ? new PluginEmotes(e) : null,
-        shared.CombatState is { } cs ? new PluginCombatState(cs) : null);
+        shared.CombatState is { } cs ? new PluginCombatState(cs) : null,
+        shared.Posing is PosingService p ? new PluginPosing(p, new object()) : null);
 
     public void ReleaseAll()
     {

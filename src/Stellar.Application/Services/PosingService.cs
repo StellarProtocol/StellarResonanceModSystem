@@ -166,9 +166,10 @@ internal sealed class PosingService : IPosing
         RaiseChanged();
     }
 
+    // Runs on EVERY entity removal (the RemoveEntity prefix): nothing selected = return at once.
     private void OnPersonRemoved(long uuid)
     {
-        if (!_targets.TryGetValue(uuid, out var t)) return;
+        if (_targets.Count == 0 || !_targets.TryGetValue(uuid, out var t)) return;
         _targets.Remove(uuid);
         t.Close(PoseTargetState.Released);
         RaiseChanged();

@@ -41,8 +41,9 @@ internal sealed class PoseTarget : IPoseTarget
 
     /// <summary>Takes one of the photo-member slots: a copy or model exists, is on its way, or failed to finish
     /// opening while the backend still handed back a model (a half-made copy can still hold a hidden player, so it
-    /// keeps the slot until <see cref="Reset"/> closes it). Not held when the open threw (no model was ever made —
-    /// see <c>IPosingBackend.Open</c>) or while merely <see cref="PoseTargetState.Full"/>.</summary>
+    /// keeps the slot until <see cref="Reset"/> closes it). Not held when the open threw or was refused with
+    /// <see cref="DeadPoseModel"/> (no model was ever made — see <c>IPosingBackend.Open</c>) or while
+    /// merely <see cref="PoseTargetState.Full"/>.</summary>
     internal bool HoldsModel => _model is not null;
 
     private bool Usable => _svc.IsAvailable && State is not (PoseTargetState.Failed or PoseTargetState.Released);
@@ -186,7 +187,11 @@ internal sealed class PoseTarget : IPoseTarget
         var generation = ++_generation;
         _early = null;
         _opening = true;
-        try { _model = _svc.Backend.Open(Uuid, Kind, ok => OnLoaded(generation, ok)); }
+        try
+        {
+            var opened = _svc.Backend.Open(Uuid, Kind, ok => OnLoaded(generation, ok));
+            _model = opened is DeadPoseModel ? null : opened;   // a refusal made nothing: no model, no member slot
+        }
         catch (Exception ex)
         {
             _svc.Warn($"posing: could not prepare {Kind} {Uuid}: {ex.Message}");
