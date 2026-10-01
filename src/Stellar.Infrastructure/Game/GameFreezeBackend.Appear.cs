@@ -9,7 +9,8 @@ namespace Stellar.Infrastructure.Game;
 /// <see cref="AppearWatchFrames"/> late frames its drawn speed is re-checked; while above 0 the attr write is re-applied
 /// (the game resets some players' factor right after <c>AddEntity</c>) and stage 2 is applied. Event-driven: the hook
 /// returns at once unless frozen. <c>onAddEntity</c> and <c>OnModelLoadFinish</c> never fired in the probe and are not
-/// hooked.</summary>
+/// hooked. <see cref="TickOneAppeared"/> isolates each watched entity's re-check in its own try so one failure drops
+/// only that entity from the watch, never the rest (review finding, Task 9 round 1).</summary>
 internal sealed partial class GameFreezeBackend
 {
     private const int AppearWatchFrames = 30;
@@ -32,8 +33,8 @@ internal sealed partial class GameFreezeBackend
         {
             var uuid = _entities.Uuid(entity);
             if (uuid == _entities.PlayerUuid() || _appeared.Exists(a => a.Uuid == uuid)) return;
-            FreezeFactor(uuid, entity);
-            if (_holding && HoldOrigin() is { } origin) TryHold(uuid, entity, origin);
+            FreezeFactor(uuid);
+            if (_holding && HoldOrigin() is { } origin) TryHold(uuid, origin);
             _appeared.Add((uuid, 0));
             OnAppearFrozen(uuid, _entities.EntType(entity));
             SyncLate();
@@ -41,23 +42,38 @@ internal sealed partial class GameFreezeBackend
         catch (Exception ex) { WarnOnce("appear", "could not freeze an appearing entity: " + ex.Message); }
     }
 
-    /// <summary>One late frame of re-checks; an entity leaves the watch after <see cref="AppearWatchFrames"/> frames or
-    /// when it despawns.</summary>
+    /// <summary>One late frame of re-checks; an entity leaves the watch after <see cref="AppearWatchFrames"/> frames,
+    /// when it despawns, or when its re-check throws.</summary>
     private void TickAppeared()
     {
         for (var i = _appeared.Count - 1; i >= 0; i--)
         {
             var (uuid, frames) = _appeared[i];
             frames++;
-            if (frames >= AppearWatchFrames || _entities.EntityByUuid(uuid) is not { } entity)
-            {
-                _appeared.RemoveAt(i);
-                continue;
-            }
+            if (!TickOneAppeared(uuid, frames)) { _appeared.RemoveAt(i); continue; }
             _appeared[i] = (uuid, frames);
-            if (frames < Stage2Delay || !ResolveDrawnSpeed() || DrawnSpeed(uuid) <= FreezeLedger.SpeedEpsilon) continue;
-            if (_ledger.Factors.ContainsKey(uuid)) ReapplyFactor(entity);
-            FreezeDrawnSpeed(uuid);
+        }
+    }
+
+    /// <summary>One appeared entity's re-check for one late frame. False once it should leave the watch: gone,
+    /// <see cref="AppearWatchFrames"/> elapsed, or an interop failure — isolated in its own try so a failing entity
+    /// is dropped from the watch instead of aborting the rest of <c>_appeared</c> this frame.</summary>
+    private bool TickOneAppeared(long uuid, int frames)
+    {
+        try
+        {
+            if (frames >= AppearWatchFrames || _entities.EntityByUuid(uuid) is not { } entity) return false;
+            if (frames >= Stage2Delay && ResolveDrawnSpeed() && DrawnSpeed(uuid) > FreezeLedger.SpeedEpsilon)
+            {
+                if (_ledger.Factors.ContainsKey(uuid)) ReapplyFactor(entity);
+                FreezeDrawnSpeed(uuid);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            WarnOnce("appeartick", "could not re-check an appearing entity: " + ex.Message);
+            return false;
         }
     }
 }

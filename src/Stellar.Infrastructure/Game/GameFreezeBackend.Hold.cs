@@ -9,7 +9,9 @@ namespace Stellar.Infrastructure.Game;
 /// <c>ModelGoComp.Position</c> back to where it was drawn at freeze time (2.8–4.0 µs per entity). Held = every movable kind
 /// (<see cref="FreezeKinds.Movable"/>) within <see cref="FreezeKinds.HoldRadius"/> of the local player, never the local
 /// player. The logical position keeps moving underneath; on release each held model is written back to its logical
-/// position (a pet stayed 18.48 m off for 3+ frames otherwise). Self-disables over <see cref="HoldBudget.LimitMs"/>.</summary>
+/// position (a pet stayed 18.48 m off for 3+ frames otherwise). Self-disables over <see cref="HoldBudget.LimitMs"/>.
+/// <see cref="TryHold"/> and <see cref="SnapHeldToLogical"/> isolate each entity's lookup in its own try so one bad
+/// entity never skips the rest (review finding, Task 9 round 1).</summary>
 internal sealed partial class GameFreezeBackend
 {
     internal const string ModelGoCompType = "Panda.ZGame.ModelGoCompBase";
@@ -68,7 +70,7 @@ internal sealed partial class GameFreezeBackend
         if (HoldOrigin() is not { } origin) return;
         var self = _entities.PlayerUuid();
         foreach (var uuid in _ids)
-            if (uuid != self && _entities.EntityByUuid(uuid) is { } e) TryHold(uuid, e, origin);
+            if (uuid != self) TryHold(uuid, origin);
         if (_held.Count == 0) return;
         _budget.Reset();
         _holding = true;
@@ -78,13 +80,20 @@ internal sealed partial class GameFreezeBackend
     private Vector3? HoldOrigin() =>
         _entities.LiveModel(_entities.LocalEntity()) is { } me ? _entities.AttrPosition(me) : null;
 
-    /// <summary>Holds <paramref name="entity"/> at its drawn position when it is a movable kind within the radius.</summary>
-    private void TryHold(long uuid, object entity, Vector3 origin)
+    /// <summary>Holds <paramref name="uuid"/> at its drawn position when it is a movable kind within the radius,
+    /// looked up fresh. The whole lookup runs inside one try: an interop failure for this entity is caught and
+    /// warned once, never aborting the caller's loop over the rest of <c>_ids</c>.</summary>
+    private void TryHold(long uuid, Vector3 origin)
     {
-        if (!FreezeKinds.Movable(_entities.EntType(entity)) || _entities.LiveModel(entity) is not { } m) return;
-        if (_entities.AttrPosition(m) is not { } at || Vector3.Distance(at, origin) > FreezeKinds.HoldRadius) return;
-        if (_held.Exists(h => h.Uuid == uuid)) return;   // re-appeared while still held
-        if (_goComp!(m) is { } comp) _held.Add((uuid, _getPos!(comp)));
+        try
+        {
+            if (_entities.EntityByUuid(uuid) is not { } entity) return;
+            if (!FreezeKinds.Movable(_entities.EntType(entity)) || _entities.LiveModel(entity) is not { } m) return;
+            if (_entities.AttrPosition(m) is not { } at || Vector3.Distance(at, origin) > FreezeKinds.HoldRadius) return;
+            if (_held.Exists(h => h.Uuid == uuid)) return;   // re-appeared while still held
+            if (_goComp!(m) is { } comp) _held.Add((uuid, _getPos!(comp)));
+        }
+        catch (Exception ex) { WarnOnce("holdone", "could not hold an entity's position: " + ex.Message); }
     }
 
     private void StopHold()
@@ -100,8 +109,11 @@ internal sealed partial class GameFreezeBackend
     {
         foreach (var (uuid, _) in _held)
         {
-            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _goComp!(m) is not { } comp) continue;
-            try { if (_entities.AttrPosition(m) is { } logical) _setPos!(comp, logical); }
+            try
+            {
+                if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _goComp!(m) is not { } comp) continue;
+                if (_entities.AttrPosition(m) is { } logical) _setPos!(comp, logical);
+            }
             catch (Exception ex) { WarnOnce("holdsnap", "could not snap a held entity back: " + ex.Message); }
         }
     }

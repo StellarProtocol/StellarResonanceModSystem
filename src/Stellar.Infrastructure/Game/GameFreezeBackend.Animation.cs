@@ -7,7 +7,11 @@ namespace Stellar.Infrastructure.Game;
 /// supports it: <c>SetAttrSkillStageTimeFactor(e, 0)</c> + <c>SetAttrAnimSpeedDirty(e, true)</c> + <c>tryCalculateAnimSpeed(e)</c>,
 /// the prior value from <c>GetAttrSkillStageTimeFactor</c> — enough for players, vanity pets and mounts. Stage 2, two late
 /// frames later: <c>ZModel.AnimComp.Speed = 0</c> on every entity whose drawn speed is still above 0 — NPCs and pets, whose
-/// drawn speed the attr never reaches and the game never rewrites. The local player is included (the pose freezes too).</summary>
+/// drawn speed the attr never reaches and the game never rewrites. The local player is included (the pose freezes too).
+/// Every per-entity lookup below runs inside that entity's own try: one entity's interop failure is caught, warned
+/// once and skipped, and never aborts the loop over the rest of <c>_ids</c> — a prior bug here could abort mid-loop,
+/// leaving the remaining entities both unfrozen AND un-tracked by <see cref="FreezeLedger"/>, so a later unfreeze
+/// could never restore them either (review finding, Task 9 round 1).</summary>
 internal sealed partial class GameFreezeBackend
 {
     private MethodInfo? _getFactor, _setFactor, _animDirty, _recalc;
@@ -48,16 +52,18 @@ internal sealed partial class GameFreezeBackend
     private void FreezeAnimation()
     {
         if (!ResolveAnimation()) { WarnOnce("anim", "animation freeze unavailable on this client"); return; }
-        foreach (var uuid in _ids)
-            if (_entities.EntityByUuid(uuid) is { } e) FreezeFactor(uuid, e);
+        foreach (var uuid in _ids) FreezeFactor(uuid);
     }
 
-    /// <summary>Stage 1 for one entity. Skipped for kinds where the attr path throws (<see cref="FreezeKinds.AttrSupported"/>).</summary>
-    private void FreezeFactor(long uuid, object entity)
+    /// <summary>Stage 1 for one entity, looked up fresh. Skipped for kinds where the attr path throws
+    /// (<see cref="FreezeKinds.AttrSupported"/>). The lookup and the write both run inside one try, so this
+    /// entity's failure is caught and skipped without aborting the caller's loop over the rest.</summary>
+    private void FreezeFactor(long uuid)
     {
-        if (_recalc is null || _ledger.Factors.ContainsKey(uuid) || !FreezeKinds.AttrSupported(_entities.EntType(entity))) return;
+        if (_recalc is null || _ledger.Factors.ContainsKey(uuid)) return;
         try
         {
+            if (_entities.EntityByUuid(uuid) is not { } entity || !FreezeKinds.AttrSupported(_entities.EntType(entity))) return;
             var prior = Convert.ToSingle(_getFactor!.Invoke(null, new[] { entity }));
             _setFactor!.Invoke(null, new object[] { entity, FreezeLedger.FrozenFactor });
             _ledger.SaveFactor(uuid, prior);   // saved before the recalc, so a recalc failure is still restored
@@ -88,12 +94,14 @@ internal sealed partial class GameFreezeBackend
         OnStage2(n);
     }
 
-    /// <summary>Stage 2 for one entity: a drawn speed above 0 becomes 0, the prior kept. True when written.</summary>
+    /// <summary>Stage 2 for one entity: a drawn speed above 0 becomes 0, the prior kept. True when written. The
+    /// entity lookup and the write both run inside the same try, so a failed lookup is caught here instead of
+    /// aborting <see cref="FreezeDrawnSpeeds"/>'s loop over the rest of <c>_ids</c>.</summary>
     private bool FreezeDrawnSpeed(long uuid)
     {
-        if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return false;
         try
         {
+            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return false;
             var speed = _getSpeed!(comp);
             if (speed <= FreezeLedger.SpeedEpsilon) return false;
             _ledger.SaveSpeed(uuid, speed);
@@ -107,11 +115,14 @@ internal sealed partial class GameFreezeBackend
         }
     }
 
-    /// <summary>The entity's drawn speed, or 0 when it has no model / anim component.</summary>
+    /// <summary>The entity's drawn speed, or 0 when it has no model / anim component or the lookup fails.</summary>
     private float DrawnSpeed(long uuid)
     {
-        if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return 0f;
-        try { return _getSpeed!(comp); }
+        try
+        {
+            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return 0f;
+            return _getSpeed!(comp);
+        }
         catch { return 0f; }
     }
 
@@ -120,9 +131,9 @@ internal sealed partial class GameFreezeBackend
         RestoreSpeeds();   // drawn speeds first, then the factors (players' speed is recomputed from the factor)
         foreach (var kv in _ledger.Factors)
         {
-            if (_entities.EntityByUuid(kv.Key) is not { } entity) continue;   // left / despawned: nothing to restore
             try
             {
+                if (_entities.EntityByUuid(kv.Key) is not { } entity) continue;   // left / despawned: nothing to restore
                 var current = Convert.ToSingle(_getFactor!.Invoke(null, new[] { entity }));
                 if (FreezeLedger.RestoreValue(kv.Value, current) is not float restore) continue;
                 _setFactor!.Invoke(null, new object[] { entity, restore });
@@ -137,9 +148,9 @@ internal sealed partial class GameFreezeBackend
         if (_ledger.Speeds.Count == 0 || _setSpeed is null) return;
         foreach (var kv in _ledger.Speeds)
         {
-            if (_entities.LiveModel(_entities.EntityByUuid(kv.Key)) is not { } m || _animComp!(m) is not { } comp) continue;
             try
             {
+                if (_entities.LiveModel(_entities.EntityByUuid(kv.Key)) is not { } m || _animComp!(m) is not { } comp) continue;
                 if (FreezeLedger.RestoreSpeed(kv.Value, _getSpeed!(comp)) is float restore) _setSpeed(comp, restore);
             }
             catch (Exception ex) { WarnOnce("speedrestore", "could not restore an entity's drawn speed: " + ex.Message); }
