@@ -15,6 +15,7 @@ namespace Stellar.Infrastructure.Hooks;
 internal sealed class HarmonyGameMethodHooker
 {
     private const BindingFlags InstanceMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
     // Shared lookup is required because HarmonyX postfixes must be static methods.
     internal static readonly Dictionary<MethodBase, Action<object?, object?[]>> Callbacks = new();
@@ -31,9 +32,16 @@ internal sealed class HarmonyGameMethodHooker
         _harmony = new Harmony(harmonyId);
     }
 
-    public void PostfixAllOverloads(Type type, string methodName, Action<object?, object?[]> callback)
+    public void PostfixAllOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
+        PostfixMatching(type, methodName, InstanceMembers, callback);
+
+    /// <summary>Same as <see cref="PostfixAllOverloads"/> for STATIC methods (the callback's instance is null).</summary>
+    public void PostfixStaticOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
+        PostfixMatching(type, methodName, StaticMembers, callback);
+
+    private void PostfixMatching(Type type, string methodName, BindingFlags flags, Action<object?, object?[]> callback)
     {
-        var methods = type.GetMethods(InstanceMembers)
+        var methods = type.GetMethods(flags)
             .Where(m => m.Name == methodName && !m.IsGenericMethodDefinition)
             .ToArray();
 
