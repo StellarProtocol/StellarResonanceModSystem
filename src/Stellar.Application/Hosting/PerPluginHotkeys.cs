@@ -33,4 +33,7 @@ internal sealed class PerPluginHotkeys : IHotkeys
 
     public IHotkeyAction DeclareAction(HotkeyAction action, Action callback)
         => _sink.DeclareAction(action, callback, _pluginGuid);
+
+    public SavedBindingMigration MigrateSavedBinding(string actionId, KeyBinding from, KeyBinding to)
+        => _sink.MigrateSavedBinding(actionId, from, to);
 }

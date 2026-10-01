@@ -7,7 +7,7 @@ using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
-internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDirectory, IHotkeyOwnedDeclarations
+internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDirectory, IHotkeyOwnedDeclarations
 {
     private const string UnboundSentinel = "_unbound_";
     private static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(30);
@@ -78,6 +78,7 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
             return;
         }
         action.CurrentBinding = newBinding;
+        action.Saved = newBinding is not null;
         PersistBinding(actionId, newBinding);
         BindingChanged?.Invoke(actionId);
         SyncBlockedKeys();
@@ -112,13 +113,14 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
         }
 
         _suggestedDefaults[action.Id] = action.SuggestedDefault;
-        var resolved = ResolveBinding(action);
+        var (resolved, saved) = ResolveBinding(action);
         // PluginId/Description are init properties, not ctor args — RegisteredAction's ctor is
         // already at 5 params and two more would trip the STELLAR0004 ctor-dependency gate.
         var registered = new RegisteredAction(action.Id, resolved, callback, _actions, InvalidateActionsCache)
         {
             PluginId = pluginId,
             Description = action.Description ?? string.Empty,
+            Saved = saved,
         };
         _actions[action.Id] = registered;
         _cachedActionsList = null;   // invalidate the snapshot served to IHotkeyDirectory consumers
@@ -182,46 +184,6 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
     public bool IsActionHeld(string actionId)
         => _actions.TryGetValue(actionId, out var a) && a.CurrentBinding is { } b
            && _input.CurrentModifiers == b.Modifiers && _input.IsKeyHeld(b.Key);
-
-    private KeyBinding? ResolveBinding(HotkeyAction action)
-    {
-        // Persisted user choice trumps SuggestedDefault. "_unbound_" sentinel
-        // means the user explicitly cleared the binding.
-        var stored = LoadStoredBinding(action.Id);
-        if (stored.HasValue && stored.Value.IsUnbound) return null;
-        if (stored.HasValue) return stored.Value.Binding;
-
-        if (action.SuggestedDefault is not { } suggested) return null;
-
-        // Collision check: walk existing actions; if any already has this exact
-        // binding, the alphabetically-first Id wins.
-        var conflicting = _actions.Values
-            .Where(a => a.CurrentBinding == suggested)
-            .Select(a => a.Id)
-            .ToList();
-
-        if (conflicting.Count == 0) return suggested;
-
-        // Sort all ids (existing + the new one) alphabetically; the first wins.
-        var all = new List<string>(conflicting) { action.Id };
-        all.Sort(StringComparer.Ordinal);
-        var winnerId = all[0];
-
-        if (winnerId == action.Id)
-        {
-            // New action wins; un-bind the others.
-            foreach (var lostId in conflicting)
-            {
-                _actions[lostId].CurrentBinding = null;
-                LogCollision(lostId, suggested, action.Id);
-            }
-            return suggested;
-        }
-
-        // Existing action keeps the binding; new action is unbound.
-        LogCollision(action.Id, suggested, winnerId);
-        return null;
-    }
 
     private void SyncBlockedKeys()
     {
@@ -325,6 +287,8 @@ internal sealed class HotkeyService : IHotkeys, IHotkeyDirectory, IHotkeyBlockDi
         public Action      Callback        { get; internal set; }
         public string?     PluginId        { get; init; }
         public string      Description     { get; init; } = "";
+        /// <summary>True when the binding is the player's saved choice (config / Rebind), false for a suggested default.</summary>
+        public bool        Saved           { get; internal set; }
 
         public void Dispose()
         {
