@@ -101,6 +101,19 @@ public sealed class CombatStateServiceTests
     }
 
     [Fact]
+    public void Off_thread_flag_events_are_posted()
+    {
+        var combat = new StubCombat { LocalEntityId = Self };
+        var flags = new FakeFlags();
+        var posted = new List<Action>();
+        var svc = new CombatStateService(combat, combat, flags, posted.Add);
+        flags.Raise(CombatFlagKind.LocalCombatData, true);
+        Assert.False(svc.LocalPlayerInCombat);         // nothing changes until the main thread runs the post
+        posted[0]();
+        Assert.True(svc.LocalPlayerInCombat);
+    }
+
+    [Fact]
     public void Subscribing_installs_the_fallback_hooks()
     {
         var (_, _, flags, _) = Make();

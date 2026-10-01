@@ -59,9 +59,12 @@ internal sealed class CombatStateService : ICombatState
 
     private void OnFlag(CombatFlagKind kind, bool on)
     {
-        if (kind == CombatFlagKind.LocalCombatData) _local = on;
-        else _show = on;
-        Recompute();
+        _post(() =>
+        {
+            if (kind == CombatFlagKind.LocalCombatData) _local = on;
+            else _show = on;
+            Recompute();
+        });
     }
 
     private void Recompute()
