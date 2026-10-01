@@ -157,10 +157,12 @@ internal sealed class PluginHost : IDisposable
         // Render-quality tokens + time-of-day pins released on unload (fresh owner key per enable).
         lifetime.Quality = sharedServices.RenderQuality is RenderQualityService rq ? new PluginRenderQuality(rq, new object()) : null;
         lifetime.Time = sharedServices.TimeOfDay is { } tod ? new PluginTimeOfDay(tod) : null;
+        lifetime.FreeCam = FreeCameraScope.Mint(sharedServices);   // camera/shield/freeze/handlers released on unload
         var perPluginServices = new PerPluginServices(sharedServices,
             new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
                                bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
-                               lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time));
+                               lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
+                               FreeCamera: lifetime.FreeCam));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -182,6 +184,7 @@ internal sealed class PluginHost : IDisposable
         public PluginPhotoModeState? PhotoMode;
         public PluginRenderQuality? Quality;
         public PluginTimeOfDay? Time;
+        public FreeCameraScope? FreeCam;
 
         public void Release()
         {
@@ -191,6 +194,7 @@ internal sealed class PluginHost : IDisposable
             PhotoMode?.ReleaseAll();
             Quality?.ReleaseAll();
             Time?.ReleaseAll();
+            FreeCam?.ReleaseAll();
             (Harmony as IDisposable)?.Dispose();
         }
     }

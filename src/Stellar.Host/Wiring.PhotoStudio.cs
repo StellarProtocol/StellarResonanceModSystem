@@ -79,9 +79,14 @@ public sealed partial class BootstrapPlugin
         _photoModeProbe?.Install(hooker);
         _visibilityBackend?.InstallHooks(hooker);
         InstallRenderQualityHooks(hooker);
+        InstallFreeCameraHooks(hooker);
     }
 
-    private void DisposePhotoStudio() => _lookBackend?.Dispose();
+    private void DisposePhotoStudio()
+    {
+        _lookBackend?.Dispose();
+        DisposeFreeCamera();   // after plugins released their handles (Unload disposes the registry first)
+    }
 
     // The framework's own overlay canvases (HideAndDontSave, so taken from their owners, never searched for).
     // The toast canvas is deliberately absent: toasts stay visible (capture feedback).

@@ -91,7 +91,8 @@ public sealed partial class BootstrapPlugin
             _renderLook!,
             _photoMode!,
             _renderQuality!,
-            _timeOfDay!);
+            _timeOfDay!,
+            FreeCameraSet());
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

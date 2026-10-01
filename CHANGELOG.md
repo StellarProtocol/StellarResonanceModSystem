@@ -14,6 +14,29 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.14.0] - 2026-10-01
+_**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._
+### Added
+- Free camera support for plugins: move the camera freely around your character, freeze the moment (characters, NPCs, pets and effects stop), and strike a pose with your own emotes.
+### Fixed
+- A hotkey you set yourself can no longer end up sharing its key with another action's default.
+### Developer notes
+- New `IPluginServices` members: `CameraOverride` (exclusive Cinemachine vcam takeover; 60 m hard cap from the local player;
+  framework release on zone change / cutscene / game camera mode / disconnect / unload / frame-handler exception with
+  `CameraReleaseReason`; `LookAtCamera()` snapshot-restore), `InputShield` (ref-counted `ZIgnoreMgr` mask under
+  `EIgnoreMaskSource.EGm` plus the text-field `KeyboardInputGate` for every game key, raw key/mouse reads), `SceneFreeze`
+  (every `EntityDict` entity: effects via `SetEffectFreeze` + `AddEffectDisplay` postfix, animation via
+  `SkillStageTimeFactor` then `AnimComp.Speed` where the drawn speed stays above 0, drawn-position hold of movable kinds
+  within 80 m in LateUpdate with a 0.3 ms/frame self-check and a release snap, entities appearing while frozen via an
+  `AddEntity` postfix), `Emotes`
+  (the emote wheel's unlocked list and check-then-play path through the Lua VM), `CombatState` (attr 104 +
+  `SetLocalCombatData`/`SetLocalAttrInBattleShow` postfixes, no polling), `EntityPicker` (chest projection).
+- Kill switches: `STELLAR_FREECAM_OFF=1`, `STELLAR_FREEZE_NO_POSITIONS=1`.
+- `IHotkeys.MigrateSavedBinding(actionId, from, to)` (`SavedBindingMigration`): one-time move of a player-saved chord.
+  Resolution now lets a saved binding beat a suggested default whatever the declare order (it used to skip the collision
+  check); default-vs-default is unchanged.
+- A per-frame `FreeCameraFrameDriver` MonoBehaviour exists but is disabled unless a camera override or a position hold is live.
+
 ## [2.13.0] - 2026-09-30
 _**2.13.0** (minor) — Screenshot support for plugins. Adds API for plugins (Abstractions 2.13.0); additive, no plugin rebuild._
 ### Added

@@ -39,6 +39,21 @@ public interface IPluginServices
     IRenderQuality RenderQuality { get; }
     /// <summary>Pin the in-world time of day to an hour, then hand it back to the server. See <see cref="ITimeOfDay"/>.</summary>
     ITimeOfDay TimeOfDay { get; }
+    /// <summary>Exclusive free-camera takeover of the game camera (60 m hard cap, framework-ended on zone change,
+    /// cutscene, the game's camera mode, disconnect or unload). See <see cref="ICameraOverride"/>.</summary>
+    ICameraOverride CameraOverride { get; }
+    /// <summary>Blocks the game's movement/camera/combat input and every game key while held, and exposes raw key/mouse
+    /// reads. See <see cref="IInputShield"/>.</summary>
+    IInputShield InputShield { get; }
+    /// <summary>Freezes the animation, effects and drawn positions of every entity on screen, including ones that appear
+    /// while frozen (visual and local only). See <see cref="ISceneFreeze"/>.</summary>
+    ISceneFreeze SceneFreeze { get; }
+    /// <summary>The local player's unlocked emotes and playing one through the game's own emote action. See <see cref="IEmotes"/>.</summary>
+    IEmotes Emotes { get; }
+    /// <summary>Whether the local player is in combat (event-driven). See <see cref="ICombatState"/>.</summary>
+    ICombatState CombatState { get; }
+    /// <summary>The character drawn under a screen point. See <see cref="IEntityPicker"/>.</summary>
+    IEntityPicker EntityPicker { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>

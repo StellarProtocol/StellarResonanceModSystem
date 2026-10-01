@@ -39,6 +39,7 @@ internal sealed class PerPluginServices : IPluginServices
     // host — fall back to the shared services.
     private readonly IRenderQuality? _renderQuality;
     private readonly ITimeOfDay? _timeOfDay;
+    private readonly FreeCameraScope? _freeCam;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -54,6 +55,7 @@ internal sealed class PerPluginServices : IPluginServices
         _photoMode = scope.PhotoMode;
         _renderQuality = scope.RenderQuality;
         _timeOfDay = scope.TimeOfDay;
+        _freeCam = scope.FreeCamera;
     }
 
     public IPluginConfig Config { get; }
@@ -113,6 +115,12 @@ internal sealed class PerPluginServices : IPluginServices
     public IPhotoModeState PhotoMode => _photoMode ?? _shared.PhotoMode;
     public IRenderQuality RenderQuality => _renderQuality ?? _shared.RenderQuality;
     public ITimeOfDay TimeOfDay => _timeOfDay ?? _shared.TimeOfDay;
+    public ICameraOverride CameraOverride => (ICameraOverride?)_freeCam?.Camera ?? _shared.CameraOverride;
+    public IInputShield InputShield => (IInputShield?)_freeCam?.Shield ?? _shared.InputShield;
+    public ISceneFreeze SceneFreeze => (ISceneFreeze?)_freeCam?.Freeze ?? _shared.SceneFreeze;
+    public IEmotes Emotes => (IEmotes?)_freeCam?.Emotes ?? _shared.Emotes;
+    public ICombatState CombatState => (ICombatState?)_freeCam?.Combat ?? _shared.CombatState;
+    public IEntityPicker EntityPicker => _shared.EntityPicker;
 }
 
 /// <summary>
@@ -130,4 +138,5 @@ internal readonly record struct PerPluginScope(
     IRenderLook? RenderLook = null,
     IPhotoModeState? PhotoMode = null,
     IRenderQuality? RenderQuality = null,
-    ITimeOfDay? TimeOfDay = null);
+    ITimeOfDay? TimeOfDay = null,
+    FreeCameraScope? FreeCamera = null);

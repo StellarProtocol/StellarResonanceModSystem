@@ -345,8 +345,9 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
         _windowService?.Tick(deltaTime);
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:window");
+        // One gate, two demands: a focused Stellar text field, or a held input shield (free camera — spec D8).
         if (_keyboardGate != null)
-            _keyboardGate.SetSuppressed(_windowService?.AnyFieldFocused ?? false);
+            _keyboardGate.SetSuppressed((_windowService?.AnyFieldFocused ?? false) || (_inputShield?.KeyboardBlocked ?? false));
         _hotkeysCapturePoll?.Invoke();   // uGUI Hotkeys panel key capture (no-op unless a cell is capturing)
         _themeEditorPoll?.Invoke();      // uGUI Themes colour-editor drag-release flush (no-op unless editing)
     }

@@ -161,6 +161,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     //   8. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
     //   8b. WireRenderQuality        — render quality + time-of-day arbiters (Wiring.RenderQuality.cs)
     //   8c. WirePhotoStudio          — scene visibility, render look, screen capture, photo-mode state
+    //   8d. WireFreeCamera          — camera override, input shield, freeze, emotes, combat state (Wiring.FreeCamera.cs)
     //   9. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
     //
     // Wiring call order in OnHotUpdateReady():
@@ -211,6 +212,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         ConstructResonanceData(log, typeRegistry);
         WireRenderQuality(log); // render quality + time of day; before WirePhotoStudio (capture takes the scale guard)
         WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
+        WireFreeCamera(log);    // free-camera services; needs _photoMode (release on the game's camera mode / cutscene)
         WireGameEventsAndPluginHost(log, configFactory);
 
         watcher.WaitForAll(ExpectedHotUpdateAssemblies, () => OnHotUpdateReady(log, typeRegistry, hooker));
