@@ -13,6 +13,14 @@ internal readonly record struct LookAtWrite(LookAtWriteKind Kind, bool Value);
 /// (recon run 2 F: the recipe leaves head=False where it was True; <c>HeadClose(!pre.Head)</c> fixes it).</summary>
 internal static class LookAtRestorePlan
 {
+    /// <summary>The after-state to feed <see cref="Corrections"/> once the release recipe has run. Head is always the
+    /// value the recipe's own <c>SetLuaAttrLookAtHeadClose(true)</c> call just wrote (closed/false) — never a live read
+    /// of the model, which the probe showed only settles after ~1 s; reading in the same frame can still report the
+    /// pre-release ("applied") value and make <see cref="Corrections"/> see a false "no drift" match, skipping the
+    /// corrective write it owes the player. Eye/Enable are not touched by the recipe, so they keep <paramref
+    /// name="liveRead"/>'s reported values.</summary>
+    internal static LookAtSnapshot AfterRelease(LookAtSnapshot? liveRead) => new(liveRead?.Enable, false, liveRead?.Eye);
+
     internal static List<LookAtWrite> Corrections(LookAtSnapshot pre, LookAtSnapshot? after)
     {
         var writes = new List<LookAtWrite>(3);

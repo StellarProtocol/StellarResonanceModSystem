@@ -37,6 +37,7 @@ internal sealed partial class LookAtBackend : ILookAtBackend
 
     public bool TryApply()
     {
+        if (_pre is not null) return true;
         var model = _entities.LiveModel(_entities.LocalEntity());
         var cam = _mainCamera();
         if (!Resolve() || model is null || cam == null || Read(model) is not { } pre) return false;
@@ -68,7 +69,10 @@ internal sealed partial class LookAtBackend : ILookAtBackend
             _resetIk!.Invoke(null, new[] { model });
             _headClose!.Invoke(model, new object[] { true });
             _setTransform!.Invoke(null, new object?[] { model, null, false, true });
-            var writes = LookAtRestorePlan.Corrections(pre, Read(model));
+            // Head never comes from this same-frame read (AfterRelease forces it to the recipe's own written value) —
+            // see LookAtRestorePlan.AfterRelease.
+            var after = LookAtRestorePlan.AfterRelease(Read(model));
+            var writes = LookAtRestorePlan.Corrections(pre, after);
             foreach (var w in writes) Write(model, w);
             OnRestored(writes.Count);
         }

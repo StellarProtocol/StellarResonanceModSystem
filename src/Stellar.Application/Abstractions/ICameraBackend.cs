@@ -9,7 +9,8 @@ internal interface ICameraBackend
     CameraPose? ReadGamePose();
     /// <summary>The local player's logical (server) position, or null when unknown.</summary>
     Position3D? ReadLocalPlayerPosition();
-    /// <summary>Creates and enables the override camera at <paramref name="start"/>; false when the game refuses.</summary>
+    /// <summary>Creates and enables the override camera at <paramref name="start"/>; false when the game refuses.
+    /// Idempotent: returns true without creating a second camera if one is already live.</summary>
     bool TryBegin(CameraPose start);
     /// <summary>Moves the override camera.</summary>
     void Apply(CameraPose pose);

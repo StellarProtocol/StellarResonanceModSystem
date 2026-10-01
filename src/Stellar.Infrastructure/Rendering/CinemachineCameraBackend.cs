@@ -58,6 +58,7 @@ internal sealed partial class CinemachineCameraBackend : ICameraBackend
 
     public bool TryBegin(CameraPose start)
     {
+        if (_go != null) return true;
         if (!ResolveVcam()) { WarnResolveOnce(); return false; }
         try
         {
@@ -74,6 +75,7 @@ internal sealed partial class CinemachineCameraBackend : ICameraBackend
         catch (Exception ex)
         {
             _log.Warning(Tag + "could not create the free camera: " + (ex.InnerException ?? ex).Message);
+            _driver.SetFrame(null);
             DestroyCamera();
             return false;
         }
