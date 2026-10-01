@@ -40,6 +40,16 @@ internal sealed class UnityShieldInputReader : IShieldInputReader
         }
     }
 
+    private bool _axesMissing;
+
+    // Raw axes keep moving while the game locks the cursor for RMB (owner report 2026-10-01). Missing axes throw once.
+    private (float X, float Y, bool Ok) ReadAxes()
+    {
+        if (_axesMissing) return (0f, 0f, false);
+        try { return (Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"), true); }
+        catch { _axesMissing = true; return (0f, 0f, false); }
+    }
+
     private void Sample()
     {
         var frame = Time.frameCount;
@@ -49,9 +59,12 @@ internal sealed class UnityShieldInputReader : IShieldInputReader
         {
             _wheel = Input.mouseScrollDelta.y;
             var p = Input.mousePosition;
-            _delta = _havePointer ? (p.x - _lastPointer.x, -(p.y - _lastPointer.y)) : (0f, 0f);   // Y flipped: top-left origin
+            var posDx = _havePointer ? p.x - _lastPointer.x : 0f;
+            var posDy = _havePointer ? -(p.y - _lastPointer.y) : 0f;   // Y flipped: top-left origin
             _lastPointer = p;
             _havePointer = true;
+            var (ax, ay, axisOk) = ReadAxes();
+            _delta = MouseDeltaSource.Pick(axisOk, ax, ay, posDx, posDy);
         }
         catch
         {
