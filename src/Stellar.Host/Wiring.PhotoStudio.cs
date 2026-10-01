@@ -37,10 +37,11 @@ public sealed partial class BootstrapPlugin
         _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));
         _frameGrabber = new UnityFrameGrabber(log);
         _screenCapture = new ScreenCaptureService(_frameGrabber, _sceneVisibility, new CaptureFileSink(),
-            m => log.Warning("[PhotoStudio] capture: " + m));
+            m => log.Warning("[PhotoStudio] capture: " + m), CaptureScaleGuard(log));
         _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, _clientState!, log);
         _photoMode = new PhotoModeService(_photoModeProbe);
         WirePhotoReassert();
+        WireRenderQualityPhotoSignals();
         var renderLook = _renderLook;
         _framework!.Update += _ => { renderLook.Tick(); DrainPhotoReassert(); };   // Tick is a no-op unless a look tracks the player
     }
@@ -71,6 +72,7 @@ public sealed partial class BootstrapPlugin
     {
         _photoModeProbe?.Install(hooker);
         _visibilityBackend?.InstallHooks(hooker);
+        InstallRenderQualityHooks(hooker);
     }
 
     private void DisposePhotoStudio() => _lookBackend?.Dispose();

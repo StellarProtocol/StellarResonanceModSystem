@@ -59,6 +59,8 @@ internal sealed class PluginServices : IPluginServices
     public ISceneVisibility SceneVisibility { get; }
     public IRenderLook RenderLook { get; }
     public IPhotoModeState PhotoMode { get; }
+    public IRenderQuality RenderQuality { get; }
+    public ITimeOfDay TimeOfDay { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -114,7 +116,9 @@ internal sealed class PluginServices : IPluginServices
         IScreenCapture screenCapture,
         ISceneVisibility sceneVisibility,
         IRenderLook renderLook,
-        IPhotoModeState photoMode)
+        IPhotoModeState photoMode,
+        IRenderQuality renderQuality,
+        ITimeOfDay timeOfDay)
     {
         Log = log;
         Framework = framework;
@@ -170,5 +174,7 @@ internal sealed class PluginServices : IPluginServices
         SceneVisibility = sceneVisibility;
         RenderLook = renderLook;
         PhotoMode = photoMode;
+        RenderQuality = renderQuality;
+        TimeOfDay = timeOfDay;
     }
 }

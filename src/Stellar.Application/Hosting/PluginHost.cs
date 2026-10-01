@@ -154,10 +154,13 @@ internal sealed class PluginHost : IDisposable
         // Look handles disposed + photo-mode handlers dropped on unload (spec § 6 framework backstop).
         lifetime.Look = sharedServices.RenderLook is { } look ? new PluginRenderLook(look) : null;
         lifetime.PhotoMode = sharedServices.PhotoMode is { } photo ? new PluginPhotoModeState(photo) : null;
+        // Render-quality tokens + time-of-day pins released on unload (fresh owner key per enable).
+        lifetime.Quality = sharedServices.RenderQuality is RenderQualityService rq ? new PluginRenderQuality(rq, new object()) : null;
+        lifetime.Time = sharedServices.TimeOfDay is { } tod ? new PluginTimeOfDay(tod) : null;
         var perPluginServices = new PerPluginServices(sharedServices,
             new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
                                bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
-                               lifetime.Look, lifetime.PhotoMode));
+                               lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -177,6 +180,8 @@ internal sealed class PluginHost : IDisposable
         public PluginSceneVisibility? Visibility;
         public PluginRenderLook? Look;
         public PluginPhotoModeState? PhotoMode;
+        public PluginRenderQuality? Quality;
+        public PluginTimeOfDay? Time;
 
         public void Release()
         {
@@ -184,6 +189,8 @@ internal sealed class PluginHost : IDisposable
             Visibility?.ReleaseAll();
             Look?.ReleaseAll();
             PhotoMode?.ReleaseAll();
+            Quality?.ReleaseAll();
+            Time?.ReleaseAll();
             (Harmony as IDisposable)?.Dispose();
         }
     }

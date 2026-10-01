@@ -35,6 +35,10 @@ internal sealed class PerPluginServices : IPluginServices
     // test host — fall back to the shared services.
     private readonly IRenderLook? _renderLook;
     private readonly IPhotoModeState? _photoMode;
+    // Per-plugin render-quality / time-of-day façades (tokens + pins released on unload). Null in a bare test
+    // host — fall back to the shared services.
+    private readonly IRenderQuality? _renderQuality;
+    private readonly ITimeOfDay? _timeOfDay;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -48,6 +52,8 @@ internal sealed class PerPluginServices : IPluginServices
         _sceneVisibility = scope.SceneVisibility;
         _renderLook = scope.RenderLook;
         _photoMode = scope.PhotoMode;
+        _renderQuality = scope.RenderQuality;
+        _timeOfDay = scope.TimeOfDay;
     }
 
     public IPluginConfig Config { get; }
@@ -105,6 +111,8 @@ internal sealed class PerPluginServices : IPluginServices
     public ISceneVisibility SceneVisibility => _sceneVisibility ?? _shared.SceneVisibility;
     public IRenderLook RenderLook => _renderLook ?? _shared.RenderLook;
     public IPhotoModeState PhotoMode => _photoMode ?? _shared.PhotoMode;
+    public IRenderQuality RenderQuality => _renderQuality ?? _shared.RenderQuality;
+    public ITimeOfDay TimeOfDay => _timeOfDay ?? _shared.TimeOfDay;
 }
 
 /// <summary>
@@ -120,4 +128,6 @@ internal readonly record struct PerPluginScope(
     ILocalization? Localization,
     ISceneVisibility? SceneVisibility = null,
     IRenderLook? RenderLook = null,
-    IPhotoModeState? PhotoMode = null);
+    IPhotoModeState? PhotoMode = null,
+    IRenderQuality? RenderQuality = null,
+    ITimeOfDay? TimeOfDay = null);

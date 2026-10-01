@@ -89,7 +89,9 @@ public sealed partial class BootstrapPlugin
             _screenCapture!,
             _sceneVisibility!,
             _renderLook!,
-            _photoMode!);
+            _photoMode!,
+            _renderQuality!,
+            _timeOfDay!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

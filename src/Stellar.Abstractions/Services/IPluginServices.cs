@@ -34,6 +34,11 @@ public interface IPluginServices
     IRenderLook RenderLook { get; }
     /// <summary>The game's own photo / selfie mode and cutscene state. See <see cref="IPhotoModeState"/>.</summary>
     IPhotoModeState PhotoMode { get; }
+    /// <summary>Raise render quality (supersampling + TAA, high shadows) while a token is held; reference-counted
+    /// across plugins, the game's values restored when the last token goes. See <see cref="IRenderQuality"/>.</summary>
+    IRenderQuality RenderQuality { get; }
+    /// <summary>Pin the in-world time of day to an hour, then hand it back to the server. See <see cref="ITimeOfDay"/>.</summary>
+    ITimeOfDay TimeOfDay { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>
