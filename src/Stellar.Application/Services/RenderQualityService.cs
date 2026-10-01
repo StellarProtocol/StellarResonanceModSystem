@@ -28,9 +28,16 @@ internal sealed class RenderQualityService : IRenderQuality
     private readonly LeverOverride<int> _shadowRes = new((a, b) => a == b);
     private readonly LeverOverride<int> _cascades = new((a, b) => a == b);
     private readonly LeverOverride<bool> _soft = new((a, b) => a == b);
+    private readonly Action<string> _warn;
+    private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
+    private ShadowValues _shadowLive;   // live shadow values while one ApplyShadows writes member by member
     private int _captureSuspends;
 
-    public RenderQualityService(IRenderQualityBackend backend) => _backend = backend;
+    public RenderQualityService(IRenderQualityBackend backend, Action<string>? warn = null)
+    {
+        _backend = backend;
+        _warn = warn ?? (_ => { });
+    }
 
     public RenderQualityCapabilities Capabilities => _backend.Capabilities;
 
@@ -90,23 +97,41 @@ internal sealed class RenderQualityService : IRenderQuality
     private void ApplyScale(float? target)
     {
         if (_backend.ReadRenderScale() is not float cur) return;   // unreadable now — the next re-assert retries
-        if (_scale.Decide(cur, target) is float write) _backend.WriteRenderScale(write);
+        Note("render scale", _scale.Step(cur, target, v => (_backend.WriteRenderScale(v), _backend.ReadRenderScale())));
     }
 
     private void ApplyTaa(bool? target)
     {
         if (_backend.ReadTaa() is not bool cur) return;
-        if (_taa.Decide(cur, target) is bool write) _backend.WriteTaa(write);
+        Note("TAA", _taa.Step(cur, target, v => (_backend.WriteTaa(v), _backend.ReadTaa())));
     }
 
+    // Member by member, each confirmed by read-back. _shadowLive carries the values already written this pass, so a
+    // later member's write never puts back an earlier member's old value.
     private void ApplyShadows(bool high)
     {
         if (_backend.ReadShadows() is not ShadowValues cur) return;
-        var res = _shadowRes.Decide(cur.Resolution, high ? HighShadowResolution : null);
-        var cascades = _cascades.Decide(cur.Cascades, high ? HighShadowCascades : null);
-        var soft = _soft.Decide(cur.Soft, high ? true : null);
-        if (res is null && cascades is null && soft is null) return;
-        _backend.WriteShadows(new ShadowValues(res ?? cur.Resolution, cascades ?? cur.Cascades, soft ?? cur.Soft));
+        _shadowLive = cur;
+        Note("shadow resolution", _shadowRes.Step(cur.Resolution, high ? HighShadowResolution : null,
+            v => WriteShadowMember(_shadowLive with { Resolution = v }, s => s.Resolution)));
+        Note("shadow cascades", _cascades.Step(cur.Cascades, high ? HighShadowCascades : null,
+            v => WriteShadowMember(_shadowLive with { Cascades = v }, s => s.Cascades)));
+        Note("soft shadows", _soft.Step(cur.Soft, high ? true : null,
+            v => WriteShadowMember(_shadowLive with { Soft = v }, s => s.Soft)));
+    }
+
+    private (bool Ok, T? After) WriteShadowMember<T>(ShadowValues next, Func<ShadowValues, T> member) where T : struct
+    {
+        var ok = _backend.WriteShadows(next);
+        var after = _backend.ReadShadows();
+        _shadowLive = after ?? (ok ? next : _shadowLive);
+        return (ok, after is ShadowValues a ? member(a) : null);
+    }
+
+    private void Note(string lever, LeverOutcome outcome)
+    {
+        if (outcome == LeverOutcome.Failed && _warned.Add(lever))
+            _warn($"Could not set {lever}: the game did not take the value (it is retried on the next scene change).");
     }
 
     private void Release(Token t)

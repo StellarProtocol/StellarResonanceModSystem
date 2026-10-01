@@ -52,7 +52,7 @@ internal sealed partial class ZRenderQualityBackend : IRenderQualityBackend
         catch { return null; }
     }
 
-    public void WriteRenderScale(float scale) => Write("scale", scale, () =>
+    public bool WriteRenderScale(float scale) => Write("scale", scale, () =>
     {
         var asset = _pipelineAsset!.GetValue(null) ?? throw new InvalidOperationException("pipeline asset is null");
         _renderScale!.SetValue(asset, scale);
@@ -65,7 +65,7 @@ internal sealed partial class ZRenderQualityBackend : IRenderQualityBackend
         catch { return null; }
     }
 
-    public void WriteTaa(bool on) => Write("taa", on, () =>
+    public bool WriteTaa(bool on) => Write("taa", on, () =>
     {
         _enableAA!.SetValue(null, on);
         _applyEnableAA!.Invoke(null, new object[] { on });
@@ -83,7 +83,7 @@ internal sealed partial class ZRenderQualityBackend : IRenderQualityBackend
         catch { return null; }
     }
 
-    public void WriteShadows(ShadowValues values) => Write("shadows", values, () =>
+    public bool WriteShadows(ShadowValues values) => Write("shadows", values, () =>
     {
         var s = LiveShadowSettings() ?? throw new InvalidOperationException("shadow settings are null");
         // Per member, only when it differs: a shadow-map resolution write reallocates the shadow atlas.
@@ -92,17 +92,19 @@ internal sealed partial class ZRenderQualityBackend : IRenderQualityBackend
         if (Convert.ToBoolean(_soft.Get(s)) != values.Soft) _soft.Set(s, values.Soft);
     });
 
-    private void Write(string lever, object value, Action write)
+    private bool Write(string lever, object value, Action write)
     {
         _writing = true;
         try
         {
             write();
             OnLeverWritten(lever, value);
+            return true;
         }
         catch (Exception ex)
         {
             WarnOnce("write:" + lever, $"Could not set {lever}: {(ex.InnerException ?? ex).Message}");
+            return false;
         }
         finally
         {

@@ -21,12 +21,20 @@ public sealed class RenderQualityServiceTests
         public RenderQualityCapabilities Capabilities { get; set; } = new(true, true, true);
         public int EnsureHooksCalls;
         public void EnsureHooks() => EnsureHooksCalls++;
+        public bool FailWrites;          // a write that reports failure and changes nothing
+        public float? ClampScaleTo;      // the pipeline clamps the render scale (a write that doesn't stick)
         public float? ReadRenderScale() => Readable ? Scale : null;
-        public void WriteRenderScale(float scale) { Writes.Add($"scale={scale}"); Scale = scale; }
+        public bool WriteRenderScale(float scale)
+        {
+            Writes.Add($"scale={scale}");
+            if (FailWrites) return false;
+            Scale = ClampScaleTo is float c ? System.Math.Min(scale, c) : scale;
+            return true;
+        }
         public bool? ReadTaa() => Readable ? Taa : null;
-        public void WriteTaa(bool on) { Writes.Add($"taa={on}"); Taa = on; }
+        public bool WriteTaa(bool on) { Writes.Add($"taa={on}"); if (FailWrites) return false; Taa = on; return true; }
         public ShadowValues? ReadShadows() => Readable ? Shadows : null;
-        public void WriteShadows(ShadowValues values) { Writes.Add($"shadows={values}"); Shadows = values; }
+        public bool WriteShadows(ShadowValues values) { Writes.Add($"shadows={values}"); if (FailWrites) return false; Shadows = values; return true; }
     }
 
     private static readonly RenderQualityRequest Ss = new() { Supersample = true };
@@ -49,7 +57,9 @@ public sealed class RenderQualityServiceTests
         new RenderQualityService(b).Request(Hs);
         Assert.Equal(new ShadowValues(4096, 3, true), b.Shadows);
         Assert.Equal(1.0f, b.Scale);
-        Assert.Single(b.Writes);
+        // One confirmed write per shadow member (review fix 5: each is read back); scale/TAA untouched.
+        Assert.Equal(3, b.Writes.Count);
+        Assert.All(b.Writes, w => Assert.StartsWith("shadows=", w));
     }
 
     [Fact]
@@ -275,5 +285,52 @@ public sealed class RenderQualityServiceTests
         Assert.Equal(0, b.EnsureHooksCalls);
         s.Request(Ss);
         Assert.Equal(1, b.EnsureHooksCalls);
+    }
+
+    // ── Review fixes 4 + 5: failed / non-sticking writes ──
+
+    [Fact]
+    public void A_restore_write_that_fails_is_retried_by_the_next_reassert()
+    {
+        var b = new FakeBackend();
+        var s = new RenderQualityService(b);
+        var t = s.Request(new RenderQualityRequest { Supersample = true, HighShadows = true });
+        b.FailWrites = true;
+        t.Dispose();                       // every restore write fails
+        Assert.Equal(2.0f, b.Scale);
+        b.FailWrites = false;
+        s.Reassert();
+        Assert.Equal(1.0f, b.Scale);
+        Assert.False(b.Taa);
+        Assert.Equal(new ShadowValues(2048, 2, false), b.Shadows);
+    }
+
+    [Fact]
+    public void An_override_write_that_fails_is_retried_and_never_pollutes_the_baseline()
+    {
+        var b = new FakeBackend { FailWrites = true };
+        var s = new RenderQualityService(b);
+        var t = s.Request(Ss);
+        Assert.Equal(1.0f, b.Scale);
+        b.FailWrites = false;
+        s.Reassert();
+        Assert.Equal(2.0f, b.Scale);
+        t.Dispose();
+        Assert.Equal(1.0f, b.Scale);
+    }
+
+    [Fact]
+    public void A_clamped_write_is_not_adopted_as_the_baseline_and_warns_once()
+    {
+        var warnings = new List<string>();
+        var b = new FakeBackend { ClampScaleTo = 1.5f };
+        var s = new RenderQualityService(b, warnings.Add);
+        var t = s.Request(Ss);
+        Assert.Equal(1.5f, b.Scale);      // read back: the 2.0 did not stick
+        s.Reassert();
+        s.Reassert();
+        Assert.Single(warnings);          // once per lever
+        t.Dispose();
+        Assert.Equal(1.0f, b.Scale);      // the game's value — never the clamped 1.5
     }
 }

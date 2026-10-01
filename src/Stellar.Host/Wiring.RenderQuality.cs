@@ -30,7 +30,7 @@ public sealed partial class BootstrapPlugin
     private void WireRenderQuality(BepInExPluginLog log)
     {
         _qualityBackend = new ZRenderQualityBackend(_gameTypeRegistry!, _clientState!, log);
-        _renderQuality = new RenderQualityService(_qualityBackend);
+        _renderQuality = new RenderQualityService(_qualityBackend, m => log.Warning("[PhotoQuality] " + m));
         _timeBackend = new LuaTimeOfDayBackend(_gameTypeRegistry!, _clientState!, log);
         _timeOfDay = new TimeOfDayService(_timeBackend);
         _qualityBackend.GameApplied += _qualityReassert.Request;

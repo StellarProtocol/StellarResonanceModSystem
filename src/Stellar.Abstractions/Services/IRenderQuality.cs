@@ -8,8 +8,10 @@ namespace Stellar.Abstractions.Services;
 /// </summary>
 /// <remarks>
 /// The game re-applies its own quality grade on scene changes and from its settings panel; the framework
-/// re-asserts every held lever after those (event-driven, writing only values that differ). Tokens a plugin still
-/// holds are released when it unloads.
+/// re-asserts every held lever after those (event-driven, writing only values that differ). A value the game itself
+/// writes while a lever is held (from its settings panel, or a quality-grade re-apply) becomes the value restored when
+/// the last token goes — so a setting the player changed mid-session is kept, never rolled back to an older capture.
+/// Tokens a plugin still holds are released when it unloads.
 /// </remarks>
 public interface IRenderQuality
 {
