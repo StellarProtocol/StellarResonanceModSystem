@@ -1,0 +1,94 @@
+using Stellar.Abstractions.Domain;
+using Stellar.Application.Abstractions;
+namespace Stellar.Application.Services;
+
+/// <summary>What a plugin asked for on one person — replayed in one go when an NPC model finishes loading, and the
+/// record of what a reset must undo (<see cref="Touched"/>). Main thread.</summary>
+internal sealed class PoseIntent
+{
+    private float _headX, _headY, _eyesX, _eyesY;
+
+    public int ActionId { get; private set; }
+    public float Moment { get; private set; } = -1f;
+    public ExpressionInfo? Expression { get; private set; }
+    public bool Hold { get; private set; }
+    public LookMode Head { get; private set; }
+    public LookMode Eyes { get; private set; }
+    public bool HeadLocked { get; private set; }
+    public bool EyesLocked { get; private set; }
+    public float Yaw { get; private set; }
+    public PoseTouches Touched { get; private set; }
+
+    /// <summary>An action is held at a point (not playing).</summary>
+    public bool Paused => ActionId != 0 && Moment >= 0f;
+
+    public void SetAction(int actionId)
+    {
+        ActionId = actionId;
+        Moment = -1f;
+        Touched |= PoseTouches.Action;
+    }
+
+    public void SetMoment(float moment) => Moment = moment;
+
+    public void SetExpression(ExpressionInfo? expression, bool hold)
+    {
+        Expression = expression;
+        Hold = hold;
+        Touched |= PoseTouches.Expression;
+    }
+
+    public void SetLook(LookPart part, LookMode mode, bool locked)
+    {
+        if (part == LookPart.Head) { Head = mode; HeadLocked = locked; Touched |= PoseTouches.Head; }
+        else { Eyes = mode; EyesLocked = locked; Touched |= PoseTouches.Eyes; }
+    }
+
+    public void SetAim(LookPart part, float x, float y)
+    {
+        if (part == LookPart.Head) { _headX = x; _headY = y; }
+        else { _eyesX = x; _eyesY = y; }
+    }
+
+    public void SetYaw(float yaw)
+    {
+        Yaw = yaw;
+        Touched |= PoseTouches.Yaw;
+    }
+
+    public LookMode ModeOf(LookPart part) => part == LookPart.Head ? Head : Eyes;
+    public float AimX(LookPart part) => part == LookPart.Head ? _headX : _eyesX;
+    public float AimY(LookPart part) => part == LookPart.Head ? _headY : _eyesY;
+
+    public void Clear()
+    {
+        ActionId = 0;
+        Moment = -1f;
+        Expression = null;
+        Hold = false;
+        Head = Eyes = LookMode.Default;
+        HeadLocked = EyesLocked = false;
+        _headX = _headY = _eyesX = _eyesY = 0f;
+        Yaw = 0f;
+        Touched = PoseTouches.None;
+    }
+
+    /// <summary>Applies everything asked for so far: the action first, the pause last (a look change on a paused person
+    /// re-applies the pause — recon § 1, Head Free). Returns the action's result (true without an action).</summary>
+    public bool ReplayInto(IPoseModel m)
+    {
+        var played = ActionId == 0 || m.PlayAction(ActionId);
+        if ((Touched & PoseTouches.Expression) != 0) m.SetExpression(Expression, Hold);
+        if ((Touched & PoseTouches.Head) != 0) ReplayLook(m, LookPart.Head, Head, HeadLocked);
+        if ((Touched & PoseTouches.Eyes) != 0) ReplayLook(m, LookPart.Eyes, Eyes, EyesLocked);
+        if ((Touched & PoseTouches.Yaw) != 0) m.SetYaw(Yaw);
+        if (Paused) m.SetMoment(Moment);
+        return played;
+    }
+
+    private void ReplayLook(IPoseModel m, LookPart part, LookMode mode, bool locked)
+    {
+        m.SetLook(part, mode, locked);
+        if (mode == LookMode.Free) m.Aim(part, AimX(part), AimY(part));
+    }
+}
