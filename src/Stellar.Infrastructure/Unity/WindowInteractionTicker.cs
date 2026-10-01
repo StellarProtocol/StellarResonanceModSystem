@@ -456,9 +456,11 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         for (var i = 0; i < DragAreas.Count; i++)
         {
-            if (DragAreas[i].Area == null) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(DragAreas[i].Area, mp, null)) continue;
-            if (FrontWindowBlocks(mp, FindWindowRoot(DragAreas[i].Area))) continue;
+            var area = DragAreas[i].Area;
+            if (area == null) continue;
+            if (!PointerHitRule.AcceptsPress(alive: true, area.gameObject.activeInHierarchy,
+                    RectTransformUtility.RectangleContainsScreenPoint(area, mp, null),
+                    () => FrontWindowBlocks(mp, FindWindowRoot(area)))) continue;
             return i;
         }
         return -1;
