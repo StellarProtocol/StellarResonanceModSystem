@@ -25,6 +25,9 @@ internal sealed partial class GameVisibilityBackend
     private MethodInfo? _setEntityShow;    // CameraFrameCtrl.SetEntityShow(int, bool)
     private MethodInfo? _forceRefreshCharVisible;   // ZEntityMgr.ForceRefreshCharVisible(EVisibleSource, bool)
     private object? _photoVisibleSource;            // (EVisibleSource)ETakePhotos — the source SetEntityShow drives
+    private MethodInfo? _getHideCount;              // ZEntityMgr.getHideCount(EntityRenderLayerHideType, EVisibleSource)
+    private Type? _hideTypeEnum;                    // EntityRenderLayerHideType
+    private object? _holdCountSource;               // (EVisibleSource)ETakePhotos for getHideCount
     // Set by InstallHooks (called once hot-update is ready): from then on a missing TYPE is a definitive negative
     // (a game patch renamed/removed it), cached under the same TTL instead of re-probed optimistically every call.
     private bool _hotUpdateReady;
@@ -212,7 +215,41 @@ internal sealed partial class GameVisibilityBackend
             setter.Invoke(ctrl, new object[] { type, show });
             OnEntityShowWritten(type, show);
             return true;
-        });
+        }, HoldCount);
+    }
+
+    /// <summary>
+    /// Live hold count behind a camera entity-show type: <c>ZEntityMgr.Instance.getHideCount(hideType, ETakePhotos)</c>
+    /// (private in the game, public in the interop). Null when it cannot be read — the plan then keeps its own
+    /// bookkeeping. Lets the plan notice a counter reset that silently dropped our hide.
+    /// </summary>
+    private int? HoldCount(int cameraType)
+    {
+        try
+        {
+            var mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
+            if (mgr is null) return null;
+            if (_getHideCount is null)
+            {
+                var m = StellarInterop.FindMethod(t, "getHideCount", 2);
+                var ps = m?.GetParameters();
+                if (m is null || ps![0].ParameterType is not { IsEnum: true } hideType || ps[1].ParameterType is not { IsEnum: true } sourceType)
+                {
+                    WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
+                    return null;
+                }
+                _hideTypeEnum = hideType;
+                _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
+                _getHideCount = m;
+            }
+            var hide = Enum.ToObject(_hideTypeEnum!, EntityShowPlan.HideTypeFor(cameraType));
+            return _getHideCount.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
+        }
+        catch (Exception ex)
+        {
+            WarnOnce("x:HoldCount", "Hold-count check failed: " + (ex.InnerException ?? ex).Message);
+            return null;
+        }
     }
 
     /// <summary>
@@ -226,7 +263,7 @@ internal sealed partial class GameVisibilityBackend
         if (!_entityShow.HoldsKeepPartySet) return;
         try
         {
-            var mgr = CreatedSingleton(ZEntityMgrType, "OtherPlayers", out var t);
+            var mgr = CreatedSingleton(ZEntityMgrType, "PartyRefresh", out var t);
             if (mgr is null) return;
             if (_forceRefreshCharVisible is null)
             {

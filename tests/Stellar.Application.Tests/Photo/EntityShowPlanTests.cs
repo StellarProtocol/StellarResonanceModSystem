@@ -141,16 +141,68 @@ public sealed class EntityShowPlanTests
         Assert.False(p.HoldsKeepPartySet);
     }
 
-    // Re-pin of fix round 2 (minor 3) "Reset forgets the mirror so the hold is rewritten": under the counter model a
-    // re-write of a held type is a DOUBLE hide that one release can never undo. The counters live in ZEntityMgr, not
-    // in CameraFrameCtrl, so a CameraFrameCtrl re-init no longer resets anything — held types are never re-hidden.
+    // Fix round 2 (minor 3) origin, restated for the counter model: the game can reset the ZEntityMgr hold counters
+    // under us (a re-init), silently dropping our hide. The plan reads the live count (getHideCount, photo source)
+    // and re-hides a held type exactly once when its count reads 0 — never on a count > 0 (that would be a double hide).
+    private int? LiveCount(int type) => Count(type);
+
     [Fact]
-    public void No_reset_path_can_double_hide_a_held_type()
+    public void Counter_reset_while_held_rehides_exactly_once()
     {
         var p = new EntityShowPlan();
-        p.Apply(true, false, Write);
-        p.Apply(true, false, Write);
-        p.Apply(false, false, Write);
-        Assert.Equal(0, Count(11));
+        p.Apply(true, false, Write, LiveCount);
+        _count.Clear();                                 // the game reset its counters: our hide is gone
+        Assert.True(p.NeedsWrite(true, false, LiveCount));
+        _calls.Clear();
+        p.Apply(true, false, Write, LiveCount);
+        p.Apply(true, false, Write, LiveCount);         // a second re-assert must not hide again
+        Assert.Equal(new[] { (11, false) }, _calls);
+        Assert.Equal(1, Count(11));
     }
+
+    [Fact]
+    public void Counter_reset_of_the_keep_party_set_rehides_each_type_once()
+    {
+        var p = new EntityShowPlan();
+        p.Apply(true, true, Write, LiveCount);
+        _count[2] = 0;                                  // only Chum's counter was reset
+        _calls.Clear();
+        p.Apply(true, true, Write, LiveCount);
+        Assert.Equal(new[] { (2, false) }, _calls);
+    }
+
+    [Fact]
+    public void Count_zero_at_release_issues_no_show()
+    {
+        var p = new EntityShowPlan();
+        _count[11] = 0;
+        p.Apply(true, false, Write, LiveCount);
+        _count[11] = 0;                                 // reset while held, before the release
+        _calls.Clear();
+        Assert.True(p.Apply(false, false, Write, LiveCount));
+        Assert.Empty(_calls);                           // a show here could cancel someone else's later hold
+        Assert.False(p.NeedsWrite(false, false, LiveCount));
+    }
+
+    [Fact]
+    public void Unreadable_count_keeps_the_bookkeeping_behaviour()
+    {
+        var p = new EntityShowPlan();
+        int? Unreadable(int _) => null;
+        p.Apply(true, false, Write, Unreadable);
+        _calls.Clear();
+        p.Apply(true, false, Write, Unreadable);        // no re-hide on an unknown count
+        Assert.Empty(_calls);
+        Assert.False(p.NeedsWrite(true, false, Unreadable));
+        p.Apply(false, false, Write, Unreadable);       // release still shows exactly once
+        Assert.Equal(new[] { (11, true) }, _calls);
+    }
+
+    [Theory]
+    [InlineData(6, 6)]    // Stranger → Nearby
+    [InlineData(2, 5)]    // Chum → Friend
+    [InlineData(4, 3)]    // Union → Union
+    [InlineData(11, 7)]   // OtherPlayer → OtherPlayer
+    public void Camera_types_map_to_the_render_layer_hide_types(int camera, int layer) =>
+        Assert.Equal(layer, EntityShowPlan.HideTypeFor(camera));
 }

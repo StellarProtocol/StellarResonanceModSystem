@@ -88,7 +88,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         var want = (requested & VisibilityLayers.OtherPlayers) != 0;
         var keep = want && (requested & VisibilityLayers.KeepParty) != 0;
         var target = want ? VisibilityLayers.OtherPlayers | (keep ? VisibilityLayers.KeepParty : 0) : VisibilityLayers.None;
-        var wrote = _entityShow.NeedsWrite(want, keep);
+        var wrote = _entityShow.NeedsWrite(want, keep, HoldCount);
         var ok = !wrote || Invoke(VisibilityLayers.OtherPlayers, want, () => SetOtherPlayersHidden(want, keep));
         _applied = (_applied & ~both) | (want && !ok ? VisibilityLayers.None : target);
         if (wrote) OnLayerSet(VisibilityLayers.OtherPlayers, want, ok);

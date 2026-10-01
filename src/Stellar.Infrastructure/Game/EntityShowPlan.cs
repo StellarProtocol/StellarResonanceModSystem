@@ -16,7 +16,10 @@ namespace Stellar.Infrastructure.Game;
 /// </list>
 /// The plan keeps hide-once / show-once bookkeeping of only the types WE hid. The game's own writes are not mirrored —
 /// the counter composes them for us — and a held type is never hidden twice (every extra hide would need a matching
-/// show). Pure — no Unity/game types — so it is unit-tested.
+/// show). The game can reset the counters under us; given the live count (<c>ZEntityMgr.getHideCount</c> for the photo
+/// source, see <see cref="HideTypeFor"/>), a held type whose count reads 0 is re-hidden exactly once and gets no show
+/// at release (a show there could cancel a hold someone took after the reset). An unreadable count (null) changes
+/// nothing. Pure — no Unity/game types — so it is unit-tested.
 /// </summary>
 internal sealed class EntityShowPlan
 {
@@ -34,11 +37,24 @@ internal sealed class EntityShowPlan
     /// <summary>True while the party-preserving set (6/2/4) is what we hold — party changes then need a refresh.</summary>
     public bool HoldsKeepPartySet => _held.Count > 0 && _held.All(t => Array.IndexOf(KeepPartySet, t) >= 0);
 
-    /// <summary>True when <see cref="Apply"/> would write anything.</summary>
-    public bool NeedsWrite(bool hideOthers, bool keepParty)
+    /// <summary>
+    /// <c>Panda.ZGame.EntityRenderLayerHideType</c> that <c>CameraFrameCtrl.SetEntityShow(cameraType, …)</c> drives
+    /// (decoded jump table, recon-party-grain.md; enum values verified in the release_3.7 interop).
+    /// </summary>
+    public static int HideTypeFor(int cameraType) => cameraType switch
+    {
+        Stranger => 6,      // Nearby
+        Chum => 5,          // Friend
+        Union => 3,         // Union
+        OtherPlayer => 7,   // OtherPlayer
+        _ => throw new ArgumentOutOfRangeException(nameof(cameraType)),
+    };
+
+    /// <summary>True when <see cref="Apply"/> would write anything or drop a reset hold.</summary>
+    public bool NeedsWrite(bool hideOthers, bool keepParty, Func<int, int?>? holdCount = null)
     {
         var target = Target(hideOthers, keepParty);
-        return _held.Count != target.Length || _held.Any(t => Array.IndexOf(target, t) < 0);
+        return _held.Count != target.Length || _held.Any(t => Array.IndexOf(target, t) < 0 || IsReset(t, holdCount));
     }
 
     /// <summary>
@@ -46,10 +62,11 @@ internal sealed class EntityShowPlan
     /// type not yet held. A failed hide is not held (retried next time); a failed show stays held (retried next
     /// time, so a hide is never stranded). Returns false when any write failed.
     /// </summary>
-    public bool Apply(bool hideOthers, bool keepParty, Func<int, bool, bool> write)
+    public bool Apply(bool hideOthers, bool keepParty, Func<int, bool, bool> write, Func<int, int?>? holdCount = null)
     {
         var target = Target(hideOthers, keepParty);
         var ok = true;
+        _held.RemoveAll(t => IsReset(t, holdCount));   // our hold is gone: re-hide (if wanted) / no show (if not)
         foreach (var type in _held.Where(t => Array.IndexOf(target, t) < 0).ToList())
         {
             if (write(type, true)) _held.Remove(type);
@@ -63,6 +80,8 @@ internal sealed class EntityShowPlan
         }
         return ok;
     }
+
+    private static bool IsReset(int type, Func<int, int?>? holdCount) => holdCount?.Invoke(type) == 0;
 
     private static int[] Target(bool hideOthers, bool keepParty) =>
         !hideOthers ? Array.Empty<int>() : keepParty ? KeepPartySet : EveryoneSet;
