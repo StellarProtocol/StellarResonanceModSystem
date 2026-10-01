@@ -30,9 +30,6 @@ public sealed class FreeCameraContractTests
     }
 
     [Fact]
-    public void Framework_version_is_2_14_0() => Assert.Equal("2.14.0", FrameworkVersion.Value);
-
-    [Fact]
     public void Release_reasons_are_stable() => Assert.Equal(
         new[] { "Disposed", "SceneChanged", "Cutscene", "GamePhotoMode", "Disconnected", "PluginUnloaded", "Error" },
         Enum.GetNames(typeof(CameraReleaseReason)));
