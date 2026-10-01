@@ -328,4 +328,80 @@ public sealed class ScreenCaptureServiceTests : IDisposable
     [Fact]
     public void Log_sink_is_required() =>
         Assert.Throws<ArgumentNullException>(() => new ScreenCaptureService(new FakeGrabber(), new FakeVisibility(), new CaptureFileSink(), null!));
+
+    // ── Capture render-scale guard (spec 2026-10-01 § 4) ──
+
+    private sealed class CountingGuard
+    {
+        public int Live;
+        public int Acquired;
+        public IDisposable? Acquire() { Live++; Acquired++; return new Token(this); }
+        private sealed class Token : IDisposable
+        {
+            private CountingGuard? _g;
+            public Token(CountingGuard g) => _g = g;
+            public void Dispose() { if (_g is not null) _g.Live--; _g = null; }
+        }
+    }
+
+    [Fact]
+    public async Task Scale_guard_is_held_during_the_grab_and_released_before_the_save()
+    {
+        var guard = new CountingGuard();
+        var g = new FakeGrabber();
+        g.HiddenDuringGrab = () => guard.Live > 0;
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog, guard.Acquire);
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t" });
+        Assert.True(r.Success, r.Error);
+        Assert.True(g.SawHidden);         // held while the frame was grabbed
+        Assert.Equal(0, guard.Live);
+        Assert.Equal(1, guard.Acquired);
+        Assert.Equal(1, g.Calls[0].settle); // one settle frame for the render-target reallocation
+    }
+
+    [Fact]
+    public async Task Scale_guard_settle_does_not_shorten_the_hide_settle()
+    {
+        var guard = new CountingGuard();
+        var g = new FakeGrabber();
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog, guard.Acquire);
+        await s.CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t", HideDuringCapture = VisibilityLayers.GameHud });
+        Assert.Equal(2, g.Calls[0].settle);
+    }
+
+    [Fact]
+    public async Task Scale_guard_is_released_when_the_grab_fails()
+    {
+        var guard = new CountingGuard();
+        var g = new FakeGrabber { FailAtScale = 2 };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog, guard.Acquire);
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t" });
+        Assert.False(r.Success);
+        Assert.Equal(0, guard.Live);
+    }
+
+    [Fact]
+    public async Task No_scale_guard_means_no_extra_settle()
+    {
+        var g = new FakeGrabber();
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog);
+        await s.CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t" });
+        Assert.Equal(0, g.Calls[0].settle);
+    }
+
+    [Fact]
+    public async Task Scale_guard_drops_a_real_supersample_hold_for_the_grab()
+    {
+        var backend = new RenderQualityServiceTests.FakeBackend();
+        var quality = new RenderQualityService(backend);
+        quality.Request(new RenderQualityRequest { Supersample = true });
+        var g = new FakeGrabber();
+        float scaleAtGrab = 0f;
+        g.HiddenDuringGrab = () => { scaleAtGrab = backend.Scale; return false; };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog, quality.SuspendSupersampleForCapture);
+        var r = await s.CaptureAsync(new CaptureRequest { Scale = 4, Directory = TempDir(), FileStem = "t" });
+        Assert.True(r.Success, r.Error);
+        Assert.Equal(1.0f, scaleAtGrab);
+        Assert.Equal(2.0f, backend.Scale);
+    }
 }

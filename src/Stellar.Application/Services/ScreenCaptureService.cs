@@ -10,17 +10,24 @@ namespace Stellar.Application.Services;
 internal sealed class ScreenCaptureService : IScreenCapture
 {
     private const int SettleFramesWhenHiding = 2;
+    private const int SettleFramesForScaleGuard = 1;   // a render-scale write reallocates the pipeline's targets
     private readonly IFrameGrabber _grabber;
     private readonly ISceneVisibility _visibility;
     private readonly CaptureFileSink _sink;
     private readonly Action<string> _log;
+    private readonly Func<IDisposable?>? _renderScaleGuard;
 
-    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string> log)
+    /// <param name="renderScaleGuard">Spec 2026-10-01 § 4: when set, held around the grab frame to drop a
+    /// supersampled render scale (the N× grab is supersampled already). Null = off (the default until the in-game
+    /// measurement shows the off-screen render is multiplied by the render scale).</param>
+    public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string> log,
+        Func<IDisposable?>? renderScaleGuard = null)
     {
         _grabber = grabber;
         _visibility = visibility;
         _sink = sink;
         _log = log ?? throw new ArgumentNullException(nameof(log));
+        _renderScaleGuard = renderScaleGuard;
     }
 
     public bool IsCapturing { get; private set; }
@@ -29,6 +36,7 @@ internal sealed class ScreenCaptureService : IScreenCapture
     {
         if (IsCapturing) return CaptureResult.Fail("A screenshot is already being taken.");
         IDisposable? hide = null;
+        IDisposable? scaleGuard = null;
         try
         {
             IsCapturing = true;
@@ -36,8 +44,11 @@ internal sealed class ScreenCaptureService : IScreenCapture
             var (scale, error) = CaptureRequestValidator.Validate(request, w, h);
             if (error is not null) return CaptureResult.Fail(error);
             hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
-            FrameGrab? grab = await GrabWithFallback(request, scale, hide is null ? 0 : SettleFramesWhenHiding);
-            hide?.Dispose(); // still on the main thread (grabber contract)
+            scaleGuard = _renderScaleGuard?.Invoke();
+            FrameGrab? grab = await GrabWithFallback(request, scale, SettleFrames(hide, scaleGuard));
+            scaleGuard?.Dispose(); // still on the main thread (grabber contract)
+            scaleGuard = null;
+            hide?.Dispose();
             hide = null;
             var (width, height) = (grab.Width, grab.Height);
             // Off-thread: stream the PNG straight into the file (or write the JPG bytes). The frame reference is
@@ -59,10 +70,14 @@ internal sealed class ScreenCaptureService : IScreenCapture
         }
         finally
         {
+            scaleGuard?.Dispose();
             hide?.Dispose();
             IsCapturing = false;
         }
     }
+
+    private static int SettleFrames(IDisposable? hide, IDisposable? scaleGuard) =>
+        Math.Max(hide is null ? 0 : SettleFramesWhenHiding, scaleGuard is null ? 0 : SettleFramesForScaleGuard);
 
     private string Save(FrameGrab g, CaptureRequest r)
     {
