@@ -44,7 +44,7 @@ public sealed partial class BootstrapPlugin
         var camera = new CinemachineCameraBackend(_gameTypeRegistry!, entities, _frameDriver, log);
         var lookAt = new LookAtService(new LookAtBackend(_gameTypeRegistry!, entities, camera.MainCamera, log), warn);
         _cameraOverride = new CameraOverrideService(camera, lookAt, camOff, warn);
-        _inputShield = new InputShieldService(new ZIgnoreShieldBackend(_gameTypeRegistry!, log), new UnityShieldInputReader(), warn);
+        _inputShield = new InputShieldService(new ZIgnoreShieldBackend(_gameTypeRegistry!, log), new UnityShieldInputReader(), _windowService!, warn);
         _freezeBackend = new GameFreezeBackend(_gameTypeRegistry!, entities, _frameDriver, log);
         _sceneFreeze = new SceneFreezeService(_freezeBackend, positionsDisabled: noPositions);
         _emotes = new EmoteService(_luaService!, warn);

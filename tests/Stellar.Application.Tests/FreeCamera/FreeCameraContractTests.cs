@@ -18,7 +18,7 @@ public sealed class FreeCameraContractTests
     [InlineData(typeof(ICameraOverride), 4)]
     [InlineData(typeof(ICameraControl), 5)]
     [InlineData(typeof(IInputShield), 2)]
-    [InlineData(typeof(IInputShieldHandle), 7)]
+    [InlineData(typeof(IInputShieldHandle), 8)]
     [InlineData(typeof(ISceneFreeze), 4)]
     [InlineData(typeof(IEmotes), 3)]
     [InlineData(typeof(ICombatState), 2)]

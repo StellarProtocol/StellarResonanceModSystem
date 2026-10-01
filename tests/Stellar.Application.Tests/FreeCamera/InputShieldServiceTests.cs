@@ -28,11 +28,37 @@ public sealed class InputShieldServiceTests
         public (float X, float Y) Pointer => (100f, 200f);
     }
 
-    private static (InputShieldService Svc, FakeBackend B, List<string> Warn) Make()
+    private sealed class FakeFocus : ITextFieldFocus
+    {
+        public bool Focused;
+        public bool AnyFieldFocused => Focused;
+    }
+
+    private static (InputShieldService Svc, FakeBackend B, List<string> Warn) Make() => Make(new FakeFocus());
+
+    private static (InputShieldService Svc, FakeBackend B, List<string> Warn) Make(FakeFocus focus)
     {
         var b = new FakeBackend();
         var warn = new List<string>();
-        return (new InputShieldService(b, new FakeReader(), warn.Add), b, warn);
+        return (new InputShieldService(b, new FakeReader(), focus, warn.Add), b, warn);
+    }
+
+    // Review F1: typing into a panel search box must not drive the free camera — the handle exposes the same text-field
+    // focus the keyboard gate reads, live, and reports false once disposed.
+    [Fact]
+    public void TextFieldFocused_reports_the_focus_source_while_held_and_false_after_dispose()
+    {
+        var focus = new FakeFocus();
+        var (svc, _, _) = Make(focus);
+        var h = svc.Shield();
+        Assert.False(h.TextFieldFocused);
+        focus.Focused = true;
+        Assert.True(h.TextFieldFocused);
+        focus.Focused = false;
+        Assert.False(h.TextFieldFocused);
+        focus.Focused = true;
+        h.Dispose();
+        Assert.False(h.TextFieldFocused);
     }
 
     [Fact]

@@ -50,11 +50,10 @@ internal sealed partial class CinemachineCameraBackend : ICameraBackend
         return new CameraPose(new Position3D(p.x, p.y, p.z), e.y, Signed(e.x), Signed(e.z), cam.fieldOfView);
     }
 
-    public Position3D? ReadLocalPlayerPosition()
-    {
-        var model = _entities.LiveModel(_entities.LocalEntity());
-        return model is not null && _entities.AttrPosition(model) is Vector3 v ? new Position3D(v.x, v.y, v.z) : null;
-    }
+    /// <summary>Per frame while the camera is held (the distance cap): compiled accessors, one manager fetch
+    /// (<see cref="GameEntityAccess.LocalPlayerPosition"/>).</summary>
+    public Position3D? ReadLocalPlayerPosition() =>
+        _entities.LocalPlayerPosition() is Vector3 v ? new Position3D(v.x, v.y, v.z) : null;
 
     public bool TryBegin(CameraPose start)
     {

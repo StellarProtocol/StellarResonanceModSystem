@@ -28,8 +28,9 @@ public static class FrameworkVersion
     /// game's own action, no packet construction), <c>ICombatState</c> (local-player in-combat, event-driven)
     /// and <c>IEntityPicker</c> (screen-point → <c>EntityId</c> hit-testing for <c>IEntityTransforms</c>).
     /// Domain-only additions: <c>CameraPose</c>, <c>CameraReleaseReason</c>, <c>EmoteInfo</c>, <c>EmoteResult</c>.
-    /// Interfaces only — Infrastructure implementations land in later tasks. Additive, binary-compatible with
-    /// plugins built against ≤2.13.0.
+    /// Every service is implemented and wired on <c>IPluginServices</c>; <c>IInputShieldHandle.TextFieldFocused</c>
+    /// reports a focused Stellar text field so a holder can ignore keys typed into a panel. Additive,
+    /// binary-compatible with plugins built against ≤2.13.0.
     /// 2.13.0 — photo services: <c>IScreenCapture</c>, <c>ISceneVisibility</c>, <c>IRenderLook</c>, <c>IPhotoModeState</c>
     /// (<c>IPluginServices.ScreenCapture</c> / <c>.SceneVisibility</c> / <c>.RenderLook</c> / <c>.PhotoMode</c>). Additive only.
     /// 2.12.0 adds <c>HitchProbe</c> (diagnostics-gated render-frame hitch attribution) and makes windows cheaper:

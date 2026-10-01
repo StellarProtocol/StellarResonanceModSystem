@@ -12,7 +12,7 @@ namespace Stellar.Infrastructure.Game;
 /// <c>IsDestroying</c> objects (docs/il2cpp-probing-safety.md); nothing is cached across frames except member handles.
 /// Handles resolve lazily and retry until all are found (the hot-update assemblies load after construction). Main thread.
 /// </summary>
-internal sealed class GameEntityAccess
+internal sealed partial class GameEntityAccess
 {
     internal const string ManagerType = "Panda.ZGame.ZEntityMgr";
     internal const string EntityType = "Panda.ZGame.ZEntity";

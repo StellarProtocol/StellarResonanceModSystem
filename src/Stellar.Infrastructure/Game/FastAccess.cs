@@ -55,4 +55,20 @@ internal static class FastAccess
             return (o, value) => (TResult)m.Invoke(o, new object?[] { value })!;
         }
     }
+
+    /// <summary>Compiled call of a one-argument static method (e.g. the extension <c>GetAttrGoPosition(ZModel)</c>).</summary>
+    public static Func<TArg, TResult>? StaticFunc1<TArg, TResult>(MethodInfo? m)
+    {
+        if (m is null || !m.IsStatic || m.GetParameters().Length != 1) return null;
+        try
+        {
+            var a = Expression.Parameter(typeof(TArg), "a");
+            var call = Expression.Call(m, Expression.Convert(a, m.GetParameters()[0].ParameterType));
+            return Expression.Lambda<Func<TArg, TResult>>(Expression.Convert(call, typeof(TResult)), a).Compile();
+        }
+        catch
+        {
+            return value => (TResult)m.Invoke(null, new object?[] { value })!;
+        }
+    }
 }

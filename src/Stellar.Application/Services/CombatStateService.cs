@@ -49,8 +49,10 @@ internal sealed class CombatStateService : ICombatState
         if (ev is not CombatEvent.EntityAttributesChanged a) return;
         var self = _snapshot.LocalEntityId;
         if (self.IsNone || a.TargetId != self) return;
-        foreach (var v in a.Attrs)
+        var attrs = a.Attrs;
+        for (var i = 0; i < attrs.Count; i++)
         {
+            var v = attrs[i];
             if (v.AttrId != AttrCombatState) continue;
             var on = v.Value > 0;
             _post(() => { _wire = on; Recompute(); });

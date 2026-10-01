@@ -44,4 +44,10 @@ public interface IInputShieldHandle : IDisposable
 
     /// <summary>Pointer position in screen pixels, origin top-left.</summary>
     (float X, float Y) Pointer { get; }
+
+    /// <summary>
+    /// True while a Stellar overlay text field has keyboard focus; free-camera consumers should ignore movement/edge
+    /// keys then. False once disposed.
+    /// </summary>
+    bool TextFieldFocused { get; }
 }

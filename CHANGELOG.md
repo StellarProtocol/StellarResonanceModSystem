@@ -36,6 +36,8 @@ _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (A
   Resolution now lets a saved binding beat a suggested default whatever the declare order (it used to skip the collision
   check); default-vs-default is unchanged.
 - A per-frame `FreeCameraFrameDriver` MonoBehaviour exists but is disabled unless a camera override or a position hold is live.
+- `IInputShieldHandle.TextFieldFocused`: true while a Stellar overlay text field has keyboard focus (the same source as the
+  keyboard gate), so a free-camera consumer can ignore movement/edge keys typed into a panel search box. False once disposed.
 
 ## [2.13.0] - 2026-09-30
 _**2.13.0** (minor) — Screenshot support for plugins. Adds API for plugins (Abstractions 2.13.0); additive, no plugin rebuild._

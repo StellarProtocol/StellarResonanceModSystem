@@ -13,14 +13,16 @@ internal sealed class InputShieldService : IInputShield
 {
     private readonly IInputShieldBackend _backend;
     private readonly IShieldInputReader _reader;
+    private readonly ITextFieldFocus _focus;
     private readonly Action<string> _warn;
     private readonly List<Handle> _handles = new();
     private bool _warned;
 
-    public InputShieldService(IInputShieldBackend backend, IShieldInputReader reader, Action<string> warn)
+    public InputShieldService(IInputShieldBackend backend, IShieldInputReader reader, ITextFieldFocus focus, Action<string> warn)
     {
         _backend = backend;
         _reader = reader;
+        _focus = focus;
         _warn = warn;
     }
 
@@ -91,6 +93,7 @@ internal sealed class InputShieldService : IInputShield
         public (float X, float Y) MouseDelta => _svc?._reader.MouseDelta ?? (0f, 0f);
         public float Wheel => _svc?._reader.Wheel ?? 0f;
         public (float X, float Y) Pointer => _svc?._reader.Pointer ?? (0f, 0f);
+        public bool TextFieldFocused => _svc?._focus.AnyFieldFocused ?? false;
 
         public void Dispose()
         {

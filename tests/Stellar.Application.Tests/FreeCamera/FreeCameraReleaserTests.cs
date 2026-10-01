@@ -39,6 +39,11 @@ public sealed class FreeCameraReleaserTests
         public (float X, float Y) Pointer => (0, 0);
     }
 
+    private sealed class NoFocus : ITextFieldFocus
+    {
+        public bool AnyFieldFocused => false;
+    }
+
     private sealed record Rig(FreeCameraReleaser Releaser, CameraOverrideService Camera, FakeBackend CamBackend,
         InputShieldService Shield, CountingShieldBackend ShieldBackend, SceneFreezeService Freeze,
         CountingFreezeBackend FreezeBackend, List<string> Warn);
@@ -49,7 +54,7 @@ public sealed class FreeCameraReleaserTests
         var camBackend = new FakeBackend();
         var camera = new CameraOverrideService(camBackend, new LookAtService(new FakeLookAt(), warn.Add), false, warn.Add);
         var shieldBackend = new CountingShieldBackend();
-        var shield = new InputShieldService(shieldBackend, new NullReader(), warn.Add);
+        var shield = new InputShieldService(shieldBackend, new NullReader(), new NoFocus(), warn.Add);
         var freezeBackend = new CountingFreezeBackend();
         var freeze = new SceneFreezeService(freezeBackend, false);
         return new Rig(new FreeCameraReleaser(camera, freeze, shield, warn.Add), camera, camBackend, shield, shieldBackend,
