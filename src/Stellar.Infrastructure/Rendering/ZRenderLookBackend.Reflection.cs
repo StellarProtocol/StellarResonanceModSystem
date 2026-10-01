@@ -31,10 +31,12 @@ internal sealed partial class ZRenderLookBackend
     private MethodInfo? _profileAdd;
     private readonly Dictionary<string, object> _components = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Texture2D> _luts = new(StringComparer.Ordinal);
+    private Texture2D? _grainTexture;
 
     partial void OnVolumeCreated();
     partial void OnParamWritten(ParamWrite write, object value);
     partial void OnFocusWritten(float distance);
+    partial void OnGrainTextureCreated(int size, byte[] pixels);
 
     private Type? ResolveType(string fullName, string assembly)
     {
@@ -97,6 +99,8 @@ internal sealed partial class ZRenderLookBackend
         foreach (var tex in _luts.Values)
             if (tex != null) UnityEngine.Object.Destroy(tex);
         _luts.Clear();
+        if (_grainTexture != null) UnityEngine.Object.Destroy(_grainTexture);
+        _grainTexture = null;
         _profileObject = null;
         _profile = null;
         _profileAdd = null;
@@ -125,6 +129,8 @@ internal sealed partial class ZRenderLookBackend
         RgbColor c => new Color(c.R, c.G, c.B, 1f),
         EnumName e => Enum.Parse(target, e.Name),
         LutPath p => LoadLut(p.Path),
+        GeneratedNoiseTexture n => GrainTexture(n.Size),
+        Vec2 v2 => new Vector2(v2.X, v2.Y),
         _ => v,
     };
 
@@ -151,6 +157,24 @@ internal sealed partial class ZRenderLookBackend
         tex.hideFlags = HideFlags.DontUnloadUnusedAsset;
         tex.name = "StellarPhotoLut";
         _luts[path] = tex;
+        return tex;
+    }
+
+    /// <summary>The generated grain texture (linear, Repeat-wrapped, never mip-mapped); created once, destroyed with
+    /// the volume objects.</summary>
+    private Texture2D GrainTexture(int size)
+    {
+        if (_grainTexture != null) return _grainTexture;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false, true);
+        var pixels = GrainNoise.Generate(size);
+        tex.LoadRawTextureData(pixels);
+        tex.wrapMode = TextureWrapMode.Repeat;
+        tex.filterMode = FilterMode.Bilinear;
+        tex.hideFlags = HideFlags.DontUnloadUnusedAsset;
+        tex.name = "StellarPhotoGrain";
+        tex.Apply(false, true);   // upload, then drop the CPU copy
+        _grainTexture = tex;
+        OnGrainTextureCreated(size, pixels);
         return tex;
     }
 

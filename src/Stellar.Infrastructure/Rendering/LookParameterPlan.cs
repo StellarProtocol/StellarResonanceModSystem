@@ -12,6 +12,16 @@ internal sealed record LutPath(string Path);
 /// <summary>Marker value: the applier parses this name into the parameter's enum type.</summary>
 internal sealed record EnumName(string Name);
 
+/// <summary>Marker value: the applier substitutes the framework's own generated grain texture (<see cref="GrainNoise"/>),
+/// created once and destroyed with the volume objects.</summary>
+internal sealed record GeneratedNoiseTexture(int Size)
+{
+    public static readonly GeneratedNoiseTexture Grain = new(GrainNoise.Size);
+}
+
+/// <summary>Marker value: the applier converts this into a <c>UnityEngine.Vector2</c>.</summary>
+internal readonly record struct Vec2(float X, float Y);
+
 /// <summary>
 /// What changed between the last applied plan and the next one: the writes to make (only fields whose value
 /// differs, plus every field of a group that just turned on) and the components whose group turned OFF (the
@@ -68,7 +78,7 @@ internal static class LookParameterPlan
         // Recon (DXVK): only the _UE pair is live; plain intensity > 0 keeps ZBloomVolume.IsActive() true.
         if (s.Bloom is { } b) AddAll(w, BloomComponent, ("Enabled", true), ("intensity", Math.Max(b.Intensity, 0.01f)), ("intensity_UE", b.Intensity), ("threshold_UE", b.Threshold));
         if (s.Vignette is { } v) AddAll(w, VignetteComponent, ("intensity", v.Intensity), ("smoothness", v.Smoothness));
-        if (s.FilmGrain is { } f) AddAll(w, FilmGrainComponent, ("Enabled", true), ("Intensity", f.Intensity), ("Response", f.Response));
+        if (s.FilmGrain is { } f) AddFilmGrain(w, f);
         return w;
     }
 
@@ -106,6 +116,13 @@ internal static class LookParameterPlan
     // Recon: ZDofVolume's default blurType (DepthBlur) blurs nothing; Bokeh is the live path.
     private static void AddDof(List<ParamWrite> w, DofLook d) =>
         AddAll(w, DofComponent, ("Enabled", true), ("blurType", new EnumName("Bokeh")), (FocusField, d.FocusDistance), ("Aperture", d.Aperture), ("FocalLength", d.FocalLength));
+
+    // Every parameter, the way the game's cutscene grain track drives it: Custom type + OUR texture (the bundled Thin1
+    // texture is most likely flat), 1:1 tiling, white tint. Enabled is not read by the pass (recon) but harmless.
+    private static void AddFilmGrain(List<ParamWrite> w, FilmGrainLook f) =>
+        AddAll(w, FilmGrainComponent, ("Enabled", true), ("filmType", new EnumName("Custom")),
+            ("filmGrainTex", GeneratedNoiseTexture.Grain), ("Intensity", f.Intensity), ("Response", f.Response),
+            ("Tiling", new Vec2(1f, 1f)), ("Color", RgbColor.White));
 
     private static void AddColor(List<ParamWrite> w, ColorLook c) =>
         AddAll(w, ColorComponent, ("postExposure", c.PostExposure), ("contrast", c.Contrast), ("saturation", c.Saturation), ("colorFilter", c.Filter));

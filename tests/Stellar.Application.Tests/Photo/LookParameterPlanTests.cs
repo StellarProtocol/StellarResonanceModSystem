@@ -82,4 +82,41 @@ public sealed class LookParameterPlanTests
     [Fact]
     public void Focus_write_targets_only_the_dof_focus_distance() =>
         Assert.Equal(new ParamWrite(LookParameterPlan.DofComponent, "FocusDistance", 5.5f), LookParameterPlan.FocusWrite(5.5f));
+
+    // Owner bug 2026-10-01 "film grain shows no visible change": the game's bundled Thin1 texture is most likely flat,
+    // so the plan drives every grain parameter the way the game's cutscene grain track does, with OUR texture.
+    [Fact]
+    public void Film_grain_writes_every_parameter_with_the_generated_texture()
+    {
+        var w = LookParameterPlan.Build(new LookSettings { FilmGrain = new FilmGrainLook { Intensity = 0.6f, Response = 0.3f } });
+        const string c = "Bokura.Rendering.ZFilmGrainVolume";
+        Assert.Contains(new ParamWrite(c, "filmType", new EnumName("Custom")), w);
+        Assert.Contains(new ParamWrite(c, "filmGrainTex", GeneratedNoiseTexture.Grain), w);
+        Assert.Contains(new ParamWrite(c, "Intensity", 0.6f), w);
+        Assert.Contains(new ParamWrite(c, "Response", 0.3f), w);
+        Assert.Contains(new ParamWrite(c, "Tiling", new Vec2(1f, 1f)), w);
+        Assert.Contains(new ParamWrite(c, "Color", RgbColor.White), w);
+        Assert.Equal(256, GeneratedNoiseTexture.Grain.Size);
+    }
+
+    [Fact]
+    public void Film_grain_slider_change_rewrites_only_the_changed_field()
+    {
+        var d = LookParameterPlan.Diff(
+            new LookSettings { FilmGrain = new FilmGrainLook { Intensity = 0.2f } },
+            new LookSettings { FilmGrain = new FilmGrainLook { Intensity = 0.7f } });
+        Assert.Equal(new[] { new ParamWrite("Bokura.Rendering.ZFilmGrainVolume", "Intensity", 0.7f) }, d.Writes);
+        Assert.Empty(d.ClearComponents);
+    }
+
+    [Fact]
+    public void Film_grain_off_clears_the_whole_component_incl_texture_and_type()
+    {
+        var d = LookParameterPlan.Diff(new LookSettings { FilmGrain = new FilmGrainLook() }, new LookSettings());
+        Assert.Equal(new[] { "Bokura.Rendering.ZFilmGrainVolume" }, d.ClearComponents);
+        Assert.Empty(d.Writes);
+    }
+
+    [Fact]
+    public void Film_grain_default_response_is_point_eight() => Assert.Equal(0.8f, new FilmGrainLook().Response);
 }
