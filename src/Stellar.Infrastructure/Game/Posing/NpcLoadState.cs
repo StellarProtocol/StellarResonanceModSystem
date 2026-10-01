@@ -9,7 +9,9 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// </summary>
 /// <remarks>Releasing the keep-alive before a late callback is safe: an Il2CppInterop-converted delegate's target is an
 /// injected <c>Il2CppToMonoDelegateReference</c> that holds the managed delegate for as long as the game holds the native
-/// delegate, so a load arriving after a close still runs and removes its model.</remarks>
+/// delegate, so a load arriving after a close still runs and removes its model. Separately: <see cref="Created"/> (the
+/// game's preCreate callback) runs inside the game's own model build and is not posted through <c>PoseCalls.OnMain</c> —
+/// Q11 only covers the load/error callbacks — so it may write this state off the main thread.</remarks>
 internal sealed class NpcLoadState
 {
     private readonly NpcLoadGate _gate = new();
@@ -34,7 +36,9 @@ internal sealed class NpcLoadState
     public void Created(object model) => _model ??= model;
 
     /// <summary>The load finished. <paramref name="target"/> = the model to make posable (Ready) or to remove now
-    /// (Recycle — already forgotten here); null when the callback is ignored.</summary>
+    /// (Recycle — already forgotten here); null when the callback is ignored. A "successful" load with nothing to pose
+    /// (no pre-create was seen and <paramref name="model"/> itself is null) is reported as <see cref="NpcLoadStep.Fail"/>
+    /// instead of <see cref="NpcLoadStep.Ready"/>, so the caller fails the person instead of leaving them stuck loading.</summary>
     public NpcLoadStep Loaded(object? model, out object? target)
     {
         Settle();
@@ -42,17 +46,22 @@ internal sealed class NpcLoadState
         target = null;
         if (step == NpcLoadStep.Ignore) return step;
         target = _model ??= model;
-        if (step == NpcLoadStep.Ready) _ready = true;
-        else _model = null;
+        if (step != NpcLoadStep.Ready) { _model = null; return step; }
+        if (target is null) return NpcLoadStep.Fail;
+        _ready = true;
         return step;
     }
 
-    /// <summary>The load failed: everything is forgotten unless a model had already become posable.</summary>
-    public NpcLoadStep Failed()
+    /// <summary>The load failed. <paramref name="model"/> = a pre-created, never-readied model to remove now (forgotten
+    /// here, like <see cref="Close"/> hands one out), else null — the generate path does not own a half-made model on
+    /// error, so this is the only place it gets recycled.</summary>
+    public NpcLoadStep Failed(out object? model)
     {
         Settle();
         var step = _gate.OnError();
-        if (!_ready) _model = null;
+        if (_ready) { model = null; return step; }
+        model = _model;
+        _model = null;
         return step;
     }
 

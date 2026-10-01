@@ -31,14 +31,22 @@ public sealed class NpcLoadStateTests
         Assert.False(s.Holding);
     }
 
+    // Review round 1, finding 1: on an error after preCreate already handed over a model, the generate path does not own
+    // it (the game's caller keeps a half-made model for its own cleanup only up to that point) — Failed() must hand it
+    // out for removal exactly once, the same way Close() does, instead of silently dropping it (a dropped model could
+    // stay visible as a duplicate NPC).
     [Fact]
-    public void An_error_releases_the_keep_alive_and_drops_a_half_made_model()
+    public void An_error_releases_the_keep_alive_and_hands_out_a_half_made_model_for_removal_exactly_once()
     {
         var s = Requested();
-        s.Created(new object());
-        Assert.Equal(NpcLoadStep.Fail, s.Failed());
+        var model = new object();
+        s.Created(model);
+        Assert.Equal(NpcLoadStep.Fail, s.Failed(out var target));
+        Assert.Same(model, target);
         Assert.False(s.Holding);
         Assert.Null(s.Model);
+        Assert.Equal(NpcLoadStep.Ignore, s.Failed(out var again));
+        Assert.Null(again);
     }
 
     [Fact]
@@ -92,17 +100,35 @@ public sealed class NpcLoadStateTests
         s.Loaded(model, out _);
         Assert.Equal(NpcLoadStep.Ignore, s.Loaded(new object(), out var again));
         Assert.Null(again);
-        Assert.Equal(NpcLoadStep.Ignore, s.Failed());
+        Assert.Equal(NpcLoadStep.Ignore, s.Failed(out var abandoned));
+        Assert.Null(abandoned);
         Assert.Same(model, s.Model);
     }
 
+    // Same root cause as the finding-1 regression above: a pre-created model abandoned by a close-then-error is still
+    // the generate path NOT owning it — Failed() hands it out here too, even though the step itself reports Ignore
+    // (already closed).
     [Fact]
-    public void An_error_after_a_close_forgets_everything()
+    public void An_error_after_a_close_still_hands_out_the_pre_created_model()
     {
         var s = Requested();
-        s.Created(new object());
+        var model = new object();
+        s.Created(model);
         s.Close();
-        Assert.Equal(NpcLoadStep.Ignore, s.Failed());
+        Assert.Equal(NpcLoadStep.Ignore, s.Failed(out var target));
+        Assert.Same(model, target);
+        Assert.Null(s.Model);
+        Assert.False(s.Holding);
+    }
+
+    // Review round 1, finding 2: a "successful" load callback with nothing to pose (no pre-create was seen and the
+    // callback's own model argument is null) must not leave the person stuck Loading forever — treat it as a failure.
+    [Fact]
+    public void A_load_with_nothing_to_pose_fails_instead_of_sticking_in_loading()
+    {
+        var s = Requested();
+        Assert.Equal(NpcLoadStep.Fail, s.Loaded(null, out var target));
+        Assert.Null(target);
         Assert.Null(s.Model);
         Assert.False(s.Holding);
     }

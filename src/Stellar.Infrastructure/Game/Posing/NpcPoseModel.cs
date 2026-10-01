@@ -10,7 +10,9 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// never posed. The load / error callbacks run their handling on the main thread (<see cref="PoseCalls.OnMain"/>, decision
 /// Q11). Close removes the model (<c>RecycleModelByLua</c>) and shows the real NPC; a close before the load removes the
 /// model the moment it arrives, never showing it (<see cref="NpcLoadState"/>: the callbacks' keep-alive and the model
-/// reference live exactly as long as they are needed). Main thread.
+/// reference live exactly as long as they are needed). An error after <c>preCreate</c> already handed over a model also
+/// recycles it — the generate path does not own a half-made model on failure, so a dropped reference there would leave a
+/// duplicate NPC visible. Main thread.
 /// </summary>
 internal sealed class NpcPoseModel : IPoseModel
 {
@@ -75,6 +77,7 @@ internal sealed class NpcPoseModel : IPoseModel
     private void HandleLoad(object model)
     {
         var step = _state.Loaded(model, out var target);
+        if (step == NpcLoadStep.Fail) { _c.Warn("posing: the NPC model loaded with nothing to pose."); _loaded(false); return; }
         if (target is null) return;
         if (step == NpcLoadStep.Recycle) Remove(target);   // closed while loading: removed now, never shown
         else if (step == NpcLoadStep.Ready) Ready(target);
@@ -92,7 +95,9 @@ internal sealed class NpcPoseModel : IPoseModel
 
     private void HandleError(object error)
     {
-        if (_state.Failed() != NpcLoadStep.Fail) return;
+        var step = _state.Failed(out var abandoned);
+        if (abandoned is { } m) Remove(m);   // a pre-created model the generate path does not own: recycle it ourselves
+        if (step != NpcLoadStep.Fail) return;
         _c.Warn("posing: the NPC model did not load: " + error);
         _loaded(false);
     }
