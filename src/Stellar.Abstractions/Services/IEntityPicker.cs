@@ -2,7 +2,8 @@ using Stellar.Abstractions.Domain;
 
 namespace Stellar.Abstractions.Services;
 
-/// <summary>Finds the character drawn under a screen point (players, including the local player). Main thread only.</summary>
+/// <summary>Finds the character drawn under a screen point: players (including the local player) and, since 2.15.0,
+/// NPCs. Main thread only.</summary>
 public interface IEntityPicker
 {
     /// <summary>The character nearest to (<paramref name="screenX"/>, <paramref name="screenY"/>) within a small

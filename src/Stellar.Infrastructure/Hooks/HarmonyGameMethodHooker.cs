@@ -51,7 +51,7 @@ internal sealed class HarmonyGameMethodHooker
     private void PatchMatching(Type type, string methodName, BindingFlags flags, Action<object?, object?[]> callback, bool prefix)
     {
         var methods = type.GetMethods(flags)
-            .Where(m => m.Name == methodName && !m.IsGenericMethodDefinition)
+            .Where(m => m.Name == methodName && !m.IsGenericMethodDefinition && !m.IsAbstract)
             .ToArray();
 
         if (methods.Length == 0)
