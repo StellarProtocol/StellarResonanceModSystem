@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Stellar.Abstractions.Services;
@@ -13,7 +14,9 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// <c>CameraFrameCtrl.SetTargetEntityVisible(entity, visible, ECommon)</c> (the panel passes the default source) and the
 /// local player's rotation <c>LuaAsyncBridge.SetEntityRotation</c>. The managed callbacks are handed to IL2CPP through the
 /// interop delegate's <c>op_Implicit</c> (Il2CppInterop <c>DelegateSupport</c>, as <c>MessagePipeContainerBridge</c>
-/// does); the caller keeps them alive until the load ends. Main thread.
+/// does); the caller keeps them alive until the load ends. A callback body that throws never crosses back into IL2CPP,
+/// but is reported once per exception type through the shared warn sink rather than swallowed (review round 1) — never
+/// silent, never fatal. Main thread.
 /// </summary>
 internal sealed class PoseSpawnCalls
 {
@@ -24,12 +27,18 @@ internal sealed class PoseSpawnCalls
         typeof(PoseSpawnCalls).GetMethod(nameof(Forward), BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private readonly IGameTypeRegistry _types;
+    private readonly Action<string> _warn;
+    private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly SingletonAccess _frameCtrl = new();
     private readonly SingletonAccess _modelMgr = new();
     private MethodInfo? _generate, _applyIdle, _rotateEntity, _recycle, _visible;
     private object? _visibleSource;
 
-    public PoseSpawnCalls(IGameTypeRegistry types) => _types = types;
+    public PoseSpawnCalls(IGameTypeRegistry types, Action<string> warn)
+    {
+        _types = types;
+        _warn = warn;
+    }
 
     public bool SetVisible(object entity, bool visible)
     {
@@ -69,15 +78,24 @@ internal sealed class PoseSpawnCalls
     }
 
     // System.Action<T> for the interop delegate's T (ZModel / Il2CppSystem.Exception); never lets a managed exception
-    // cross back into IL2CPP.
-    private static Delegate Managed(Type il2cppAction, Action<object> body) =>
-        (Delegate)ForwardMethod.MakeGenericMethod(il2cppAction.GetGenericArguments()[0]).Invoke(null, new object[] { body })!;
+    // cross back into IL2CPP — but never swallows it silently either (review round 1: routed to WarnOnce below).
+    private Delegate Managed(Type il2cppAction, Action<object> body) =>
+        (Delegate)ForwardMethod.MakeGenericMethod(il2cppAction.GetGenericArguments()[0])
+            .Invoke(null, new object[] { body, (Action<Exception>)OnCallbackThrew })!;
 
-    private static Action<T> Forward<T>(Action<object> body) => value =>
+    private static Action<T> Forward<T>(Action<object> body, Action<Exception> onError) => value =>
     {
         try { body(value!); }
-        catch { /* trust boundary: the pose model already logged */ }
+        catch (Exception ex) { onError(ex); }
     };
+
+    private void OnCallbackThrew(Exception ex) =>
+        WarnOnce("callback:" + ex.GetType().Name, $"posing generate callback threw: {ex.GetType().Name}: {ex.Message}");
+
+    private void WarnOnce(string key, string message)
+    {
+        if (_warned.Add(key)) _warn(message);
+    }
 
     private static object? ToIl2Cpp(Delegate managed, Type il2cppType) =>
         il2cppType.GetMethod("op_Implicit", BindingFlags.Public | BindingFlags.Static, null, new[] { managed.GetType() }, null)

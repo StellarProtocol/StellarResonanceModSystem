@@ -21,18 +21,22 @@ internal sealed partial class PoseModelCalls
     /// <summary>The model's world position (<c>GetAttrGoPosition</c>), or null when it is gone or unreadable.</summary>
     public Position3D? FastPosition(object m)
     {
-        if (!ResolveFast() || m is not Il2CppObjectBase { WasCollected: false } || _fastGone!(m)) return null;
+        if (!ResolveFast() || !IsLiveFast(m)) return null;
         var v = _fastPos!(m);
         return new Position3D(v.x, v.y, v.z);
     }
 
-    /// <summary>The drawn animation speed (<c>AnimComp.Speed</c>), or null when unreadable.</summary>
-    public float? DrawnSpeed(object m) => ResolveFast() && _animComp!(m) is { } comp ? _getSpeed!(comp) : null;
+    /// <summary>The drawn animation speed (<c>AnimComp.Speed</c>), or null when gone, destroying, or unreadable.</summary>
+    public float? DrawnSpeed(object m) => ResolveFast() && IsLiveFast(m) && _animComp!(m) is { } comp ? _getSpeed!(comp) : null;
 
     public void SetDrawnSpeed(object m, float speed)
     {
-        if (ResolveFast() && _animComp!(m) is { } comp) _setSpeed!(comp, speed);
+        if (ResolveFast() && IsLiveFast(m) && _animComp!(m) is { } comp) _setSpeed!(comp, speed);
     }
+
+    /// <summary>Not collected and not <c>IsDestroying</c> — the same liveness guard as <see cref="FastPosition"/>, shared
+    /// so the two speed accessors cannot drift from it (review round 1).</summary>
+    private bool IsLiveFast(object m) => m is Il2CppObjectBase { WasCollected: false } && !_fastGone!(m);
 
     private bool ResolveFast()
     {

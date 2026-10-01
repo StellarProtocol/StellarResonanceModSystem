@@ -16,7 +16,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// </summary>
 internal sealed partial class PoseModelCalls
 {
-    internal const string HelperType = "Panda.ZGame.ZModelHelper";
+    // ZModelHelper's type name is LookAtBackend.HelperType (one shared constant — review round 1).
     internal const string WriteNotifyType = "Panda.ZGame.Pure.WriteNotify";
     internal const string ShowLoadType = "Panda.ZGame.EShowLoadType";
     private const BindingFlags S = BindingFlags.Public | BindingFlags.Static;
@@ -71,7 +71,7 @@ internal sealed partial class PoseModelCalls
         if (_toLocal is not null) return true;
         var model = _types.FindType(GameEntityAccess.ModelType);
         var ext = _types.FindType(GameEntityAccess.AttrExtType);
-        var helper = _types.FindType(HelperType);
+        var helper = _types.FindType(LookAtBackend.HelperType);
         var notify = _types.FindType(WriteNotifyType);
         var show = _types.FindType(ShowLoadType);
         if (model is null || ext is null || helper is null || notify is null || show is null) return false;
