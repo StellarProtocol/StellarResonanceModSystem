@@ -10,8 +10,7 @@ namespace Stellar.Application.Tests.Posing;
 // the version, and the enum names plugins switch on.
 public sealed class PosingContractTests
 {
-    private static int Members(Type t) =>
-        t.GetMethods().Count(m => !m.IsSpecialName) + t.GetProperties().Length + t.GetEvents().Length;
+    private static int Members(Type t) => ContractMembers.Count(t);
 
     [Theory]
     [InlineData(typeof(IPosing), 7)]

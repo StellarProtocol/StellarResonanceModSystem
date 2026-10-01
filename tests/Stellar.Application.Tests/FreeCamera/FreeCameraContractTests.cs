@@ -11,8 +11,7 @@ namespace Stellar.Application.Tests.FreeCamera;
 // the 8-member interface budget and the release reasons plugins switch on keep their names.
 public sealed class FreeCameraContractTests
 {
-    private static int Members(Type t) =>
-        t.GetMethods().Count(m => !m.IsSpecialName) + t.GetProperties().Length + t.GetEvents().Length;
+    private static int Members(Type t) => ContractMembers.Count(t);
 
     [Theory]
     [InlineData(typeof(ICameraOverride), 4)]
