@@ -12,12 +12,13 @@ internal sealed partial class ZRenderQualityBackend
 {
     private const string QualityWrapType = "Panda_Utility_Quality_QualityGradeSettingWrap";
     private const string FlowActionType = "DreamMaker.Logic.EPFlowActionQualityGradeSetting";
+    private const string ApplyAllData = "ApplyAllData";   // ref QualityData parameter — the kill-switchable hook
 
     // QualityGradeSetting statics. applyEnableAA is absent on purpose: inlined (CallerCount 0), and we call it ourselves.
     // ClearAAHistory is absent on purpose: 12 native callers (camera cuts) — too hot for an allocating postfix.
     private static readonly string[] QualityStatics =
     {
-        "ApplyAllData", "applyRenderScale", "applyShadowGrade", "ApplyResolution", "ResetResolution",
+        ApplyAllData, "applyRenderScale", "applyShadowGrade", "ApplyResolution", "ResetResolution",
         "PostCheckQualityGrade", "set_QualityGrade", "set_UseExtendRenderScale", "Init",
         "set_RenderScale", "set_EnableAA", "set_ShadowGrade", "SetExtendScaleWithoutSave",
     };
@@ -29,10 +30,23 @@ internal sealed partial class ZRenderQualityBackend
         "set_UseExtendRenderScale", "ResetResolution", "SetExtendScaleWithoutSave", "PostCheckQualityGrade",
     };
 
-    /// <summary>Installs the game-apply postfixes. Call once, after the hot-update assemblies load.</summary>
-    public void InstallHooks(HarmonyGameMethodHooker hooker)
+    private readonly LazyHookInstall _hooks = new();
+
+    /// <summary>
+    /// Makes the game-apply postfixes installable (call once, after the hot-update assemblies load). They install on
+    /// the first <c>Request</c> (<see cref="EnsureHooks"/>), never at boot. <paramref name="skipApplyAllData"/>
+    /// (env <c>STELLAR_RQ_NO_APPLYALLDATA=1</c>) leaves out the one hook with a by-ref struct parameter.
+    /// </summary>
+    public void ArmHooks(HarmonyGameMethodHooker hooker, bool skipApplyAllData) =>
+        _hooks.Arm(() => InstallHooks(hooker, skipApplyAllData));
+
+    public void EnsureHooks() => _hooks.Request();
+
+    private void InstallHooks(HarmonyGameMethodHooker hooker, bool skipApplyAllData)
     {
-        HookAll(hooker, QualityGradeType, QualityStatics, isStatic: true);
+        var statics = skipApplyAllData ? Array.FindAll(QualityStatics, m => m != ApplyAllData) : QualityStatics;
+        if (skipApplyAllData) _log.Info(Tag + "ApplyAllData re-assert hook skipped (STELLAR_RQ_NO_APPLYALLDATA=1).");
+        HookAll(hooker, QualityGradeType, statics, isStatic: true);
         HookAll(hooker, QualityWrapType, QualityWrapStatics, isStatic: true);
         HookAll(hooker, FlowActionType, new[] { "OnEnter" }, isStatic: false);
         HookAll(hooker, ShadowPassType, new[] { "OnInitialize" }, isStatic: false);

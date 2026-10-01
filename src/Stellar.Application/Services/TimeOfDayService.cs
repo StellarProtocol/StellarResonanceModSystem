@@ -30,6 +30,7 @@ internal sealed class TimeOfDayService : ITimeOfDay
 
     internal ITimePin Add(float hour)
     {
+        _backend.EnsureHooks();   // game hooks install on first use, never at boot
         var pin = new Pin(this, Clamp(hour));
         _pins.Add(pin);
         Apply();

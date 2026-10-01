@@ -20,4 +20,6 @@ internal interface IRenderQualityBackend
     ShadowValues? ReadShadows();
     /// <summary>Writes each member of <paramref name="values"/> that differs from the live object.</summary>
     void WriteShadows(ShadowValues values);
+    /// <summary>Installs the game re-assert hooks if not yet installed (lazy: first Request). Idempotent.</summary>
+    void EnsureHooks();
 }

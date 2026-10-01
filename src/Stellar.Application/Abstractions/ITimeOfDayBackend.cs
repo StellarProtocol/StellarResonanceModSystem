@@ -16,4 +16,6 @@ internal interface ITimeOfDayBackend
     void Pin(float hour);
     /// <summary>Hands time of day back to the server clock.</summary>
     void ReleaseToServer();
+    /// <summary>Installs the game re-assert hooks if not yet installed (lazy: first Pin). Idempotent.</summary>
+    void EnsureHooks();
 }

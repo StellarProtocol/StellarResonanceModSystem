@@ -15,6 +15,8 @@ public sealed class TimeOfDayServiceTests
         public bool ServerDriven = true;
         public bool Ready = true;
         public readonly List<string> Calls = new();
+        public int EnsureHooksCalls;
+        public void EnsureHooks() => EnsureHooksCalls++;
         public bool IsAvailable => true;
         public bool IsReady => Ready;
         public float? ReadHour() => Hour;
@@ -214,5 +216,18 @@ public sealed class TimeOfDayServiceTests
         p.Pin(3f).Dispose();
         p.Pin(4f);
         Assert.Equal(1, p.TrackedCount);
+    }
+
+    // Review fix 2: game hooks install lazily — the first Pin asks for them; reads / re-asserts never do.
+    [Fact]
+    public void Pin_asks_the_backend_for_its_hooks_and_reassert_does_not()
+    {
+        var b = new FakeBackend();
+        var s = new TimeOfDayService(b);
+        s.Reassert();
+        _ = s.CurrentHour;
+        Assert.Equal(0, b.EnsureHooksCalls);
+        s.Add(9f);
+        Assert.Equal(1, b.EnsureHooksCalls);
     }
 }

@@ -34,6 +34,7 @@ internal sealed partial class LuaTimeOfDayBackend : ITimeOfDayBackend
     private MethodInfo? _getTime;        // GetCurWeatherTime24() → float
     private MethodInfo? _getFromServer;  // GetWeatherIsUpdateFromServer() → bool
     private bool _writing;               // true while WE call the bridge, so the hooks ignore our own calls
+    private readonly LazyHookInstall _hooks = new();
 
     public LuaTimeOfDayBackend(IGameTypeRegistry types, IClientState clientState, IPluginLog log)
     {
@@ -60,9 +61,14 @@ internal sealed partial class LuaTimeOfDayBackend : ITimeOfDayBackend
 
     public void ReleaseToServer() => Write("server", true, () => _setFromServer!.Invoke(null, new object[] { true }));
 
-    /// <summary>Installs the "the game set the time" postfixes on the bridge and its Lua wrap (the wrap catches a
-    /// bridge call IL2CPP inlined into it). Call once, after the hot-update assemblies load.</summary>
-    public void InstallHooks(HarmonyGameMethodHooker hooker)
+    /// <summary>Makes the "the game set the time" postfixes installable (call once, after the hot-update assemblies
+    /// load). They install on the first <c>Pin</c> (<see cref="EnsureHooks"/>), never at boot.</summary>
+    public void ArmHooks(HarmonyGameMethodHooker hooker) => _hooks.Arm(() => InstallHooks(hooker));
+
+    public void EnsureHooks() => _hooks.Request();
+
+    // Postfixes on the bridge and its Lua wrap (the wrap catches a bridge call IL2CPP inlined into it).
+    private void InstallHooks(HarmonyGameMethodHooker hooker)
     {
         foreach (var typeName in new[] { BridgeType, BridgeWrapType })
         {

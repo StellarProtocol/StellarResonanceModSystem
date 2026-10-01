@@ -19,6 +19,8 @@ public sealed class RenderQualityServiceTests
         public bool Readable = true;
         public readonly List<string> Writes = new();
         public RenderQualityCapabilities Capabilities { get; set; } = new(true, true, true);
+        public int EnsureHooksCalls;
+        public void EnsureHooks() => EnsureHooksCalls++;
         public float? ReadRenderScale() => Readable ? Scale : null;
         public void WriteRenderScale(float scale) { Writes.Add($"scale={scale}"); Scale = scale; }
         public bool? ReadTaa() => Readable ? Taa : null;
@@ -259,5 +261,19 @@ public sealed class RenderQualityServiceTests
     public void Request_null_throws()
     {
         Assert.Throws<ArgumentNullException>(() => new RenderQualityService(new FakeBackend()).Request(null!));
+    }
+
+    // Review fix 2: game hooks install lazily — the first Request asks for them; reads / re-asserts never do.
+    [Fact]
+    public void Request_asks_the_backend_for_its_hooks_and_reassert_does_not()
+    {
+        var b = new FakeBackend();
+        var s = new RenderQualityService(b);
+        s.Reassert();
+        _ = s.Live;
+        _ = s.Capabilities;
+        Assert.Equal(0, b.EnsureHooksCalls);
+        s.Request(Ss);
+        Assert.Equal(1, b.EnsureHooksCalls);
     }
 }

@@ -12,6 +12,7 @@ public sealed partial class BootstrapPlugin
     // ── Render quality + time of day (Wiring.RenderQuality.cs) — IRenderQuality / ITimeOfDay ──
     // Spec docs/superpowers/specs/2026-10-01-photo-studio-render-quality-design.md (devkit).
     private const string CaptureScaleGuardEnvVar = "STELLAR_CAPTURE_SCALE_GUARD";
+    private const string NoApplyAllDataEnvVar = "STELLAR_RQ_NO_APPLYALLDATA";
     private RenderQualityService? _renderQuality;
     private TimeOfDayService? _timeOfDay;
     private ZRenderQualityBackend? _qualityBackend;
@@ -71,9 +72,11 @@ public sealed partial class BootstrapPlugin
         return _renderQuality!.SuspendSupersampleForCapture;
     }
 
+    // Arms (does not install) the game hooks: they install on the first Request / Pin. Kill switch for the by-ref
+    // ApplyAllData hook: STELLAR_RQ_NO_APPLYALLDATA=1 (read once here).
     private void InstallRenderQualityHooks(HarmonyGameMethodHooker hooker)
     {
-        _qualityBackend?.InstallHooks(hooker);
-        _timeBackend?.InstallHooks(hooker);
+        _qualityBackend?.ArmHooks(hooker, skipApplyAllData: Environment.GetEnvironmentVariable(NoApplyAllDataEnvVar) == "1");
+        _timeBackend?.ArmHooks(hooker);
     }
 }

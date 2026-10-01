@@ -49,6 +49,7 @@ internal sealed class RenderQualityService : IRenderQuality
     internal IDisposable Request(RenderQualityRequest request, object? owner)
     {
         if (request is null) throw new ArgumentNullException(nameof(request));
+        _backend.EnsureHooks();   // game hooks install on first use, never at boot
         var token = new Token(this, request.Supersample, request.HighShadows, owner);
         _tokens.Add(token);
         Apply();
