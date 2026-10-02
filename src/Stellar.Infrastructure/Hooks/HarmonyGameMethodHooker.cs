@@ -107,16 +107,13 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
         {
             try
             {
-                if (prefix)
+                if (!HookCallbackTable.Add(prefix ? PrefixCallbacks : Callbacks, method, callback))
                 {
-                    PrefixCallbacks[method] = callback;
-                    _harmony.Patch(method, prefix: new HarmonyMethod(PrefixTrampolineMethod));
+                    _log.Info($"[Hooker] chained a callback on {type.FullName}.{method.Name}{(prefix ? " (prefix)" : "")}");
+                    continue;   // already patched: one trampoline, both callbacks
                 }
-                else
-                {
-                    Callbacks[method] = callback;
-                    _harmony.Patch(method, postfix: new HarmonyMethod(TrampolineMethod));
-                }
+                if (prefix) _harmony.Patch(method, prefix: new HarmonyMethod(PrefixTrampolineMethod));
+                else _harmony.Patch(method, postfix: new HarmonyMethod(TrampolineMethod));
                 _log.Info($"[Hooker] patched {type.FullName}.{method.Name}{(prefix ? " (prefix)" : "")}");
             }
             catch (Exception ex)
