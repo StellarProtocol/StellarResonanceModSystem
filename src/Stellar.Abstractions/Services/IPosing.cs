@@ -5,19 +5,23 @@ using Stellar.Abstractions.Domain;
 namespace Stellar.Abstractions.Services;
 
 /// <summary>
-/// Pose people while a free camera is held (<see cref="ICameraOverride"/>), like the game's own photo panel: the local
-/// player live, other players as a local photo copy (the real player hidden), NPCs as a locally generated model (the
-/// real NPC hidden and never changed). Everything is local: copies and generated models send nothing. The copy or model
-/// is made on the first control that changes something, never on <see cref="Select"/>. When the free camera ends — for
-/// any reason — the framework resets every touched person (action, expression, look, facing; copies and models removed,
-/// real people shown again); a person who leaves is released alone; a plugin's people are released when it unloads.
+/// Pose people in the world, like the game's own photo panel — with or without a free camera
+/// (<see cref="ICameraOverride"/>): the local player live, other players as a local photo copy (the real player hidden),
+/// NPCs as a locally generated model (the real NPC hidden and never changed). Everything is local: copies and generated
+/// models send nothing. The copy or model is made on the first control that changes something, never on
+/// <see cref="Select"/>. Poses belong to the scene, not the camera: leaving the free camera keeps every pose. The scene
+/// ends — and the framework resets every touched person (action, expression, look, facing; copies and models removed,
+/// real people shown again) — on the reasons the scene freeze ends on: a zone change or scene leave, a cutscene, the
+/// game's own camera mode, a disconnect and the framework unloading; also on <see cref="ResetAll"/>. A person who leaves
+/// is released alone; a plugin's people are released when it unloads.
 /// At most the game's own photo-member limit of copies (you plus limit − 1 players) and of NPC models exist at once;
 /// beyond it a target reports <see cref="PoseTargetState.Full"/>. While the scene freeze (<see cref="ISceneFreeze"/>) is
 /// on, posed copies and models freeze too. Main thread only.
 /// </summary>
 public interface IPosing
 {
-    /// <summary>True while a free camera is held — the only time people can be posed.</summary>
+    /// <summary>True while the player is in the world and the scene has settled (false for about 2 s after a zone change
+    /// while the game rebuilds every entity) — the only time people can be posed. Independent of the free camera.</summary>
     bool IsAvailable { get; }
 
     /// <summary>The people within <paramref name="radius"/> m of the local player: the local player first, then players
@@ -53,7 +57,7 @@ public interface IPosing
     /// <param name="moment">How far it has played, 0–1 (the held point while held); −1 when false.</param>
     bool TryGetCurrentAction(EntityId person, out int actionId, out float moment);
 
-    /// <summary>Resets every person this plugin touched, now (the free camera stays on).</summary>
+    /// <summary>Resets every person this plugin touched, now (the free camera, if any, stays on).</summary>
     void ResetAll();
 
     /// <summary>Raised (main thread) when a target's <see cref="IPoseTarget.State"/> changed: a model finished loading or
@@ -85,7 +89,8 @@ public interface IPoseTarget
     void SetExpression(int expressionId, bool hold);
 
     /// <summary>Sets where the head or the eyes look. <paramref name="locked"/> pins a <see cref="LookMode.Lens"/> target
-    /// where the camera is now (the camera can then move away).</summary>
+    /// where the camera is now (the camera can then move away). Lens follows whichever camera renders — the free camera
+    /// while one is held, the game's camera otherwise.</summary>
     /// <param name="part">Head or eyes.</param>
     /// <param name="mode">Default, Lens or Free.</param>
     /// <param name="locked">Pin the Lens target.</param>

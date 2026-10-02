@@ -59,7 +59,8 @@ public enum PoseTargetState
     Ready,
     /// <summary>The copy or model could not be made; <c>Reset()</c> lets it try again.</summary>
     Failed,
-    /// <summary>Released by the framework (free camera ended, the person left, or the plugin unloaded); select again.</summary>
+    /// <summary>Released by the framework (the scene ended — zone change, cutscene, the game's camera mode, disconnect — the person
+    /// left, or the plugin unloaded); select again.</summary>
     Released,
     /// <summary>The game's photo-member limit is reached for this kind of person (other players' copies, or NPC models);
     /// nothing was made. Reset someone else, then use a control again.</summary>
@@ -75,7 +76,7 @@ public enum PoseResult
     Loading,
     /// <summary>The game's own check refused it (the game shows its own message).</summary>
     Refused,
-    /// <summary>Not possible now (no free camera, the person left, or the copy/model failed).</summary>
+    /// <summary>Not possible now (not in the world or the scene still settling, the person left, or the copy/model failed).</summary>
     Unavailable,
     /// <summary>The photo-member limit is reached (see <see cref="PoseTargetState.Full"/>); nothing was made.</summary>
     Full,

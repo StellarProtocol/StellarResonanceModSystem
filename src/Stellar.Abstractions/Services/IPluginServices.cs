@@ -55,8 +55,9 @@ public interface IPluginServices
     /// <summary>The character drawn under a screen point. See <see cref="IEntityPicker"/>.</summary>
     IEntityPicker EntityPicker { get; }
 
-    /// <summary>Pose people inside the free camera — you live, other players as a local copy, NPCs as a stand-in model;
-    /// everyone reset when the free camera ends. See <see cref="IPosing"/>.</summary>
+    /// <summary>Pose people in the world, with or without the free camera — you live, other players as a local copy, NPCs
+    /// as a stand-in model; everyone reset when the scene ends (zone change, cutscene, disconnect). See
+    /// <see cref="IPosing"/>.</summary>
     IPosing Posing { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>

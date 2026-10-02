@@ -51,6 +51,8 @@ internal sealed class FakePosingBackend : IPosingBackend
     public readonly Dictionary<long, PoseActionReading> LiveActions = new();
     public int LiveActionReads;
     public bool ThrowOnReadAction;
+    /// <summary>The scene-change settle window (posing unavailable while true).</summary>
+    public bool Settling { get; set; }
     public event Action<long>? PersonRemoved;
 
     public PoseActionReading ReadAction(long uuid)
@@ -105,7 +107,9 @@ internal sealed class FakeFreezeSignal : ISceneFreeze
     public void Raise(bool frozen) { IsFrozen = frozen; Changed?.Invoke(frozen); }
 }
 
-/// <summary>A posing service over a real camera arbiter (fake camera backend), with the camera held.</summary>
+/// <summary>A posing service in the world (scene settled), next to a real camera arbiter (fake camera backend) held by
+/// default — posing no longer depends on it (scene-stays spec § 5). The scene ends through a real
+/// <see cref="FreeCameraReleaser"/> (<see cref="EndScene"/>), the same call that ends the freeze in the host.</summary>
 internal sealed class PosingRig
 {
     public readonly List<string> Warnings = new();
@@ -116,6 +120,10 @@ internal sealed class PosingRig
     public readonly PosingService Svc;
     public readonly object CameraOwner = new();
     public ICameraControl? Control;
+    public readonly FreeCameraReleaser Releaser;
+
+    /// <summary>The client's in-world state fed to <see cref="PosingService"/> (IClientState.IsWorldActive in the host).</summary>
+    public bool InWorld = true;
 
     /// <summary>Fake monotonic clock (ms) fed to <see cref="PosingService"/>'s retry latches (review F1/F2) — advance it
     /// to simulate the 5 s retry window elapsing.</summary>
@@ -124,9 +132,16 @@ internal sealed class PosingRig
     public PosingRig(bool acquire = true)
     {
         Camera = new CameraOverrideService(CameraBackend, new LookAtService(new CameraOverrideServiceTests.FakeLookAt(), Warnings.Add), false, Warnings.Add);
-        Svc = new PosingService(Backend, Camera, Freeze, Warnings.Add, () => NowMs);
+        Svc = new PosingService(Backend, () => InWorld, Freeze, Warnings.Add, () => NowMs);
+        var shield = new InputShieldService(new FreeCameraReleaserTests.CountingShieldBackend(), new FreeCameraReleaserTests.NullReader(),
+            new FreeCameraReleaserTests.NoFocus(), Warnings.Add);
+        var freeze = new SceneFreezeService(new FreeCameraReleaserTests.CountingFreezeBackend(), false);
+        Releaser = new FreeCameraReleaser(Camera, Svc, freeze, shield, Warnings.Add);
         if (acquire) Acquire();
     }
+
+    /// <summary>The scene ends (zone change, cutscene, …) the way the host ends it: the framework's forced release.</summary>
+    public void EndScene(CameraReleaseReason reason) => Releaser.Release(reason);
 
     public void Acquire() => Camera.TryAcquire(CameraOwner, out Control);
 

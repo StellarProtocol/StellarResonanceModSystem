@@ -48,7 +48,7 @@ public sealed class PosingCurrentActionTests
     [Fact]
     public void Nothing_is_read_while_posing_is_unavailable()
     {
-        var r = new PosingRig(acquire: false);
+        var r = new PosingRig { InWorld = false };   // was: no free camera (scene-stays spec § 5)
         r.Backend.LiveActions[2] = Running(9206, 0.4f);
         Assert.False(r.Svc.TryGetCurrentAction(new EntityId(2), out var id, out _));
         Assert.Equal(0, id);
@@ -123,11 +123,13 @@ public sealed class PosingCurrentActionTests
     }
 
     [Fact]
-    public void Camera_release_stops_detection()
+    public void Camera_release_keeps_detection_and_leaving_the_world_stops_it()
     {
         var r = new PosingRig();
         r.Backend.LiveActions[2] = Running(9206, 0.4f);
-        r.Control!.Dispose();
+        r.Control!.Dispose();   // scene-stays spec § 5: the free camera no longer gates posing
+        Assert.True(r.Svc.TryGetCurrentAction(new EntityId(2), out _, out _));
+        r.InWorld = false;
         Assert.False(r.Svc.TryGetCurrentAction(new EntityId(2), out _, out _));
     }
 

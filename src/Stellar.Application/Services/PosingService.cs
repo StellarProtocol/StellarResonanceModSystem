@@ -7,9 +7,10 @@ using Stellar.Application.Abstractions;
 namespace Stellar.Application.Services;
 
 /// <summary>
-/// Posing by person (spec 2026-10-02). People are targets only while a free camera is held. Every camera release —
-/// whatever the reason (exit, zone change, cutscene, the game's camera mode, disconnect, unload, a frame-handler error) —
-/// resets every touched person; a despawning person is released alone; a plugin's people are released by its facade on
+/// Posing by person (spec 2026-10-02, amended by the scene-stays spec 2026-10-02 § 5). People are targets while the
+/// player is in the world and the scene has settled — with or without a free camera; leaving the free camera keeps every
+/// pose. The scene's end (zone change, cutscene, the game's camera mode, disconnect, framework unload — the freeze's own
+/// reasons, via <see cref="FreeCameraReleaser"/>) resets every touched person; a despawning person is released alone; a plugin's people are released by its facade on
 /// unload. Copies and NPC models are capped at the game's own photo-member limit. The scene freeze also freezes posed
 /// models (they are not entities, so the scene freeze never sees them) and, when it ends, unfreezes them and re-applies
 /// held pauses so the unfreeze never resumes a pose (§ 4.5). Main thread.
@@ -26,7 +27,7 @@ internal sealed class PosingService : IPosing
     // Same pattern as GameVisibilityBackend's negative probes (docs/il2cpp-probing-safety.md § negative-cache races).
     private const long RetryTtlMs = 5_000;
 
-    private readonly CameraOverrideService _camera;
+    private readonly Func<bool> _inWorld;
     private readonly Action<string> _warn;
     private readonly Dictionary<long, PoseTarget> _targets = new();
     private readonly List<PersonInfo> _people = new();
@@ -36,16 +37,20 @@ internal sealed class PosingService : IPosing
     private int _memberLimit;
     private bool _frozen;
 
-    public PosingService(IPosingBackend backend, CameraOverrideService camera, ISceneFreeze freeze, Action<string> warn, Func<long>? nowMs = null)
+    /// <param name="backend">The game side.</param>
+    /// <param name="inWorld">The client's in-world state (<c>IClientState.IsWorldActive</c> — event-driven, never polled).</param>
+    /// <param name="freeze">The scene freeze; posed copies and models freeze with it.</param>
+    /// <param name="warn">Warning sink.</param>
+    /// <param name="nowMs">Monotonic clock for the retry latches (tests).</param>
+    public PosingService(IPosingBackend backend, Func<bool> inWorld, ISceneFreeze freeze, Action<string> warn, Func<long>? nowMs = null)
     {
         Backend = backend;
-        _camera = camera;
+        _inWorld = inWorld;
         _warn = warn;
         _frozen = freeze.IsFrozen;
         var clock = nowMs ?? (() => Environment.TickCount64);
         _expressionsRetry = new NegativeProbeCache(clock, RetryTtlMs);
         _memberLimitRetry = new NegativeProbeCache(clock, RetryTtlMs);
-        camera.Released += _ => ResetAll();
         freeze.Changed += OnFreezeChanged;
         backend.PersonRemoved += OnPersonRemoved;
     }
@@ -84,7 +89,11 @@ internal sealed class PosingService : IPosing
         }
     }
 
-    public bool IsAvailable => _camera.IsOverridden;
+    // Scene-stays spec § 5: posing belongs to the scene, not the free camera — available in the world once the scene
+    // settled (the backend's scene-change settle window, armed by the leave/enter events: a time compare, no poll).
+    // The scene's end (zone change, cutscene, game photo mode, disconnect, framework unload) resets every person through
+    // FreeCameraReleaser — the same call that ends the freeze — never a camera release.
+    public bool IsAvailable => _inWorld() && !Backend.Settling;
 
     public event Action? Changed;
 

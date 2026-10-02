@@ -51,11 +51,11 @@ public sealed partial class BootstrapPlugin
         _combatFlags = new PandaCombatFlagSource(_gameTypeRegistry!, entities, log);
         _combatState = new CombatStateService(_combatService!, _combatService!, _combatFlags, _framework!.Post);
         _entityPicker = new EntityPickerService(entities, camera.MainCamera);
-        _freeCamReleaser = new FreeCameraReleaser(_cameraOverride, _sceneFreeze, _inputShield, warn);
-        WirePosing(log, entities, camera.MainCamera);   // Wiring.Posing.cs — needs the camera arbiter + the freeze
+        WirePosing(log, entities, camera.MainCamera);   // Wiring.Posing.cs — needs the freeze + the client state
+        _freeCamReleaser = new FreeCameraReleaser(_cameraOverride, _posing!, _sceneFreeze, _inputShield, warn);
         _sceneLeave = new SceneLeavePrefix(log);
         WireFreeCameraReleases();
-        WirePosingSettle();   // Wiring.Posing.cs — AFTER the releases: the release closes every model first
+        WirePosingSettle();   // Wiring.Posing.cs — AFTER the releases: the release closes every model first (scene end)
         WireFreeCameraKeyboardGate(log);
     }
 

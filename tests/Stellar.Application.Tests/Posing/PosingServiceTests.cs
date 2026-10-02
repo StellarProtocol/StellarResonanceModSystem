@@ -6,22 +6,36 @@ using Xunit;
 
 namespace Stellar.Application.Tests.Posing;
 
-// Spec 2026-10-02 §§ 4.1–4.5: a person's copy/model is made once, on the first control (never on selection); every
-// free-camera release reason resets every touched person; a despawn drops only that person; NPC controls made while the
+// Spec 2026-10-02 §§ 4.1–4.5 (+ scene-stays spec §§ 1, 2, 5): a person's copy/model is made once, on the first control
+// (never on selection); a free-camera release keeps every pose and every scene end resets every touched person; a despawn drops only that person; NPC controls made while the
 // model loads are applied in order when it arrives; a reset undoes only what was touched; unfreeze never resumes a pause.
 public sealed class PosingServiceTests
 {
+    // Scene-stays spec § 5 (was: available only while a free camera is held): in the world and the scene settled.
     [Fact]
-    public void Select_needs_a_held_free_camera_and_a_person()
+    public void scene_stays_available_without_a_camera_override()
     {
         var r = new PosingRig(acquire: false);
-        Assert.False(r.Svc.IsAvailable);
-        Assert.Null(r.Svc.Select(new EntityId(2)));
-        r.Acquire();
+        Assert.False(r.Camera.IsOverridden);
         Assert.True(r.Svc.IsAvailable);
         Assert.NotNull(r.Svc.Select(new EntityId(2)));
         Assert.Null(r.Svc.Select(new EntityId(99)));   // not a player or an NPC
         Assert.Null(r.Svc.Select(EntityId.None));
+    }
+
+    [Fact]
+    public void Select_needs_the_world_and_a_settled_scene()
+    {
+        var r = new PosingRig(acquire: false) { InWorld = false };
+        Assert.False(r.Svc.IsAvailable);
+        Assert.Null(r.Svc.Select(new EntityId(2)));
+        r.InWorld = true;
+        r.Backend.Settling = true;   // the ~2 s after a zone change
+        Assert.False(r.Svc.IsAvailable);
+        Assert.Null(r.Svc.Select(new EntityId(2)));
+        r.Backend.Settling = false;
+        Assert.True(r.Svc.IsAvailable);
+        Assert.NotNull(r.Svc.Select(new EntityId(2)));
     }
 
     [Fact]
@@ -40,6 +54,8 @@ public sealed class PosingServiceTests
         Assert.Equal(new[] { "yaw 30", "play 9020" }, r.Backend.Model(2).Calls);
     }
 
+    // Scene-stays spec § 1 (was: every camera release reset every person): leaving the free camera — for any reason —
+    // returns only the camera; every pose stays, nothing is closed, and a new free camera finds the same targets.
     [Theory]
     [InlineData(CameraReleaseReason.Disposed)]
     [InlineData(CameraReleaseReason.SceneChanged)]
@@ -48,7 +64,33 @@ public sealed class PosingServiceTests
     [InlineData(CameraReleaseReason.Disconnected)]
     [InlineData(CameraReleaseReason.PluginUnloaded)]
     [InlineData(CameraReleaseReason.Error)]
-    public void Every_free_camera_release_resets_every_touched_person(CameraReleaseReason reason)
+    public void scene_stays_camera_release_keeps_poses(CameraReleaseReason reason)
+    {
+        var r = new PosingRig();
+        var self = r.Target(1);
+        var copy = r.Target(2);
+        self.PlayAction(9020);
+        copy.SetLook(LookPart.Head, LookMode.Lens, false);
+        ReleaseCameraOnly(r, reason);
+        Assert.False(r.Camera.IsOverridden);
+        Assert.True(r.Svc.IsAvailable);
+        Assert.Null(r.Backend.Model(1).Closed);
+        Assert.Null(r.Backend.Model(2).Closed);
+        Assert.All(new[] { self, copy }, t => Assert.Equal(PoseTargetState.Ready, t.State));
+        Assert.True(r.Svc.HasTargets);
+        r.Acquire();
+        Assert.Same(copy, r.Target(2));   // re-entering the free camera finds the scene as it was
+    }
+
+    // Scene-stays spec § 2: the scene ends on the reasons the freeze ends on (the framework's forced release) — every
+    // touched person is reset (what the old camera-release pin asserted, now driven by the scene end).
+    [Theory]
+    [InlineData(CameraReleaseReason.SceneChanged)]
+    [InlineData(CameraReleaseReason.Cutscene)]
+    [InlineData(CameraReleaseReason.GamePhotoMode)]
+    [InlineData(CameraReleaseReason.Disconnected)]
+    [InlineData(CameraReleaseReason.PluginUnloaded)]
+    public void Every_scene_end_resets_every_touched_person(CameraReleaseReason reason)
     {
         var r = new PosingRig();
         var self = r.Target(1);
@@ -57,17 +99,36 @@ public sealed class PosingServiceTests
         self.PlayAction(9020);
         self.Yaw = 15f;
         copy.SetLook(LookPart.Head, LookMode.Lens, false);
-        Release(r, reason);
+        r.EndScene(reason);
         Assert.Equal(PoseTouches.Action | PoseTouches.Yaw, r.Backend.Model(1).Closed);
         Assert.Equal(PoseTouches.Head, r.Backend.Model(2).Closed);
         Assert.Equal(2, r.Backend.Opened.Count);   // the untouched NPC never got a model
         Assert.All(new[] { self, copy, untouched }, t => Assert.Equal(PoseTargetState.Released, t.State));
         Assert.False(r.Svc.HasTargets);
-        r.Acquire();
-        Assert.NotSame(copy, r.Target(2));   // a new free camera starts clean
+        Assert.NotSame(copy, r.Target(2));   // a new scene starts clean
     }
 
-    private static void Release(PosingRig r, CameraReleaseReason reason)
+    // Scene-stays spec § 2, the leave-scene path: the Game.OnLeaveScene prefix routes to Release(SceneChanged) and closes
+    // every pose, with or without a free camera held.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void scene_stays_leave_scene_closes_poses(bool cameraHeld)
+    {
+        var r = new PosingRig(acquire: cameraHeld);
+        var copy = r.Target(2);
+        copy.Yaw = 5f;
+        var changed = 0;
+        r.Svc.Changed += () => changed++;
+        r.EndScene(CameraReleaseReason.SceneChanged);   // the leave prefix
+        r.EndScene(CameraReleaseReason.SceneChanged);   // the SceneChanged backstop: no-op
+        Assert.Equal(PoseTargetState.Released, copy.State);
+        Assert.Equal(1, r.Backend.Model(2).CloseCount);
+        Assert.Equal(1, changed);
+        Assert.False(r.Svc.HasTargets);
+    }
+
+    private static void ReleaseCameraOnly(PosingRig r, CameraReleaseReason reason)
     {
         switch (reason)
         {
@@ -205,7 +266,7 @@ public sealed class PosingServiceTests
         var r = new PosingRig();
         r.Target(2).Yaw = 5f;
         r.Freeze.Raise(true);
-        r.Camera.ReleaseAll(CameraReleaseReason.SceneChanged);
+        r.EndScene(CameraReleaseReason.SceneChanged);
         Assert.Equal(new[] { "yaw 5", "frozen True", "frozen False", "close Yaw" }, r.Backend.Model(2).Calls);
     }
 
@@ -223,7 +284,7 @@ public sealed class PosingServiceTests
         Assert.False(r.Svc.TryGetVisiblePosition(new EntityId(3), out _));   // still loading
         r.Backend.PendingLoads[0](true);
         Assert.True(r.Svc.TryGetVisiblePosition(new EntityId(3), out _));
-        r.Camera.ReleaseAll(CameraReleaseReason.Cutscene);
+        r.EndScene(CameraReleaseReason.Cutscene);
         Assert.False(r.Svc.TryGetVisiblePosition(new EntityId(2), out _));
     }
 
@@ -332,7 +393,7 @@ public sealed class PosingServiceTests
         var r = new PosingRig();
         var npc = r.Target(3);
         npc.PlayAction(9020);
-        r.Camera.ReleaseAll(CameraReleaseReason.SceneChanged);
+        r.EndScene(CameraReleaseReason.SceneChanged);
         Assert.Equal(1, r.Backend.Model(3).CloseCount);
         r.Backend.PendingLoads[0](true);
         Assert.Equal(PoseTargetState.Released, npc.State);
@@ -408,17 +469,17 @@ public sealed class PosingServiceTests
         var r = new PosingRig();
         r.Svc.Changed += () => throw new InvalidOperationException("plugin handler");
         r.Target(2).Yaw = 5f;
-        r.Camera.ReleaseAll(CameraReleaseReason.Cutscene);
+        r.EndScene(CameraReleaseReason.Cutscene);
         Assert.Equal(PoseTouches.Yaw, r.Backend.Model(2).Closed);
         Assert.Contains(r.Warnings, w => w.Contains("Changed handler threw"));
     }
 
     [Fact]
-    public void People_come_from_one_backend_read_and_are_empty_without_a_camera()
+    public void People_come_from_one_backend_read_and_are_empty_outside_the_world()
     {
-        var r = new PosingRig(acquire: false);
+        var r = new PosingRig(acquire: false) { InWorld = false };
         Assert.Empty(r.Svc.NearbyPeople(40f));
-        r.Acquire();
+        r.InWorld = true;   // no free camera needed (scene-stays spec § 5)
         Assert.Equal(new[] { "Revette", "Celia" }, r.Svc.NearbyPeople(40f).Select(p => p.Name));
     }
 
@@ -454,16 +515,16 @@ public sealed class PosingServiceTests
     }
 
     // Review round 1, finding 2: a synchronous open failure (self/player) still hands back a model — the half-made
-    // copy keeps hiding the real person until it is closed, so a camera release must still unhide it exactly once.
+    // copy keeps hiding the real person until it is closed, so the scene's end must still unhide it exactly once.
     [Fact]
-    public void A_failed_open_on_a_player_still_gets_closed_on_camera_release()
+    public void A_failed_open_on_a_player_still_gets_closed_on_scene_end()
     {
         var r = new PosingRig();
         r.Backend.FailOpen = true;
         var copy = r.Target(2);
         copy.PlayAction(9020);
         Assert.Equal(PoseTargetState.Failed, copy.State);
-        r.Camera.ReleaseAll(CameraReleaseReason.SceneChanged);
+        r.EndScene(CameraReleaseReason.SceneChanged);
         Assert.Equal(1, r.Backend.Model(2).CloseCount);
     }
 

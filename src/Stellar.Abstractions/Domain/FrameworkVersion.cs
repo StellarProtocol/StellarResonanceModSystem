@@ -19,9 +19,11 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
-    /// 2.15.0 adds posing by person for the free camera: <c>IPosing</c> / <c>IPoseTarget</c> (the local player live,
-    /// other players as a local photo copy, NPCs as a generated model; action + moment, held expression, head/eye look,
-    /// facing; every touched person reset on any free-camera release, despawn or unload) plus the domain types
+    /// 2.15.0 adds posing by person: <c>IPosing</c> / <c>IPoseTarget</c> (the local player live, other players as a
+    /// local photo copy, NPCs as a generated model; action + moment, held expression, head/eye look, facing; available
+    /// in the world with or without the free camera; every touched person reset when the scene ends — zone change,
+    /// cutscene, the game's camera mode, disconnect — or on despawn or unload; the scene freeze never holds the local
+    /// player) plus the domain types
     /// <c>PersonKind</c>, <c>PersonInfo</c>, <c>ExpressionInfo</c>, <c>LookMode</c>, <c>LookPart</c>,
     /// <c>PoseTargetState</c>, <c>PoseResult</c>; <c>IEntityPicker</c> also picks NPCs. Additive.
     /// 2.14.0 adds the free-camera contracts on top of 2.13.0's photo services:

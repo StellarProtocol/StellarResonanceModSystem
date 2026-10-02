@@ -15,19 +15,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [2.15.0] - 2026-10-01
-_**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
+_**2.15.0** (minor) — Posing by person, with or without the free camera. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
 ### Added
-- Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see, and everyone returns to normal when you leave the free camera.
+- Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see. Posing works with the free camera off too, and leaving the free camera keeps everyone as you posed them — they return to normal when you change zone, a cutscene starts or you disconnect.
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
+- Freezing the scene never freezes your own character: you can walk away from a frozen scene (moving cancels your own held emote, as in the game). Effects stay frozen, yours included.
 - Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
 - New `IPluginServices.Posing` (`IPosing`: `IsAvailable`, `NearbyPeople`, `Expressions`, `Select`, `ResetAll`, `Changed`;
   `IPoseTarget`: `State`, `PlayAction`, `Moment`, `SetExpression`, `SetLook`, `Aim`, `Yaw`, `Reset`) and domain types
-  `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`. Targets exist only
-  while a camera override is held; every `CameraReleaseReason` resets every touched person (`PosingService` subscribes to
-  the camera arbiter), a `ZEntityMgr.RemoveEntity` prefix releases a despawning person, the per-plugin facade releases a
+  `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`.
+  `IPosing.IsAvailable` = `IClientState.IsWorldActive` and outside the posing scene-change settle window (~2 s after a
+  leave/enter) — no camera override needed; a camera release resets nobody. The scene end (`FreeCameraReleaser.Release`:
+  `Game.OnLeaveScene` prefix / `SceneChanged`, cutscene, game photo mode, logout, framework unload — the reasons the scene
+  freeze already ends on) resets every touched person in the same call, a `ZEntityMgr.RemoveEntity` prefix releases a despawning person, the per-plugin facade releases a
   plugin's people on unload, and a scene-freeze end re-applies held pauses.
 - Game calls (devkit `docs/recon/photo-posing-recon.md` runs 4–5): you = live model, `ZAnimActionPlayMgr.PlayAction(id,
   syncServer: false, …)` / `SetActionPersistTime` / `ResetAction` and `LuaAsyncBridge.SetEntityRotation` (an action start
@@ -41,6 +44,9 @@ _**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugin
   at the game's `PhotographTeamMemberLimit` (PC `[1]`, 30 in release_3.7: you + 29 players; NPC models 30) with
   `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
   model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
+- `ISceneFreeze` never freezes the local player: `GameFreezeBackend` drops their uuid from the press's entity list and the
+  `FreezeLedger` refuses their factor / drawn-speed saves (written only after an admitted save); the hold and the appear
+  re-check skip them too. Pinned: `scene_stays_self_never_frozen`.
 - `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
   entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
   settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without

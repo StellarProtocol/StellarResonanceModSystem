@@ -57,6 +57,10 @@ internal interface IPosingBackend
     /// objects, so the interop allocates its small per-call wrappers (two per read); nothing else allocates.</summary>
     PoseActionReading ReadAction(long uuid);
 
+    /// <summary>True inside the scene-change settle window (a time compare on read, armed by the scene events — never
+    /// polled); <c>IPosing.IsAvailable</c> is false meanwhile.</summary>
+    bool Settling { get; }
+
     /// <summary>Raised (main thread) just before the game removes an entity.</summary>
     event Action<long>? PersonRemoved;
 }

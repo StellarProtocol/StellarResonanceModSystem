@@ -41,9 +41,12 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     public void ArmHooks(IGameMethodHooks hooker) => _hooks.Arm(hooker);
 
     /// <summary>A scene leave (the <c>Game.OnLeaveScene</c> prefix) or enter (<c>IClientState.SceneChanged</c>): starts
-    /// the settle window. Subscribe AFTER the free-camera release on the same events, so the release (which closes
+    /// the settle window. Subscribe AFTER the scene-end release (FreeCameraReleaser) on the same events, so the release (which closes
     /// every model) runs first — it is never gated anyway (<see cref="SettledPoseModel.Close"/>).</summary>
     public void SceneChanged() => _settle.Arm();
+
+    /// <summary>Inside the settle window (no live read) — <c>IPosing.IsAvailable</c> is false meanwhile.</summary>
+    public bool Settling => _settle.Settling;
 
     public PersonKind? KindOf(long uuid)
     {

@@ -38,7 +38,7 @@ internal sealed class PosingHookSet
         _copies.Install(_hooker, _types);
         if (_types.FindType(GameEntityAccess.ManagerType) is not { } mgr)
         {
-            _log.Warning("[Posing] a person who leaves keeps their copy until the free camera ends (ZEntityMgr not found)");
+            _log.Warning("[Posing] a person who leaves keeps their copy until the scene ends (ZEntityMgr not found)");
             return;
         }
         try { _hooker.PrefixAllOverloads(mgr, "RemoveEntity", _onRemoveEntity); }

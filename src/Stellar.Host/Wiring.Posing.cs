@@ -27,7 +27,9 @@ public sealed partial class BootstrapPlugin
             new PoseSpawnCalls(_gameTypeRegistry!, warn), new LookAtSnapshotReader(_gameTypeRegistry!), new PoseLuaQueries(_luaService!),
             mainCamera, warn, onMain);
         _posingBackend = new GamePosingBackend(calls, entities, _gameTypeRegistry!, log);
-        _posing = new PosingService(_posingBackend, _cameraOverride!, _sceneFreeze!, warn);
+        var clientState = _clientState!;
+        // Available in the world once the scene settled (scene-stays spec § 5) — not tied to the free camera.
+        _posing = new PosingService(_posingBackend, () => clientState.IsWorldActive, _sceneFreeze!, warn);
         var posing = _posing;
         _posingSendTap = new PosingSendTap(_gameTypeRegistry!, () => posing.HasTargets, log);
     }
