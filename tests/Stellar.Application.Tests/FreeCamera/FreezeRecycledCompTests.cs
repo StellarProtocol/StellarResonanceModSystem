@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Stellar.Infrastructure.Game;
 using Xunit;
 
@@ -107,6 +108,44 @@ public sealed class FreezeRecycledCompTests
         Assert.Equal(3, g.Calls);
         g.Arm(l);
         Assert.Equal(0, g.Calls);
+    }
+
+    // Review Minor finding (2026-10-02): OnUnfreezing's diagnostics read calls into reflection/game code for every
+    // tracked uuid — it must never enumerate TrackedUuids' live Keys view directly, since a reentrant Track (e.g. the
+    // game's own AddEntity postfix firing mid-read) inserts into the SAME dictionary and throws. (.NET tolerates a
+    // same-key Remove during Dictionary.Keys enumeration, but not an Add — the realistic reentrant hazard here is a new
+    // entity appearing, i.e. a Track, not an Untrack.) The production fix snapshots first.
+    [Fact]
+    public void tracked_uuids_live_view_can_throw_if_something_tracks_mid_loop_but_a_snapshot_never_can()
+    {
+        var (_, live) = Armed();
+        live.Track(Pooled, Dead, FreezeKinds.Monster);
+        live.Track(Other, Respawn, FreezeKinds.Monster);
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            var first = true;
+            foreach (var _ in live.TrackedUuids)
+            {
+                if (!first) continue;
+                first = false;
+                live.Track(new IntPtr(0x9000), 999, FreezeKinds.Monster);   // the reentrant AddEntity re-key
+            }
+        });
+
+        var (_, g) = Armed();
+        g.Track(Pooled, Dead, FreezeKinds.Monster);
+        g.Track(Other, Respawn, FreezeKinds.Monster);
+        var seen = new List<long>();
+        var firstIter = true;
+        foreach (var uuid in g.TrackedUuids.ToArray())   // the fix: snapshot first
+        {
+            seen.Add(uuid);
+            if (!firstIter) continue;
+            firstIter = false;
+            g.Track(new IntPtr(0x9000), 999, FreezeKinds.Monster);
+        }
+        Assert.Equal(new[] { Dead, Respawn }, seen.OrderBy(x => x));   // the snapshot predates the reentrant Track
+        Assert.Equal(3, g.Tracked);                                     // the gate itself now tracks the new entity too
     }
 
     private static (FreezeLedger, DrawnSpeedGate) Armed()

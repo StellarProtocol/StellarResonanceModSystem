@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Stellar.Abstractions.Diagnostics;
 namespace Stellar.Infrastructure.Game;
 
@@ -51,12 +52,14 @@ internal sealed partial class GameFreezeBackend
         _log.Info($"[FreeCam] vehicle event while frozen: uuid={uuid} ownMount={released}");
     }
 
-    // Before the gate disarms: one read per tracked entity (diagnostics only).
+    // Before the gate disarms: one read per tracked entity (diagnostics only). Snapshotted first (review finding): the
+    // read below calls into reflection/game code, which must never enumerate the gate's own live Keys view in case it
+    // reenters and mutates it (e.g. an Untrack from the same frame) mid-loop.
     partial void OnUnfreezing()
     {
         _resumedAtUnfreeze = 0;
         if (!StellarDiagnostics.IsEnabled || _getSpeed is null) return;
-        foreach (var uuid in _speedGate.TrackedUuids)
+        foreach (var uuid in _speedGate.TrackedUuids.ToArray())
         {
             try
             {
