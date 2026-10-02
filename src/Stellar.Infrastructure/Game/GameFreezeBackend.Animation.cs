@@ -138,6 +138,19 @@ internal sealed partial class GameFreezeBackend
         return true;
     }
 
+    /// <summary>The appear re-check for one late frame: tracks <paramref name="comp"/> for the gate, reads its drawn
+    /// speed ONCE (perf review) and, while above 0 (the game restarted it), keeps that speed as the latest restore value,
+    /// re-applies the frozen factor (first prior kept; its recalc's own <c>set_Speed</c> is gated — tracked first — and
+    /// a newer game value it writes wins, being noted after) and writes 0 again.</summary>
+    private void ReapplyComp(long uuid, int kind, object entity, object comp)
+    {
+        _speedGate.Track(CompPointer(comp), uuid, kind);
+        var speed = _getSpeed!(comp);
+        if (speed <= FreezeLedger.SpeedEpsilon || !_ledger.AdmitSpeed(uuid, speed)) return;
+        if (_ledger.Factors.ContainsKey(uuid)) ReapplyFactor(uuid, entity);
+        WriteSpeed(comp, 0f);
+    }
+
     private void Recalc(object entity)
     {
         _animDirty!.Invoke(null, new object[] { entity, true });

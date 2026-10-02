@@ -1,18 +1,22 @@
-using System.Linq;
+using System;
 using Stellar.Abstractions.Diagnostics;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>StellarDiagnostics-gated logging for the freeze backend. The <c>freeze held:</c> line on unfreeze is the
 /// owner-run proof of the combat-resume fix: per entity kind, how many game <c>set_Speed</c> writes the gate turned into 0
 /// (a real speed stopped), and how many tracked entities were still moving right before the restore (<c>resumed</c>
-/// should be 0 — anything else means the game moved them by a path the gate does not see).</summary>
+/// should be 0 — anything else means the game moved them by a path the gate does not see). <c>calls</c> = every
+/// <c>set_Speed</c> call the prefix saw during the freeze and <c>ms</c> its length: calls ÷ ms is the real hook rate
+/// (perf review — measure it in a raid).</summary>
 internal sealed partial class GameFreezeBackend
 {
     private int _resumedAtUnfreeze;
+    private long _frozenAtMs;
 
     partial void OnFrozen(int effects, int factors, int held)
     {
         if (!StellarDiagnostics.IsEnabled) return;
+        _frozenAtMs = Environment.TickCount64;
         _log.Info($"[FreeCam] freeze on: effects={effects} entities={_ids.Count} attrFrozen={factors} positionsHeld={held} " +
                   $"excluded=[{string.Join(",", _ledger.Excluded)}] self={_ledger.Self} speedGate={(_speedGateInstalled ? "on" : "OFF")}");
     }
@@ -35,12 +39,24 @@ internal sealed partial class GameFreezeBackend
         _log.Info($"[FreeCam] never frozen: uuid={uuid} kind={kind} ({why}) self={_ledger.Self} riding={_entities.RiddenVehicle()}");
     }
 
+    partial void OnReleased(long uuid, string why)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        OnExcluded(uuid, _entities.Kind(uuid), why);
+    }
+
+    partial void OnVehicleEvent(long uuid, bool released)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[FreeCam] vehicle event while frozen: uuid={uuid} ownMount={released}");
+    }
+
     // Before the gate disarms: one read per tracked entity (diagnostics only).
     partial void OnUnfreezing()
     {
         _resumedAtUnfreeze = 0;
         if (!StellarDiagnostics.IsEnabled || _getSpeed is null) return;
-        foreach (var uuid in _speedGate.TrackedUuids.Distinct().ToList())
+        foreach (var uuid in _speedGate.TrackedUuids)
         {
             try
             {
@@ -58,6 +74,7 @@ internal sealed partial class GameFreezeBackend
         var g = _speedGate;
         _log.Info($"[FreeCam] freeze held: monster={g.Held(DrawnSpeedGate.Bucket.Monster)} player={g.Held(DrawnSpeedGate.Bucket.Player)} " +
                   $"npc={g.Held(DrawnSpeedGate.Bucket.Npc)} pet={g.Held(DrawnSpeedGate.Bucket.Pet)} mount={g.Held(DrawnSpeedGate.Bucket.Mount)} " +
-                  $"other={g.Held(DrawnSpeedGate.Bucket.Other)} resumed={_resumedAtUnfreeze} gameWrites={g.Seen} gate={(_speedGateInstalled ? "on" : "OFF")}");
+                  $"other={g.Held(DrawnSpeedGate.Bucket.Other)} resumed={_resumedAtUnfreeze} gameWrites={g.Seen} calls={g.Calls} ms={Environment.TickCount64 - _frozenAtMs} " +
+                  $"gate={(_speedGateInstalled ? "on" : "OFF")}");
     }
 }

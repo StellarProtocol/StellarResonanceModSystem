@@ -3,16 +3,20 @@ using Stellar.Abstractions.Services;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>Restores: every entity on unfreeze (drawn speeds first, then the factors — players' speed is recomputed from
-/// the factor), and ONE entity mid-freeze when it turns out to be excluded after the press froze it (review M1: the local
-/// player when the press read uuid 0; review I1: the mount the local player rides, learned at stage 2 or while an
-/// appearing mount is watched). The <c>set_Speed</c> gate is disarmed / untracked before any restore write. Each entity
+/// the factor; the order is <see cref="FreezeTeardown"/>'s, pinned), and ONE entity mid-freeze when it turns out to be
+/// excluded after the press froze it (review M1: the local player when the press read uuid 0; review I1: the mount the
+/// local player rides or drives, learned at stage 2 or by the game's vehicle ride event). The <c>set_Speed</c> gate is disarmed / untracked before any restore write. Each entity
 /// runs in its own try: one failure never skips the rest.</summary>
 internal sealed partial class GameFreezeBackend
 {
-    private void UnfreezeAnimation()
+    private void RestoreDrawnSpeeds()
     {
-        if (_setSpeed is not null)
-            foreach (var kv in _ledger.Speeds) RestoreSpeedOf(kv.Key, kv.Value);
+        if (_setSpeed is null) return;
+        foreach (var kv in _ledger.Speeds) RestoreSpeedOf(kv.Key, kv.Value);
+    }
+
+    private void RestoreFactors()
+    {
         foreach (var kv in _ledger.Factors) RestoreFactorOf(kv.Key, kv.Value);
     }
 
@@ -43,7 +47,7 @@ internal sealed partial class GameFreezeBackend
     /// newly excluded entity is released and dropped from this press's list.</summary>
     private void ReleaseLateExclusions()
     {
-        FreezeTargets.Recheck(_entities, _ledger, _released);
+        FreezeTargets.Recheck(_entities, _ledger, _ids, _released);
         foreach (var uuid in _released) ReleaseEntity(uuid, "stage 2 re-check");
         if (_released.Count > 0) _ledger.WithoutSelf(_ids);
     }
@@ -57,7 +61,7 @@ internal sealed partial class GameFreezeBackend
         if (_ledger.Factors.TryGetValue(uuid, out var factor)) RestoreFactorOf(uuid, factor);
         _ledger.Forget(uuid);
         Unhold(uuid);
-        OnExcluded(uuid, _entities.Kind(uuid), why);
+        OnReleased(uuid, why);   // the kind is read inside the diagnostics gate
     }
 
     /// <summary>Our own <c>set_Speed</c> write: passes the gate untouched.</summary>

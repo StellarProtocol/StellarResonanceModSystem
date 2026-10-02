@@ -9,9 +9,11 @@ namespace Stellar.Infrastructure.Game;
 /// <see cref="AppearWatchFrames"/> late frames its anim component is tracked for the <c>set_Speed</c> gate and its drawn
 /// speed re-checked; while above 0 the attr write is re-applied (the game resets some players' factor right after
 /// <c>AddEntity</c>) and 0 is written again (a re-apply is never a no-op — regression <c>freeze_combat_resume_reapply</c>).
-/// The local player's own mount is never frozen (review I1): refused as it appears (<see cref="FreezeTargets.AdmitAppeared"/>)
-/// and, because the ride-up can link it later, re-checked for <see cref="FreezeTargets.MountWatchFrames"/> frames and
-/// released if it turns out to be theirs. Event-driven: the hook
+/// The local player's own mount is never frozen (review I1): refused as it appears (<see cref="FreezeTargets.AdmitAppeared"/>,
+/// one read); a ride-up that links it later is the game's vehicle event (<c>.Events.cs</c>), never a frame watch.
+/// <b>Pooled models</b> (review, regression <c>freeze_combat_resume_recycled_comp_*</c>): the new entity's anim component
+/// may be a recycled one the gate still maps to a dead entity, so the postfix RE-KEYS it at once — tracked under the new
+/// uuid when admitted, forgotten when refused (the local player, their mount). Event-driven: the hook
 /// returns at once unless frozen. <c>onAddEntity</c> and <c>OnModelLoadFinish</c> never fired in the probe and are not
 /// hooked. <see cref="TickOneAppeared"/> isolates each watched entity's re-check in its own try so one failure drops
 /// only that entity from the watch, never the rest (review finding, Task 9 round 1). <see cref="OnEntityAdded"/>
@@ -43,7 +45,9 @@ internal sealed partial class GameFreezeBackend
             var kind = _entities.EntType(entity);
             // The local player and their own mount never join the appear re-check (scene-stays spec § 3, review I1).
             var controller = kind == FreezeKinds.Vehicle ? _entities.VehicleController(entity) : 0L;
-            if (!FreezeTargets.AdmitAppeared(_entities, _ledger, uuid, kind, controller))
+            var admitted = FreezeTargets.AdmitAppeared(_entities, _ledger, uuid, kind, controller);
+            RekeyComp(entity, uuid, kind, admitted);
+            if (!admitted)
             {
                 if (kind == FreezeKinds.Vehicle) OnExcluded(uuid, kind, "own mount appeared");
                 return;
@@ -59,8 +63,17 @@ internal sealed partial class GameFreezeBackend
         catch (Exception ex) { WarnOnce("appear", "could not freeze an appearing entity: " + ex.Message); }
     }
 
-    /// <summary>One late frame of re-checks; an entity leaves the watch when its watch ends, when it despawns, when it
-    /// turns out to be the local player's mount, or when its re-check throws.</summary>
+    /// <summary>The appearing entity's anim component follows its NEW owner in the gate: tracked under
+    /// <paramref name="uuid"/> when admitted, forgotten when refused (a recycled component must not stay keyed to the dead
+    /// entity — its init write would be substituted under the dead uuid and the new entity left at 0 after unfreeze).</summary>
+    private void RekeyComp(object entity, long uuid, int kind, bool admitted)
+    {
+        if (!ResolveDrawnSpeed() || _entities.LiveModel(entity) is not { } m || _animComp!(m) is not { } comp) return;
+        _speedGate.Rekey(CompPointer(comp), uuid, kind, admitted);
+    }
+
+    /// <summary>One late frame of re-checks; an entity leaves the watch when its watch ends, when it despawns, or when its
+    /// re-check throws.</summary>
     private void TickAppeared()
     {
         for (var i = _appeared.Count - 1; i >= 0; i--)
@@ -78,15 +91,8 @@ internal sealed partial class GameFreezeBackend
     {
         try
         {
-            var watch = kind == FreezeKinds.Vehicle ? FreezeTargets.MountWatchFrames : AppearWatchFrames;
-            if (frames >= watch || _entities.EntityByUuid(uuid) is not { } entity) return false;
-            if (kind == FreezeKinds.Vehicle &&
-                FreezeTargets.ExcludeIfOwnMount(_entities, _ledger, uuid, kind, _entities.VehicleController(entity)))
-            {
-                ReleaseEntity(uuid, "own mount (ride-up)");
-                return false;
-            }
-            if (frames >= Stage2Delay && frames < AppearWatchFrames && ResolveDrawnSpeed()) ReapplyIfResumed(uuid, kind, entity);
+            if (frames >= AppearWatchFrames || _ledger.Excludes(uuid) || _entities.EntityByUuid(uuid) is not { } entity) return false;
+            if (frames >= Stage2Delay && ResolveDrawnSpeed()) ReapplyIfResumed(uuid, kind, entity);
             return true;
         }
         catch (Exception ex)
@@ -96,13 +102,11 @@ internal sealed partial class GameFreezeBackend
         }
     }
 
-    /// <summary>Tracks the entity's anim component for the gate; a drawn speed above 0 (the game restarted it) gets the
-    /// frozen factor re-applied (first prior kept) and 0 written again (latest game speed kept for the restore).</summary>
+    /// <summary>The entity's live anim component, re-checked by <see cref="ReapplyComp"/> (one pointer read, one speed
+    /// read).</summary>
     private void ReapplyIfResumed(long uuid, int kind, object entity)
     {
         if (_entities.LiveModel(entity) is not { } m || _animComp!(m) is not { } comp) return;
-        _speedGate.Track(CompPointer(comp), uuid, kind);   // before the re-apply: its recalc's set_Speed is gated too
-        if (_getSpeed!(comp) > FreezeLedger.SpeedEpsilon && _ledger.Factors.ContainsKey(uuid)) ReapplyFactor(uuid, entity);
-        FreezeComp(uuid, kind, comp);
+        ReapplyComp(uuid, kind, entity, comp);
     }
 }

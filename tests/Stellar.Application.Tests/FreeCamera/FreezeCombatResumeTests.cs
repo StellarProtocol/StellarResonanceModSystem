@@ -116,7 +116,7 @@ public sealed class FreezeCombatResumeTests
         g.TrySubstitute(MonsterComp, ref v, Main);
         g.Disarm();
         Assert.Equal(1, g.Held(DrawnSpeedGate.Bucket.Monster));     // kept for the summary line after disarm
-        g.Arm(l, Main);
+        g.Arm(l);
         Assert.Equal(0, g.Held(DrawnSpeedGate.Bucket.Monster));
         Assert.Equal(0, g.Tracked);
     }
@@ -137,7 +137,8 @@ public sealed class FreezeCombatResumeTests
         var l = new FreezeLedger();
         l.Begin(self: 42);
         var g = new DrawnSpeedGate();
-        g.Arm(l, Main);
+        g.Arm(l);
+        g.ObserveMainThread(Main);   // the frame driver's late frame
         return (l, g);
     }
 }

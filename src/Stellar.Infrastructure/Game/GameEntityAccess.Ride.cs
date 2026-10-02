@@ -7,7 +7,8 @@ namespace Stellar.Infrastructure.Game;
 /// <c>enum_e_attr_type.proto</c>): the rider's <c>GetAttrRideUuid</c> (<c>AttrRideUuid</c> 605 — the mount entity being
 /// ridden) and the mount's <c>GetVehicleController</c> (<c>AttrVehicleController</c> — the entity driving it). Either read
 /// fails soft to 0 (unknown) — a kind without the component throws <c>MethodAccessException</c>, as the factor attr does
-/// (recon run 3). One-shot reads on a freeze press / an appearing mount, never per frame.</summary>
+/// (recon run 3). One-shot reads on a freeze press, an appearing mount, or the game's vehicle ride event — never per
+/// frame.</summary>
 internal sealed partial class GameEntityAccess : IFreezeEntitySource
 {
     private MethodInfo? _rideUuid, _vehicleController;

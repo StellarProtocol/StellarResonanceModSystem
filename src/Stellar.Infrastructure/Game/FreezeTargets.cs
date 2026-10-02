@@ -23,14 +23,12 @@ internal interface IFreezeEntitySource
 
 /// <summary>Who a freeze touches — the wiring between the entity reads and <see cref="FreezeLedger"/>, kept pure so it is
 /// unit-tested with a fake source (review I2). Never frozen (scene-stays spec § 3, review I1): the local player and their
-/// OWN mount — the mount they ride, or one they drive (a mount summoned mid-freeze is a new entity, checked as it
-/// appears and again for <see cref="FreezeTargets.MountWatchFrames"/> late frames while the ride-up settles).</summary>
+/// OWN mount — the mount they ride, or one they drive. A mount summoned mid-freeze is a new entity, checked ONCE as it
+/// appears; a ride-up that links a mount later is the game's own vehicle event (<c>VehicleComp.UpdateControllerInfo</c> /
+/// <c>UpdatePassengerList</c>), which re-runs <see cref="ExcludeIfOwnMount"/> — never a frame watch (perf review: the
+/// former 300-frame re-check was a poll; owner doctrine: event-driven).</summary>
 internal static class FreezeTargets
 {
-    /// <summary>Late frames an appearing mount is re-checked for being the local player's (ride-up can set the link after
-    /// the mount appears). Bounded and appear-triggered — not a poll.</summary>
-    internal const int MountWatchFrames = 300;
-
     /// <summary>The press: reads every uuid, starts the ledger with the local player, excludes their own mount, and drops
     /// every excluded entity from <paramref name="ids"/>.</summary>
     public static void Select(IFreezeEntitySource src, FreezeLedger ledger, List<long> ids)
@@ -45,15 +43,21 @@ internal static class FreezeTargets
     }
 
     /// <summary>Stage 2's re-check: learns the local player if the press read 0 (review M1) and excludes the mount they
-    /// now ride. Adds every entity newly excluded to <paramref name="released"/> — the caller undoes what the press froze
-    /// on them.</summary>
-    public static void Recheck(IFreezeEntitySource src, FreezeLedger ledger, List<long> released)
+    /// now ride. When the player is learned only now, the press's mounts (<paramref name="ids"/>) are re-checked for
+    /// one they DRIVE — the press could not match a driver against an unknown player (review). Adds every entity newly
+    /// excluded to <paramref name="released"/> — the caller undoes what the press froze on them.</summary>
+    public static void Recheck(IFreezeEntitySource src, FreezeLedger ledger, IReadOnlyList<long> ids, List<long> released)
     {
         released.Clear();
         var self = src.PlayerUuid();
-        if (ledger.LearnSelf(self)) released.Add(self);
+        var learned = ledger.LearnSelf(self);
+        if (learned) released.Add(self);
         var ridden = src.RiddenVehicle();
         if (ledger.Exclude(ridden)) released.Add(ridden);
+        if (!learned) return;
+        foreach (var id in ids)
+            if (!ledger.Excludes(id) && src.Kind(id) == FreezeKinds.Vehicle && IsOwnMount(id, src.VehicleController(id), self, ridden) &&
+                ledger.Exclude(id)) released.Add(id);
     }
 
     /// <summary>An entity appearing while frozen: false (freeze nothing) for an excluded entity, the local player, or

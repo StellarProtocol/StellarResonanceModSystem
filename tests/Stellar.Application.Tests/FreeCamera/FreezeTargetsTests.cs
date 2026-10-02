@@ -33,7 +33,7 @@ public sealed class FreezeTargetsTests
         Assert.False(FreezeTargets.AdmitAppeared(src, l, 200, FreezeKinds.Vehicle, controller: Self));
         Assert.True(l.Excludes(200));
         Assert.True(FreezeTargets.AdmitAppeared(src, l, 201, FreezeKinds.Vehicle, controller: Other));
-        // … and released when the ride-up links it later (the watch's re-check).
+        // … and released when the ride-up links it later (the vehicle ride event's re-check).
         src.Ridden = 201;
         Assert.True(FreezeTargets.ExcludeIfOwnMount(src, l, 201, FreezeKinds.Vehicle, controller: 0));
         Assert.True(l.Excludes(201));
@@ -83,14 +83,19 @@ public sealed class FreezeTargetsTests
         src.Player = Self;
         src.Ridden = Ridden;
         var released = new List<long>();
-        FreezeTargets.Recheck(src, l, released);
-        Assert.Equal(new[] { Self, Ridden }, released);                      // the caller undoes the press on both
+        FreezeTargets.Recheck(src, l, ids, released);
+        // the caller undoes the press on all three: the player, the mount they ride, and the press's mount they DRIVE
+        // (review: the press could not match its driver against an unknown player)
+        Assert.Equal(new[] { Self, Ridden, Driven }, released);
         Assert.True(l.Excludes(Self));
         Assert.True(l.Excludes(Ridden));
+        Assert.True(l.Excludes(Driven));
+        Assert.False(l.Excludes(OthersMount));                               // someone else's mount stays frozen
         l.WithoutSelf(ids);
         Assert.DoesNotContain(Self, ids);
+        Assert.DoesNotContain(Driven, ids);
 
-        FreezeTargets.Recheck(src, l, released);
+        FreezeTargets.Recheck(src, l, ids, released);
         Assert.Empty(released);                                              // nothing new: no second release
     }
 

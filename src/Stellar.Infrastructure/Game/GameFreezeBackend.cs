@@ -7,14 +7,15 @@ using Stellar.Infrastructure.Unity;
 namespace Stellar.Infrastructure.Game;
 
 // Effects: GameFreezeBackend.Effects.cs. Animation (two stages): .Animation.cs. The set_Speed gate: .SpeedGate.cs.
-// Restores: .Restore.cs. Position hold: .Hold.cs. Entities appearing while frozen: .Appear.cs. Logging: .Diagnostics.cs.
+// Restores: .Restore.cs. Position hold: .Hold.cs. Entities appearing while frozen: .Appear.cs. Entities leaving and the
+// vehicle ride-up event: .Events.cs. The unfreeze order: FreezeTeardown.cs (+ .Teardown.cs). Logging: .Diagnostics.cs.
 
 /// <summary>The game side of <c>ISceneFreeze</c> (spec § 4, recon runs 2 and 3) for every entity in
 /// <c>ZEntityMgr.EntityDict</c> except the local player and their own mount (scene-stays spec § 3, review I1 —
 /// <see cref="FreezeTargets"/>; effects stay global). Visual and local
 /// only. Each part fails open on its own with one warning; a failure in one never stops the others. One LateUpdate handler runs stage 2, the appear re-checks and the hold; the frame driver
 /// is off whenever none of them is live. Main thread.</summary>
-internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
+internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTeardownSteps
 {
     private const string Tag = "[FreeCam] ";
     /// <summary>Late frames between stage 1 (attr) and stage 2 (drawn speed) — run 3 read the drawn speed 2 frames on.</summary>
@@ -55,6 +56,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         InstallEffectHook(hooker);
         InstallAppearHook(hooker);
         InstallSpeedGate(hooker);
+        InstallLeaveHook(hooker);
+        InstallVehicleHooks(hooker);
     });
 
     public void EnsureHooks() => _hooks.Request();
@@ -73,7 +76,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         if (_frozen) return;
         _frozen = true;
         _ledger.Clear();
-        _speedGate.Arm(_ledger, Environment.CurrentManagedThreadId);   // components are tracked at stage 2 / appear
+        _speedGate.Arm(_ledger);   // components are tracked at stage 2 / appear; the main thread comes from the late frame
         // "everything on screen" = every entity but the local player and their own mount, read once per press.
         if (FreezeStepRunner.RunAll(ReadTargets, FreezeEffects, FreezeAnimation,
                 () => { if (holdPositions) StartHold(); }) is { } ex)
@@ -88,7 +91,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     /// gate, hold, appear) refuses them too. The selection itself is <see cref="FreezeTargets.Select"/> (unit-tested).</summary>
     private void ReadTargets() => FreezeTargets.Select(_entities, _ledger, _ids);
 
-    /// <summary>Unfreezes everything this backend touched. Each step runs through <see cref="FreezeStepRunner"/> so
+    /// <summary>Unfreezes everything this backend touched, in <see cref="FreezeTeardown"/>'s pinned order (gate disarmed
+    /// before any restore write; drawn speeds before factors). Each step runs through <see cref="FreezeStepRunner"/> so
     /// a throw restoring one piece (e.g. one entity's animation) never skips the others — the hold release, the
     /// effect unfreeze and the ledger clear always run, so the backend never gets stuck frozen.</summary>
     public void UnfreezeAll()
@@ -96,13 +100,12 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         if (!_frozen) return;
         _frozen = false;
         OnUnfreezing();
-        _speedGate.Disarm();   // before any restore write: from here every set_Speed passes through
         _stage2Due = 0;
         _appeared.Clear();
         var effects = _ledger.Effects.Count;
         var factors = _ledger.Factors.Count;
         var speeds = _ledger.Speeds.Count;
-        if (FreezeStepRunner.RunAll(StopHold, UnfreezeAnimation, UnfreezeEffects, _ledger.Clear) is { } ex)
+        if (FreezeTeardown.Run(this) is { } ex)
             WarnOnce("unfreezeall", "unfreeze completed best-effort after an error: " + ex.Message);
         SyncLate();
         OnUnfrozen(effects, factors, speeds);
@@ -113,6 +116,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     // already decremented to 0) and the appear re-check / hold write would never run this frame either.
     private void LateTick()
     {
+        _speedGate.ObserveMainThread(Environment.CurrentManagedThreadId);   // Unity runs LateUpdate on the main thread
         if (_stage2Due > 0 && --_stage2Due == 0)
         {
             try { ReleaseLateExclusions(); FreezeDrawnSpeeds(); }
@@ -148,6 +152,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     partial void OnStage2(int drawnFrozen);
     partial void OnAppearFrozen(long uuid, int kind);
     partial void OnExcluded(long uuid, int kind, string why);
+    partial void OnReleased(long uuid, string why);
+    partial void OnVehicleEvent(long uuid, bool released);
     partial void OnUnfreezing();
     partial void OnUnfrozen(int effects, int factors, int speeds);
 }

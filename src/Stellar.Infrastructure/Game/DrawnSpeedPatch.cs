@@ -8,7 +8,13 @@ namespace Stellar.Infrastructure.Game;
 /// non-virtual, armed 244 frames without trouble) that hands every game write to the freeze's
 /// <see cref="DrawnSpeedGate"/>. A dedicated static prefix taking the value by position (<c>ref float __0</c>) — no
 /// <c>__args</c> array, no boxing; an unarmed gate returns at once. Installed once, lazily, on the first freeze (with the
-/// freeze's other hooks). Never patch <c>tryCalculateAnimSpeed</c> instead: it hung the main thread (R7-6).</summary>
+/// freeze's other hooks). Never patch <c>tryCalculateAnimSpeed</c> instead: it hung the main thread (R7-6).
+/// <para><b>Static state — the HarmonyX exception</b> (perf review): <c>s_gate</c> is static mutable state outside Host,
+/// which the coding standards otherwise forbid. HarmonyX calls a patch method statically with no instance to carry state,
+/// and the shared <see cref="HarmonyGameMethodHooker"/> trampoline (the usual way round that) costs a per-call
+/// <c>__args</c> array on this hot setter. So the one gate is reached through this one field: written once at install on
+/// the main thread, read-only afterwards, holding no game object. The same reason keeps the hooker's own callback tables
+/// static.</para></summary>
 internal static class DrawnSpeedPatch
 {
     internal const string AnimCompType = "Panda.ZGame.AnimCompBase";
@@ -30,7 +36,9 @@ internal static class DrawnSpeedPatch
     private static void Prefix(object __instance, ref float __0)
     {
         var gate = s_gate;
-        if (gate is null || !gate.Armed || gate.OwnWrite) return;
+        if (gate is null) return;
+        gate.CountCall();   // every entry, armed or not: the real set_Speed rate for the gated summary line
+        if (!gate.Armed || gate.OwnWrite) return;
         try
         {
             if (__instance is Il2CppObjectBase comp) gate.TrySubstitute(comp.Pointer, ref __0, Environment.CurrentManagedThreadId);
