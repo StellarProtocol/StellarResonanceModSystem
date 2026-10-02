@@ -19,7 +19,7 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 ### Added
 - Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see. Posing works with the free camera off too, and leaving the free camera keeps everyone as you posed them — they return to normal when you change zone, a cutscene starts or you disconnect.
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
-- Freezing the scene never freezes your own character: you can walk away from a frozen scene (moving cancels your own held emote, as in the game). Effects stay frozen, yours included.
+- Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze.
 - Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
@@ -44,9 +44,28 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   at the game's `PhotographTeamMemberLimit` (PC `[1]`, 30 in release_3.7: you + 29 players; NPC models 30) with
   `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
   model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
-- `ISceneFreeze` never freezes the local player: `GameFreezeBackend` drops their uuid from the press's entity list and the
-  `FreezeLedger` refuses their factor / drawn-speed saves (written only after an admitted save); the hold and the appear
-  re-check skip them too. Pinned: `scene_stays_self_never_frozen`.
+- `ISceneFreeze` is a global time pause (Photo Studio scene-stays spec amendment 2026-10-02 late; devkit recon
+  `free-camera-recon.md` § Run 9): `GameClockPause` saves `Time.timeScale` and sets 0; a HarmonyX prefix on
+  `UnityEngine.Time.set_timeScale(float)` (`TimeScalePatch`, by-value float — allowed by `Il2CppPatchSafety`) holds the
+  game's own writes while paused (hit-stop `ZTimeScaleShowInfo.OnStop` writes 1.0) and keeps the latest as the restore
+  value (else the saved one; never ≤ 0). A watchdog on the framework tick resumes a pause its freeze lost, releases a pause
+  outside the world and re-asserts 0 if the clock was set behind the hook; a per-paused-frame stall check resumes if the
+  framework tick stops beating for 10 s; framework unload and the paused driver's destruction resume too. While paused the
+  framework tick runs from real time (`StellarPausedTicker`, enabled only while paused; `TickPacer` keeps one dt and one
+  tick per frame across both drivers — the `InvokeRepeating` path is unchanged), and the free camera's acquire / release
+  cut (`CinemachineBrain.m_DefaultBlend` = Cut for the pause, the game's blend put back on resume). Kept from the per-entity
+  freeze: the `ModelGoComp` position + rotation hold for remote movers (never the local player or their own mount) and the
+  deferred removal of a monster killed while frozen. New (owner report on the TEST window, recon runs 11–12): at timeScale 0
+  the ECS animator's clock is frozen (0 animation events over a 20 s pause) but the game keeps REQUESTING states for movers
+  (a walking monster: 9 `PlayBaseState` in 20 s), and one request re-poses a model with the clock stopped (45 % of its region
+  changed). So a run-original gate on `ECSAnimController.Play{Base,Upper,Additive}State` / `PlayManualClip` and their
+  internal `play…` twins holds the requests of the press's entities' controllers (never the local player, their mount or a
+  posing copy) and replays the latest per layer on unfreeze (`AnimRequestGate`; kill switch `STELLAR_FREEZE_ANIM_GATE=0`),
+  and the local player's movement / combat input is masked while paused (`ZIgnoreMgr.SetInputIgnore`, source `EPayWebView`,
+  mask `ShieldMask.PauseBits` = `0x10FFB6679`; camera bits open; coexists with the free camera's `EGm` shield). Removed: the attr factor freeze, the `AnimCompBase.set_Speed` gate,
+  the ECS layer gate and its native play detours (`EcsPlayDetours`), the effect freeze at `AddEffectDisplay` /
+  `ZEffect.Init`, the appear / ride-up re-checks and the combat-freeze diagnostics capture; diagnostics keep one freeze
+  on/off summary (time scale saved/restored, game writes held, drifts, positions held, deferred removals).
 - `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
   entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
   settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without
@@ -67,8 +86,8 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   8 garbage bytes back over the caller's; a `ref float` makes it throw so the original never runs. By-value blittable
   structs were byte-identical. `QualityGradeSetting.ApplyAllData(ref QualityData)` (the render-quality re-assert signal)
   is therefore a native detour (`QualityApplyDetour`, original first, then the signal), the diagnostics-only
-  `MoveComp.MoveGo` / `MoveGoByCurve` / `MoveGoBySpeed` prefixes are gone, and every native detour (`EcsPlayDetours`,
-  `QualityApplyDetour`) goes live only on its full exact interop signature (`NativeSignature`), else an error line.
+  `MoveComp.MoveGo` / `MoveGoByCurve` / `MoveGoBySpeed` prefixes are gone, and every native detour (`QualityApplyDetour`)
+  goes live only on its full exact interop signature (`NativeSignature`), else an error line.
 
 ## [2.14.0] - 2026-10-01
 _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._
