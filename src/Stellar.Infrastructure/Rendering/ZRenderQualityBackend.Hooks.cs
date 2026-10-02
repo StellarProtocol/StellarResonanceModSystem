@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Reflection;
 using Stellar.Infrastructure.Hooks;
 namespace Stellar.Infrastructure.Rendering;
 
@@ -6,19 +8,19 @@ namespace Stellar.Infrastructure.Rendering;
 /// The game's quality-apply entry points (recon § Quality-apply entry points hooked). Each postfix only raises
 /// <see cref="ZRenderQualityBackend.GameApplied"/>; the host turns that into a re-assert on the next framework tick
 /// (so the game's own apply finishes first). No game call runs inside a postfix. Each hook installs independently
-/// and fails open with one log line.
+/// and fails open with one log line. <c>ApplyAllData</c> (by-ref <c>QualityData</c>, which the HarmonyX trampoline corrupts —
+/// measured 2026-10-02) is a native detour (<see cref="QualityApplyDetour"/>) raising the same signal after the game's apply.
 /// </summary>
 internal sealed partial class ZRenderQualityBackend
 {
     private const string QualityWrapType = "Panda_Utility_Quality_QualityGradeSettingWrap";
     private const string FlowActionType = "DreamMaker.Logic.EPFlowActionQualityGradeSetting";
-    private const string ApplyAllData = "ApplyAllData";   // ref QualityData parameter — the kill-switchable hook
-
-    // QualityGradeSetting statics. applyEnableAA is absent on purpose: inlined (CallerCount 0), and we call it ourselves.
-    // ClearAAHistory is absent on purpose: 12 native callers (camera cuts) — too hot for an allocating postfix.
+    // QualityGradeSetting statics (HarmonyX postfixes; ApplyAllData is the native detour). applyEnableAA is absent on
+    // purpose: inlined (CallerCount 0), and we call it ourselves. ClearAAHistory is absent on purpose: 12 native callers
+    // (camera cuts) — too hot for an allocating postfix.
     private static readonly string[] QualityStatics =
     {
-        ApplyAllData, "applyRenderScale", "applyShadowGrade", "ApplyResolution", "ResetResolution",
+        "applyRenderScale", "applyShadowGrade", "ApplyResolution", "ResetResolution",
         "PostCheckQualityGrade", "set_QualityGrade", "set_UseExtendRenderScale", "Init",
         "set_RenderScale", "set_EnableAA", "set_ShadowGrade", "SetExtendScaleWithoutSave",
     };
@@ -35,7 +37,7 @@ internal sealed partial class ZRenderQualityBackend
     /// <summary>
     /// Makes the game-apply postfixes installable (call once, after the hot-update assemblies load). They install on
     /// the first <c>Request</c> (<see cref="EnsureHooks"/>), never at boot. <paramref name="skipApplyAllData"/>
-    /// (env <c>STELLAR_RQ_NO_APPLYALLDATA=1</c>) leaves out the one hook with a by-ref struct parameter.
+    /// (env <c>STELLAR_RQ_NO_APPLYALLDATA=1</c>) leaves out the <c>ApplyAllData</c> detour.
     /// </summary>
     public void ArmHooks(HarmonyGameMethodHooker hooker, bool skipApplyAllData) =>
         _hooks.Arm(() => InstallHooks(hooker, skipApplyAllData));
@@ -44,9 +46,9 @@ internal sealed partial class ZRenderQualityBackend
 
     private void InstallHooks(HarmonyGameMethodHooker hooker, bool skipApplyAllData)
     {
-        var statics = skipApplyAllData ? Array.FindAll(QualityStatics, m => m != ApplyAllData) : QualityStatics;
         if (skipApplyAllData) _log.Info(Tag + "ApplyAllData re-assert hook skipped (STELLAR_RQ_NO_APPLYALLDATA=1).");
-        HookAll(hooker, QualityGradeType, statics, isStatic: true);
+        else DetourApplyAllData();
+        HookAll(hooker, QualityGradeType, QualityStatics, isStatic: true);
         HookAll(hooker, QualityWrapType, QualityWrapStatics, isStatic: true);
         HookAll(hooker, FlowActionType, new[] { "OnEnter" }, isStatic: false);
         HookAll(hooker, ShadowPassType, new[] { "OnInitialize" }, isStatic: false);
@@ -75,5 +77,25 @@ internal sealed partial class ZRenderQualityBackend
                 WarnOnce("hook:" + typeName + "." + name, $"re-assert hook {typeName}.{name} failed: {ex.Message}");
             }
         }
+    }
+
+    private void DetourApplyAllData()
+    {
+        const string name = QualityGradeType + "." + QualityApplySignature.Method;
+        MethodInfo[] named;
+        try
+        {
+            named = _types.FindType(QualityGradeType)?.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(m => m.Name == QualityApplySignature.Method).ToArray() ?? Array.Empty<MethodInfo>();
+        }
+        catch { named = Array.Empty<MethodInfo>(); }
+        if (named.FirstOrDefault(QualityApplySignature.Expected.Matches) is not { } method)
+        {
+            _log.Error($"{Tag}{name} not detoured: no overload has the exact signature {QualityApplySignature.Expected} (found: " +
+                       $"{(named.Length == 0 ? "none" : string.Join(" | ", named.Select(NativeSignature.Of)))}); scene changes still re-assert.");
+            return;
+        }
+        if (QualityApplyDetour.Install(method, () => OnGameApply(name), m => WarnOnce("hook:" + name, m)))
+            _log.Info($"{Tag}{name} detoured (native; re-assert after the game's apply)");
     }
 }

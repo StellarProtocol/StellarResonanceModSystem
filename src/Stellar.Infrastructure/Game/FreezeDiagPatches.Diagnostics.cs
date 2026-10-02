@@ -14,8 +14,10 @@ namespace Stellar.Infrastructure.Game;
 /// <c>set_PauseGraph</c> [11] for GameObject (Animancer) models; <c>AnimCompBase.PlayBaseState / PlayUpperState /
 /// PlayManualClip</c> [4 each]; the skill timeline <c>ZSkillShow.PlaySkillStage</c> [6] / <c>PlayVehicleShow</c> [2] (by the
 /// caster-uuid argument); the skill state <c>ZStateSkillComp.Update / motionUpdate / doSkillStage / stageInitAnim /
-/// correctPosition</c>; the move state <c>ZStateMoveComp.Update</c>; the drawn-transform movers <c>MoveComp.MoveGo /
-/// SimpleMoveGo / MoveGoByCurve / MoveGoBySpeed / RotGo / SimpleRotGo</c>; the drawn position itself
+/// correctPosition</c>; the move state <c>ZStateMoveComp.Update</c>; the drawn-transform movers <c>MoveComp.SimpleMoveGo /
+/// RotGo / SimpleRotGo</c> (NOT <c>MoveGo / MoveGoByCurve / MoveGoBySpeed</c>: they take a <c>ref Vector3</c> /
+/// <c>ref Quaternion</c>, which the HarmonyX trampoline corrupts — measured 2026-10-02, <see cref="Hooks.Il2CppPatchSafety"/>;
+/// the hooker refuses them); the drawn position itself
 /// (<c>ECSModelGoComp</c> / <c>ModelGoComp.set_Position</c>, virtual overrides — before or after our hold write); and the
 /// effect paths beside the hooked <c>AddEffectDisplay(ZEffect)</c>: <c>ZEffect.Init</c>, <c>ZEffectManager.AddEffect</c>,
 /// <c>SetEffectFreeze(false)</c>, <c>SetEffectSpeed / SetEffectSpeedScale</c>. Never <c>tryCalculateAnimSpeed</c> (hung the
@@ -52,10 +54,7 @@ internal static class FreezeDiagPatches
         ("Panda.ZGame.ZStateSkillComp", "stageInitAnim", nameof(Host), DiagSlot.SkillStep),
         ("Panda.ZGame.ZStateSkillComp", "correctPosition", nameof(Host), DiagSlot.SkillStep),
         ("Panda.ZGame.ZStateMoveComp", "Update", nameof(Host), DiagSlot.MoveTick),
-        ("Panda.ZGame.MoveComp", "MoveGo", nameof(Host), DiagSlot.MoveGo),
         ("Panda.ZGame.MoveComp", "SimpleMoveGo", nameof(Host), DiagSlot.MoveGo),
-        ("Panda.ZGame.MoveComp", "MoveGoByCurve", nameof(Host), DiagSlot.MoveGo),
-        ("Panda.ZGame.MoveComp", "MoveGoBySpeed", nameof(Host), DiagSlot.MoveGo),
         ("Panda.ZGame.MoveComp", "RotGo", nameof(Host), DiagSlot.MoveGo),
         ("Panda.ZGame.MoveComp", "SimpleRotGo", nameof(Host), DiagSlot.MoveGo),
         ("Panda.ZGame.ECSModelGoComp", "set_Position", nameof(Position), DiagSlot.GoPosBefore),

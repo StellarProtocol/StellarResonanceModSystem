@@ -184,17 +184,18 @@ public sealed class FreezeCombatFix2Tests
     private static MethodInfo Fake(string name, Type layer) =>
         typeof(Fakes).GetMethods(BindingFlags.Static | BindingFlags.NonPublic).Single(m => m.Name == name && m.GetParameters()[1].ParameterType == layer);
 
-    // The release_3.7 shapes (uid, layer, …, speed, weight, …), each also with the wrong layer type.
+    // The release_3.7 interop shapes, exactly (FitsTarget matches the FULL signature since the patch-safety review
+    // 2026-10-02 — the fixture is the real shape: InteropShapeStandIns), each also with the wrong layer type.
     private static class Fakes
     {
         internal static void SetAnimatorLayerData(uint uid, int layer, float speed, float weight) { }
         internal static void SetAnimatorLayerData(uint uid, ushort layer, float speed, float weight) { }
-        internal static void PlayClip(uint uid, ushort layer, object clip, float fade, float normalizedTime, float speed, float weight, bool loop) { }
-        internal static void PlayClip(uint uid, int layer, object clip, float fade, float normalizedTime, float speed, float weight, bool loop) { }
-        internal static void PlayState(uint uid, ushort layer, uint hash, ref float range, float normalizedTime, float fade, float speed, float weight, bool loop) { }
-        internal static void PlayState(uint uid, int layer, uint hash, ref float range, float normalizedTime, float fade, float speed, float weight, bool loop) { }
-        internal static void PlayDynamicState(uint uid, ushort layer, object state, float range, float normalizedTime, float fade, float speed, float weight, bool loop) { }
-        internal static void PlayDynamicState(uint uid, int layer, object state, float range, float normalizedTime, float fade, float speed, float weight, bool loop) { }
+        internal static uint PlayClip(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float normalizedTime, float speed, float weight, int mask, float end) => 0;
+        internal static uint PlayClip(uint uid, int layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float normalizedTime, float speed, float weight, int mask, float end) => 0;
+        internal static uint PlayState(uint uid, ushort layer, uint hash, ref Unity.Mathematics.float2 range, float normalizedTime, float fade, float speed, float weight, int mask, float end) => 0;
+        internal static uint PlayState(uint uid, int layer, uint hash, ref Unity.Mathematics.float2 range, float normalizedTime, float fade, float speed, float weight, int mask, float end) => 0;
+        internal static uint PlayDynamicState(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.StateBlob> state, Unity.Mathematics.float2 range, float normalizedTime, float fade, float speed, float weight, float end) => 0;
+        internal static uint PlayDynamicState(uint uid, int layer, ECSModel.ExternalBlobPtr<ECSModel.StateBlob> state, Unity.Mathematics.float2 range, float normalizedTime, float fade, float speed, float weight, float end) => 0;
     }
 
     private static EcsSpeedGate ArmedEcs()

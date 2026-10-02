@@ -34,7 +34,7 @@ internal enum DiagSlot
     SkillStep,
     /// <summary><c>ZStateMoveComp.Update</c> — the move state's per-frame tick.</summary>
     MoveTick,
-    /// <summary><c>MoveComp.MoveGo* / SimpleMoveGo / RotGo / SimpleRotGo</c> — writes of the drawn ("Go") transform.</summary>
+    /// <summary><c>MoveComp.SimpleMoveGo / RotGo / SimpleRotGo</c> (the by-ref <c>MoveGo*</c> overloads are never hooked) — writes of the drawn ("Go") transform.</summary>
     MoveGo,
     /// <summary>A game write of the drawn position (<c>ECSModelGoComp / ModelGoComp.set_Position</c>) BEFORE our hold
     /// write this frame (the hold overwrites it).</summary>

@@ -32,13 +32,9 @@ internal static class EcsSpeedPatch
 
     private static EcsSpeedGate? s_gate;
 
-    private static readonly (string Method, Type Layer, int SpeedAt)[] Targets =
-    {
-        ("SetAnimatorLayerData", typeof(int), 2),
-        ("PlayState", typeof(ushort), 6),
-        ("PlayClip", typeof(ushort), 5),
-        ("PlayDynamicState", typeof(ushort), 6),
-    };
+    /// <summary>The exact interop signature of the HarmonyX target (primitives only: no Il2CppInterop hazard).</summary>
+    internal static readonly NativeSignature LayerDataSignature =
+        new("System.Void", new[] { "System.UInt32", "System.Int32", "System.Single", "System.Single" });
 
     /// <summary>The writers patched through HarmonyX: only the primitive-only <c>SetAnimatorLayerData</c>.</summary>
     internal static readonly string[] HarmonyTargets = { "SetAnimatorLayerData" };
@@ -46,35 +42,46 @@ internal static class EcsSpeedPatch
     /// <summary>The writers taking an IL2CPP struct argument: native detours, NEVER HarmonyX (freeze-crash 2026-10-02).</summary>
     internal static readonly string[] NativeTargets = { "PlayState", "PlayClip", "PlayDynamicState" };
 
-    internal static List<string> Install(HarmonyGameMethodHooker hooker, Type manager, EcsSpeedGate gate, Action<string> warn)
+    /// <summary>What <see cref="Install"/> put live: the HarmonyX prefix, the native detours, and the writers left alone.</summary>
+    internal sealed record Installed(List<string> Harmony, List<string> Native, List<string> Skipped)
+    {
+        internal int Count => Harmony.Count + Native.Count;
+
+        public override string ToString() =>
+            $"harmony=[{string.Join(",", Harmony)}] native=[{string.Join(",", Native)}] skipped=[{string.Join(",", Skipped)}]";
+    }
+
+    /// <summary>Installs every writer that resolves with its exact signature. A writer whose signature changed (game patch)
+    /// is not hooked and reported through <paramref name="error"/>; any other install failure through <paramref name="warn"/>.</summary>
+    internal static Installed Install(HarmonyGameMethodHooker hooker, Type manager, EcsSpeedGate gate, Action<string> warn, Action<string> error)
     {
         s_gate = gate;
-        var patched = new List<string>();
+        var done = new Installed(new List<string>(), new List<string>(), new List<string>());
         var prefix = typeof(EcsSpeedPatch).GetMethod(nameof(LayerData), BindingFlags.Static | BindingFlags.NonPublic);
-        if (prefix is not null && Resolve(manager, HarmonyTargets[0]) is { } layerData && hooker.PrefixWith(layerData, prefix))
-            patched.Add(HarmonyTargets[0]);
+        var layerData = Resolve(manager, HarmonyTargets[0], error);
+        (prefix is not null && layerData is not null && hooker.PrefixWith(layerData, prefix) ? done.Harmony : done.Skipped).Add(HarmonyTargets[0]);
         foreach (var name in NativeTargets)
-            if (Resolve(manager, name) is { } play && EcsPlayDetours.Install(name, play, warn)) patched.Add(name);
-        return patched;
+            (Resolve(manager, name, error) is { } play && EcsPlayDetours.Install(name, play, warn) ? done.Native : done.Skipped).Add(name);
+        return done;
     }
 
-    private static MethodInfo? Resolve(Type manager, string name) =>
-        manager.GetMethods(BindingFlags.Static | BindingFlags.Public).FirstOrDefault(m => FitsTarget(name, m));
-
-    internal static bool FitsTarget(string name, MethodInfo m)
+    private static MethodInfo? Resolve(Type manager, string name, Action<string> error)
     {
-        if (m.Name != name) return false;
-        foreach (var t in Targets)
-            if (t.Method == name) return Fits(m, t.Layer, t.SpeedAt);
-        return false;
+        var named = manager.GetMethods(BindingFlags.Static | BindingFlags.Public).Where(m => m.Name == name).ToArray();
+        if (named.FirstOrDefault(m => FitsTarget(name, m)) is { } exact) return exact;
+        error($"ECS {name} not hooked: no overload has the exact signature {SignatureOf(name)} " +
+              $"(found: {(named.Length == 0 ? "none" : string.Join(" | ", named.Select(NativeSignature.Of)))})");
+        return null;
     }
 
-    private static bool Fits(MethodInfo m, Type layer, int speedAt)
-    {
-        var ps = m.GetParameters();
-        return ps.Length > speedAt + 1 && ps[0].ParameterType == typeof(uint) && ps[1].ParameterType == layer &&
-               ps[speedAt].ParameterType == typeof(float) && ps[speedAt + 1].ParameterType == typeof(float);
-    }
+    /// <summary>The exact signature <paramref name="name"/> must carry, or null for a name that is not a writer.</summary>
+    internal static NativeSignature? SignatureOf(string name) =>
+        name == HarmonyTargets[0] ? LayerDataSignature : EcsPlaySignatures.Expected.TryGetValue(name, out var s) ? s : null;
+
+    /// <summary>True when <paramref name="m"/> is the writer <paramref name="name"/> with its FULL expected signature —
+    /// every parameter type and the return type (a native detour's delegate is the ABI; review 2026-10-02).</summary>
+    internal static bool FitsTarget(string name, MethodInfo m) =>
+        m.Name == name && SignatureOf(name) is { } expected && expected.Matches(m);
 
     // ---- the HarmonyX prefix (static, by position; never throws into the native caller) ----
 

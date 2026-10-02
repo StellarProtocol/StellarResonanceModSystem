@@ -59,6 +59,16 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 - Whole-feature review: `Expressions` and the photo-member limit read are each behind a bounded retry latch
   (`NegativeProbeCache`, same pattern as `GameVisibilityBackend`'s probes) — an empty/zero answer or a throw is cached
   and retried at most every 5 s instead of re-running the Lua query (and re-warning) on every 10 Hz panel poll.
+- HarmonyX patch safety (unreleased-code fixes, review of the freeze-crash fix): the hooker now refuses — logged as an
+  error, never patched — any method with a by-ref value type other than an integer primitive (blittable struct, enum,
+  float, double, char) or a register-sized / unknown-size IL2CPP struct RETURN, besides the by-value 1/2/4/8-byte and
+  by-ref IL2CPP struct parameters it already refused. Measured on the game's CoreCLR 6.0.7 (TEST): Il2CppInterop's
+  trampoline hands a by-ref `Vector3`/`Quaternion`/`QualityData` to the original with only its first 8 bytes and writes
+  8 garbage bytes back over the caller's; a `ref float` makes it throw so the original never runs. By-value blittable
+  structs were byte-identical. `QualityGradeSetting.ApplyAllData(ref QualityData)` (the render-quality re-assert signal)
+  is therefore a native detour (`QualityApplyDetour`, original first, then the signal), the diagnostics-only
+  `MoveComp.MoveGo` / `MoveGoByCurve` / `MoveGoBySpeed` prefixes are gone, and every native detour (`EcsPlayDetours`,
+  `QualityApplyDetour`) goes live only on its full exact interop signature (`NativeSignature`), else an error line.
 
 ## [2.14.0] - 2026-10-01
 _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._

@@ -122,16 +122,17 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
         }
     }
 
-    /// <summary>True (logged as an error) when <paramref name="method"/> takes an IL2CPP struct argument the Il2CppInterop
-    /// trampoline mis-marshals (<see cref="Il2CppPatchSafety"/>; freeze-crash root cause 2026-10-02): patching it would
-    /// corrupt every call the game makes to it, so it is never patched.</summary>
+    /// <summary>True (logged as an error) when <paramref name="method"/>'s signature — a parameter or the return type — holds a
+    /// type the Il2CppInterop trampoline mis-marshals (<see cref="Il2CppPatchSafety"/>; freeze-crash root cause 2026-10-02,
+    /// by-ref corruption measured on CoreCLR 6.0.7): patching it would corrupt every call the game makes to it, so it is
+    /// never patched.</summary>
     private bool Refused(MethodBase method)
     {
         var types = method.GetParameters().Select(p => p.ParameterType).ToArray();
-        if (Il2CppPatchSafety.FirstHazard(types, Il2CppStructSizes.Of) is not { } hazard) return false;
-        _log.Error($"[Hooker] refused to patch {method.DeclaringType?.FullName}.{method.Name}: parameter #{hazard.Index} " +
-                   $"({types[hazard.Index].Name}, {hazard.Size} bytes) is an IL2CPP struct {hazard.Hazard} that Il2CppInterop " +
-                   "mis-marshals (native crash) — needs a native detour");
+        var returns = method is MethodInfo info ? info.ReturnType : typeof(void);
+        if (Il2CppPatchSafety.FirstHazard(types, returns, Il2CppStructSizes.Of) is not { } hazard) return false;
+        _log.Error($"[Hooker] refused to patch {method.DeclaringType?.FullName}.{method.Name}: {Il2CppPatchSafety.Describe(hazard, types, returns)} " +
+                   "that Il2CppInterop mis-marshals (corrupt arguments / native crash) — needs a native detour");
         return true;
     }
 
