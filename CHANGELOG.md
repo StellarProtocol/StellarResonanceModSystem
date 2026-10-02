@@ -41,8 +41,13 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   the window, `fieldOfView` narrowed so the horizontal angle is kept) and both put back before anything else renders
   (`CaptureLensOverride`: automatic aspect again when it was the window's) — so the photo frames exactly
   `GuideRect`, the largest centred rectangle of the shape. Property writes only, no new hook. An invalid shape fails with
-  a readable error; a failed shaped 4× grab retries once at the 2× shape. Diagnostics log the lens set/restore and the
-  next frame's aspect (`[PhotoCapture] lens …`).
+  a readable error; a failed shaped 4× grab retries once at the 2× shape. A PHYSICAL camera (`usePhysicalProperties`,
+  which the game sets) stays physical for the shaped render: the framing rule is applied through an explicit Vertical
+  `gateFit` + the matching `focalLength` (never `fieldOfView`, which would move the focal length), computed from the
+  on-screen gate fit (Vertical/Horizontal/Fill/Overscan/None) by the pure `CaptureLensPlanner`; every property it
+  changed is put back exactly once, even when a write or a restore step throws. Diagnostics log the lens
+  set/restore and whether the next frame's whole lens equals the pre-shot one (`[PhotoCapture] lens next-frame ok=…`).
+  New `IScreenCapture.MaxTextureSize` (the GPU limit `PlanSize` applies — pass it to `CaptureSizing.EffectiveScale`).
 - New `IPluginServices.Posing` (`IPosing`: `IsAvailable`, `NearbyPeople`, `Expressions`, `Select`, `ResetAll`, `Changed`;
   `IPoseTarget`: `State`, `PlayAction`, `Moment`, `SetExpression`, `SetLook`, `Aim`, `Yaw`, `Reset`) and domain types
   `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`.

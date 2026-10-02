@@ -26,4 +26,10 @@ public interface IScreenCapture
     /// at 2× (after a failed 4× grab) can still make the written image smaller. Call from the main thread.
     /// </summary>
     CaptureSize PlanSize(CaptureRequest request);
+    /// <summary>
+    /// The GPU's largest texture side in pixels (<c>SystemInfo.maxTextureSize</c>; <see cref="CaptureSizing.MaxLongSide"/>
+    /// when it cannot be read) — the limit <see cref="PlanSize"/> and the capture apply. Pass it to
+    /// <see cref="CaptureSizing.EffectiveScale"/> so a scale shown to the player agrees with <see cref="PlanSize"/>.
+    /// </summary>
+    int MaxTextureSize { get; }
 }

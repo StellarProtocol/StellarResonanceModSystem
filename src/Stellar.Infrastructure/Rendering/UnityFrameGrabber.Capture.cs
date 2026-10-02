@@ -7,7 +7,8 @@ using UnityEngine;
 namespace Stellar.Infrastructure.Rendering;
 
 /// <summary>CameraRender capture: main camera → target-sized RenderTexture → ReadPixels (RGBA32, rows bottom-up). A
-/// shaped target renders with the camera's aspect (and, for a wide shape, view angle) set for that render only.</summary>
+/// shaped target renders with the camera's lens (aspect, view angle; gate fit + focal length on a physical camera) set
+/// for that render only — <see cref="CaptureLensPlanner"/>.</summary>
 internal sealed partial class UnityFrameGrabber
 {
     private bool _nativeReadbackFailed;
@@ -22,7 +23,7 @@ internal sealed partial class UnityFrameGrabber
         var prevTarget = cam.targetTexture;
         var prevActive = RenderTexture.active;
         Texture2D? tex = null;
-        CaptureLensOverride? lens = null;
+        CaptureLensOverride? lens = null, restored = null;
         try
         {
             if (!rt.Create()) throw new FrameGrabException($"A {w}x{h} render target could not be created.");
@@ -30,7 +31,7 @@ internal sealed partial class UnityFrameGrabber
             cam.targetTexture = rt;
             cam.Render();
             cam.targetTexture = prevTarget;
-            RestoreLens(cam, ref lens);
+            RestoreLens(ref lens, ref restored);
             RenderTexture.active = rt;
             tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             // ReadPixels fills the texture's CPU copy, which is all the readback/JPG encode read — no Apply()
@@ -40,21 +41,26 @@ internal sealed partial class UnityFrameGrabber
         }
         finally
         {
-            RestoreLens(cam, ref lens);   // the camera's aspect / view angle are back before anything else renders
-            cam.targetTexture = prevTarget;
-            RenderTexture.active = prevActive;
-            rt.Release();
-            UnityEngine.Object.Destroy(rt);
-            if (tex != null) UnityEngine.Object.Destroy(tex);
+            try { RestoreLens(ref lens, ref restored); }   // the camera's lens is back before anything else renders
+            finally
+            {
+                // A failed lens restore must not skip the render-target cleanup.
+                cam.targetTexture = prevTarget;
+                RenderTexture.active = prevActive;
+                rt.Release();
+                UnityEngine.Object.Destroy(rt);
+                if (tex != null) UnityEngine.Object.Destroy(tex);
+            }
+            if (restored is not null) OnLensRestored(cam, restored);   // diagnostics last, after every cleanup; never throws
         }
     }
 
-    private void RestoreLens(Camera cam, ref CaptureLensOverride? lens)
+    private static void RestoreLens(ref CaptureLensOverride? lens, ref CaptureLensOverride? restored)
     {
         if (lens is null) return;
-        lens.Dispose();
-        OnLensRestored(cam, lens);
-        lens = null;
+        restored = lens;
+        lens = null;            // cleared first: a restore runs every step exactly once, even when one of them throws
+        restored.Dispose();
     }
 
     private static int ReadMaxTextureSize()

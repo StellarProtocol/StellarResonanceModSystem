@@ -480,6 +480,17 @@ public sealed class ScreenCaptureServiceTests : IDisposable
     }
 
     [Fact]
+    public void Max_texture_size_is_the_limit_plan_size_applies()
+    {
+        // Review minor 6: a plugin's shown scale (CaptureSizing.EffectiveScale with this limit) agrees with PlanSize.
+        var g = new FakeGrabber { ScreenSize = (1920, 1080), MaxTextureSize = 3000 };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog);
+        Assert.Equal(3000, s.MaxTextureSize);
+        var scale = CaptureSizing.EffectiveScale(1920, 1080, 2, s.MaxTextureSize);
+        Assert.Equal(s.PlanSize(new CaptureRequest { Scale = 2 }), new CaptureSize(1920 * scale, 1080 * scale));
+    }
+
+    [Fact]
     public async Task Plan_size_matches_the_written_size()
     {
         var g = new FakeGrabber { ScreenSize = (21, 10) };

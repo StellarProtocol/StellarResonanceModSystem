@@ -26,22 +26,35 @@ internal sealed partial class UnityFrameGrabber
     }
 
     /// <summary>A shaped capture's lens override was just put back: what was set, what the camera reads now, and — one
-    /// frame later — that the camera still has the window's aspect (in-game proof of the restore).</summary>
+    /// frame later — that the camera's whole lens (aspect, view angle, physical mode, gate fit, focal length) is the one
+    /// the player had before the shot (in-game proof of the restore). Never throws: it runs after the capture's cleanup.</summary>
     private void OnLensRestored(Camera cam, CaptureLensOverride lens)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[PhotoCapture] lens set aspect={lens.TargetAspect:F4} fov={lens.TargetFieldOfView:F2} (was aspect={lens.PreviousAspect:F4}); " +
-                  $"restored aspect={cam.aspect:F4} fov={cam.fieldOfView:F2} screen={ScreenAspect():F4} physical={cam.usePhysicalProperties}");
-        _host?.StartCoroutine(LensNextFrame(cam).WrapToIl2Cpp());
+        try
+        {
+            var was = lens.Previous;
+            var plan = lens.Plan;
+            _log.Info($"[PhotoCapture] lens set aspect={plan.Aspect:F4} angle={plan.VerticalAngle:F2} fit={plan.GateFit} focal={plan.FocalLength:F3} " +
+                      $"(was aspect={was.Aspect:F4} fov={was.FieldOfView:F2} physical={was.Physical} fit={was.GateFit} focal={was.FocalLength:F3}); " +
+                      $"restored aspect={cam.aspect:F4} fov={cam.fieldOfView:F2} fit={cam.gateFit} focal={cam.focalLength:F3} screen={ScreenAspect():F4}");
+            _host?.StartCoroutine(LensNextFrame(cam, was).WrapToIl2Cpp());
+        }
+        catch (System.Exception ex)
+        {
+            _log.Warning($"[PhotoCapture] lens diagnostics failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
-    private IEnumerator LensNextFrame(Camera cam)
+    private IEnumerator LensNextFrame(Camera cam, LensState was)
     {
         var frame = Time.frameCount;
         yield return null;
         if (cam == null) yield break;
-        var ok = System.Math.Abs(cam.aspect - ScreenAspect()) < 1e-3f;
-        _log.Info($"[PhotoCapture] lens next-frame ok={ok} aspect={cam.aspect:F4} fov={cam.fieldOfView:F2} screen={ScreenAspect():F4} frames={Time.frameCount - frame}");
+        var now = CaptureLensOverride.Read(new UnityCaptureLens(cam));
+        var ok = CaptureLensPlanner.SameLens(was, now);   // an automatic aspect reads the window's again
+        _log.Info($"[PhotoCapture] lens next-frame ok={ok} aspect={now.Aspect:F4} fov={now.FieldOfView:F2} physical={now.Physical} " +
+                  $"fit={now.GateFit} focal={now.FocalLength:F3} screen={ScreenAspect():F4} frames={Time.frameCount - frame}");
     }
 
     private static float ScreenAspect() => Screen.height > 0 ? (float)Screen.width / Screen.height : 0f;

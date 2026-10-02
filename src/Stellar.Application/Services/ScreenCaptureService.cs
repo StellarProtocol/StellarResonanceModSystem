@@ -32,6 +32,8 @@ internal sealed class ScreenCaptureService : IScreenCapture
 
     public bool IsCapturing { get; private set; }
 
+    public int MaxTextureSize => _grabber.MaxTextureSize;
+
     public CaptureSize PlanSize(CaptureRequest request)
     {
         if (CaptureRequestValidator.ShapeError(request) is not null) return default;
