@@ -56,19 +56,33 @@ internal sealed partial class GameFreezeBackend
     /// out of the hold (snapped to its logical position), forgotten by the ledger.</summary>
     private void ReleaseEntity(long uuid, string why)
     {
-        _speedGate.Untrack(uuid);
-        if (_ledger.Speeds.TryGetValue(uuid, out var speed) && _setSpeed is not null) RestoreSpeedOf(uuid, speed);
-        if (_ledger.Factors.TryGetValue(uuid, out var factor)) RestoreFactorOf(uuid, factor);
-        _ledger.Forget(uuid);
-        Unhold(uuid);
+        RestoreEntity(uuid);
         OnReleased(uuid, why);   // the kind is read inside the diagnostics gate
     }
 
-    /// <summary>Our own <c>set_Speed</c> write: passes the gate untouched.</summary>
+    /// <summary><see cref="ReleaseEntity"/> without its diagnostics line (a deferred removal about to replay): drawn speed,
+    /// factor, then the ECS layers (the controller already carries the restored speed), out of the hold (snapped).</summary>
+    private void RestoreEntity(long uuid)
+    {
+        _speedGate.Untrack(uuid);
+        if (_ledger.Speeds.TryGetValue(uuid, out var speed) && _setSpeed is not null) RestoreSpeedOf(uuid, speed);
+        if (_ledger.Factors.TryGetValue(uuid, out var factor)) RestoreFactorOf(uuid, factor);
+        ReleaseEcs(uuid);
+        _ledger.Forget(uuid);
+        Unhold(uuid);
+    }
+
+    /// <summary>Our own <c>set_Speed</c> write: passes both gates untouched (the drawn speed, and the ECS layer write the
+    /// controller makes from it).</summary>
     private void WriteSpeed(object comp, float value)
     {
         _speedGate.OwnWrite = true;
+        _ecsGate.OwnWrite = true;
         try { _setSpeed!(comp, value); }
-        finally { _speedGate.OwnWrite = false; }
+        finally
+        {
+            _speedGate.OwnWrite = false;
+            _ecsGate.OwnWrite = false;
+        }
     }
 }

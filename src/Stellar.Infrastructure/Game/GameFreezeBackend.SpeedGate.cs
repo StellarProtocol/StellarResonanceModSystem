@@ -18,6 +18,7 @@ internal sealed partial class GameFreezeBackend
         try { _speedGateInstalled = DrawnSpeedPatch.Install(hooker, comp, _speedGate); }
         catch (Exception ex) { WarnOnce("speedgate", "drawn-speed gate failed: " + ex.Message); }
         if (!_speedGateInstalled) WarnOnce("speedgate", "monsters may resume in combat while frozen (set_Speed not patched)");
+        InstallEcsGate(hooker);   // .Ecs.cs: the ECS animator's own layer-speed writers
     }
 
     private static IntPtr CompPointer(object comp)

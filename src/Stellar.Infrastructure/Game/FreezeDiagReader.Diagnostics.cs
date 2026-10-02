@@ -30,6 +30,10 @@ internal sealed class FreezeDiagReading
     public int State { get; set; } = -1;
     public Vector3? Logic { get; set; }
     public Vector3? DrawnPos { get; set; }
+    /// <summary>The drawn rotation (<c>ModelGoCompBase.Rotation</c>: on an ECS model, the bound root the renderer draws).</summary>
+    public Quaternion? DrawnRot { get; set; }
+    /// <summary>The model's ECS uid (<c>ZModel.EcsAnimComp.ecsUID</c>), 0 for a GameObject model or unreadable.</summary>
+    public uint EcsUid { get; set; }
 }
 
 /// <summary>Reflected reads behind the combat-freeze sampler (diagnostics only; owner report 2026-10-02). Reads one LIVE
@@ -51,7 +55,7 @@ internal sealed class FreezeDiagReader
     private readonly int[] _fail = new int[(int)R.Count];
     private readonly bool[] _ok = new bool[(int)R.Count];
     private MethodInfo? _factor, _animSpeed, _skill, _skillFx, _action, _state;
-    private PropertyInfo? _entId, _boss, _animComp, _ctl, _ctlSpeed, _compSpeed, _goComp, _goPos;
+    private PropertyInfo? _entId, _boss, _animComp, _ctl, _ctlSpeed, _compSpeed, _goComp, _goPos, _goRot, _ecsComp, _ecsUid;
     private bool _resolved;
 
     public FreezeDiagReader(IGameTypeRegistry types, GameEntityAccess entities)
@@ -78,6 +82,7 @@ internal sealed class FreezeDiagReader
         into.Logic = _entities.AttrPosition(model);
         ReadAnim(model, into);
         ReadGo(model, into);
+        into.EcsUid = Safe(_ecsComp, model) is { } ecs && Safe(_ecsUid, ecs) is uint uid ? uid : 0u;
     }
 
     private void ReadAnim(object model, FreezeDiagReading into)
@@ -100,6 +105,7 @@ internal sealed class FreezeDiagReader
         if (go is null) return;
         into.Go = Ptr(go);
         if (Safe(_goPos, go) is Vector3 v) into.DrawnPos = v;
+        if (Safe(_goRot, go) is Quaternion q) into.DrawnRot = q;
     }
 
     private void Resolve()
@@ -126,6 +132,9 @@ internal sealed class FreezeDiagReader
         _ctl = StellarInterop.FindPropertyUp(anim, "animController_");
         _ctlSpeed = StellarInterop.FindPropertyUp(ctl, "Speed");
         _goPos = StellarInterop.FindPropertyUp(go, "Position");
+        _goRot = StellarInterop.FindPropertyUp(go, "Rotation");
+        _ecsComp = StellarInterop.FindPropertyUp(model, "EcsAnimComp");
+        _ecsUid = StellarInterop.FindPropertyUp(_types.FindType(GameFreezeBackend.EcsAnimCompType), "ecsUID");
         _resolved = true;
     }
 

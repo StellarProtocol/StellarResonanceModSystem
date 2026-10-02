@@ -34,6 +34,12 @@ internal sealed class FreezeDiagTally
     public int EffectsUnfrozen { get; set; }
     /// <summary>Frozen entities removed while frozen.</summary>
     public int Despawns { get; set; }
+    /// <summary>Entity-samples whose drawn rotation was off the held rotation (combat-freeze fix check).</summary>
+    public int RotOffHold { get; set; }
+    /// <summary>Sampled ECS models the ECS layer gate did not track.</summary>
+    public int EcsUntracked { get; set; }
+    /// <summary>ECS layer writes above 0 on tracked models that passed the gate.</summary>
+    public int EcsLeaked { get; set; }
 }
 
 /// <summary>Turns a <see cref="FreezeDiagTally"/> into the hypothesis tags printed on the <c>[FreeCamDiag] summary:</c>
@@ -55,7 +61,37 @@ internal static class FreezeDiagVerdict
         if (t.EffectsMissed > 0) tags.Add("FX-CREATED-UNHOOKED");
         if (t.EffectsUnfrozen > 0) tags.Add("FX-UNFROZEN-BY-GAME");
         if (t.Despawns > 0) tags.Add("DESPAWNED-WHILE-FROZEN");
+        if (t.RotOffHold > 0) tags.Add("ROTATION-OFF-HOLD");            // the drawn rotation moved off the hold
+        if (t.EcsUntracked > 0) tags.Add("ECS-UNTRACKED");              // an ECS model the layer gate never saw
+        if (t.EcsLeaked > 0) tags.Add("ECS-SPEED-LEAK");                // a layer speed write got past the gate
         if (tags.Count == 0) tags.Add("ALL-HELD");
         return tags;
+    }
+
+    /// <summary>Drawn position off the hold beyond this (m) = not held (the sampler reads before our write).</summary>
+    internal const float PositionEpsilon = 0.05f;
+    /// <summary>Drawn rotation off the hold beyond this (degrees) = not held.</summary>
+    internal const float RotationEpsilonDeg = 2f;
+
+    /// <summary>The angle between two rotations given as (x, y, z, w), in degrees (0 = the same orientation; q and −q are
+    /// the same rotation).</summary>
+    public static float AngleDegrees((float X, float Y, float Z, float W) a, (float X, float Y, float Z, float W) b)
+    {
+        var la = System.MathF.Sqrt(a.X * a.X + a.Y * a.Y + a.Z * a.Z + a.W * a.W);
+        var lb = System.MathF.Sqrt(b.X * b.X + b.Y * b.Y + b.Z * b.Z + b.W * b.W);
+        if (la < 1e-6f || lb < 1e-6f) return float.NaN;
+        var dot = System.MathF.Abs((a.X * b.X + a.Y * b.Y + a.Z * b.Z + a.W * b.W) / (la * lb));
+        return 2f * System.MathF.Acos(System.MathF.Min(1f, dot)) * (180f / System.MathF.PI);
+    }
+
+    /// <summary>One entity's fix-check verdict over a freeze: "HELD" when its drawn position and rotation stayed within
+    /// epsilon of the hold and (for an ECS model) the layer gate tracked it with no speed leak; else "OFF:" + what moved.</summary>
+    public static string EntityVerdict(float maxOffHold, float maxRotOffDeg, bool ecsModel, bool ecsUntracked, int ecsLeaked)
+    {
+        var off = new List<string>();
+        if (maxOffHold > PositionEpsilon) off.Add("pos");
+        if (maxRotOffDeg > RotationEpsilonDeg) off.Add("rot");
+        if (ecsModel && (ecsUntracked || ecsLeaked > 0)) off.Add("ecs");
+        return off.Count == 0 ? "HELD" : "OFF:" + string.Join(",", off);
     }
 }

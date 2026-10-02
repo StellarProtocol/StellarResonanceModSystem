@@ -29,6 +29,15 @@ internal sealed class FreezeDiagRow
     public bool NotHeld { get; set; }
     public bool Untracked { get; set; }
     public bool Swapped { get; set; }
+    /// <summary>Samples whose drawn rotation was off the held one (combat-freeze fix check).</summary>
+    public int RotOff { get; set; }
+    public float MaxRotOff { get; set; }
+    /// <summary>The model is an ECS model (it has an ECS uid).</summary>
+    public bool EcsModel { get; set; }
+    /// <summary>An ECS model whose uid the ECS layer gate did not track in some sample.</summary>
+    public bool EcsUntracked { get; set; }
+    /// <summary>ECS layer writes above 0 that passed the gate for this entity (cumulative, from the gate).</summary>
+    public int EcsLeaked { get; set; }
     public int LastLogged { get; set; } = -1;
 
     /// <summary>Records this sample's pointers; true when any differs from the first one seen (a swap / recycle).</summary>

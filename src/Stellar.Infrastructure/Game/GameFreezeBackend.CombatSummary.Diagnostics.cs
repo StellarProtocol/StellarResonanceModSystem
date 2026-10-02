@@ -50,7 +50,8 @@ internal sealed partial class GameFreezeBackend
                   $"untargeted={t.Untargeted} neverFrozen={t.NeverFrozen} notHeld={t.NotHeld} untracked={t.Untracked} " +
                   $"drawnAnim={t.DrawnAnimating} ctlAnim={t.ControllerAnimating} offHold={t.OffHold} posPost={t.PositionAfterHold} " +
                   $"ctlUp={t.ControllerSpeedUp} sub={t.GateSubstituted} fxMissed={t.EffectsMissed} fxUnfrozen={t.EffectsUnfrozen} " +
-                  $"despawns={t.Despawns} offThread={_diagCounters!.OffThreadHits} dropped={_diagClock.Dropped} | " +
+                  $"despawns={t.Despawns} offThread={_diagCounters!.OffThreadHits} dropped={_diagClock.Dropped} " +
+                  $"rotOff={t.RotOffHold} ecsUntracked={t.EcsUntracked} {DiagFixTotals()} | " +
                   $"verdict={string.Join(",", FreezeDiagVerdict.Explain(t))} | hooks: {FreezeDiagPatches.HitsText()}");
     }
 
@@ -63,7 +64,7 @@ internal sealed partial class GameFreezeBackend
         return $"{DiagTag}entity-summary u={r.Uuid} k={r.Kind} in0={r.FirstColls} samples={r.Samples} drawnAnim={r.DrawnAnimating} " +
                $"ctlAnim={r.ControllerAnimating} offHold={r.OffHold} maxOffHold={r.MaxOffHold:F2} untargeted={YN(r.Untargeted)} " +
                $"neverFrozen={YN(r.NeverFrozen)} notHeld={YN(r.NotHeld)} untracked={YN(r.Untracked)} swapped={YN(r.Swapped)} " +
-               $"despawn={DespawnText(r.Uuid)} | n:{(n.Length == 0 ? " -" : n)}";
+               $"despawn={DespawnText(r.Uuid)} | fix: {DiagFixSummary(r)} | n:{(n.Length == 0 ? " -" : n)}";
     }
 
     private FreezeDiagTally DiagTally(List<FreezeDiagRow> rows)
@@ -85,6 +86,9 @@ internal sealed partial class GameFreezeBackend
             EffectsMissed = _diagFxMissedMax,
             EffectsUnfrozen = _diagFxUnfrozenMax + c.Global(DiagSlot.FxUnfreeze),
             Despawns = _diagDespawns,
+            RotOffHold = rows.Sum(r => r.RotOff),
+            EcsUntracked = rows.Count(r => r.EcsModel && r.EcsUntracked),
+            EcsLeaked = _ecsGate.Leaked,
         };
         return t;
     }

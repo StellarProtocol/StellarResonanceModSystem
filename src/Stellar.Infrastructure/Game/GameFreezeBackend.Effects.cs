@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Stellar.Abstractions.Services;
 using Stellar.Infrastructure.Hooks;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>Effects (recon B): <c>ZEffectManager.SetEffectFreeze(uid, true)</c> over every key of <c>EffectDict</c> once per
-/// freeze, plus a postfix on <c>AddEffectDisplay(ZEffect)</c> that freezes effects created while frozen. Every touched uid
+/// freeze, plus postfixes on <c>AddEffectDisplay(ZEffect)</c> and <c>ZEffect.Init</c> that freeze effects created while
+/// frozen (<see cref="FreezeEffectRule"/>). Every touched uid
 /// is unfrozen on release.</summary>
 internal sealed partial class GameFreezeBackend
 {
@@ -82,7 +84,31 @@ internal sealed partial class GameFreezeBackend
         if (mgr is null) { WarnOnce("fxhook", "effects created while frozen will not freeze (ZEffectManager not found)"); return; }
         try { hooker.PostfixAllOverloads(mgr, "AddEffectDisplay", OnEffectDisplayed); }
         catch (Exception ex) { WarnOnce("fxhook", "effect-creation hook failed: " + ex.Message); }
+        // ZEffect.Init(EffectContext): every effect's own initialisation (combat-freeze fix 2026-10-02 — creations the
+        // AddEffectDisplay postfix never sees; FreezeEffectRule).
+        if (_types.FindType(EffectType) is not { } fx) return;
+        try { hooker.PostfixAllOverloads(fx, "Init", OnEffectInit); }
+        catch (Exception ex) { WarnOnce("fxinit", "effect-init hook failed: " + ex.Message); }
     }
+
+    // Postfix on ZEffect.Init(EffectContext): the instance is the new effect (its uid set from the context by now).
+    private void OnEffectInit(object? fx, object?[] args)
+    {
+        if (!_frozen || fx is null || _fxSetFreeze is null || Environment.CurrentManagedThreadId != _speedGate.MainThread) return;
+        try
+        {
+            var uid = Convert.ToInt64(_fxUid!.GetValue(fx));
+            if (uid == 0) return;   // no uid yet: it could never be unfrozen — AddEffectDisplay still catches it
+            if (!FreezeEffectRule.ShouldFreeze(_frozen, _ledger.Effects.Contains(uid), 0L, _ledger.Self)) return;
+            _boolArg[0] = true;
+            _fxSetFreeze.Invoke(fx, _boolArg);
+            _ledger.TouchEffect(uid);
+            OnEffectInitFrozen();
+        }
+        catch (Exception ex) { WarnOnce("fxinitone", "could not freeze an initialising effect: " + (ex.InnerException ?? ex).Message); }
+    }
+
+    partial void OnEffectInitFrozen();
 
     // Postfix on both AddEffectDisplay overloads; only the ZEffect one carries an effect to freeze.
     private void OnEffectDisplayed(object? _, object?[] args)

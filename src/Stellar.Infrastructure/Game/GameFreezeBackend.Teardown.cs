@@ -4,7 +4,11 @@ namespace Stellar.Infrastructure.Game;
 /// backend's own surface).</summary>
 internal sealed partial class GameFreezeBackend
 {
-    void IFreezeTeardownSteps.DisarmGate() => _speedGate.Disarm();
+    void IFreezeTeardownSteps.DisarmGate()
+    {
+        _speedGate.Disarm();
+        _ecsGate.Disarm();   // the tracked models stay for RestoreEcsLayers
+    }
 
     void IFreezeTeardownSteps.StopHold() => StopHold();
 
@@ -12,7 +16,13 @@ internal sealed partial class GameFreezeBackend
 
     void IFreezeTeardownSteps.RestoreFactors() => RestoreFactors();
 
+    void IFreezeTeardownSteps.RestoreEcsLayers() => RestoreEcsLayers();
+
     void IFreezeTeardownSteps.UnfreezeEffects() => UnfreezeEffects();
 
-    void IFreezeTeardownSteps.ClearLedger() => _ledger.Clear();
+    void IFreezeTeardownSteps.ClearLedger()
+    {
+        _ledger.Clear();
+        _ecsGate.Clear();
+    }
 }

@@ -62,7 +62,7 @@ internal sealed partial class GameFreezeBackend
         if (!DiagCares(uuid)) return;
         _diagRemoving = uuid;
         _diagDespawns++;
-        var held = _held.Exists(h => h.Uuid == uuid);
+        var held = _held.Contains(uuid);
         DespawnLog(uuid, $"RemoveEntity type={Arg(args, 1)} imm={Arg(args, 2)} st1={YN(_ledger.Factors.ContainsKey(uuid))} " +
                          $"st2={YN(_ledger.Speeds.ContainsKey(uuid))} held={YN(held)} k={_entities.Kind(uuid)}");
     }

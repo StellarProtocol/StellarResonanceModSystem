@@ -46,10 +46,12 @@ internal sealed partial class GameFreezeBackend
     }
 
     // Prefix on ZEntityMgr.RemoveEntity(long uuid, EDisappearType, bool): args[0] is the uuid; the entity is still alive.
+    // Runs only when the removal really happens: a deferred one (.Removal.cs) skips it until its replay.
     private void OnEntityLeaving(object? _, object?[] args)
     {
         if (!_speedGate.Armed || args.Length == 0 || args[0] is not long uuid) return;
         _speedGate.Untrack(uuid);
+        _ecsGate.Untrack(uuid);   // its ECS uid may be recycled: never gated or replayed under the dead uuid
     }
 
     // Postfix on VehicleComp.UpdateControllerInfo / UpdatePassengerList: the instance is the vehicle's component. Only

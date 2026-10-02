@@ -150,11 +150,12 @@ internal sealed partial class GameFreezeBackend
         var tgt = _diagTargets.Contains(c.Uuid) ? "press" : _diagAppeared.Contains(c.Uuid) ? "appear" : "none";
         var st1 = _ledger.Factors.ContainsKey(c.Uuid);
         var st2 = _ledger.Speeds.ContainsKey(c.Uuid);
-        var heldAt = _held.FindIndex(h => h.Uuid == c.Uuid);
+        var heldEntry = _held.Find(c.Uuid);
+        var heldAt = heldEntry is null ? -1 : 0;
         var gate = _speedGate.TracksFor(r.Comp, c.Uuid);
         var holdLive = heldAt >= 0 && _entities.EntityByUuid(c.Uuid) is not null;   // the hold only reaches GetEntity's entities
         var stage = _diagSink!.LastStage.TryGetValue(c.Uuid, out var ls) ? $"{ls.Effect}:{ls.Stage}" : "-";
-        var dHold = heldAt >= 0 && r.DrawnPos is { } dp ? Vector3.Distance(dp, _held[heldAt].Pos) : float.NaN;
+        var dHold = heldAt >= 0 && r.DrawnPos is { } dp ? Vector3.Distance(dp, heldEntry!.Value.Pos) : float.NaN;
         var drawnAnim = r.Drawn > FreezeLedger.SpeedEpsilon;
         var ctlAnim = !drawnAnim && r.ControllerSpeed > FreezeLedger.SpeedEpsilon;
         var offHold = dHold > 0.05f;
@@ -167,14 +168,15 @@ internal sealed partial class GameFreezeBackend
         if (offHold) { row.OffHold++; row.MaxOffHold = Math.Max(row.MaxOffHold, dHold); }
         _diagCounters!.Take(c.Uuid, _diagTake);
         var hits = DiagHitsText(_diagTake);
+        var fix = DiagFixCheck(c, heldEntry, out var fixOff);   // .FixCheck.Diagnostics.cs: rotation + ECS layer gate
         c.Priority = (tgt == "none" ? 8 : 0) + (drawnAnim ? 4 : 0) + (ctlAnim ? 4 : 0) + (offHold ? 2 : 0) + (!gate ? 2 : 0) +
-                     (heldAt < 0 ? 1 : 0) + (swap ? 1 : 0) + (hits.Length > 0 ? 1 : 0);
+                     (fixOff ? 2 : 0) + (heldAt < 0 ? 1 : 0) + (swap ? 1 : 0) + (hits.Length > 0 ? 1 : 0);
         c.Line = $"{DiagTag}e s={_diagClock!.Samples} t={_diagClock.Elapsed(Environment.TickCount64)} u={c.Uuid} k={c.Kind} cls={r.EntClass} " +
                  $"id={r.EntId} boss={(r.Boss ? 1 : 0)} d={c.Dist:F1} in={c.Colls} tgt={tgt} st1={YN(st1)} st2={YN(st2)} held={YN(heldAt >= 0)} holdLive={YN(holdLive)} " +
                  $"gate={YN(gate)} | spd={F(r.Drawn)} ctl={F(r.ControllerSpeed)} ctlCls={r.ControllerClass} compCls={r.CompClass} " +
                  $"fac={F(r.Factor)} asp={F(r.AnimSpeed)} skill={r.Skill} skFx={r.SkillEffect} stage={stage} act={r.Action} st={r.State} | " +
                  $"logic={V(r.Logic)} drawn={V(r.DrawnPos)} dHold={F(dHold)} dLogic={F(Dist(r.DrawnPos, r.Logic))} " +
-                 $"swap={row.SwapText(r.Model, r.Comp, r.Controller, r.Go)} | n:{(hits.Length == 0 ? " -" : hits)}";
+                 $"swap={row.SwapText(r.Model, r.Comp, r.Controller, r.Go)} | fix: {fix} | n:{(hits.Length == 0 ? " -" : hits)}";
         DiagSampleCounts((drawnAnim ? 1 : 0) | (ctlAnim ? 2 : 0) | (offHold ? 4 : 0) | (tgt == "none" ? 8 : 0) | (heldAt < 0 ? 16 : 0) | (!gate ? 32 : 0));
     }
 

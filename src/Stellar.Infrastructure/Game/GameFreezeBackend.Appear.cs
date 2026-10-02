@@ -70,6 +70,8 @@ internal sealed partial class GameFreezeBackend
     {
         if (!ResolveDrawnSpeed() || _entities.LiveModel(entity) is not { } m || _animComp!(m) is not { } comp) return;
         _speedGate.Rekey(CompPointer(comp), uuid, kind, admitted);
+        if (admitted) TrackEcs(uuid, m);   // a pooled ECS uid follows its new owner too
+        else ForgetEcs(m);
     }
 
     /// <summary>One late frame of re-checks; an entity leaves the watch when its watch ends, when it despawns, or when its
@@ -107,6 +109,7 @@ internal sealed partial class GameFreezeBackend
     private void ReapplyIfResumed(long uuid, int kind, object entity)
     {
         if (_entities.LiveModel(entity) is not { } m || _animComp!(m) is not { } comp) return;
+        TrackEcs(uuid, m);   // no-op once tracked; catches a model that finished loading after AddEntity
         ReapplyComp(uuid, kind, entity, comp);
     }
 }

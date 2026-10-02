@@ -118,6 +118,7 @@ internal sealed partial class GameFreezeBackend
         try
         {
             if (_entities.EntityByUuid(uuid) is not { } e || _entities.LiveModel(e) is not { } m || _animComp!(m) is not { } comp) return false;
+            TrackEcs(uuid, m);   // the ECS layers too (.Ecs.cs): a skill stage restarts them past the drawn speed
             return FreezeComp(uuid, _entities.EntType(e), comp);
         }
         catch (Exception ex)
@@ -151,9 +152,16 @@ internal sealed partial class GameFreezeBackend
         WriteSpeed(comp, 0f);
     }
 
+    // Our own recalc: the ECS layer write it ends in (set_Speed → SetAnimatorLayerData) is ours, never recorded as a game
+    // wish (it would drop the layer wishes the release replays). The drawn-speed gate still decides the value itself.
     private void Recalc(object entity)
     {
-        _animDirty!.Invoke(null, new object[] { entity, true });
-        _recalc!.Invoke(null, new[] { entity });
+        _ecsGate.OwnWrite = true;
+        try
+        {
+            _animDirty!.Invoke(null, new object[] { entity, true });
+            _recalc!.Invoke(null, new[] { entity });
+        }
+        finally { _ecsGate.OwnWrite = false; }
     }
 }

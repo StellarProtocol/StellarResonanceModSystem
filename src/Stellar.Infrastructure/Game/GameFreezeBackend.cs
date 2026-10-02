@@ -7,8 +7,9 @@ using Stellar.Infrastructure.Unity;
 namespace Stellar.Infrastructure.Game;
 
 // Effects: GameFreezeBackend.Effects.cs. Animation (two stages): .Animation.cs. The set_Speed gate: .SpeedGate.cs.
-// Restores: .Restore.cs. Position hold: .Hold.cs. Entities appearing while frozen: .Appear.cs. Entities leaving and the
-// vehicle ride-up event: .Events.cs. The unfreeze order: FreezeTeardown.cs (+ .Teardown.cs). Logging: .Diagnostics.cs.
+// The ECS layer gate: .Ecs.cs. Restores: .Restore.cs. Position + rotation hold: .Hold.cs. Entities appearing while frozen:
+// .Appear.cs. Entities leaving and the vehicle ride-up event: .Events.cs. Deaths deferred until unfreeze: .Removal.cs.
+// The unfreeze order: FreezeTeardown.cs (+ .Teardown.cs). Logging: .Diagnostics.cs (+ .FixCheck.Diagnostics.cs).
 
 /// <summary>The game side of <c>ISceneFreeze</c> (spec § 4, recon runs 2 and 3) for every entity in
 /// <c>ZEntityMgr.EntityDict</c> except the local player and their own mount (scene-stays spec § 3, review I1 —
@@ -58,6 +59,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         InstallAppearHook(hooker);
         InstallSpeedGate(hooker);
         InstallLeaveHook(hooker);
+        InstallRemovalGate(hooker);   // .Removal.cs: the same RemoveEntity trampoline, gated
         InstallVehicleHooks(hooker);
         InstallCombatDiagHooks(hooker);   // diagnostics only: chained after the freeze's own callbacks
     });
@@ -79,6 +81,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         _frozen = true;
         _ledger.Clear();
         _speedGate.Arm(_ledger);   // components are tracked at stage 2 / appear; the main thread comes from the late frame
+        _ecsGate.Arm();            // ECS uids likewise (.Ecs.cs)
+        _removals.Arm();           // a monster killed from now on stays until the freeze ends (.Removal.cs)
         // "everything on screen" = every entity but the local player and their own mount, read once per press.
         if (FreezeStepRunner.RunAll(ReadTargets, FreezeEffects, FreezeAnimation,
                 () => { if (holdPositions) StartHold(); }) is { } ex)
@@ -102,6 +106,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         if (!_frozen) return;
         _frozen = false;
         OnUnfreezing();
+        FlushDeferred("unfreeze");   // the deferred deaths first, each restored then removed in this frame
+        _removals.Disarm();
         _stage2Due = 0;
         _appeared.Clear();
         _pendingVehicleChecks.Clear();
@@ -121,6 +127,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
     private void LateTick()
     {
         _speedGate.ObserveMainThread(Environment.CurrentManagedThreadId);   // Unity runs LateUpdate on the main thread
+        _ecsGate.ObserveMainThread(Environment.CurrentManagedThreadId);
         if (_pendingVehicleChecks.Count > 0) ProcessPendingVehicleChecks();   // queued by the game's own ride-up event
         if (_stage2Due > 0 && --_stage2Due == 0)
         {

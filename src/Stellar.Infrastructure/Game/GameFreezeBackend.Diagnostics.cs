@@ -19,7 +19,8 @@ internal sealed partial class GameFreezeBackend
         if (!StellarDiagnostics.IsEnabled) return;
         _frozenAtMs = Environment.TickCount64;
         _log.Info($"[FreeCam] freeze on: effects={effects} entities={_ids.Count} attrFrozen={factors} positionsHeld={held} " +
-                  $"excluded=[{string.Join(",", _ledger.Excluded)}] self={_ledger.Self} speedGate={(_speedGateInstalled ? "on" : "OFF")}");
+                  $"excluded=[{string.Join(",", _ledger.Excluded)}] self={_ledger.Self} speedGate={(_speedGateInstalled ? "on" : "OFF")} " +
+                  $"ecsGate={(_ecsPatched > 0 ? $"on({_ecsPatched})" : "OFF")} deferRemovals={(_removeEntity is not null ? "on" : "OFF")}");
         DiagBegin();   // the combat evidence capture (.Combat.Diagnostics.cs)
     }
 
@@ -62,6 +63,7 @@ internal sealed partial class GameFreezeBackend
     {
         _resumedAtUnfreeze = 0;
         if (StellarDiagnostics.IsEnabled) DiagEnd();   // before any restore: the frozen state is still in place
+        if (StellarDiagnostics.IsEnabled) DiagFixBegin();
         if (!StellarDiagnostics.IsEnabled || _getSpeed is null) return;
         foreach (var uuid in _speedGate.TrackedUuids.ToArray())
         {
@@ -83,5 +85,6 @@ internal sealed partial class GameFreezeBackend
                   $"npc={g.Held(DrawnSpeedGate.Bucket.Npc)} pet={g.Held(DrawnSpeedGate.Bucket.Pet)} mount={g.Held(DrawnSpeedGate.Bucket.Mount)} " +
                   $"other={g.Held(DrawnSpeedGate.Bucket.Other)} resumed={_resumedAtUnfreeze} gameWrites={g.Seen} calls={g.Calls} ms={Environment.TickCount64 - _frozenAtMs} " +
                   $"gate={(_speedGateInstalled ? "on" : "OFF")}");
+        DiagFixEnd();
     }
 }
