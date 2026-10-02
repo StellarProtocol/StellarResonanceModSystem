@@ -6,26 +6,31 @@ using Stellar.Application.Abstractions;
 using UnityEngine;
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary>CameraRender capture: main camera → N× RenderTexture → ReadPixels (RGBA32, rows bottom-up).</summary>
+/// <summary>CameraRender capture: main camera → target-sized RenderTexture → ReadPixels (RGBA32, rows bottom-up). A
+/// shaped target renders with the camera's aspect (and, for a wide shape, view angle) set for that render only.</summary>
 internal sealed partial class UnityFrameGrabber
 {
     private bool _nativeReadbackFailed;
 
-    private FrameGrab Capture(int scale, CaptureFormat format, int q)
+    private FrameGrab Capture(GrabTarget target, CaptureFormat format, int q)
     {
         var cam = Camera.main;
         if (cam == null) throw new FrameGrabException("No camera is rendering the scene.");
-        int w = Screen.width * scale, h = Screen.height * scale;
+        int w = target.Size.Width, h = target.Size.Height;
+        if (w <= 0 || h <= 0) throw new FrameGrabException("The photo size is empty.");
         var rt = new RenderTexture(w, h, 24);
         var prevTarget = cam.targetTexture;
         var prevActive = RenderTexture.active;
         Texture2D? tex = null;
+        CaptureLensOverride? lens = null;
         try
         {
             if (!rt.Create()) throw new FrameGrabException($"A {w}x{h} render target could not be created.");
+            lens = CaptureLensOverride.Apply(new UnityCaptureLens(cam), target, Screen.width, Screen.height);
             cam.targetTexture = rt;
             cam.Render();
             cam.targetTexture = prevTarget;
+            RestoreLens(cam, ref lens);
             RenderTexture.active = rt;
             tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             // ReadPixels fills the texture's CPU copy, which is all the readback/JPG encode read — no Apply()
@@ -35,12 +40,27 @@ internal sealed partial class UnityFrameGrabber
         }
         finally
         {
+            RestoreLens(cam, ref lens);   // the camera's aspect / view angle are back before anything else renders
             cam.targetTexture = prevTarget;
             RenderTexture.active = prevActive;
             rt.Release();
             UnityEngine.Object.Destroy(rt);
             if (tex != null) UnityEngine.Object.Destroy(tex);
         }
+    }
+
+    private void RestoreLens(Camera cam, ref CaptureLensOverride? lens)
+    {
+        if (lens is null) return;
+        lens.Dispose();
+        OnLensRestored(cam, lens);
+        lens = null;
+    }
+
+    private static int ReadMaxTextureSize()
+    {
+        try { return SystemInfo.maxTextureSize; }
+        catch (Exception) { return CaptureSizing.MaxLongSide; }   // the long-side cap still holds
     }
 
     // JPG stays on the main thread: EncodeToJPG reads the texture in place, while the thread-safe

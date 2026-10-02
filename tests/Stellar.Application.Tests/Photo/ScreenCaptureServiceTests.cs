@@ -29,13 +29,20 @@ public sealed class ScreenCaptureServiceTests : IDisposable
         public bool ResumeThrows;
         public bool ResumeFaults;
 
-        public Task<FrameGrab> GrabAsync(int scale, int settleFrames, CaptureFormat format, int jpgQuality)
+        public int MaxTextureSize { get; set; } = 16384;
+        public readonly List<GrabTarget> Targets = new();
+
+        // The grab's scale is read back from the target's long side (window-shaped and shaped grabs alike: a shape's
+        // long side is the window's long side × the scale), so the pre-shape assertions on Calls stay as they were.
+        public Task<FrameGrab> GrabAsync(GrabTarget target, int settleFrames, CaptureFormat format, int jpgQuality)
         {
+            var scale = Math.Max(target.Size.Width, target.Size.Height) / Math.Max(ScreenSize.Width, ScreenSize.Height);
             Calls.Add((scale, settleFrames));
+            Targets.Add(target);
             SawHidden = HiddenDuringGrab?.Invoke() ?? false;
             if (scale == FailAtScale) throw FailWithOutOfMemory ? new OutOfMemoryException() : new FrameGrabException("oom");
             if (Pending is not null) return Pending.Task;
-            var w = ScreenSize.Width * scale; var h = ScreenSize.Height * scale;
+            var w = target.Size.Width; var h = target.Size.Height;
             var rgba = new byte[ShortBuffer ? 1 : w * h * 4];
             var jpeg = format == CaptureFormat.Jpg ? JpegBytes : null;
             return Task.FromResult(new FrameGrab(rgba, w, h, jpeg));
@@ -403,5 +410,86 @@ public sealed class ScreenCaptureServiceTests : IDisposable
         Assert.True(r.Success, r.Error);
         Assert.Equal(1.0f, scaleAtGrab);
         Assert.Equal(2.0f, backend.Scale);
+    }
+
+    // ── Photo shapes (spec 2026-10-03-photo-studio-portrait-capture-design.md) ──
+
+    private static CaptureRequest Shape(int scale, int aw, int ah, string dir) =>
+        new() { Scale = scale, Directory = dir, FileStem = "t", Aspect = new CaptureAspect(aw, ah) };
+
+    [Fact]
+    public async Task Shaped_capture_renders_the_true_shape_never_a_crop()
+    {
+        var g = new FakeGrabber { ScreenSize = (16, 9) };
+        var r = await new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog).CaptureAsync(Shape(2, 9, 16, TempDir()));
+        Assert.True(r.Success, r.Error);
+        Assert.Equal((18, 32), (r.Width, r.Height));
+        Assert.Equal(new GrabTarget(new CaptureSize(18, 32), Shaped: true), Assert.Single(g.Targets));
+    }
+
+    [Fact]
+    public async Task Window_shaped_capture_leaves_the_camera_alone()
+    {
+        var g = new FakeGrabber();
+        var r = await new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog)
+            .CaptureAsync(new CaptureRequest { Scale = 2, Directory = TempDir(), FileStem = "t" });
+        Assert.True(r.Success, r.Error);
+        Assert.False(Assert.Single(g.Targets).Shaped);
+    }
+
+    [Fact]
+    public async Task Shaped_four_x_failure_retries_once_at_the_two_x_shape()
+    {
+        var g = new FakeGrabber { ScreenSize = (16, 9), FailAtScale = 4 };
+        var r = await new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog).CaptureAsync(Shape(4, 9, 16, TempDir()));
+        Assert.True(r.Success, r.Error);
+        Assert.Equal(new[] { new CaptureSize(36, 64), new CaptureSize(18, 32) }, g.Targets.Select(t => t.Size));
+        Assert.All(g.Targets, t => Assert.True(t.Shaped));
+    }
+
+    // A shape sizes from the REQUESTED scale and shrinks both sides equally — never from the window-shaped halving
+    // (which would drop 4× to 2× here: 16 × 4 = 64 > 40).
+    [Fact]
+    public async Task Shaped_capture_caps_equally_from_the_requested_scale()
+    {
+        var g = new FakeGrabber { ScreenSize = (16, 9), MaxTextureSize = 40 };
+        var r = await new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog).CaptureAsync(Shape(4, 9, 16, TempDir()));
+        Assert.True(r.Success, r.Error);
+        Assert.Equal(new CaptureSize(22, 40), Assert.Single(g.Targets).Size);
+    }
+
+    [Fact]
+    public async Task Invalid_shape_never_grabs()
+    {
+        var g = new FakeGrabber();
+        var r = await new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog).CaptureAsync(Shape(2, 1, 5, TempDir()));
+        Assert.False(r.Success);
+        Assert.Empty(g.Calls);
+    }
+
+    [Fact]
+    public void Plan_size_is_the_calculator_with_the_gpu_limit()
+    {
+        var g = new FakeGrabber { ScreenSize = (1920, 1080), MaxTextureSize = 3000 };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog);
+        Assert.Equal(new CaptureSize(1688, 3000), s.PlanSize(Shape(2, 9, 16, "/tmp")));
+        Assert.Equal(new CaptureSize(1920, 1080), s.PlanSize(new CaptureRequest { Scale = 2 }));   // 3840 > 3000 → 1×
+        Assert.True(s.PlanSize(Shape(3, 9, 16, "/tmp")).IsEmpty);
+        Assert.True(s.PlanSize(Shape(2, 1, 5, "/tmp")).IsEmpty);
+        Assert.Empty(g.Calls);
+    }
+
+    [Fact]
+    public async Task Plan_size_matches_the_written_size()
+    {
+        var g = new FakeGrabber { ScreenSize = (21, 10) };
+        var s = new ScreenCaptureService(g, new FakeVisibility(), new CaptureFileSink(), NoLog);
+        foreach (var (aw, ah) in new[] { (9, 16), (4, 5), (2, 3), (1, 1), (21, 9) })
+        {
+            var req = Shape(2, aw, ah, TempDir());
+            var r = await s.CaptureAsync(req);
+            Assert.True(r.Success, r.Error);
+            Assert.Equal(s.PlanSize(req), new CaptureSize(r.Width, r.Height));
+        }
     }
 }

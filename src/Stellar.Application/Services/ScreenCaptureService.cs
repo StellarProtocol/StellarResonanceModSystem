@@ -32,6 +32,13 @@ internal sealed class ScreenCaptureService : IScreenCapture
 
     public bool IsCapturing { get; private set; }
 
+    public CaptureSize PlanSize(CaptureRequest request)
+    {
+        if (CaptureRequestValidator.ShapeError(request) is not null) return default;
+        var (w, h) = _grabber.ScreenSize;
+        return CaptureSizing.OutputSize(w, h, request.Scale, request.Aspect, _grabber.MaxTextureSize);
+    }
+
     public async Task<CaptureResult> CaptureAsync(CaptureRequest request)
     {
         if (IsCapturing) return CaptureResult.Fail("A screenshot is already being taken.");
@@ -41,7 +48,7 @@ internal sealed class ScreenCaptureService : IScreenCapture
         {
             IsCapturing = true;
             var (w, h) = _grabber.ScreenSize;
-            var (scale, error) = CaptureRequestValidator.Validate(request, w, h);
+            var (scale, error) = CaptureRequestValidator.Validate(request, w, h, _grabber.MaxTextureSize);
             if (error is not null) return CaptureResult.Fail(error);
             hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
             scaleGuard = _renderScaleGuard?.Invoke();
@@ -94,17 +101,28 @@ internal sealed class ScreenCaptureService : IScreenCapture
         catch (Exception ex) { _log("Capture could not resume on the main thread: " + ex); }
     }
 
-    private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int scale, int settle)
+    // A window-shaped grab uses the validator's (already capped) scale; a shaped one sizes from the REQUESTED scale
+    // and caps both sides equally inside CaptureSizing.OutputSize.
+    private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
     {
+        var scale = r.Aspect is null ? effectiveScale : r.Scale;
         try
         {
-            return await _grabber.GrabAsync(scale, settle, r.Format, r.JpgQuality);
+            return await _grabber.GrabAsync(Target(r, scale), settle, r.Format, r.JpgQuality);
         }
         // A 4× frame can also run the managed heap out (OutOfMemoryException) — 2× gets the same second chance.
         catch (Exception ex) when (scale > 2 && ex is FrameGrabException or OutOfMemoryException)
         {
-            return await _grabber.GrabAsync(2, settle, r.Format, r.JpgQuality);
+            return await _grabber.GrabAsync(Target(r, 2), settle, r.Format, r.JpgQuality);
         }
+    }
+
+    private GrabTarget Target(CaptureRequest r, int scale)
+    {
+        var (w, h) = _grabber.ScreenSize;
+        return r.Aspect is null
+            ? new GrabTarget(new CaptureSize(w * scale, h * scale), Shaped: false)
+            : new GrabTarget(CaptureSizing.OutputSize(w, h, scale, r.Aspect, _grabber.MaxTextureSize), Shaped: true);
     }
 
     private static string MapError(Exception ex) => ex switch

@@ -21,9 +21,25 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
 - Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze. If something hits you while frozen, your own character may still flinch in place.
 - Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
+- Screenshots can now be taken in other shapes — portrait, square or wide — at full detail: the camera draws the photo in that shape instead of cropping a wide shot, and very large sizes are reduced to what your graphics card allows.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
+- Photo shapes (spec 2026-10-03 photo-studio-portrait-capture): new `CaptureRequest.Aspect` (`CaptureAspect?`, a
+  width:height ratio of whole numbers, valid 1:4 … 4:1; null = the window's shape, unchanged) and
+  `IScreenCapture.PlanSize(CaptureRequest)` (the real output size before the shot — scale caps, shape and the GPU's
+  `SystemInfo.maxTextureSize` included; empty for an invalid scale/shape). Pure maths on the new `CaptureSizing`
+  (`OutputSize`, `EffectiveScale`, `GuideRect`, `VerticalFieldOfView`, `MaxLongSide`, `MaxPixels`) with
+  `CaptureSize` / `NormalizedRect`: a shape's long side = the window's long side × `Scale`, the short side follows the
+  shape rounded to an even pixel count (2× on 1920 × 1080: 9:16 = 2160 × 3840, 4:5 = 3072 × 3840, 2:3 = 2560 × 3840,
+  1:1 = 3840 × 3840, 21:9 = 3840 × 1646); over the long-side limit (16384 or the GPU's, whichever is smaller) or 64 MP
+  both sides shrink by the same factor (a window-shaped capture keeps its 4× → 2× → 1× halving). The camera renders
+  straight into a target of that size with `Camera.aspect` set to it for that one render (and, for a shape wider than
+  the window, `fieldOfView` narrowed so the horizontal angle is kept) and both put back before anything else renders
+  (`CaptureLensOverride`: automatic aspect again when it was the window's) — so the photo frames exactly
+  `GuideRect`, the largest centred rectangle of the shape. Property writes only, no new hook. An invalid shape fails with
+  a readable error; a failed shaped 4× grab retries once at the 2× shape. Diagnostics log the lens set/restore and the
+  next frame's aspect (`[PhotoCapture] lens …`).
 - New `IPluginServices.Posing` (`IPosing`: `IsAvailable`, `NearbyPeople`, `Expressions`, `Select`, `ResetAll`, `Changed`;
   `IPoseTarget`: `State`, `PlayAction`, `Moment`, `SetExpression`, `SetLook`, `Aim`, `Yaw`, `Reset`) and domain types
   `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`.

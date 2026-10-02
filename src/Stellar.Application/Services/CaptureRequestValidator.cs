@@ -5,10 +5,10 @@ namespace Stellar.Application.Services;
 
 internal static class CaptureRequestValidator
 {
-    public const int MaxLongSide = 16384;
+    public const int MaxLongSide = CaptureSizing.MaxLongSide;
     /// <summary>Total output pixels (64 MP = a 256 MB RGBA frame): above it a supersampled grab risks OOM even
     /// when the long side fits (4K at 4× = 133 MP). Lowered the same way as the long-side cap.</summary>
-    public const long MaxPixels = 64_000_000;
+    public const long MaxPixels = CaptureSizing.MaxPixels;
     private static readonly char[] BadStemChars = { '/', '\\', ':', '*', '?', '"', '<', '>', '|' };
 
     private static readonly string[] ReservedStems =
@@ -18,16 +18,24 @@ internal static class CaptureRequestValidator
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     };
 
-    public static (int Scale, string? Error) Validate(CaptureRequest r, int screenW, int screenH)
+    /// <summary>Validates <paramref name="r"/>; the returned scale is the one a window-shaped capture really uses
+    /// (<see cref="CaptureSizing.EffectiveScale"/>). A shaped capture (<see cref="CaptureRequest.Aspect"/>) gets its
+    /// size from <see cref="CaptureSizing.OutputSize"/> with the REQUESTED scale instead.</summary>
+    public static (int Scale, string? Error) Validate(CaptureRequest r, int screenW, int screenH, int maxTextureSize = MaxLongSide)
     {
-        if (r.Scale is not (1 or 2 or 4)) return (0, "Capture scale must be 1×, 2× or 4×.");
+        if (ShapeError(r) is { } shapeError) return (0, shapeError);
         if (r.Format == CaptureFormat.Jpg && r.JpgQuality is < 1 or > 100) return (0, "JPEG quality must be between 1 and 100.");
         if (string.IsNullOrWhiteSpace(r.Directory)) return (0, "No screenshot folder is set.");
         if (!IsValidStem(r.FileStem)) return (0, "The screenshot file name is not valid.");
-        var scale = r.Scale;
-        var longSide = Math.Max(screenW, screenH);
-        while (scale > 1 && (longSide * scale > MaxLongSide || (long)screenW * screenH * scale * scale > MaxPixels)) scale /= 2;
-        return (scale, null);
+        return (CaptureSizing.EffectiveScale(screenW, screenH, r.Scale, maxTextureSize), null);
+    }
+
+    /// <summary>The scale and shape rules alone (what <c>PlanSize</c> needs); null = valid.</summary>
+    public static string? ShapeError(CaptureRequest r)
+    {
+        if (r.Scale is not (1 or 2 or 4)) return "Capture scale must be 1×, 2× or 4×.";
+        if (r.Aspect is { IsValid: false }) return "The photo shape must be between 1:4 and 4:1.";
+        return null;
     }
 
     private static bool IsValidStem(string stem)

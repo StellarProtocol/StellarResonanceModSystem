@@ -19,4 +19,11 @@ public interface IScreenCapture
     Task<CaptureResult> CaptureAsync(CaptureRequest request);
     /// <summary>True while a capture is in flight (a second request fails fast).</summary>
     bool IsCapturing { get; }
+    /// <summary>
+    /// The size <see cref="CaptureAsync"/> will write for <paramref name="request"/> on the current window — scale caps,
+    /// the photo shape (<see cref="CaptureRequest.Aspect"/>) and the GPU's texture limit included — so a plugin can show
+    /// the REAL output size before the shot. Empty when the scale or the shape is invalid. Only the out-of-memory retry
+    /// at 2× (after a failed 4× grab) can still make the written image smaller. Call from the main thread.
+    /// </summary>
+    CaptureSize PlanSize(CaptureRequest request);
 }

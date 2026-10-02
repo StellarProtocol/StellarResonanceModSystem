@@ -57,12 +57,15 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
 
     public (int Width, int Height) ScreenSize => (Screen.width, Screen.height);
 
+    private int _maxTextureSize;   // main thread; read once (a GPU constant)
+    public int MaxTextureSize => _maxTextureSize > 0 ? _maxTextureSize : _maxTextureSize = ReadMaxTextureSize();
+
     private bool OnMainThread => Environment.CurrentManagedThreadId == _mainThreadId;
 
-    public Task<FrameGrab> GrabAsync(int scale, int settleFrames, CaptureFormat format, int jpgQuality)
+    public Task<FrameGrab> GrabAsync(GrabTarget target, int settleFrames, CaptureFormat format, int jpgQuality)
     {
         var tcs = new TaskCompletionSource<FrameGrab>(); // no RunContinuationsAsynchronously: continuations stay on the main thread
-        Run(ex => tcs.TrySetException(ex), GrabRoutine(tcs, scale, settleFrames, format, jpgQuality));
+        Run(ex => tcs.TrySetException(ex), GrabRoutine(tcs, target, settleFrames, format, jpgQuality));
         return tcs.Task;
     }
 
@@ -121,11 +124,11 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
         tcs.TrySetResult(true);
     }
 
-    private IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, int scale, int settle, CaptureFormat format, int q)
+    private IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, GrabTarget target, int settle, CaptureFormat format, int q)
     {
         for (var i = 0; i < settle; i++) yield return null;
         yield return new WaitForEndOfFrame();
-        var grab = Capture(scale, format, q);   // a throw faults the grab (Tracked) and expects no resume
+        var grab = Capture(target, format, q);   // a throw faults the grab (Tracked) and expects no resume
         _resumes.Expect();
         _resumes.PumpStarted();
         try

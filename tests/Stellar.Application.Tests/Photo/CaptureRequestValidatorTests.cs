@@ -85,4 +85,19 @@ public sealed class CaptureRequestValidatorTests
     [InlineData(1)] [InlineData(100)] [InlineData(92)]
     public void Accepts_jpg_quality_within_1_to_100(int quality) =>
         Assert.Null(CaptureRequestValidator.Validate(R(1) with { Format = CaptureFormat.Jpg, JpgQuality = quality }, 1920, 1080).Error);
+
+    // Photo shapes spec § Framework: a shape is positive and within 1:4 … 4:1.
+    [Theory]
+    [InlineData(0, 16)] [InlineData(9, 0)] [InlineData(-9, 16)] [InlineData(1, 5)] [InlineData(5, 1)]
+    public void Rejects_invalid_shapes(int aw, int ah) =>
+        Assert.NotNull(CaptureRequestValidator.Validate(R(2) with { Aspect = new CaptureAspect(aw, ah) }, 1920, 1080).Error);
+
+    [Theory]
+    [InlineData(1, 4)] [InlineData(4, 1)] [InlineData(9, 16)] [InlineData(4, 5)] [InlineData(2, 3)] [InlineData(1, 1)] [InlineData(21, 9)]
+    public void Accepts_valid_shapes(int aw, int ah) =>
+        Assert.Null(CaptureRequestValidator.Validate(R(2) with { Aspect = new CaptureAspect(aw, ah) }, 1920, 1080).Error);
+
+    [Fact]
+    public void Gpu_texture_limit_lowers_the_window_shaped_scale() =>
+        Assert.Equal(2, CaptureRequestValidator.Validate(R(4), 1920, 1080, maxTextureSize: 4096).Scale);
 }
