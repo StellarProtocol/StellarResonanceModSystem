@@ -61,12 +61,17 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
         {
             try
             {
-                ResultCallbacks[method] = callback;
+                if (!HookCallbackTable.AddResult(ResultCallbacks, method, callback))
+                {
+                    _log.Info($"[Hooker] chained a result callback on {type.FullName}.{method.Name}");
+                    continue;   // already patched: one trampoline, both callbacks
+                }
                 _harmony.Patch(method, postfix: new HarmonyMethod(ResultTrampolineMethod));
                 _log.Info($"[Hooker] patched {type.FullName}.{method.Name} (result postfix)");
             }
             catch (Exception ex)
             {
+                HookCallbackTable.RemoveResult(ResultCallbacks, method);
                 _log.Error($"[Hooker] failed to patch {type.FullName}.{method.Name}: {ex.Message}");
             }
         }
@@ -118,6 +123,10 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
             }
             catch (Exception ex)
             {
+                // The Add above already reserved the slot; undo it so a later registration attempt for the same method
+                // is treated as the first one again instead of silently chaining onto a callback nothing patched
+                // (review finding) — only reachable here when Add returned true, so this is a safe no-op otherwise.
+                HookCallbackTable.Remove(prefix ? PrefixCallbacks : Callbacks, method);
                 _log.Error($"[Hooker] failed to patch {type.FullName}.{method.Name}: {ex.Message}");
             }
         }
