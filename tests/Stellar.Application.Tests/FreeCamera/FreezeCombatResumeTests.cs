@@ -50,6 +50,7 @@ public sealed class FreezeCombatResumeTests
         Assert.Equal(0f, v);
         Assert.Equal(1.2f, l.Speeds[7]);
         Assert.Equal(1, g.Held(DrawnSpeedGate.Bucket.Monster));
+        Assert.Equal(1, g.Seen);
 
         var self = 1f;
         Assert.False(g.TrySubstitute(SelfComp, ref self, Main));
@@ -58,6 +59,7 @@ public sealed class FreezeCombatResumeTests
         Assert.False(g.TrySubstitute(OtherComp, ref other, Main));   // not part of this freeze
         Assert.Equal(1f, other);
         Assert.Equal(1, g.Tracked);
+        Assert.Equal(1, g.Seen);                                      // only tracked writes are seen
     }
 
     [Fact]

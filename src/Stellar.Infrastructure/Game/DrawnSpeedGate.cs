@@ -28,6 +28,10 @@ internal sealed class DrawnSpeedGate
     /// <summary>Set around the freeze's own <c>set_Speed</c> writes (stage 2, re-apply, restore) so they pass through.</summary>
     public bool OwnWrite { get; set; }
 
+    /// <summary>Game writes to a tracked component seen this freeze (any value, substituted or not) — the diagnostics
+    /// proof that the prefix fires for this freeze's entities.</summary>
+    public int Seen { get; private set; }
+
     /// <summary>Components tracked this freeze.</summary>
     public int Tracked => _byComp.Count;
 
@@ -43,6 +47,7 @@ internal sealed class DrawnSpeedGate
     {
         _byComp.Clear();
         Array.Clear(_held, 0, _held.Length);
+        Seen = 0;
         _mainThread = mainThreadId;
         _ledger = ledger;
     }
@@ -76,6 +81,7 @@ internal sealed class DrawnSpeedGate
     public bool TrySubstitute(IntPtr comp, ref float value, int threadId)
     {
         if (_ledger is null || OwnWrite || threadId != _mainThread || !_byComp.TryGetValue(comp, out var t)) return false;
+        Seen++;
         if (!_ledger.NoteGameSpeed(t.Uuid, value)) return false;
         if (value > FreezeLedger.SpeedEpsilon) _held[(int)BucketOf(t.Kind)]++;
         value = 0f;

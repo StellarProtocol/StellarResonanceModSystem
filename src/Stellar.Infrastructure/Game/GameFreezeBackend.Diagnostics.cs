@@ -58,6 +58,6 @@ internal sealed partial class GameFreezeBackend
         var g = _speedGate;
         _log.Info($"[FreeCam] freeze held: monster={g.Held(DrawnSpeedGate.Bucket.Monster)} player={g.Held(DrawnSpeedGate.Bucket.Player)} " +
                   $"npc={g.Held(DrawnSpeedGate.Bucket.Npc)} pet={g.Held(DrawnSpeedGate.Bucket.Pet)} mount={g.Held(DrawnSpeedGate.Bucket.Mount)} " +
-                  $"other={g.Held(DrawnSpeedGate.Bucket.Other)} resumed={_resumedAtUnfreeze} gate={(_speedGateInstalled ? "on" : "OFF")}");
+                  $"other={g.Held(DrawnSpeedGate.Bucket.Other)} resumed={_resumedAtUnfreeze} gameWrites={g.Seen} gate={(_speedGateInstalled ? "on" : "OFF")}");
     }
 }
