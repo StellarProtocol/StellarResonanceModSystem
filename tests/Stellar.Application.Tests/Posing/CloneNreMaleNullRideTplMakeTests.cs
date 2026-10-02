@@ -261,15 +261,27 @@ public sealed class CloneNreMaleNullRideTplMakeTests
         public bool Null;
         public string? MissingMember;
         public readonly object FadeValue = "fade-0.25";
+        private object _currentFade;
         public readonly List<(object Model, string Template, object? Fade)> Sets = new();
-        public FakeRide(List<string> order) => _order = order;
+        public FakeRide(List<string> order)
+        {
+            _order = order;
+            _currentFade = FadeValue;
+        }
         public string? Missing() => MissingMember;
         public int Gender(object model) => GenderValue;
         public int State(object entity) => StateValue;
         public int ActionId(object model) => ActionIdValue;
         public bool TemplateIsNull(object model) => Null;
-        public object? Fade(object model) => FadeValue;
-        public void SetTemplate(object model, string template, object? fade) { _order.Add("set"); Sets.Add((model, template, fade)); }
+        public object? Fade(object model) => _currentFade;
+        // A write moves the current fade, so a fade read AFTER the write would hand SetTemplate a different object and
+        // fail the "ORIGINAL fade" assertion.
+        public void SetTemplate(object model, string template, object? fade)
+        {
+            _order.Add("set");
+            Sets.Add((model, template, fade));
+            _currentFade = "fade-after-write";
+        }
     }
 
     private sealed class FakeHooks : IGameMethodHooks

@@ -41,7 +41,13 @@ internal sealed partial class ClonePoseModel : IPoseModel
         _p = null;   // forgotten before the recycle: nothing reads the copy after this line
         Step("copy", () => { if (p.Live) _c.Actions.Recycle(p.Model); });
         if (!_hidden) { OnPlayerShown("not-hidden"); return; }
-        Step("player", () => OnPlayerShown(_source() is { } e ? (_c.Spawn.SetVisible(e, true) ? "True" : "False") : "gone"));
+        // The restore runs OUTSIDE the diagnostics hook's argument list: a partial method without a body has its call
+        // AND its arguments removed by the compiler, so a SetVisible inside the argument would vanish with the hook.
+        Step("player", () =>
+        {
+            var shown = _source() is { } e ? (_c.Spawn.SetVisible(e, true) ? "True" : "False") : "gone";
+            OnPlayerShown(shown);
+        });
     }
 
     partial void OnPlayerShown(string shown);
