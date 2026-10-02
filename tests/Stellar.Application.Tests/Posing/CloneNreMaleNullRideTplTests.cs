@@ -14,6 +14,9 @@ public sealed class CloneNreMaleNullRideTplTests
 {
     private const int EM = 1, EF = 2, Default = 0, Action = 8, Interaction = 28;
 
+    // RecyclePhotoModel stand-in: records the model and reports the call as made (fix2: Run takes the call's bool).
+    private static Func<object, bool> Recycler(List<object> into) => o => { into.Add(o); return true; };
+
     // ── The guard predicate ──────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -58,7 +61,7 @@ public sealed class CloneNreMaleNullRideTplTests
         {
             net.Record(orphan);   // the cloneModel postfix fires before the callback throws
             throw boom;
-        }, recycled.Add, warned.Add));
+        }, Recycler(recycled), warned.Add));
 
         Assert.Same(boom, thrown);
         Assert.Equal(new[] { orphan }, recycled);
@@ -72,7 +75,7 @@ public sealed class CloneNreMaleNullRideTplTests
         var net = new CloneOrphanNet();
         var recycled = new List<object>();
         Assert.Throws<InvalidOperationException>(() =>
-            net.Run(() => throw new InvalidOperationException(), recycled.Add, _ => { }));
+            net.Run(() => throw new InvalidOperationException(), Recycler(recycled), _ => { }));
         Assert.Empty(recycled);
         Assert.False(net.Armed);
     }
@@ -87,14 +90,14 @@ public sealed class CloneNreMaleNullRideTplTests
         {
             net.Record(copy);
             return copy;
-        }, recycled.Add, _ => { });
+        }, Recycler(recycled), _ => { });
 
         Assert.Same(copy, result);
         Assert.False(net.Armed);
         Assert.Empty(recycled);
         net.Record(new object());   // an unarmed postfix records nothing …
         Assert.Throws<InvalidOperationException>(() =>   // … so a later failure has nothing stale to remove
-            net.Run(() => throw new InvalidOperationException(), recycled.Add, _ => { }));
+            net.Run(() => throw new InvalidOperationException(), Recycler(recycled), _ => { }));
         Assert.Empty(recycled);
     }
 
@@ -125,7 +128,7 @@ public sealed class CloneNreMaleNullRideTplTests
             net.Record(first);
             net.Record(new object());
             throw new InvalidOperationException();
-        }, recycled.Add, _ => { }));
+        }, Recycler(recycled), _ => { }));
         Assert.Equal(new[] { first }, recycled);
     }
 }

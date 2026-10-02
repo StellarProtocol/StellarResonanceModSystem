@@ -12,7 +12,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// player as the game's photo copy (<c>CloneModelForPhoto</c>, real player hidden); an NPC as a generated stand-in (the
 /// Partner path; never the live NPC — its facing and idle cannot be restored). Gender for the face ids comes from the
 /// person's own data (charBase for you, AttrGender for others). A <c>ZEntityMgr.RemoveEntity</c> prefix, installed on the
-/// first open, reports despawns; the photo copy goes through <see cref="PhotoCopyMaker"/> (the game's Male-idle copy crash
+/// first open (<see cref="PosingHookSet"/>), reports despawns; the photo copy goes through <see cref="PhotoCopyMaker"/> (the game's Male-idle copy crash
 /// guard + orphan clean-up, regression clone-nre-male-null-ridetpl). Inside the scene-change settle window (<see cref="SceneChanged"/>) nothing live is read:
 /// no kind, no people, no open, and every handed-out model is a <see cref="SettledPoseModel"/> whose per-frame position
 /// reads nothing until it settles. People listing lives in GamePosingBackend.People.cs. Main thread.
@@ -21,26 +21,24 @@ internal sealed partial class GamePosingBackend : IPosingBackend
 {
     private readonly PoseCalls _calls;
     private readonly GameEntityAccess _entities;
-    private readonly IGameTypeRegistry _types;
     private readonly IPluginLog _log;
     private readonly SceneSettleWindow _settle = new();
     private readonly PhotoCopyMaker _copies;
-    private HarmonyGameMethodHooker? _hooker;
-    private bool _hookTried;
+    private readonly PosingHookSet _hooks;
 
     public GamePosingBackend(PoseCalls calls, GameEntityAccess entities, IGameTypeRegistry types, IPluginLog log)
     {
         _calls = calls;
         _entities = entities;
-        _types = types;
         _log = log;
         _copies = new PhotoCopyMaker(calls.Actions, new RideTemplateCalls(types), log);
+        _hooks = new PosingHookSet(types, _copies, OnRemoveEntity, log);
     }
 
     public event Action<long>? PersonRemoved;
 
     /// <summary>Called once the hot-update assemblies are ready; the despawn prefix installs on the first open.</summary>
-    public void ArmHooks(HarmonyGameMethodHooker hooker) => _hooker = hooker;
+    public void ArmHooks(IGameMethodHooks hooker) => _hooks.Arm(hooker);
 
     /// <summary>A scene leave (the <c>Game.OnLeaveScene</c> prefix) or enter (<c>IClientState.SceneChanged</c>): starts
     /// the settle window. Subscribe AFTER the free-camera release on the same events, so the release (which closes
@@ -78,7 +76,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     {
         var once = new LoadedOnce(loaded);
         if (_settle.Settling) return Fail(once, "the world is still loading — try again in a moment");
-        EnsureHooks();
+        _hooks.Ensure();
         var started = Stopwatch.GetTimestamp();
         IPoseModel? model;
         string? why;
@@ -128,7 +126,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
             Func<object?> source = () => _entities.EntityByUuid(uuid);
             var poser = new ModelPoser(_calls, new PoseSubject(source, copy, false, gender, _calls.Models.Yaw(copy)));
             hidden = _calls.Spawn.SetVisible(entity, false);
-            return new ClonePoseModel(_calls, poser, source, hidden);
+            return new ClonePoseModel(_calls, poser, source, hidden, _log.Info);
         }
         catch
         {
@@ -170,20 +168,6 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     {
         try { step(); }
         catch (Exception ex) { _log.Warning($"[Posing] {what} failed: {(ex.InnerException ?? ex).Message}"); }
-    }
-
-    private void EnsureHooks()
-    {
-        if (_hookTried || _hooker is null) return;
-        _hookTried = true;
-        _copies.Install(_hooker, _types);
-        if (_types.FindType(GameEntityAccess.ManagerType) is not { } mgr)
-        {
-            _log.Warning("[Posing] a person who leaves keeps their copy until the free camera ends (ZEntityMgr not found)");
-            return;
-        }
-        try { _hooker.PrefixAllOverloads(mgr, "RemoveEntity", OnRemoveEntity); }
-        catch (Exception ex) { _log.Warning("[Posing] despawn hook failed: " + ex.Message); }
     }
 
     // Prefix on ZEntityMgr.RemoveEntity(long uuid, EDisappearType, bool) — its only overload in release_3.7 (ilspycmd):

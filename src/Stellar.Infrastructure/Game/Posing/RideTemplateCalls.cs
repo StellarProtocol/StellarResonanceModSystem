@@ -12,51 +12,58 @@ internal readonly record struct CloneGuardReading(int Gender, int State, int Act
 /// ilspycmd): <c>ZModel.ModelGender</c>, <c>EntityAttrExtensions.GetAttrState(ZEntity)</c>,
 /// <c>GetAttrActionInfoActionId(ZModel)</c>, <c>GetAttrAnimRideTemplate / GetAttrAnimRideTemplateFade(ZModel)</c>, and the
 /// game's own setter <c>SetAttrAnimRideTemplate(ZModel, string, string)</c> (local attribute, no packet). Overloads that
-/// share a name resolve by exact parameter types. Game exceptions propagate. Main thread.
+/// share a name resolve by exact parameter types. A missing game TYPE is retried (cheap lookup); a missing MEMBER of a
+/// found type is cached as missing for the session (review M-1: no re-resolve on every open). Game exceptions propagate.
+/// Main thread.
 /// </summary>
-internal sealed class RideTemplateCalls
+internal sealed class RideTemplateCalls : IRideTemplateAccess
 {
     private const BindingFlags S = BindingFlags.Public | BindingFlags.Static;
 
     private readonly IGameTypeRegistry _types;
     private PropertyInfo? _gender;
     private MethodInfo? _state, _actionId, _getTpl, _getFade, _setTpl;
+    private string? _missingMember;   // cached member miss
+    private bool _resolved;
 
     public RideTemplateCalls(IGameTypeRegistry types) => _types = types;
 
-    /// <summary>Reads the source; when the copy would crash, sets its ride template to <c>""</c> (keeping its fade).
-    /// Null when the game types are not resolvable.</summary>
-    public CloneGuardReading? Normalise(object entity, object model)
+    public string? Missing()
     {
-        if (!Resolve()) return null;
-        var gender = Convert.ToInt32(_gender!.GetValue(model));
-        var state = Convert.ToInt32(_state!.Invoke(null, new[] { entity }));
-        var actionId = Convert.ToInt32(_actionId!.Invoke(null, new[] { model }));
-        var templateNull = _getTpl!.Invoke(null, new[] { model }) is null;
-        var needs = CloneGuard.NeedsRideTemplateNormalise(gender, state, actionId, templateNull);
-        if (needs)
-        {
-            var fade = _getFade!.Invoke(null, new[] { model });
-            _setTpl!.Invoke(null, new[] { model, string.Empty, fade });
-        }
-        return new CloneGuardReading(gender, state, actionId, templateNull, needs);
-    }
-
-    private bool Resolve()
-    {
-        if (_setTpl is not null) return true;
+        if (_resolved || _missingMember is not null) return _missingMember;
         var model = _types.FindType(GameEntityAccess.ModelType);
         var entity = _types.FindType(GameEntityAccess.EntityType);
         var ext = _types.FindType(GameEntityAccess.AttrExtType);
-        if (model is null || entity is null || ext is null) return false;
+        if (model is null) return GameEntityAccess.ModelType;
+        if (entity is null) return GameEntityAccess.EntityType;
+        if (ext is null) return GameEntityAccess.AttrExtType;
+        _missingMember = ResolveMembers(model, entity, ext);
+        _resolved = _missingMember is null;
+        return _missingMember;
+    }
+
+    public int Gender(object model) => Convert.ToInt32(_gender!.GetValue(model));
+    public int State(object entity) => Convert.ToInt32(_state!.Invoke(null, new[] { entity }));
+    public int ActionId(object model) => Convert.ToInt32(_actionId!.Invoke(null, new[] { model }));
+    public bool TemplateIsNull(object model) => _getTpl!.Invoke(null, new[] { model }) is null;
+    public object? Fade(object model) => _getFade!.Invoke(null, new[] { model });
+    public void SetTemplate(object model, string template, object? fade) =>
+        _setTpl!.Invoke(null, new[] { model, template, fade });
+
+    // The first member the game does not have, or null when all resolved.
+    private string? ResolveMembers(Type model, Type entity, Type ext)
+    {
         _gender = StellarInterop.FindPropertyUp(model, "ModelGender");
         _state = ext.GetMethod("GetAttrState", S, null, new[] { entity }, null);
         _actionId = ext.GetMethod("GetAttrActionInfoActionId", S, null, new[] { model }, null);
         _getTpl = ext.GetMethod("GetAttrAnimRideTemplate", S, null, new[] { model }, null);
         _getFade = ext.GetMethod("GetAttrAnimRideTemplateFade", S, null, new[] { model }, null);
-        var set = ext.GetMethod("SetAttrAnimRideTemplate", S, null, new[] { model, typeof(string), typeof(string) }, null);
-        if (_gender is null || _state is null || _actionId is null || _getTpl is null || _getFade is null) return false;
-        _setTpl = set;   // set last: the "fully resolved" sentinel
-        return set is not null;
+        _setTpl = ext.GetMethod("SetAttrAnimRideTemplate", S, null, new[] { model, typeof(string), typeof(string) }, null);
+        if (_gender is null) return "ZModel.ModelGender";
+        if (_state is null) return "GetAttrState";
+        if (_actionId is null) return "GetAttrActionInfoActionId";
+        if (_getTpl is null) return "GetAttrAnimRideTemplate";
+        if (_getFade is null) return "GetAttrAnimRideTemplateFade";
+        return _setTpl is null ? "SetAttrAnimRideTemplate" : null;
     }
 }

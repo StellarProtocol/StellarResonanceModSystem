@@ -13,7 +13,7 @@ namespace Stellar.Infrastructure.Hooks;
 /// stored in <see cref="Callbacks"/> (postfixes) or <see cref="PrefixCallbacks"/> (prefixes — a separate table so
 /// one method can carry both).
 /// </summary>
-internal sealed class HarmonyGameMethodHooker
+internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
 {
     private const BindingFlags InstanceMembers = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
@@ -52,7 +52,9 @@ internal sealed class HarmonyGameMethodHooker
         PatchMatching(type, methodName, StaticMembers, callback, prefix: false);
 
     /// <summary>Patches every non-void instance overload with a POSTFIX that hands <paramref name="callback"/> only the
-    /// return value — no <c>__args</c> array, so a callback that early-outs costs a table lookup and no allocation.</summary>
+    /// return value — no <c>__args</c> array, so a callback that early-outs costs a table lookup and allocates nothing of
+    /// its own. Not zero: a reference return reaches the postfix as its Il2CppInterop managed wrapper, which the
+    /// patched method's interop glue materialises whatever the callback does.</summary>
     public void PostfixResultAllOverloads(Type type, string methodName, Action<object?> callback)
     {
         foreach (var method in Matching(type, methodName, InstanceMembers).Where(m => m.ReturnType != typeof(void)))

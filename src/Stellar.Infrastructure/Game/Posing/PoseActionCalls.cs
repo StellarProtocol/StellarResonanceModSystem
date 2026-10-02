@@ -11,7 +11,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// singleton is read through <see cref="SingletonAccess"/> (never constructed). Handles resolve lazily and retry until all
 /// are found. Exceptions propagate to the caller (the pose model's boundary logs them). Main thread.
 /// </summary>
-internal sealed partial class PoseActionCalls
+internal sealed partial class PoseActionCalls : IPhotoCopyCalls
 {
     internal const string MgrType = "Panda.ZAnim.ZAnimActionPlayMgr";
 
