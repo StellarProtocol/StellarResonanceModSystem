@@ -56,4 +56,47 @@ internal static class HookCallbackTable
 
     /// <summary>Same as <see cref="Remove"/> for <see cref="AddResult"/>'s table.</summary>
     public static void RemoveResult(Dictionary<MethodBase, Action<object?>> table, MethodBase method) => table.Remove(method);
+
+    /// <summary>True when <paramref name="method"/> already carries the shared PREFIX trampoline — through a callback OR a
+    /// gate (both tables share one patch; patching again would run every callback twice).</summary>
+    public static bool PrefixPatched(Dictionary<MethodBase, Action<object?, object?[]>> callbacks,
+        Dictionary<MethodBase, Func<object?, object?[], bool>> gates, MethodBase method) =>
+        callbacks.ContainsKey(method) || gates.ContainsKey(method);
+
+    /// <summary>Adds a run-original GATE for <paramref name="method"/>; a second gate is AND-ed onto the first (either may
+    /// veto). True when it is the method's first gate.</summary>
+    public static bool AddGate(Dictionary<MethodBase, Func<object?, object?[], bool>> gates, MethodBase method,
+        Func<object?, object?[], bool> gate)
+    {
+        if (!gates.TryGetValue(method, out var first))
+        {
+            gates[method] = gate;
+            return true;
+        }
+        gates[method] = (instance, args) => Ask(first, instance, args) & Ask(gate, instance, args);
+        return false;
+    }
+
+    /// <summary>The shared prefix trampoline's whole decision (combat-freeze deferred removal, owner 2026-10-02): the
+    /// method's gate is asked FIRST; a veto skips the game's body AND every chained prefix callback, so a deferred call
+    /// runs none of them (posing's despawn, the freeze's leave) — they run exactly once, when the call is replayed and the
+    /// gate lets it through. No gate, or a gate that throws (fail open): the callbacks run and so does the original.
+    /// Returns HarmonyX's run-original flag.</summary>
+    public static bool RunPrefix(Dictionary<MethodBase, Func<object?, object?[], bool>> gates,
+        Dictionary<MethodBase, Action<object?, object?[]>> callbacks, MethodBase method, object? instance, object?[] args)
+    {
+        if (gates.TryGetValue(method, out var gate) && !Ask(gate, instance, args)) return false;
+        if (callbacks.TryGetValue(method, out var callback))
+        {
+            try { callback(instance, args); }
+            catch { /* trust boundary: a managed exception must not propagate back into the IL2CPP trampoline */ }
+        }
+        return true;
+    }
+
+    private static bool Ask(Func<object?, object?[], bool> gate, object? instance, object?[] args)
+    {
+        try { return gate(instance, args); }
+        catch { return true; }   // a broken gate never blocks the game
+    }
 }

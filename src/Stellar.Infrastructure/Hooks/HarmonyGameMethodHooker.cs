@@ -22,6 +22,7 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     internal static readonly Dictionary<MethodBase, Action<object?, object?[]>> Callbacks = new();
     internal static readonly Dictionary<MethodBase, Action<object?, object?[]>> PrefixCallbacks = new();
     internal static readonly Dictionary<MethodBase, Action<object?>> ResultCallbacks = new();
+    internal static readonly Dictionary<MethodBase, Func<object?, object?[], bool>> PrefixGates = new();
 
     private static readonly MethodInfo TrampolineMethod =
         typeof(HarmonyGameMethodHooker).GetMethod(nameof(Trampoline), BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -46,6 +47,29 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     /// body (never skips it). Coexists with a postfix on the same method.</summary>
     public void PrefixAllOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
         PatchMatching(type, methodName, InstanceMembers, callback, prefix: true);
+
+    /// <summary>Patches every instance overload with a run-original GATE on the shared prefix trampoline (one patch with
+    /// <see cref="PrefixAllOverloads"/>'s callbacks): when <paramref name="runOriginal"/> returns false the game's body AND
+    /// the method's chained prefix callbacks are skipped (<see cref="HookCallbackTable.RunPrefix"/>).</summary>
+    public void GatePrefixAllOverloads(Type type, string methodName, Func<object?, object?[], bool> runOriginal)
+    {
+        foreach (var method in Matching(type, methodName, InstanceMembers))
+        {
+            var patched = HookCallbackTable.PrefixPatched(PrefixCallbacks, PrefixGates, method);
+            HookCallbackTable.AddGate(PrefixGates, method, runOriginal);
+            if (patched) { _log.Info($"[Hooker] chained a gate on {type.FullName}.{method.Name} (prefix)"); continue; }
+            try
+            {
+                _harmony.Patch(method, prefix: new HarmonyMethod(PrefixTrampolineMethod));
+                _log.Info($"[Hooker] patched {type.FullName}.{method.Name} (gated prefix)");
+            }
+            catch (Exception ex)
+            {
+                PrefixGates.Remove(method);
+                _log.Error($"[Hooker] failed to patch {type.FullName}.{method.Name}: {ex.Message}");
+            }
+        }
+    }
 
     /// <summary>Same as <see cref="PostfixAllOverloads"/> for STATIC methods (the callback's instance is null).</summary>
     public void PostfixStaticOverloads(Type type, string methodName, Action<object?, object?[]> callback) =>
@@ -112,7 +136,9 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
         {
             try
             {
-                if (!HookCallbackTable.Add(prefix ? PrefixCallbacks : Callbacks, method, callback))
+                // A prefix shares its trampoline with a gate (GatePrefixAllOverloads): already patched = chain only.
+                var gated = prefix && HookCallbackTable.PrefixPatched(PrefixCallbacks, PrefixGates, method);
+                if (!HookCallbackTable.Add(prefix ? PrefixCallbacks : Callbacks, method, callback) || gated)
                 {
                     _log.Info($"[Hooker] chained a callback on {type.FullName}.{method.Name}{(prefix ? " (prefix)" : "")}");
                     continue;   // already patched: one trampoline, both callbacks
@@ -136,9 +162,10 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     private static void Trampoline(object? __instance, MethodBase __originalMethod, object[] __args) =>
         Dispatch(Callbacks, __instance, __originalMethod, __args);
 
-    // HarmonyX prefix: void return = the original always runs. Same injected arguments as the postfix.
-    private static void PrefixTrampoline(object? __instance, MethodBase __originalMethod, object[] __args) =>
-        Dispatch(PrefixCallbacks, __instance, __originalMethod, __args);
+    // HarmonyX prefix: true = the original runs (always, unless the method's gate vetoes — then its callbacks are
+    // skipped too). Same injected arguments as the postfix.
+    private static bool PrefixTrampoline(object? __instance, MethodBase __originalMethod, object[] __args) =>
+        HookCallbackTable.RunPrefix(PrefixGates, PrefixCallbacks, __originalMethod, __instance, __args);
 
     // HarmonyX postfix receiving only the return value (object: a reference return passes through unboxed).
     private static void ResultTrampoline(MethodBase __originalMethod, object? __result)
