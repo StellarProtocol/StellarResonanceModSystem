@@ -12,7 +12,8 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// player as the game's photo copy (<c>CloneModelForPhoto</c>, real player hidden); an NPC as a generated stand-in (the
 /// Partner path; never the live NPC — its facing and idle cannot be restored). Gender for the face ids comes from the
 /// person's own data (charBase for you, AttrGender for others). A <c>ZEntityMgr.RemoveEntity</c> prefix, installed on the
-/// first open, reports despawns. Inside the scene-change settle window (<see cref="SceneChanged"/>) nothing live is read:
+/// first open, reports despawns; the photo copy goes through <see cref="PhotoCopyMaker"/> (the game's Male-idle copy crash
+/// guard + orphan clean-up, regression clone-nre-male-null-ridetpl). Inside the scene-change settle window (<see cref="SceneChanged"/>) nothing live is read:
 /// no kind, no people, no open, and every handed-out model is a <see cref="SettledPoseModel"/> whose per-frame position
 /// reads nothing until it settles. People listing lives in GamePosingBackend.People.cs. Main thread.
 /// </summary>
@@ -23,6 +24,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     private readonly IGameTypeRegistry _types;
     private readonly IPluginLog _log;
     private readonly SceneSettleWindow _settle = new();
+    private readonly PhotoCopyMaker _copies;
     private HarmonyGameMethodHooker? _hooker;
     private bool _hookTried;
 
@@ -32,6 +34,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
         _entities = entities;
         _types = types;
         _log = log;
+        _copies = new PhotoCopyMaker(calls.Actions, new RideTemplateCalls(types), log);
     }
 
     public event Action<long>? PersonRemoved;
@@ -75,7 +78,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     {
         var once = new LoadedOnce(loaded);
         if (_settle.Settling) return Fail(once, "the world is still loading — try again in a moment");
-        EnsureRemoveHook();
+        EnsureHooks();
         var started = Stopwatch.GetTimestamp();
         IPoseModel? model;
         string? why;
@@ -118,7 +121,7 @@ internal sealed partial class GamePosingBackend : IPosingBackend
         if (_entities.EntityByUuid(uuid) is not { } entity) return null;
         var gender = _calls.Lua.Gender(uuid, self: false);
         why = "the game made no photo copy";
-        if (_calls.Actions.Clone(entity) is not { } copy) return null;
+        if (_copies.Make(entity, _entities.LiveModel(entity)) is not { } copy) return null;
         var hidden = false;
         try
         {
@@ -169,10 +172,11 @@ internal sealed partial class GamePosingBackend : IPosingBackend
         catch (Exception ex) { _log.Warning($"[Posing] {what} failed: {(ex.InnerException ?? ex).Message}"); }
     }
 
-    private void EnsureRemoveHook()
+    private void EnsureHooks()
     {
         if (_hookTried || _hooker is null) return;
         _hookTried = true;
+        _copies.Install(_hooker, _types);
         if (_types.FindType(GameEntityAccess.ManagerType) is not { } mgr)
         {
             _log.Warning("[Posing] a person who leaves keeps their copy until the free camera ends (ZEntityMgr not found)");

@@ -11,7 +11,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// singleton is read through <see cref="SingletonAccess"/> (never constructed). Handles resolve lazily and retry until all
 /// are found. Exceptions propagate to the caller (the pose model's boundary logs them). Main thread.
 /// </summary>
-internal sealed class PoseActionCalls
+internal sealed partial class PoseActionCalls
 {
     internal const string MgrType = "Panda.ZAnim.ZAnimActionPlayMgr";
 
@@ -35,7 +35,12 @@ internal sealed class PoseActionCalls
     public bool FaceModel(object m, int faceId) => Call(Mgr(), _faceModel, m, faceId, false, 0f);
     public bool ResetFaceSelf() => Call(Mgr(), _resetFaceSelf);
     public bool ResetFaceModel(object m) => Call(Mgr(), _resetFaceModel, m);
-    public bool Recycle(object clone) => Call(Mgr(), _recycle, clone);
+    public bool Recycle(object clone)
+    {
+        var done = Call(Mgr(), _recycle, clone);
+        OnRecycled();
+        return done;
+    }
 
     /// <summary><c>CloneModelForPhoto(entity)</c> — the game's photo copy of another player (null when unavailable).</summary>
     public object? Clone(object entity)
@@ -87,4 +92,6 @@ internal sealed class PoseActionCalls
         _animTotal = total;   // set last: the "fully resolved" sentinel
         return true;
     }
+
+    partial void OnRecycled();
 }
