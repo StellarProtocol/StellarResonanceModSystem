@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 namespace Stellar.Infrastructure.Game;
 
@@ -18,8 +19,11 @@ namespace Stellar.Infrastructure.Game;
 /// while frozen it is the drawn-speed chain carrying our substituted 0 (the controller restore re-issues the real one).</para>
 /// <para><b>Pooled uids</b> (as <see cref="DrawnSpeedGate"/>): <see cref="Track"/> re-keys a uid another entity held;
 /// <see cref="Untrack"/> (the despawn) drops the entity's uid and its wishes, so nothing is ever replayed onto a recycled
-/// model. Counts are ungated ints (diagnostics read them). Main thread. Pure (unit-tested).</para></summary>
-internal sealed class EcsSpeedGate
+/// model — and <see cref="Release"/> (a leaving entity, a mid-freeze release, the teardown) first writes the model back
+/// (the whole model at its controller's speed, then its wishes) when it is still the entity's live model, so a pooled model
+/// is never reused with its layers at 0 (review 2026-10-02). Counts are ungated ints (diagnostics read them); the per-writer
+/// call counters live in <c>EcsSpeedGate.Diagnostics.cs</c>. Main thread. Pure (unit-tested).</para></summary>
+internal sealed partial class EcsSpeedGate
 {
     /// <summary>One ECS layer write: <c>layer -1</c> = every layer.</summary>
     internal readonly record struct LayerWrite(int Layer, float Speed, float Weight);
@@ -55,6 +59,7 @@ internal sealed class EcsSpeedGate
         Held = Leaked = 0;
         _heldBy.Clear();
         _leakedBy.Clear();
+        ResetCallCounts();
         Armed = true;
     }
 
@@ -138,6 +143,24 @@ internal sealed class EcsSpeedGate
         return plan;
     }
 
+    /// <summary>Releases <paramref name="uuid"/>'s model and stops gating it. When <paramref name="liveControllerSpeed"/>
+    /// confirms the uid is still this entity's live model (it answers that model's controller speed; null = gone, recycled
+    /// or unreadable — nothing is written), the release plan (<see cref="TakeReleasePlan"/>) goes through
+    /// <paramref name="write"/>. The uid is forgotten either way, even when a callback throws (the throw is the caller's).
+    /// Returns the writes issued, or −1 when the entity was not tracked.</summary>
+    public int Release(long uuid, Func<uint, long, float?> liveControllerSpeed, Action<uint, LayerWrite> write)
+    {
+        if (!_byUuid.TryGetValue(uuid, out var uid)) return -1;
+        try
+        {
+            if (liveControllerSpeed(uid, uuid) is not float controller) return 0;
+            var plan = TakeReleasePlan(uid, controller);
+            foreach (var w in plan) write(uid, w);
+            return plan.Count;
+        }
+        finally { Forget(uid); }
+    }
+
     public int HeldFor(long uuid) => _heldBy.TryGetValue(uuid, out var n) ? n : 0;
 
     public int LeakedFor(long uuid) => _leakedBy.TryGetValue(uuid, out var n) ? n : 0;
@@ -146,7 +169,8 @@ internal sealed class EcsSpeedGate
     {
         if (!_wanted.TryGetValue(uid, out var list)) _wanted[uid] = list = new List<LayerWrite>();
         if (write.Layer < 0) { list.Clear(); return; }   // whole model: earlier per-layer wishes are overwritten
-        list.RemoveAll(w => w.Layer == write.Layer);
+        for (var i = list.Count - 1; i >= 0; i--)   // indexed: no closure on the per-play path
+            if (list[i].Layer == write.Layer) list.RemoveAt(i);
         list.Add(write);
     }
 

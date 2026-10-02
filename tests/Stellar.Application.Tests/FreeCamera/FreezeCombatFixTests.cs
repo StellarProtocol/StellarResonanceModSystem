@@ -155,12 +155,12 @@ public sealed class FreezeCombatFixTests
         Assert.Equal(3, d.Count);
 
         var replayed = new List<(long, bool, object?)>();
-        Assert.Equal(3, d.Replay((u, a) => replayed.Add((u, d.Replaying, a[0]))));    // unfreeze / scene clear
+        Assert.Equal(3, d.Replay(Same, (u, a) => replayed.Add((u, d.Replaying, a[0]))));    // unfreeze / scene clear
         Assert.Equal(new[] { (3L, true, (object?)3L), (1L, true, 1L), (2L, true, 2L) }, replayed);
         Assert.Equal(0, d.Count);
         Assert.False(d.Replaying);
         Assert.Equal(DeferredRemovals.Decision.Defer, d.Decide(Dead(4), Args(4)));   // still armed after a scene-clear replay
-        Assert.Equal(1, d.Replay((_, _) => { }));
+        Assert.Equal(1, d.Replay(Same, (_, _) => { }));
         d.Disarm();
         Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(5), Args(5)));      // not frozen: never deferred
         Assert.Equal(0, d.Count);
@@ -179,7 +179,7 @@ public sealed class FreezeCombatFixTests
         Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(Self) with { Excluded = true }, Args(Self)));        // never self
         Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(0), Args(0)));
         Assert.Equal(0, d.Count);
-        d.Replay((_, _) => Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(9), Args(9))));   // replaying: always runs
+        d.Replay(Same, (_, _) => Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(9), Args(9))));   // replaying: always runs
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class FreezeCombatFixTests
         // ZEntityCreator.TryCreateEntityReady re-creating uuid 1 calls RemoveEntity(1, …, removeImmediately: true).
         Assert.Equal(DeferredRemovals.Decision.RunSuperseding, d.Decide(Dead(1) with { Immediate = true }, Args(1)));
         Assert.False(d.IsQueued(1));
-        Assert.Equal(0, d.Replay((_, _) => throw new InvalidOperationException("must not replay a superseded removal")));
+        Assert.Equal(0, d.Replay(Same, (_, _) => throw new InvalidOperationException("must not replay a superseded removal")));
         for (long u = 1; u <= DeferredRemovals.Cap; u++) Assert.Equal(DeferredRemovals.Decision.Defer, d.Decide(Dead(u), Args(u)));
         Assert.Equal(DeferredRemovals.Decision.Run, d.Decide(Dead(1000), Args(1000)));   // over the cap: the game removes it
         Assert.Equal(DeferredRemovals.Cap, d.Drop());
@@ -208,7 +208,7 @@ public sealed class FreezeCombatFixTests
         HookCallbackTable.Add(callbacks, Method, (_, a) => calls.Add("freeze:" + a[0]));    // the freeze's leave
         Assert.True(HookCallbackTable.PrefixPatched(callbacks, gates, Method));
         Assert.True(HookCallbackTable.AddGate(gates, Method, (_, a) =>
-            d.Decide(new DeferredRemovals.Call((long)a[0]!, a[1] as string, a[2] is true, FreezeKinds.Monster, false), a)
+            d.Decide(new DeferredRemovals.Call((long)a[0]!, a[1] as string, a[2] is true, FreezeKinds.Monster, false, IdentityOf((long)a[0]!), false), a)
             != DeferredRemovals.Decision.Defer));
         var originals = 0;
         void Call(object?[] a) { if (HookCallbackTable.RunPrefix(gates, callbacks, Method, null, a)) originals++; }
@@ -216,7 +216,7 @@ public sealed class FreezeCombatFixTests
         Call(Args(Monster));                                     // the kill while frozen
         Assert.Empty(calls);                                     // no callback, no game body
         Assert.Equal(0, originals);
-        d.Replay((_, a) => Call(a));                             // unfreeze: through the same trampoline
+        d.Replay(Same, (_, a) => Call(a));                             // unfreeze: through the same trampoline
         Assert.Equal(new[] { "posing:7", "freeze:7" }, calls);
         Assert.Equal(1, originals);
         Call(new object?[] { Other, "EDisappearNormal", false });   // a plain removal: callbacks once, game body once
@@ -302,7 +302,14 @@ public sealed class FreezeCombatFixTests
     }
 
     private static DeferredRemovals.Call Dead(long uuid) =>
-        new(uuid, DeferredRemovals.DeadType, Immediate: false, Kind: FreezeKinds.Monster, Excluded: false);
+        new(uuid, DeferredRemovals.DeadType, Immediate: false, Kind: FreezeKinds.Monster, Excluded: false, Identity: IdentityOf(uuid),
+            OffMainThread: false);
+
+    /// <summary>The native pointer GetEntity(uuid) serves (a fixed fake per uuid).</summary>
+    internal static nint IdentityOf(long uuid) => (nint)(0x10000 + uuid);
+
+    /// <summary>GetEntity(uuid) still serves the entity kept at defer time.</summary>
+    private static nint Same(long uuid) => IdentityOf(uuid);
 
     private static object?[] Args(long uuid) => new object?[] { uuid, DeferredRemovals.DeadType, false };
 

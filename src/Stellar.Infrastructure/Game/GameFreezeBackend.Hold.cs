@@ -149,7 +149,9 @@ internal sealed partial class GameFreezeBackend
         if (!_holding) return;
         _holding = false;
         // Release snap (run 3 R3-9): the drawn model rejoins its logical pose on this frame, not whenever it next moves.
+        OnHoldReleasing();   // diagnostics only: the drawn rotation against the logical one, before and after the snap
         _held.Release(_logicalPose!, _setPos!, _setRot, _snapError!);
+        OnHoldReleased();
         _held.Clear();
     }
 
@@ -176,6 +178,9 @@ internal sealed partial class GameFreezeBackend
                   $"for {_held.Count} entities (budget {HoldBudget.LimitMs} ms); animation and effects stay frozen");
         DisableHold();
     }
+
+    partial void OnHoldReleasing();
+    partial void OnHoldReleased();
 
     private void DisableHold()
     {

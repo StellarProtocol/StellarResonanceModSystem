@@ -53,7 +53,7 @@ internal sealed partial class GameFreezeBackend
         if (_fxGetCtx is null || _ctxFrozen is null || !ResolveEffects() || _fxManager.Get() is not { } mgr) return;
         int total = 0, frozen = 0, touchedOpen = 0, newOpen = 0, newOnWatched = 0;
         var owners = new Dictionary<long, int>();
-        foreach (var uid in EffectUids(mgr).Take(FxCensusCap))
+        foreach (var uid in (EffectUids(mgr) ?? new List<long>()).Take(FxCensusCap))
         {
             if (FxContext(mgr, uid) is not { } ctx || FxRead(ctx) is not { } read) continue;
             total++;

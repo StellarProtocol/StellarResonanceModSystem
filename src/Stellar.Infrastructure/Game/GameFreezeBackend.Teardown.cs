@@ -24,5 +24,6 @@ internal sealed partial class GameFreezeBackend
     {
         _ledger.Clear();
         _ecsGate.Clear();
+        _fxInstances.Clear();
     }
 }

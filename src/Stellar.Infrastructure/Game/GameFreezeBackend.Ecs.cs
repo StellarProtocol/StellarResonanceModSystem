@@ -21,6 +21,8 @@ internal sealed partial class GameFreezeBackend
 
     private readonly EcsSpeedGate _ecsGate = new();
     private readonly object[] _layerArgs = new object[4];
+    private readonly Func<uint, long, float?> _ecsLiveController;
+    private readonly Action<uint, EcsSpeedGate.LayerWrite> _ecsWrite;
     private Func<object, object?>? _ecsAnimComp, _ecsController;
     private Func<object, uint>? _ecsUid;
     private Func<object, float>? _ctlSpeed, _ctlPersist;
@@ -83,30 +85,32 @@ internal sealed partial class GameFreezeBackend
         if (EcsUid(model) is > 0 and var uid) _ecsGate.Forget(uid);
     }
 
-    /// <summary>The teardown step: every tracked model released (<see cref="ReleaseEcsModel"/>), then forgotten.</summary>
+    /// <summary>The teardown step: every tracked model released (<see cref="ReleaseEcs"/>), then forgotten.</summary>
     private void RestoreEcsLayers()
     {
-        foreach (var (uid, uuid) in _ecsGate.Snapshot()) ReleaseEcsModel(uid, uuid);
+        foreach (var (_, uuid) in _ecsGate.Snapshot()) ReleaseEcs(uuid);
         _ecsGate.Clear();
     }
 
-    /// <summary>One entity released mid-freeze (excluded late, or a deferred removal about to replay).</summary>
+    /// <summary>One entity's model written back and untracked (<see cref="EcsSpeedGate.Release"/>): the teardown, a
+    /// mid-freeze release (excluded late, a deferred removal about to replay) and an entity LEAVING — so a pooled model is
+    /// never reused with its layers at 0 (review 2026-10-02). Nothing is written unless the uid is still the entity's live
+    /// model.</summary>
     private void ReleaseEcs(long uuid)
-    {
-        if (_ecsGate.UidOf(uuid) is > 0 and var uid) ReleaseEcsModel(uid, uuid);
-        _ecsGate.Untrack(uuid);
-    }
-
-    private void ReleaseEcsModel(uint uid, long uuid)
     {
         try
         {
-            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _ecsAnimComp!(m) is not { } comp || _ecsUid!(comp) != uid) return;
-            var plan = _ecsGate.TakeReleasePlan(uid, ControllerSpeed(comp));
-            foreach (var w in plan) WriteLayer(uid, w.Layer, w.Speed, w.Weight);
-            OnEcsReleased(uuid, plan.Count);
+            if (_ecsGate.Release(uuid, _ecsLiveController, _ecsWrite) is >= 0 and var writes) OnEcsReleased(uuid, writes);
         }
         catch (Exception ex) { WarnOnce("ecsrestore", "could not restore an entity's ECS animation: " + (ex.InnerException ?? ex).Message); }
+    }
+
+    /// <summary>The live model's controller speed when <paramref name="uid"/> is still <paramref name="uuid"/>'s live ECS
+    /// model; null when it left, is destroying or was recycled (never written then).</summary>
+    private float? EcsLiveControllerSpeed(uint uid, long uuid)
+    {
+        if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _ecsAnimComp!(m) is not { } comp || _ecsUid!(comp) != uid) return null;
+        return ControllerSpeed(comp);
     }
 
     /// <summary>The speed the controller would write itself: 0 while its persist time is ≥ 0, else its speed.</summary>

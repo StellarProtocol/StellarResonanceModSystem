@@ -42,4 +42,15 @@ internal static class FreezeTeardown
         return FreezeStepRunner.RunAll(steps.StopHold, steps.RestoreDrawnSpeeds, steps.RestoreFactors, steps.RestoreEcsLayers,
             steps.UnfreezeEffects, steps.ClearLedger);
     }
+
+    /// <summary>The whole unfreeze: the deferred removals are replayed FIRST (each entity restored, then removed through the
+    /// game's own call, while the freeze's books still hold its kept values), then the removal queue is disarmed, then
+    /// <see cref="Run"/>. All through <see cref="FreezeStepRunner"/>: a throwing flush never skips the disarm or the
+    /// teardown, so the scene is never left frozen (review 2026-10-02). Returns the first exception.</summary>
+    public static Exception? RunAfterFlush(Action flushDeferred, Action disarmRemovals, IFreezeTeardownSteps steps)
+    {
+        var first = FreezeStepRunner.RunAll(flushDeferred, disarmRemovals);
+        var rest = Run(steps);
+        return first ?? rest;
+    }
 }

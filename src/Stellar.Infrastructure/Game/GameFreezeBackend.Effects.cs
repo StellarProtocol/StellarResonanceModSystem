@@ -2,14 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Il2CppInterop.Runtime.InteropTypes;
 using Stellar.Abstractions.Services;
 using Stellar.Infrastructure.Hooks;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>Effects (recon B): <c>ZEffectManager.SetEffectFreeze(uid, true)</c> over every key of <c>EffectDict</c> once per
 /// freeze, plus postfixes on <c>AddEffectDisplay(ZEffect)</c> and <c>ZEffect.Init</c> that freeze effects created while
-/// frozen (<see cref="FreezeEffectRule"/>). Every touched uid
-/// is unfrozen on release.</summary>
+/// frozen (<see cref="FreezeEffectRule"/>). Every touched uid is unfrozen on release — through the manager when it is in
+/// <c>EffectDict</c>, else through the instance kept when it was frozen, guarded (<see cref="FreezeEffectRule.Unfreeze"/>).</summary>
 internal sealed partial class GameFreezeBackend
 {
     internal const string EffectManagerType = "Panda.ZEffect.ZEffectManager";
@@ -18,7 +19,8 @@ internal sealed partial class GameFreezeBackend
     private readonly SingletonAccess _fxManager = new();
     private readonly object[] _uidFreezeArgs = new object[2];
     private readonly object[] _boolArg = new object[1];
-    private PropertyInfo? _effectDict, _fxUid;
+    private readonly Dictionary<long, object> _fxInstances = new();   // instance-frozen effects, by uid (this freeze only)
+    private PropertyInfo? _effectDict, _fxUid, _fxNeedDestroyed;
     private MethodInfo? _setEffectFreeze, _fxSetFreeze;
     private Type? _fxType;
 
@@ -31,6 +33,7 @@ internal sealed partial class GameFreezeBackend
         _effectDict = StellarInterop.FindPropertyUp(mgr, "EffectDict");
         _setEffectFreeze = mgr.GetMethod("SetEffectFreeze", new[] { typeof(long), typeof(bool) });
         _fxUid = StellarInterop.FindPropertyUp(fx, "Uid");
+        _fxNeedDestroyed = StellarInterop.FindPropertyUp(fx, "NeedDestroyed");   // absent: no instance is ever unfrozen
         var fxFreeze = fx.GetMethod("SetEffectFreeze", new[] { typeof(bool) });
         if (_effectDict is null || _setEffectFreeze is null || _fxUid is null || fxFreeze is null) return false;
         _fxType = fx;
@@ -41,15 +44,42 @@ internal sealed partial class GameFreezeBackend
     private void FreezeEffects()
     {
         if (!ResolveEffects()) { WarnOnce("fx", "effect freeze unavailable on this client"); return; }
+        _fxInstances.Clear();
         if (_fxManager.Get() is not { } mgr) return;
-        foreach (var uid in EffectUids(mgr))
+        foreach (var uid in EffectUids(mgr) ?? new List<long>())
             if (SetEffectFreeze(mgr, uid, true)) _ledger.TouchEffect(uid);
     }
 
+    /// <summary>The teardown step. No manager = the scene's effects are gone: no kept instance is touched.</summary>
     private void UnfreezeEffects()
     {
-        if (_ledger.Effects.Count == 0 || _fxManager.Get() is not { } mgr) return;
-        foreach (var uid in _ledger.Effects) SetEffectFreeze(mgr, uid, false);
+        try
+        {
+            if (_ledger.Effects.Count == 0 || _fxManager.Get() is not { } mgr) return;
+            var listed = EffectUids(mgr);
+            var counts = FreezeEffectRule.Unfreeze(_ledger.Effects, listed is null ? null : new HashSet<long>(listed),
+                FxInstance, uid => SetEffectFreeze(mgr, uid, false), UnfreezeInstance);
+            OnEffectsUnfrozen(counts);
+        }
+        finally { _fxInstances.Clear(); }
+    }
+
+    /// <summary>The instance kept for <paramref name="uid"/>, read now: its uid and whether it is being destroyed (an
+    /// unreadable or collected one reads as destroyed — never touched). Null when none was kept.</summary>
+    private (long Uid, bool Destroyed)? FxInstance(long uid)
+    {
+        if (!_fxInstances.TryGetValue(uid, out var fx)) return null;
+        if (fx is not Il2CppObjectBase { WasCollected: false } || _fxNeedDestroyed is null) return (0L, true);
+        try { return (Convert.ToInt64(_fxUid!.GetValue(fx)), _fxNeedDestroyed.GetValue(fx) is true); }
+        catch { return (0L, true); }
+    }
+
+    private void UnfreezeInstance(long uid)
+    {
+        if (!_fxInstances.TryGetValue(uid, out var fx)) return;
+        _boolArg[0] = false;
+        try { _fxSetFreeze!.Invoke(fx, _boolArg); }
+        catch (Exception ex) { WarnOnce("fxunfreezeone", "could not unfreeze an effect: " + (ex.InnerException ?? ex).Message); }
     }
 
     private bool SetEffectFreeze(object mgr, long uid, bool on)
@@ -60,8 +90,8 @@ internal sealed partial class GameFreezeBackend
         catch { return false; }   // the effect ended meanwhile
     }
 
-    // ZDictionary<long, ZEffect>.Keys → enumerator (MoveNext / Current), the path the probe used.
-    private List<long> EffectUids(object mgr)
+    // ZDictionary<long, ZEffect>.Keys → enumerator (MoveNext / Current), the path the probe used. Null = not listable.
+    private List<long>? EffectUids(object mgr)
     {
         var uids = new List<long>();
         try
@@ -69,12 +99,12 @@ internal sealed partial class GameFreezeBackend
             var dict = _effectDict!.GetValue(mgr);
             var keys = dict?.GetType().GetProperty("Keys")?.GetValue(dict);
             var en = keys?.GetType().GetMethod("GetEnumerator", Type.EmptyTypes)?.Invoke(keys, null);
-            if (en is null) return uids;
+            if (en is null) return null;
             var move = en.GetType().GetMethod("MoveNext")!;
             var current = en.GetType().GetProperty("Current")!;
             while (move.Invoke(en, null) is true) uids.Add(Convert.ToInt64(current.GetValue(en)));
         }
-        catch (Exception ex) { WarnOnce("fxkeys", "could not list effects: " + ex.Message); }
+        catch (Exception ex) { WarnOnce("fxkeys", "could not list effects: " + ex.Message); return null; }
         return uids;
     }
 
@@ -103,12 +133,14 @@ internal sealed partial class GameFreezeBackend
             _boolArg[0] = true;
             _fxSetFreeze.Invoke(fx, _boolArg);
             _ledger.TouchEffect(uid);
+            _fxInstances[uid] = fx;   // maybe never in EffectDict: unfrozen through this instance (guarded)
             OnEffectInitFrozen();
         }
         catch (Exception ex) { WarnOnce("fxinitone", "could not freeze an initialising effect: " + (ex.InnerException ?? ex).Message); }
     }
 
     partial void OnEffectInitFrozen();
+    partial void OnEffectsUnfrozen(FreezeEffectRule.UnfreezeCounts counts);
 
     // Postfix on both AddEffectDisplay overloads; only the ZEffect one carries an effect to freeze.
     private void OnEffectDisplayed(object? _, object?[] args)
@@ -118,7 +150,9 @@ internal sealed partial class GameFreezeBackend
         {
             _boolArg[0] = true;
             _fxSetFreeze!.Invoke(fx, _boolArg);
-            _ledger.TouchEffect(Convert.ToInt64(_fxUid!.GetValue(fx)));
+            var uid = Convert.ToInt64(_fxUid!.GetValue(fx));
+            _ledger.TouchEffect(uid);
+            if (uid != 0) _fxInstances[uid] = fx;
         }
         catch (Exception ex) { WarnOnce("fxnew", "could not freeze a new effect: " + ex.Message); }
     }

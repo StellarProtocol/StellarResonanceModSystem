@@ -33,6 +33,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly List<long> _ids = new();
     private readonly Action _lateTick;
+    private readonly Action _flushOnUnfreeze;
     private bool _frozen;
     private bool _lateOn;
     private int _stage2Due;
@@ -44,6 +45,10 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         _driver = driver;
         _log = log;
         _lateTick = LateTick;
+        _identityNow = IdentityNow;
+        _flushOnUnfreeze = () => FlushDeferred("unfreeze");
+        _ecsLiveController = EcsLiveControllerSpeed;
+        _ecsWrite = (uid, w) => WriteLayer(uid, w.Layer, w.Speed, w.Weight);
     }
 
     public event Action? HoldDisabled;
@@ -106,15 +111,15 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         if (!_frozen) return;
         _frozen = false;
         OnUnfreezing();
-        FlushDeferred("unfreeze");   // the deferred deaths first, each restored then removed in this frame
-        _removals.Disarm();
         _stage2Due = 0;
         _appeared.Clear();
         _pendingVehicleChecks.Clear();
         var effects = _ledger.Effects.Count;
         var factors = _ledger.Factors.Count;
         var speeds = _ledger.Speeds.Count;
-        if (FreezeTeardown.Run(this) is { } ex)
+        // The deferred deaths first (each restored then removed in this frame), as the step runner's first step: a throw
+        // there can never skip the disarm or the teardown (review: a stuck-frozen scene otherwise).
+        if (FreezeTeardown.RunAfterFlush(_flushOnUnfreeze, _removals.Disarm, this) is { } ex)
             WarnOnce("unfreezeall", "unfreeze completed best-effort after an error: " + ex.Message);
         SyncLate();
         OnUnfrozen(effects, factors, speeds);

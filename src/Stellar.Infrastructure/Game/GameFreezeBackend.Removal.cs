@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using Il2CppInterop.Runtime.InteropTypes;
 using Stellar.Infrastructure.Hooks;
 namespace Stellar.Infrastructure.Game;
 
@@ -19,6 +20,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class GameFreezeBackend
 {
     private readonly DeferredRemovals _removals = new();
+    private readonly Func<long, nint> _identityNow;
     private MethodInfo? _removeEntity;
 
     /// <summary>Kill switch (read once, at install on the first freeze): <c>0</c> = killed monsters vanish as before.</summary>
@@ -39,17 +41,32 @@ internal sealed partial class GameFreezeBackend
         catch (Exception ex) { WarnOnce("deferhook", "deferred-removal hook failed: " + ex.Message); }
     }
 
-    // Gate on RemoveEntity(long uuid, EDisappearType, bool removeImmediately). True = the game removes it now.
+    // Gate on RemoveEntity(long uuid, EDisappearType, bool removeImmediately). True = the game removes it now. Off the main
+    // thread (or before the late frame observed it) every call passes (DeferredRemovals.Decide), with no entity read. The
+    // diagnostics line runs after the verdict is fixed and can never change it (review: a throw there used to fail the
+    // gate open AFTER the call was queued — removed now and again at the replay).
     private bool OnRemoveEntityGate(object? _, object?[] args)
     {
         if (!_removals.Armed || _removals.Replaying || args.Length < 3 || args[0] is not long uuid) return true;
         var type = args[1]?.ToString();
         if (type != DeferredRemovals.DeadType && !_removals.IsQueued(uuid)) return true;   // no kind read for the rest
-        var call = new DeferredRemovals.Call(uuid, type, args[2] is true, _entities.Kind(uuid), _ledger.Excludes(uuid));
+        var thread = Environment.CurrentManagedThreadId;
+        var off = thread == 0 || thread != _speedGate.MainThread;
+        var entity = off ? null : _entities.EntityByUuid(uuid);
+        var call = new DeferredRemovals.Call(uuid, type, args[2] is true, entity is null ? -1 : _entities.EntType(entity),
+            _ledger.Excludes(uuid), Identity(entity), off);
         var decision = _removals.Decide(call, args);
-        OnRemovalDecision(uuid, type, decision);
-        return decision != DeferredRemovals.Decision.Defer;
+        var run = decision != DeferredRemovals.Decision.Defer;
+        try { OnRemovalDecision(uuid, type, decision); }
+        catch { /* diagnostics only: the verdict above stands */ }
+        return run;
     }
+
+    /// <summary>The entity's native pointer — its identity across a uuid reuse (0 = none).</summary>
+    private static nint Identity(object? entity) => (entity as Il2CppObjectBase)?.Pointer ?? IntPtr.Zero;
+
+    /// <summary>What <c>GetEntity(uuid)</c> serves now, as an identity (the replay's same-entity check).</summary>
+    private nint IdentityNow(long uuid) => Identity(_entities.EntityByUuid(uuid));
 
     // Prefix on ZEntityMgr.ClearEntities(bool): the scene's entities are about to be destroyed — replay first.
     private void OnClearEntities(object? _, object?[] __)
@@ -63,7 +80,7 @@ internal sealed partial class GameFreezeBackend
     {
         if (_removals.Count == 0) return;
         if (_entities.Manager() is not { } mgr || _removeEntity is null) { _removals.Drop(); return; }
-        var n = _removals.Replay((uuid, args) =>
+        var n = _removals.Replay(_identityNow, (uuid, args) =>
         {
             try
             {

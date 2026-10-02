@@ -23,13 +23,15 @@ internal static class EcsSpeedPatch
 
     private static EcsSpeedGate? s_gate;
 
-    /// <summary>(method, prefix, parameter count, speed index): the speed is at <c>__2</c> / <c>__6</c> / <c>__5</c> / <c>__6</c>.</summary>
-    private static readonly (string Method, string Prefix, int SpeedAt)[] Targets =
+    /// <summary>(method, prefix, the exact layer type, speed index, writer): the layer is <c>int</c> on
+    /// <c>SetAnimatorLayerData</c> and <c>ushort</c> on the three plays; the speed is at <c>__2</c> / <c>__6</c> / <c>__5</c> /
+    /// <c>__6</c>, the weight right after it.</summary>
+    private static readonly (string Method, string Prefix, Type Layer, int SpeedAt)[] Targets =
     {
-        ("SetAnimatorLayerData", nameof(LayerData), 2),
-        ("PlayState", nameof(PlayState), 6),
-        ("PlayClip", nameof(PlayClip), 5),
-        ("PlayDynamicState", nameof(PlayDynamic), 6),
+        ("SetAnimatorLayerData", nameof(LayerData), typeof(int), 2),
+        ("PlayState", nameof(PlayState), typeof(ushort), 6),
+        ("PlayClip", nameof(PlayClip), typeof(ushort), 5),
+        ("PlayDynamicState", nameof(PlayDynamic), typeof(ushort), 6),
     };
 
     /// <summary>Patches every target that resolves; returns the names patched.</summary>
@@ -37,40 +39,53 @@ internal static class EcsSpeedPatch
     {
         s_gate = gate;
         var patched = new List<string>();
-        foreach (var (name, prefixName, speedAt) in Targets)
+        foreach (var (name, prefixName, _, _) in Targets)
         {
             var prefix = typeof(EcsSpeedPatch).GetMethod(prefixName, BindingFlags.Static | BindingFlags.NonPublic);
-            var method = manager.GetMethods(BindingFlags.Static | BindingFlags.Public)
-                .FirstOrDefault(m => m.Name == name && Fits(m, speedAt));
+            var method = manager.GetMethods(BindingFlags.Static | BindingFlags.Public).FirstOrDefault(m => FitsTarget(name, m));
             if (prefix is not null && method is not null && hooker.PrefixWith(method, prefix)) patched.Add(name);
         }
         return patched;
     }
 
-    // uid first, the layer second, and float speed + weight at speedAt / speedAt + 1.
-    private static bool Fits(MethodInfo m, int speedAt)
+    /// <summary>True when <paramref name="m"/> is the target <paramref name="name"/> with exactly the shape its prefix binds
+    /// by position: <c>uint</c> uid first, that target's own layer type second (review: <c>int</c> vs <c>ushort</c> is per
+    /// method, never either), and by-value <c>float</c> speed + weight at the target's speed index.</summary>
+    internal static bool FitsTarget(string name, MethodInfo m)
+    {
+        if (m.Name != name) return false;
+        foreach (var t in Targets)
+            if (t.Method == name) return Fits(m, t.Layer, t.SpeedAt);
+        return false;
+    }
+
+    private static bool Fits(MethodInfo m, Type layer, int speedAt)
     {
         var ps = m.GetParameters();
-        return ps.Length > speedAt + 1 && ps[0].ParameterType == typeof(uint) &&
-               (ps[1].ParameterType == typeof(int) || ps[1].ParameterType == typeof(ushort)) &&
+        return ps.Length > speedAt + 1 && ps[0].ParameterType == typeof(uint) && ps[1].ParameterType == layer &&
                ps[speedAt].ParameterType == typeof(float) && ps[speedAt + 1].ParameterType == typeof(float);
     }
 
     // ---- the prefixes (static, by position; never throw into the native caller) ----
 
-    private static void LayerData(uint __0, int __1, ref float __2, float __3) => Ask(__0, __1, ref __2, __3);
+    private static void LayerData(uint __0, int __1, ref float __2, float __3) => Ask(EcsSpeedGate.Writer.LayerData, __0, __1, ref __2, __3);
 
-    private static void PlayState(uint __0, ushort __1, ref float __6, float __7) => Ask(__0, __1, ref __6, __7);
+    private static void PlayState(uint __0, ushort __1, ref float __6, float __7) => Ask(EcsSpeedGate.Writer.PlayState, __0, __1, ref __6, __7);
 
-    private static void PlayClip(uint __0, ushort __1, ref float __5, float __6) => Ask(__0, __1, ref __5, __6);
+    private static void PlayClip(uint __0, ushort __1, ref float __5, float __6) => Ask(EcsSpeedGate.Writer.PlayClip, __0, __1, ref __5, __6);
 
-    private static void PlayDynamic(uint __0, ushort __1, ref float __6, float __7) => Ask(__0, __1, ref __6, __7);
+    private static void PlayDynamic(uint __0, ushort __1, ref float __6, float __7) => Ask(EcsSpeedGate.Writer.PlayDynamic, __0, __1, ref __6, __7);
 
-    private static void Ask(uint uid, int layer, ref float speed, float weight)
+    // Unarmed: a bare early-out (two field reads). Armed: the diagnostics-only call counter, then the gate.
+    private static void Ask(EcsSpeedGate.Writer writer, uint uid, int layer, ref float speed, float weight)
     {
         var gate = s_gate;
         if (gate is null || !gate.Armed) return;
-        try { gate.TrySubstitute(uid, layer, ref speed, weight, Environment.CurrentManagedThreadId); }
+        try
+        {
+            gate.CountCall(writer);
+            gate.TrySubstitute(uid, layer, ref speed, weight, Environment.CurrentManagedThreadId);
+        }
         catch { /* trust boundary */ }
     }
 }

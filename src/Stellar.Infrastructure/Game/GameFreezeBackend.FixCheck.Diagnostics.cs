@@ -41,7 +41,7 @@ internal sealed partial class GameFreezeBackend
 
     private string DiagFixTotals() =>
         $"ecsPatched={_ecsPatched} ecsTracked={_ecsGate.Tracked} ecsHeld={_ecsGate.Held} ecsLeak={_ecsGate.Leaked} " +
-        $"deferred={_removals.Deferred} queued={_removals.Count} fxInitFrozen={_diagFxInitFrozen}";
+        $"deferred={_removals.Deferred} queued={_removals.Count} fxInitFrozen={_diagFxInitFrozen} ecsCalls={_ecsGate.CallCountsText()}";
 
     partial void OnEcsReleased(long uuid, int writes)
     {
@@ -82,7 +82,7 @@ internal sealed partial class GameFreezeBackend
     {
         _log.Info($"[FreeCam] freeze ecs: patched={_ecsPatched} tracked={_diagEcsTrackedAtEnd} held={_ecsGate.Held} leaked={_ecsGate.Leaked} " +
                   $"restored={_diagEcsReleased} restoreWrites={_diagEcsReleaseWrites} fxInitFrozen={_diagFxInitFrozen} " +
-                  $"deferred={_removals.Deferred} replayed={_removals.Replayed}");
+                  $"deferred={_removals.Deferred} replayed={_removals.Replayed} replayStale={_removals.Stale} {DiagFxReleaseText()}");
         _diagEcsReleased = _diagEcsReleaseWrites = _diagFxInitFrozen = _diagRemovalLines = 0;
     }
 
