@@ -28,7 +28,7 @@ internal sealed class SelfPoseModel : IPoseModel
     public void Aim(LookPart part, float x, float y) { if (!_closed) _p.Aim(part, x, y); }
     public void SetYaw(float offsetDegrees) { if (!_closed) _p.SetYaw(offsetDegrees); }
     public Position3D? Position => null;                 // you: the camera follows your entity
-    public void SetFrozen(bool frozen) { }               // you: the scene freeze covers you as an entity
+    public void SetFrozen(bool frozen) { }               // you: never frozen (scene-stays spec § 3) — moving cancels your held emote, as in the game
 
     public void Close(PoseTouches touched)
     {

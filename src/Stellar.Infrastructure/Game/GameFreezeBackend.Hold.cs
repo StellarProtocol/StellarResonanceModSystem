@@ -68,9 +68,7 @@ internal sealed partial class GameFreezeBackend
         if (!ResolveHold()) { WarnOnce("hold", "position hold unavailable on this client"); return; }
         _held.Clear();
         if (HoldOrigin() is not { } origin) return;
-        var self = _entities.PlayerUuid();
-        foreach (var uuid in _ids)
-            if (uuid != self) TryHold(uuid, origin);
+        foreach (var uuid in _ids) TryHold(uuid, origin);   // the local player is already out of _ids
         if (_held.Count == 0) return;
         _budget.Reset();
         _holding = true;
@@ -93,6 +91,7 @@ internal sealed partial class GameFreezeBackend
     /// over the rest of <c>_ids</c>.</summary>
     private void TryHold(long uuid, Vector3 origin, object? entity)
     {
+        if (_ledger.Excludes(uuid)) return;   // never the local player
         try
         {
             var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);

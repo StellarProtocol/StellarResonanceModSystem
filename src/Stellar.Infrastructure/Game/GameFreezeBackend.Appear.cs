@@ -35,7 +35,9 @@ internal sealed partial class GameFreezeBackend
         try
         {
             var uuid = _entities.Uuid(entity);
-            if (uuid == _entities.PlayerUuid() || _appeared.Exists(a => a.Uuid == uuid)) return;
+            // The local player never joins the appear re-check (scene-stays spec § 3), whether or not this freeze
+            // learned their uuid at the press.
+            if (_ledger.Excludes(uuid) || uuid == _entities.PlayerUuid() || _appeared.Exists(a => a.Uuid == uuid)) return;
             // Pass the hook's own entity through (not just the uuid): recon only proves the model is live at the
             // AddEntity postfix, not that a GetEntity(uuid) re-lookup already finds it (Task 9 round 2).
             FreezeFactor(uuid, entity);

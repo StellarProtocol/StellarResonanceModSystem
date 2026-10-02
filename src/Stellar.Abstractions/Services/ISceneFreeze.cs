@@ -3,11 +3,12 @@ using System;
 namespace Stellar.Abstractions.Services;
 
 /// <summary>
-/// Freezes what is on screen — the animation of every entity (players, NPCs, pets, mounts, monsters), skill effects and
-/// particles, and (unless turned off) the drawn positions of every moving entity except the local player — while any
-/// token is held. Entities that appear while frozen are frozen as they appear. Visual and local only: the game clock and
-/// the network keep running. Reference-counted; the framework releases every token on a zone change, a cutscene, a
-/// disconnect and the holder's unload. Main thread only.
+/// Freezes what is on screen — the animation of every entity but the local player (players, NPCs, pets, mounts,
+/// monsters), skill effects and particles (all of them, yours too), and (unless turned off) the drawn positions of every
+/// moving entity but the local player — while any token is held. The local player is never frozen: they can walk away
+/// from a frozen scene, and moving cancels their own held emote as in the game. Entities that appear while frozen are frozen as they appear. Visual and local only: the game clock and
+/// the network keep running. Reference-counted; the framework releases every token on a zone change, a cutscene, the
+/// game's own camera mode, a disconnect and the holder's unload — never on a free-camera release. Main thread only.
 /// </summary>
 public interface ISceneFreeze
 {

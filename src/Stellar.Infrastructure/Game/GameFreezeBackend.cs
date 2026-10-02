@@ -10,8 +10,8 @@ namespace Stellar.Infrastructure.Game;
 // Entities appearing while frozen: .Appear.cs. Logging: .Diagnostics.cs.
 
 /// <summary>The game side of <c>ISceneFreeze</c> (spec § 4, recon runs 2 and 3) for every entity in
-/// <c>ZEntityMgr.EntityDict</c>. Visual and local only. Each part fails open on its own with one warning; a failure in
-/// one never stops the others. One LateUpdate handler runs stage 2, the appear re-checks and the hold; the frame driver
+/// <c>ZEntityMgr.EntityDict</c> except the local player (scene-stays spec § 3; effects stay global). Visual and local
+/// only. Each part fails open on its own with one warning; a failure in one never stops the others. One LateUpdate handler runs stage 2, the appear re-checks and the hold; the frame driver
 /// is off whenever none of them is live. Main thread.</summary>
 internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
 {
@@ -69,13 +69,22 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         if (_frozen) return;
         _frozen = true;
         _ledger.Clear();
-        // "everything on screen" = every entity, read once per press.
-        if (FreezeStepRunner.RunAll(() => _entities.EntityUuids(_ids), FreezeEffects, FreezeAnimation,
+        // "everything on screen" = every entity but the local player, read once per press.
+        if (FreezeStepRunner.RunAll(ReadTargets, FreezeEffects, FreezeAnimation,
                 () => { if (holdPositions) StartHold(); }) is { } ex)
             WarnOnce("freezeall", "freeze applied best-effort after an error: " + ex.Message);
         _stage2Due = Stage2Delay;
         SyncLate();
         OnFrozen(_ledger.Effects.Count, _ledger.Factors.Count, _held.Count);
+    }
+
+    /// <summary>This press's entities: every entity uuid, minus the local player (never frozen — scene-stays spec § 3).
+    /// The ledger keeps who the local player is, so every later phase (stage 1/2, hold, appear) refuses them too.</summary>
+    private void ReadTargets()
+    {
+        _entities.EntityUuids(_ids);
+        _ledger.Begin(_entities.PlayerUuid());
+        _ledger.WithoutSelf(_ids);
     }
 
     /// <summary>Unfreezes everything this backend touched. Each step runs through <see cref="FreezeStepRunner"/> so

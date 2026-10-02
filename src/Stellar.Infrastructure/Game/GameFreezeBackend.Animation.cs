@@ -7,7 +7,8 @@ namespace Stellar.Infrastructure.Game;
 /// supports it: <c>SetAttrSkillStageTimeFactor(e, 0)</c> + <c>SetAttrAnimSpeedDirty(e, true)</c> + <c>tryCalculateAnimSpeed(e)</c>,
 /// the prior value from <c>GetAttrSkillStageTimeFactor</c> — enough for players, vanity pets and mounts. Stage 2, two late
 /// frames later: <c>ZModel.AnimComp.Speed = 0</c> on every entity whose drawn speed is still above 0 — NPCs and pets, whose
-/// drawn speed the attr never reaches and the game never rewrites. The local player is included (the pose freezes too).
+/// drawn speed the attr never reaches and the game never rewrites. The local player is never frozen (scene-stays spec § 3:
+/// <see cref="FreezeLedger.Excludes"/>) — they walk and their own emote plays while the rest of the scene holds.
 /// Every per-entity lookup below runs inside that entity's own try: one entity's interop failure is caught, warned
 /// once and skipped, and never aborts the loop over the rest of <c>_ids</c> — a prior bug here could abort mid-loop,
 /// leaving the remaining entities both unfrozen AND un-tracked by <see cref="FreezeLedger"/>, so a later unfreeze
@@ -67,14 +68,16 @@ internal sealed partial class GameFreezeBackend
     /// caught and skipped without aborting the caller's loop over the rest.</summary>
     private void FreezeFactor(long uuid, object? entity)
     {
-        if (_recalc is null || _ledger.Factors.ContainsKey(uuid)) return;
+        if (_recalc is null || _ledger.Excludes(uuid) || _ledger.Factors.ContainsKey(uuid)) return;
         try
         {
             var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);
             if (live is not { } e || !FreezeKinds.AttrSupported(_entities.EntType(e))) return;
             var prior = Convert.ToSingle(_getFactor!.Invoke(null, new[] { e }));
+            // Saved BEFORE the write: the ledger refuses the local player (never frozen), and a write that then throws
+            // leaves a prior the restore skips (it only restores while our frozen value is still in place).
+            if (!_ledger.SaveFactor(uuid, prior)) return;
             _setFactor!.Invoke(null, new object[] { e, FreezeLedger.FrozenFactor });
-            _ledger.SaveFactor(uuid, prior);   // saved before the recalc, so a recalc failure is still restored
             Recalc(e);
         }
         catch (Exception ex) { WarnOnce("animone", "could not freeze an entity's animation: " + (ex.InnerException ?? ex).Message); }
@@ -107,12 +110,13 @@ internal sealed partial class GameFreezeBackend
     /// aborting <see cref="FreezeDrawnSpeeds"/>'s loop over the rest of <c>_ids</c>.</summary>
     private bool FreezeDrawnSpeed(long uuid)
     {
+        if (_ledger.Excludes(uuid)) return false;   // no model read for the local player at all
         try
         {
             if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return false;
             var speed = _getSpeed!(comp);
             if (speed <= FreezeLedger.SpeedEpsilon) return false;
-            _ledger.SaveSpeed(uuid, speed);
+            if (!_ledger.SaveSpeed(uuid, speed)) return false;   // the local player is never frozen
             _setSpeed!(comp, 0f);
             return true;
         }
