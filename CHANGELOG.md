@@ -19,7 +19,7 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 ### Added
 - Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see. Posing works with the free camera off too, and leaving the free camera keeps everyone as you posed them — they return to normal when you change zone, a cutscene starts or you disconnect.
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
-- Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze.
+- Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze. If something hits you while frozen, your own character may still flinch in place.
 - Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
@@ -48,9 +48,13 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   `free-camera-recon.md` § Run 9): `GameClockPause` saves `Time.timeScale` and sets 0; a HarmonyX prefix on
   `UnityEngine.Time.set_timeScale(float)` (`TimeScalePatch`, by-value float — allowed by `Il2CppPatchSafety`) holds the
   game's own writes while paused (hit-stop `ZTimeScaleShowInfo.OnStop` writes 1.0) and keeps the latest as the restore
-  value (else the saved one; never ≤ 0). A watchdog on the framework tick resumes a pause its freeze lost, releases a pause
-  outside the world and re-asserts 0 if the clock was set behind the hook; a per-paused-frame stall check resumes if the
-  framework tick stops beating for 10 s; framework unload and the paused driver's destruction resume too. While paused the
+  value (else the saved one; never ≤ 0). A watchdog (`TimePauseWatchdog`) at the framework's global rate, OUTSIDE the world
+  gate beside the login / loading-screen probes (never on the world-gated `IFramework.Update`), re-asserts 0 if the clock
+  was set behind the hook, resumes a pause its freeze already dropped and releases a pause outside the world; a stall
+  check after every paused frame's tick (no framework tick for 10 s, persisting over 3 checks and 1 s — one long hitch is
+  no stall) and the paused driver's destruction release too. Every such release is the FULL release path
+  (`FreeCameraReleaser`: camera, posing, every freeze token → animation replay + gate disarmed, hold stopped, clock
+  resumed, input shield), never a bare clock resume; framework unload resumes as well. While paused the
   framework tick runs from real time (`StellarPausedTicker`, enabled only while paused; `TickPacer` keeps one dt and one
   tick per frame across both drivers — the `InvokeRepeating` path is unchanged), and the free camera's acquire / release
   cut (`CinemachineBrain.m_DefaultBlend` = Cut for the pause, the game's blend put back on resume). Kept from the per-entity
@@ -60,12 +64,29 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   (a walking monster: 9 `PlayBaseState` in 20 s), and one request re-poses a model with the clock stopped (45 % of its region
   changed). So a run-original gate on `ECSAnimController.Play{Base,Upper,Additive}State` / `PlayManualClip` and their
   internal `play…` twins holds the requests of the press's entities' controllers (never the local player, their mount or a
-  posing copy) and replays the latest per layer on unfreeze (`AnimRequestGate`; kill switch `STELLAR_FREEZE_ANIM_GATE=0`),
-  and the local player's movement / combat input is masked while paused (`ZIgnoreMgr.SetInputIgnore`, source `EPayWebView`,
-  mask `ShieldMask.PauseBits` = `0x10FFB6679`; camera bits open; coexists with the free camera's `EGm` shield). Removed: the attr factor freeze, the `AnimCompBase.set_Speed` gate,
+  posing copy) and replays the latest per layer on unfreeze, each only while its entity still serves the same (pooled)
+  controller (`AnimRequestGate`; kill switch `STELLAR_FREEZE_ANIM_GATE=0`). The gate is four TYPED HarmonyX prefixes
+  (`AnimGatePatch`, by-position arguments, exact-signature check) on the internal `playBaseState` / `playUpperState` /
+  `playAdditiveState` / `playManualClip` only — the public, sequence and state-end requests all funnel through them
+  (release_3.7 ISIL) — so an unfrozen call costs a counter and a field check and allocates nothing; installed on the first
+  freeze for the session. A press that does not know the local player tracks nobody. The local player's movement / combat
+  input is masked while paused (`ZIgnoreMgr.SetInputIgnore`, mask `ShieldMask.PauseBits` = `0x10FFB6679`, camera bits
+  open) as a second layer of the free camera's `EGm` source: `InputShieldService` owns that one source and moves it
+  between unions by the difference only (the game counts each bit per source). Removed: the attr factor freeze, the `AnimCompBase.set_Speed` gate,
   the ECS layer gate and its native play detours (`EcsPlayDetours`), the effect freeze at `AddEffectDisplay` /
   `ZEffect.Init`, the appear / ride-up re-checks and the combat-freeze diagnostics capture; diagnostics keep one freeze
-  on/off summary (time scale saved/restored, game writes held, drifts, positions held, deferred removals).
+  on/off summary (time scale saved/restored, game writes held, drifts, positions held, animation requests held / replayed /
+  stale, the gated entry points' calls this freeze and since install, deferred removals).
+- **While frozen, Unity's scaled time stops for every plugin**, not just the game: `Time.deltaTime` is 0 and `Time.time`
+  stands still, `WaitForSeconds`, `UniTask.Delay` (default `DelayType.DeltaTime`) and anything else on scaled time wait
+  until the unfreeze. Use `Time.unscaledDeltaTime` / `Time.realtimeSinceStartup`, `WaitForSecondsRealtime` or
+  `DelayType.Realtime` / `IFramework` timers for anything that must keep running. The position hold covers players and
+  monsters within 80 m of you (`FreezeKinds.HoldRadius`); farther ones may glide in their paused pose. `ISceneFreeze.Changed`
+  handlers each run on their own (a throwing one is logged once); one throwing `IFramework.Update` subscriber no longer
+  stops the others.
+- Known limits: the server keeps driving the local player's hit reactions while frozen, so your own character can still
+  re-pose in stop-motion when something hits you (its requests are not held — holding them would also hold your own
+  movement); a disconnect ends the freeze only through the game's logout (`IClientState.Logout`).
 - `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
   entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
   settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without

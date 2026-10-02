@@ -23,7 +23,8 @@ public enum CameraReleaseReason
     Disconnected,
     /// <summary>The holding plugin was disabled or unloaded.</summary>
     PluginUnloaded,
-    /// <summary>The holder's per-frame code threw; the framework released the camera.</summary>
+    /// <summary>The holder's per-frame code threw, or the scene freeze's watchdog found its pause lost (the framework tick
+    /// stalled, or its paused-frame driver was destroyed); the framework released the camera.</summary>
     Error,
 }
 
