@@ -10,11 +10,13 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// arrives in is made by the postfix trampoline before this runs — not ours to avoid). On a throw the recorded copy is
 /// removed (isolated: a failing removal is warned, never hides the original failure) and the exception is rethrown
 /// unchanged. Pure (unit-tested).
-/// <para>Only the FIRST model is kept (review M-6). A mounted source's copy is 2 models (the 2026-10-02 sweep: modelDict_
-/// +2 per copy of WhiteTea), and <c>RecyclePhotoModel</c> on the copy removed BOTH (the count came back to its pre-open
-/// value both times), so the copy is the one handle that matters. The throw this net exists for cannot reach a 2-model
-/// copy anyway: it needs a NULL ride template, and every mounted source measured carries one
-/// (<c>animtpl/ch_vehicle_ride_*</c>, probe run 6 + sweep), so the guard never fires and the callback does not throw.</para>
+/// <para>Only the FIRST model is kept (review M-6). A source riding or seated on something is copied as 2 models, both
+/// made inside the armed call (2026-10-02 sweeps: WhiteTea +2; fix2 runs Aster and Remmir — Male, on a throne —
+/// <c>records=2</c>, modelDict_ +2), and <c>RecyclePhotoModel</c> on the returned copy removed BOTH every time (the count
+/// came back to its pre-open value), so the copy is the one handle that matters. The throw this net exists for cannot
+/// reach a 2-model copy anyway: it needs a NULL ride template, and every 2-model source measured carried a non-null one
+/// (<c>rideTplNull=False</c>: probe run 6's mounted source, WhiteTea, Aster, Remmir), so the callback does not throw;
+/// every null-template source measured was a 1-model copy (<c>records=1</c>).</para>
 /// </summary>
 internal sealed class CloneOrphanNet
 {
