@@ -102,6 +102,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
         OnUnfreezing();
         _stage2Due = 0;
         _appeared.Clear();
+        _pendingVehicleChecks.Clear();
         var effects = _ledger.Effects.Count;
         var factors = _ledger.Factors.Count;
         var speeds = _ledger.Speeds.Count;
@@ -113,10 +114,12 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
 
     // Each stage wrapped in its own try (zero-allocation — no delegate/array needed for just 3 fixed calls): a
     // throw in one must not skip the others this frame. Stage 2 would otherwise be lost for good (_stage2Due is
-    // already decremented to 0) and the appear re-check / hold write would never run this frame either.
+    // already decremented to 0) and the appear re-check / hold write would never run this frame either. The vehicle
+    // re-check isolates per-uuid instead (ProcessPendingVehicleChecks), since its queue can hold more than one entry.
     private void LateTick()
     {
         _speedGate.ObserveMainThread(Environment.CurrentManagedThreadId);   // Unity runs LateUpdate on the main thread
+        if (_pendingVehicleChecks.Count > 0) ProcessPendingVehicleChecks();   // queued by the game's own ride-up event
         if (_stage2Due > 0 && --_stage2Due == 0)
         {
             try { ReleaseLateExclusions(); FreezeDrawnSpeeds(); }
@@ -137,7 +140,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
 
     private void SyncLate()
     {
-        var want = _frozen && (_stage2Due > 0 || _appeared.Count > 0 || _holding);
+        var want = _frozen && (_stage2Due > 0 || _appeared.Count > 0 || _holding || _pendingVehicleChecks.Count > 0);
         if (want == _lateOn) return;
         _lateOn = want;
         _driver.SetLate(want ? _lateTick : null);

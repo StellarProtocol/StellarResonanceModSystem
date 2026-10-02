@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Stellar.Abstractions.Services;
 using Stellar.Infrastructure.Hooks;
 namespace Stellar.Infrastructure.Game;
@@ -10,15 +11,19 @@ namespace Stellar.Infrastructure.Game;
 /// substituted under the dead uuid (review, regression <c>freeze_combat_resume_recycled_comp_*</c>).</para>
 /// <para><b>Ride-up</b> — postfixes on <c>Panda.ZGame.VehicleComp.UpdateControllerInfo</c> and <c>UpdatePassengerList</c>
 /// (release_3.7 interop: public, parameterless, no managed callers — the vehicle component's own refresh callbacks; the
-/// entity is <c>ZComponent.Host</c>): a vehicle whose driver or passengers change while frozen is re-checked once for
-/// being the local player's (<see cref="FreezeTargets.ExcludeIfOwnMount"/>) and released if so. Replaces the former
-/// 300-frame per-vehicle re-check. Unmeasured in game: personal mounts are part of the player model (run 8a), so this
-/// is for multi-seat / public <c>VehicleEnt</c> only. Both return at once unless frozen.</para></summary>
+/// entity is <c>ZComponent.Host</c>): a vehicle whose driver or passengers change while frozen only has its uuid QUEUED
+/// here (review, Important finding: <see cref="FreezeTargets.ExcludeIfOwnMount"/> and the release must never run inside
+/// the game's own dispatch, and a same-batch <c>AttrRideUuid</c> write may not have landed at the postfix yet). The next
+/// <c>LateTick</c> — one frame later, off the game's call stack — re-checks each queued uuid against the CURRENT link
+/// and releases it if it is now the local player's. Replaces the former 300-frame per-vehicle re-check. Unmeasured in
+/// game: personal mounts are part of the player model (run 8a), so this is for multi-seat / public <c>VehicleEnt</c>
+/// only. Both postfixes return at once unless frozen.</para></summary>
 internal sealed partial class GameFreezeBackend
 {
     internal const string VehicleCompType = "Panda.ZGame.VehicleComp";
 
     private Func<object, object?>? _vehicleHost;
+    private readonly HashSet<long> _pendingVehicleChecks = new();
 
     private void InstallLeaveHook(HarmonyGameMethodHooker hooker)
     {
@@ -47,19 +52,38 @@ internal sealed partial class GameFreezeBackend
         _speedGate.Untrack(uuid);
     }
 
-    // Postfix on VehicleComp.UpdateControllerInfo / UpdatePassengerList: the instance is the vehicle's component.
+    // Postfix on VehicleComp.UpdateControllerInfo / UpdatePassengerList: the instance is the vehicle's component. Only
+    // queues the uuid (repeats coalesce in the set) and arms the late driver — the actual re-check runs one LateTick
+    // later, outside this callback (review finding).
     private void OnVehicleChanged(object? comp, object?[] _)
     {
         if (!_frozen || comp is null) return;
         try
         {
             if (_vehicleHost!(comp) is not { } host || _entities.Live(host) is not { } vehicle) return;
-            var uuid = _entities.Uuid(vehicle);
-            if (_ledger.Excludes(uuid)) return;
-            var own = FreezeTargets.ExcludeIfOwnMount(_entities, _ledger, uuid, FreezeKinds.Vehicle, _entities.VehicleController(vehicle));
-            OnVehicleEvent(uuid, own);
-            if (own) ReleaseEntity(uuid, "own mount (ride event)");
+            _pendingVehicleChecks.Add(_entities.Uuid(vehicle));
+            SyncLate();
         }
-        catch (Exception ex) { WarnOnce("vehicleevent", "could not re-check a vehicle: " + ex.Message); }
+        catch (Exception ex) { WarnOnce("vehicleevent", "could not queue a vehicle re-check: " + ex.Message); }
+    }
+
+    /// <summary>The queued vehicles' re-check, one <c>LateTick</c> after the event — never inside it (review finding): by
+    /// now a same-batch <c>AttrRideUuid</c> write has landed, so this reads the CURRENT link. Each uuid (repeats already
+    /// coalesced by the set) is isolated in its own try so one failing vehicle never skips the rest, and the queue is
+    /// always cleared so nothing is re-checked twice.</summary>
+    private void ProcessPendingVehicleChecks()
+    {
+        foreach (var uuid in _pendingVehicleChecks)
+        {
+            try
+            {
+                if (_ledger.Excludes(uuid)) continue;
+                var own = FreezeTargets.ExcludeIfOwnMount(_entities, _ledger, uuid, FreezeKinds.Vehicle, _entities.VehicleController(uuid));
+                OnVehicleEvent(uuid, own);
+                if (own) ReleaseEntity(uuid, "own mount (ride event)");
+            }
+            catch (Exception ex) { WarnOnce("vehicletick", "could not re-check a queued vehicle: " + ex.Message); }
+        }
+        _pendingVehicleChecks.Clear();
     }
 }

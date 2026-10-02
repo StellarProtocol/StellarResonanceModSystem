@@ -39,6 +39,26 @@ public sealed class FreezeTargetsTests
         Assert.True(l.Excludes(201));
     }
 
+    // Review Important finding (2026-10-02): the ride-up event must queue the vehicle's uuid and re-check it on the NEXT
+    // LateTick, never inside the game's own dispatch — a same-batch AttrRideUuid write may not have landed at the
+    // postfix. The production queue (GameFreezeBackend.Events.cs) remembers only the uuid, never a controller value
+    // captured at enqueue time, so the re-check always reads whatever VehicleController(uuid) answers THEN. This pins
+    // that contract directly on the pure re-check: a vehicle not yet the local player's mount when it would have been
+    // queued becomes excluded once its link is the local player's by the time it is re-checked.
+    [Fact]
+    public void scene_stays_a_queued_vehicle_whose_rider_link_becomes_self_only_later_is_released_on_the_next_check()
+    {
+        var src = Town();
+        var l = new FreezeLedger();
+        FreezeTargets.Select(src, l, new List<long>());
+        Assert.False(l.Excludes(OthersMount));                              // not the player's at the press
+
+        // The same-batch AttrRideUuid write lands between the event firing and the next LateTick.
+        src.Controllers[OthersMount] = Self;
+        Assert.True(FreezeTargets.ExcludeIfOwnMount(src, l, OthersMount, FreezeKinds.Vehicle, src.VehicleController(OthersMount)));
+        Assert.True(l.Excludes(OthersMount));
+    }
+
     [Fact]
     public void scene_stays_own_mount_never_frozen_even_when_its_kind_cannot_be_read()
     {
