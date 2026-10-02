@@ -5,17 +5,20 @@ using Stellar.Abstractions.Services;
 using UnityEngine;
 namespace Stellar.Infrastructure.Game;
 
-/// <summary>Position + rotation hold (recon run 2 C W2, run 3 R3-9; rotation: owner MAIN evidence 2026-10-02 — a frozen
-/// boss kept turning under <c>MoveComp.RotGo</c>): every LateUpdate, write each held entity's visual
-/// <c>ModelGoComp.Position</c> AND <c>Rotation</c> back to the pose it was drawn at freeze time (<see cref="PoseHold{TPos,TRot}"/>;
-/// 2.8–4.0 µs per entity for the position). Both are <c>ModelGoCompBase</c> virtuals: on an ECS model they are
-/// <c>ECSModelGoComp</c>'s overrides, whose getters read the bound bone transform the renderer draws from (release_3.7 ISIL)
-/// — the hold reads and writes the rendered root. Held = every movable kind
-/// (<see cref="FreezeKinds.Movable"/>) within <see cref="FreezeKinds.HoldRadius"/> of the local player, never the local
-/// player or their own mount (<see cref="FreezeTargets.MayHold"/>, review I1/I2). The logical pose keeps moving underneath; on release each held model is written back to its logical
-/// position and rotation (a pet stayed 18.48 m off for 3+ frames otherwise). Self-disables over <see cref="HoldBudget.LimitMs"/>.
-/// <see cref="TryHold"/> and the release isolate each entity's lookup in its own try so one bad
-/// entity never skips the rest (review finding, Task 9 round 1).</summary>
+/// <summary>Position + rotation hold (recon run 2 C W2, run 3 R3-9, run 9 R9-2; rotation: owner MAIN evidence 2026-10-02 —
+/// a frozen boss kept turning under <c>MoveComp.RotGo</c>). The time pause stops animation but NOT movement: move packets
+/// write a remote player's or monster's drawn position directly (R9-2: a walker glided 6.07 m in a frozen pose; 183 drawn
+/// jumps over 0.5 m in a 5-minute pause). So every LateUpdate, each held entity's visual <c>ModelGoComp.Position</c> AND
+/// <c>Rotation</c> are written back to the pose it was drawn at freeze time (<see cref="PoseHold{TPos,TRot}"/>; 2.8–4.0 µs
+/// per entity for the position). Both are <c>ModelGoCompBase</c> virtuals: on an ECS model they are <c>ECSModelGoComp</c>'s
+/// overrides, whose getters read the bound bone transform the renderer draws from (release_3.7 ISIL) — the hold reads and
+/// writes the rendered root. Held = every movable kind (<see cref="FreezeKinds.Movable"/>) within
+/// <see cref="FreezeKinds.HoldRadius"/> of the local player, never the local player or their own mount
+/// (<see cref="FreezeTargets.MayHold"/>, review I1/I2). The logical pose keeps moving underneath; on release each held model
+/// is written back to its logical position and rotation (a pet stayed 18.48 m off for 3+ frames otherwise). Entities that
+/// appear while frozen are not held. Self-disables over <see cref="HoldBudget.LimitMs"/>. <see cref="TryHold"/> and the
+/// release isolate each entity's lookup in its own try so one bad entity never skips the rest (review finding, Task 9
+/// round 1).</summary>
 internal sealed partial class GameFreezeBackend
 {
     internal const string ModelGoCompType = "Panda.ZGame.ModelGoCompBase";
@@ -83,7 +86,7 @@ internal sealed partial class GameFreezeBackend
     {
         if (!ResolveHold()) { WarnOnce("hold", "position hold unavailable on this client"); return; }
         _held.Clear();
-        if (HoldOrigin() is not { } origin) return;
+        if (!FreezeTargets.MayHoldAny(_ledger) || HoldOrigin() is not { } origin) return;
         foreach (var uuid in _ids) TryHold(uuid, origin);   // the local player is already out of _ids
         if (_held.Count == 0) return;
         _budget.Reset();
@@ -94,25 +97,16 @@ internal sealed partial class GameFreezeBackend
     private Vector3? HoldOrigin() =>
         _entities.LiveModel(_entities.LocalEntity()) is { } me ? _entities.AttrPosition(me) : null;
 
-    /// <summary>Holds <paramref name="uuid"/> at its drawn position, looked up fresh by uuid. See the
-    /// <c>(uuid, origin, entity)</c> overload.</summary>
-    private void TryHold(long uuid, Vector3 origin) => TryHold(uuid, origin, null);
-
-    /// <summary>Holds <paramref name="uuid"/> at its drawn position when it is a movable kind within the radius.
-    /// When <paramref name="entity"/> is given — a hook's own postfix argument, already proven live at the hook
-    /// site (recon run 3) — it is used directly under the same <see cref="GameEntityAccess.Live"/> check as a
-    /// fresh lookup, instead of re-finding it via <c>GetEntity(uuid)</c>, which recon never proved succeeds at
-    /// that same instant (Task 9 round 2). Falls back to the uuid lookup when null. The whole lookup runs inside
-    /// one try: an interop failure for this entity is caught and warned once, never aborting the caller's loop
-    /// over the rest of <c>_ids</c>.</summary>
-    private void TryHold(long uuid, Vector3 origin, object? entity)
+    /// <summary>Holds <paramref name="uuid"/> (looked up fresh) at its drawn position when it is a movable kind within the
+    /// radius. The whole lookup runs inside one try: an interop failure for this entity is caught and warned once, never
+    /// aborting the caller's loop over the rest of <c>_ids</c>.</summary>
+    private void TryHold(long uuid, Vector3 origin)
     {
         if (_ledger.Excludes(uuid)) return;   // never the local player or their own mount: no read at all
         try
         {
-            var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);
-            if (live is not { } e || _entities.LiveModel(e) is not { } m || _entities.AttrPosition(m) is not { } at) return;
-            var held = _held.Contains(uuid);   // re-appeared while still held
+            if (_entities.EntityByUuid(uuid) is not { } e || _entities.LiveModel(e) is not { } m || _entities.AttrPosition(m) is not { } at) return;
+            var held = _held.Contains(uuid);
             if (!FreezeTargets.MayHold(_ledger, uuid, _entities.EntType(e), Vector3.Distance(at, origin), held)) return;
             if (_goComp!(m) is { } comp) _held.Add(uuid, _getPos!(comp), ReadRotation(comp));
         }
@@ -135,8 +129,8 @@ internal sealed partial class GameFreezeBackend
         return _entities.AttrPosition(m) is { } logical ? (comp, logical, _entities.AttrRotation(m)) : null;
     }
 
-    /// <summary>Releases one held entity mid-freeze (it turned out to be excluded, or a deferred removal replays): snapped
-    /// to its logical pose, out of the hold.</summary>
+    /// <summary>Releases one held entity mid-freeze (a deferred removal replays): snapped to its logical pose, out of the
+    /// hold.</summary>
     private void Unhold(long uuid)
     {
         if (!_held.Contains(uuid)) return;
@@ -149,9 +143,7 @@ internal sealed partial class GameFreezeBackend
         if (!_holding) return;
         _holding = false;
         // Release snap (run 3 R3-9): the drawn model rejoins its logical pose on this frame, not whenever it next moves.
-        OnHoldReleasing();   // diagnostics only: the drawn rotation against the logical one, before and after the snap
         _held.Release(_logicalPose!, _setPos!, _setRot, _snapError!);
-        OnHoldReleased();
         _held.Clear();
     }
 
@@ -175,12 +167,9 @@ internal sealed partial class GameFreezeBackend
         _holdWatch.Stop();
         if (!_budget.Record(_holdWatch.Elapsed.TotalMilliseconds)) return;
         _log.Info($"{Tag}position hold off: {_budget.LastAverageMs:F3} ms/frame over {HoldBudget.Window} frames " +
-                  $"for {_held.Count} entities (budget {HoldBudget.LimitMs} ms); animation and effects stay frozen");
+                  $"for {_held.Count} entities (budget {HoldBudget.LimitMs} ms); the world stays paused");
         DisableHold();
     }
-
-    partial void OnHoldReleasing();
-    partial void OnHoldReleased();
 
     private void DisableHold()
     {

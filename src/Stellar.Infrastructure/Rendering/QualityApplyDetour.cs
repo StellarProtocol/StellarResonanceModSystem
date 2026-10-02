@@ -13,7 +13,7 @@ namespace Stellar.Infrastructure.Rendering;
 /// runs with every argument as received, THEN <c>applied</c> fires — the postfix's timing, so the re-assert still follows
 /// the game's own apply. Native signature (Win64): <c>void(QualityData*, bool, MethodInfo*)</c>. Goes live only on the exact
 /// interop signature <see cref="QualityApplySignature.Expected"/>.
-/// <para><b>Static state — the hook exception</b> (as <c>EcsPlayDetours</c>): the original-trampoline delegate, the detour
+/// <para><b>Static state — the hook exception</b> (as the hooker's own tables): the original-trampoline delegate, the detour
 /// handle and the callback, written once at install on the main thread, then read-only; holding the delegates keeps them
 /// alive for the process.</para></summary>
 internal static class QualityApplyDetour

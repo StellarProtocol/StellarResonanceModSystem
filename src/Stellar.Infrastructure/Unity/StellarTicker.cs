@@ -19,16 +19,19 @@ public sealed class StellarTicker : MonoBehaviour
     // Required by Il2CppInterop for managed MonoBehaviour subclasses.
     public StellarTicker(IntPtr ptr) : base(ptr) { }
 
-    /// <summary>Tick callback; argument is real seconds elapsed since the previous tick.</summary>
-    internal static Action<float>? OnTick;
+    /// <summary>Tick callback: the host's paced dispatch (<see cref="UnityTickHost"/> + <see cref="TickPacer"/> — real
+    /// seconds since the previous tick, shared with <see cref="StellarPausedTicker"/>, which drives the tick while the game's
+    /// clock is paused and this schedule cannot fire).</summary>
+    internal static Action? OnTick;
+    internal static Action? OnStart;
     internal static Action<string>? OnError;
 
     private int _scheduledRateHz;
-    private float _lastTickTime;
 
     private void Start()
     {
-        _lastTickTime = Time.realtimeSinceStartup;
+        try { OnStart?.Invoke(); }
+        catch (Exception ex) { OnError?.Invoke(ex.Message); }
         Schedule(Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz);
     }
 
@@ -51,10 +54,7 @@ public sealed class StellarTicker : MonoBehaviour
     // Public so Unity's InvokeRepeating can find it by name on the injected type.
     public void Tick()
     {
-        var now = Time.realtimeSinceStartup;
-        var dt = now - _lastTickTime;
-        _lastTickTime = now;
-        try { OnTick?.Invoke(dt); }
+        try { OnTick?.Invoke(); }
         catch (Exception ex) { OnError?.Invoke(ex.Message); }
     }
 }

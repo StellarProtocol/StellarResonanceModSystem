@@ -11,95 +11,17 @@ namespace Stellar.Application.Tests.FreeCamera;
 // Owner report 2026-10-02, MAIN client, boss fight with the diagnostics build (combat-diag-main-log-20261002.log,
 // report .superpowers/sdd/posing/combat-freeze-fix-report.md): "boss suppose to stay in the air but it's still animated
 // down and be able to move … boss can rotate, and animated". Root causes pinned here, each through its pure rule:
-//  1. the ECS animator's per-LAYER speed (SetAnimatorLayerData / PlayState / PlayClip / PlayDynamicState) restarted a
-//     skill layer past both gated speeds — EcsSpeedGate holds it at 0 and replays the game's wishes on release;
 //  2. the drawn ROTATION was never held — PoseHold writes the press pose (position + rotation) and snaps to the logical
 //     pose on release;
 //  3. a killed monster vanished — DeferredRemovals queues EDisappearDead removals of frozen monsters and replays them, in
 //     order, through the game's own RemoveEntity on unfreeze / scene clear; the gated prefix runs no chained callback
-//     for a deferred call and each exactly once at the replay;
-//  4. effects initialised outside AddEffectDisplay — FreezeEffectRule freezes every new effect while frozen (owner
-//     ignored: scene-stays spec § 3 keeps effects global).
-// Do not weaken.
+//     for a deferred call and each exactly once at the replay.
+// (1. the ECS layer-speed gate, 4. the effect owner rule and 5. the fix-check verdict were removed 2026-10-02 late with the
+// mechanisms they pinned: the freeze is a global time pause now — Time.timeScale = 0 stops animation, skills and effects,
+// which no per-entity speed could; recon § Run 9.) Do not weaken.
 public sealed class FreezeCombatFixTests
 {
-    private const int Main = 1;
     private const long Monster = 7, Other = 8, Self = 42;
-    private const uint Uid = 500, Uid2 = 501;
-
-    // ---- 1. ECS layer speed hold and restore ----
-
-    [Fact]
-    public void freeze_combat_ecs_layer_write_is_held_at_zero_and_its_wish_replayed_on_release()
-    {
-        var g = ArmedEcs();
-        Assert.True(g.Track(Uid, Monster));                     // stage 2: first tracking → the caller writes the model to 0
-        Assert.False(g.Track(Uid, Monster));                    // once only
-        var speed = 1.2f;
-        Assert.True(g.TrySubstitute(Uid, 1, ref speed, 1f, Main));   // a skill stage restarts the upper layer
-        Assert.Equal(0f, speed);
-        Assert.Equal(1, g.Held);
-        Assert.Equal(1, g.HeldFor(Monster));
-        g.Disarm();
-        var plan = g.TakeReleasePlan(Uid, controllerSpeed: 0.9f);
-        Assert.Equal(new[] { new EcsSpeedGate.LayerWrite(-1, 0.9f, 1f), new EcsSpeedGate.LayerWrite(1, 1.2f, 1f) }, plan);
-        Assert.Single(g.TakeReleasePlan(Uid, 0.9f));             // taken: never replayed twice
-    }
-
-    [Fact]
-    public void freeze_combat_ecs_untracked_own_offthread_and_unarmed_writes_pass_untouched()
-    {
-        var g = ArmedEcs();
-        g.Track(Uid, Monster);
-        var v = 1f;
-        Assert.False(g.TrySubstitute(Uid2, 0, ref v, 1f, Main));     // the local player / a photo copy / a UI model
-        Assert.Equal(1f, v);
-        g.OwnWrite = true;
-        Assert.False(g.TrySubstitute(Uid, 0, ref v, 1f, Main));      // our own write
-        g.OwnWrite = false;
-        Assert.Equal(1f, v);
-        Assert.False(g.TrySubstitute(Uid, 0, ref v, 1f, threadId: 2));   // off the main thread: passes, counted as a leak
-        Assert.Equal(1f, v);
-        Assert.Equal(1, g.Leaked);
-        Assert.Equal(1, g.LeakedFor(Monster));
-        g.Disarm();
-        Assert.False(g.TrySubstitute(Uid, 0, ref v, 1f, Main));
-        Assert.Equal(1f, v);
-        Assert.Equal(0, g.Held);
-    }
-
-    [Fact]
-    public void freeze_combat_ecs_release_plan_keeps_each_layers_latest_wish_after_the_last_whole_model_write()
-    {
-        var g = ArmedEcs();
-        g.Track(Uid, Monster);
-        Write(g, 1, 1.0f);
-        Write(g, 2, 0.5f);
-        Write(g, 1, 1.3f);
-        Write(g, -1, 0.8f);   // the controller's whole-model write overrides every layer before it
-        Write(g, 2, 0.7f);
-        Write(g, 0, 1.1f);
-        var plan = g.TakeReleasePlan(Uid, 1f);
-        Assert.Equal(new[] { (-1, 1f), (2, 0.7f), (0, 1.1f) }, plan.Select(w => (w.Layer, w.Speed)));
-    }
-
-    [Fact]
-    public void freeze_combat_ecs_despawned_or_recycled_uid_is_never_replayed()
-    {
-        var g = ArmedEcs();
-        g.Track(Uid, Monster);
-        Write(g, 1, 1.2f);
-        Assert.Equal(Uid, g.Untrack(Monster));                   // RemoveEntity: the uid may be recycled
-        Assert.False(g.Tracks(Uid));
-        Assert.Single(g.TakeReleasePlan(Uid, 1f));               // its wish is gone
-
-        g.Track(Uid, Monster);
-        Write(g, 1, 1.2f);
-        Assert.True(g.Track(Uid, Other));                        // a pooled uid follows its NEW owner
-        Assert.Equal(Other, g.Snapshot().Single().Uuid);
-        Assert.Single(g.TakeReleasePlan(Uid, 1f));               // the dead owner's wish is not replayed onto it
-        Assert.Equal(0u, g.UidOf(Monster));
-    }
 
     // ---- 2. rotation hold and restore ----
 
@@ -239,60 +161,11 @@ public sealed class FreezeCombatFixTests
         Assert.True(HookCallbackTable.RunPrefix(broken, callbacks, Method, null, Array.Empty<object?>()));
     }
 
-    // ---- 4. the effect owner rule ----
-
-    [Fact]
-    public void freeze_combat_effect_owner_rule_freezes_every_new_effect_while_frozen()
-    {
-        Assert.True(FreezeEffectRule.ShouldFreeze(frozen: true, alreadyTouched: false, owner: Monster, self: Self));   // the boss's skill fx
-        Assert.True(FreezeEffectRule.ShouldFreeze(true, false, owner: Self, self: Self));     // scene-stays § 3: yours too
-        Assert.True(FreezeEffectRule.ShouldFreeze(true, false, owner: 0, self: Self));        // unowned
-        Assert.False(FreezeEffectRule.ShouldFreeze(true, alreadyTouched: true, Monster, Self));   // already in the ledger
-        Assert.False(FreezeEffectRule.ShouldFreeze(frozen: false, false, Monster, Self));
-    }
-
-    // ---- 5. the fix-check diagnostics verdict ----
-
-    [Fact]
-    public void freeze_combat_fix_check_entity_verdict_names_what_moved()
-    {
-        Assert.Equal("HELD", FreezeDiagVerdict.EntityVerdict(0.01f, 1f, ecsModel: true, ecsUntracked: false, ecsLeaked: 0));
-        Assert.Equal("OFF:pos", FreezeDiagVerdict.EntityVerdict(0.2f, 0f, true, false, 0));
-        Assert.Equal("OFF:rot", FreezeDiagVerdict.EntityVerdict(0f, 5f, true, false, 0));
-        Assert.Equal("OFF:ecs", FreezeDiagVerdict.EntityVerdict(0f, 0f, true, true, 0));
-        Assert.Equal("OFF:ecs", FreezeDiagVerdict.EntityVerdict(0f, 0f, true, false, 3));
-        Assert.Equal("HELD", FreezeDiagVerdict.EntityVerdict(0f, 0f, ecsModel: false, ecsUntracked: true, ecsLeaked: 0));   // GameObject model
-        Assert.Equal("OFF:pos,rot,ecs", FreezeDiagVerdict.EntityVerdict(1f, 90f, true, true, 1));
-
-        Assert.Equal(0f, FreezeDiagVerdict.AngleDegrees((0, 0, 0, 1), (0, 0, 0, 1)), 2);
-        Assert.Equal(90f, FreezeDiagVerdict.AngleDegrees((0, 0, 0, 1), (0, 0.70710677f, 0, 0.70710677f)), 2);
-        Assert.Equal(0f, FreezeDiagVerdict.AngleDegrees((0, 0.6f, 0, 0.8f), (0, -0.6f, 0, -0.8f)), 2);   // q and −q: same rotation
-        Assert.True(float.IsNaN(FreezeDiagVerdict.AngleDegrees((0, 0, 0, 0), (0, 0, 0, 1))));
-
-        var tags = FreezeDiagVerdict.Explain(new FreezeDiagTally { Monsters = 2, RotOffHold = 1, EcsUntracked = 1, EcsLeaked = 1 });
-        Assert.Equal(new[] { "ROTATION-OFF-HOLD", "ECS-UNTRACKED", "ECS-SPEED-LEAK" }, tags);
-    }
-
     // ---- helpers ----
 
     private static readonly MethodBase Method = typeof(FreezeCombatFixTests).GetMethod(nameof(Target), BindingFlags.NonPublic | BindingFlags.Static)!;
 
     private static void Target() { }
-
-    private static EcsSpeedGate ArmedEcs()
-    {
-        var g = new EcsSpeedGate();
-        g.ObserveMainThread(Main);
-        g.Arm();
-        return g;
-    }
-
-    private static void Write(EcsSpeedGate g, int layer, float speed)
-    {
-        var s = speed;
-        Assert.True(g.TrySubstitute(Uid, layer, ref s, 1f, Main));
-        Assert.Equal(0f, s);
-    }
 
     private static DeferredRemovals Armed()
     {

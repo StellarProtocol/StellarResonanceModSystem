@@ -24,6 +24,7 @@ public sealed partial class BootstrapPlugin
     private EntityPickerService? _entityPicker;
     private PandaCombatFlagSource? _combatFlags;
     private GameFreezeBackend? _freezeBackend;
+    private GameClockPause? _clockPause;
     private FrameDriverHost? _frameDriver;
     private FreeCameraReleaser? _freeCamReleaser;
     private SceneLeavePrefix? _sceneLeave;
@@ -45,7 +46,8 @@ public sealed partial class BootstrapPlugin
         var lookAt = new LookAtService(new LookAtBackend(_gameTypeRegistry!, entities, camera.MainCamera, log), warn);
         _cameraOverride = new CameraOverrideService(camera, lookAt, camOff, warn);
         _inputShield = new InputShieldService(new ZIgnoreShieldBackend(_gameTypeRegistry!, log), new UnityShieldInputReader(), _windowService!, warn);
-        _freezeBackend = new GameFreezeBackend(_gameTypeRegistry!, entities, _frameDriver, log);
+        _clockPause = new GameClockPause(log);
+        _freezeBackend = new GameFreezeBackend(_gameTypeRegistry!, entities, _frameDriver, _clockPause, log);
         _sceneFreeze = new SceneFreezeService(_freezeBackend, positionsDisabled: noPositions);
         _emotes = new EmoteService(_luaService!, warn);
         _combatFlags = new PandaCombatFlagSource(_gameTypeRegistry!, entities, log);
@@ -57,6 +59,27 @@ public sealed partial class BootstrapPlugin
         WireFreeCameraReleases();
         WirePosingSettle();   // Wiring.Posing.cs — AFTER the releases: the release closes every model first (scene end)
         WireFreeCameraKeyboardGate(log);
+        WireTimePause(camera, ZIgnoreShieldBackend.ForTimePause(_gameTypeRegistry!, log));
+    }
+
+    /// <summary>The scene freeze's time pause (<c>Time.timeScale = 0</c>; spec amendment 2026-10-02 late): while the clock is
+    /// stopped the framework tick runs from real time (the scheduled ticker cannot fire) and the camera cuts instead of
+    /// blending (a blend never advances), and the local player's movement / combat input is masked (owner report 2026-10-02:
+    /// WASD while frozen played the run in place). The watchdog runs on every framework tick while paused: a pause outside the
+    /// world releases the freeze; a pause its freeze lost, a stalled tick or the driver going away resumes the game.</summary>
+    private void WireTimePause(CinemachineCameraBackend camera, ZIgnoreShieldBackend pauseInput)
+    {
+        var clock = _clockPause!;
+        clock.Changed += paused =>
+        {
+            _tickHost?.SetUnscaled(paused, clock.CheckStall, clock.Resume);
+            camera.SetCutBlend(paused);
+            pauseInput.SetShield(paused);
+        };
+        _framework!.Update += _ =>
+        {
+            if (clock.IsPaused && clock.Watch(_sceneFreeze!.IsFrozen, _clientState!.IsWorldActive)) _sceneFreeze.ReleaseAll();
+        };
     }
 
     /// <summary>Spec D8 (owner 2026-10-01): while any input-shield handle is held, the text-field keyboard gate blocks every
@@ -105,7 +128,7 @@ public sealed partial class BootstrapPlugin
     private void InstallFreeCameraLeaveHook(HarmonyGameMethodHooker hooker, Type gameType) =>
         _sceneLeave?.Install(hooker, gameType);
 
-    // Arms (does not install): the effect-creation and combat-flag postfixes install on first use.
+    // Arms (does not install): the time-scale / removal hooks and the combat-flag postfixes install on first use.
     private void InstallFreeCameraHooks(HarmonyGameMethodHooker hooker)
     {
         _freezeBackend?.ArmHooks(hooker);
@@ -119,6 +142,7 @@ public sealed partial class BootstrapPlugin
     private void DisposeFreeCamera()
     {
         ReleaseFreeCamera(CameraReleaseReason.PluginUnloaded);
+        _clockPause?.Dispose();   // never leave the game paused, whatever the release above did
         _frameDriver?.Dispose();
     }
 }

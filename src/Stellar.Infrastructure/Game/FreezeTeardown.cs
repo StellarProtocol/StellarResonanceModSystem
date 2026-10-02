@@ -5,48 +5,34 @@ namespace Stellar.Infrastructure.Game;
 /// <see cref="GameFreezeBackend"/>; faked in unit tests).</summary>
 internal interface IFreezeTeardownSteps
 {
-    /// <summary>Disarms the <c>set_Speed</c> gate and the ECS layer gate — from here every write passes through, ours included.</summary>
-    void DisarmGate();
+    /// <summary>Replays the animation requests held while paused (each model resumes in the state the game last asked for).</summary>
+    void ReleaseAnim();
 
-    /// <summary>Releases the position hold (held models snapped to their logical position).</summary>
+    /// <summary>Releases the position hold (held models snapped to their logical pose).</summary>
     void StopHold();
 
-    /// <summary>Writes each entity's kept drawn speed back.</summary>
-    void RestoreDrawnSpeeds();
-
-    /// <summary>Writes each entity's first factor prior back (players' drawn speed is recomputed from it).</summary>
-    void RestoreFactors();
-
-    /// <summary>Writes each ECS model's animation layers back: the whole model at its controller's (now restored) speed,
-    /// then each layer's latest wished speed (combat-freeze fix, owner MAIN evidence 2026-10-02).</summary>
-    void RestoreEcsLayers();
-
-    /// <summary>Unfreezes the effects this freeze touched.</summary>
-    void UnfreezeEffects();
+    /// <summary>Runs the game's clock again (<see cref="GameClockPause.Resume"/>).</summary>
+    void ResumeClock();
 
     /// <summary>Forgets everything this freeze kept.</summary>
     void ClearLedger();
 }
 
-/// <summary>The unfreeze ORDER, kept pure so it is pinned (review, regression <c>freeze_unfreeze_order_*</c>): the gate is
-/// disarmed BEFORE any restore write (an armed gate would turn the restore itself into 0), and drawn speeds are restored
-/// BEFORE factors (a factor restore recomputes a player's drawn speed; the other order would overwrite that with a stale
-/// kept speed). The ECS layers are restored AFTER both (combat-freeze fix 2026-10-02): their whole-model write reads the
-/// controller's speed, which only the drawn-speed and factor restores put back. The disarm runs first and alone — it cannot fail; every later step runs through
-/// <see cref="FreezeStepRunner"/>, so one throwing step never skips the rest. Returns the first exception.</summary>
+/// <summary>The unfreeze ORDER, kept pure so it is pinned (regression <c>freeze_unfreeze_order_*</c>; time-pause rewrite
+/// 2026-10-02): the held animation requests are replayed and the hold is released while the clock is still stopped (each
+/// model takes the state the game last asked for and snaps to its logical pose on a paused frame, so nothing visibly jumps
+/// after the world runs), THEN the clock runs. Every step runs through
+/// <see cref="FreezeStepRunner"/>, so one throwing step never skips the rest — above all, a throwing hold release can never
+/// leave the game paused. Returns the first exception.</summary>
 internal static class FreezeTeardown
 {
-    public static Exception? Run(IFreezeTeardownSteps steps)
-    {
-        steps.DisarmGate();
-        return FreezeStepRunner.RunAll(steps.StopHold, steps.RestoreDrawnSpeeds, steps.RestoreFactors, steps.RestoreEcsLayers,
-            steps.UnfreezeEffects, steps.ClearLedger);
-    }
+    public static Exception? Run(IFreezeTeardownSteps steps) =>
+        FreezeStepRunner.RunAll(steps.ReleaseAnim, steps.StopHold, steps.ResumeClock, steps.ClearLedger);
 
-    /// <summary>The whole unfreeze: the deferred removals are replayed FIRST (each entity restored, then removed through the
-    /// game's own call, while the freeze's books still hold its kept values), then the removal queue is disarmed, then
-    /// <see cref="Run"/>. All through <see cref="FreezeStepRunner"/>: a throwing flush never skips the disarm or the
-    /// teardown, so the scene is never left frozen (review 2026-10-02). Returns the first exception.</summary>
+    /// <summary>The whole unfreeze: the deferred removals are replayed FIRST (each entity released from the hold, then removed
+    /// through the game's own call), then the removal queue is disarmed, then <see cref="Run"/>. All through
+    /// <see cref="FreezeStepRunner"/>: a throwing flush never skips the disarm or the teardown, so the scene is never left
+    /// frozen (review 2026-10-02). Returns the first exception.</summary>
     public static Exception? RunAfterFlush(Action flushDeferred, Action disarmRemovals, IFreezeTeardownSteps steps)
     {
         var first = FreezeStepRunner.RunAll(flushDeferred, disarmRemovals);

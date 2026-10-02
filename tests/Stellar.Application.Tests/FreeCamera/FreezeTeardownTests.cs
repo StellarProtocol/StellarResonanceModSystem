@@ -5,41 +5,40 @@ using Xunit;
 
 namespace Stellar.Application.Tests.FreeCamera;
 
-// Freeze review round 2 (qa minor): the unfreeze ORDER was unpinned. The gate must be disarmed before any restore write
-// (else the restore itself is substituted to 0), and drawn speeds restored before factors (a factor restore recomputes
-// a player's drawn speed). Pinned through the pure FreezeTeardown with a recording fake. Do not weaken.
-// RE-PINNED 2026-10-02 (combat-freeze fix, owner MAIN evidence: the boss animated through the ECS layer speeds): a
-// RestoreEcsLayers step joins AFTER RestoreFactors — its whole-model write reads the controller speed that the drawn-speed
-// and factor restores put back. Every earlier assertion (disarm first, speeds before factors, no step skipped) is kept.
+// Freeze review round 2 (qa minor): the unfreeze ORDER was unpinned. RE-PINNED 2026-10-02 (late) for the global time pause:
+// the per-entity restores (gate disarm, drawn speeds, factors, ECS layers, effects) are gone with the mechanisms they undid;
+// the held animation requests are replayed and the hold is released while the clock is still stopped (the replayed states
+// and the snap land on a paused frame), THEN the clock runs, and no failing step ever skips the rest — above all, a throwing hold release never leaves the game paused. Do not weaken.
 public sealed class FreezeTeardownTests
 {
     [Fact]
-    public void freeze_unfreeze_order_disarms_first_and_restores_speeds_before_factors()
+    public void freeze_unfreeze_order_replays_animation_and_releases_the_hold_before_the_clock_runs()
     {
         var steps = new Recorder();
         Assert.Null(FreezeTeardown.Run(steps));
-        Assert.Equal(new[] { "DisarmGate", "StopHold", "RestoreDrawnSpeeds", "RestoreFactors", "RestoreEcsLayers", "UnfreezeEffects", "ClearLedger" }, steps.Calls);
+        Assert.Equal(new[] { "ReleaseAnim", "StopHold", "ResumeClock", "ClearLedger" }, steps.Calls);
     }
 
-    [Fact]
-    public void freeze_unfreeze_order_a_failing_step_never_skips_the_rest()
+    [Theory]
+    [InlineData("ReleaseAnim")]
+    [InlineData("StopHold")]
+    [InlineData("ResumeClock")]
+    [InlineData("ClearLedger")]
+    public void freeze_unfreeze_order_a_failing_step_never_skips_the_rest(string failing)
     {
-        var steps = new Recorder { Throw = "RestoreDrawnSpeeds" };
-        Assert.IsType<InvalidOperationException>(FreezeTeardown.Run(steps));
-        Assert.Equal(new[] { "DisarmGate", "StopHold", "RestoreDrawnSpeeds", "RestoreFactors", "RestoreEcsLayers", "UnfreezeEffects", "ClearLedger" }, steps.Calls);
+        var steps = new Recorder { Throw = failing };
+        Assert.Equal(failing, Assert.IsType<InvalidOperationException>(FreezeTeardown.Run(steps)).Message);
+        Assert.Equal(new[] { "ReleaseAnim", "StopHold", "ResumeClock", "ClearLedger" }, steps.Calls);
     }
 
-    private sealed class Recorder : IFreezeTeardownSteps
+    internal sealed class Recorder : IFreezeTeardownSteps
     {
         public readonly List<string> Calls = new();
         public string? Throw;
 
-        public void DisarmGate() => Note(nameof(DisarmGate));
+        public void ReleaseAnim() => Note(nameof(ReleaseAnim));
         public void StopHold() => Note(nameof(StopHold));
-        public void RestoreDrawnSpeeds() => Note(nameof(RestoreDrawnSpeeds));
-        public void RestoreFactors() => Note(nameof(RestoreFactors));
-        public void RestoreEcsLayers() => Note(nameof(RestoreEcsLayers));
-        public void UnfreezeEffects() => Note(nameof(UnfreezeEffects));
+        public void ResumeClock() => Note(nameof(ResumeClock));
         public void ClearLedger() => Note(nameof(ClearLedger));
 
         private void Note(string step)

@@ -23,10 +23,11 @@ namespace Stellar.Application.Tests.FreeCamera;
 //     any by-ref value type other than an integer primitive (blittable struct, enum, float, double, char), and an IL2CPP
 //     struct RETURN of 1/2/4/8 bytes or unknown size; by-value blittable structs, other struct sizes, integer by-refs and
 //     reference types stay patchable;
-//  2. the ECS PLAY writers are never HarmonyX targets — only the primitive-only SetAnimatorLayerData is; the plays are native
-//     detours whose delegates mirror the native ABI and which go live only on the FULL exact interop signature;
-//  3. ApplyAllData (by-ref QualityData) is a native detour with an exact signature, and the by-ref MoveGo* diagnostics
-//     hooks are gone.
+//  2. a native signature's text is the full name with generic arguments and by-ref (what an exact-signature detour matches);
+//  3. ApplyAllData (by-ref QualityData) is a native detour with an exact signature.
+// (The ECS play-writer detour pins and the by-ref MoveGo* diagnostics pin were removed 2026-10-02 late with the ECS layer
+// gate and the combat diagnostics they pinned — the freeze is a global time pause now; the general refusal rule in 1
+// still refuses any such signature.)
 // Do not weaken.
 public sealed class FreezeCrashPatchSafetyTests
 {
@@ -137,70 +138,7 @@ public sealed class FreezeCrashPatchSafetyTests
         Assert.Equal(-1, Of(typeof(BlobPtrStandIn), _ => throw new TypeInitializationException("x", null)));   // interop threw
     }
 
-    // ---- 2. the ECS play writers: never HarmonyX targets; native detours on the exact signature ----
-
-    [Fact]
-    public void freeze_crash_ecs_play_writers_are_native_detours_never_harmony_targets()
-    {
-        Assert.Equal(new[] { "SetAnimatorLayerData" }, EcsSpeedPatch.HarmonyTargets);
-        Assert.Equal(new[] { "PlayState", "PlayClip", "PlayDynamicState" }, EcsSpeedPatch.NativeTargets);
-        Assert.Empty(EcsSpeedPatch.HarmonyTargets.Intersect(EcsSpeedPatch.NativeTargets));
-    }
-
-    [Fact]
-    public void freeze_crash_ecs_play_detours_mirror_the_native_signatures()
-    {
-        // The detour delegates are the native ABI: struct arguments as machine words, speed at the interop position, and
-        // IL2CPP's hidden MethodInfo* last (release_3.7 ISIL of ECSAnimState.Play).
-        var delegates = DelegateParameters(typeof(EcsPlayDetours));
-        Assert.Equal(new[] { typeof(uint), typeof(ushort), typeof(uint), typeof(nint), typeof(float), typeof(float), typeof(float), typeof(float), typeof(int), typeof(float), typeof(nint) },
-            delegates["PlayStateFn"]);
-        Assert.Equal(new[] { typeof(uint), typeof(ushort), typeof(nint), typeof(float), typeof(float), typeof(float), typeof(float), typeof(int), typeof(float), typeof(nint) },
-            delegates["PlayClipFn"]);
-        Assert.Equal(new[] { typeof(uint), typeof(ushort), typeof(nint), typeof(long), typeof(float), typeof(float), typeof(float), typeof(float), typeof(float), typeof(nint) },
-            delegates["PlayDynamicFn"]);
-        Assert.All(delegates.Values, ps => Assert.DoesNotContain(ps, t => !t.IsPrimitive));
-    }
-
-    [Fact]
-    public void patch_safety_ecs_expected_signatures_are_the_delegate_abi_minus_the_hidden_method_info()
-    {
-        // Each expected interop signature lines up with its delegate position by position: primitives equal, every IL2CPP /
-        // blittable struct argument (and the by-ref float2) a machine word; the delegate adds only the trailing MethodInfo*.
-        var delegates = DelegateParameters(typeof(EcsPlayDetours));
-        foreach (var (name, fn) in new[] { ("PlayState", "PlayStateFn"), ("PlayClip", "PlayClipFn"), ("PlayDynamicState", "PlayDynamicFn") })
-        {
-            var expected = EcsPlaySignatures.Expected[name];
-            var abi = delegates[fn];
-            Assert.Equal("System.UInt32", expected.Return);
-            Assert.Equal(abi.Length - 1, expected.Parameters.Count);
-            for (var i = 0; i < expected.Parameters.Count; i++)
-            {
-                var interop = expected.Parameters[i];
-                if (interop.StartsWith("System.", StringComparison.Ordinal)) Assert.Equal(interop, abi[i].FullName);
-                else Assert.True(abi[i] == typeof(nint) || abi[i] == typeof(long), $"{name} #{i} {interop} -> {abi[i]}");
-            }
-        }
-    }
-
-    [Fact]
-    public void patch_safety_ecs_writers_bind_only_on_the_full_exact_signature()
-    {
-        foreach (var name in EcsSpeedPatch.NativeTargets.Append("SetAnimatorLayerData"))
-            Assert.True(EcsSpeedPatch.FitsTarget(name, Shape(name, 0)), name);
-        // One parameter type, an extra parameter, a missing parameter, or the return type changed: never detoured. (The
-        // variants carry a suffixed name, so they go through the signature FitsTarget applies after its name check.)
-        bool Fits(string name, int variant) => EcsSpeedPatch.SignatureOf(name)!.Value.Matches(Shape(name, variant));
-        Assert.True(Fits("PlayClip", 0));
-        Assert.False(Fits("PlayClip", 1));   // clip as nint
-        Assert.False(Fits("PlayClip", 2));   // extra trailing parameter
-        Assert.False(Fits("PlayClip", 3));   // last parameter dropped
-        Assert.False(Fits("PlayClip", 4));   // returns void
-        Assert.False(Fits("PlayState", 1));   // float2 by value instead of by ref
-        Assert.False(Fits("PlayDynamicState", 1));   // StateBlob → AnimationClipBlob
-        Assert.False(EcsSpeedPatch.FitsTarget("PlayState", Shape("PlayClip", 0)));   // another writer's name and shape
-        Assert.Null(EcsSpeedPatch.SignatureOf("tryCalculateAnimSpeed"));
-    }
+    // ---- 2. native signatures ----
 
     [Fact]
     public void patch_safety_signature_text_is_full_name_generic_args_and_by_ref()
@@ -225,15 +163,6 @@ public sealed class FreezeCrashPatchSafetyTests
         Assert.DoesNotContain("ApplyAllData", statics);   // never a HarmonyX postfix again
     }
 
-    [Fact]
-    public void patch_safety_by_ref_move_go_diagnostics_hooks_are_not_installed()
-    {
-        var targets = (Array)typeof(FreezeDiagPatches).GetField("Targets", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        var methods = targets.Cast<object>().Select(t => (string)t.GetType().GetField("Item2")!.GetValue(t)!).ToArray();
-        foreach (var byRef in new[] { "MoveGo", "MoveGoByCurve", "MoveGoBySpeed" }) Assert.DoesNotContain(byRef, methods);
-        Assert.Contains("SimpleMoveGo", methods);   // by-value movers stay
-    }
-
     // ---- helpers ----
 
     // Stand-ins for IL2CPP struct wrappers: ExternalBlobPtr<T> (one pointer field, 8 bytes) and ECSAnimState (72 bytes).
@@ -255,16 +184,6 @@ public sealed class FreezeCrashPatchSafetyTests
 
     private static class Shapes
     {
-        internal static void SetAnimatorLayerData(uint uid, int layer, float speed, float weight) { }
-        internal static uint PlayState(uint uid, ushort layer, uint hash, ref Unity.Mathematics.float2 range, float time, float fade, float speed, float weight, int mask, float end) => 0;
-        internal static uint PlayState_1(uint uid, ushort layer, uint hash, Unity.Mathematics.float2 range, float time, float fade, float speed, float weight, int mask, float end) => 0;
-        internal static uint PlayClip(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float time, float speed, float weight, int mask, float end) => 0;
-        internal static uint PlayClip_1(uint uid, ushort layer, nint clip, float fade, float time, float speed, float weight, int mask, float end) => 0;
-        internal static uint PlayClip_2(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float time, float speed, float weight, int mask, float end, bool extra) => 0;
-        internal static uint PlayClip_3(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float time, float speed, float weight, int mask) => 0;
-        internal static void PlayClip_4(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> clip, float fade, float time, float speed, float weight, int mask, float end) { }
-        internal static uint PlayDynamicState(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.StateBlob> state, Unity.Mathematics.float2 range, float time, float fade, float speed, float weight, float end) => 0;
-        internal static uint PlayDynamicState_1(uint uid, ushort layer, ECSModel.ExternalBlobPtr<ECSModel.AnimationClipBlob> state, Unity.Mathematics.float2 range, float time, float fade, float speed, float weight, float end) => 0;
         internal static void ApplyAllData(ref Panda.Utility.Quality.QualityData data, bool excludeFrameRate) { }
         internal static void ApplyAllData_1(Panda.Utility.Quality.QualityData data, bool excludeFrameRate) { }
     }

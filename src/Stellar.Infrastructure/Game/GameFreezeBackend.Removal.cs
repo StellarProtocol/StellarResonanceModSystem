@@ -8,15 +8,15 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>A monster killed while frozen stays visible as it was until the freeze ends (owner choice 2026-10-02; the rule
 /// is <see cref="DeferredRemovals"/>). A run-original GATE on the one <c>ZEntityMgr.RemoveEntity</c> prefix trampoline
 /// (<see cref="HarmonyGameMethodHooker.GatePrefixAllOverloads"/>): a deferred call skips the game's body AND the chained
-/// prefix callbacks on that method (posing's despawn, the freeze's leave, the despawn diagnostics), so each of them runs
-/// exactly once — when the call is REPLAYED through the game's own <c>RemoveEntity</c> with its original arguments. The
-/// entity stays in <c>EntityDict</c> meanwhile, so the freeze's stage 1/2, both speed gates and the position hold keep
-/// covering it. The replay runs, in arrival order: on unfreeze, BEFORE anything else unfreezes (each replayed entity is
-/// restored first — speeds, factor, ECS layers, hold snap — and removed in the same frame, so it never visibly revives);
-/// and from a PREFIX on <c>ZEntityMgr.ClearEntities</c>, the game's own scene teardown (leave scene, disconnect, return to
-/// login: <c>OnLeaveScene</c> → <c>ClearEntities</c> → <c>doClearEntities</c>), before the game destroys the scene's
-/// entities. Framework releases (zone change, cutscene, disconnect, plugin unload) all end in <c>UnfreezeAll</c>.
-/// Event-driven; the gate returns after two field reads unless frozen and the call is a <c>Dead</c> removal.</summary>
+/// prefix callbacks on that method (posing's despawn), so each of them runs exactly once — when the call is REPLAYED through
+/// the game's own <c>RemoveEntity</c> with its original arguments. The entity stays in <c>EntityDict</c> meanwhile, so the
+/// time pause keeps it still and the position hold keeps covering it. The replay runs, in arrival order: on unfreeze, BEFORE
+/// anything else unfreezes (each replayed entity is released from the hold — snapped to its logical pose — and removed in the
+/// same frame, so it never visibly revives); and from a PREFIX on <c>ZEntityMgr.ClearEntities</c>, the game's own scene
+/// teardown (leave scene, disconnect, return to login: <c>OnLeaveScene</c> → <c>ClearEntities</c> → <c>doClearEntities</c>),
+/// before the game destroys the scene's entities. Framework releases (zone change, cutscene, disconnect, plugin unload) all
+/// end in <c>UnfreezeAll</c>. Event-driven; the gate returns after two field reads unless frozen and the call is a
+/// <c>Dead</c> removal.</summary>
 internal sealed partial class GameFreezeBackend
 {
     private readonly DeferredRemovals _removals = new();
@@ -29,7 +29,7 @@ internal sealed partial class GameFreezeBackend
     private void InstallRemovalGate(HarmonyGameMethodHooker hooker)
     {
         if (Environment.GetEnvironmentVariable(DeferEnvVar) == "0") { _log.Info($"{Tag}deferred removals OFF ({DeferEnvVar}=0)"); return; }
-        if (_types.FindType(GameEntityAccess.ManagerType) is not { } mgr) return;   // the appear hook already warned
+        if (_types.FindType(GameEntityAccess.ManagerType) is not { } mgr) { WarnOnce("deferhook", "a monster killed while frozen will vanish (ZEntityMgr not found)"); return; }
         _removeEntity = mgr.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
             .FirstOrDefault(m => m.Name == "RemoveEntity" && m.GetParameters().Length == 3 && m.GetParameters()[0].ParameterType == typeof(long));
         if (_removeEntity is null) { WarnOnce("deferhook", "a monster killed while frozen will vanish (RemoveEntity not found)"); return; }
@@ -42,24 +42,18 @@ internal sealed partial class GameFreezeBackend
     }
 
     // Gate on RemoveEntity(long uuid, EDisappearType, bool removeImmediately). True = the game removes it now. Off the main
-    // thread (or before the late frame observed it) every call passes (DeferredRemovals.Decide), with no entity read. The
-    // diagnostics line runs after the verdict is fixed and can never change it (review: a throw there used to fail the
-    // gate open AFTER the call was queued — removed now and again at the replay).
+    // thread (the thread FreezeAll ran on) every call passes (DeferredRemovals.Decide), with no entity read.
     private bool OnRemoveEntityGate(object? _, object?[] args)
     {
         if (!_removals.Armed || _removals.Replaying || args.Length < 3 || args[0] is not long uuid) return true;
         var type = args[1]?.ToString();
         if (type != DeferredRemovals.DeadType && !_removals.IsQueued(uuid)) return true;   // no kind read for the rest
         var thread = Environment.CurrentManagedThreadId;
-        var off = thread == 0 || thread != _speedGate.MainThread;
+        var off = thread == 0 || thread != _mainThread;
         var entity = off ? null : _entities.EntityByUuid(uuid);
         var call = new DeferredRemovals.Call(uuid, type, args[2] is true, entity is null ? -1 : _entities.EntType(entity),
             _ledger.Excludes(uuid), Identity(entity), off);
-        var decision = _removals.Decide(call, args);
-        var run = decision != DeferredRemovals.Decision.Defer;
-        try { OnRemovalDecision(uuid, type, decision); }
-        catch { /* diagnostics only: the verdict above stands */ }
-        return run;
+        return _removals.Decide(call, args) != DeferredRemovals.Decision.Defer;
     }
 
     /// <summary>The entity's native pointer — its identity across a uuid reuse (0 = none).</summary>
@@ -74,8 +68,8 @@ internal sealed partial class GameFreezeBackend
         if (_removals.Count > 0) FlushDeferred("scene clear");
     }
 
-    /// <summary>Re-issues every deferred removal through the game's own <c>RemoveEntity</c>, in order, each entity restored
-    /// just before its own removal. One failure never skips the rest.</summary>
+    /// <summary>Re-issues every deferred removal through the game's own <c>RemoveEntity</c>, in order, each entity released
+    /// from the hold (snapped to its logical pose) just before its own removal. One failure never skips the rest.</summary>
     private void FlushDeferred(string why)
     {
         if (_removals.Count == 0) return;
@@ -84,16 +78,13 @@ internal sealed partial class GameFreezeBackend
         {
             try
             {
-                RestoreEntity(uuid);
+                Unhold(uuid);
                 _removeEntity.Invoke(mgr, args);
-                OnRemovalReplayed(uuid, why);
             }
             catch (Exception ex) { WarnOnce("deferreplay", "could not replay a deferred removal: " + (ex.InnerException ?? ex).Message); }
         });
         OnDeferredFlushed(why, n);
     }
 
-    partial void OnRemovalDecision(long uuid, string? type, DeferredRemovals.Decision decision);
-    partial void OnRemovalReplayed(long uuid, string why);
     partial void OnDeferredFlushed(string why, int replayed);
 }

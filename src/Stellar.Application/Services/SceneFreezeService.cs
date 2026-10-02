@@ -5,8 +5,9 @@ using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 namespace Stellar.Application.Services;
 
-/// <summary>Reference-counted scene freeze (spec § 4). The framework calls <see cref="ReleaseAll"/> on a zone change,
-/// a cutscene and a disconnect. <c>STELLAR_FREEZE_NO_POSITIONS=1</c> arrives as <c>positionsDisabled</c>. Main thread.</summary>
+/// <summary>Reference-counted scene freeze — a global time pause (spec § 4; amendment 2026-10-02 late). The framework calls
+/// <see cref="ReleaseAll"/> on a zone change, a cutscene, a disconnect and when its watchdog finds the pause outside the
+/// world. <c>STELLAR_FREEZE_NO_POSITIONS=1</c> arrives as <c>positionsDisabled</c>. Main thread.</summary>
 internal sealed class SceneFreezeService : ISceneFreeze
 {
     private readonly ISceneFreezeBackend _backend;

@@ -5,10 +5,13 @@ using Xunit;
 namespace Stellar.Application.Tests.FreeCamera;
 
 // Photo Studio scene-stays review (2026-10-02). I1: the local player's own mount (VehicleEnt, a separate entity) was frozen
-// and position-held, pinning / sliding the rider — it must be excluded like the player, at the press AND when it appears
-// (or links on ride-up) mid-freeze. I2: the self-exclusion WIRING (read ids → Begin(self) → drop self) and the hold
-// admission were unpinned; they live in the pure FreezeTargets and are driven here through a fake entity source. M1: a
-// press that read uuid 0 learns the player at stage 2. Do not weaken.
+// and position-held, pinning / sliding the rider — it must be excluded like the player. I2: the self-exclusion WIRING (read
+// ids → Begin(self) → drop self) and the hold admission were unpinned; they live in the pure FreezeTargets and are driven
+// here through a fake entity source. M1: a press that read uuid 0 must not pin the player.
+// RE-PINNED 2026-10-02 (late) for the global time pause (spec amendment: everyone pauses, the local player included): the
+// exclusion now guards only the POSITION HOLD (and the deferred removal). The appear / ride-up re-checks are gone with the
+// per-entity freeze — nobody can summon or board a mount while the clock is stopped — and M1's stage-2 re-check became "a
+// press that does not know the player holds nobody". Every hold assertion is kept. Do not weaken.
 public sealed class FreezeTargetsTests
 {
     private const long Self = 42, Other = 7, Ridden = 99, Driven = 100, OthersMount = 101, Npc = 8;
@@ -24,39 +27,9 @@ public sealed class FreezeTargetsTests
         Assert.Equal(new[] { Other, OthersMount, Npc }, ids);                // self, the ridden and the driven mount are out
         Assert.True(l.Excludes(Ridden));
         Assert.True(l.Excludes(Driven));
-        Assert.False(l.SaveFactor(Ridden, 1f));                              // no stage 1 …
-        Assert.False(l.AdmitSpeed(Ridden, 1f));                              // … no stage 2 …
-        Assert.False(FreezeTargets.MayHold(l, Ridden, FreezeKinds.Vehicle, 1f, false));   // … no hold
+        Assert.False(FreezeTargets.MayHold(l, Ridden, FreezeKinds.Vehicle, 1f, false));   // never held
+        Assert.False(FreezeTargets.MayHold(l, Driven, FreezeKinds.Vehicle, 1f, false));
         Assert.True(FreezeTargets.MayHold(l, OthersMount, FreezeKinds.Vehicle, 1f, false));
-
-        // A mount summoned mid-freeze: refused as it appears when its driver is the local player …
-        Assert.False(FreezeTargets.AdmitAppeared(src, l, 200, FreezeKinds.Vehicle, controller: Self));
-        Assert.True(l.Excludes(200));
-        Assert.True(FreezeTargets.AdmitAppeared(src, l, 201, FreezeKinds.Vehicle, controller: Other));
-        // … and released when the ride-up links it later (the vehicle ride event's re-check).
-        src.Ridden = 201;
-        Assert.True(FreezeTargets.ExcludeIfOwnMount(src, l, 201, FreezeKinds.Vehicle, controller: 0));
-        Assert.True(l.Excludes(201));
-    }
-
-    // Review Important finding (2026-10-02): the ride-up event must queue the vehicle's uuid and re-check it on the NEXT
-    // LateTick, never inside the game's own dispatch — a same-batch AttrRideUuid write may not have landed at the
-    // postfix. The production queue (GameFreezeBackend.Events.cs) remembers only the uuid, never a controller value
-    // captured at enqueue time, so the re-check always reads whatever VehicleController(uuid) answers THEN. This pins
-    // that contract directly on the pure re-check: a vehicle not yet the local player's mount when it would have been
-    // queued becomes excluded once its link is the local player's by the time it is re-checked.
-    [Fact]
-    public void scene_stays_a_queued_vehicle_whose_rider_link_becomes_self_only_later_is_released_on_the_next_check()
-    {
-        var src = Town();
-        var l = new FreezeLedger();
-        FreezeTargets.Select(src, l, new List<long>());
-        Assert.False(l.Excludes(OthersMount));                              // not the player's at the press
-
-        // The same-batch AttrRideUuid write lands between the event firing and the next LateTick.
-        src.Controllers[OthersMount] = Self;
-        Assert.True(FreezeTargets.ExcludeIfOwnMount(src, l, OthersMount, FreezeKinds.Vehicle, src.VehicleController(OthersMount)));
-        Assert.True(l.Excludes(OthersMount));
     }
 
     [Fact]
@@ -86,11 +59,11 @@ public sealed class FreezeTargetsTests
         Assert.False(l.Excludes(555));                                       // Begin cleared the old freeze
         Assert.DoesNotContain(Self, ids);
         Assert.False(FreezeTargets.MayHold(l, Self, FreezeKinds.Char, 0f, false));
-        Assert.False(FreezeTargets.AdmitAppeared(src, l, Self, FreezeKinds.Char, 0));
+        Assert.True(FreezeTargets.MayHoldAny(l));
     }
 
     [Fact]
-    public void A_press_that_did_not_know_the_player_learns_them_and_their_mount_at_stage_2()
+    public void A_press_that_did_not_know_the_player_holds_nobody()
     {
         var src = Town();
         src.Player = 0;                                                      // review M1: uuid 0 at the press
@@ -98,25 +71,10 @@ public sealed class FreezeTargetsTests
         var l = new FreezeLedger();
         var ids = new List<long>();
         FreezeTargets.Select(src, l, ids);
-        Assert.Contains(Self, ids);                                          // unknown: nobody excluded yet
-
-        src.Player = Self;
-        src.Ridden = Ridden;
-        var released = new List<long>();
-        FreezeTargets.Recheck(src, l, ids, released);
-        // the caller undoes the press on all three: the player, the mount they ride, and the press's mount they DRIVE
-        // (review: the press could not match its driver against an unknown player)
-        Assert.Equal(new[] { Self, Ridden, Driven }, released);
-        Assert.True(l.Excludes(Self));
-        Assert.True(l.Excludes(Ridden));
-        Assert.True(l.Excludes(Driven));
-        Assert.False(l.Excludes(OthersMount));                               // someone else's mount stays frozen
-        l.WithoutSelf(ids);
-        Assert.DoesNotContain(Self, ids);
-        Assert.DoesNotContain(Driven, ids);
-
-        FreezeTargets.Recheck(src, l, ids, released);
-        Assert.Empty(released);                                              // nothing new: no second release
+        Assert.Contains(Self, ids);                                          // unknown: nobody excluded …
+        Assert.False(FreezeTargets.MayHoldAny(l));                           // … so the hold pins nobody (never the player)
+        l.Begin(Self);
+        Assert.True(FreezeTargets.MayHoldAny(l));
     }
 
     [Theory]

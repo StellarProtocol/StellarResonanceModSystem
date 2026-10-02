@@ -1,10 +1,11 @@
 using System;
 namespace Stellar.Application.Abstractions;
 
-/// <summary>Game side of <c>ISceneFreeze</c>: effects, animation and drawn positions. Main thread.</summary>
+/// <summary>Game side of <c>ISceneFreeze</c>: the game clock's time pause, the drawn-position hold and the deferred removal of
+/// monsters killed while paused. Main thread.</summary>
 internal interface ISceneFreezeBackend
 {
-    /// <summary>Installs the effect-creation hook on first use (never at boot).</summary>
+    /// <summary>Installs the time-scale and removal hooks on first use (never at boot).</summary>
     void EnsureHooks();
     void FreezeAll(bool holdPositions);
     void UnfreezeAll();
