@@ -11,7 +11,8 @@ public sealed class FreeCameraScopeTests
     private sealed class NullShieldBackend : Stellar.Application.Abstractions.IInputShieldBackend
     {
         public bool On;
-        public bool SetShield(bool on) { On = on; return true; }
+        public bool Apply(bool camera, bool pause) { On = camera; return true; }
+        public void Forget() { }
     }
 
     private sealed class NullFreezeBackend : Stellar.Application.Abstractions.ISceneFreezeBackend

@@ -55,8 +55,9 @@ internal sealed class UnityTickHost
     }
 
     /// <summary>The game's clock stopped (true) or runs again (false): the unscaled driver takes the tick while stopped.
-    /// <paramref name="pausedFrame"/> runs on every paused frame (the pause watchdog's stall check); <paramref name="gone"/>
-    /// if the driver is destroyed.</summary>
+    /// <paramref name="pausedFrame"/> runs on every paused frame AFTER that frame's tick had its chance to run (the pause
+    /// watchdog's stall check — checked before the tick, the first frame after a long hitch read as a stall, qa M-8);
+    /// <paramref name="gone"/> if the driver is destroyed.</summary>
     public void SetUnscaled(bool on, Action? pausedFrame = null, Action? gone = null)
     {
         _pacer.Unscaled = on;
@@ -72,11 +73,13 @@ internal sealed class UnityTickHost
 
     private void FirePaused()
     {
+        if (_pacer.TryUnscaled(Time.realtimeSinceStartup, Time.frameCount, _rateHz, out var dt))
+        {
+            try { _onTick?.Invoke(dt); }
+            catch (Exception ex) { _log.Error($"[Ticker] tick threw: {ex.Message}"); }
+        }
         try { _pausedFrame?.Invoke(); }
         catch (Exception ex) { _log.Error($"[Ticker] paused-frame check threw: {ex.Message}"); }
-        if (!_pacer.TryUnscaled(Time.realtimeSinceStartup, Time.frameCount, _rateHz, out var dt)) return;
-        try { _onTick?.Invoke(dt); }
-        catch (Exception ex) { _log.Error($"[Ticker] tick threw: {ex.Message}"); }
     }
 
     private StellarPausedTicker? EnsurePaused(Action? gone)

@@ -18,7 +18,8 @@ public sealed class FreeCameraReleaserTests
     internal sealed class CountingShieldBackend : IInputShieldBackend
     {
         public readonly List<bool> Calls = new();
-        public bool SetShield(bool on) { Calls.Add(on); return true; }
+        public bool Apply(bool camera, bool pause) { Calls.Add(camera); return true; }
+        public void Forget() { }
     }
 
     internal sealed class CountingFreezeBackend : ISceneFreezeBackend

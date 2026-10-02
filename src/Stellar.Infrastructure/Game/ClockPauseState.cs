@@ -10,8 +10,11 @@ namespace Stellar.Infrastructure.Game;
 /// would leave the game paused with nobody holding the pause): then 1.</para>
 /// <para><b>Watchdog</b> (a lost pause must never leave the game stopped): <see cref="Verify"/> answers, at the framework's
 /// unscaled tick, whether the clock drifted off 0 by a write the setter hook did not see (the caller re-asserts 0 and the
-/// drift counts as a wish), and <see cref="Stalled"/> whether that tick stopped beating (then the caller resumes the clock
-/// on its own). Pure (unit-tested); main thread.</para></summary>
+/// drift counts as a wish), and <see cref="Stalled"/> whether that tick stopped beating (then <see cref="TimePauseWatchdog"/>
+/// releases the whole freeze). A stall must PERSIST — over <see cref="StallSeconds"/> without a beat, seen on at least
+/// <see cref="StallFrames"/> paused frames spanning <see cref="StallGraceSeconds"/> — so one long main-thread hitch (the
+/// first frame after it is past the limit before its own tick can beat) is never a stall (qa M-8). Pure (unit-tested); main
+/// thread.</para></summary>
 internal sealed class ClockPauseState
 {
     /// <summary>The value put back when neither the saved value nor a wish is a running clock.</summary>
@@ -20,9 +23,17 @@ internal sealed class ClockPauseState
     /// <summary>Real seconds without a watchdog beat, while paused, before the pause counts as lost.</summary>
     internal const float StallSeconds = 10f;
 
+    /// <summary>Real seconds a stall must persist, once past <see cref="StallSeconds"/>, before it counts.</summary>
+    internal const float StallGraceSeconds = 1f;
+
+    /// <summary>Paused frames a stall must be seen on, once past <see cref="StallSeconds"/>, before it counts.</summary>
+    internal const int StallFrames = 3;
+
     private float _saved = Running;
     private float? _wanted;
     private float _lastBeat;
+    private float _overSince;
+    private int _overFrames;
 
     /// <summary>True between <see cref="Begin"/> and <see cref="End"/>.</summary>
     public bool Paused { get; private set; }
@@ -48,7 +59,7 @@ internal sealed class ClockPauseState
         _saved = current;
         _wanted = null;
         HeldWrites = Bypassed = 0;
-        _lastBeat = now;
+        Beat(now);
         return true;
     }
 
@@ -101,10 +112,21 @@ internal sealed class ClockPauseState
     }
 
     /// <summary>The framework's tick beat at real time <paramref name="now"/> (it runs on unscaled time while paused).</summary>
-    public void Beat(float now) => _lastBeat = now;
+    public void Beat(float now)
+    {
+        _lastBeat = now;
+        _overFrames = 0;
+    }
 
-    /// <summary>True when paused and no <see cref="Beat"/> came for <see cref="StallSeconds"/> of real time.</summary>
-    public bool Stalled(float now) => Paused && now - _lastBeat > StallSeconds;
+    /// <summary>One paused frame's stall check, AFTER that frame's tick had its chance to beat: true when paused and no
+    /// <see cref="Beat"/> came for <see cref="StallSeconds"/> of real time, on at least <see cref="StallFrames"/> checks
+    /// spanning <see cref="StallGraceSeconds"/>.</summary>
+    public bool Stalled(float now)
+    {
+        if (!Paused || now - _lastBeat <= StallSeconds) { _overFrames = 0; return false; }
+        if (_overFrames++ == 0) _overSince = now;
+        return _overFrames >= StallFrames && now - _overSince >= StallGraceSeconds;
+    }
 
     /// <summary>Ends the pause: the value to write back (the latest wish, else the saved value; 1 when that is not above 0),
     /// or null when not paused.</summary>

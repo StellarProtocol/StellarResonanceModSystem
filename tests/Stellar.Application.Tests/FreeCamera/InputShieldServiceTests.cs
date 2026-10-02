@@ -15,7 +15,10 @@ public sealed class InputShieldServiceTests
     {
         public bool Ok = true;
         public readonly List<bool> Calls = new();
-        public bool SetShield(bool on) { Calls.Add(on); return Ok; }
+        public readonly List<(bool Camera, bool Pause)> Layers = new();
+        public int Forgets;
+        public bool Apply(bool camera, bool pause) { Calls.Add(camera); Layers.Add((camera, pause)); return Ok; }
+        public void Forget() => Forgets++;
     }
 
     private sealed class FakeReader : IShieldInputReader
@@ -177,5 +180,43 @@ public sealed class InputShieldServiceTests
         var h3 = svc.Shield();
         svc.ReleaseAll();
         Assert.Equal(new[] { true, false, true, false }, seen);
+    }
+
+    // Review M-4 (2026-10-03): the pause block used to sit under the shop's EPayWebView source (which the game's payment
+    // callback may clear wholesale). Now ONE source holds the union of the free camera's mask and the pause block: every change
+    // re-applies both layers, so dropping the camera keeps the pause block and unfreezing keeps the camera's mask. Do not weaken.
+    [Fact]
+    public void freeze_pause_block_and_free_camera_share_one_source_as_a_union()
+    {
+        var (svc, b, _) = Make();
+        svc.SetPauseBlock(true);                                 // freeze first
+        var h = svc.Shield();                                    // then the free camera
+        h.Dispose();                                             // Esc out of the free camera: the pause block stays
+        svc.SetPauseBlock(true);                                 // no change: nothing re-applied
+        svc.SetPauseBlock(false);                                // unfreeze
+        Assert.Equal(new[] { (false, true), (true, true), (false, true), (false, false) }, b.Layers);
+        Assert.False(svc.KeyboardBlocked);                       // the pause block never blocks the keyboard
+
+        b.Layers.Clear();
+        var c = svc.Shield();                                    // free camera first
+        svc.SetPauseBlock(true);
+        svc.SetPauseBlock(false);                                // unfreeze while the camera is still on: its mask stays
+        Assert.True(svc.IsShielded);
+        c.Dispose();
+        Assert.Equal(new[] { (true, false), (true, true), (true, false), (false, false) }, b.Layers);
+    }
+
+    [Fact]
+    public void freeze_reassert_reissues_the_pause_block_alone_after_a_zone_load()
+    {
+        var (svc, b, _) = Make();
+        svc.SetPauseBlock(true);
+        svc.Reassert();
+        Assert.Equal(1, b.Forgets);                              // the game may have rebuilt its table: re-set every wanted bit
+        Assert.Equal(new[] { (false, true), (false, true) }, b.Layers);
+        svc.SetPauseBlock(false);
+        svc.Reassert();                                          // nothing held: no call
+        Assert.Equal(1, b.Forgets);
+        Assert.Equal(3, b.Layers.Count);
     }
 }

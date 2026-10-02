@@ -5,11 +5,11 @@ using UnityEngine;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>The scene freeze's global time pause on Unity's clock (<c>Time.timeScale</c>; the rules are
-/// <see cref="ClockPauseState"/>'s). Held against the game's own writes by <see cref="TimeScalePatch"/>; watched every
-/// framework tick (the tick runs on unscaled time while paused) and every paused frame for a stall, so a lost pause never
-/// leaves the game stopped. <see cref="Changed"/> tells the framework's tick host (switch to the unscaled driver) and the
-/// camera (Cut blends while paused). Main thread.</summary>
-internal sealed class GameClockPause : IDisposable
+/// <see cref="ClockPauseState"/>'s). Held against the game's own writes by <see cref="TimeScalePatch"/>; watched by
+/// <see cref="TimePauseWatchdog"/> at the framework's global rate (outside the world gate) and on every paused frame for a
+/// stall, so a lost pause never leaves the game stopped. <see cref="Changed"/> tells the framework's tick host (switch to the
+/// unscaled driver), the camera (Cut blends while paused) and the input shield (the pause block). Main thread.</summary>
+internal sealed class GameClockPause : ITimePauseClock, IDisposable
 {
     private const string Tag = "[FreeCam] ";
 
@@ -55,34 +55,20 @@ internal sealed class GameClockPause : IDisposable
         Raise(false);
     }
 
-    /// <summary>The watchdog at one framework tick. True = the world is gone: the caller releases the scene (which resumes).</summary>
-    public bool Watch(bool holderFrozen, bool worldActive)
+    /// <summary>The watchdog at one framework tick: beats, re-asserts 0 on a drift behind the hook (warned once) and answers
+    /// the verdict — <see cref="TimePauseWatchdog"/> acts on a lost pause or a pause outside the world.</summary>
+    public ClockPauseState.WatchVerdict Watch(bool holderFrozen, bool worldActive)
     {
-        switch (_state.Watch(holderFrozen, worldActive, Time.timeScale, Time.realtimeSinceStartup))
-        {
-            case ClockPauseState.WatchVerdict.Reasserted:
-                Time.timeScale = 0f;
-                if (!_warnedBypass) { _warnedBypass = true; _log.Warning(Tag + "the clock was set behind the time-scale hook while paused; paused again"); }
-                return false;
-            case ClockPauseState.WatchVerdict.LostPause:
-                _log.Warning(Tag + "watchdog: the time pause outlived its freeze; resuming the game");
-                Resume();
-                return false;
-            case ClockPauseState.WatchVerdict.LeftWorld:
-                _log.Warning(Tag + "watchdog: paused outside the world; releasing the scene freeze");
-                return true;
-            default:
-                return false;
-        }
+        var verdict = _state.Watch(holderFrozen, worldActive, Time.timeScale, Time.realtimeSinceStartup);
+        if (verdict != ClockPauseState.WatchVerdict.Reasserted) return verdict;
+        Time.timeScale = 0f;
+        if (!_warnedBypass) { _warnedBypass = true; _log.Warning(Tag + "the clock was set behind the time-scale hook while paused; paused again"); }
+        return verdict;
     }
 
-    /// <summary>Every paused frame (the unscaled driver): resumes on its own when the framework tick stopped beating.</summary>
-    public void CheckStall()
-    {
-        if (!_state.Stalled(Time.realtimeSinceStartup)) return;
-        _log.Warning($"{Tag}watchdog: no framework tick for {ClockPauseState.StallSeconds:F0} s while paused; resuming the game");
-        Resume();
-    }
+    /// <summary>One paused frame's stall check (after that frame's tick): true when the framework tick stopped beating
+    /// (<see cref="ClockPauseState.Stalled"/>) — <see cref="TimePauseWatchdog"/> then releases the whole freeze.</summary>
+    public bool Stalled() => _state.Stalled(Time.realtimeSinceStartup);
 
     /// <summary>The framework is going away: never leave the game paused.</summary>
     public void Dispose() => Resume();

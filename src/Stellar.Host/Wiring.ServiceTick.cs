@@ -117,8 +117,7 @@ public sealed partial class BootstrapPlugin
         // while IsWorldActive is false (the zone-load handshake), so the gated menu-state probe below is frozen
         // and can't own the Loading bit. This pure active-state read is the SOLE owner of GameUIState.Loading,
         // set every phase; the gated menu-state probe no longer touches that bit (SetUiState strips it).
-        _loadingScreenProbe?.Tick();
-        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
+        TickLoadingAndPauseWatchdog();
         // uGUI native-canvas injection — UN-gated so title-screen anchors (LoginSidebar) inject too. It reads
         // GameObject active-state + builds uGUI buttons (no game-state/network touch), safe every phase like the
         // probes above. In-world anchors (MainMenuRail/HudTopRight) simply won't resolve until their parents exist.
@@ -160,6 +159,15 @@ public sealed partial class BootstrapPlugin
     // the frame — the "repositioned game HUD element snaps back on scene change" bug. Pure GameObject reads/writes
     // via PandaHudAdapter (TryResolve/SetRect), no game-state or network touch — safe every phase like the
     // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so TryResolveAll no-ops.
+    // The loading-screen probe, then the scene freeze's time-pause watchdog (Wiring.FreeCamera.cs) — un-gated like the probes:
+    // the watchdog must see a pause outside the world, which the world-gated IFramework.Update never could (qa I-1).
+    private void TickLoadingAndPauseWatchdog()
+    {
+        _loadingScreenProbe?.Tick();
+        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
+        TickTimePauseWatchdog();
+    }
+
     private void SelfHealNativeUiUngated(float globalDt)
         => _nativeUi?.Tick(globalDt, _inputGateway?.CurrentResolution ?? default);
 

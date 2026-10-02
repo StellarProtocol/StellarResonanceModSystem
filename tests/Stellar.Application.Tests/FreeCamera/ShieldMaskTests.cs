@@ -51,4 +51,41 @@ public sealed class ShieldMaskTests
         foreach (var bit in new[] { "Zoom", "Rotation", "RecoverCamera", "RotationX", "RotationY", "Emote", "Action" })
             Assert.Equal(0UL, mask & (1UL << ValueOf(bit)!.Value));
     }
+
+    // Review M-4 (2026-10-03) + release_3.7 ISIL: ZIgnoreMgr.SetInputIgnore(mask, ignore, source) adds ±1 to a per-bit,
+    // per-source COUNTER (AddIgnore ignoreLayer = ignore ? 1 : -1) — a bit is ignored while its count is above 0. The one
+    // source therefore moves between unions by the difference only: setting a bit twice would need two clears (movement stuck
+    // after unfreeze). Replays every layer change the shield makes against that counter: each bit stays at 0 or 1, the union
+    // is exactly what is masked, and both layers off leaves every count at 0. Do not weaken.
+    [Fact]
+    public void freeze_one_source_union_moves_by_difference_and_never_double_counts_a_bit()
+    {
+        var camera = ShieldMask.Compose(ValueOf, ShieldMask.Bits);
+        var pause = ShieldMask.Compose(ValueOf, ShieldMask.PauseBits);
+        Assert.Equal(pause, pause & camera);                    // the pause block is a subset of the camera's mask
+        var counts = new int[64];
+        ulong applied = 0;
+        void Apply(bool cam, bool pz)
+        {
+            var next = (cam ? camera : 0UL) | (pz ? pause : 0UL);
+            var (clear, add) = ShieldMask.Transition(applied, next);
+            for (var i = 0; i < 64; i++)
+            {
+                if ((clear & (1UL << i)) != 0) counts[i]--;
+                if ((add & (1UL << i)) != 0) counts[i]++;
+            }
+            applied = (applied & ~clear) | add;
+            for (var i = 0; i < 64; i++)
+            {
+                Assert.InRange(counts[i], 0, 1);
+                Assert.Equal((next & (1UL << i)) != 0, counts[i] == 1);
+            }
+        }
+        foreach (var (cam, pz) in new[] { (false, true), (true, true), (false, true), (true, true), (true, false), (false, false),
+                                          (true, false), (true, true), (false, false) })
+            Apply(cam, pz);
+        Assert.All(counts, c => Assert.Equal(0, c));
+        Assert.Equal((0UL, 0UL), ShieldMask.Transition(camera, camera));          // no change: no call
+        Assert.Equal((camera & ~pause, 0UL), ShieldMask.Transition(camera, pause)); // camera off, pause on: only camera-only bits drop
+    }
 }

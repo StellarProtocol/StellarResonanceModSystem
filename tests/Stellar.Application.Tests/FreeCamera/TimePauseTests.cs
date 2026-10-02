@@ -141,6 +141,8 @@ public sealed class TimePauseTests
         Assert.Equal(0.8f, s.End());
     }
 
+    // Re-pinned 2026-10-03 (qa M-8): a stall must PERSIST past the limit — StallFrames checks spanning StallGraceSeconds —
+    // before it counts; what it then does (a FULL release) is pinned in TimePauseWatchdogTests.
     [Fact]
     public void time_pause_watchdog_resumes_when_the_framework_tick_stalls()
     {
@@ -148,12 +150,36 @@ public sealed class TimePauseTests
         Assert.False(s.Stalled(100f));                           // not paused: never stalled
         s.Begin(1f, now: 0f);
         Assert.False(s.Stalled(ClockPauseState.StallSeconds));   // exactly the limit: still fine
-        Assert.True(s.Stalled(ClockPauseState.StallSeconds + 0.1f));
-        s.Watch(true, true, 0f, now: 9f);                        // a tick beat
-        Assert.False(s.Stalled(18f));
-        Assert.True(s.Stalled(19.5f));
+        Assert.False(s.Stalled(10.1f));                          // past it: 1st check …
+        Assert.False(s.Stalled(10.5f));                          // … 2nd …
+        Assert.False(s.Stalled(11.0f));                          // … 3rd, but only 0.9 s since the first
+        Assert.True(s.Stalled(11.2f));                           // persisted ≥ 3 checks and ≥ 1 s: stalled
+        s.Watch(true, true, 0f, now: 20f);                       // a tick beat
+        Assert.False(s.Stalled(29f));
+        Assert.False(s.Stalled(30.5f));
+        Assert.False(s.Stalled(31.0f));
+        Assert.True(s.Stalled(31.6f));
         s.End();
         Assert.False(s.Stalled(1000f));
+    }
+
+    // qa M-8 (2026-10-03): the stall check ran BEFORE the paused frame's tick, so the first frame after one >10 s main-thread
+    // hitch (a shader compile, a load spike) read as a stall and resumed the game. Now it runs after the tick and must persist:
+    // a hitch whose next tick beats is never a stall. Do not weaken.
+    [Fact]
+    public void time_pause_one_long_hitch_is_not_a_stall()
+    {
+        var s = new ClockPauseState();
+        s.Begin(1f, now: 0f);
+        Assert.False(s.Stalled(12f));                            // the frame after a 12 s hitch, past the limit once …
+        s.Watch(true, true, 0f, now: 12.02f);                    // … its tick beats …
+        Assert.False(s.Stalled(12.03f));                         // … and the next checks are fine again
+        Assert.False(s.Stalled(12.5f));
+        Assert.False(s.Stalled(13.5f));
+        Assert.False(s.Stalled(25f));                            // a second hitch starts a new count: 1st check
+        Assert.False(s.Stalled(25.1f));
+        s.Beat(25.2f);
+        Assert.False(s.Stalled(36f));                            // the beat reset the count: 1st check again
     }
 
     // ---- the position hold: remote movers yes, never the local player or their mount ----
