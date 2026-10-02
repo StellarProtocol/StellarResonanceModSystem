@@ -25,6 +25,9 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
+- `WindowSpec.Passive` (Borderless windows): a visual-only layer with no content padding and no click blocker, so
+  presses reach the game and every window behind it — for full-screen guides/overlays (Photo Studio's frame guide).
+  `IScreenCapture.PlanSize` is a new interface member: a plugin that IMPLEMENTS `IScreenCapture` must add it.
 - Photo shapes (spec 2026-10-03 photo-studio-portrait-capture): new `CaptureRequest.Aspect` (`CaptureAspect?`, a
   width:height ratio of whole numbers, valid 1:4 … 4:1; null = the window's shape, unchanged) and
   `IScreenCapture.PlanSize(CaptureRequest)` (the real output size before the shot — scale caps, shape and the GPU's

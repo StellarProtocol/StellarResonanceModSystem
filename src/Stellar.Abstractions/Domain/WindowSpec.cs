@@ -112,4 +112,10 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// Applied to the root's existing click-blocker Image so the background fills the entire window rect and
     /// expands when the user resizes height — no separate child GO needed. Null = no background (default).</summary>
     public Func<float>? BackgroundOpacity { get; init; }
+
+    /// <summary>Borderless windows only: a purely visual layer. No content padding (the content starts at the window's
+    /// top-left corner and fills its rect exactly) and no click blocker, so presses and pointer-over-UI checks fall
+    /// through to the game and to every window behind it. For full-screen guides and overlays that must never take
+    /// input (e.g. a photo frame guide). Default false.</summary>
+    public bool Passive { get; init; }
 }

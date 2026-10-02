@@ -106,12 +106,14 @@ internal sealed partial class WindowBuilder
         var fitter = root.gameObject.AddComponent<ContentSizeFitter>();
         fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        // Invisible raycast blocker so clicks/right-clicks over the window don't fall through to the game.
+        // Invisible raycast blocker so clicks/right-clicks over the window don't fall through to the game — except a
+        // Passive window (WindowSpec.Passive): a visual-only layer that must never take input.
         var blocker = root.gameObject.AddComponent<Image>();
         blocker.color = new Color(0f, 0f, 0f, 0f);
-        blocker.raycastTarget = true;
+        blocker.raycastTarget = !spec.Passive;
         var vlg = root.gameObject.AddComponent<VerticalLayoutGroup>();
-        vlg.padding = new RectOffset(12, 12, 12, 12);
+        var pad = spec.Passive ? 0 : 12;   // Passive: content fills the window rect exactly (a full-screen guide must not shift)
+        vlg.padding = new RectOffset(pad, pad, pad, pad);
         vlg.spacing = SectionGap;
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
