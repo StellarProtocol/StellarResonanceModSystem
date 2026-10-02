@@ -38,7 +38,12 @@ internal sealed partial class GameFreezeBackend
         if (Environment.GetEnvironmentVariable(EcsGateEnvVar) == "0") { _log.Info($"{Tag}ECS animation gate OFF ({EcsGateEnvVar}=0)"); return; }
         var mgr = _types.FindType(EcsSpeedPatch.ManagerType);
         if (mgr is null || !ResolveEcs()) { WarnOnce("ecsgate", "monsters may keep animating while frozen (ECS animator not found)"); return; }
-        try { _ecsPatched = EcsSpeedPatch.Install(hooker, mgr, _ecsGate).Count; }
+        try
+        {
+            var installed = EcsSpeedPatch.Install(hooker, mgr, _ecsGate, m => WarnOnce("ecsgate:" + m, m));
+            _ecsPatched = installed.Count;
+            _log.Info($"{Tag}ECS speed writers installed: {string.Join(",", installed)} (plays as native detours)");
+        }
         catch (Exception ex) { WarnOnce("ecsgate", "ECS animation gate failed: " + ex.Message); }
         if (_ecsPatched == 0) WarnOnce("ecsgate", "monsters may keep animating while frozen (ECS speed writers not patched)");
     }

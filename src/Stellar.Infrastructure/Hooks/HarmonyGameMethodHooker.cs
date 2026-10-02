@@ -55,6 +55,7 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     {
         foreach (var method in Matching(type, methodName, InstanceMembers))
         {
+            if (Refused(method)) continue;
             var patched = HookCallbackTable.PrefixPatched(PrefixCallbacks, PrefixGates, method);
             HookCallbackTable.AddGate(PrefixGates, method, runOriginal);
             if (patched) { _log.Info($"[Hooker] chained a gate on {type.FullName}.{method.Name} (prefix)"); continue; }
@@ -83,6 +84,7 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     {
         foreach (var method in Matching(type, methodName, InstanceMembers).Where(m => m.ReturnType != typeof(void)))
         {
+            if (Refused(method)) continue;
             try
             {
                 if (!HookCallbackTable.AddResult(ResultCallbacks, method, callback))
@@ -106,6 +108,7 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
     /// <c>ref float __0</c>). False when the patch failed (logged).</summary>
     public bool PrefixWith(MethodBase method, MethodInfo prefix)
     {
+        if (Refused(method)) return false;
         try
         {
             _harmony.Patch(method, prefix: new HarmonyMethod(prefix));
@@ -117,6 +120,19 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
             _log.Error($"[Hooker] failed to patch {method.DeclaringType?.FullName}.{method.Name}: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>True (logged as an error) when <paramref name="method"/> takes an IL2CPP struct argument the Il2CppInterop
+    /// trampoline mis-marshals (<see cref="Il2CppPatchSafety"/>; freeze-crash root cause 2026-10-02): patching it would
+    /// corrupt every call the game makes to it, so it is never patched.</summary>
+    private bool Refused(MethodBase method)
+    {
+        var types = method.GetParameters().Select(p => p.ParameterType).ToArray();
+        if (Il2CppPatchSafety.FirstHazard(types, Il2CppStructSizes.Of) is not { } hazard) return false;
+        _log.Error($"[Hooker] refused to patch {method.DeclaringType?.FullName}.{method.Name}: parameter #{hazard.Index} " +
+                   $"({types[hazard.Index].Name}, {hazard.Size} bytes) is an IL2CPP struct {hazard.Hazard} that Il2CppInterop " +
+                   "mis-marshals (native crash) — needs a native detour");
+        return true;
     }
 
     private MethodInfo[] Matching(Type type, string methodName, BindingFlags flags)
@@ -134,6 +150,7 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
 
         foreach (var method in methods)
         {
+            if (Refused(method)) continue;
             try
             {
                 // A prefix shares its trampoline with a gate (GatePrefixAllOverloads): already patched = chain only.
