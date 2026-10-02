@@ -16,7 +16,7 @@ namespace Stellar.Infrastructure.Game;
 /// CURRENT owner: <see cref="Track"/> re-keys a component (and drops the entity's previous one), <see cref="Forget"/>
 /// drops a component whose new owner is refused, and <see cref="Untrack"/> (the despawn) drops the leaving entity's
 /// component in O(1) through the uuid → component map.</para></summary>
-internal sealed class DrawnSpeedGate
+internal sealed partial class DrawnSpeedGate
 {
     /// <summary>Diagnostics buckets, in summary order.</summary>
     internal enum Bucket { Monster, Player, Npc, Pet, Mount, Other }
