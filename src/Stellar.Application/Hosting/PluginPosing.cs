@@ -25,6 +25,8 @@ internal sealed class PluginPosing : IPosing
     public IReadOnlyList<ExpressionInfo> Expressions => _inner.Expressions;
     public IPoseTarget? Select(EntityId person) => _inner.Select(person, _owner);
     public bool TryGetVisiblePosition(EntityId person, out Position3D position) => _inner.TryGetVisiblePosition(person, out position);
+    public bool TryGetCurrentAction(EntityId person, out int actionId, out float moment) =>
+        _inner.TryGetCurrentAction(person, out actionId, out moment);
     public void ResetAll() => _inner.ReleaseOwner(_owner);
 
     public event Action? Changed

@@ -24,7 +24,7 @@ internal sealed class ClonePoseModel : IPoseModel
 
     public bool PlayAction(int actionId) => _p is { } p && p.PlayAction(actionId);
     public void SetMoment(float fraction) => _p?.SetMoment(fraction);
-    public float ReadMoment() => _p?.ReadMoment() ?? -1f;
+    public PoseActionReading ReadAction() => _p?.ReadAction() ?? PoseActionReading.None;
     public void SetExpression(ExpressionInfo? expression, bool hold) => _p?.SetExpression(expression, hold);
     public void SetLook(LookPart part, LookMode mode, bool locked) => _p?.SetLook(part, mode, locked);
     public void Aim(LookPart part, float x, float y) => _p?.Aim(part, x, y);

@@ -144,7 +144,25 @@ internal sealed class PosingService : IPosing
         return _targets.Count > 0 && _targets.TryGetValue(person.Value, out var t) && t.TryGetVisiblePosition(out position);
     }
 
+    public bool TryGetCurrentAction(EntityId person, out int actionId, out float moment)
+    {
+        var r = PoseActionReading.None;
+        if (IsAvailable && !person.IsNone)
+            r = _targets.TryGetValue(person.Value, out var t) ? t.CurrentAction() : ReadLive(person.Value);
+        actionId = r.IsPlaying ? r.ActionId : 0;
+        moment = r.IsPlaying ? Math.Clamp(r.Moment, 0f, 1f) : -1f;
+        return r.IsPlaying;
+    }
+
     public void ResetAll() => CloseWhere(_ => true);
+
+    /// <summary>The live person's action (no copy). A throwing backend reads as nothing — this is polled, so it never
+    /// warns.</summary>
+    internal PoseActionReading ReadLive(long uuid)
+    {
+        try { return Backend.ReadAction(uuid); }
+        catch { return PoseActionReading.None; }
+    }
 
     internal void ReleaseOwner(object owner) => CloseWhere(t => Equals(t.Owner, owner));
 

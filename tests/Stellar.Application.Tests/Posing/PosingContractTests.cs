@@ -13,7 +13,7 @@ public sealed class PosingContractTests
     private static int Members(Type t) => ContractMembers.Count(t);
 
     [Theory]
-    [InlineData(typeof(IPosing), 7)]
+    [InlineData(typeof(IPosing), 8)]
     [InlineData(typeof(IPoseTarget), 8)]
     public void Contract_member_counts_are_pinned(Type contract, int expected)
     {

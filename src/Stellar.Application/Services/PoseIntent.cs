@@ -9,6 +9,10 @@ internal sealed class PoseIntent
     private float _headX, _headY, _eyesX, _eyesY;
 
     public int ActionId { get; private set; }
+
+    /// <summary>The action is the one the person was already doing (adopted to hold it), not one we played: a replay
+    /// never plays it again (that would restart it).</summary>
+    public bool Adopted { get; private set; }
     public float Moment { get; private set; } = -1f;
     public ExpressionInfo? Expression { get; private set; }
     public bool Hold { get; private set; }
@@ -25,8 +29,16 @@ internal sealed class PoseIntent
     public void SetAction(int actionId)
     {
         ActionId = actionId;
+        Adopted = false;
         Moment = -1f;
         Touched |= PoseTouches.Action;
+    }
+
+    /// <summary>Takes over the action the person is already doing, so it can be held (never re-played).</summary>
+    public void AdoptAction(int actionId)
+    {
+        SetAction(actionId);
+        Adopted = true;
     }
 
     public void SetMoment(float moment) => Moment = moment;
@@ -63,6 +75,7 @@ internal sealed class PoseIntent
     public void Clear()
     {
         ActionId = 0;
+        Adopted = false;
         Moment = -1f;
         Expression = null;
         Hold = false;
@@ -77,7 +90,7 @@ internal sealed class PoseIntent
     /// re-applies the pause — recon § 1, Head Free). Returns the action's result (true without an action).</summary>
     public bool ReplayInto(IPoseModel m)
     {
-        var played = ActionId == 0 || m.PlayAction(ActionId);
+        var played = ActionId == 0 || Adopted || m.PlayAction(ActionId);
         if ((Touched & PoseTouches.Expression) != 0) m.SetExpression(Expression, Hold);
         if ((Touched & PoseTouches.Head) != 0) ReplayLook(m, LookPart.Head, Head, HeadLocked);
         if ((Touched & PoseTouches.Eyes) != 0) ReplayLook(m, LookPart.Eyes, Eyes, EyesLocked);

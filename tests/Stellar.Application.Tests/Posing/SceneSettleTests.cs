@@ -53,7 +53,7 @@ public sealed class SceneSettleTests
         w.Arm();
         Assert.Null(m.Position);
         Assert.False(m.PlayAction(5));
-        Assert.Equal(-1f, m.ReadMoment());
+        Assert.Equal(PoseActionReading.None, m.ReadAction());
         m.SetMoment(0.5f);
         m.SetExpression(null, true);
         m.SetLook(LookPart.Head, LookMode.Lens, false);
@@ -83,7 +83,7 @@ public sealed class SceneSettleTests
         var m = new SettledPoseModel(inner, w);
         Assert.Equal(inner.Visible, m.Position);
         Assert.True(m.PlayAction(5));
-        Assert.Equal(0.25f, m.ReadMoment());
+        Assert.Equal(new PoseActionReading(9020, 0.25f), m.ReadAction());
         m.SetYaw(30f);
         m.SetFrozen(true);
         Assert.Equal(new List<string> { "play 5", "read", "yaw 30", "frozen True" }, inner.Calls);

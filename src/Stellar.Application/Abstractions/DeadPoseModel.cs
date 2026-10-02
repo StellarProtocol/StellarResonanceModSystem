@@ -14,7 +14,7 @@ internal sealed class DeadPoseModel : IPoseModel
 
     public bool PlayAction(int actionId) => false;
     public void SetMoment(float fraction) { }
-    public float ReadMoment() => -1f;
+    public PoseActionReading ReadAction() => PoseActionReading.None;
     public void SetExpression(ExpressionInfo? expression, bool hold) { }
     public void SetLook(LookPart part, LookMode mode, bool locked) { }
     public void Aim(LookPart part, float x, float y) { }

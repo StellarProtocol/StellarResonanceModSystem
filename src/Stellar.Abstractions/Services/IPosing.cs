@@ -41,6 +41,16 @@ public interface IPosing
     /// <param name="position">The posed model's world position.</param>
     bool TryGetVisiblePosition(EntityId person, out Position3D position);
 
+    /// <summary>The action (emote / pose) <paramref name="person"/> is doing right now — the one they were already doing
+    /// when selected, or the one held or played on them through <see cref="IPoseTarget"/>. Read from their posed copy or
+    /// stand-in when one exists, else from the person themselves; local only (nothing is sent). False while posing is not
+    /// available, when the person is idle, gone or unreadable, and for ~2 s after a scene change. No allocation and no
+    /// per-call reflection lookup: cheap enough for a panel that polls a few times a second.</summary>
+    /// <param name="person">The entity to read.</param>
+    /// <param name="actionId">The emote/action id (the ids of <see cref="IEmotes.Unlocked"/>); 0 when false.</param>
+    /// <param name="moment">How far it has played, 0–1 (the held point while held); −1 when false.</param>
+    bool TryGetCurrentAction(EntityId person, out int actionId, out float moment);
+
     /// <summary>Resets every person this plugin touched, now (the free camera stays on).</summary>
     void ResetAll();
 
@@ -62,7 +72,8 @@ public interface IPoseTarget
 
     /// <summary>Set: 0–1 holds the current action at that point of its length; −1 lets it play. Get: the held point while
     /// held; while playing, how far it has played (reads the game — call on a user action, not every frame); −1 when
-    /// nothing plays. Ignored before <see cref="PlayAction"/>.</summary>
+    /// nothing plays. Before <see cref="PlayAction"/>, setting 0–1 holds the action the person was already doing
+    /// (<see cref="IPosing.TryGetCurrentAction"/>) at that point without restarting it; ignored when they do none.</summary>
     float Moment { get; set; }
 
     /// <summary>Shows an expression (an <see cref="ExpressionInfo.Id"/>; 0 clears). With <paramref name="hold"/> it stays

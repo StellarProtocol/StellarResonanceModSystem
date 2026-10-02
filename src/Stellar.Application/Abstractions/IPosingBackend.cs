@@ -15,6 +15,18 @@ internal enum PoseTouches
     Yaw = 16,
 }
 
+/// <summary>What a person or a posed model is doing: the game's action id (<c>GetLuaAttrActionInfoActionId</c>) and how
+/// far it has played, 0–1 (<c>PassedTime / TotalTime</c>; 0 when the length is unknown). <see cref="None"/> = idle,
+/// gone or unreadable.</summary>
+internal readonly record struct PoseActionReading(int ActionId, float Moment)
+{
+    /// <summary>Nothing playing (or nothing readable).</summary>
+    public static readonly PoseActionReading None = new(0, -1f);
+
+    /// <summary>An action is running.</summary>
+    public bool IsPlaying => ActionId > 0;
+}
+
 /// <summary>Game side of <c>IPosing</c> (recon docs/recon/photo-posing-recon.md, runs 4–5). Main thread.</summary>
 internal interface IPosingBackend
 {
@@ -38,6 +50,11 @@ internal interface IPosingBackend
     /// when it returns <see cref="DeadPoseModel.Instance"/>, nothing is hidden or loading: the caller treats the open as
     /// failed and has no model to close (and the person holds no photo-member slot).</summary>
     IPoseModel Open(long uuid, PersonKind kind, Action<bool> loaded);
+
+    /// <summary>The action the live person <paramref name="uuid"/> is doing (their own model, not a copy);
+    /// <see cref="PoseActionReading.None"/> when idle, gone, destroying, or inside the scene-change settle window. Polled
+    /// by panels (~10 Hz): compiled accessors, no allocation, never throws.</summary>
+    PoseActionReading ReadAction(long uuid);
 
     /// <summary>Raised (main thread) just before the game removes an entity.</summary>
     event Action<long>? PersonRemoved;
@@ -65,11 +82,14 @@ internal interface IPoseModel : IPoseBody
     /// docs/recon/photo-posing-recon.md "Pose play from paused").</summary>
     bool PlayAction(int actionId);
 
-    /// <summary>Holds the current action at <paramref name="fraction"/> (0–1) of its length; −1 lets it play.</summary>
+    /// <summary>Holds the current action at <paramref name="fraction"/> (0–1) of its length; −1 lets it play. When nothing
+    /// was played through <see cref="PlayAction"/>, the action the model is already doing (a person's own emote, or the
+    /// one a photo copy inherited) is the one held — it is never restarted.</summary>
     void SetMoment(float fraction);
 
-    /// <summary>How far the current action has played (0–1); −1 when nothing plays.</summary>
-    float ReadMoment();
+    /// <summary>What this model is doing now (whoever started it) and how far it has played;
+    /// <see cref="PoseActionReading.None"/> when nothing plays or the model is gone.</summary>
+    PoseActionReading ReadAction();
 
     /// <summary>Shows <paramref name="expression"/> (null clears it); <paramref name="hold"/> keeps it until changed.</summary>
     void SetExpression(ExpressionInfo? expression, bool hold);

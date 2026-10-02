@@ -38,6 +38,22 @@ internal static class FastAccess
         }
     }
 
+    /// <summary>Compiled call of a parameterless instance method (e.g. <c>ZModel.GetLuaAttrActionInfoPassedTime()</c>).</summary>
+    public static Func<object, TResult>? Func0<TResult>(MethodInfo? m)
+    {
+        if (m is null || m.IsStatic || m.DeclaringType is null || m.GetParameters().Length != 0) return null;
+        try
+        {
+            var o = Expression.Parameter(typeof(object), "o");
+            var call = Expression.Call(Expression.Convert(o, m.DeclaringType), m);
+            return Expression.Lambda<Func<object, TResult>>(Expression.Convert(call, typeof(TResult)), o).Compile();
+        }
+        catch
+        {
+            return o => (TResult)m.Invoke(o, null)!;
+        }
+    }
+
     /// <summary>Compiled call of a one-argument instance method (e.g. <c>ZEntityMgr.GetEntity(long)</c>).</summary>
     public static Func<object, TArg, TResult>? Func1<TArg, TResult>(MethodInfo? m)
     {

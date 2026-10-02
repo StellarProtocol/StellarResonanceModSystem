@@ -19,6 +19,7 @@ _**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugin
 ### Added
 - Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see, and everyone returns to normal when you leave the free camera.
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
+- Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
@@ -40,6 +41,10 @@ _**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugin
   at the game's `PhotographTeamMemberLimit` (PC `[1]`, 30 in release_3.7: you + 29 players; NPC models 30) with
   `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
   model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
+- `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
+  entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
+  settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without
+  re-playing it (a reset only releases the hold on an adopted action).
 - `IEntityPicker` also returns NPCs. `HarmonyGameMethodHooker` skips abstract overloads (they cannot be patched).
 - Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, a
   `[Posing] despawn prefix fired on managed thread …` line on every `ZEntityMgr.RemoveEntity` prefix, and

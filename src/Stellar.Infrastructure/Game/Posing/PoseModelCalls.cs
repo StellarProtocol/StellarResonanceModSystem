@@ -38,7 +38,6 @@ internal sealed partial class PoseModelCalls
     public void HoldFace(object m, int faceId) { if (Resolve()) _holdFace!.Invoke(m, new object[] { faceId, -1f, true, false, 0f, false, false }); }
     public void ClearFace(object m) { if (Resolve()) _holdFace!.Invoke(m, new object[] { 0, 0f, false, false, 0f, false, false }); }
     public float TotalTime(object m) => Resolve() ? Convert.ToSingle(_total!.Invoke(m, null)) : 0f;
-    public float PassedTime(object m) => Resolve() ? Convert.ToSingle(_passed!.Invoke(m, null)) : 0f;
     public Vector3? Head(object m) => Resolve() && _head!.Invoke(m, null) is Vector3 v ? v : null;
     public void HeadClose(object m, bool closed) { if (Resolve()) _headClose!.Invoke(m, new object[] { closed }); }
     public void EyeOpen(object m, bool open) { if (Resolve()) _eyeOpen!.Invoke(m, new object[] { open }); }

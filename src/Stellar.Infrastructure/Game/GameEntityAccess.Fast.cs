@@ -2,7 +2,8 @@ using System;
 using UnityEngine;
 namespace Stellar.Infrastructure.Game;
 
-/// <summary>The local player's logical position for a per-frame caller (the free camera's distance cap, review F2):
+/// <summary>The local player's logical position for a per-frame caller (the free camera's distance cap, review F2) and a
+/// person's live model for the posing panel's action poll:
 /// compiled accessors for <c>PlayerUuid</c>, <c>GetEntity</c>, <c>IsDestroying</c>, <c>Model</c> and
 /// <c>GetAttrGoPosition</c> — the same lookups and liveness gates as <see cref="LiveModel"/>(<see cref="LocalEntity"/>)
 /// + <see cref="AttrPosition"/>, but no <c>MethodInfo.Invoke</c>, no boxing and one manager fetch per call. Falls back to
@@ -27,6 +28,20 @@ internal sealed partial class GameEntityAccess
             if (uuid == 0 || _fastGetEntity!(mgr, uuid) is not { } e || _fastEntGone!(e)) return null;
             if (_fastModel!(e) is not { } model || _fastModelGone!(model)) return null;
             return _fastAttrPos!(model);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>The live model of entity <paramref name="uuid"/> (<c>GetEntity</c> → <c>Model</c>, both not
+    /// <c>IsDestroying</c>), or null when gone. Compiled like <see cref="LocalPlayerPosition"/>: a panel polls it.</summary>
+    public object? FastLiveModel(long uuid)
+    {
+        if (uuid == 0 || Manager() is not { } mgr) return null;
+        if (!ResolveFast()) return LiveModel(EntityByUuid(uuid));
+        try
+        {
+            if (_fastGetEntity!(mgr, uuid) is not { } e || _fastEntGone!(e)) return null;
+            return _fastModel!(e) is { } model && !_fastModelGone!(model) ? model : null;
         }
         catch { return null; }
     }

@@ -1,4 +1,5 @@
 using Stellar.Abstractions.Domain;
+using Stellar.Application.Abstractions;
 namespace Stellar.Infrastructure.Game.Posing;
 
 /// <summary>Action, moment, expression, look and facing on ONE model (recon § 1 table): the local player through the
@@ -9,6 +10,7 @@ internal sealed class ModelPoser
     private readonly PoseCalls _c;
     private readonly PoseSubject _s;
     private int _actionId;
+    private bool _adopted;   // _actionId is the model's own running action (held, never played by us)
     private float? _priorSpeed;
 
     public ModelPoser(PoseCalls calls, PoseSubject subject)
@@ -26,18 +28,28 @@ internal sealed class ModelPoser
     {
         if (!Live || !_c.Lua.Allowed(actionId)) return false;
         _actionId = actionId;
+        _adopted = false;
         return _s.Self ? _c.Actions.PlaySelf(actionId) : _c.Actions.PlayModel(_s.Model, actionId);
     }
 
+    /// <summary>Holds (0–1) or releases (−1) the action. Nothing played by us yet: holding takes over the action the model
+    /// is already doing (the person's own emote, or the one a photo copy inherited) — it is never re-played.</summary>
     public void SetMoment(float fraction)
     {
-        if (!Live || _actionId == 0) return;
+        if (!Live) return;
+        if (_actionId == 0 && fraction >= 0f && _c.Models.ReadAction(_s.Model) is { IsPlaying: true } running)
+        {
+            _actionId = running.ActionId;
+            _adopted = true;
+        }
+        if (_actionId == 0) return;
         var time = PoseMath.PersistTime(fraction, Total());
         if (_s.Self) _c.Actions.PersistSelf(time);
         else _c.Actions.PersistModel(_s.Model, time);
     }
 
-    public float ReadMoment() => !Live || _actionId == 0 ? -1f : PoseMath.Fraction(_c.Models.PassedTime(_s.Model), Total());
+    /// <summary>What the model is doing now, whoever started it (compiled reads, liveness-gated).</summary>
+    public PoseActionReading ReadAction() => _c.Models.ReadAction(_s.Model);
 
     /// <summary>Held = <c>SetLuaAttrEmoteInfo(face, -1, true)</c> (run 5 (1): no expiry, no timer); not held = the game's
     /// own 5 s <c>PlayEmote</c>; null clears (<c>SetLuaAttrEmoteInfo(0)</c> + <c>ResetEmote</c>).</summary>
@@ -80,13 +92,15 @@ internal sealed class ModelPoser
     }
 
     /// <summary>Persist −1 + <c>ResetAction</c> (self: one NewMove, the game's own photo behaviour). Skipped when nothing
-    /// was playing.</summary>
+    /// was playing. An adopted action (the person's own, only held) is just released (persist −1): it was theirs, so it
+    /// carries on rather than being stopped.</summary>
     public void ResetAction()
     {
         if (!Live || _actionId == 0) return;
-        if (_s.Self) { _c.Actions.PersistSelf(-1f); _c.Actions.ResetSelf(); }
-        else { _c.Actions.PersistModel(_s.Model, -1f); _c.Actions.ResetModel(_s.Model); }
+        if (_s.Self) { _c.Actions.PersistSelf(-1f); if (!_adopted) _c.Actions.ResetSelf(); }
+        else { _c.Actions.PersistModel(_s.Model, -1f); if (!_adopted) _c.Actions.ResetModel(_s.Model); }
         _actionId = 0;
+        _adopted = false;
     }
 
     /// <summary>Where a copy / generated model stands (the orbit centre, every frame); null for the live player.</summary>

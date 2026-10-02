@@ -56,6 +56,10 @@ internal sealed partial class GamePosingBackend : IPosingBackend
         };
     }
 
+    /// <summary>The live person's own model (never a copy), compiled reads only; nothing inside the settle window.</summary>
+    public PoseActionReading ReadAction(long uuid) =>
+        _settle.Settling ? PoseActionReading.None : _calls.Models.ReadAction(_entities.FastLiveModel(uuid));
+
     public IReadOnlyList<ExpressionInfo> ReadExpressions() => _calls.Lua.Expressions();
 
     public int MemberLimit() => _calls.Lua.MemberLimit();

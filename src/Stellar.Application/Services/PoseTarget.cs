@@ -67,7 +67,8 @@ internal sealed class PoseTarget : IPoseTarget
             : State == PoseTargetState.Ready && _intent.ActionId != 0 ? ReadMoment() : -1f;
         set
         {
-            if (!Usable || _intent.ActionId == 0) return;
+            if (!Usable) return;
+            if (_intent.ActionId == 0 && !(value >= 0f && AdoptCurrentAction())) return;
             _intent.SetMoment(value < 0f ? -1f : Math.Clamp(value, 0f, 1f));
             if (Prepare()) Run(m => { m.SetMoment(_intent.Moment); return true; });
         }
@@ -131,6 +132,17 @@ internal sealed class PoseTarget : IPoseTarget
             return true;
         }
         catch { return false; }
+    }
+
+    /// <summary>What this person is doing now: the held point of a held action; else the posed model's own reading once it
+    /// is ready (a copy inherits the person's action); else the live person's. <see cref="PoseActionReading.None"/> once
+    /// released. Polled by panels: no allocation, failures read as None.</summary>
+    internal PoseActionReading CurrentAction()
+    {
+        if (State == PoseTargetState.Released) return PoseActionReading.None;
+        if (_intent.Paused) return new PoseActionReading(_intent.ActionId, _intent.Moment);
+        if (State == PoseTargetState.Ready) return ReadModel();
+        return _svc.ReadLive(Uuid);
     }
 
     /// <summary>Applies or undoes the model freeze (scene freeze on/off). Idempotent; only a ready model.</summary>
@@ -228,11 +240,23 @@ internal sealed class PoseTarget : IPoseTarget
         _ => PoseResult.Unavailable,
     };
 
-    private float ReadMoment()
+    private float ReadMoment() => ReadModel() is { IsPlaying: true } r ? r.Moment : -1f;
+
+    private PoseActionReading ReadModel()
     {
-        var value = -1f;
-        Run(m => { value = m.ReadMoment(); return true; });
+        var value = PoseActionReading.None;
+        Run(m => { value = m.ReadAction(); return true; });
         return value;
+    }
+
+    // Holding before anything was played: take over what the person is already doing (spec: the Person panel shows the
+    // running emote and its pause holds it where it is — never restarted). False when they do nothing.
+    private bool AdoptCurrentAction()
+    {
+        var current = CurrentAction();
+        if (!current.IsPlaying) return false;
+        _intent.AdoptAction(current.ActionId);
+        return true;
     }
 
     private bool Run(Func<IPoseModel, bool> op)

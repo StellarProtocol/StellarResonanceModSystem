@@ -23,7 +23,9 @@ internal sealed class FakePoseModel : IPoseModel
     private static string N(float v) => v.ToString("0.00", CultureInfo.InvariantCulture);
     public bool PlayAction(int actionId) { Calls.Add($"play {actionId}"); return !Refuse; }
     public void SetMoment(float fraction) => Calls.Add($"moment {N(fraction)}");
-    public float ReadMoment() { Calls.Add("read"); return Live; }
+    /// <summary>The action the model reports as running (with <see cref="Live"/> as its progress; Live &lt; 0 = none).</summary>
+    public int RunningId = 9020;
+    public PoseActionReading ReadAction() { Calls.Add("read"); return Live < 0f ? PoseActionReading.None : new PoseActionReading(RunningId, Live); }
     public void SetExpression(ExpressionInfo? expression, bool hold) => Calls.Add($"face {expression?.Id ?? 0} hold={hold}");
     public void SetLook(LookPart part, LookMode mode, bool locked) => Calls.Add($"look {part} {mode} lock={locked}");
     public void Aim(LookPart part, float x, float y) => Calls.Add($"aim {part} {N(x)},{N(y)}");
@@ -44,7 +46,18 @@ internal sealed class FakePosingBackend : IPosingBackend
     public bool AsyncNpc = true, FailOpen, RefuseActions, RefuseOpen;
     public bool ThrowOnReadExpressions, ThrowOnMemberLimit;
     public int ExpressionReads, Limit = 30, LimitReads;
+    /// <summary>What each live person is doing (their own model); absent = idle.</summary>
+    public readonly Dictionary<long, PoseActionReading> LiveActions = new();
+    public int LiveActionReads;
+    public bool ThrowOnReadAction;
     public event Action<long>? PersonRemoved;
+
+    public PoseActionReading ReadAction(long uuid)
+    {
+        LiveActionReads++;
+        if (ThrowOnReadAction) throw new InvalidOperationException("the model is gone");
+        return LiveActions.TryGetValue(uuid, out var r) ? r : PoseActionReading.None;
+    }
 
     public PersonKind? KindOf(long uuid) => Kinds.TryGetValue(uuid, out var k) ? k : null;
 
