@@ -53,11 +53,13 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
     /// first freeze.</summary>
     public void ArmHooks(HarmonyGameMethodHooker hooker) => _hooks.Arm(() =>
     {
+        InstallCombatDiagCounters();   // diagnostics only (.Combat.Diagnostics.cs): before the gate picks its prefix
         InstallEffectHook(hooker);
         InstallAppearHook(hooker);
         InstallSpeedGate(hooker);
         InstallLeaveHook(hooker);
         InstallVehicleHooks(hooker);
+        InstallCombatDiagHooks(hooker);   // diagnostics only: chained after the freeze's own callbacks
     });
 
     public void EnsureHooks() => _hooks.Request();
@@ -130,17 +132,19 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
             try { TickAppeared(); }
             catch (Exception ex) { WarnOnce("appeartick2", "the appear watch failed this frame: " + ex.Message); }
         }
+        OnLateTickDiag(beforeHold: true);    // diagnostics only: the combat sampler reads before our hold write
         if (_holding)
         {
             try { HoldTick(); }
             catch (Exception ex) { WarnOnce("holdtick2", "the position hold failed this frame: " + ex.Message); }
         }
+        OnLateTickDiag(beforeHold: false);
         SyncLate();
     }
 
     private void SyncLate()
     {
-        var want = _frozen && (_stage2Due > 0 || _appeared.Count > 0 || _holding || _pendingVehicleChecks.Count > 0);
+        var want = _frozen && (_stage2Due > 0 || _appeared.Count > 0 || _holding || _pendingVehicleChecks.Count > 0 || DiagWantsLate());
         if (want == _lateOn) return;
         _lateOn = want;
         _driver.SetLate(want ? _lateTick : null);
@@ -159,4 +163,9 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend, IFreezeTe
     partial void OnVehicleEvent(long uuid, bool released);
     partial void OnUnfreezing();
     partial void OnUnfrozen(int effects, int factors, int speeds);
+    partial void InstallCombatDiagCounters();
+    partial void InstallCombatDiagHooks(HarmonyGameMethodHooker hooker);
+    partial void OnLateTickDiag(bool beforeHold);
+    /// <summary>Diagnostics only: the combat sampler still needs late frames (false whenever diagnostics are off).</summary>
+    private partial bool DiagWantsLate();
 }

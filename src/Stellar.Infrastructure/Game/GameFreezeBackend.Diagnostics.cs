@@ -20,6 +20,7 @@ internal sealed partial class GameFreezeBackend
         _frozenAtMs = Environment.TickCount64;
         _log.Info($"[FreeCam] freeze on: effects={effects} entities={_ids.Count} attrFrozen={factors} positionsHeld={held} " +
                   $"excluded=[{string.Join(",", _ledger.Excluded)}] self={_ledger.Self} speedGate={(_speedGateInstalled ? "on" : "OFF")}");
+        DiagBegin();   // the combat evidence capture (.Combat.Diagnostics.cs)
     }
 
     partial void OnStage2(int drawnFrozen)
@@ -32,6 +33,8 @@ internal sealed partial class GameFreezeBackend
     {
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[FreeCam] appeared while frozen: uuid={uuid} kind={kind}");
+        _diagAppeared.Add(uuid);
+        if (kind == FreezeKinds.Monster && _diagClock is { Active: true }) DiagWatch(uuid);
     }
 
     partial void OnExcluded(long uuid, int kind, string why)
@@ -58,6 +61,7 @@ internal sealed partial class GameFreezeBackend
     partial void OnUnfreezing()
     {
         _resumedAtUnfreeze = 0;
+        if (StellarDiagnostics.IsEnabled) DiagEnd();   // before any restore: the frozen state is still in place
         if (!StellarDiagnostics.IsEnabled || _getSpeed is null) return;
         foreach (var uuid in _speedGate.TrackedUuids.ToArray())
         {

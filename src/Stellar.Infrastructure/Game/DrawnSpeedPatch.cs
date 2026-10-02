@@ -15,7 +15,7 @@ namespace Stellar.Infrastructure.Game;
 /// <c>__args</c> array on this hot setter. So the one gate is reached through this one field: written once at install on
 /// the main thread, read-only afterwards, holding no game object. The same reason keeps the hooker's own callback tables
 /// static.</para></summary>
-internal static class DrawnSpeedPatch
+internal static partial class DrawnSpeedPatch
 {
     internal const string AnimCompType = "Panda.ZGame.AnimCompBase";
 
@@ -26,7 +26,9 @@ internal static class DrawnSpeedPatch
     internal static bool Install(HarmonyGameMethodHooker hooker, Type animComp, DrawnSpeedGate gate)
     {
         var setter = animComp.GetProperty("Speed", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetSetMethod(true);
-        var prefix = typeof(DrawnSpeedPatch).GetMethod(nameof(Prefix), BindingFlags.Static | BindingFlags.NonPublic);
+        var name = nameof(Prefix);
+        ChoosePrefix(ref name);   // diagnostics: the counted twin (.Diagnostics.cs); otherwise unchanged
+        var prefix = typeof(DrawnSpeedPatch).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic);
         if (setter is null || prefix is null) return false;
         s_gate = gate;
         return hooker.PrefixWith(setter, prefix);
@@ -48,4 +50,6 @@ internal static class DrawnSpeedPatch
             // Trust boundary: a managed exception must not propagate back into the IL2CPP caller.
         }
     }
+
+    static partial void ChoosePrefix(ref string name);
 }
