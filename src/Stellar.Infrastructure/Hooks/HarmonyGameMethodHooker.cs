@@ -72,6 +72,24 @@ internal sealed class HarmonyGameMethodHooker : IGameMethodHooks
         }
     }
 
+    /// <summary>Patches one method with a caller-supplied static PREFIX — for a hot game method whose prefix must not pay
+    /// the shared trampoline's per-call <c>__args</c> array (it can take its arguments by position, e.g.
+    /// <c>ref float __0</c>). False when the patch failed (logged).</summary>
+    public bool PrefixWith(MethodBase method, MethodInfo prefix)
+    {
+        try
+        {
+            _harmony.Patch(method, prefix: new HarmonyMethod(prefix));
+            _log.Info($"[Hooker] patched {method.DeclaringType?.FullName}.{method.Name} (prefix {prefix.Name})");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"[Hooker] failed to patch {method.DeclaringType?.FullName}.{method.Name}: {ex.Message}");
+            return false;
+        }
+    }
+
     private MethodInfo[] Matching(Type type, string methodName, BindingFlags flags)
     {
         var methods = type.GetMethods(flags)

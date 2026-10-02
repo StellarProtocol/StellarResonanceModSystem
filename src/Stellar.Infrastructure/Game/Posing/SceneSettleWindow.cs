@@ -26,7 +26,10 @@ internal sealed class SceneSettleWindow
         _span = spanTicks;
     }
 
-    /// <summary>True inside the window after the latest <see cref="Arm"/>.</summary>
+    /// <summary>True inside the window after the latest <see cref="Arm"/>. Note (review M3): this getter MUTATES — the
+    /// first read after the window has passed drops the armed latch. That is safe because the latch only short-circuits
+    /// the clock read: once expired the answer stays false until the next <see cref="Arm"/>, whoever reads first and
+    /// however often, so no reader can observe a different value because of another reader.</summary>
     public bool Settling
     {
         get

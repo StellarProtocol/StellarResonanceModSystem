@@ -8,7 +8,7 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>Position hold (recon run 2 C W2, run 3 R3-9): every LateUpdate, write each held entity's visual
 /// <c>ModelGoComp.Position</c> back to where it was drawn at freeze time (2.8–4.0 µs per entity). Held = every movable kind
 /// (<see cref="FreezeKinds.Movable"/>) within <see cref="FreezeKinds.HoldRadius"/> of the local player, never the local
-/// player. The logical position keeps moving underneath; on release each held model is written back to its logical
+/// player or their own mount (<see cref="FreezeTargets.MayHold"/>, review I1/I2). The logical position keeps moving underneath; on release each held model is written back to its logical
 /// position (a pet stayed 18.48 m off for 3+ frames otherwise). Self-disables over <see cref="HoldBudget.LimitMs"/>.
 /// <see cref="TryHold"/> and <see cref="SnapHeldToLogical"/> isolate each entity's lookup in its own try so one bad
 /// entity never skips the rest (review finding, Task 9 round 1).</summary>
@@ -91,17 +91,31 @@ internal sealed partial class GameFreezeBackend
     /// over the rest of <c>_ids</c>.</summary>
     private void TryHold(long uuid, Vector3 origin, object? entity)
     {
-        if (_ledger.Excludes(uuid)) return;   // never the local player
+        if (_ledger.Excludes(uuid)) return;   // never the local player or their own mount: no read at all
         try
         {
             var live = entity is not null ? _entities.Live(entity) : _entities.EntityByUuid(uuid);
-            if (live is not { } e) return;
-            if (!FreezeKinds.Movable(_entities.EntType(e)) || _entities.LiveModel(e) is not { } m) return;
-            if (_entities.AttrPosition(m) is not { } at || Vector3.Distance(at, origin) > FreezeKinds.HoldRadius) return;
-            if (_held.Exists(h => h.Uuid == uuid)) return;   // re-appeared while still held
+            if (live is not { } e || _entities.LiveModel(e) is not { } m || _entities.AttrPosition(m) is not { } at) return;
+            var held = _held.Exists(h => h.Uuid == uuid);   // re-appeared while still held
+            if (!FreezeTargets.MayHold(_ledger, uuid, _entities.EntType(e), Vector3.Distance(at, origin), held)) return;
             if (_goComp!(m) is { } comp) _held.Add((uuid, _getPos!(comp)));
         }
         catch (Exception ex) { WarnOnce("holdone", "could not hold an entity's position: " + ex.Message); }
+    }
+
+    /// <summary>Releases one held entity mid-freeze (it turned out to be excluded): snapped to its logical position, out
+    /// of the hold.</summary>
+    private void Unhold(long uuid)
+    {
+        var i = _held.FindIndex(h => h.Uuid == uuid);
+        if (i < 0) return;
+        try
+        {
+            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is { } m && _goComp!(m) is { } comp && _entities.AttrPosition(m) is { } logical)
+                _setPos!(comp, logical);
+        }
+        catch (Exception ex) { WarnOnce("holdsnap", "could not snap a held entity back: " + ex.Message); }
+        _held.RemoveAt(i);
     }
 
     private void StopHold()

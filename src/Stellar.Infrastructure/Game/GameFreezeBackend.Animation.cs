@@ -7,7 +7,9 @@ namespace Stellar.Infrastructure.Game;
 /// supports it: <c>SetAttrSkillStageTimeFactor(e, 0)</c> + <c>SetAttrAnimSpeedDirty(e, true)</c> + <c>tryCalculateAnimSpeed(e)</c>,
 /// the prior value from <c>GetAttrSkillStageTimeFactor</c> — enough for players, vanity pets and mounts. Stage 2, two late
 /// frames later: <c>ZModel.AnimComp.Speed = 0</c> on every entity whose drawn speed is still above 0 — NPCs and pets, whose
-/// drawn speed the attr never reaches and the game never rewrites. The local player is never frozen (scene-stays spec § 3:
+/// drawn speed the attr never reaches. Stage 2 also tracks every entity's anim component for the <c>set_Speed</c> gate
+/// (<see cref="DrawnSpeedGate"/>), which keeps the drawn speed at 0 when the GAME rewrites it later (combat, owner report
+/// 2026-10-02). The local player and their own mount are never frozen (scene-stays spec § 3, review I1:
 /// <see cref="FreezeLedger.Excludes"/>) — they walk and their own emote plays while the rest of the scene holds.
 /// Every per-entity lookup below runs inside that entity's own try: one entity's interop failure is caught, warned
 /// once and skipped, and never aborts the loop over the rest of <c>_ids</c> — a prior bug here could abort mid-loop,
@@ -83,10 +85,11 @@ internal sealed partial class GameFreezeBackend
         catch (Exception ex) { WarnOnce("animone", "could not freeze an entity's animation: " + (ex.InnerException ?? ex).Message); }
     }
 
-    /// <summary>Writes the frozen factor again (the ledger keeps the first prior). For entities the game reset after
-    /// <c>AddEntity</c> (run 3).</summary>
-    private void ReapplyFactor(object entity)
+    /// <summary>Writes the frozen factor again (the ledger keeps the FIRST prior — a re-apply never touches it). For
+    /// entities the game reset after <c>AddEntity</c> (run 3).</summary>
+    private void ReapplyFactor(long uuid, object entity)
     {
+        if (_ledger.Excludes(uuid)) return;
         try
         {
             _setFactor!.Invoke(null, new object[] { entity, FreezeLedger.FrozenFactor });
@@ -105,20 +108,17 @@ internal sealed partial class GameFreezeBackend
         OnStage2(n);
     }
 
-    /// <summary>Stage 2 for one entity: a drawn speed above 0 becomes 0, the prior kept. True when written. The
+    /// <summary>Stage 2 for one entity: tracks its anim component for the <c>set_Speed</c> gate, and a drawn speed
+    /// above 0 becomes 0 (<see cref="FreezeLedger.AdmitSpeed"/> keeps the restore value). True when written. The
     /// entity lookup and the write both run inside the same try, so a failed lookup is caught here instead of
     /// aborting <see cref="FreezeDrawnSpeeds"/>'s loop over the rest of <c>_ids</c>.</summary>
     private bool FreezeDrawnSpeed(long uuid)
     {
-        if (_ledger.Excludes(uuid)) return false;   // no model read for the local player at all
+        if (_ledger.Excludes(uuid)) return false;   // no model read for an excluded entity at all
         try
         {
-            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return false;
-            var speed = _getSpeed!(comp);
-            if (speed <= FreezeLedger.SpeedEpsilon) return false;
-            if (!_ledger.SaveSpeed(uuid, speed)) return false;   // the local player is never frozen
-            _setSpeed!(comp, 0f);
-            return true;
+            if (_entities.EntityByUuid(uuid) is not { } e || _entities.LiveModel(e) is not { } m || _animComp!(m) is not { } comp) return false;
+            return FreezeComp(uuid, _entities.EntType(e), comp);
         }
         catch (Exception ex)
         {
@@ -127,46 +127,15 @@ internal sealed partial class GameFreezeBackend
         }
     }
 
-    /// <summary>The entity's drawn speed, or 0 when it has no model / anim component or the lookup fails.</summary>
-    private float DrawnSpeed(long uuid)
+    /// <summary>Tracks <paramref name="comp"/> for the gate and writes 0 over a drawn speed above 0 — every time, also on
+    /// a re-apply after a game rewrite (regression <c>freeze_combat_resume_reapply</c>). True when written.</summary>
+    private bool FreezeComp(long uuid, int kind, object comp)
     {
-        try
-        {
-            if (_entities.LiveModel(_entities.EntityByUuid(uuid)) is not { } m || _animComp!(m) is not { } comp) return 0f;
-            return _getSpeed!(comp);
-        }
-        catch { return 0f; }
-    }
-
-    private void UnfreezeAnimation()
-    {
-        RestoreSpeeds();   // drawn speeds first, then the factors (players' speed is recomputed from the factor)
-        foreach (var kv in _ledger.Factors)
-        {
-            try
-            {
-                if (_entities.EntityByUuid(kv.Key) is not { } entity) continue;   // left / despawned: nothing to restore
-                var current = Convert.ToSingle(_getFactor!.Invoke(null, new[] { entity }));
-                if (FreezeLedger.RestoreValue(kv.Value, current) is not float restore) continue;
-                _setFactor!.Invoke(null, new object[] { entity, restore });
-                Recalc(entity);
-            }
-            catch (Exception ex) { WarnOnce("animrestore", "could not restore an entity's animation: " + (ex.InnerException ?? ex).Message); }
-        }
-    }
-
-    private void RestoreSpeeds()
-    {
-        if (_ledger.Speeds.Count == 0 || _setSpeed is null) return;
-        foreach (var kv in _ledger.Speeds)
-        {
-            try
-            {
-                if (_entities.LiveModel(_entities.EntityByUuid(kv.Key)) is not { } m || _animComp!(m) is not { } comp) continue;
-                if (FreezeLedger.RestoreSpeed(kv.Value, _getSpeed!(comp)) is float restore) _setSpeed(comp, restore);
-            }
-            catch (Exception ex) { WarnOnce("speedrestore", "could not restore an entity's drawn speed: " + ex.Message); }
-        }
+        _speedGate.Track(CompPointer(comp), uuid, kind);
+        var speed = _getSpeed!(comp);
+        if (speed <= FreezeLedger.SpeedEpsilon || !_ledger.AdmitSpeed(uuid, speed)) return false;
+        WriteSpeed(comp, 0f);
+        return true;
     }
 
     private void Recalc(object entity)

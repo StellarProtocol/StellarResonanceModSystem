@@ -6,11 +6,12 @@ using Stellar.Infrastructure.Hooks;
 using Stellar.Infrastructure.Unity;
 namespace Stellar.Infrastructure.Game;
 
-// Effects: GameFreezeBackend.Effects.cs. Animation (two stages): .Animation.cs. Position hold: .Hold.cs.
-// Entities appearing while frozen: .Appear.cs. Logging: .Diagnostics.cs.
+// Effects: GameFreezeBackend.Effects.cs. Animation (two stages): .Animation.cs. The set_Speed gate: .SpeedGate.cs.
+// Restores: .Restore.cs. Position hold: .Hold.cs. Entities appearing while frozen: .Appear.cs. Logging: .Diagnostics.cs.
 
 /// <summary>The game side of <c>ISceneFreeze</c> (spec § 4, recon runs 2 and 3) for every entity in
-/// <c>ZEntityMgr.EntityDict</c> except the local player (scene-stays spec § 3; effects stay global). Visual and local
+/// <c>ZEntityMgr.EntityDict</c> except the local player and their own mount (scene-stays spec § 3, review I1 —
+/// <see cref="FreezeTargets"/>; effects stay global). Visual and local
 /// only. Each part fails open on its own with one warning; a failure in one never stops the others. One LateUpdate handler runs stage 2, the appear re-checks and the hold; the frame driver
 /// is off whenever none of them is live. Main thread.</summary>
 internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
@@ -24,6 +25,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     private readonly FrameDriverHost _driver;
     private readonly IPluginLog _log;
     private readonly FreezeLedger _ledger = new();
+    private readonly DrawnSpeedGate _speedGate = new();
+    private readonly List<long> _released = new();
     private readonly LazyHookInstall _hooks = new();
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly List<long> _ids = new();
@@ -51,6 +54,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     {
         InstallEffectHook(hooker);
         InstallAppearHook(hooker);
+        InstallSpeedGate(hooker);
     });
 
     public void EnsureHooks() => _hooks.Request();
@@ -69,7 +73,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         if (_frozen) return;
         _frozen = true;
         _ledger.Clear();
-        // "everything on screen" = every entity but the local player, read once per press.
+        _speedGate.Arm(_ledger, Environment.CurrentManagedThreadId);   // components are tracked at stage 2 / appear
+        // "everything on screen" = every entity but the local player and their own mount, read once per press.
         if (FreezeStepRunner.RunAll(ReadTargets, FreezeEffects, FreezeAnimation,
                 () => { if (holdPositions) StartHold(); }) is { } ex)
             WarnOnce("freezeall", "freeze applied best-effort after an error: " + ex.Message);
@@ -78,14 +83,10 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
         OnFrozen(_ledger.Effects.Count, _ledger.Factors.Count, _held.Count);
     }
 
-    /// <summary>This press's entities: every entity uuid, minus the local player (never frozen — scene-stays spec § 3).
-    /// The ledger keeps who the local player is, so every later phase (stage 1/2, hold, appear) refuses them too.</summary>
-    private void ReadTargets()
-    {
-        _entities.EntityUuids(_ids);
-        _ledger.Begin(_entities.PlayerUuid());
-        _ledger.WithoutSelf(_ids);
-    }
+    /// <summary>This press's entities: every entity uuid, minus the local player and their own mount (never frozen —
+    /// scene-stays spec § 3, review I1). The ledger keeps who is excluded, so every later phase (stage 1/2, the speed
+    /// gate, hold, appear) refuses them too. The selection itself is <see cref="FreezeTargets.Select"/> (unit-tested).</summary>
+    private void ReadTargets() => FreezeTargets.Select(_entities, _ledger, _ids);
 
     /// <summary>Unfreezes everything this backend touched. Each step runs through <see cref="FreezeStepRunner"/> so
     /// a throw restoring one piece (e.g. one entity's animation) never skips the others — the hold release, the
@@ -94,6 +95,8 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     {
         if (!_frozen) return;
         _frozen = false;
+        OnUnfreezing();
+        _speedGate.Disarm();   // before any restore write: from here every set_Speed passes through
         _stage2Due = 0;
         _appeared.Clear();
         var effects = _ledger.Effects.Count;
@@ -112,7 +115,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     {
         if (_stage2Due > 0 && --_stage2Due == 0)
         {
-            try { FreezeDrawnSpeeds(); }
+            try { ReleaseLateExclusions(); FreezeDrawnSpeeds(); }
             catch (Exception ex) { WarnOnce("stage2tick", "freeze stage 2 failed this frame: " + ex.Message); }
         }
         if (_appeared.Count > 0)
@@ -144,5 +147,7 @@ internal sealed partial class GameFreezeBackend : ISceneFreezeBackend
     partial void OnFrozen(int effects, int factors, int held);
     partial void OnStage2(int drawnFrozen);
     partial void OnAppearFrozen(long uuid, int kind);
+    partial void OnExcluded(long uuid, int kind, string why);
+    partial void OnUnfreezing();
     partial void OnUnfrozen(int effects, int factors, int speeds);
 }
