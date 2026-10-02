@@ -79,18 +79,35 @@ public sealed class PosingCurrentActionTests
         Assert.Equal(0.5f, moment);
     }
 
+    // Fix round 1 (3): game truth whenever a model exists, paused or not — never the intent's claim.
     [Fact]
-    public void A_held_pause_reports_the_held_point_without_reading_the_game()
+    public void A_held_pause_reports_what_the_model_really_holds()
     {
         var r = new PosingRig();
         var t = r.Target(2);
         t.PlayAction(9021);
         t.Moment = 0.3f;
-        var reads = r.Backend.Model(2).Calls.FindAll(c => c == "read").Count;
+        var copy = r.Backend.Model(2);
+        copy.RunningId = 9022;   // the game says something else runs: the game wins over the intent (9021)
         Assert.True(r.Svc.TryGetCurrentAction(new EntityId(2), out var id, out var moment));
-        Assert.Equal(9021, id);
-        Assert.Equal(0.3f, moment);
-        Assert.Equal(reads, r.Backend.Model(2).Calls.FindAll(c => c == "read").Count);
+        Assert.Equal(9022, id);
+        Assert.Equal(0.3f, moment);   // the model's own held point
+        Assert.Contains("read", copy.Calls);
+        copy.Live = -1f;   // the model lost the action: no hold is claimed
+        Assert.False(r.Svc.TryGetCurrentAction(new EntityId(2), out _, out _));
+    }
+
+    [Fact]
+    public void A_held_pause_on_a_still_loading_npc_reports_the_intent()
+    {
+        var r = new PosingRig();
+        var npc = r.Target(3);
+        npc.PlayAction(9300);
+        npc.Moment = 0.45f;
+        Assert.Equal(PoseTargetState.Loading, npc.State);
+        Assert.True(r.Svc.TryGetCurrentAction(new EntityId(3), out var id, out var moment));
+        Assert.Equal(9300, id);
+        Assert.Equal(0.45f, moment);
     }
 
     [Fact]
@@ -122,10 +139,11 @@ public sealed class PosingCurrentActionTests
         var t = r.Target(2);
         t.Moment = 0.4f;
         Assert.Equal(PoseTargetState.Ready, t.State);
-        Assert.Equal(new[] { "moment 0.40" }, r.Backend.Model(2).Calls);   // no "play": never restarted
+        Assert.Equal(new[] { "read", "moment 0.40 adopt" }, r.Backend.Model(2).Calls);   // no "play": never restarted
         Assert.Equal(0.4f, t.Moment);
         t.Moment = 0.7f;   // scrub from there
         Assert.Equal(0.7f, t.Moment);
+        r.Backend.Model(2).RunningId = 9206;   // the copy runs the person's inherited action
         Assert.True(r.Svc.TryGetCurrentAction(new EntityId(2), out var id, out var moment));
         Assert.Equal(9206, id);
         Assert.Equal(0.7f, moment);
@@ -139,7 +157,7 @@ public sealed class PosingCurrentActionTests
         var t = r.Target(2);
         t.Moment = 0.4f;
         Assert.Equal(PoseResult.Applied, t.PlayAction(9206));
-        Assert.Equal(new[] { "moment 0.40", "moment -1.00", "play 9206" }, r.Backend.Model(2).Calls);
+        Assert.Equal(new[] { "read", "moment 0.40 adopt", "moment -1.00", "play 9206" }, r.Backend.Model(2).Calls);
     }
 
     [Fact]
@@ -172,7 +190,60 @@ public sealed class PosingCurrentActionTests
         npc.Moment = 0.2f;
         Assert.Equal(PoseTargetState.Loading, npc.State);
         r.Backend.PendingLoads[0](true);
-        Assert.Equal(new[] { "moment 0.20" }, r.Backend.Model(3).Calls);
+        Assert.Equal(new[] { "read", "moment 0.20 adopt" }, r.Backend.Model(3).Calls);
+    }
+
+    // Fix round 1 (2): an opened model that runs no action (a copy that came up idle, an NPC stand-in) drops the
+    // adopted action — nothing claims a hold the model lacks, and the panel is told.
+    [Fact]
+    public void An_adopted_action_the_opened_model_lacks_is_dropped_and_changed_is_raised()
+    {
+        var r = new PosingRig();
+        r.Backend.LiveActions[3] = Running(9300, 0.2f);
+        var npc = r.Target(3);
+        npc.Moment = 0.2f;
+        r.Backend.LiveActions.Remove(3);
+        var changed = 0;
+        r.Svc.Changed += () => changed++;
+        r.Backend.Model(3).Live = -1f;   // the stand-in is idle
+        r.Backend.PendingLoads[0](true);
+        Assert.Equal(PoseTargetState.Ready, npc.State);
+        Assert.Equal(new[] { "read" }, r.Backend.Model(3).Calls);   // no play, no hold
+        Assert.Equal(-1f, npc.Moment);
+        Assert.Equal(1, changed);
+        Assert.False(r.Svc.TryGetCurrentAction(new EntityId(3), out _, out _));
+        npc.Reset();
+        Assert.Equal(PoseTouches.None, r.Backend.Model(3).Closed);   // nothing to undo
+    }
+
+    // Fix round 1 (2): only an explicitly adopted intent may hold what the model inherited; a played-but-refused
+    // action's pause never freezes whatever the copy came up with.
+    [Fact]
+    public void A_hold_after_a_refused_play_is_not_an_adoption()
+    {
+        var r = new PosingRig();
+        r.Backend.RefuseActions = true;
+        var t = r.Target(2);
+        Assert.Equal(PoseResult.Refused, t.PlayAction(9020));
+        t.Moment = 0.5f;
+        Assert.Contains("moment 0.50", r.Backend.Model(2).Calls);
+        Assert.DoesNotContain("moment 0.50 adopt", r.Backend.Model(2).Calls);
+    }
+
+    [Fact]
+    public void A_copy_opened_first_then_paused_adopts_only_when_the_copy_really_plays()
+    {
+        var r = new PosingRig();
+        r.Backend.LiveActions[2] = Running(9206, 0.4f);   // the hidden real player
+        var t = r.Target(2);
+        t.Yaw = 10f;   // opens the copy
+        var copy = r.Backend.Model(2);
+        copy.Live = -1f;   // the copy came up idle
+        t.Moment = 0.4f;
+        Assert.DoesNotContain(copy.Calls, c => c.StartsWith("moment"));
+        copy.Live = 0.4f;   // now the copy plays its inherited action
+        t.Moment = 0.4f;
+        Assert.Contains("moment 0.40 adopt", copy.Calls);
     }
 
     [Fact]

@@ -34,6 +34,17 @@ internal sealed class PoseIntent
         Touched |= PoseTouches.Action;
     }
 
+    /// <summary>Forgets an adopted action the model turned out not to have (a copy that came up idle, an NPC stand-in):
+    /// nothing is held, and a reset has no action to undo.</summary>
+    public void DropAdopted()
+    {
+        if (!Adopted) return;
+        ActionId = 0;
+        Adopted = false;
+        Moment = -1f;
+        Touched &= ~PoseTouches.Action;
+    }
+
     /// <summary>Takes over the action the person is already doing, so it can be held (never re-played).</summary>
     public void AdoptAction(int actionId)
     {
@@ -87,15 +98,18 @@ internal sealed class PoseIntent
     }
 
     /// <summary>Applies everything asked for so far: the action first, the pause last (a look change on a paused person
-    /// re-applies the pause — recon § 1, Head Free). Returns the action's result (true without an action).</summary>
+    /// re-applies the pause — recon § 1, Head Free). An adopted action is never played: it is held only when the opened
+    /// model really runs an action, else it is dropped (<see cref="DropAdopted"/>) so nothing claims a hold the model
+    /// lacks. Returns the action's result (true without an action).</summary>
     public bool ReplayInto(IPoseModel m)
     {
+        if (Adopted && !m.ReadAction().IsPlaying) DropAdopted();
         var played = ActionId == 0 || Adopted || m.PlayAction(ActionId);
         if ((Touched & PoseTouches.Expression) != 0) m.SetExpression(Expression, Hold);
         if ((Touched & PoseTouches.Head) != 0) ReplayLook(m, LookPart.Head, Head, HeadLocked);
         if ((Touched & PoseTouches.Eyes) != 0) ReplayLook(m, LookPart.Eyes, Eyes, EyesLocked);
         if ((Touched & PoseTouches.Yaw) != 0) m.SetYaw(Yaw);
-        if (Paused) m.SetMoment(Moment);
+        if (Paused) m.SetMoment(Moment, Adopted);
         return played;
     }
 

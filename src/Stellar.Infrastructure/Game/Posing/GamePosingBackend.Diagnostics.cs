@@ -29,5 +29,21 @@ internal sealed partial class GamePosingBackend
         _log.Info($"[Posing] despawn prefix fired on managed thread {Environment.CurrentManagedThreadId}");
     }
 
+    // Fix round 1 (5): the raw action readback for the end-of-action gate decision — does a finished one-shot keep its id,
+    // does passed run past total, does a loop's passed wrap? Logged on the live-person read (the panel poll and the
+    // PhotoStudio posing self-test's probe=oneshot/probe=loop reads), at most every 200 ms so a 10 Hz panel poll is halved.
+    private long _lastRawLog;
+
+    partial void OnActionRead(long uuid, object? model)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var now = Stopwatch.GetTimestamp();
+        if (now - _lastRawLog < Stopwatch.Frequency / 5) return;
+        _lastRawLog = now;
+        var ok = _calls.Models.ReadRaw(model, out var id, out var passed, out var total);
+        _log.Info(ok ? $"[Posing] action-raw uuid={uuid} id={id:F0} passed={passed:F3} total={total:F3}"
+            : $"[Posing] action-raw uuid={uuid} model=none");
+    }
+
     private static double Ms(long started) => (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
 }

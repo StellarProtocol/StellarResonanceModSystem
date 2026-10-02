@@ -22,10 +22,11 @@ internal sealed class FakePoseModel : IPoseModel
     public void SetFrozen(bool frozen) { Calls.Add($"frozen {frozen}"); OnFrozenCalled?.Invoke(); }
     private static string N(float v) => v.ToString("0.00", CultureInfo.InvariantCulture);
     public bool PlayAction(int actionId) { Calls.Add($"play {actionId}"); return !Refuse; }
-    public void SetMoment(float fraction) => Calls.Add($"moment {N(fraction)}");
-    /// <summary>The action the model reports as running (with <see cref="Live"/> as its progress; Live &lt; 0 = none).</summary>
+    private float _held = -1f;
+    public void SetMoment(float fraction, bool adopt) { _held = fraction; Calls.Add($"moment {N(fraction)}" + (adopt ? " adopt" : "")); }
+    /// <summary>The action the model reports as running (with <see cref="Live"/> as its progress, or the held point once held; Live &lt; 0 = none).</summary>
     public int RunningId = 9020;
-    public PoseActionReading ReadAction() { Calls.Add("read"); return Live < 0f ? PoseActionReading.None : new PoseActionReading(RunningId, Live); }
+    public PoseActionReading ReadAction() { Calls.Add("read"); return Live < 0f ? PoseActionReading.None : new PoseActionReading(RunningId, _held >= 0f ? _held : Live); }
     public void SetExpression(ExpressionInfo? expression, bool hold) => Calls.Add($"face {expression?.Id ?? 0} hold={hold}");
     public void SetLook(LookPart part, LookMode mode, bool locked) => Calls.Add($"look {part} {mode} lock={locked}");
     public void Aim(LookPart part, float x, float y) => Calls.Add($"aim {part} {N(x)},{N(y)}");

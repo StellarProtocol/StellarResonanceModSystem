@@ -39,7 +39,7 @@ internal sealed class NpcPoseModel : IPoseModel
     }
 
     public bool PlayAction(int actionId) => _p is { } p && p.PlayAction(actionId);
-    public void SetMoment(float fraction) => _p?.SetMoment(fraction);
+    public void SetMoment(float fraction, bool adopt) => _p?.SetMoment(fraction, adopt);
     public PoseActionReading ReadAction() => _p?.ReadAction() ?? PoseActionReading.None;
     public void SetExpression(ExpressionInfo? expression, bool hold) => _p?.SetExpression(expression, hold);
     public void SetLook(LookPart part, LookMode mode, bool locked) => _p?.SetLook(part, mode, locked);

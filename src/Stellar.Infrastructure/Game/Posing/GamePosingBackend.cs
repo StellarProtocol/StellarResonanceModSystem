@@ -57,8 +57,13 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     }
 
     /// <summary>The live person's own model (never a copy), compiled reads only; nothing inside the settle window.</summary>
-    public PoseActionReading ReadAction(long uuid) =>
-        _settle.Settling ? PoseActionReading.None : _calls.Models.ReadAction(_entities.FastLiveModel(uuid));
+    public PoseActionReading ReadAction(long uuid)
+    {
+        if (_settle.Settling) return PoseActionReading.None;
+        var model = _entities.FastLiveModel(uuid);
+        OnActionRead(uuid, model);
+        return _calls.Models.ReadAction(model);
+    }
 
     public IReadOnlyList<ExpressionInfo> ReadExpressions() => _calls.Lua.Expressions();
 
@@ -189,4 +194,5 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     partial void OnOpened(PersonKind kind, long uuid, long started);
     partial void OnNpcLoaded(long uuid, bool ok, long started);
     partial void OnDespawnPrefixFired();
+    partial void OnActionRead(long uuid, object? model);
 }

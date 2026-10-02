@@ -53,7 +53,8 @@ internal interface IPosingBackend
 
     /// <summary>The action the live person <paramref name="uuid"/> is doing (their own model, not a copy);
     /// <see cref="PoseActionReading.None"/> when idle, gone, destroying, or inside the scene-change settle window. Polled
-    /// by panels (~10 Hz): compiled accessors, no allocation, never throws.</summary>
+    /// by panels (~10 Hz): compiled accessors, no reflection invoke, never throws. The entity → model lookup returns game
+    /// objects, so the interop allocates its small per-call wrappers (two per read); nothing else allocates.</summary>
     PoseActionReading ReadAction(long uuid);
 
     /// <summary>Raised (main thread) just before the game removes an entity.</summary>
@@ -82,10 +83,11 @@ internal interface IPoseModel : IPoseBody
     /// docs/recon/photo-posing-recon.md "Pose play from paused").</summary>
     bool PlayAction(int actionId);
 
-    /// <summary>Holds the current action at <paramref name="fraction"/> (0–1) of its length; −1 lets it play. When nothing
-    /// was played through <see cref="PlayAction"/>, the action the model is already doing (a person's own emote, or the
-    /// one a photo copy inherited) is the one held — it is never restarted.</summary>
-    void SetMoment(float fraction);
+    /// <summary>Holds the current action at <paramref name="fraction"/> (0–1) of its length; −1 lets it play. With
+    /// <paramref name="adopt"/> (only for an explicitly adopted intent) and nothing played through
+    /// <see cref="PlayAction"/>, the action the model is already doing (a person's own emote, or the one a photo copy
+    /// inherited) is the one held — never restarted; without it, nothing played = nothing held.</summary>
+    void SetMoment(float fraction, bool adopt);
 
     /// <summary>What this model is doing now (whoever started it) and how far it has played;
     /// <see cref="PoseActionReading.None"/> when nothing plays or the model is gone.</summary>

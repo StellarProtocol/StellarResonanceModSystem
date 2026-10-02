@@ -41,11 +41,13 @@ public interface IPosing
     /// <param name="position">The posed model's world position.</param>
     bool TryGetVisiblePosition(EntityId person, out Position3D position);
 
-    /// <summary>The action (emote / pose) <paramref name="person"/> is doing right now — the one they were already doing
-    /// when selected, or the one held or played on them through <see cref="IPoseTarget"/>. Read from their posed copy or
-    /// stand-in when one exists, else from the person themselves; local only (nothing is sent). False while posing is not
-    /// available, when the person is idle, gone or unreadable, and for ~2 s after a scene change. No allocation and no
-    /// per-call reflection lookup: cheap enough for a panel that polls a few times a second.</summary>
+    /// <summary>The action (emote / pose) <paramref name="person"/> is doing right now, as the game reports it — the one
+    /// they were already doing when selected, or the one held or played on them through <see cref="IPoseTarget"/>. Read
+    /// from their posed copy or stand-in when one exists (held or not), else from the person themselves; local only
+    /// (nothing is sent). False while posing is not available, when the person is idle, gone or unreadable, and for ~2 s
+    /// after a scene change. Compiled reads, no reflection lookup per call: cheap enough for a panel that polls a few
+    /// times a second. Reading a person who has no posed copy allocates only the game interop's two small per-call object
+    /// wrappers (entity and model lookup).</summary>
     /// <param name="person">The entity to read.</param>
     /// <param name="actionId">The emote/action id (the ids of <see cref="IEmotes.Unlocked"/>); 0 when false.</param>
     /// <param name="moment">How far it has played, 0–1 (the held point while held); −1 when false.</param>

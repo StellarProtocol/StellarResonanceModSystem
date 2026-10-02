@@ -54,7 +54,7 @@ public sealed class SceneSettleTests
         Assert.Null(m.Position);
         Assert.False(m.PlayAction(5));
         Assert.Equal(PoseActionReading.None, m.ReadAction());
-        m.SetMoment(0.5f);
+        m.SetMoment(0.5f, false);
         m.SetExpression(null, true);
         m.SetLook(LookPart.Head, LookMode.Lens, false);
         m.Aim(LookPart.Eyes, 0.1f, 0.2f);

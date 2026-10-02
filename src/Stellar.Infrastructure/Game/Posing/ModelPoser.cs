@@ -32,12 +32,13 @@ internal sealed class ModelPoser
         return _s.Self ? _c.Actions.PlaySelf(actionId) : _c.Actions.PlayModel(_s.Model, actionId);
     }
 
-    /// <summary>Holds (0–1) or releases (−1) the action. Nothing played by us yet: holding takes over the action the model
-    /// is already doing (the person's own emote, or the one a photo copy inherited) — it is never re-played.</summary>
-    public void SetMoment(float fraction)
+    /// <summary>Holds (0–1) or releases (−1) the action. Nothing played by us yet and <paramref name="adopt"/> (an
+    /// explicitly adopted intent only): holding takes over the action the model is already doing (the person's own emote,
+    /// or the one a photo copy inherited) — it is never re-played. Without <paramref name="adopt"/> nothing is held.</summary>
+    public void SetMoment(float fraction, bool adopt)
     {
         if (!Live) return;
-        if (_actionId == 0 && fraction >= 0f && _c.Models.ReadAction(_s.Model) is { IsPlaying: true } running)
+        if (adopt && _actionId == 0 && fraction >= 0f && _c.Models.ReadAction(_s.Model) is { IsPlaying: true } running)
         {
             _actionId = running.ActionId;
             _adopted = true;

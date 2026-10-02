@@ -24,7 +24,7 @@ internal sealed class SettledPoseModel : IPoseModel
 
     public Position3D? Position => Usable?.Position;
     public bool PlayAction(int actionId) => Usable is { } m && m.PlayAction(actionId);
-    public void SetMoment(float fraction) => Usable?.SetMoment(fraction);
+    public void SetMoment(float fraction, bool adopt) => Usable?.SetMoment(fraction, adopt);
     public PoseActionReading ReadAction() => Usable?.ReadAction() ?? PoseActionReading.None;
     public void SetExpression(ExpressionInfo? expression, bool hold) => Usable?.SetExpression(expression, hold);
     public void SetLook(LookPart part, LookMode mode, bool locked) => Usable?.SetLook(part, mode, locked);

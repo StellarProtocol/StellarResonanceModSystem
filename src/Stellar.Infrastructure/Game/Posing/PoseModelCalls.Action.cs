@@ -27,6 +27,22 @@ internal sealed partial class PoseModelCalls
         catch { return PoseActionReading.None; }
     }
 
+    /// <summary>The three raw readbacks, unclamped and including an id of 0 (diagnostics: the end-of-action probe). False
+    /// when the model is gone or unreadable. Never throws.</summary>
+    public bool ReadRaw(object? m, out float id, out float passed, out float total)
+    {
+        id = passed = total = 0f;
+        if (m is null || !ResolveAction() || !IsLiveFast(m)) return false;
+        try
+        {
+            id = _fastActionId!(m);
+            passed = _fastPassed!(m);
+            total = _fastTotal!(m);
+            return true;
+        }
+        catch { return false; }
+    }
+
     private bool ResolveAction()
     {
         if (_actionTried) return _fastPassed is not null;

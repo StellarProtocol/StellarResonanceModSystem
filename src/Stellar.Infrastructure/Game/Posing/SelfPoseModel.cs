@@ -21,7 +21,7 @@ internal sealed class SelfPoseModel : IPoseModel
     }
 
     public bool PlayAction(int actionId) => !_closed && _p.PlayAction(actionId);
-    public void SetMoment(float fraction) { if (!_closed) _p.SetMoment(fraction); }
+    public void SetMoment(float fraction, bool adopt) { if (!_closed) _p.SetMoment(fraction, adopt); }
     public PoseActionReading ReadAction() => _closed ? PoseActionReading.None : _p.ReadAction();
     public void SetExpression(ExpressionInfo? expression, bool hold) { if (!_closed) _p.SetExpression(expression, hold); }
     public void SetLook(LookPart part, LookMode mode, bool locked) { if (!_closed) _p.SetLook(part, mode, locked); }

@@ -44,7 +44,8 @@ _**2.15.0** (minor) — Posing by person in the free camera. Adds API for plugin
 - `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
   entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
   settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without
-  re-playing it (a reset only releases the hold on an adopted action).
+  re-playing it (a reset only releases the hold on an adopted action). The read reports the posed model's own state
+  whenever one exists; an adopted action the opened model lacks is dropped. Diagnostics: `[Posing] action-raw` (≤ 5/s).
 - `IEntityPicker` also returns NPCs. `HarmonyGameMethodHooker` skips abstract overloads (they cannot be patched).
 - Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, a
   `[Posing] despawn prefix fired on managed thread …` line on every `ZEntityMgr.RemoveEntity` prefix, and

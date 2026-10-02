@@ -56,7 +56,7 @@ internal sealed class PoseTarget : IPoseTarget
         if (!Prepare()) return Pending();
         // The game's own play-from-paused path always clears the held persist time before the next play
         // (recon docs/recon/photo-posing-recon.md "Pose play from paused": FreezeFrameCtrl(-1) then ExpressionSinglePlay).
-        if (wasPaused) Run(m => { m.SetMoment(-1f); return true; });
+        if (wasPaused) Run(m => { m.SetMoment(-1f, false); return true; });
         _lastPlayOk = Run(m => m.PlayAction(actionId));
         return _lastPlayOk ? PoseResult.Applied : PoseResult.Refused;
     }
@@ -70,7 +70,7 @@ internal sealed class PoseTarget : IPoseTarget
             if (!Usable) return;
             if (_intent.ActionId == 0 && !(value >= 0f && AdoptCurrentAction())) return;
             _intent.SetMoment(value < 0f ? -1f : Math.Clamp(value, 0f, 1f));
-            if (Prepare()) Run(m => { m.SetMoment(_intent.Moment); return true; });
+            if (Prepare()) Run(m => { m.SetMoment(_intent.Moment, _intent.Adopted); return true; });
         }
     }
 
@@ -134,14 +134,15 @@ internal sealed class PoseTarget : IPoseTarget
         catch { return false; }
     }
 
-    /// <summary>What this person is doing now: the held point of a held action; else the posed model's own reading once it
-    /// is ready (a copy inherits the person's action); else the live person's. <see cref="PoseActionReading.None"/> once
-    /// released. Polled by panels: no allocation, failures read as None.</summary>
+    /// <summary>What this person is doing now — GAME TRUTH whenever a posed model exists (its own action / passed / total,
+    /// paused or not; a copy inherits the person's action); the held point of a held action only while no model is ready
+    /// yet (an NPC still loading); else the live person's. <see cref="PoseActionReading.None"/> once released. Polled by
+    /// panels: no closure, failures read as None (never warned).</summary>
     internal PoseActionReading CurrentAction()
     {
         if (State == PoseTargetState.Released) return PoseActionReading.None;
+        if (State == PoseTargetState.Ready && _model is not null) return ReadModel();
         if (_intent.Paused) return new PoseActionReading(_intent.ActionId, _intent.Moment);
-        if (State == PoseTargetState.Ready) return ReadModel();
         return _svc.ReadLive(Uuid);
     }
 
@@ -156,7 +157,7 @@ internal sealed class PoseTarget : IPoseTarget
     /// <summary>Re-applies a held pause (after a look change, or after the scene freeze ends).</summary>
     internal void ReapplyPause()
     {
-        if (State == PoseTargetState.Ready && _intent.Paused) Run(m => { m.SetMoment(_intent.Moment); return true; });
+        if (State == PoseTargetState.Ready && _intent.Paused) Run(m => { m.SetMoment(_intent.Moment, _intent.Adopted); return true; });
     }
 
     /// <summary>Unfreezes and closes the model with what was touched, and forgets every request. A pending NPC load is
@@ -242,11 +243,12 @@ internal sealed class PoseTarget : IPoseTarget
 
     private float ReadMoment() => ReadModel() is { IsPlaying: true } r ? r.Moment : -1f;
 
+    // The poll path: a direct call, no closure; a throwing read is "nothing" (it would warn ten times a second).
     private PoseActionReading ReadModel()
     {
-        var value = PoseActionReading.None;
-        Run(m => { value = m.ReadAction(); return true; });
-        return value;
+        if (_model is not { } m) return PoseActionReading.None;
+        try { return m.ReadAction(); }
+        catch { return PoseActionReading.None; }
     }
 
     // Holding before anything was played: take over what the person is already doing (spec: the Person panel shows the
