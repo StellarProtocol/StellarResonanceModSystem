@@ -34,23 +34,38 @@ internal sealed partial class GameEffectVisibility
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
         _wanted = requested & VisibilityLayerSets.Effects;
+        if (_unavailable) return VisibilityLayers.None;   // already known dead on this client — don't re-resolve every call
         if (_wanted == VisibilityLayers.None && _ledger.Count == 0) return VisibilityLayers.None;
         if (!Resolve() || Manager() is not { } mgr) { if (_wanted != 0) WarnOnce("fx", "effect hiding unavailable on this client"); return VisibilityLayers.None; }
         var listed = ListUids(mgr);
-        var shown = 0;
-        foreach (var uid in _ledger.TakeReleasable(_wanted, uid => IsAlive(listed, uid)))
-            if (Show(mgr, listed, uid)) shown++;
-        var hidden = _wanted == VisibilityLayers.None ? 0 : Sweep(mgr, listed);
+        var shown = listed is null ? 0 : Release(mgr, listed);
+        var hidden = _wanted == VisibilityLayers.None || listed is null ? 0 : Sweep(mgr, listed);
         OnSwept(_wanted, hidden, shown, _ledger.Count);
         return _wanted;
     }
 
-    private int Sweep(object mgr, HashSet<long>? listed)
+    /// <summary>Shows back whatever the ledger holds that is no longer wanted and still alive. Only called with a
+    /// REAL listing — a failed listing means "don't know", so <see cref="Apply"/> skips this entirely and every
+    /// held uid is kept for the next apply (never dropped as ended just because the listing failed this tick).</summary>
+    private int Release(object mgr, HashSet<long> listed)
     {
-        if (listed is null) return 0;
+        var shown = 0;
+        foreach (var uid in _ledger.TakeReleasable(_wanted, uid => IsAlive(listed, uid)))
+        {
+            try { if (TryShow(mgr, listed, uid)) shown++; }
+            catch (Exception ex) { WarnOnce("fxshow", "could not show a released effect: " + (ex.InnerException ?? ex).Message); }
+        }
+        return shown;
+    }
+
+    private int Sweep(object mgr, HashSet<long> listed)
+    {
         var hidden = 0;
         foreach (var uid in listed)
-            if (Effect(mgr, uid) is { } fx && TryHide(fx, uid, viaInstance: false, mgr)) hidden++;
+        {
+            try { if (Effect(mgr, uid) is { } fx && TryHide(fx, uid, viaInstance: false, mgr)) hidden++; }
+            catch (Exception ex) { WarnOnce("fxsweep", "effect sweep failed for uid " + uid + ": " + (ex.InnerException ?? ex).Message); }
+        }
         return hidden;
     }
 
@@ -68,16 +83,30 @@ internal sealed partial class GameEffectVisibility
         return true;
     }
 
-    private bool IsAlive(HashSet<long>? listed, long uid) =>
-        listed?.Contains(uid) == true || (_instances.TryGetValue(uid, out var fx) && !IsDestroyed(fx));
+    private bool IsAlive(HashSet<long> listed, long uid) =>
+        ReleaseState(listed, uid) is EffectReleaseState.Manager or EffectReleaseState.Instance;
 
-    private bool Show(object mgr, HashSet<long>? listed, long uid)
+    private bool TryShow(object mgr, HashSet<long> listed, long uid)
     {
-        var ok = listed?.Contains(uid) == true
-            ? SetManagerVisible(mgr, uid, true)
-            : _instances.TryGetValue(uid, out var fx) && SetInstanceVisible(fx, true);
+        var ok = ReleaseState(listed, uid) switch
+        {
+            EffectReleaseState.Manager => SetManagerVisible(mgr, uid, true),
+            EffectReleaseState.Instance => _instances.TryGetValue(uid, out var fx) && SetInstanceVisible(fx, true),
+            _ => false,
+        };
         _instances.Remove(uid);
         return ok;
+    }
+
+    /// <summary>Resolves the pure release rule for one recorded uid. ZEffect is pooled, so a held instance is only
+    /// trusted when its current uid readback still matches (read inside try/catch — any exception means ended).</summary>
+    private EffectReleaseState ReleaseState(HashSet<long> listed, long uid)
+    {
+        if (!_instances.TryGetValue(uid, out var fx)) return EffectReleaseRule.Resolve(listed, uid, null, false);
+        if (IsDestroyed(fx)) return EffectReleaseRule.Resolve(listed, uid, null, true);
+        long? readback;
+        try { readback = ReadUid(fx); } catch { readback = null; }
+        return EffectReleaseRule.Resolve(listed, uid, readback, false);
     }
 
     /// <summary>Creation hooks (AddEffectDisplay(ZEffect) / ZEffect.Init): hide a new effect while an effect layer is wanted.</summary>
