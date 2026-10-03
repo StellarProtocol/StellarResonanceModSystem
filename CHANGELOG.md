@@ -14,9 +14,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.15.0] - 2026-10-01
-_**2.15.0** (minor) — Posing by person, with or without the free camera. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
+## [2.15.0] - 2026-10-03
+_**2.15.0** (minor) — Photo mode support for plugins: screenshots and looks, a free camera, posing, a scene freeze, photo shapes and lights. Includes the never-released 2.13.0 and 2.14.0. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
 ### Added
+- Screenshot support for plugins: hide the interface, take high-resolution screenshots and apply camera looks. Plugins can also sharpen the picture for screenshots and set the time of day, and your own graphics settings come back exactly when they stop.
+- Free camera support for plugins: move the camera freely around your character or anyone you click, fly anywhere nearby, and freeze the moment.
 - Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see. Posing works with the free camera off too, and leaving the free camera keeps everyone as you posed them — they return to normal when you change zone, a cutscene starts or you disconnect.
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
 - Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze. If something hits you while frozen, your own character may still flinch in place.
@@ -25,6 +27,8 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 - Screenshots can now be taken in other shapes — portrait, square or wide — at full detail: the camera draws the photo in that shape instead of cropping a wide shot, and very large sizes are reduced to what your graphics card allows.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
+### Fixed
+- A hotkey you set yourself can no longer end up sharing its key with another action's default.
 ### Developer notes
 - `ColorPickerElement.ShowAlpha` (init, default true): false hides the Opacity slider for colours with no alpha
   (Photo Studio lights). Additive — the two-argument constructor is unchanged.
@@ -165,7 +169,7 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   `MoveComp.MoveGo` / `MoveGoByCurve` / `MoveGoBySpeed` prefixes are gone, and every native detour (`QualityApplyDetour`)
   goes live only on its full exact interop signature (`NativeSignature`), else an error line.
 
-## [2.14.0] - 2026-10-01
+## [2.14.0] - 2026-10-01 (never released — shipped in 2.15.0)
 _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._
 ### Added
 - Free camera support for plugins: move the camera freely around your character, freeze the moment (characters, NPCs, pets and effects stop), and strike a pose with your own emotes.
@@ -190,7 +194,7 @@ _**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (A
 - `IInputShieldHandle.TextFieldFocused`: true while a Stellar overlay text field has keyboard focus (the same source as the
   keyboard gate), so a free-camera consumer can ignore movement/edge keys typed into a panel search box. False once disposed.
 
-## [2.13.0] - 2026-09-30
+## [2.13.0] - 2026-09-30 (never released — shipped in 2.15.0)
 _**2.13.0** (minor) — Screenshot support for plugins. Adds API for plugins (Abstractions 2.13.0); additive, no plugin rebuild._
 ### Added
 - Screenshot support for plugins: hide the interface, take high-resolution screenshots and apply camera looks.
