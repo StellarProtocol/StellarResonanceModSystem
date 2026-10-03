@@ -558,8 +558,9 @@ is `ReShadeState.NotInstalled` and every member is a no-op — check it before s
 ```csharp
 var reShade = services.ReShade;
 reShade.Changed += Redraw;                          // main thread: state, on/off, techniques or preset changed
-if (reShade.State != ReShadeState.Ready) return;     // Loading = bound but not ready yet, or reloading effects
+// Set your folders once at start, whatever the state: the call is held until the add-on binds, and a repeat is ignored.
 reShade.SetSearchPaths(new[] { Path.Combine(services.Downloads.DataFolder, "packs") }, Array.Empty<string>());
+if (reShade.State != ReShadeState.Ready) return;     // Loading = bound but not ready yet, or reloading effects
 foreach (var t in reShade.Techniques)
     AddRow(t.EffectFile, t.Name, t.Enabled, t.UsesDepth);
 reShade.SetTechnique("Clarity.fx", "Clarity", enabled: true);   // identity = effect file + technique name
