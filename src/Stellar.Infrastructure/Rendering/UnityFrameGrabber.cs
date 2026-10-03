@@ -36,10 +36,12 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     private StellarCaptureHost? _host;                           // main thread only
     private bool _registered;
 
-    /// <summary>Construct on the Unity main thread (the framework's Load()); its thread id is the main-thread id.</summary>
-    public UnityFrameGrabber(IPluginLog log)
+    /// <summary>Construct on the Unity main thread (the framework's Load()); its thread id is the main-thread id.
+    /// <paramref name="reShade"/> is the bridge used when a grab asks for ReShade (null = never).</summary>
+    public UnityFrameGrabber(IPluginLog log, ReShadeBridge? reShade = null)
     {
         _log = log;
+        _reShade = reShade;
         _mainThreadId = Environment.CurrentManagedThreadId;
     }
 
@@ -127,8 +129,10 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     private IEnumerator GrabRoutine(TaskCompletionSource<FrameGrab> tcs, GrabTarget target, int settle, CaptureFormat format, int q)
     {
         for (var i = 0; i < settle; i++) yield return null;
-        yield return new WaitForEndOfFrame();
-        var grab = Capture(target, format, q);   // a throw faults the grab (Tracked) and expects no resume
+        var box = new GrabBox();
+        var frames = CaptureFrames(target, format, q, box);   // one end-of-frame without ReShade; one step per frame with it
+        while (frames.MoveNext()) yield return frames.Current;
+        var grab = box.Value ?? throw new FrameGrabException("The capture produced no frame.");   // a throw faults the grab (Tracked) and expects no resume
         _resumes.Expect();
         _resumes.PumpStarted();
         try
@@ -180,6 +184,7 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     private void FailPending()
     {
         _host = null;
+        RestoreDepthOverrides();   // the coroutine that would have restored them is gone with the host
         Action<Exception>[] pending;
         lock (_gate)
         {

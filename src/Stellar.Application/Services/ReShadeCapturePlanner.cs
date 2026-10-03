@@ -4,6 +4,10 @@ using Stellar.Abstractions.Domain;
 
 namespace Stellar.Application.Services;
 
+/// <summary>A technique's identity: its effect file (as ReShade reports it) and its name — names repeat across effects,
+/// so a toggle by name alone would hit every same-named technique in every pack.</summary>
+internal sealed record ReShadeTechniqueRef(string EffectFile, string Name);
+
 /// <summary>
 /// One step of a <see cref="ReShadeCapturePlanner"/> plan. <see cref="Done"/> is absorbing — once returned, the
 /// planner returns the same <see cref="Done"/> forever.
@@ -12,12 +16,12 @@ internal abstract record CaptureStep
 {
     /// <summary>Let ReShade draw one more frame; keep calling until the queued render reports it drew something.</summary>
     internal sealed record WarmUp : CaptureStep;
-    /// <summary>Turn off the named depth-using techniques for this capture (shaped captures only, once).</summary>
-    internal sealed record DisableDepth(IReadOnlyList<string> Names) : CaptureStep;
+    /// <summary>Turn off these depth-using techniques for this capture (shaped captures only, once; never saved).</summary>
+    internal sealed record DisableDepth(IReadOnlyList<ReShadeTechniqueRef> Techniques) : CaptureStep;
     /// <summary>Queue the actual capture render. Returned at most once per plan.</summary>
     internal sealed record Render : CaptureStep;
-    /// <summary>Turn the named techniques back on (mirrors an earlier <see cref="DisableDepth"/>).</summary>
-    internal sealed record Restore(IReadOnlyList<string> Names) : CaptureStep;
+    /// <summary>Turn these techniques back on (mirrors an earlier <see cref="DisableDepth"/>; never saved).</summary>
+    internal sealed record Restore(IReadOnlyList<ReShadeTechniqueRef> Techniques) : CaptureStep;
     /// <summary>The plan is finished. <see cref="Applied"/> is false when nothing was drawn (no active
     /// techniques, or the warm-up timed out).</summary>
     internal sealed record Done(bool Applied) : CaptureStep;
@@ -41,7 +45,7 @@ internal sealed class ReShadeCapturePlanner
         DoneFail,
     }
 
-    private readonly IReadOnlyList<string> _depthNames;
+    private readonly IReadOnlyList<ReShadeTechniqueRef> _depthNames;
     private Phase _phase;
     private long _warmUpStartMs;
 
@@ -54,12 +58,12 @@ internal sealed class ReShadeCapturePlanner
     {
         if (active.Count == 0)
         {
-            _depthNames = Array.Empty<string>();
+            _depthNames = Array.Empty<ReShadeTechniqueRef>();
             _phase = Phase.DoneFail;
             return;
         }
 
-        _depthNames = shaped ? CollectDepthNames(active) : Array.Empty<string>();
+        _depthNames = shaped ? CollectDepthNames(active) : Array.Empty<ReShadeTechniqueRef>();
         if (_depthNames.Count > 0)
         {
             _phase = Phase.DisableDepth;
@@ -116,15 +120,15 @@ internal sealed class ReShadeCapturePlanner
         return new CaptureStep.WarmUp();
     }
 
-    private static IReadOnlyList<string> CollectDepthNames(IReadOnlyList<ReShadeTechnique> active)
+    private static IReadOnlyList<ReShadeTechniqueRef> CollectDepthNames(IReadOnlyList<ReShadeTechnique> active)
     {
-        List<string>? names = null;
+        List<ReShadeTechniqueRef>? names = null;
         foreach (var technique in active)
         {
             if (!technique.UsesDepth) continue;
-            names ??= new List<string>();
-            names.Add(technique.Name);
+            names ??= new List<ReShadeTechniqueRef>();
+            names.Add(new ReShadeTechniqueRef(technique.EffectFile, technique.Name));
         }
-        return (IReadOnlyList<string>?)names ?? Array.Empty<string>();
+        return (IReadOnlyList<ReShadeTechniqueRef>?)names ?? Array.Empty<ReShadeTechniqueRef>();
     }
 }

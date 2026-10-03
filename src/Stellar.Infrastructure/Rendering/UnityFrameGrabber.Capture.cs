@@ -13,7 +13,9 @@ internal sealed partial class UnityFrameGrabber
 {
     private bool _nativeReadbackFailed;
 
-    private FrameGrab Capture(GrabTarget target, CaptureFormat format, int q)
+    /// <param name="applyReShade">Have ReShade draw its effects into the render target between the camera render and
+    /// the readback (UnityFrameGrabber.ReShade.cs). The caller checks the result and fixes alpha.</param>
+    private FrameGrab Capture(GrabTarget target, CaptureFormat format, int q, bool applyReShade = false)
     {
         var cam = Camera.main;
         if (cam == null) throw new FrameGrabException("No camera is rendering the scene.");
@@ -32,6 +34,7 @@ internal sealed partial class UnityFrameGrabber
             cam.Render();
             cam.targetTexture = prevTarget;
             RestoreLens(ref lens, ref restored);
+            if (applyReShade) IssueReShadeRender(rt, w, h);   // render thread, before the readback below syncs with it
             RenderTexture.active = rt;
             tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             // ReadPixels fills the texture's CPU copy, which is all the readback/JPG encode read — no Apply()

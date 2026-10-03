@@ -45,4 +45,15 @@ public sealed class ContractTests
         Assert.NotEqual(new ReShadeTechnique("Bloom", "Bloom.fx", true, false),
             new ReShadeTechnique("Bloom", "Bloom.fx", false, false));
     }
+
+    // ReShade support ships in framework 2.17.0 (IPluginDownloads, IReShade, CaptureRequest.ApplyReShade, CaptureResult.Notes).
+    [Fact]
+    public void Framework_version_is_2_17_0() => Assert.Equal("2.17.0", FrameworkVersion.Value);
+
+    [Fact]
+    public void CaptureResult_Notes_defaults_to_empty_for_ok_and_fail()
+    {
+        Assert.Empty(CaptureResult.Ok("p", 1, 1).Notes);
+        Assert.Empty(CaptureResult.Fail("e").Notes);
+    }
 }

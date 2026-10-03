@@ -93,9 +93,10 @@ public sealed partial class BootstrapPlugin
             _renderQuality!,
             _timeOfDay!,
             FreeCameraSet(),
-            // Placeholders until a later task wires in the real download service / ReShade bridge.
+            // Shared-bag fallback only: every plugin gets its own IPluginDownloads from the per-plugin factory
+            // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
-            Stellar.Application.Services.UnavailableReShade.Instance);
+            _reShadeService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

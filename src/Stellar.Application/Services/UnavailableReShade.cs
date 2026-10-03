@@ -6,8 +6,9 @@ using Stellar.Abstractions.Services;
 namespace Stellar.Application.Services;
 
 /// <summary>
-/// Null-object <see cref="IReShade"/> — always unavailable, every mutator a no-op. Host wires this in
-/// until a later task replaces it with the real Infrastructure bridge to ReShade.
+/// Null-object <see cref="IReShade"/> — always unavailable, every mutator a no-op. The Host wires the real
+/// Infrastructure <c>ReShadeService</c> (which is itself unavailable without ReShade); this remains for tests and
+/// any composition without a ReShade bridge.
 /// </summary>
 internal sealed class UnavailableReShade : IReShade
 {

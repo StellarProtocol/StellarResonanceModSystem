@@ -19,6 +19,12 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.17.0 adds ReShade support: <c>IReShade</c> (<c>IPluginServices.ReShade</c> — effects on/off, technique toggles by
+    /// effect file + name, preset switching, shader/texture search paths; unavailable and a no-op without ReShade and
+    /// the Stellar bridge add-on), <c>IPluginDownloads</c> (<c>IPluginServices.Downloads</c> — sha256-pinned https
+    /// downloads, optionally unzipped, into the plugin's own data folder), <c>CaptureRequest.ApplyReShade</c> (default
+    /// true: a photo carries ReShade's active effects; a shaped photo skips depth-based ones for that photo only) and
+    /// <c>CaptureResult.Notes</c> (for example "ReShade was not ready — photo taken without it."). Additive.
     /// 2.16.0 adds hiding yourself and effects by caster: <c>VisibilityLayers.Self</c> and the four effect layers
     /// (<c>EffectsMine</c>/<c>EffectsParty</c>/<c>EffectsOthers</c>/<c>EffectsMonsters</c>, <c>VisibilityLayerSets.Effects</c>).
     /// 2.15.0 adds posing by person: <c>IPosing</c> / <c>IPoseTarget</c> (the local player live, other players as a
@@ -255,5 +261,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.16.0";
+    public const string Value = "2.17.0";
 }

@@ -30,13 +30,13 @@ public sealed class ReShadeCapturePlannerTests
         var planner = new ReShadeCapturePlanner(shaped: true, active, nowMs: 0);
 
         var disable = Assert.IsType<CaptureStep.DisableDepth>(planner.Next(lastDrawn: 0, nowMs: 0));
-        Assert.Equal(new[] { "DepthOfField" }, disable.Names);
+        Assert.Equal(new[] { new ReShadeTechniqueRef("DepthOfField.fx", "DepthOfField") }, disable.Techniques);
 
         Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 10));
         Assert.IsType<CaptureStep.Render>(planner.Next(lastDrawn: 1, nowMs: 20));
 
         var restore = Assert.IsType<CaptureStep.Restore>(planner.Next(lastDrawn: 1, nowMs: 30));
-        Assert.Equal(new[] { "DepthOfField" }, restore.Names);
+        Assert.Equal(new[] { new ReShadeTechniqueRef("DepthOfField.fx", "DepthOfField") }, restore.Techniques);
 
         var done = Assert.IsType<CaptureStep.Done>(planner.Next(lastDrawn: 1, nowMs: 40));
         Assert.True(done.Applied);
@@ -80,7 +80,7 @@ public sealed class ReShadeCapturePlannerTests
 
         var restore = Assert.IsType<CaptureStep.Restore>(
             planner.Next(lastDrawn: 0, nowMs: ReShadeCapturePlanner.WarmUpTimeoutMs));
-        Assert.Equal(new[] { "DepthOfField" }, restore.Names);
+        Assert.Equal(new[] { new ReShadeTechniqueRef("DepthOfField.fx", "DepthOfField") }, restore.Techniques);
 
         var done = Assert.IsType<CaptureStep.Done>(planner.Next(lastDrawn: 0, nowMs: 999_999));
         Assert.False(done.Applied);
@@ -116,5 +116,24 @@ public sealed class ReShadeCapturePlannerTests
     public void WarmUpTimeoutMs_is_5000()
     {
         Assert.Equal(5000, ReShadeCapturePlanner.WarmUpTimeoutMs);
+    }
+
+    // Technique identity is (effect file, name): a same-named technique in another effect must never be touched.
+    [Fact]
+    public void Depth_steps_carry_the_effect_file_with_each_name()
+    {
+        var active = new[]
+        {
+            new ReShadeTechnique("Blur", "PackA/Blur.fx", true, false),
+            new ReShadeTechnique("Blur", "DepthBlur.fx", true, true),
+        };
+        var planner = new ReShadeCapturePlanner(shaped: true, active, nowMs: 0);
+
+        var disable = Assert.IsType<CaptureStep.DisableDepth>(planner.Next(lastDrawn: 0, nowMs: 0));
+        Assert.Equal(new[] { new ReShadeTechniqueRef("DepthBlur.fx", "Blur") }, disable.Techniques);
+        planner.Next(lastDrawn: 0, nowMs: 1);
+        planner.Next(lastDrawn: 1, nowMs: 2);
+        var restore = Assert.IsType<CaptureStep.Restore>(planner.Next(lastDrawn: 1, nowMs: 3));
+        Assert.Equal(disable.Techniques, restore.Techniques);
     }
 }

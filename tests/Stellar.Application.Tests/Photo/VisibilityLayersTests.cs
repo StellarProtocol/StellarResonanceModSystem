@@ -34,5 +34,6 @@ public sealed class VisibilityLayersTests
     }
 
     [Fact]
-    public void Framework_version_is_2_16_0() => Assert.Equal("2.16.0", FrameworkVersion.Value);
+    public void Framework_version_is_at_least_2_16_0() =>
+        Assert.True(System.Version.Parse(FrameworkVersion.Value) >= new System.Version(2, 16, 0), FrameworkVersion.Value);
 }

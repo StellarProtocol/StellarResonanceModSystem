@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Stellar.Abstractions.Domain;
 
@@ -130,6 +131,10 @@ public readonly record struct NormalizedRect(float X, float Y, float Width, floa
 /// <param name="Error">Player-readable error, or null.</param>
 public sealed record CaptureResult(bool Success, string? Path, int Width, int Height, string? Error)
 {
+    /// <summary>Player-readable remarks about a capture that still succeeded — for example "ReShade was not ready — photo
+    /// taken without it." Empty when there is nothing to say (always empty on failure).</summary>
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
+
     /// <summary>A successful result.</summary>
     public static CaptureResult Ok(string path, int width, int height) => new(true, path, width, height, null);
     /// <summary>A failed result.</summary>

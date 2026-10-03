@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Stellar.Abstractions.Domain;
@@ -16,18 +17,22 @@ internal sealed class ScreenCaptureService : IScreenCapture
     private readonly CaptureFileSink _sink;
     private readonly Action<string> _log;
     private readonly Func<IDisposable?>? _renderScaleGuard;
+    private readonly IReShade? _reShade;
 
     /// <param name="renderScaleGuard">Spec 2026-10-01 § 4: when set, held around the grab frame to drop a
     /// supersampled render scale (the N× grab is supersampled already). Null = off (the default until the in-game
     /// measurement shows the off-screen render is multiplied by the render scale).</param>
+    /// <param name="reShade">When set, a request with <see cref="CaptureRequest.ApplyReShade"/> has ReShade's active
+    /// effects drawn into the capture — only while ReShade is available and its effects are on. Null = never.</param>
     public ScreenCaptureService(IFrameGrabber grabber, ISceneVisibility visibility, CaptureFileSink sink, Action<string> log,
-        Func<IDisposable?>? renderScaleGuard = null)
+        Func<IDisposable?>? renderScaleGuard = null, IReShade? reShade = null)
     {
         _grabber = grabber;
         _visibility = visibility;
         _sink = sink;
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _renderScaleGuard = renderScaleGuard;
+        _reShade = reShade;
     }
 
     public bool IsCapturing { get; private set; }
@@ -59,7 +64,7 @@ internal sealed class ScreenCaptureService : IScreenCapture
             scaleGuard = null;
             hide?.Dispose();
             hide = null;
-            var (width, height) = (grab.Width, grab.Height);
+            var (width, height, note) = (grab.Width, grab.Height, grab.Note);
             // Off-thread: stream the PNG straight into the file (or write the JPG bytes). The frame reference is
             // dropped the moment the write returns, so the pixel buffer is collectable before the main-thread resume.
             var path = await Task.Run(() =>
@@ -69,7 +74,8 @@ internal sealed class ScreenCaptureService : IScreenCapture
                 return Save(g, request);
             });
             await ResumeQuietly(); // never throws, so the catch below can never resume a second time
-            return CaptureResult.Ok(path, width, height);
+            var ok = CaptureResult.Ok(path, width, height);
+            return note is null ? ok : ok with { Notes = new[] { note } };
         }
         catch (Exception ex)
         {
@@ -108,23 +114,37 @@ internal sealed class ScreenCaptureService : IScreenCapture
     private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
     {
         var scale = r.Aspect is null ? effectiveScale : r.Scale;
+        var reShade = ReShadeOptions(r);
         try
         {
-            return await _grabber.GrabAsync(Target(r, scale), settle, r.Format, r.JpgQuality);
+            return await _grabber.GrabAsync(Target(r, scale, reShade), settle, r.Format, r.JpgQuality);
         }
         // A 4× frame can also run the managed heap out (OutOfMemoryException) — 2× gets the same second chance.
         catch (Exception ex) when (scale > 2 && ex is FrameGrabException or OutOfMemoryException)
         {
-            return await _grabber.GrabAsync(Target(r, 2), settle, r.Format, r.JpgQuality);
+            return await _grabber.GrabAsync(Target(r, 2, reShade), settle, r.Format, r.JpgQuality);
         }
     }
 
-    private GrabTarget Target(CaptureRequest r, int scale)
+    private GrabTarget Target(CaptureRequest r, int scale, ReShadeCaptureOptions? reShade)
     {
         var (w, h) = _grabber.ScreenSize;
         return r.Aspect is null
-            ? new GrabTarget(new CaptureSize(w * scale, h * scale), Shaped: false)
-            : new GrabTarget(CaptureSizing.OutputSize(w, h, scale, r.Aspect, _grabber.MaxTextureSize), Shaped: true);
+            ? new GrabTarget(new CaptureSize(w * scale, h * scale), Shaped: false, reShade)
+            : new GrabTarget(CaptureSizing.OutputSize(w, h, scale, r.Aspect, _grabber.MaxTextureSize), Shaped: true, reShade);
+    }
+
+    // ReShade draws into the photo only when the request asks for it, ReShade is available, its effects are on, and at
+    // least one technique is active — otherwise the capture is exactly the pre-ReShade one (no options at all).
+    private ReShadeCaptureOptions? ReShadeOptions(CaptureRequest r)
+    {
+        if (!r.ApplyReShade || _reShade is not { IsAvailable: true, Enabled: true } reShade) return null;
+        List<ReShadeTechnique>? active = null;
+        foreach (var technique in reShade.Techniques)
+        {
+            if (technique.Enabled) (active ??= new List<ReShadeTechnique>()).Add(technique);
+        }
+        return active is null ? null : new ReShadeCaptureOptions(Shaped: r.Aspect is not null, active);
     }
 
     private static string MapError(Exception ex) => ex switch

@@ -57,5 +57,11 @@ internal sealed partial class UnityFrameGrabber
                   $"fit={now.GateFit} focal={now.FocalLength:F3} screen={ScreenAspect():F4} frames={Time.frameCount - frame}");
     }
 
+    private void OnReShadeCapture(bool applied, long elapsedMs)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoCapture] reshade applied={applied} elapsedMs={elapsedMs}");
+    }
+
     private static float ScreenAspect() => Screen.height > 0 ? (float)Screen.width / Screen.height : 0f;
 }
