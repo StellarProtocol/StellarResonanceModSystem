@@ -51,4 +51,27 @@ public sealed class EffectDepthScannerTests
                            "float depth = ReShade::GetLinearizedDepth(uv);";
         Assert.True(EffectDepthScanner.UsesDepth(fx));
     }
+    [Theory]
+    [InlineData("texture2D t : depth;")]
+    [InlineData("texture2D t : Depth;")]
+    [InlineData("float d = reshade::depthbuffer.Sample(s, uv).x;")]
+    [InlineData("float d = ReShade::GETLINEARIZEDDEPTH(uv);")]
+    public void UsesDepth_is_case_insensitive(string fx)
+    {
+        Assert.True(EffectDepthScanner.UsesDepth(fx));
+    }
+
+    [Theory]
+    [InlineData("float4 main() : SV_DEPTH { return 0; }")]
+    [InlineData("float main() : sv_depth { return 0; }")]
+    public void UsesDepth_false_for_the_system_value_semantic_in_any_case(string fx)
+    {
+        Assert.False(EffectDepthScanner.UsesDepth(fx));
+    }
+
+    [Fact]
+    public void UsesDepth_false_for_null_source()
+    {
+        Assert.False(EffectDepthScanner.UsesDepth(null));
+    }
 }
