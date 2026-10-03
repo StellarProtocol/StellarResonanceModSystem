@@ -14,7 +14,18 @@ public sealed class EffectOwnerClassifierTests
     private EntityId _local = new(Player(1));
     private readonly List<PartyMember> _party = new();
 
-    private EffectOwnerClassifier Make() => new(() => _local, () => _party, _summons.TopOwner);
+    private readonly Dictionary<long, long> _gameOwners = new();
+    private readonly List<long> _asked = new();
+
+    private EffectOwnerClassifier Make() => new(() => _local, () => _party, _summons);
+
+    private EffectOwnerClassifier MakeAsking() => new(() => _local, () => _party, _summons, AskGame);
+
+    private long AskGame(long uuid)
+    {
+        _asked.Add(uuid);
+        return _gameOwners.TryGetValue(uuid, out var owner) ? owner : 0;
+    }
 
     private static PartyMember Member(long charId, bool self = false) =>
         new(charId, null, 0, 0, 0, 0, 0, default, IsOnline: true, IsSelf: self, GroupId: 0);
@@ -57,5 +68,89 @@ public sealed class EffectOwnerClassifierTests
         _summons.OnCombatEvent(new CombatEvent.EntitySummonAppeared(0, new EntityId(Summon(60)), new EntityId(Summon(61))));
         _summons.OnCombatEvent(new CombatEvent.EntitySummonAppeared(0, new EntityId(Summon(61)), new EntityId(Summon(60))));
         Assert.Equal(VisibilityLayers.None, Make().Classify(Summon(60)));
+    }
+
+    [Fact]
+    public void Unannounced_pet_asks_the_game_and_resolves_to_local()
+    {
+        _gameOwners[Summon(80)] = Player(1);
+        Assert.Equal(VisibilityLayers.EffectsMine, MakeAsking().Classify(Summon(80)));
+    }
+
+    [Fact]
+    public void Game_answer_zero_stays_none()
+    {
+        Assert.Equal(VisibilityLayers.None, MakeAsking().Classify(Summon(81)));
+        Assert.Equal(new[] { Summon(81) }, _asked);
+    }
+
+    [Fact]
+    public void Game_answer_that_is_itself_a_summon_resolves_through_the_index()
+    {
+        _party.Add(Member(1, self: true));
+        _party.Add(Member(2));
+        _summons.Record(new EntityId(Player(2)), new EntityId(Summon(90)));
+        _gameOwners[Summon(91)] = Summon(90);
+        Assert.Equal(VisibilityLayers.EffectsParty, MakeAsking().Classify(Summon(91)));
+    }
+
+    [Fact]
+    public void Game_answer_that_is_an_unindexed_summon_is_asked_again_bounded()
+    {
+        _gameOwners[Summon(92)] = Summon(93);
+        _gameOwners[Summon(93)] = Player(1);
+        Assert.Equal(VisibilityLayers.EffectsMine, MakeAsking().Classify(Summon(92)));
+    }
+
+    [Fact]
+    public void Game_answer_chain_that_never_resolves_terminates()
+    {
+        _gameOwners[Summon(94)] = Summon(95);
+        _gameOwners[Summon(95)] = Summon(94);
+        Assert.Equal(VisibilityLayers.None, MakeAsking().Classify(Summon(94)));
+        Assert.True(_asked.Count <= 4);
+    }
+
+    [Fact]
+    public void Game_answer_equal_to_caster_is_ignored()
+    {
+        _gameOwners[Summon(96)] = Summon(96);
+        Assert.Equal(VisibilityLayers.None, MakeAsking().Classify(Summon(96)));
+    }
+
+    [Fact]
+    public void Fallback_is_not_called_for_player_or_monster_casters()
+    {
+        var c = MakeAsking();
+        c.Classify(Player(1));
+        c.Classify(Player(7));
+        c.Classify(Monster(3));
+        Assert.Empty(_asked);
+    }
+
+    [Fact]
+    public void Fallback_is_not_called_for_an_indexed_summon()
+    {
+        _summons.Record(new EntityId(Player(1)), new EntityId(Summon(97)));
+        Assert.Equal(VisibilityLayers.EffectsMine, MakeAsking().Classify(Summon(97)));
+        Assert.Empty(_asked);
+    }
+
+    [Fact]
+    public void Repeated_classification_hits_the_index_not_the_fallback()
+    {
+        _gameOwners[Summon(98)] = Player(1);
+        var c = MakeAsking();
+        Assert.Equal(VisibilityLayers.EffectsMine, c.Classify(Summon(98)));
+        Assert.Equal(VisibilityLayers.EffectsMine, c.Classify(Summon(98)));
+        Assert.Single(_asked);
+        Assert.Equal(Player(1), _summons.TopOwner(Summon(98)));
+    }
+
+    [Fact]
+    public void Fallback_is_not_called_for_a_zero_caster()
+    {
+        Assert.Equal(VisibilityLayers.None, MakeAsking().Classify(0));
+        Assert.Empty(_asked);
     }
 }
