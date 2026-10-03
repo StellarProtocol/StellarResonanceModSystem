@@ -25,6 +25,9 @@ internal sealed partial class GamePosingBackend : IPosingBackend
     private readonly SceneSettleWindow _settle = new();
     private readonly PhotoCopyMaker _copies;
     private readonly PosingHookSet _hooks;
+    // The copy / stand-in each posed player or NPC is seen as (lights draw a key light / rim on it). Pruned on read once
+    // the model is closed.
+    private readonly Dictionary<long, SettledPoseModel> _posed = new();
 
     public GamePosingBackend(PoseCalls calls, GameEntityAccess entities, IGameTypeRegistry types, IPluginLog log)
     {
@@ -100,7 +103,18 @@ internal sealed partial class GamePosingBackend : IPosingBackend
         if (model is null) return Fail(once, why ?? $"could not prepare {kind} {uuid}");
         OnOpened(kind, uuid, started);
         if (kind != PersonKind.Npc) once.Report(true);   // NPCs report from their load / error callback
-        return new SettledPoseModel(model, _settle);
+        var settled = new SettledPoseModel(model, _settle);
+        if (kind != PersonKind.Self) _posed[uuid] = settled;
+        return settled;
+    }
+
+    /// <summary>The model <paramref name="uuid"/> is seen as while posed — their photo copy or NPC stand-in (null for the
+    /// local player, who is posed live; while an NPC model loads; once closed). No game read.</summary>
+    public object? PosedModel(long uuid)
+    {
+        if (_posed.Count == 0 || !_posed.TryGetValue(uuid, out var m)) return null;
+        if (m.IsClosed) _posed.Remove(uuid);
+        return m.VisibleModel;
     }
 
     private IPoseModel? OpenSelf(out string? why)

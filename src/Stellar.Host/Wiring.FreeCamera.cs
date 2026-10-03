@@ -59,7 +59,8 @@ public sealed partial class BootstrapPlugin
         _combatState = new CombatStateService(_combatService!, _combatService!, _combatFlags, _framework!.Post);
         _entityPicker = new EntityPickerService(entities, camera.MainCamera);
         WirePosing(log, entities, camera.MainCamera);   // Wiring.Posing.cs — needs the freeze + the client state
-        _freeCamReleaser = new FreeCameraReleaser(_cameraOverride, _posing!, _sceneFreeze, _inputShield, warn);
+        WireLights(log, entities);                      // Wiring.Lights.cs — needs posing (visible models, availability)
+        _freeCamReleaser = new FreeCameraReleaser(_cameraOverride, _posing!, _sceneFreeze, _inputShield, warn, _lights);
         _sceneLeave = new SceneLeavePrefix(log);
         WireFreeCameraReleases();
         WirePosingSettle();   // Wiring.Posing.cs — AFTER the releases: the release closes every model first (scene end)
@@ -158,7 +159,7 @@ public sealed partial class BootstrapPlugin
     }
 
     private FreeCameraServiceSet FreeCameraSet() =>
-        new(_cameraOverride!, _inputShield!, _sceneFreeze!, _emotes!, _combatState!, _entityPicker!, _posing!);
+        new(_cameraOverride!, _inputShield!, _sceneFreeze!, _emotes!, _combatState!, _entityPicker!, _posing!, _lights!);
 
     private void DisposeFreeCamera()
     {

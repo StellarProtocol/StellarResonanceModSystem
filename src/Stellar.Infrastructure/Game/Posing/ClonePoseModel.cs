@@ -7,7 +7,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// player hidden. Every control is local (0 sends, measured). Close removes the copy (<c>RecyclePhotoModel</c>) and shows
 /// the real player again, each step isolated; nothing on the real player needs undoing. The copy is forgotten the moment
 /// it is removed, so a recycled model is never read again (Task 4 review carry-over (c)).</summary>
-internal sealed partial class ClonePoseModel : IPoseModel
+internal sealed partial class ClonePoseModel : IPoseModel, IVisibleModel
 {
     private readonly PoseCalls _c;
     private readonly Func<object?> _source;
@@ -33,6 +33,7 @@ internal sealed partial class ClonePoseModel : IPoseModel
     public void Aim(LookPart part, float x, float y) => _p?.Aim(part, x, y);
     public void SetYaw(float offsetDegrees) => _p?.SetYaw(offsetDegrees);
     public Position3D? Position => _p?.Position;
+    public object? VisibleModel => _p is { Live: true } p ? p.Model : null;
     public void SetFrozen(bool frozen) => _p?.SetFrozen(frozen);
 
     public void Close(PoseTouches touched)

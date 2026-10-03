@@ -59,6 +59,9 @@ public interface IPluginServices
     /// as a stand-in model; everyone reset when the scene ends (zone change, cutscene, disconnect). See
     /// <see cref="IPosing"/>.</summary>
     IPosing Posing { get; }
+    /// <summary>Photo lights — lamps in the world, how strongly characters take them, and a key light and rim per person;
+    /// all ended and restored exactly when the scene ends. See <see cref="ILights"/>.</summary>
+    ILights Lights { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>

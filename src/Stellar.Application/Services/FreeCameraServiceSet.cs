@@ -5,4 +5,4 @@ namespace Stellar.Application.Services;
 /// <c>ConstructPluginServices</c> under the 50-LoC analyzer gate).</summary>
 internal sealed record FreeCameraServiceSet(
     ICameraOverride Camera, IInputShield Shield, ISceneFreeze Freeze, IEmotes Emotes, ICombatState Combat, IEntityPicker Picker,
-    IPosing Posing);
+    IPosing Posing, ILights Lights);

@@ -68,6 +68,7 @@ internal sealed class PluginServices : IPluginServices
     public ICombatState CombatState { get; }
     public IEntityPicker EntityPicker { get; }
     public IPosing Posing { get; }
+    public ILights Lights { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -191,5 +192,6 @@ internal sealed class PluginServices : IPluginServices
         CombatState = freeCamera.Combat;
         EntityPicker = freeCamera.Picker;
         Posing = freeCamera.Posing;
+        Lights = freeCamera.Lights;
     }
 }

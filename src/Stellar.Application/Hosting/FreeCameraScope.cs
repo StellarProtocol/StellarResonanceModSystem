@@ -3,11 +3,11 @@ using Stellar.Application.Services;
 namespace Stellar.Application.Hosting;
 
 /// <summary>A plugin's free-camera facades, minted per enable (fresh owner keys) and released together on unload —
-/// camera first (its release already resets every posed person), then posing (this plugin's people, as a backstop),
+/// camera first (its release already resets every posed person), then lights (people written back before their copies go), then posing (this plugin's people, as a backstop),
 /// freeze and shield, then handlers (the spec § 7 release order).</summary>
 internal sealed record FreeCameraScope(
     PluginCameraOverride? Camera, PluginInputShield? Shield, PluginSceneFreeze? Freeze, PluginEmotes? Emotes, PluginCombatState? Combat,
-    PluginPosing? Posing = null)
+    PluginPosing? Posing = null, PluginLights? Lights = null)
 {
     public static FreeCameraScope Mint(IPluginServices shared) => new(
         shared.CameraOverride is CameraOverrideService c ? new PluginCameraOverride(c, new object()) : null,
@@ -15,11 +15,13 @@ internal sealed record FreeCameraScope(
         shared.SceneFreeze is SceneFreezeService f ? new PluginSceneFreeze(f, new object()) : null,
         shared.Emotes is { } e ? new PluginEmotes(e) : null,
         shared.CombatState is { } cs ? new PluginCombatState(cs) : null,
-        shared.Posing is PosingService p ? new PluginPosing(p, new object()) : null);
+        shared.Posing is PosingService p ? new PluginPosing(p, new object()) : null,
+        shared.Lights is LightsService l ? new PluginLights(l, new object()) : null);
 
     public void ReleaseAll()
     {
         Camera?.ReleaseAll();
+        Lights?.ReleaseAll();
         Posing?.ReleaseAll();
         Freeze?.ReleaseAll();
         Shield?.ReleaseAll();

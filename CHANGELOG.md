@@ -21,10 +21,29 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 - The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
 - Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze. If something hits you while frozen, your own character may still flinch in place.
 - Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
+- Photo lights: place lamps around the people in your shot — each with its own colour, strength and reach — that light the ground and scene, let characters take their light, and give anyone a key light from one side and a coloured rim. Lights stay when you leave the free camera and are gone, with everything back as it was, when you change zone, a cutscene starts or you disconnect.
 - Screenshots can now be taken in other shapes — portrait, square or wide — at full detail: the camera draws the photo in that shape instead of cropping a wide shot, and very large sizes are reduced to what your graphics card allows.
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
+- New `IPluginServices.Lights` (`ILights`: `IsAvailable`, `AddLamp`, `UpdateLamp`, `RemoveLamp`, `PeopleLevel`,
+  `SetPersonLight`, `ResetAll`, `Released`) and domain types `LampId`, `LampSettings`, `KeyLight`, `RimLight`,
+  `PersonLight`, `LightLimits` (spec devkit 2026-10-03-photo-studio-lights; recon `free-camera-recon.md` § Run 13). Lamps =
+  a GameObject with a Unity point `Light` + the game's `Bokura.Rendering.MultiLight` (`lightLayer = Everything`,
+  `type = Common`, `maxDistance = 128`), set up inactive then activated so `MultiLight.OnEnable` adds it to the light
+  cluster; off = inactive; removal = inactive + `Destroy`. The cap (8 per plugin) is enforced framework-side. The
+  character gate is `CameraManager.weatherParamsVolume_.creaturePointlightColorIntensity`: raised = snapshot all
+  `parameterList` override flags (101 on release_3.7) + the parameter's value + `active`, every flag off, only the gate
+  overriding, `active = true`; restored (value, flags, active) exactly when no lamp is on or every level is 0
+  (`LightGate`, `LightGatePolicy`). Key light = `RenderCompBase.SetFixedLight(ref ModelFixedLightData{LightParms}, 0x3FFFFFFF)`
+  → `_CameraLightParm` (a camera-space direction, w = 1); rim = `SetFresnelEffect(1, colour × strength, (−0.7, 1, 1, 1),
+  All)`; both written back from a per-material snapshot taken before the first write (`ModelLightSnapshot`; the game's own
+  Fresnel "off" leaves colour + params). Plain reflected calls only — `ModelFixedLightData` is by-ref and is never
+  HarmonyX-patched. The posed copy / NPC stand-in comes from the posing backend; lit people are re-resolved on every
+  `IPosing.Changed`. `FreeCameraReleaser` releases lights after the camera and before posing (people written back while
+  their copy lives → lamps → gate); `ReleaseAll` is idempotent and raises `Released` only when it ended something; the
+  per-plugin facade ends a plugin's lights on unload. Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Lights] lamp add|remove`,
+  `[Lights] gate raised|restored …`, `[Lights] person <uuid> key|rim written|restored`.
 - `WindowSpec.Passive` (Borderless windows): a visual-only layer with no content padding and no click blocker, so
   presses reach the game and every window behind it — for full-screen guides/overlays (Photo Studio's frame guide).
   `IScreenCapture.PlanSize` is a new interface member: a plugin that IMPLEMENTS `IScreenCapture` must add it.

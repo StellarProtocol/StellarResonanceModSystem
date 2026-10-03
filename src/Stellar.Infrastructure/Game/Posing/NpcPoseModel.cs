@@ -14,7 +14,7 @@ namespace Stellar.Infrastructure.Game.Posing;
 /// recycles it — the generate path does not own a half-made model on failure, so a dropped reference there would leave a
 /// duplicate NPC visible. Main thread.
 /// </summary>
-internal sealed class NpcPoseModel : IPoseModel
+internal sealed class NpcPoseModel : IPoseModel, IVisibleModel
 {
     private readonly PoseCalls _c;
     private readonly NpcSource _src;
@@ -46,6 +46,7 @@ internal sealed class NpcPoseModel : IPoseModel
     public void Aim(LookPart part, float x, float y) => _p?.Aim(part, x, y);
     public void SetYaw(float offsetDegrees) => _p?.SetYaw(offsetDegrees);
     public Position3D? Position => _p?.Position;
+    public object? VisibleModel => _p is { Live: true } p ? p.Model : null;
     public void SetFrozen(bool frozen) => _p?.SetFrozen(frozen);
 
     /// <summary>Idempotent; safe while loading (also releases the pending load's callbacks).</summary>

@@ -22,6 +22,12 @@ internal sealed class SettledPoseModel : IPoseModel
 
     private IPoseModel? Usable => _inner is { } m && !_settle.Settling ? m : null;
 
+    /// <summary>The game model shown for the person (copy / stand-in); null while settling, loading or once closed.</summary>
+    public object? VisibleModel => Usable is IVisibleModel v ? v.VisibleModel : null;
+
+    /// <summary>Closed: nothing will ever be shown through this model again.</summary>
+    public bool IsClosed => _inner is null;
+
     public Position3D? Position => Usable?.Position;
     public bool PlayAction(int actionId) => Usable is { } m && m.PlayAction(actionId);
     public void SetMoment(float fraction, bool adopt) => Usable?.SetMoment(fraction, adopt);
