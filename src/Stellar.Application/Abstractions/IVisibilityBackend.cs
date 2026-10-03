@@ -20,4 +20,13 @@ internal interface IVisibilityBackend
     /// member is reported unavailable (refined).
     /// </summary>
     VisibilityLayers Available { get; }
+
+    /// <summary>
+    /// M2: true when a restore (show) is still owed even though nothing is currently requested — e.g. an effect
+    /// release that couldn't complete because its manager/listing was briefly unavailable, or a layer's own
+    /// restore-retry bit. <see cref="Stellar.Application.Services.SceneVisibilityService.Reassert"/> calls the
+    /// backend once when this is true even with nothing held, so the retry isn't stranded by Reassert's
+    /// "nothing requested" early return.
+    /// </summary>
+    bool HasPendingRestore { get; }
 }

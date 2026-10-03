@@ -14,6 +14,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.16.0] - 2026-10-03
+_**2.16.0** (minor) — Photo mode: hide yourself and hide effects by whose they are. Adds API for plugins (Abstractions 2.16.0); additive, no plugin rebuild._
+### Added
+- Photos can now hide your own character — together with your pet and your Battle Imagine — on your screen only. You can still move and fight, and other players still see you.
+- Photos can hide skill, buff and hit effects by who caused them: yours (including your pet's and Battle Imagine's), your party's, other players' or monsters' (including boss warning areas). Scenery like waterfalls and lamps is never hidden, and everything comes back when you turn the switch off.
+### Developer notes
+- `VisibilityLayers` gains `Self` (32), `EffectsMine` (64), `EffectsParty` (128), `EffectsOthers` (256), `EffectsMonsters` (512) and `VisibilityLayerSets.Effects`; all go through `ISceneVisibility.Hide` like the existing layers. Values of the old layers are unchanged.
+- Self uses the game's own photo entity-show counters (Oneself + SelfPet). Effects are classified by the effect's caster (`FromUuid`, else `BelongUuid`); a summon resolves to its owner via `EntitySummonAppeared`, else the entity's own `TopSummonUuid`/`SummonUuid`; an effect with no resolvable owner is never hidden. Only effects that were visible when hidden are ever shown again; ZEffect pooling is guarded by a uid read-back.
+- Effect creation hooks (`ZEffectManager.AddEffectDisplay`, `ZEffect.Init`) install lazily on the first effect-layer hide. A failed show-back is retried on the next re-assert (`IVisibilityBackend.HasPendingRestore`).
+- With `STELLAR_DIAGNOSTICS` on: `[EffectHide] apply/classified/unresolved/zero-caster/born-hidden/owner-lookup` and `[PhotoVis] holds after Self` lines (all capped).
+
 ## [2.15.0] - 2026-10-03
 _**2.15.0** (minor) — Photo mode support for plugins: screenshots and looks, a free camera, posing, a scene freeze, photo shapes and lights. Ships the never-released 2.13.0 and 2.14.0 (the release tooling folds their notes in). Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
 ### Added

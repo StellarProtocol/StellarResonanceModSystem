@@ -54,10 +54,12 @@ internal sealed class SceneVisibilityService : ISceneVisibility
         Publish(_backend.Apply(union));
     }
 
-    /// <summary>Re-issues the held set (the game's photo mode ended, or a hide target was rebuilt). No-op when nothing is held.</summary>
+    /// <summary>Re-issues the held set (the game's photo mode ended, or a hide target was rebuilt). No-op when
+    /// nothing is held AND the backend reports no pending restore (M2: a release Apply couldn't complete earlier —
+    /// e.g. an effect manager briefly unavailable — would otherwise never be retried, since nothing looks "held").</summary>
     internal void Reassert()
     {
-        if (_requested == VisibilityLayers.None) return;
+        if (_requested == VisibilityLayers.None && !_backend.HasPendingRestore) return;
         Publish(_backend.Reassert(_requested));
     }
 

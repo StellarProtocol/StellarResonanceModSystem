@@ -77,6 +77,7 @@ internal sealed partial class GameVisibilityBackend
             // are NOT re-hidden (a second hide would need a second show) — EntityShowPlan never double-hides.
             if (_types.FindType(CameraFrameCtrlType) is { } cfi)
                 hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
+            _effects?.InstallHooks(hooker);
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
     }
@@ -102,7 +103,8 @@ internal sealed partial class GameVisibilityBackend
         (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
         | VisibilityLayers.StellarOverlay
         | (ProbeNameplates() ? VisibilityLayers.Nameplates : VisibilityLayers.None)
-        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty : VisibilityLayers.None);
+        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty | VisibilityLayers.Self : VisibilityLayers.None)
+        | (_effects?.Available ?? VisibilityLayers.None);
 
     private bool ProbeGameHud()
     {
@@ -205,17 +207,32 @@ internal sealed partial class GameVisibilityBackend
     /// (one show per hide we issued; refcount semantics from the disassembly, recon-party-grain.md).</summary>
     private bool SetOtherPlayersHidden(bool hidden, bool keepParty)
     {
-        var ctrl = CreatedSingleton(CameraFrameCtrlType, "OtherPlayers", out var t);
-        if (ctrl is null) return false;
+        if (EntityShowWriter("OtherPlayers") is not { } write) return false;
+        return _entityShow.Apply(hidden, keepParty, write, HoldCount);
+    }
+
+    /// <summary>Shared by <see cref="SetOtherPlayersHidden"/> and <c>GameVisibilityBackend.Self.cs</c>'s
+    /// SetSelfHidden: resolves CameraFrameCtrl + its cached SetEntityShow method (once, via <see cref="_setEntityShow"/>)
+    /// and hands back the write closure both <see cref="EntityShowPlan"/> instances call through — one less copy of
+    /// the "resolve singleton, cache the method, warn once, write + OnEntityShowWritten" sequence to keep in sync.
+    /// Null when the singleton or method can't be resolved right now (the caller's layer is reported not hidden).</summary>
+    private Func<int, bool, bool>? EntityShowWriter(string layerTag)
+    {
+        var ctrl = CreatedSingleton(CameraFrameCtrlType, layerTag, out var t);
+        if (ctrl is null) return null;
         _setEntityShow ??= t!.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
-        if (_setEntityShow is null) { WarnOnce("m:OtherPlayers", "Hide OtherPlayers unavailable: CameraFrameCtrl.SetEntityShow not found."); return false; }
+        if (_setEntityShow is null)
+        {
+            WarnOnce("m:" + layerTag, $"Hide {layerTag} unavailable: CameraFrameCtrl.SetEntityShow not found.");
+            return null;
+        }
         var setter = _setEntityShow;
-        return _entityShow.Apply(hidden, keepParty, (type, show) =>
+        return (type, show) =>
         {
             setter.Invoke(ctrl, new object[] { type, show });
             OnEntityShowWritten(type, show);
             return true;
-        }, HoldCount);
+        };
     }
 
     /// <summary>
@@ -227,29 +244,42 @@ internal sealed partial class GameVisibilityBackend
     {
         try
         {
-            var mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
-            if (mgr is null) return null;
-            if (_getHideCount is null)
-            {
-                var m = StellarInterop.FindMethod(t, "getHideCount", 2);
-                var ps = m?.GetParameters();
-                if (m is null || ps![0].ParameterType is not { IsEnum: true } hideType || ps[1].ParameterType is not { IsEnum: true } sourceType)
-                {
-                    WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
-                    return null;
-                }
-                _hideTypeEnum = hideType;
-                _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
-                _getHideCount = m;
-            }
-            var hide = Enum.ToObject(_hideTypeEnum!, EntityShowPlan.HideTypeFor(cameraType));
-            return _getHideCount.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
+            if (EntityShowPlan.TryHideTypeFor(cameraType) is not { } hideType) return null;
+            if (!EnsureHoldCountReflection(out var mgr)) return null;
+            var hide = Enum.ToObject(_hideTypeEnum!, hideType);
+            return _getHideCount!.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
         }
         catch (Exception ex)
         {
             WarnOnce("x:HoldCount", "Hold-count check failed: " + (ex.InnerException ?? ex).Message);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Resolves (once) the ZEntityMgr singleton + its <c>getHideCount(EntityRenderLayerHideType, EVisibleSource)</c>
+    /// method, caching <see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> / <see cref="_holdCountSource"/> for
+    /// every later caller — <see cref="HoldCount"/> AND the Self-holds diagnostic (GameVisibilityBackend.Diagnostics.cs),
+    /// which needs the same fields but has no camera type to resolve through <see cref="EntityShowPlan.TryHideTypeFor"/>
+    /// (Oneself/SelfPet aren't in that map). False (with the same warning as before extraction) when the singleton or
+    /// method isn't available right now; callers decide how to react (HoldCount returns null, the diagnostic no-ops).
+    /// </summary>
+    private bool EnsureHoldCountReflection(out object? mgr)
+    {
+        mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
+        if (mgr is null) return false;
+        if (_getHideCount is not null) return true;
+        var m = StellarInterop.FindMethod(t, "getHideCount", 2);
+        var ps = m?.GetParameters();
+        if (m is null || ps![0].ParameterType is not { IsEnum: true } hideTypeEnum || ps[1].ParameterType is not { IsEnum: true } sourceType)
+        {
+            WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
+            return false;
+        }
+        _hideTypeEnum = hideTypeEnum;
+        _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
+        _getHideCount = m;
+        return true;
     }
 
     /// <summary>

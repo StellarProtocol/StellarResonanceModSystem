@@ -28,46 +28,70 @@ internal sealed class EntityShowPlan
     public const int Union = 4;
     public const int Stranger = 6;
     public const int OtherPlayer = 11;
+    // Panda.ZGame.ECamerasysShowEntityType — the local player and their pet/summon.
+    public const int Oneself = 1;
+    public const int SelfPet = 14;
 
     private static readonly int[] KeepPartySet = { Stranger, Chum, Union };
     private static readonly int[] EveryoneSet = { OtherPlayer };
+    public static readonly int[] SelfSet = { Oneself, SelfPet };
 
     private readonly List<int> _held = new();   // types WE hid, in hide order
 
     /// <summary>True while the party-preserving set (6/2/4) is what we hold — party changes then need a refresh.</summary>
     public bool HoldsKeepPartySet => _held.Count > 0 && _held.All(t => Array.IndexOf(KeepPartySet, t) >= 0);
 
-    /// <summary>
-    /// <c>Panda.ZGame.EntityRenderLayerHideType</c> that <c>CameraFrameCtrl.SetEntityShow(cameraType, …)</c> drives
-    /// (decoded jump table, recon-party-grain.md; enum values verified in the release_3.7 interop).
-    /// </summary>
-    public static int HideTypeFor(int cameraType) => cameraType switch
+    /// <summary>True while anything is held — a type we hid and haven't shown back yet. M2 follow-up: a failed show
+    /// stays held for retry (see <see cref="Apply(IReadOnlyList{int},Func{int,bool,bool},Func{int,int?})"/>'s doc),
+    /// so this is exactly "a restore is still owed" for this plan even once its layer is no longer requested.</summary>
+    public bool HoldsAny => _held.Count > 0;
+
+    /// <summary><c>EntityRenderLayerHideType</c> behind a camera type, or null when not measured (the hold-count check
+    /// is then skipped for it — bookkeeping only).</summary>
+    public static int? TryHideTypeFor(int cameraType) => cameraType switch
     {
         Stranger => 6,      // Nearby
         Chum => 5,          // Friend
         Union => 3,         // Union
         OtherPlayer => 7,   // OtherPlayer
-        _ => throw new ArgumentOutOfRangeException(nameof(cameraType)),
+        SelfPet => 12,      // SelfPet — measured 2026-10-03 (owner client: "holds after Self … SelfPet(12)=1")
+        // Oneself (1) keeps no ETakePhotos counter (same measurement), so it stays unmapped: bookkeeping only.
+        _ => null,
     };
 
-    /// <summary>True when <see cref="Apply"/> would write anything or drop a reset hold.</summary>
-    public bool NeedsWrite(bool hideOthers, bool keepParty, Func<int, int?>? holdCount = null)
-    {
-        var target = Target(hideOthers, keepParty);
-        return _held.Count != target.Length || _held.Any(t => Array.IndexOf(target, t) < 0 || IsReset(t, holdCount));
-    }
+    /// <summary>
+    /// <c>Panda.ZGame.EntityRenderLayerHideType</c> that <c>CameraFrameCtrl.SetEntityShow(cameraType, …)</c> drives
+    /// (decoded jump table, recon-party-grain.md; enum values verified in the release_3.7 interop).
+    /// </summary>
+    public static int HideTypeFor(int cameraType) =>
+        TryHideTypeFor(cameraType) ?? throw new ArgumentOutOfRangeException(nameof(cameraType));
+
+    /// <summary>True when <see cref="Apply(bool,bool,Func{int,bool,bool},Func{int,int?})"/> would write anything or drop a reset hold.</summary>
+    public bool NeedsWrite(bool hideOthers, bool keepParty, Func<int, int?>? holdCount = null) =>
+        NeedsWrite(Target(hideOthers, keepParty), holdCount);
+
+    /// <summary>True when <see cref="Apply(IReadOnlyList{int},Func{int,bool,bool},Func{int,int?})"/> would write
+    /// anything or drop a reset hold, for an arbitrary target set (e.g. <see cref="SelfSet"/>).</summary>
+    public bool NeedsWrite(IReadOnlyList<int> target, Func<int, int?>? holdCount = null) =>
+        _held.Count != target.Count || _held.Any(t => !target.Contains(t) || IsReset(t, holdCount));
 
     /// <summary>
     /// Moves to the target set: first one show for every held type the target drops, then one hide for every target
     /// type not yet held. A failed hide is not held (retried next time); a failed show stays held (retried next
     /// time, so a hide is never stranded). Returns false when any write failed.
     /// </summary>
-    public bool Apply(bool hideOthers, bool keepParty, Func<int, bool, bool> write, Func<int, int?>? holdCount = null)
+    public bool Apply(bool hideOthers, bool keepParty, Func<int, bool, bool> write, Func<int, int?>? holdCount = null) =>
+        Apply(Target(hideOthers, keepParty), write, holdCount);
+
+    /// <summary>
+    /// Moves to an arbitrary target set (e.g. <see cref="SelfSet"/>) with the same hide-once / show-once /
+    /// never-strand-a-hide semantics as the bool overload.
+    /// </summary>
+    public bool Apply(IReadOnlyList<int> target, Func<int, bool, bool> write, Func<int, int?>? holdCount = null)
     {
-        var target = Target(hideOthers, keepParty);
         var ok = true;
         _held.RemoveAll(t => IsReset(t, holdCount));   // our hold is gone: re-hide (if wanted) / no show (if not)
-        foreach (var type in _held.Where(t => Array.IndexOf(target, t) < 0).ToList())
+        foreach (var type in _held.Where(t => !target.Contains(t)).ToList())
         {
             if (write(type, true)) _held.Remove(type);
             else ok = false;

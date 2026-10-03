@@ -27,6 +27,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     private readonly IGameTypeRegistry _types;
     private readonly Func<IReadOnlyList<GameObject>> _overlayRoots;
     private readonly IPluginLog _log;
+    private readonly GameEffectVisibility? _effects;
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly EntityShowPlan _entityShow = new();
     private VisibilityLayers _applied;
@@ -34,20 +35,40 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     // (and, transitively, TargetRebuilt via the host's drain) retries these even though nothing is held, so a
     // restore never silently strands the layer hidden — see LayerStepDecision.
     private VisibilityLayers _restorePending;
+    // M2 follow-up: HasPendingRestore needs to know which layers were last asked for, since _selfShow/_entityShow's
+    // own held set (a failed show-back) is the pending signal, not _applied (StepSelf/StepOtherPlayers already clear
+    // their _applied bit on a failed show — see their own doc comments).
+    private VisibilityLayers _lastRequested;
 
-    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log)
+    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log, GameEffectVisibility? effects = null)
     {
         _types = types;
         _overlayRoots = overlayRoots;
         _log = log;
+        _effects = effects;
     }
+
+    /// <summary>M2: true when a restore is still owed. Effects report their own pending release (the manager/listing
+    /// was unavailable when Apply(None) tried to show them back); any layer still carries its own restore-retry bit
+    /// (<see cref="_restorePending"/>); OR Self/OtherPlayers' entity-show plan still holds a hide while its layer
+    /// isn't in the last requested set — a failed show-back the plan is retrying (<see cref="EntityShowPlan.HoldsAny"/>),
+    /// which a failed <see cref="StepSelf"/>/<see cref="StepOtherPlayers"/> already cleared from <see cref="_applied"/>,
+    /// so nothing there looks "held" for it.</summary>
+    public bool HasPendingRestore =>
+        (_effects?.HasPendingRelease ?? false) ||
+        _restorePending != VisibilityLayers.None ||
+        (_selfShow.HoldsAny && (_lastRequested & VisibilityLayers.Self) == 0) ||
+        (_entityShow.HoldsAny && (_lastRequested & VisibilityLayers.OtherPlayers) == 0);
 
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
+        _lastRequested = requested;
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: false);
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: false);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepOtherPlayers(requested);
+        StepSelf(requested);
+        StepEffects(requested);
         return _applied;
     }
 
@@ -55,15 +76,27 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     /// have undone it), AND retries any layer whose earlier restore (show) call failed because its singleton was
     /// briefly unavailable — even though that failure already cleared the layer from <c>_applied</c>, so nothing
     /// looks "held" for it. This is the path <c>TargetRebuilt</c> drives (via the host's one-tick-later drain),
-    /// which is exactly when a previously-missing singleton is likely to have appeared. Other players go through
-    /// the entity-show plan, which rewrites only what differs.</summary>
+    /// which is exactly when a previously-missing singleton is likely to have appeared. Other players and Self go
+    /// through the entity-show plan, which rewrites only what differs.</summary>
     public VisibilityLayers Reassert(VisibilityLayers requested)
     {
+        _lastRequested = requested;
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: true);
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: true);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
         StepOtherPlayers(requested);
+        StepSelf(requested);
+        StepEffects(requested);
         return _applied;
+    }
+
+    /// <summary>Folds <see cref="GameEffectVisibility.Apply"/>'s result into <see cref="_applied"/>, replacing
+    /// whatever was there for the four effect bits (<see cref="VisibilityLayerSets.Effects"/>) — <c>Apply</c> and
+    /// <c>Reassert</c> share this instead of repeating the same two lines.</summary>
+    private void StepEffects(VisibilityLayers requested)
+    {
+        var fx = _effects?.Apply(requested) ?? VisibilityLayers.None;
+        _applied = (_applied & ~VisibilityLayerSets.Effects) | fx;
     }
 
     private void Step(VisibilityLayers layer, VisibilityLayers requested, Func<bool, bool> setter, bool force)
