@@ -1,5 +1,4 @@
 using Stellar.Abstractions.Services;
-using Stellar.Application.Services;
 
 namespace Stellar.Application.Hosting;
 
@@ -41,6 +40,9 @@ internal sealed class PerPluginServices : IPluginServices
     private readonly IRenderQuality? _renderQuality;
     private readonly ITimeOfDay? _timeOfDay;
     private readonly FreeCameraScope? _freeCam;
+    // Per-plugin download channel, backed by its own data folder + busy-gate. Null in a bare test host
+    // that supplies no per-plugin factory — falls back to the shared bag's (placeholder) Downloads.
+    private readonly IPluginDownloads? _downloads;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -57,6 +59,7 @@ internal sealed class PerPluginServices : IPluginServices
         _renderQuality = scope.RenderQuality;
         _timeOfDay = scope.TimeOfDay;
         _freeCam = scope.FreeCamera;
+        _downloads = scope.Downloads;
     }
 
     public IPluginConfig Config { get; }
@@ -124,10 +127,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IEntityPicker EntityPicker => _shared.EntityPicker;
     public IPosing Posing => (IPosing?)_freeCam?.Posing ?? _shared.Posing;
     public ILights Lights => (ILights?)_freeCam?.Lights ?? _shared.Lights;
-    // Per-plugin download channel — not yet backed by a real per-plugin data folder/service, so this
-    // forwards a placeholder rather than the shared aggregator's own Downloads. A later task replaces
-    // this with a real per-plugin service (see UnavailablePluginDownloads).
-    public IPluginDownloads Downloads => UnavailablePluginDownloads.Instance;
+    public IPluginDownloads Downloads => _downloads ?? _shared.Downloads;
     public IReShade ReShade => _shared.ReShade;
 }
 
@@ -147,4 +147,5 @@ internal readonly record struct PerPluginScope(
     IPhotoModeState? PhotoMode = null,
     IRenderQuality? RenderQuality = null,
     ITimeOfDay? TimeOfDay = null,
-    FreeCameraScope? FreeCamera = null);
+    FreeCameraScope? FreeCamera = null,
+    IPluginDownloads? Downloads = null);

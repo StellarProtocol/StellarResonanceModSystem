@@ -18,21 +18,16 @@ internal sealed class FrameGrabException : Exception
 /// </summary>
 internal readonly record struct GrabTarget(CaptureSize Size, bool Shaped);
 
-/// <summary>Grabs a rendered frame. Completes on the main thread (no RunContinuationsAsynchronously).</summary>
-internal interface IFrameGrabber
+/// <summary>
+/// Grabs a rendered frame. Completes on the main thread (no RunContinuationsAsynchronously).
+/// Extends <see cref="IMainThreadResume"/> — the resume mechanism it defines also backs
+/// <c>IScreenCapture.IsCapturing</c>'s off-thread-to-main-thread handoff; a task that never
+/// completes there wedges it the same way it would wedge any other caller.
+/// </summary>
+internal interface IFrameGrabber : IMainThreadResume
 {
     (int Width, int Height) ScreenSize { get; }
     /// <summary>The GPU's largest texture side (Unity <c>SystemInfo.maxTextureSize</c>).</summary>
     int MaxTextureSize { get; }
     Task<FrameGrab> GrabAsync(GrabTarget target, int settleFrames, CaptureFormat format, int jpgQuality);
-
-    /// <summary>
-    /// Resumes the caller on the main thread. Infrastructure implements this as a one-frame
-    /// coroutine backed by a TCS created without RunContinuationsAsynchronously, so the
-    /// continuation runs synchronously on the main thread when the coroutine completes it.
-    /// The implementation MUST always complete the returned task (fault it when the coroutine
-    /// host is gone) — a task that never completes wedges <c>IScreenCapture.IsCapturing</c>.
-    /// The same holds for <see cref="GrabAsync"/>.
-    /// </summary>
-    Task ResumeOnMainThreadAsync();
 }

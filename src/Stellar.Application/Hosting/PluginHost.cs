@@ -93,6 +93,7 @@ internal sealed class PluginHost : IDisposable
         var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
         var perPluginConfig = _factories.Config.Create(pluginGuid);
         var perPluginData = _factories.DataStore.Create(pluginGuid);
+        var perPluginDownloads = _factories.Downloads.Create(pluginGuid);
         // Discover + register this plugin's embedded Lang/*.json catalogs and mint its scoped façade.
         var perPluginLoc = _factories.Localization.RegisterPlugin(pluginGuid, asm);
 
@@ -104,7 +105,7 @@ internal sealed class PluginHost : IDisposable
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
-        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid), perPluginLoc);
+        var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid), perPluginLoc, perPluginDownloads);
 
         Func<IPluginServices, object> factory = sharedServices =>
             BuildAndInvoke(ctor, bindContext, lifetime, sharedServices);
@@ -162,7 +163,7 @@ internal sealed class PluginHost : IDisposable
             new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
                                bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
                                lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
-                               FreeCamera: lifetime.FreeCam));
+                               FreeCamera: lifetime.FreeCam, Downloads: bind.PerPluginDownloads));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -205,7 +206,7 @@ internal sealed class PluginHost : IDisposable
     // along here for the same reason — BuildAndInvoke is already at the cap.
     private readonly record struct PluginBindContext(string PluginGuid, IPluginConfig PerPluginConfig,
                                                     IPluginDataStore PerPluginData, IHotkeys? PerPluginHotkeys,
-                                                    ILocalization PerPluginLocalization);
+                                                    ILocalization PerPluginLocalization, IPluginDownloads PerPluginDownloads);
 
     public void Dispose()
     {

@@ -8,4 +8,5 @@ namespace Stellar.Application.Abstractions;
 internal readonly record struct PerPluginResourceFactories(
     IPluginConfigFactory Config,
     IPluginDataStoreFactory DataStore,
-    ILocalizationHost Localization);
+    ILocalizationHost Localization,
+    IPluginDownloadsFactory Downloads);

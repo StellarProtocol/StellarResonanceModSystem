@@ -128,8 +128,21 @@ public sealed partial class BootstrapPlugin
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
         _pluginHost = new PluginHost(services,
-            new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!),
+            new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!, BuildPluginDownloadsFactory(log)),
             _pluginRegistry, _scheduler!, _harmonyHostFactory!);
+    }
+
+    /// <summary>
+    /// Rooted at the same <c>stellar/plugindata</c> base dir as <see cref="_pluginDataStoreFactory"/> (Task 5 —
+    /// real <c>IPluginDownloads</c>). Shares one <see cref="System.Net.Http.HttpClient"/> across every plugin and
+    /// reuses <see cref="_frameGrabber"/>'s main-thread resume pump — the same mechanism screen capture uses —
+    /// rather than building a second one. <see cref="_frameGrabber"/> is built in <c>WirePhotoStudio</c>, which
+    /// always runs before <see cref="WireGameEventsAndPluginHost"/> (see BootstrapPlugin.Load's ordering comment).
+    /// </summary>
+    private Stellar.Infrastructure.Net.PluginDownloadsFactory BuildPluginDownloadsFactory(BepInExPluginLog log)
+    {
+        var pluginDataRoot = Path.Combine(BepInEx.Paths.GameRootPath, Stellar.Infrastructure.Configuration.FrameworkPaths.PluginDataSubdir);
+        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, new System.Net.Http.HttpClient(), _frameGrabber!, log);
     }
 
     /// <summary>
