@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 namespace Stellar.Infrastructure.Game;
@@ -5,9 +6,12 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class GameEffectVisibility
 {
     private const int MaxClassifiedLines = 400;
-    private const int MaxClassifiedWithCasterLines = 300;
+    private const int MaxClassifiedWithCasterUids = 300;
     private int _classifiedLines;
-    private int _classifiedWithCasterLines;
+    // First-sighting cap keyed by uid, not a per-call counter: Sweep re-classifies every listed uid on every
+    // Apply/Reassert, so a counter of calls fills the budget in a handful of sweeps and a live effect further
+    // down the list (a summon's, a party member's) is never logged. Bounded at MaxClassifiedWithCasterUids entries.
+    private readonly HashSet<long> _classifiedWithCasterUids = new();
     private int _mineHidden, _partyHidden, _othersHidden, _monstersHidden;   // reset every OnSwept — per-sweep, not cumulative
 
     partial void OnClassified(long uid, long from, long belong, VisibilityLayers owner)
@@ -26,24 +30,25 @@ internal sealed partial class GameEffectVisibility
     }
 
     /// <summary>The owner's in-game pass could not be run for this change — this is its replacement: the first 300
-    /// classified effects that had a caster, so a wrong owner can be spotted straight from the log (never from the
-    /// unresolved-only line above, which only fires when owner is None).</summary>
+    /// DISTINCT classified effects that had a caster (one line per uid, the first time it is seen), so a wrong
+    /// owner can be spotted straight from the log (never from the unresolved-only line above, which only fires when
+    /// owner is None) without the budget being consumed by the same handful of long-lived effects re-classified on
+    /// every sweep.</summary>
     private void LogClassifiedWithCaster(long uid, long from, long belong, VisibilityLayers owner)
     {
-        if ((from == 0 && belong == 0) || _classifiedWithCasterLines >= MaxClassifiedWithCasterLines) return;
-        _classifiedWithCasterLines++;
-        var fromIsCaster = from != 0;   // ReadContext's own rule: caster = FromUuid, else BelongUuid
-        _log.Info($"[EffectHide] classified uid={uid} from={from}({Kind(from, fromIsCaster, owner)}) " +
-                  $"belong={belong}({Kind(belong, !fromIsCaster, owner)}) owner={owner}");
+        if (from == 0 && belong == 0) return;   // scenery: never logged, never counted
+        if (_classifiedWithCasterUids.Contains(uid)) return;   // already logged this uid once
+        if (_classifiedWithCasterUids.Count >= MaxClassifiedWithCasterUids) return;   // budget exhausted
+        _classifiedWithCasterUids.Add(uid);
+        _log.Info($"[EffectHide] classified uid={uid} from={from}({Kind(from)}) belong={belong}({Kind(belong)}) owner={owner}");
     }
 
-    /// <summary>Simple, low-bits-only classification (EntityId's own 640=player / 64,32832=monster markers) for a
-    /// log label — "self" only for the slot that actually served as caster when the real classifier (which also
-    /// walks summon ownership) already resolved that effect to EffectsMine.</summary>
-    private static string Kind(long uuid, bool isCaster, VisibilityLayers owner)
+    /// <summary>Simple, low-bits-only classification (EntityId's own 640=player / 64,32832=monster markers) for a log
+    /// label. Deliberately never relabels a caster "self" from <paramref name="uuid"/>'s own uuid — <c>owner</c> is
+    /// printed separately so summon resolution (a monster-uuid caster whose owner is EffectsMine) stays visible.</summary>
+    private static string Kind(long uuid)
     {
         if (uuid == 0) return "none";
-        if (isCaster && owner == VisibilityLayers.EffectsMine) return "self";
         var low = uuid & 0xFFFF;
         if (low == 640) return "player";
         if (low == 64 || low == 32832) return "monster";

@@ -51,8 +51,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepOtherPlayers(requested);
         StepSelf(requested);
-        var fx = _effects?.Apply(requested) ?? VisibilityLayers.None;
-        _applied = (_applied & ~VisibilityLayerSets.Effects) | fx;
+        StepEffects(requested);
         return _applied;
     }
 
@@ -69,9 +68,17 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
         StepOtherPlayers(requested);
         StepSelf(requested);
+        StepEffects(requested);
+        return _applied;
+    }
+
+    /// <summary>Folds <see cref="GameEffectVisibility.Apply"/>'s result into <see cref="_applied"/>, replacing
+    /// whatever was there for the four effect bits (<see cref="VisibilityLayerSets.Effects"/>) — <c>Apply</c> and
+    /// <c>Reassert</c> share this instead of repeating the same two lines.</summary>
+    private void StepEffects(VisibilityLayers requested)
+    {
         var fx = _effects?.Apply(requested) ?? VisibilityLayers.None;
         _applied = (_applied & ~VisibilityLayerSets.Effects) | fx;
-        return _applied;
     }
 
     private void Step(VisibilityLayers layer, VisibilityLayers requested, Func<bool, bool> setter, bool force)

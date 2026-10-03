@@ -21,12 +21,12 @@ internal sealed partial class GameVisibilityBackend
 
     /// <summary>Owner's in-game pass could not be run for this change — this line replaces it: every NON-ZERO
     /// ETakePhotos hold count over all EntityRenderLayerHideType values right after a Self write, so a stray hold
-    /// (ours or the game's own) is visible from the log alone. Fix round 1: calls the same
-    /// <see cref="EnsureHoldCountReflection"/> helper <c>HoldCount</c> uses, instead of requiring an earlier
-    /// OtherPlayers/party hide to have already populated <see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> /
-    /// <see cref="_holdCountSource"/> — Self's camera types (Oneself/SelfPet) have no
-    /// <see cref="EntityShowPlan.TryHideTypeFor"/> mapping, so a Self-only session never resolved them before this
-    /// fix, and the measurement was silently lost. Whole thing in try/catch, silent on failure.</summary>
+    /// (ours or the game's own) is visible from the log alone. Resolves ZEntityMgr/getHideCount itself through the
+    /// shared <see cref="EnsureHoldCountReflection"/> helper (also used by <c>HoldCount</c>) rather than depending on
+    /// <see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> / <see cref="_holdCountSource"/> having already been
+    /// populated — Self's camera types (Oneself/SelfPet) have no <see cref="EntityShowPlan.TryHideTypeFor"/> mapping,
+    /// so a Self-only session needs its own resolve. Each enum value's read is independently guarded so one bad
+    /// value can't drop the whole line; the whole method is also wrapped, silent on failure.</summary>
     partial void OnSelfHoldsChanged(bool hide)
     {
         if (!StellarDiagnostics.IsEnabled) return;
@@ -36,8 +36,12 @@ internal sealed partial class GameVisibilityBackend
             var parts = new List<string>();
             foreach (var value in Enum.GetValues(_hideTypeEnum!))
             {
-                if (_getHideCount!.Invoke(mgr, new[] { value, _holdCountSource! }) is int count && count != 0)
-                    parts.Add($"{value}({Convert.ToInt32(value)})={count}");
+                try
+                {
+                    if (_getHideCount!.Invoke(mgr, new[] { value, _holdCountSource! }) is int count && count != 0)
+                        parts.Add($"{value}({Convert.ToInt32(value)})={count}");
+                }
+                catch { /* one bad enum value must not drop the whole line */ }
             }
             _log.Info($"[PhotoVis] holds after Self hide={hide}: {string.Join(" ", parts)}");
         }
