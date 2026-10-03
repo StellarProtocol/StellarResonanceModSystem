@@ -36,7 +36,7 @@ public sealed class PluginDownloadServiceTests : IDisposable
         var root = Path.Combine(Path.GetTempPath(), "stellar-dl-" + Path.GetRandomFileName());
         _tempRoots.Add(root);
         dataDir = Path.Combine(root, "test.plugin.data");
-        progressQueue = new MainThreadProgressQueue();
+        progressQueue = new MainThreadProgressQueue(new NullPluginLog());
         return new PluginDownloadService(dataDir, new HttpClient(handler), new FakeResume(), new NullPluginLog(), progressQueue, inactivityTimeout);
     }
 
@@ -391,6 +391,28 @@ public sealed class PluginDownloadServiceTests : IDisposable
         Assert.Equal("too large", result.Error);
     }
 
+    // Fix round 2 — N2: a failed download must drop any pending progress rather than let it surface on a
+    // later drain, after DownloadAsync has already returned the failure to the caller.
+    [Fact]
+    public async Task A_failed_download_drops_any_pending_progress_so_nothing_arrives_after_completion()
+    {
+        var payload = new byte[200_000]; // bigger than one 81920-byte read chunk, so Report fires mid-stream
+        new Random(3).NextBytes(payload);
+        var handler = new FakeHandler();
+        handler.EnqueueBytes(payload);
+        var svc = NewService(handler, out _, out var queue);
+        var progress = new CollectProgress();
+        // A wrong checksum — real intermediate progress is reported before the mismatch is even checked.
+        var req = Req(payload, "pack/file.bin", zip: false, sha: new string('0', 64));
+
+        var result = await svc.DownloadAsync(req, progress, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.False(queue.HasQueued, "a failed download must not leave a pending progress value for a later drain");
+        Assert.Equal(0, queue.Drain());
+        Assert.Empty(progress.Values); // nothing was ever drained, so nothing was ever delivered
+    }
+
     [Fact]
     public async Task Progress_is_delivered_only_through_the_main_thread_drain()
     {
@@ -427,7 +449,7 @@ public sealed class PluginDownloadServiceTests : IDisposable
         _tempRoots.Add(root);
         var dataDir = Path.Combine(root, "test.plugin.data");
         var resume = new FakeResume();
-        var svc = new PluginDownloadService(dataDir, new HttpClient(handler), resume, new NullPluginLog(), new MainThreadProgressQueue());
+        var svc = new PluginDownloadService(dataDir, new HttpClient(handler), resume, new NullPluginLog(), new MainThreadProgressQueue(new NullPluginLog()));
 
         var result = await svc.DownloadAsync(Req(payload, "pack/file.bin", zip: false), null, CancellationToken.None);
 

@@ -127,6 +127,9 @@ public sealed partial class BootstrapPlugin
     {
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
+        // Fix round 2 (N4): assigned here at the call site, not inside BuildPluginDownloadsFactory — the
+        // shared progress relay drained alongside the frame grabber's resume queue in Wiring.ServiceTick.
+        _pluginDownloadProgress = new Stellar.Infrastructure.Net.MainThreadProgressQueue(log);
         _pluginHost = new PluginHost(services,
             new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!, BuildPluginDownloadsFactory(log)),
             _pluginRegistry, _scheduler!, _harmonyHostFactory!);
@@ -139,16 +142,15 @@ public sealed partial class BootstrapPlugin
     /// <see cref="_frameGrabber"/>'s main-thread resume pump — the same mechanism screen capture uses — rather
     /// than building a second one. <see cref="_frameGrabber"/> is built in <c>WirePhotoStudio</c>, which always
     /// runs before <see cref="WireGameEventsAndPluginHost"/> (see BootstrapPlugin.Load's ordering comment).
-    /// Also constructs <see cref="_pluginDownloadProgress"/> (Fix round 1 — I1), the shared progress relay
-    /// drained alongside the frame grabber's resume queue in <c>Wiring.ServiceTick</c>.
+    /// <see cref="_pluginDownloadProgress"/> is assigned by the caller (<see cref="BuildRegistryAndHost"/>),
+    /// not here.
     /// </summary>
     private Stellar.Infrastructure.Net.PluginDownloadsFactory BuildPluginDownloadsFactory(BepInExPluginLog log)
     {
         var pluginDataRoot = Path.Combine(BepInEx.Paths.GameRootPath, Stellar.Infrastructure.Configuration.FrameworkPaths.PluginDataSubdir);
         var http = new System.Net.Http.HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"StellarFramework/{Stellar.Abstractions.Domain.FrameworkVersion.Value}");
-        _pluginDownloadProgress = new Stellar.Infrastructure.Net.MainThreadProgressQueue();
-        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, http, _frameGrabber!, log, _pluginDownloadProgress);
+        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, http, _frameGrabber!, log, _pluginDownloadProgress!);
     }
 
     /// <summary>

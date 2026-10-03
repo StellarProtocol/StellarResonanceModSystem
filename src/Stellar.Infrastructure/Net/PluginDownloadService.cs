@@ -80,17 +80,31 @@ internal sealed class PluginDownloadService : IPluginDownloads
         }
     }
 
+    // Fix round 2 (N2): the slot is FLUSHED exactly once on every exit path — 1.0 on success, dropped
+    // (never delivered) on any failure — so no stale progress can arrive on a later tick after
+    // DownloadAsync has already returned a result to the caller.
     private async Task<DownloadResult> RunDownloadAsync(DownloadRequest request, string target, IProgress<double>? progress, CancellationToken ct)
     {
         var slot = progress is null ? null : _progressQueue.CreateSlot(progress);
-        var bytes = await DownloadBytesAsync(request.Url, request.MaxBytes, slot, ct).ConfigureAwait(false);
-        var actualHash = Convert.ToHexString(SHA256.HashData(bytes));
-        if (!string.Equals(actualHash, request.Sha256, StringComparison.OrdinalIgnoreCase))
-            return new DownloadResult(false, null, "checksum mismatch");
-        if (request.ExtractZip) ExtractZipAtomic(bytes, target, request.IncludePrefixes);
-        else WriteFileAtomic(bytes, target);
-        _progressQueue.Report(slot, 1.0);
-        return new DownloadResult(true, target, null);
+        try
+        {
+            var bytes = await DownloadBytesAsync(request.Url, request.MaxBytes, slot, ct).ConfigureAwait(false);
+            var actualHash = Convert.ToHexString(SHA256.HashData(bytes));
+            if (!string.Equals(actualHash, request.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                _progressQueue.Finish(slot, null);
+                return new DownloadResult(false, null, "checksum mismatch");
+            }
+            if (request.ExtractZip) ExtractZipAtomic(bytes, target, request.IncludePrefixes);
+            else WriteFileAtomic(bytes, target);
+            _progressQueue.Finish(slot, 1.0);
+            return new DownloadResult(true, target, null);
+        }
+        catch
+        {
+            _progressQueue.Finish(slot, null);
+            throw;
+        }
     }
 
     // Linked to the caller's token so a genuine cancellation still propagates; CancelAfter is re-armed on

@@ -107,8 +107,8 @@ public sealed partial class BootstrapPlugin
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
         _framework!.SetCanvasScale(_windowService?.CanvasScale ?? 1f);   // canvas-unit dims for IFramework.CanvasWidth/Height
         ReclampLayoutOnResolutionChange();   // pull windows/HUD back on-screen when the resolution changes
+        _pluginDownloadProgress?.Drain();      // download progress — drained BEFORE the resume below (fix round 2, N2)
         _frameGrabber?.DrainQueuedResumes();  // photo capture: a late resume completes here, on the main thread
-        _pluginDownloadProgress?.Drain();     // download progress: a SEPARATE queue, same per-tick hook, no shared state with the resume drain above
         // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
         // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
         // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.

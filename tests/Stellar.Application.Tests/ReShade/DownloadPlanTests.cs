@@ -44,12 +44,20 @@ public sealed class DownloadPlanTests
     // ── Fix round 1 (I4): trailing slash, interior empty segments, trailing dot/space, post-resolve containment ──
 
     [Fact]
-    public void ResolveTarget_trims_a_single_trailing_slash() =>
-        Assert.Equal(DownloadPlan.ResolveTarget("/data", "packs/standard"), DownloadPlan.ResolveTarget("/data", "packs/standard/"));
+    public void ResolveTarget_trims_trailing_slashes()
+    {
+        // Fix round 2 (N3): TrimEnd('/') trims EVERY trailing slash, not just one — pin that explicitly.
+        var expected = DownloadPlan.ResolveTarget("/data", "packs/standard");
+        Assert.Equal(expected, DownloadPlan.ResolveTarget("/data", "packs/standard/"));
+        Assert.Equal(expected, DownloadPlan.ResolveTarget("/data", "packs/standard///"));
+    }
 
     [Fact]
-    public void ResolveTarget_null_when_trailing_slash_only() =>
+    public void ResolveTarget_null_when_trailing_slashes_only()
+    {
         Assert.Null(DownloadPlan.ResolveTarget("/data", "/"));
+        Assert.Null(DownloadPlan.ResolveTarget("/data", "///"));
+    }
 
     [Fact]
     public void ResolveTarget_null_when_interior_empty_segment() =>

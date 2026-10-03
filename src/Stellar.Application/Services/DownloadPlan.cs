@@ -15,10 +15,9 @@ internal static class DownloadPlan
     /// <summary>Resolves <paramref name="targetFolder"/> under <paramref name="dataFolder"/>, or null when
     /// <paramref name="targetFolder"/> is empty, rooted, contains a "\", a ":", a ".."/"." segment, an
     /// interior empty segment ("a//b"), a segment with a trailing dot/space (unsafe on Windows/NTFS), or —
-    /// after resolving — lexically escapes <paramref name="dataFolder"/> (defense in depth; lexical only,
-    /// via <see cref="Path.GetFullPath(string)"/>, so it is cheap and symlink-safe where the OS would also
-    /// refuse the traversal, but does not itself follow symlinks). A single trailing "/" is trimmed first,
-    /// so "packs/" and "packs" resolve identically.</summary>
+    /// after resolving — lexically escapes <paramref name="dataFolder"/> (defense in depth: a cheap,
+    /// string-only check via <see cref="Path.GetFullPath(string)"/> that does not resolve symlinks). Trailing
+    /// slashes are trimmed first, so "packs/" (or "packs///") and "packs" resolve identically.</summary>
     internal static string? ResolveTarget(string dataFolder, string targetFolder)
     {
         if (string.IsNullOrEmpty(targetFolder) || targetFolder.Contains('\\')) return null;
@@ -32,8 +31,9 @@ internal static class DownloadPlan
     }
 
     /// <summary>Maps one zip entry to a relative, "/"-separated output path, or null when the entry is a
-    /// directory (name ends with "/"), escapes the extraction folder ("..", rooted, or a ":" segment), or
-    /// falls outside every prefix in <paramref name="includePrefixes"/> (null allows every file entry).</summary>
+    /// directory (name ends with "/"), escapes the extraction folder ("..", rooted, or a ":" segment), has a
+    /// segment with a trailing dot or space (skipped — unsafe on Windows/NTFS), or falls outside every prefix
+    /// in <paramref name="includePrefixes"/> (null allows every file entry).</summary>
     internal static string? MapZipEntry(string entryName, IReadOnlyList<string>? includePrefixes)
     {
         if (string.IsNullOrEmpty(entryName)) return null;
