@@ -36,6 +36,7 @@ public sealed partial class BootstrapPlugin
         var summons = new SummonOwnerIndex();
         _combatService!.CombatEventOccurred += summons.OnCombatEvent;
         var ownerLookup = new GameSummonerLookup(_gameTypeRegistry!, log);
+        _clientState!.SceneChanged += _ => ownerLookup.Clear();   // entity ids are scene-scoped
         var classifier = new EffectOwnerClassifier(() => _combatService.LocalEntityId, () => _partyService!.Members, summons,
             ownerLookup.TopSummonerOf);
         var effects = new GameEffectVisibility(_gameTypeRegistry!, classifier.Classify, log);

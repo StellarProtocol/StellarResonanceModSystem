@@ -10,28 +10,23 @@ namespace Stellar.Infrastructure.Game;
 /// <c>ZEntityMgr.GetEntity(uuid)</c> → <c>ZEntity.TopSummonUuid</c> (the game's typed view of <c>AttrTopSummonerId</c>,
 /// 91), falling back to <c>ZEntity.SummonUuid</c> (<c>AttrSummonerId</c>, 90). Both are the game's own <c>Int64</c>
 /// getters, so no <c>TryGetAttr&lt;T&gt;</c> is ever called with a guessed T (the "arr type err" storm class).
-/// <para>Event-driven: called only at classification time (effect sweep / creation hooks), never polled. Memoized per
-/// uuid — positives up to <see cref="PositiveCapacity"/> (cleared when exceeded); negatives expire after
-/// <see cref="NegativeTtlMs"/> so a summon whose attrs arrive late is retried (docs/il2cpp-probing-safety.md rule 3),
-/// bounded the same way. A client-wide "not ready" (types / manager missing) caches nothing for any uuid. Liveness:
+/// <para>Event-driven: called only at classification time (effect sweep / creation hooks), never polled. Memo + TTL
+/// policy is the pure <see cref="SummonerMemo"/> (unit-tested); <see cref="Clear"/> runs on scene change. A
+/// client-wide "not ready" (types / manager missing) caches nothing for any uuid. Liveness:
 /// the game's null-returning <c>GetEntity</c> plus <c>IsDestroying</c>. Fails open (0 + one warning). Main thread only —
 /// any other thread gets 0.</para></summary>
 internal sealed partial class GameSummonerLookup
 {
-    internal const int PositiveCapacity = 1024;
-    internal const int NegativeCapacity = 1024;
-    internal const long NegativeTtlMs = 10_000;
     private const string Tag = "[PhotoStudio] ";
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
     private readonly IGameTypeRegistry _types;
     private readonly IPluginLog _log;
-    private readonly Func<long> _nowMs;
     private readonly SingletonAccess _manager = new();
-    private readonly Dictionary<long, long> _owners = new();
-    private readonly Dictionary<long, long> _missedAtMs = new();
+    private readonly SummonerMemo _memo = new();
+    private readonly Func<long, SummonerRead?> _read;
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
-    private readonly NegativeProbeCache _resolveMiss;
+    private readonly NegativeProbeCache _resolveMiss = new(() => Environment.TickCount64, SummonerMemo.NegativeTtlMs);
     private readonly int _mainThread = Environment.CurrentManagedThreadId;   // constructed in Load() on the main thread
     private Func<object, long, object?>? _getEntity;
     private Func<object, bool>? _destroying;
@@ -41,51 +36,39 @@ internal sealed partial class GameSummonerLookup
     {
         _types = types;
         _log = log;
-        _nowMs = () => Environment.TickCount64;
-        _resolveMiss = new NegativeProbeCache(_nowMs, NegativeTtlMs);
+        _read = Read;
     }
 
     /// <summary>The entity id that owns <paramref name="uuid"/> (top summoner, else direct summoner), or 0 when the game
     /// does not know / the entity is gone / anything failed. Never returns <paramref name="uuid"/> itself.</summary>
     public long TopSummonerOf(long uuid)
     {
-        if (uuid == 0 || Environment.CurrentManagedThreadId != _mainThread) return 0;
-        if (_owners.TryGetValue(uuid, out var known)) return known;
-        var now = _nowMs();
-        if (_missedAtMs.TryGetValue(uuid, out var at) && now - at < NegativeTtlMs) return 0;
-        if (Manager() is not { } mgr) return 0;   // not ready client-wide: condemn nothing
-        var (top, summoner) = Read(mgr, uuid);
-        var owner = top != 0 && top != uuid ? top : summoner != uuid ? summoner : 0;
-        Remember(uuid, owner, now);
-        OnLookedUp(uuid, top, summoner, owner);
+        if (Environment.CurrentManagedThreadId != _mainThread) return 0;
+        var owner = _memo.Lookup(uuid, Environment.TickCount64, _read, out var fresh);
+        if (fresh is { } r) OnLookedUp(uuid, r, owner);
         return owner;
     }
 
-    private (long Top, long Summoner) Read(object mgr, long uuid)
+    /// <summary>Forgets every remembered answer (scene change: entity ids and their summoners are scene-scoped).</summary>
+    public void Clear()
     {
+        if (Environment.CurrentManagedThreadId == _mainThread) _memo.Clear();
+    }
+
+    // null = not ready client-wide (nothing gets cached); otherwise what the entity reported (0s when gone / failed).
+    private SummonerRead? Read(long uuid)
+    {
+        if (Manager() is not { } mgr) return null;
         try
         {
-            if (_getEntity!(mgr, uuid) is not { } entity || _destroying!(entity)) return (0, 0);
-            return (_topSummonUuid!(entity), _summonUuid!(entity));
+            if (_getEntity!(mgr, uuid) is not { } entity || _destroying!(entity)) return new SummonerRead(0, 0);
+            return new SummonerRead(_topSummonUuid!(entity), _summonUuid!(entity));
         }
         catch (Exception ex)
         {
             WarnOnce("read", "effect owner lookup failed: " + (ex.InnerException ?? ex).Message);
-            return (0, 0);
+            return new SummonerRead(0, 0);
         }
-    }
-
-    private void Remember(long uuid, long owner, long now)
-    {
-        if (owner != 0)
-        {
-            if (_owners.Count >= PositiveCapacity) _owners.Clear();
-            _owners[uuid] = owner;
-            _missedAtMs.Remove(uuid);
-            return;
-        }
-        if (_missedAtMs.Count >= NegativeCapacity && !_missedAtMs.ContainsKey(uuid)) _missedAtMs.Clear();
-        _missedAtMs[uuid] = now;
     }
 
     private object? Manager()
@@ -126,5 +109,5 @@ internal sealed partial class GameSummonerLookup
         if (_warned.Add(key)) _log.Warning(Tag + message);
     }
 
-    partial void OnLookedUp(long uuid, long top, long summoner, long owner);
+    partial void OnLookedUp(long uuid, SummonerRead read, long owner);
 }

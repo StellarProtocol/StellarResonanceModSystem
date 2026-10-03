@@ -108,7 +108,11 @@ public sealed class EffectOwnerClassifierTests
         _gameOwners[Summon(94)] = Summon(95);
         _gameOwners[Summon(95)] = Summon(94);
         Assert.Equal(VisibilityLayers.None, MakeAsking().Classify(Summon(94)));
-        Assert.True(_asked.Count <= 4);
+        Assert.True(_asked.Count <= 3);   // MaxAsks
+        // The game-reported cycle was never written: only 94 → 95 is stored, so both resolve to 95 (a stored
+        // 95 → 94 back-link would make the bounded walk from 94 land on 94 after its even hop count).
+        Assert.Equal(Summon(95), _summons.TopOwner(Summon(95)));
+        Assert.Equal(Summon(95), _summons.TopOwner(Summon(94)));
     }
 
     [Fact]

@@ -37,9 +37,9 @@ internal sealed class EffectOwnerClassifier
         {
             var answer = _askGameOwner(owner);
             if (answer == 0 || answer == owner) return VisibilityLayers.None;
-            _summons.Record(new EntityId(answer), new EntityId(owner));
             var next = _summons.TopOwner(answer);
-            if (next == owner) return VisibilityLayers.None;   // the answer leads back to where we started: a cycle
+            if (next == owner) return VisibilityLayers.None;   // a game-reported cycle: checked BEFORE Record, never stored
+            _summons.Record(new EntityId(answer), new EntityId(owner));
             owner = next;
             layer = LayerOf(owner);
         }
