@@ -22,7 +22,8 @@ public sealed class PosingContractTests
     }
 
     [Fact]
-    public void Framework_version_is_2_15_0() => Assert.Equal("2.15.0", FrameworkVersion.Value);
+    public void Framework_version_is_at_least_2_15_0() =>   // posing shipped in 2.15.0; later releases keep it
+        Assert.True(System.Version.Parse(FrameworkVersion.Value) >= new System.Version(2, 15, 0), FrameworkVersion.Value);
 
     [Fact]
     public void Enum_names_are_stable()
