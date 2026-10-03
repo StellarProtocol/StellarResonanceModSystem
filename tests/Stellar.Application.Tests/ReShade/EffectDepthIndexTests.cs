@@ -116,6 +116,33 @@ public sealed class EffectDepthIndexTests
     }
 
     [Fact]
+    public void The_file_index_is_walked_once_and_rebuilt_after_a_reload()
+    {
+        _index.Resolve("Plain.fx");
+        _index.Resolve("Deep.fx");
+        _index.Resolve("Elsewhere.fx");
+        Assert.Equal(1, _fs.WalksOf("/pack"));
+        _index.MarkStale();
+        _index.Resolve("Elsewhere.fx");
+        Assert.Equal(2, _fs.WalksOf("/pack"));
+    }
+
+    [Fact]
+    public void A_self_include_through_dot_dot_is_caught_as_a_cycle_on_the_normalized_path()
+    {
+        _fs.Add("/pack/Shaders/Loop.fx", "#include \"../Shaders/PackLib.fxh\"\n#include \"../Shaders/Loop.fx\"\nfloat4 PS() { return 0; }");
+        Assert.False(_index.Resolve("Loop.fx"));
+        Assert.Equal(1, _fs.ReadsOf("/pack/Shaders/Loop.fx"));
+    }
+
+    [Fact]
+    public void A_rooted_include_counts_as_using_depth()
+    {
+        _fs.Add("/pack/Shaders/Abs.fx", "#include \"/pack/Shaders/PackLib.fxh\"");
+        Assert.True(_index.Resolve("Abs.fx"));
+    }
+
+    [Fact]
     public void New_search_paths_forget_everything()
     {
         _index.Resolve("Plain.fx");

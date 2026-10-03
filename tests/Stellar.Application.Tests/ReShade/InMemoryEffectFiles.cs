@@ -5,19 +5,21 @@ using Stellar.Infrastructure.Rendering;
 
 namespace Stellar.Application.Tests.ReShade;
 
-/// <summary>In-memory <see cref="IEffectFileSystem"/> over '/'-separated absolute paths, counting reads.</summary>
+/// <summary>In-memory <see cref="IEffectFileSystem"/> over '/'-separated absolute paths, counting reads and walks.</summary>
 internal sealed class InMemoryEffectFiles : IEffectFileSystem
 {
-    private readonly Dictionary<string, (string Text, long Ticks)> _files = new(StringComparer.Ordinal);
+    private readonly SortedDictionary<string, (string Text, long Ticks)> _files = new(StringComparer.Ordinal);
     private readonly HashSet<string> _unreadable = new(StringComparer.Ordinal);
 
     public Dictionary<string, int> Reads { get; } = new(StringComparer.Ordinal);
-    public int DirectoryScans { get; private set; }
+    public Dictionary<string, int> Walks { get; } = new(StringComparer.Ordinal);
+    public int TotalWalks { get; private set; }
 
     public void Add(string path, string text, long ticks = 1) => _files[path] = (text, ticks);
     public void Touch(string path, string text) => _files[path] = (text, _files[path].Ticks + 1);
     public void MarkUnreadable(string path) => _unreadable.Add(path);
     public int ReadsOf(string path) => Reads.TryGetValue(path, out var n) ? n : 0;
+    public int WalksOf(string root) => Walks.TryGetValue(root, out var n) ? n : 0;
 
     public long? LastWriteTicks(string path) => _files.TryGetValue(path, out var f) ? f.Ticks : null;
 
@@ -28,17 +30,19 @@ internal sealed class InMemoryEffectFiles : IEffectFileSystem
         return _files.TryGetValue(path, out var f) ? f.Text : null;
     }
 
-    public IReadOnlyList<string> DirectoriesUnder(string root)
+    public IReadOnlyList<string> EnumerateFiles(string root, bool recursive, int limit)
     {
-        DirectoryScans++;
+        Walks[root] = WalksOf(root) + 1;
+        TotalWalks++;
         var prefix = root.TrimEnd('/') + "/";
-        var dirs = new SortedSet<string>(StringComparer.Ordinal);
+        var found = new List<string>();
         foreach (var path in _files.Keys)
         {
+            if (found.Count >= limit) break;
             if (!path.StartsWith(prefix, StringComparison.Ordinal)) continue;
-            for (var dir = Path.GetDirectoryName(path); dir is not null && dir.Length >= prefix.Length; dir = Path.GetDirectoryName(dir))
-                dirs.Add(dir);
+            if (!recursive && Path.GetDirectoryName(path) != prefix.TrimEnd('/')) continue;
+            found.Add(path);
         }
-        return new List<string>(dirs);
+        return found;
     }
 }

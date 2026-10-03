@@ -7,9 +7,11 @@ public sealed class EffectFileLocatorTests
 {
     private readonly InMemoryEffectFiles _fs = new();
 
-    private EffectFileLocator Locator(params string[] paths)
+    private EffectFileLocator Locator(params string[] paths) => LocatorWithCap(EffectFileLocator.MaxFilesPerRoot, paths);
+
+    private EffectFileLocator LocatorWithCap(int cap, params string[] paths)
     {
-        var locator = new EffectFileLocator(_fs);
+        var locator = new EffectFileLocator(_fs, cap);
         locator.SetSearchPaths(paths);
         return locator;
     }
@@ -64,16 +66,82 @@ public sealed class EffectFileLocatorTests
     }
 
     [Fact]
-    public void Subfolders_are_listed_once_until_the_cache_is_cleared()
+    public void Each_root_is_walked_once_across_many_lookups()
     {
         _fs.Add("/a/sub/X.fx", "x");
+        _fs.Add("/b/Y.fx", "y");
+        _fs.Add("/b/Shared.fxh", "s");
+        var locator = Locator("/a/**", "/b");
+        for (var i = 0; i < 20; i++)
+        {
+            locator.FindEffect("X.fx");
+            locator.FindEffect("Y.fx");
+            locator.FindEffect("Missing.fx");
+            locator.ResolveInclude("/a/sub/X.fx", "Shared.fxh");
+        }
+        Assert.Equal(1, _fs.WalksOf("/a"));
+        Assert.Equal(1, _fs.WalksOf("/b"));
+    }
+
+    [Fact]
+    public void The_file_index_is_rebuilt_after_the_cache_is_cleared()
+    {
         var locator = Locator("/a/**");
-        locator.FindEffect("X.fx");
-        locator.FindEffect("Y.fx");
-        Assert.Equal(1, _fs.DirectoryScans);
+        Assert.Null(locator.FindEffect("Late.fx"));
+        _fs.Add("/a/sub/Late.fx", "x");
+        Assert.Null(locator.FindEffect("Late.fx"));
         locator.ClearCache();
-        locator.FindEffect("X.fx");
-        Assert.Equal(2, _fs.DirectoryScans);
+        Assert.Equal("/a/sub/Late.fx", locator.FindEffect("Late.fx"));
+        Assert.Equal(2, _fs.WalksOf("/a"));
+    }
+
+    [Fact]
+    public void Lookups_ignore_letter_case()
+    {
+        _fs.Add("/a/sub/Clarity.fx", "x");
+        Assert.Equal("/a/sub/Clarity.fx", Locator("/a/**").FindEffect("CLARITY.fx"));
+    }
+
+    [Fact]
+    public void A_file_directly_in_a_recursive_root_wins_over_one_in_a_subfolder()
+    {
+        _fs.Add("/a/A/X.fx", "sub");
+        _fs.Add("/a/X.fx", "direct");
+        Assert.Equal("/a/X.fx", Locator("/a/**").FindEffect("X.fx"));
+    }
+
+    [Fact]
+    public void An_include_with_a_folder_part_matches_the_end_of_an_indexed_path()
+    {
+        _fs.Add("/pack/Shaders/A.fx", "a");
+        _fs.Add("/pack/Shaders/other/Shared.fxh", "wrong folder");
+        _fs.Add("/pack/Shaders/lib/Shared.fxh", "s");
+        Assert.Equal("/pack/Shaders/lib/Shared.fxh", Locator("/pack/**").ResolveInclude("/elsewhere/A.fx", "lib/Shared.fxh"));
+    }
+
+    [Fact]
+    public void Files_past_the_per_root_cap_are_not_found()
+    {
+        _fs.Add("/a/1.fx", "1");
+        _fs.Add("/a/2.fx", "2");
+        _fs.Add("/a/3.fx", "3");
+        var locator = LocatorWithCap(2, "/a/**");
+        Assert.Equal("/a/1.fx", locator.FindEffect("1.fx"));
+        Assert.Null(locator.FindEffect("3.fx"));
+    }
+
+    [Fact]
+    public void A_rooted_include_is_refused()
+    {
+        _fs.Add("/pack/Shaders/Local.fxh", "l");
+        Assert.Null(Locator("/pack/**").ResolveInclude("/pack/Shaders/A.fx", "/pack/Shaders/Local.fxh"));
+    }
+
+    [Fact]
+    public void A_relative_include_resolves_to_a_normalized_full_path()
+    {
+        _fs.Add("/pack/Shaders/Local.fxh", "l");
+        Assert.Equal("/pack/Shaders/Local.fxh", Locator().ResolveInclude("/pack/Shaders/A.fx", "../Shaders/Local.fxh"));
     }
 
     [Fact]

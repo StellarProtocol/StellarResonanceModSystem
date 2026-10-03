@@ -4,9 +4,12 @@ using System.IO;
 
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary><see cref="IEffectFileSystem"/> over the real disk. Every failure reads as "missing".</summary>
+/// <summary><see cref="IEffectFileSystem"/> over the real disk. Every failure reads as "missing", and a file larger
+/// than <see cref="MaxFileBytes"/> as unreadable (so it counts as using depth).</summary>
 internal sealed class PhysicalEffectFileSystem : IEffectFileSystem
 {
+    internal const int MaxFileBytes = 4 * 1024 * 1024;
+
     public long? LastWriteTicks(string path)
     {
         try
@@ -23,6 +26,8 @@ internal sealed class PhysicalEffectFileSystem : IEffectFileSystem
     {
         try
         {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length > MaxFileBytes) return null;
             return File.ReadAllText(path);
         }
         catch (Exception)
@@ -31,19 +36,23 @@ internal sealed class PhysicalEffectFileSystem : IEffectFileSystem
         }
     }
 
-    public IReadOnlyList<string> DirectoriesUnder(string root)
+    public IReadOnlyList<string> EnumerateFiles(string root, bool recursive, int limit)
     {
-        var dirs = new List<string>();
+        var files = new List<string>();
         try
         {
-            if (!Directory.Exists(root)) return dirs;
-            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
-            dirs.AddRange(Directory.EnumerateDirectories(root, "*", options));
+            if (!Directory.Exists(root)) return files;
+            var options = new EnumerationOptions { RecurseSubdirectories = recursive, IgnoreInaccessible = true };
+            foreach (var file in Directory.EnumerateFiles(root, "*", options))
+            {
+                if (files.Count >= limit) break;
+                files.Add(file);
+            }
         }
         catch (Exception)
         {
             // a folder that vanished mid-walk: keep what was listed
         }
-        return dirs;
+        return files;
     }
 }

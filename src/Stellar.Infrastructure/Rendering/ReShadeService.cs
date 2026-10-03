@@ -19,6 +19,8 @@ internal sealed partial class ReShadeService : IReShade
     private readonly EffectDepthIndex _depth;
     private readonly IPluginLog _log;
 
+    private readonly HashSet<string> _warnedFolders = new(StringComparer.Ordinal);
+
     private string? _pendingPreset;
     private (string? Effects, string? Textures)? _pendingSearchPaths;
 
@@ -105,7 +107,8 @@ internal sealed partial class ReShadeService : IReShade
         {
             if (string.IsNullOrWhiteSpace(folder) || folder.Contains(';') || !Path.IsPathRooted(folder))
             {
-                _log.Warning($"[ReShade] search path skipped (must be an absolute folder without ';'): '{folder}'");
+                if (_warnedFolders.Add(folder ?? ""))
+                    _log.Warning($"[ReShade] search path skipped (must be an absolute folder without ';'): '{folder}'");
                 continue;
             }
             formatted.Add(ReShadeSearchPath.FormatRecursive(folder));

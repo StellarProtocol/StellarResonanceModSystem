@@ -62,11 +62,12 @@ public sealed class EffectDepthScannerTests
     }
 
     [Theory]
+    [InlineData("float main() : SV_Depth { return 0; }")]
     [InlineData("float4 main() : SV_DEPTH { return 0; }")]
     [InlineData("float main() : sv_depth { return 0; }")]
-    public void UsesDepth_true_for_the_system_value_depth_semantic_in_any_case(string fx)
+    public void UsesDepth_false_for_the_system_value_depth_OUTPUT_in_any_case(string fx)
     {
-        Assert.True(EffectDepthScanner.UsesDepth(fx));
+        Assert.False(EffectDepthScanner.UsesDepth(fx));
     }
 
     [Theory]

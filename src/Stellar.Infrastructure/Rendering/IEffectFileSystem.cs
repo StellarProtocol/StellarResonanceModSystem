@@ -8,8 +8,9 @@ internal interface IEffectFileSystem
 {
     /// <summary>Last-write time in ticks, or null when the file does not exist.</summary>
     long? LastWriteTicks(string path);
-    /// <summary>The file's text, or null when it cannot be read.</summary>
+    /// <summary>The file's text, or null when it cannot be read (or is too large to be an effect source).</summary>
     string? ReadText(string path);
-    /// <summary>Every folder below <paramref name="root"/> (recursive, root itself excluded); empty when missing.</summary>
-    IReadOnlyList<string> DirectoriesUnder(string root);
+    /// <summary>Full paths of the files in <paramref name="root"/> (and below it when <paramref name="recursive"/>),
+    /// at most <paramref name="limit"/> of them; empty when the folder is missing.</summary>
+    IReadOnlyList<string> EnumerateFiles(string root, bool recursive, int limit);
 }

@@ -281,6 +281,15 @@ public sealed class ReShadeServiceTests
     }
 
     [Fact]
+    public void A_bad_search_path_is_warned_about_once()
+    {
+        for (var i = 0; i < 3; i++)
+            _service.SetSearchPaths(new[] { "relative/dir", "/ok" }, Array.Empty<string>());
+        _service.SetSearchPaths(new[] { "other/relative" }, Array.Empty<string>());
+        Assert.Equal(2, _log.WarningLines.Count);
+    }
+
+    [Fact]
     public void SetSearchPaths_with_nothing_usable_sends_nothing()
     {
         _service.SetSearchPaths(Array.Empty<string>(), Array.Empty<string>());

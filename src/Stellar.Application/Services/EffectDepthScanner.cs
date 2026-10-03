@@ -12,13 +12,14 @@ internal static class EffectDepthScanner
     private const string DepthBufferToken = "DepthBuffer"; // ReShade::DepthBuffer, a pack's own DepthBufferTex, ...
     private const string LinearizedDepthToken = "GetLinearizedDepth";
 
-    // Matches a "DEPTH" semantic (`texture2D t : DEPTH;`) and the system-value "SV_Depth". SV_Depth writes depth
-    // rather than reading it, but counting it errs toward "uses depth", the safe side for a shaped capture.
-    // Case-insensitive like every token here (semantics are case-insensitive in HLSL).
-    private static readonly Regex DepthSemantic = new(@":\s*(SV_)?DEPTH\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    // Matches a texture's "DEPTH" semantic (`texture2D t : DEPTH;`) — anchored on the ':' so it never fires on the
+    // system-value "SV_Depth", a depth OUTPUT that does not read the game's depth. Case-insensitive like every token
+    // here (semantics are case-insensitive in HLSL).
+    private static readonly Regex DepthSemantic = new(@":\s*DEPTH\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>True when <paramref name="fxSource"/> (with "//" line comments stripped) references a depth buffer
-    /// (<c>DepthBuffer</c>), the linearized-depth helper, the DEPTH semantic or SV_Depth, in any letter case.
+    /// (<c>DepthBuffer</c>), the linearized-depth helper or a texture bound to the DEPTH semantic, in any letter case
+    /// (SV_Depth, a depth output, does not count).
     /// False for null — a caller that could not READ the source must decide for itself (it should assume depth).</summary>
     internal static bool UsesDepth(string? fxSource)
     {

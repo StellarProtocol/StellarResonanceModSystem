@@ -4,11 +4,14 @@ using Stellar.Abstractions.Domain;
 
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary>The per-tick poll: cheap while nothing moves (one status read), re-reads the technique list when the
-/// add-on's status moved, after a request, or every <see cref="ReReadEveryTicks"/> ticks (a toggle made in ReShade's
-/// own overlay changes nothing the status shows), and resolves at most <see cref="DepthResolvesPerTick"/> effect files'
-/// depth use per tick so a first listing of a large shader pack never stalls a frame. An effect not yet resolved reads
-/// as using depth. Nothing is allocated unless something changed.</summary>
+/// <summary>The per-tick poll. Steady-state cost per tick: one status read (five add-on calls). The snapshot frame
+/// counter advances on every presented frame, so the early return ("counter unchanged") only saves work when no frame
+/// was presented since the last tick — it is not the common path. The technique list (one add-on call per technique)
+/// and the preset (one call) are re-read when the status moved (ready / loading / count), after a Stellar request, and
+/// otherwise every <see cref="ReReadEveryTicks"/> ticks (a toggle made in ReShade's own overlay changes nothing the
+/// status shows). At most <see cref="DepthResolvesPerTick"/> effect files' depth use is resolved per tick so a first
+/// listing of a large shader pack never stalls a frame; an effect not yet resolved reads as using depth. The
+/// steady-state path allocates nothing; a new technique list is built only when something changed.</summary>
 internal sealed partial class ReShadeService
 {
     internal const int ReReadEveryTicks = 15;
