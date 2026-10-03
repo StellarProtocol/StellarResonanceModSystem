@@ -134,15 +134,21 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>
     /// Rooted at the same <c>stellar/plugindata</c> base dir as <see cref="_pluginDataStoreFactory"/> (Task 5 —
-    /// real <c>IPluginDownloads</c>). Shares one <see cref="System.Net.Http.HttpClient"/> across every plugin and
-    /// reuses <see cref="_frameGrabber"/>'s main-thread resume pump — the same mechanism screen capture uses —
-    /// rather than building a second one. <see cref="_frameGrabber"/> is built in <c>WirePhotoStudio</c>, which
-    /// always runs before <see cref="WireGameEventsAndPluginHost"/> (see BootstrapPlugin.Load's ordering comment).
+    /// real <c>IPluginDownloads</c>). Shares one <see cref="System.Net.Http.HttpClient"/> across every plugin
+    /// (no per-request timeout — the service's own 30s inactivity timeout replaces it) and reuses
+    /// <see cref="_frameGrabber"/>'s main-thread resume pump — the same mechanism screen capture uses — rather
+    /// than building a second one. <see cref="_frameGrabber"/> is built in <c>WirePhotoStudio</c>, which always
+    /// runs before <see cref="WireGameEventsAndPluginHost"/> (see BootstrapPlugin.Load's ordering comment).
+    /// Also constructs <see cref="_pluginDownloadProgress"/> (Fix round 1 — I1), the shared progress relay
+    /// drained alongside the frame grabber's resume queue in <c>Wiring.ServiceTick</c>.
     /// </summary>
     private Stellar.Infrastructure.Net.PluginDownloadsFactory BuildPluginDownloadsFactory(BepInExPluginLog log)
     {
         var pluginDataRoot = Path.Combine(BepInEx.Paths.GameRootPath, Stellar.Infrastructure.Configuration.FrameworkPaths.PluginDataSubdir);
-        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, new System.Net.Http.HttpClient(), _frameGrabber!, log);
+        var http = new System.Net.Http.HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"StellarFramework/{Stellar.Abstractions.Domain.FrameworkVersion.Value}");
+        _pluginDownloadProgress = new Stellar.Infrastructure.Net.MainThreadProgressQueue();
+        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, http, _frameGrabber!, log, _pluginDownloadProgress);
     }
 
     /// <summary>

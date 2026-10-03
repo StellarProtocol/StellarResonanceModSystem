@@ -17,15 +17,18 @@ internal sealed class PluginDownloadsFactory : IPluginDownloadsFactory
     private readonly HttpClient _http;
     private readonly IMainThreadResume _mainThreadResume;
     private readonly IPluginLog _log;
+    private readonly MainThreadProgressQueue _progressQueue;
 
-    public PluginDownloadsFactory(string baseDirPath, HttpClient http, IMainThreadResume mainThreadResume, IPluginLog log)
+    public PluginDownloadsFactory(string baseDirPath, HttpClient http, IMainThreadResume mainThreadResume, IPluginLog log,
+        MainThreadProgressQueue progressQueue)
     {
         _baseDirPath = baseDirPath;
         _http = http;
         _mainThreadResume = mainThreadResume;
         _log = log;
+        _progressQueue = progressQueue;
     }
 
     public IPluginDownloads Create(string pluginGuid) =>
-        new PluginDownloadService(Path.GetFullPath(Path.Combine(_baseDirPath, pluginGuid + ".data")), _http, _mainThreadResume, _log);
+        new PluginDownloadService(Path.GetFullPath(Path.Combine(_baseDirPath, pluginGuid + ".data")), _http, _mainThreadResume, _log, _progressQueue);
 }

@@ -41,6 +41,49 @@ public sealed class DownloadPlanTests
     public void ResolveTarget_null_when_contains_colon() =>
         Assert.Null(DownloadPlan.ResolveTarget("/data", "C:evil"));
 
+    // ── Fix round 1 (I4): trailing slash, interior empty segments, trailing dot/space, post-resolve containment ──
+
+    [Fact]
+    public void ResolveTarget_trims_a_single_trailing_slash() =>
+        Assert.Equal(DownloadPlan.ResolveTarget("/data", "packs/standard"), DownloadPlan.ResolveTarget("/data", "packs/standard/"));
+
+    [Fact]
+    public void ResolveTarget_null_when_trailing_slash_only() =>
+        Assert.Null(DownloadPlan.ResolveTarget("/data", "/"));
+
+    [Fact]
+    public void ResolveTarget_null_when_interior_empty_segment() =>
+        Assert.Null(DownloadPlan.ResolveTarget("/data", "packs//standard"));
+
+    [Fact]
+    public void ResolveTarget_null_when_segment_has_trailing_dot() =>
+        Assert.Null(DownloadPlan.ResolveTarget("/data", "packs./standard"));
+
+    [Fact]
+    public void ResolveTarget_null_when_segment_has_trailing_space() =>
+        Assert.Null(DownloadPlan.ResolveTarget("/data", "packs /standard"));
+
+    [Fact]
+    public void ResolveTarget_normalizes_a_messy_but_still_safe_data_folder()
+    {
+        // dataFolder itself isn't perfectly normalized (a trailing ".." segment) — the post-resolve
+        // containment check (Path.GetFullPath on both sides) must not false-reject a target that is
+        // genuinely still under it once normalized.
+        Assert.Equal(System.IO.Path.Combine("/data", "escape"), DownloadPlan.ResolveTarget("/data/sub/..", "escape"));
+    }
+
+    [Fact]
+    public void MapZipEntry_null_for_interior_empty_segment() =>
+        Assert.Null(DownloadPlan.MapZipEntry("shaders//Bloom.fx", null));
+
+    [Fact]
+    public void MapZipEntry_null_for_trailing_dot_segment() =>
+        Assert.Null(DownloadPlan.MapZipEntry("shaders./Bloom.fx", null));
+
+    [Fact]
+    public void MapZipEntry_null_for_trailing_space_segment() =>
+        Assert.Null(DownloadPlan.MapZipEntry("shaders /Bloom.fx", null));
+
     [Fact]
     public void MapZipEntry_null_for_directory_entry() =>
         Assert.Null(DownloadPlan.MapZipEntry("shaders/standard/", null));

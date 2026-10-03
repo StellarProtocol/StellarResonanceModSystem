@@ -66,6 +66,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PluginConfigService? _pluginConfigService;
     private FileConfigStore? _configStore;
     private Stellar.Application.Abstractions.IPluginDataStoreFactory? _pluginDataStoreFactory;
+    // Fix round 1 (Task 5): plugin-download progress hand-off to the main thread — drained from
+    // Wiring.ServiceTick's RunGlobalRateWork, right next to the frame grabber's resume drain.
+    private Stellar.Infrastructure.Net.MainThreadProgressQueue? _pluginDownloadProgress;
     private PandaPlayerStateProbe? _playerStateProbe;
     private PandaPlayerStatsProbe? _playerStatsProbe;
     private ChatService? _chatService;

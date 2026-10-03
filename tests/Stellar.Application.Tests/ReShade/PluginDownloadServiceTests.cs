@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -28,16 +27,22 @@ public sealed class PluginDownloadServiceTests : IDisposable
         }
     }
 
-    private PluginDownloadService NewService(HttpMessageHandler handler, out string dataDir)
+    private PluginDownloadService NewService(HttpMessageHandler handler, out string dataDir) =>
+        NewService(handler, out dataDir, out _);
+
+    private PluginDownloadService NewService(HttpMessageHandler handler, out string dataDir, out MainThreadProgressQueue progressQueue,
+        TimeSpan inactivityTimeout = default)
     {
         var root = Path.Combine(Path.GetTempPath(), "stellar-dl-" + Path.GetRandomFileName());
         _tempRoots.Add(root);
         dataDir = Path.Combine(root, "test.plugin.data");
-        return new PluginDownloadService(dataDir, new HttpClient(handler), new FakeResume(), new NullPluginLog());
+        progressQueue = new MainThreadProgressQueue();
+        return new PluginDownloadService(dataDir, new HttpClient(handler), new FakeResume(), new NullPluginLog(), progressQueue, inactivityTimeout);
     }
 
-    private static DownloadRequest Req(byte[] payload, string folder, bool zip, IReadOnlyList<string>? prefixes = null, string? sha = null) =>
-        new(new Uri("https://cdn.example.com/pack.bin"), sha ?? Hex(payload), 10_000_000, folder, zip, prefixes);
+    private static DownloadRequest Req(byte[] payload, string folder, bool zip, IReadOnlyList<string>? prefixes = null,
+        string? sha = null, long maxBytes = 10_000_000) =>
+        new(new Uri("https://cdn.example.com/pack.bin"), sha ?? Hex(payload), maxBytes, folder, zip, prefixes);
 
     private static string Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
@@ -80,16 +85,14 @@ public sealed class PluginDownloadServiceTests : IDisposable
         }
     }
 
-    /// <summary>Blocks every request on a gate the test controls, so a download can be kept "in flight".</summary>
+    /// <summary>Blocks every request on a gate the test controls (or forever, if never set), so a download can
+    /// be kept "in flight" or made to stall. Honours the caller's token — a real cancellation (or our own
+    /// inactivity timeout, which cancels the SAME linked token) unblocks it instead of leaking a pending task.</summary>
     private sealed class BlockingHandler : HttpMessageHandler
     {
         public readonly TaskCompletionSource<HttpResponseMessage> Gate = new();
-        public int Dispatches;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-        {
-            Interlocked.Increment(ref Dispatches);
-            return await Gate.Task.ConfigureAwait(false);
-        }
+            => await Gate.Task.WaitAsync(ct).ConfigureAwait(false);
     }
 
     private sealed class CollectProgress : IProgress<double>
@@ -131,6 +134,38 @@ public sealed class PluginDownloadServiceTests : IDisposable
         Assert.Empty(handler.Requested);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Non_positive_max_bytes_is_rejected_without_dispatching(long maxBytes)
+    {
+        var handler = new FakeHandler();
+        var svc = NewService(handler, out _);
+        var payload = new byte[] { 1 };
+        var req = new DownloadRequest(new Uri("https://cdn.example.com/pack.bin"), Hex(payload), maxBytes, "pack/file.bin", false);
+
+        var result = await svc.DownloadAsync(req, null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("invalid size", result.Error);
+        Assert.Empty(handler.Requested);
+    }
+
+    [Fact]
+    public async Task Max_bytes_above_the_array_length_ceiling_is_rejected()
+    {
+        var handler = new FakeHandler();
+        var svc = NewService(handler, out _);
+        var payload = new byte[] { 1 };
+        var req = new DownloadRequest(new Uri("https://cdn.example.com/pack.bin"), Hex(payload), (long)Array.MaxLength + 1, "pack/file.bin", false);
+
+        var result = await svc.DownloadAsync(req, null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("invalid size", result.Error);
+        Assert.Empty(handler.Requested);
+    }
+
     [Fact]
     public async Task Checksum_mismatch_writes_nothing()
     {
@@ -145,6 +180,19 @@ public sealed class PluginDownloadServiceTests : IDisposable
         Assert.False(result.Ok);
         Assert.Equal("checksum mismatch", result.Error);
         Assert.False(Directory.Exists(dataDir), "nothing should be written on a checksum mismatch");
+    }
+
+    [Fact]
+    public async Task A_non_2xx_response_maps_to_network_error()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(() => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var svc = NewService(handler, out _);
+
+        var result = await svc.DownloadAsync(Req(new byte[] { 1 }, "pack/file.bin", zip: false), null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("network error", result.Error);
     }
 
     [Fact]
@@ -191,6 +239,81 @@ public sealed class PluginDownloadServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failed_zip_swap_leaves_no_temp_or_backup_siblings_and_preserves_old_content()
+    {
+        var zip = BuildZip(("a.fx", new byte[] { 1 }));
+        var handler = new FakeHandler();
+        handler.EnqueueBytes(zip);
+        var svc = NewService(handler, out var dataDir);
+        var targetParent = Path.Combine(dataDir, "reshade", "packs");
+        Directory.CreateDirectory(targetParent);
+        // Occupy the swap target with a plain FILE — Directory.Move(temp, target) can never land on it,
+        // simulating an unwritable/occupied target without needing OS-level permission tricks.
+        File.WriteAllText(Path.Combine(targetParent, "standard"), "not a directory");
+
+        var result = await svc.DownloadAsync(Req(zip, "reshade/packs/standard", zip: true), null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        var siblings = Directory.GetFileSystemEntries(targetParent);
+        Assert.Equal(new[] { Path.Combine(targetParent, "standard") }, siblings);
+        Assert.Equal("not a directory", File.ReadAllText(Path.Combine(targetParent, "standard")));
+    }
+
+    [Fact]
+    public async Task A_failed_plain_file_write_leaves_no_download_tmp_behind_and_preserves_old_content()
+    {
+        var payload = new byte[] { 1, 2, 3 };
+        var handler = new FakeHandler();
+        handler.EnqueueBytes(payload);
+        var svc = NewService(handler, out var dataDir);
+        var targetParent = Path.Combine(dataDir, "pack");
+        // "file.bin" is itself a pre-existing directory — File.Move can never overwrite it with a file.
+        Directory.CreateDirectory(Path.Combine(targetParent, "file.bin"));
+
+        var result = await svc.DownloadAsync(Req(payload, "pack/file.bin", zip: false), null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.True(Directory.Exists(Path.Combine(targetParent, "file.bin")), "the old content must survive a failed write");
+        Assert.DoesNotContain(Directory.GetFileSystemEntries(targetParent), e => e.EndsWith(".download-tmp"));
+    }
+
+    [Fact]
+    public void SwapDirectory_restores_the_backup_when_the_second_move_fails()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "stellar-dl-" + Path.GetRandomFileName());
+        _tempRoots.Add(root);
+        Directory.CreateDirectory(root);
+        var target = Path.Combine(root, "pack");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "old.txt"), "old");
+        var missingTemp = Path.Combine(root, "pack.new-missing"); // never created — forces the second move to fail
+
+        var svc = NewService(new FakeHandler(), out _);
+        Assert.ThrowsAny<IOException>(() => svc.SwapDirectory(missingTemp, target));
+
+        Assert.True(Directory.Exists(target), "the original content must be restored, not left aside as a backup");
+        Assert.True(File.Exists(Path.Combine(target, "old.txt")));
+        Assert.DoesNotContain(Directory.GetFileSystemEntries(root), e => e.Contains(".old-"));
+    }
+
+    [Fact]
+    public async Task A_plain_file_download_overwrites_an_existing_file()
+    {
+        var handler = new FakeHandler();
+        var newPayload = new byte[] { 9, 8, 7 };
+        handler.EnqueueBytes(newPayload);
+        var svc = NewService(handler, out var dataDir);
+        var path = Path.Combine(dataDir, "pack", "file.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
+
+        var result = await svc.DownloadAsync(Req(newPayload, "pack/file.bin", zip: false), null, CancellationToken.None);
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(newPayload, File.ReadAllBytes(path));
+    }
+
+    [Fact]
     public async Task Second_call_while_one_is_in_flight_returns_busy_without_waiting()
     {
         var handler = new BlockingHandler();
@@ -209,22 +332,88 @@ public sealed class PluginDownloadServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Progress_reaches_one_on_a_successful_plain_file_download()
+    public async Task A_stalled_download_times_out_and_releases_the_gate()
+    {
+        var handler = new BlockingHandler(); // Gate is never set — the request stalls until the inactivity timeout fires
+        var svc = NewService(handler, out _, out _, inactivityTimeout: TimeSpan.FromMilliseconds(30));
+        var req = Req(new byte[] { 1 }, "pack/file.bin", zip: false);
+
+        var first = await svc.DownloadAsync(req, null, CancellationToken.None);
+        Assert.False(first.Ok);
+        Assert.Equal("timed out", first.Error);
+
+        // A fresh call must not see "busy" — the gate was released after the timeout.
+        var second = await svc.DownloadAsync(req, null, CancellationToken.None);
+        Assert.False(second.Ok);
+        Assert.NotEqual("busy", second.Error);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_propagates_and_releases_the_gate()
+    {
+        var handler = new BlockingHandler();
+        var svc = NewService(handler, out _, out _, inactivityTimeout: TimeSpan.FromSeconds(30));
+        var req = Req(new byte[] { 1 }, "pack/file.bin", zip: false);
+
+        using (var cts = new CancellationTokenSource())
+        {
+            var first = svc.DownloadAsync(req, null, cts.Token);
+            cts.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        }
+
+        // A fresh call must not see "busy" — proven by it reaching the (also cancelled) HTTP call rather
+        // than returning a normal "busy" DownloadResult.
+        using var cts2 = new CancellationTokenSource();
+        var second = svc.DownloadAsync(req, null, cts2.Token);
+        cts2.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => second);
+    }
+
+    [Fact]
+    public async Task Streaming_cap_applies_even_without_a_content_length_header()
+    {
+        var payload = new byte[1000];
+        new Random(2).NextBytes(payload);
+        var handler = new FakeHandler();
+        handler.Enqueue(() =>
+        {
+            var content = new StreamContent(new MemoryStream(payload));
+            content.Headers.ContentLength = null; // simulate a chunked response with no declared length
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+        var svc = NewService(handler, out _);
+        var req = Req(payload, "pack/file.bin", zip: false, maxBytes: 500);
+
+        var result = await svc.DownloadAsync(req, null, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("too large", result.Error);
+    }
+
+    [Fact]
+    public async Task Progress_is_delivered_only_through_the_main_thread_drain()
     {
         var payload = new byte[50_000];
         new Random(1).NextBytes(payload);
         var handler = new FakeHandler();
         handler.EnqueueBytes(payload);
-        var svc = NewService(handler, out var dataDir);
+        var svc = NewService(handler, out var dataDir, out var queue);
         var progress = new CollectProgress();
         var req = Req(payload, "reshade/ReShade64.dll", zip: false);
 
         var result = await svc.DownloadAsync(req, progress, CancellationToken.None);
 
         Assert.True(result.Ok, result.Error);
+        Assert.Empty(progress.Values);    // never delivered directly from the worker
+        Assert.True(queue.HasQueued);
+
+        var delivered = queue.Drain();
+
+        Assert.True(delivered > 0);
         Assert.NotEmpty(progress.Values);
         Assert.Equal(1.0, progress.Values[^1]);
-        Assert.True(File.Exists(Path.Combine(dataDir, "reshade", "ReShade64.dll")));
+        Assert.False(queue.HasQueued);
         Assert.Equal(payload, File.ReadAllBytes(Path.Combine(dataDir, "reshade", "ReShade64.dll")));
     }
 
@@ -238,7 +427,7 @@ public sealed class PluginDownloadServiceTests : IDisposable
         _tempRoots.Add(root);
         var dataDir = Path.Combine(root, "test.plugin.data");
         var resume = new FakeResume();
-        var svc = new PluginDownloadService(dataDir, new HttpClient(handler), resume, new NullPluginLog());
+        var svc = new PluginDownloadService(dataDir, new HttpClient(handler), resume, new NullPluginLog(), new MainThreadProgressQueue());
 
         var result = await svc.DownloadAsync(Req(payload, "pack/file.bin", zip: false), null, CancellationToken.None);
 

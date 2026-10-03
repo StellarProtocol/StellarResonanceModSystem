@@ -13,12 +13,22 @@ namespace Stellar.Application.Services;
 internal static class DownloadPlan
 {
     /// <summary>Resolves <paramref name="targetFolder"/> under <paramref name="dataFolder"/>, or null when
-    /// <paramref name="targetFolder"/> is empty, rooted, or contains a "\", a ":" or a ".."/"." segment.</summary>
+    /// <paramref name="targetFolder"/> is empty, rooted, contains a "\", a ":", a ".."/"." segment, an
+    /// interior empty segment ("a//b"), a segment with a trailing dot/space (unsafe on Windows/NTFS), or —
+    /// after resolving — lexically escapes <paramref name="dataFolder"/> (defense in depth; lexical only,
+    /// via <see cref="Path.GetFullPath(string)"/>, so it is cheap and symlink-safe where the OS would also
+    /// refuse the traversal, but does not itself follow symlinks). A single trailing "/" is trimmed first,
+    /// so "packs/" and "packs" resolve identically.</summary>
     internal static string? ResolveTarget(string dataFolder, string targetFolder)
     {
-        if (string.IsNullOrEmpty(targetFolder) || targetFolder.Contains('\\') || HasUnsafeSegment(targetFolder))
-            return null;
-        return Path.Combine(dataFolder, targetFolder);
+        if (string.IsNullOrEmpty(targetFolder) || targetFolder.Contains('\\')) return null;
+        var trimmed = targetFolder.TrimEnd('/');
+        if (trimmed.Length == 0 || HasUnsafeSegment(trimmed)) return null;
+        var resolved = Path.GetFullPath(Path.Combine(dataFolder, trimmed));
+        var root = Path.GetFullPath(dataFolder);
+        var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+            ? root : root + Path.DirectorySeparatorChar;
+        return resolved.StartsWith(rootPrefix, StringComparison.Ordinal) ? resolved : null;
     }
 
     /// <summary>Maps one zip entry to a relative, "/"-separated output path, or null when the entry is a
@@ -52,8 +62,9 @@ internal static class DownloadPlan
             return true;
         foreach (var segment in normalizedPath.Split('/'))
         {
-            if (segment is "." or "..")
-                return true;
+            if (segment.Length == 0) return true;          // interior empty segment ("a//b")
+            if (segment is "." or "..") return true;
+            if (segment[^1] is '.' or ' ') return true;     // trailing dot/space — unsafe on Windows/NTFS
         }
         return false;
     }
