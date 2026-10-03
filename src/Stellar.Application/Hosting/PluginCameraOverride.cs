@@ -22,6 +22,7 @@ internal sealed class PluginCameraOverride : ICameraOverride
     public bool TryAcquire([NotNullWhen(true)] out ICameraControl? control) => _inner.TryAcquire(_owner, out control);
     public bool IsOverridden => _inner.IsOverridden;
     public IDisposable LookAtCamera() => _inner.LookAtCamera(_owner);
+    public bool TryProjectToScreen(Position3D world, out ScreenPoint point) => _inner.TryProjectToScreen(world, out point);
 
     public event Action<CameraReleaseReason>? Released
     {

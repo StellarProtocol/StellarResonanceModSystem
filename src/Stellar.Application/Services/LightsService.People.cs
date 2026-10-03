@@ -10,8 +10,9 @@ namespace Stellar.Application.Services;
 /// stand-in while there is one, else their own model (<see cref="ILightsBackend.ResolveModel"/>). The model's material
 /// values are snapshotted before the first write (<see cref="ModelLightSnapshot"/>) and written back on
 /// <see cref="PersonLight.None"/>, on release, or when the person moves to another model (posed / reset — re-checked on
-/// every <c>IPosing.Changed</c>), where the light is then applied afresh. A person who is gone is dropped; a dead model is
-/// never written. One owner per person. Main thread.
+/// every <c>IPosing.Changed</c>), where the light is then applied afresh. Every apply first reads any material the model
+/// gained since (review I-1). A person who is gone is dropped; a destroyed material is never written. One owner per
+/// person. Main thread.
 /// </summary>
 internal sealed partial class LightsService
 {
@@ -83,13 +84,9 @@ internal sealed partial class LightsService
     {
         try
         {
-            if (p.Model is { } old && !old.IsSame(model)) RestoreModel(uuid, p);
-            if (p.Model is null || p.Snapshot is null)
-            {
-                p.Model = model;
-                p.Snapshot = ModelLightSnapshot.Capture(model.Materials());
-                p.KeyOn = p.RimOn = false;
-            }
+            if (p.Model is { } old && !old.IsSame(model)) MoveTo(uuid, p, model);
+            else if (p.Model is null || p.Snapshot is null) Begin(p, model, ModelLightSnapshot.Capture(model.Materials()));
+            else p.Snapshot.AddNew(model.Materials());   // review I-1: a material gained since (equipment) is read before any write
             ApplyKey(uuid, p, model);
             ApplyRim(uuid, p, model);
             return true;
@@ -99,6 +96,26 @@ internal sealed partial class LightsService
             WarnOnce("person-apply", "lights: a person's light could not be set: " + (ex.InnerException ?? ex).Message);
             return false;
         }
+    }
+
+    /// <summary>The person is seen on another model now (posed / reset). The new model is read FIRST, while the old one is
+    /// still lit, so a copy born lit (cloned from the lit model — review concern 1) saves the old model's originals for what
+    /// we wrote; then the old model is written back.</summary>
+    private void MoveTo(long uuid, Person p, ILightModel model)
+    {
+        var keyOn = p.KeyOn;
+        var rimOn = p.RimOn;
+        var seeded = ModelLightSnapshot.Capture(model.Materials(), p.Snapshot,
+            prop => prop == LightProperty.CameraLightParm ? keyOn : rimOn);
+        RestoreModel(uuid, p);
+        Begin(p, model, seeded);
+    }
+
+    private static void Begin(Person p, ILightModel model, ModelLightSnapshot snapshot)
+    {
+        p.Model = model;
+        p.Snapshot = snapshot;
+        p.KeyOn = p.RimOn = false;
     }
 
     private void ApplyKey(long uuid, Person p, ILightModel model)
@@ -139,7 +156,7 @@ internal sealed partial class LightsService
         p.Model = null;
         p.Snapshot = null;
         p.KeyOn = p.RimOn = false;
-        if (model is null || snapshot is null || !model.IsLive) return;
+        if (model is null || snapshot is null) return;   // each material is checked live before its write-back
         OnPersonRestored(uuid, "all", snapshot.Restore(ModelLightSnapshot.KeyProperties.Concat(ModelLightSnapshot.RimProperties).ToArray()));
     }
 

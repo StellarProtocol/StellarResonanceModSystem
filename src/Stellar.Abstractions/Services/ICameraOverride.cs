@@ -24,6 +24,15 @@ public interface ICameraOverride
     /// <summary>Raised after an override ends, with the reason.</summary>
     event Action<CameraReleaseReason>? Released;
 
+    /// <summary>Where <paramref name="world"/> appears on screen through the camera that renders NOW: the free camera while
+    /// any holder has it, else the game's own camera. Screen pixels with the origin top-left (the same space as
+    /// <see cref="IEntityPicker.TryPickEntity"/>); see <see cref="ScreenPoint.InFront"/> for points behind the camera. One
+    /// projection, no allocation — fine every frame for a handful of markers. False (point = default) when there is no
+    /// camera (not in the world). Works with or without an override. Main thread.</summary>
+    /// <param name="world">The world position.</param>
+    /// <param name="point">The screen point; default when false.</param>
+    bool TryProjectToScreen(Position3D world, out ScreenPoint point);
+
     /// <summary>Turns the local player's head toward the camera until disposed; the previous look-at state is restored
     /// on dispose (and on unload). Works with or without an override.</summary>
     IDisposable LookAtCamera();

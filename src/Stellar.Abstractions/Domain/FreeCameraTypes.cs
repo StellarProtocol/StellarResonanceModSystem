@@ -8,6 +8,13 @@ namespace Stellar.Abstractions.Domain;
 /// <param name="Fov">Vertical field of view.</param>
 public readonly record struct CameraPose(Position3D Position, float Yaw, float Pitch, float Roll, float Fov);
 
+/// <summary>Where a world point appears on screen (<see cref="Services.ICameraOverride.TryProjectToScreen"/>).</summary>
+/// <param name="X">Screen X in pixels, origin left (the same space as <see cref="Services.IEntityPicker.TryPickEntity"/>).</param>
+/// <param name="Y">Screen Y in pixels, origin top.</param>
+/// <param name="InFront">True when the point is in front of the camera. When false the point is behind it and
+/// <paramref name="X"/> / <paramref name="Y"/> mean nothing on screen — draw nothing for it.</param>
+public readonly record struct ScreenPoint(float X, float Y, bool InFront);
+
 /// <summary>Why a camera override ended.</summary>
 public enum CameraReleaseReason
 {

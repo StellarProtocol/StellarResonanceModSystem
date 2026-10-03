@@ -61,10 +61,14 @@ public sealed class LightGateTests
         var gate = LightGate.Raise(v, 2f)!;
         log.Entries.Clear();
         gate.Restore();
-        Assert.Equal("set value 1", log.Entries[0]);
-        Assert.Equal(101, log.Entries.Count(e => e.StartsWith("set flag", System.StringComparison.Ordinal)));
-        Assert.Equal("set active False", log.Entries[^1]);
-        Assert.Single(log.Entries, e => e.StartsWith("set active", System.StringComparison.Ordinal));   // written once, last
+        // Review I-4 adds a read-only "still ours?" check before the writes; the WRITE order is what this pins.
+        var writes = log.Entries.Where(e => e.StartsWith("set", System.StringComparison.Ordinal)).ToList();
+        Assert.Equal("set value 1", writes[0]);
+        Assert.Equal(101, writes.Count(e => e.StartsWith("set flag", System.StringComparison.Ordinal)));
+        Assert.Equal("set active False", writes[^1]);
+        Assert.Single(writes, e => e.StartsWith("set active", System.StringComparison.Ordinal));   // written once, last
+        var lastRead = log.Entries.FindLastIndex(e => e.StartsWith("get", System.StringComparison.Ordinal));
+        Assert.True(lastRead < log.Entries.IndexOf("set value 1"), "every check read precedes the first write-back");
     }
 
     [Fact]

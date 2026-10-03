@@ -11,7 +11,7 @@ namespace Stellar.Infrastructure.Game.Lights;
 /// One lamp the way recon Run 13 measured it (probe <c>probe/lights@5d31428</c>, <c>R13Lamps</c>): a GameObject made
 /// inactive, a Unity point <c>Light</c> (colour, intensity, range, no shadows) and the game's <c>Bokura.Rendering.MultiLight</c>
 /// (<c>lightLayer = Everything</c>, <c>type = Common</c>, <c>maxDistance = 128</c>, falloff 4, specular 1, reflection on),
-/// then activated — <c>MultiLight.OnEnable</c> adds it to the game's light cluster (<c>MultiLightManager.AddLight</c>) and
+/// kept on a persistent root (<c>DontDestroyOnLoad</c>), then activated — <c>MultiLight.OnEnable</c> adds it to the game's light cluster (<c>MultiLightManager.AddLight</c>) and
 /// turns the Unity light itself off. Off = the object inactive (out of the cluster); removal = inactive, then destroyed.
 /// Property writes and a <c>MarkDirty()</c> after each change — plain reflected calls, no hook. Main thread.
 /// </summary>
@@ -40,6 +40,9 @@ internal sealed class LampCalls
         var go = new GameObject("StellarPhotoLamp");
         try
         {
+            // A persistent root (review): never part of the active scene / a streamed chunk, whose unload would destroy the
+            // lamp under us. The framework itself removes every lamp on a scene end (ILights.Released).
+            UnityEngine.Object.DontDestroyOnLoad(go);
             go.SetActive(false);
             var light = go.AddComponent(Il2CppType.Of<Light>()).Cast<Light>();
             light.type = LightType.Point;

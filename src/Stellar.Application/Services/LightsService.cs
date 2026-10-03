@@ -177,7 +177,14 @@ internal sealed partial class LightsService : ILights
         }
         catch (Exception ex)
         {
+            // Review I-2: never drop a raised gate without putting the game's values back (Restore tries every write).
+            var g = _gate;
             _gate = null;
+            if (g is not null)
+            {
+                try { g.Restore(); }
+                catch (Exception restoreEx) { WarnOnce("gate-restore", "lights: the character-lamp level could not be put back: " + (restoreEx.InnerException ?? restoreEx).Message); }
+            }
             WarnOnce("gate", "lights: the character-lamp level could not be changed: " + (ex.InnerException ?? ex).Message);
         }
     }

@@ -513,13 +513,17 @@ lights.Released += () => { /* the scene ended: forget your lamp ids */ };
   game's own clustered lights: real pools of light on the ground and scene. On a character a lamp is an even colour wash
   scaled by distance, range and colour — not a directional shade.
 - **`PeopleLevel`** (0–20, default 0) is the game's character-lamp multiplier. It is **shared**: while it is raised every
-  character near ANY lamp — street lamps included — is tinted. The framework raises the game's value only while one of
-  your lamps is on and your level is above 0 (the highest level among plugins with a lamp on wins) and restores the game's
-  own value the moment the last lamp goes off.
+  character near ANY lamp — street lamps included — is tinted. Your level counts only while one of YOUR lamps is on (the
+  highest level among plugins with a lamp on wins; another plugin's level never lights people through your lamps), and
+  the game's own value comes back the moment no plugin with a level above 0 has a lamp on — unless the game itself wrote
+  that value meanwhile (a cutscene, its weather), which is then left as the game set it.
 - **`SetPersonLight`** gives one person a key light (direction / height relative to the camera that draws them — the only
   per-person directional shade) and a coloured rim (hair, headwear and weapons; the body has none). People are addressed
   like `IPosing`: a posed copy or NPC stand-in is lit on that visible model, and the light follows the person when they are
   posed or reset. `PersonLight.None` puts them back exactly. One plugin per person.
+- **Markers:** `services.CameraOverride.TryProjectToScreen(lampPosition, out var p)` gives where a lamp appears through
+  the camera rendering now (free camera or game camera) in screen pixels, top-left origin; draw it only when
+  `p.InFront`.
 
 ## The no-cheating boundary
 

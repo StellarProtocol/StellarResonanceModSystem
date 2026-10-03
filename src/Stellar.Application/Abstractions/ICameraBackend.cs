@@ -16,6 +16,10 @@ internal interface ICameraBackend
     void Apply(CameraPose pose);
     /// <summary>Destroys the override camera; the game blends back to its own.</summary>
     void End();
+    /// <summary>Unity's <c>WorldToScreenPoint</c> of <paramref name="world"/> through the game's main camera now (the brain
+    /// drives it from the free camera while one is held): pixels with the origin BOTTOM-left, depth along the camera's
+    /// forward, and the screen height in pixels. Null when there is no camera.</summary>
+    (float X, float Y, float Depth, float ScreenHeight)? ProjectToScreen(Position3D world);
     /// <summary>Raised once per rendered frame between <see cref="TryBegin"/> and <see cref="End"/>.</summary>
     event Action<float>? Frame;
 }

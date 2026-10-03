@@ -107,6 +107,7 @@ public sealed class LightsPeopleTests
         var npc = r.Backend.AddPerson(3, "npc");
         r.Svc.SetPersonLight(new EntityId(3), KeyAndRim);
         npc.Live = () => false;
+        foreach (var m in npc.Mats) m.Live = false;   // a destroyed model takes its material instances with it
         r.Backend.Log.Entries.Clear();
         r.Svc.RefreshPeople();
         Assert.Equal(0, r.Svc.LitPeopleCount);

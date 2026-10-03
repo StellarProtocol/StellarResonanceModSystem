@@ -14,7 +14,7 @@ public sealed class FreeCameraContractTests
     private static int Members(Type t) => ContractMembers.Count(t);
 
     [Theory]
-    [InlineData(typeof(ICameraOverride), 4)]
+    [InlineData(typeof(ICameraOverride), 5)]   // + TryProjectToScreen (2.15.0 lamp markers)
     [InlineData(typeof(ICameraControl), 5)]
     [InlineData(typeof(IInputShield), 2)]
     [InlineData(typeof(IInputShieldHandle), 8)]

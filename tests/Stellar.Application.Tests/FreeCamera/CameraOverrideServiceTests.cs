@@ -27,6 +27,8 @@ public sealed class CameraOverrideServiceTests
         public void Apply(CameraPose pose) => Applied.Add(pose);
         public void End() => Ends++;
         public void RaiseFrame(float dt) => Frame?.Invoke(dt);
+        public (float X, float Y, float Depth, float ScreenHeight)? Projected;
+        public (float X, float Y, float Depth, float ScreenHeight)? ProjectToScreen(Position3D world) => Projected;
     }
 
     internal sealed class FakeLookAt : ILookAtBackend

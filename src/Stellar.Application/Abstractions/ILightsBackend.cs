@@ -77,6 +77,10 @@ internal interface IMaterialSlot
     /// <summary>Not destroyed.</summary>
     bool IsLive { get; }
 
+    /// <summary>True when <paramref name="other"/> wraps the same game material (a fresh wrapper per
+    /// <see cref="ILightModel.Materials"/> call — never compare by reference).</summary>
+    bool IsSame(IMaterialSlot other);
+
     /// <summary>Reads <paramref name="property"/> (floats in X); false when this material's shader lacks it.</summary>
     bool TryRead(LightProperty property, out LightVector value);
 

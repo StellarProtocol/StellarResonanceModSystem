@@ -25,7 +25,7 @@ internal sealed class FakeGateVolume : IGateVolume
     private bool _active;
     public bool Live = true;
 
-    public FakeGateVolume(LightLog log, int count = 101, int gateIndex = 37)
+    public FakeGateVolume(LightLog log, int count = 101, int gateIndex = 37, bool active = false)
     {
         _log = log;
         Flags = new bool[count];
@@ -34,25 +34,42 @@ internal sealed class FakeGateVolume : IGateVolume
         for (var i = 0; i < count; i += 3) Flags[i] = true;
         if (gateIndex >= 0 && gateIndex < count) Flags[gateIndex] = false;
         _value = 1f;
-        _active = false;
+        _active = active;
     }
 
     public int Count => Flags.Length;
     public int GateIndex { get; set; }
     public bool IsLive => Live;
     public bool GetOverride(int index) { _log.Add($"get flag {index}"); return Flags[index]; }
-    public void SetOverride(int index, bool value) { _log.Add($"set flag {index}={value}"); Flags[index] = value; }
+    public void SetOverride(int index, bool value) { Set($"set flag {index}={value}"); Flags[index] = value; }
+
+    /// <summary>A write whose log line equals this throws (after logging, before taking effect) — lights review I-2.</summary>
+    public string? ThrowOn;
+
+    /// <summary>The game writes the volume itself (no log) — lights review I-4.</summary>
+    public void GameWrites(float? value = null, int? flag = null, bool? active = null)
+    {
+        if (value is { } v) _value = v;
+        if (flag is { } f) Flags[f] = !Flags[f];
+        if (active is { } a) _active = a;
+    }
+
+    private void Set(string entry)
+    {
+        _log.Add(entry);
+        if (entry == ThrowOn) throw new InvalidOperationException("volume write refused: " + entry);
+    }
 
     public float Value
     {
         get { _log.Add("get value"); return _value; }
-        set { _log.Add("set value " + value.ToString("0.###", CultureInfo.InvariantCulture)); _value = value; }
+        set { Set("set value " + value.ToString("0.###", CultureInfo.InvariantCulture)); _value = value; }
     }
 
     public bool Active
     {
         get { _log.Add("get active"); return _active; }
-        set { _log.Add($"set active {value}"); _active = value; }
+        set { Set($"set active {value}"); _active = value; }
     }
 
     /// <summary>The state without logging (for exact before/after compares).</summary>
@@ -80,6 +97,7 @@ internal sealed class FakeMaterial : IMaterialSlot
     }
 
     public bool IsLive => Live;
+    public bool IsSame(IMaterialSlot other) => ReferenceEquals(other, this);
     public bool TryRead(LightProperty property, out LightVector value) => Values.TryGetValue(property, out value);
 
     public void Write(LightProperty property, LightVector value)
@@ -95,7 +113,7 @@ internal sealed class FakeLightModel : ILightModel
 {
     private readonly LightLog _log;
     public readonly string Name;
-    public readonly FakeMaterial[] Mats;
+    public FakeMaterial[] Mats;   // replaceable: an equipment change gives the model new materials (review I-1)
     public Func<bool> Live = () => true;
     public int MaterialsCalls;
 

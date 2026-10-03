@@ -43,7 +43,17 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
   `IPosing.Changed`. `FreeCameraReleaser` releases lights after the camera and before posing (people written back while
   their copy lives → lamps → gate); `ReleaseAll` is idempotent and raises `Released` only when it ended something; the
   per-plugin facade ends a plugin's lights on unload. Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Lights] lamp add|remove`,
-  `[Lights] gate raised|restored …`, `[Lights] person <uuid> key|rim written|restored`.
+  `[Lights] gate raised|restored …`, `[Lights] person <uuid> key|rim written|restored`. Hardening (lights review
+  2026-10-03): every key / rim apply first reads any material the model gained since (equipment) so it is written back
+  too; a posed copy cloned from a lit person saves that person's originals for the values we wrote; a gate write that
+  throws is rolled back from the snapshot and the restore attempts every write; the gate is put back only while the
+  volume still holds exactly what we wrote — if the game wrote it since (a cutscene, its own weather) it is left to the
+  game — and a volume the game already has active keeps its own overrides (only ours is added); lamps live on a
+  persistent root (`DontDestroyOnLoad`), never in a streamed scene chunk.
+- New `ICameraOverride.TryProjectToScreen(Position3D, out ScreenPoint)` + domain `ScreenPoint(X, Y, InFront)`: where a
+  world point appears through the camera rendering now (the free camera while held, else the game camera), in screen
+  pixels top-left (the `IEntityPicker` space) — for on-screen markers (Photo Studio's lamp markers). A plugin that
+  IMPLEMENTS `ICameraOverride` must add it.
 - `WindowSpec.Passive` (Borderless windows): a visual-only layer with no content padding and no click blocker, so
   presses reach the game and every window behind it — for full-screen guides/overlays (Photo Studio's frame guide).
   `IScreenCapture.PlanSize` is a new interface member: a plugin that IMPLEMENTS `IScreenCapture` must add it.

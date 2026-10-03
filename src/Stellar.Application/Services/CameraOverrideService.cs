@@ -51,6 +51,14 @@ internal sealed class CameraOverrideService : ICameraOverride
 
     public IDisposable LookAtCamera() => _lookAt.Acquire(owner: null);
 
+    public bool TryProjectToScreen(Position3D world, out ScreenPoint point)
+    {
+        point = default;
+        if (_backend.ProjectToScreen(world) is not { } raw) return false;
+        point = ScreenProjection.FromUnity(raw.X, raw.Y, raw.Depth, raw.ScreenHeight);
+        return true;
+    }
+
     internal IDisposable LookAtCamera(object? owner) => _lookAt.Acquire(owner);
 
     /// <summary>Framework-triggered end (zone change, cutscene, game camera mode, disconnect, shutdown).</summary>
@@ -144,4 +152,13 @@ internal sealed class CameraOverrideService : ICameraOverride
             if (IsActive) _svc.End(this, CameraReleaseReason.Disposed);
         }
     }
+}
+
+/// <summary>Unity screen space → the plugin-facing <see cref="ScreenPoint"/>. Pure (pinned).</summary>
+internal static class ScreenProjection
+{
+    /// <summary>Unity's <c>WorldToScreenPoint</c> result (origin bottom-left, depth along the camera's forward) as a top-left
+    /// <see cref="ScreenPoint"/>; in front only at a positive, finite depth.</summary>
+    public static ScreenPoint FromUnity(float x, float y, float depth, float screenHeight) =>
+        new(x, screenHeight - y, depth > 0f && float.IsFinite(depth) && float.IsFinite(x) && float.IsFinite(y));
 }

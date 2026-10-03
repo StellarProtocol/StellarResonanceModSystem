@@ -61,6 +61,8 @@ internal sealed class MaterialSlot : IMaterialSlot
 
     public bool IsLive => !_m.WasCollected && _m != null;
 
+    public bool IsSame(IMaterialSlot other) => other is MaterialSlot o && o._m.Pointer == _m.Pointer;
+
     public bool TryRead(LightProperty property, out LightVector value)
     {
         value = default;

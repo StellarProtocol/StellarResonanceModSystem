@@ -25,7 +25,7 @@ internal sealed partial class LightsService
     {
         if (!StellarDiagnostics.IsEnabled) return;
         var s = gate.Saved;
-        _info($"[Lights] gate restored value={s.Value:F3} active={s.Active} overriding={s.Overriding}/{s.Flags}");
+        _info($"[Lights] gate {(gate.LeftToGame ? "left to the game (it wrote the volume since)" : "restored")} value={s.Value:F3} active={s.Active} overriding={s.Overriding}/{s.Flags}");
     }
 
     partial void OnPersonWritten(long uuid, string what, int saved)

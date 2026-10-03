@@ -55,6 +55,18 @@ internal sealed partial class CinemachineCameraBackend : ICameraBackend
     public Position3D? ReadLocalPlayerPosition() =>
         _entities.LocalPlayerPosition() is Vector3 v ? new Position3D(v.x, v.y, v.z) : null;
 
+    /// <summary>One <c>WorldToViewportPoint</c> on the camera that renders now (Main Camera — the brain drives it from the
+    /// free camera's vcam while one is held).</summary>
+    public (float X, float Y, float Depth, float ScreenHeight)? ProjectToScreen(Position3D world)
+    {
+        var cam = MainCamera();
+        if (cam == null) return null;
+        // Viewport → screen pixels: right even when the camera renders into a scaled target (render scale / capture RT).
+        var vp = cam.WorldToViewportPoint(new Vector3(world.X, world.Y, world.Z));
+        float w = Screen.width, h = Screen.height;
+        return (vp.x * w, vp.y * h, vp.z, h);
+    }
+
     public bool TryBegin(CameraPose start)
     {
         if (_go != null) return true;
