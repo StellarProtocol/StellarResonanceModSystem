@@ -53,6 +53,7 @@ public sealed partial class BootstrapPlugin
         WireRenderQualityPhotoSignals();
         var renderLook = _renderLook;
         _framework!.Update += _ => { renderLook.Tick(); DrainPhotoReassert(); };   // Tick is a no-op unless a look tracks the player
+        WireReShadeProbe(log);
     }
 
     /// <summary>
