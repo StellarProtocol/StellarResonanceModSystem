@@ -138,7 +138,9 @@ internal sealed class ScreenCaptureService : IScreenCapture
     // least one technique is active — otherwise the capture is exactly the pre-ReShade one (no options at all).
     private ReShadeCaptureOptions? ReShadeOptions(CaptureRequest r)
     {
-        if (!r.ApplyReShade || _reShade is not { IsAvailable: true, Enabled: true } reShade) return null;
+        if (!r.ApplyReShade || _reShade is null) return null;
+        if (_reShade is IReShadeLiveRead live) live.RefreshNow();   // a toggle made just before the shutter counts
+        if (_reShade is not { IsAvailable: true, Enabled: true } reShade) return null;
         List<ReShadeTechnique>? active = null;
         foreach (var technique in reShade.Techniques)
         {

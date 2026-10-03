@@ -136,4 +136,54 @@ public sealed class ReShadeCapturePlannerTests
         var restore = Assert.IsType<CaptureStep.Restore>(planner.Next(lastDrawn: 1, nowMs: 3));
         Assert.Equal(disable.Techniques, restore.Techniques);
     }
+
+    // Fail fast: -1 (no ReShade runtime) and -3 (view creation failed) cannot recover by waiting out the 5 s.
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-3)]
+    public void A_hard_error_during_warm_up_restores_then_done_false_without_waiting(int code)
+    {
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { WithDepth("DepthOfField") }, nowMs: 0);
+        planner.Next(lastDrawn: 0, nowMs: 0);   // DisableDepth
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 16));
+
+        Assert.IsType<CaptureStep.Restore>(planner.Next(lastDrawn: code, nowMs: 32));
+        Assert.False(Assert.IsType<CaptureStep.Done>(planner.Next(lastDrawn: code, nowMs: 48)).Applied);
+        Assert.Equal(ReShadeWarmUpOutcome.Error, planner.Outcome);
+        Assert.Equal(code, planner.WarmUpEndCode);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-3)]
+    public void A_hard_error_without_depth_is_done_false_at_once(int code)
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 16));
+        Assert.False(Assert.IsType<CaptureStep.Done>(planner.Next(lastDrawn: code, nowMs: 32)).Applied);
+        Assert.Equal(ReShadeWarmUpOutcome.Error, planner.Outcome);
+    }
+
+    [Fact]
+    public void Nothing_queued_keeps_warming_up()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 16));
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: -2, nowMs: 32));
+        Assert.Equal(ReShadeWarmUpOutcome.Pending, planner.Outcome);
+    }
+
+    [Fact]
+    public void Outcome_records_drew_and_timeout()
+    {
+        var drew = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        drew.Next(0, 16);
+        drew.Next(2, 32);
+        Assert.Equal((ReShadeWarmUpOutcome.Drew, 2), (drew.Outcome, drew.WarmUpEndCode));
+
+        var slow = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        slow.Next(0, 16);
+        slow.Next(0, ReShadeCapturePlanner.WarmUpTimeoutMs);
+        Assert.Equal(ReShadeWarmUpOutcome.TimedOut, slow.Outcome);
+    }
 }

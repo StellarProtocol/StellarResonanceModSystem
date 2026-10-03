@@ -13,7 +13,7 @@ namespace Stellar.Infrastructure.Rendering;
 /// once it does. A preset switch is additionally held until ReShade lists techniques — the add-on's host contract
 /// (it ignores a preset request while there are none). Main thread only.
 /// </summary>
-internal sealed partial class ReShadeService : IReShade
+internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abstractions.IReShadeLiveRead
 {
     private readonly IReShadeNative _native;
     private readonly EffectDepthIndex _depth;

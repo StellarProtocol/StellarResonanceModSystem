@@ -31,7 +31,24 @@ internal sealed partial class ReShadeService
 
     /// <summary>Called by the Host once per framework tick. Raises <see cref="Changed"/> when availability, the
     /// technique list (incl. depth use) or the preset changed.</summary>
-    internal void Refresh()
+    internal void Refresh() => Poll(force: false);
+
+    /// <summary>Re-reads status and the technique list now, even within the re-read interval or on an unchanged frame
+    /// counter (<see cref="Stellar.Application.Abstractions.IReShadeLiveRead"/> — the capture service calls it just
+    /// before choosing a photo's techniques). Effects not yet depth-resolved read as using depth (safe for D8).</summary>
+    public void RefreshNow()
+    {
+        try
+        {
+            Poll(force: true);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[ReShade] refresh before capture failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void Poll(bool force)
     {
         if (!_native.IsLoaded)
         {
@@ -41,7 +58,8 @@ internal sealed partial class ReShadeService
         if (!_hasStatus) OnBound();
         TrySendPendingSearchPaths();
         var status = _native.ReadStatus();
-        if (_hasStatus && status.Frames == _status.Frames) return;
+        if (_hasStatus && status.Frames == _status.Frames && !force) return;
+        _forceRead |= force;
 
         var changed = Observe(status);
         TrySendPendingPreset(status);

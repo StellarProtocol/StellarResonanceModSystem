@@ -24,6 +24,8 @@ internal sealed partial class UnityFrameGrabber
     private readonly ReShadeBridge? _reShade;
     private RenderTexture? _warmUpTarget;              // scratch target, reused across one capture's warm-up frames
     private ReShadeTechniqueRef[]? _depthOverrides;    // switched off for the capture in flight; null = none held
+    private int _renderCode = NoRealRender;            // LastRender after the real render (diagnostics)
+    private const int NoRealRender = int.MinValue;
 
     private sealed class GrabBox
     {
@@ -41,6 +43,7 @@ internal sealed partial class UnityFrameGrabber
         }
         var planner = new ReShadeCapturePlanner(options.Shaped, options.Active, Environment.TickCount64);
         var started = Environment.TickCount64;
+        _renderCode = NoRealRender;
         var queued = false;   // LastRender reflects THIS capture only after its first warm-up render
         try
         {
@@ -56,7 +59,7 @@ internal sealed partial class UnityFrameGrabber
         {
             RestoreDepthOverrides();
             ReleaseWarmUpTarget();
-            OnReShadeCapture(box.Value is { Note: null }, Environment.TickCount64 - started);
+            OnReShadeCapture(planner, _renderCode, box.Value is { Note: null }, Environment.TickCount64 - started);
         }
     }
 
@@ -93,7 +96,8 @@ internal sealed partial class UnityFrameGrabber
             RestoreDepthOverrides();   // right after the real render: its effects are already drawn and read back
         }
         // The readback synced with the render thread, so LastRender is this render's result.
-        if (_reShade!.LastRender() <= 0) return grab with { Note = ReShadeCaptureOptions.NotReadyNote };
+        _renderCode = _reShade!.LastRender();
+        if (_renderCode <= 0) return grab with { Note = ReShadeCaptureOptions.NotReadyNote };
         RgbaAlpha.ForceOpaque(grab.RgbaBottomUp);   // empty for JPG (encoded already; JPG carries no alpha)
         return grab;
     }
@@ -107,7 +111,9 @@ internal sealed partial class UnityFrameGrabber
         try
         {
             cam.targetTexture = rt;
-            cam.Render();   // content is irrelevant to the warm-up (it only needs ReShade to draw at this size)
+            // The real camera view, as specified. Only the target SIZE decides ReShade's permutation, so this render may
+            // be droppable — its cost (heavy at 4x, every warm-up frame) is to be measured in game before changing it.
+            cam.Render();
         }
         finally
         {

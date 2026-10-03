@@ -27,6 +27,21 @@ internal abstract record CaptureStep
     internal sealed record Done(bool Applied) : CaptureStep;
 }
 
+/// <summary>Why a <see cref="ReShadeCapturePlanner"/> plan ended (diagnostics and tests).</summary>
+internal enum ReShadeWarmUpOutcome
+{
+    /// <summary>Still running.</summary>
+    Pending,
+    /// <summary>A warm-up render drew techniques; the real render was returned.</summary>
+    Drew,
+    /// <summary>Nothing was drawn within <see cref="ReShadeCapturePlanner.WarmUpTimeoutMs"/>.</summary>
+    TimedOut,
+    /// <summary>The bridge reported a hard error (<see cref="ReShadeCapturePlanner.IsHardError"/>); no point waiting.</summary>
+    Error,
+    /// <summary>No active technique — nothing to draw.</summary>
+    NothingActive,
+}
+
 /// <summary>
 /// Pure per-capture state machine deciding what the ReShade capture pass should do next, one call per frame.
 /// Construct one instance per capture; it holds no reference to anything renderable. No I/O, no threading.
@@ -35,6 +50,16 @@ internal sealed class ReShadeCapturePlanner
 {
     /// <summary>How long a plan may sit in warm-up (no drawn frame yet) before it gives up.</summary>
     internal const long WarmUpTimeoutMs = 5000;
+
+    /// <summary>The bridge's render result codes that cannot recover by waiting: -1 no ReShade runtime (or no add-on),
+    /// -3 the render-target view could not be created. (-2 "nothing queued" and 0 "nothing drawn yet" keep warming.)</summary>
+    internal static bool IsHardError(int lastRender) => lastRender is -1 or -3;
+
+    /// <summary>Why the plan ended (<see cref="ReShadeWarmUpOutcome.Pending"/> while running).</summary>
+    internal ReShadeWarmUpOutcome Outcome { get; private set; }
+
+    /// <summary>The <c>lastDrawn</c> value the warm-up ended on (the drawn count, or the error code).</summary>
+    internal int WarmUpEndCode { get; private set; }
 
     private enum Phase
     {
@@ -60,6 +85,7 @@ internal sealed class ReShadeCapturePlanner
         {
             _depthNames = Array.Empty<ReShadeTechniqueRef>();
             _phase = Phase.DoneFail;
+            Outcome = ReShadeWarmUpOutcome.NothingActive;
             return;
         }
 
@@ -106,12 +132,15 @@ internal sealed class ReShadeCapturePlanner
         if (lastDrawn > 0)
         {
             _phase = _depthNames.Count > 0 ? Phase.Restore : Phase.DoneSuccess;
+            (Outcome, WarmUpEndCode) = (ReShadeWarmUpOutcome.Drew, lastDrawn);
             return new CaptureStep.Render();
         }
 
-        if (nowMs - _warmUpStartMs >= WarmUpTimeoutMs)
+        var error = IsHardError(lastDrawn);
+        if (error || nowMs - _warmUpStartMs >= WarmUpTimeoutMs)
         {
             _phase = Phase.DoneFail;
+            (Outcome, WarmUpEndCode) = (error ? ReShadeWarmUpOutcome.Error : ReShadeWarmUpOutcome.TimedOut, lastDrawn);
             return _depthNames.Count > 0
                 ? new CaptureStep.Restore(_depthNames)
                 : new CaptureStep.Done(false);

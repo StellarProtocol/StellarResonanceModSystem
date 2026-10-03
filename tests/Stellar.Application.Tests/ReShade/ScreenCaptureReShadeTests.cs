@@ -178,6 +178,59 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         Assert.Empty(native.Requests);
     }
 
+    // Item 6: a depth effect switched on a moment before the shutter (no frame presented / inside the re-read interval,
+    // so the per-tick poll has not seen it) must still be in the photo's plan — the capture forces a re-read first.
+    [Fact]
+    public async Task A_technique_enabled_just_before_the_shutter_is_in_the_plan()
+    {
+        var native = new FakeReShadeNative();
+        native.Add("Bloom", "Bloom.fx");
+        native.Add("MXAO", "MXAO.fx", enabled: false);
+        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new NullLog());
+        service.Refresh();
+        Assert.Equal(new[] { "Bloom" }, service.Techniques.Where(t => t.Enabled).Select(t => t.Name));
+
+        native.Techniques[1] = ("MXAO", "MXAO.fx", true);   // same frame counter: a plain Refresh() would return early
+        service.Refresh();
+        Assert.False(service.Techniques.Single(t => t.Name == "MXAO").Enabled);
+
+        await Service(service).CaptureAsync(Request(aspect: new CaptureAspect(1, 1)));
+        var options = Assert.Single(_grabber.Targets).ReShade!;
+        var mxao = Assert.Single(options.Active, t => t.Name == "MXAO");
+        Assert.True(mxao.UsesDepth);   // not on any search path / not yet resolved -> counts as depth (D8-safe)
+    }
+
+    [Fact]
+    public async Task The_live_read_happens_before_availability_is_checked()
+    {
+        var reShade = new LiveReadReShade { IsAvailable = false };
+        await Service(reShade).CaptureAsync(Request());
+        Assert.Equal(1, reShade.RefreshCount);
+        Assert.NotNull(Assert.Single(_grabber.Targets).ReShade);   // RefreshNow made it available
+    }
+
+    [Fact]
+    public async Task No_live_read_when_the_request_does_not_want_ReShade()
+    {
+        var reShade = new LiveReadReShade();
+        await Service(reShade).CaptureAsync(Request(apply: false));
+        Assert.Equal(0, reShade.RefreshCount);
+    }
+
+    private sealed class LiveReadReShade : IReShade, IReShadeLiveRead
+    {
+        public int RefreshCount;
+        public bool IsAvailable { get; set; } = true;
+        public bool Enabled { get; set; } = true;
+        public IReadOnlyList<ReShadeTechnique> Techniques { get; } = new[] { new ReShadeTechnique("Bloom", "Bloom.fx", true, false) };
+        public string? CurrentPreset => null;
+        public void RefreshNow() { RefreshCount++; IsAvailable = true; }
+        public void SetTechnique(string effectFile, string name, bool enabled) { }
+        public void SetPreset(string path) { }
+        public void SetSearchPaths(IReadOnlyList<string> effectFolders, IReadOnlyList<string> textureFolders) { }
+        public event Action? Changed { add { } remove { } }
+    }
+
     private sealed class NullLog : IPluginLog
     {
         public void Debug(string message) { }

@@ -17,9 +17,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [2.17.0] - 2026-10-04
 _**2.17.0** (minor) — ReShade support for plugins: effects live and in photos, plus checked downloads into a plugin's own folder. Adds API for plugins (Abstractions 2.17.0); additive, no plugin rebuild._
 ### Added
-- Once ReShade is installed from Photo Studio, its effects can be turned on and off live, and Photo Studio photos carry the same effects you see on screen — at every photo size.
+- With Photo Studio 1.5.0 or later, you can install ReShade from Photo Studio, turn its effects on and off there, and your photos get the same effects you see on screen, at every photo size.
 - Photos in a different shape than your screen (portrait, square, wide) turn off depth-based effects for that photo only, so nothing is drawn in the wrong place; they come back right after.
-- If ReShade is still getting ready when you take a photo, the photo is taken without its effects and you are told so.
+- If ReShade is still getting ready when you take a photo, the photo is taken without its effects and you are told so in Photo Studio.
 ### Developer notes
 - New `IPluginServices.Downloads` (`IPluginDownloads`): https-only downloads pinned by sha256 (verified before anything is written), with a size cap and optional zip extraction filtered by `IncludePrefixes`, into the calling plugin's own data folder (`DataFolder`), which a request can never escape. One download per plugin at a time; completes and reports progress on the main thread.
 - New `IPluginServices.ReShade` (`IReShade`): `IsAvailable`, `Enabled`, `Techniques` (`ReShadeTechnique`: name, effect file, enabled, `UsesDepth`), `SetTechnique(effectFile, name, enabled)` (a technique is identified by effect file + name, saved to the current preset), `CurrentPreset` / `SetPreset`, `SetSearchPaths` and `Changed`. Talks to ReShade through the Stellar ReShade bridge add-on (looked up, never loaded); without ReShade and the add-on it reports unavailable and every member is a no-op. `UsesDepth` comes from a scan of the effect source with its includes (ReShade's standard headers skipped); an effect that cannot be found or read counts as using depth.

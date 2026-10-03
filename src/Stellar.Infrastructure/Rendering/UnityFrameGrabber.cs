@@ -185,6 +185,7 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     {
         _host = null;
         RestoreDepthOverrides();   // the coroutine that would have restored them is gone with the host
+        ReleaseWarmUpTarget();     // ...and so is the one that would have released the scratch target
         Action<Exception>[] pending;
         lock (_gate)
         {
