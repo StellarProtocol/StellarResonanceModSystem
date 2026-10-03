@@ -41,6 +41,11 @@ internal sealed class EntityShowPlan
     /// <summary>True while the party-preserving set (6/2/4) is what we hold — party changes then need a refresh.</summary>
     public bool HoldsKeepPartySet => _held.Count > 0 && _held.All(t => Array.IndexOf(KeepPartySet, t) >= 0);
 
+    /// <summary>True while anything is held — a type we hid and haven't shown back yet. M2 follow-up: a failed show
+    /// stays held for retry (see <see cref="Apply(IReadOnlyList{int},Func{int,bool,bool},Func{int,int?})"/>'s doc),
+    /// so this is exactly "a restore is still owed" for this plan even once its layer is no longer requested.</summary>
+    public bool HoldsAny => _held.Count > 0;
+
     /// <summary><c>EntityRenderLayerHideType</c> behind a camera type, or null when not measured (the hold-count check
     /// is then skipped for it — bookkeeping only).</summary>
     public static int? TryHideTypeFor(int cameraType) => cameraType switch

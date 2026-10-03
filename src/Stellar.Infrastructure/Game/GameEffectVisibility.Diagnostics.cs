@@ -15,7 +15,9 @@ internal sealed partial class GameEffectVisibility
     // down the list (a summon's, a party member's) is never logged. Bounded at MaxClassifiedWithCasterUids entries.
     private readonly HashSet<long> _classifiedWithCasterUids = new();
     private readonly HashSet<long> _zeroCasterUids = new();   // I2(a): distinct zero-caster uids logged this session
-    private readonly HashSet<long> _bornHiddenUids = new();   // I2(c): distinct born-hidden uids logged this session
+    // I2(c): distinct (uid, hook) pairs logged this session — follow-up: keyed per hook, not per uid, so an effect
+    // that is normally invisible at Init but visible by AddEffectDisplay is told apart from a genuine born-hidden one.
+    private readonly HashSet<(long Uid, string Hook)> _bornHiddenUids = new();
     private int _mineHidden, _partyHidden, _othersHidden, _monstersHidden;   // reset every OnSwept — per-sweep, not cumulative
 
     partial void OnClassified(long uid, (long Caster, long From, long Belong, bool Visible) ctx, VisibilityLayers owner, bool viaInstance, object fx)
@@ -82,12 +84,14 @@ internal sealed partial class GameEffectVisibility
 
     /// <summary>I2(c), pool reuse: runs BEFORE OnEffectCreated's early return, so this covers an effect being
     /// recycled even when no effect layer is currently wanted. An effect whose context already reads invisible at
-    /// Init/AddEffectDisplay means the pool handed back a wrapper the game (or an earlier hide) had already hidden —
-    /// `recorded` says whether OUR ledger already knows about it (a pooled wrapper's uid can be reused across
-    /// effects, so a stale `_instances`/ledger entry would otherwise look like a live hide). Capped at
-    /// <see cref="MaxBornHiddenUids"/> distinct uids; must cost nothing when diagnostics are off — the IsEnabled
-    /// check is the very first thing this partial method does.</summary>
-    partial void OnEffectSeen(object? fx)
+    /// <paramref name="hook"/> ("Init" or "AddEffectDisplay") means the pool handed back a wrapper the game (or an
+    /// earlier hide) had already hidden — `recorded` says whether OUR ledger already knows about it (a pooled
+    /// wrapper's uid can be reused across effects, so a stale `_instances`/ledger entry would otherwise look like a
+    /// live hide). Follow-up: dedupes per (uid, hook) rather than per uid alone, so an effect that is normally
+    /// invisible at Init but visible by the time AddEffectDisplay runs is told apart from one that is really born
+    /// hidden at both. Capped at <see cref="MaxBornHiddenUids"/> distinct (uid, hook) pairs; must cost nothing when
+    /// diagnostics are off — the IsEnabled check is the very first thing this partial method does.</summary>
+    partial void OnEffectSeen(object? fx, string hook)
     {
         if (!StellarDiagnostics.IsEnabled || fx is null) return;
         if (_bornHiddenUids.Count >= MaxBornHiddenUids) return;
@@ -95,10 +99,11 @@ internal sealed partial class GameEffectVisibility
         try
         {
             var uid = ReadUid(fx);
-            if (uid == 0 || _bornHiddenUids.Contains(uid) || ReadVisible(fx)) return;
-            _bornHiddenUids.Add(uid);
+            var key = (uid, hook);
+            if (uid == 0 || _bornHiddenUids.Contains(key) || ReadVisible(fx)) return;
+            _bornHiddenUids.Add(key);
             var (addr, _) = ReadAsset(fx);
-            _log.Info($"[EffectHide] born-hidden uid={uid} addr={addr} recorded={_ledger.Contains(uid)}");
+            _log.Info($"[EffectHide] born-hidden uid={uid} hook={hook} addr={addr} recorded={_ledger.Contains(uid)}");
         }
         catch { /* diagnostics only */ }
     }

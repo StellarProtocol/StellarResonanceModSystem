@@ -39,9 +39,9 @@ internal sealed partial class GameEffectVisibility
     {
         if (_effectHooksInstalled || _hooker is not { } hooker) return;
         _effectHooksInstalled = true;
-        try { hooker.PostfixAllOverloads(_types.FindType(EffectManagerType)!, "AddEffectDisplay", (_, args) => OnEffectCreated(args.Length == 1 ? args[0] : null)); }
+        try { hooker.PostfixAllOverloads(_types.FindType(EffectManagerType)!, "AddEffectDisplay", (_, args) => OnEffectCreated(args.Length == 1 ? args[0] : null, "AddEffectDisplay")); }
         catch (Exception ex) { WarnOnce("fxhook", "effect-display hook failed: " + ex.Message); }
-        try { hooker.PostfixAllOverloads(_fxType!, "Init", (fx, _) => OnEffectCreated(fx)); }
+        try { hooker.PostfixAllOverloads(_fxType!, "Init", (fx, _) => OnEffectCreated(fx, "Init")); }
         catch (Exception ex) { WarnOnce("fxinit", "effect-init hook failed: " + ex.Message); }
     }
 

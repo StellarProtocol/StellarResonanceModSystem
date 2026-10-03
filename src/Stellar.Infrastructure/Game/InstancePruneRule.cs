@@ -32,4 +32,10 @@ internal static class InstancePruneRule
             if (state(uid) == EffectReleaseState.Ended) drop.Add(uid);
         return drop;
     }
+
+    /// <summary>Follow-up (prune hysteresis): the next bounded-prune threshold after a pass, given the instance count
+    /// right after that pass. Doubling (never below <paramref name="floor"/>) means a sustained count just above the
+    /// floor — hundreds of live effects in a raid, none of them actually ended — pays the O(n) <see cref="OverBudget"/>
+    /// pass once instead of on every single creation-hook call.</summary>
+    public static int NextThreshold(int countAfterPrune, int floor) => Math.Max(floor, countAfterPrune * 2);
 }

@@ -35,6 +35,10 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     // (and, transitively, TargetRebuilt via the host's drain) retries these even though nothing is held, so a
     // restore never silently strands the layer hidden — see LayerStepDecision.
     private VisibilityLayers _restorePending;
+    // M2 follow-up: HasPendingRestore needs to know which layers were last asked for, since _selfShow/_entityShow's
+    // own held set (a failed show-back) is the pending signal, not _applied (StepSelf/StepOtherPlayers already clear
+    // their _applied bit on a failed show — see their own doc comments).
+    private VisibilityLayers _lastRequested;
 
     public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log, GameEffectVisibility? effects = null)
     {
@@ -44,12 +48,21 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         _effects = effects;
     }
 
-    /// <summary>M2: effects report their own pending release (the manager/listing was unavailable when Apply(None)
-    /// tried to show them back), OR any layer still carries its own restore-retry bit.</summary>
-    public bool HasPendingRestore => (_effects?.HasPendingRelease ?? false) || _restorePending != VisibilityLayers.None;
+    /// <summary>M2: true when a restore is still owed. Effects report their own pending release (the manager/listing
+    /// was unavailable when Apply(None) tried to show them back); any layer still carries its own restore-retry bit
+    /// (<see cref="_restorePending"/>); OR Self/OtherPlayers' entity-show plan still holds a hide while its layer
+    /// isn't in the last requested set — a failed show-back the plan is retrying (<see cref="EntityShowPlan.HoldsAny"/>),
+    /// which a failed <see cref="StepSelf"/>/<see cref="StepOtherPlayers"/> already cleared from <see cref="_applied"/>,
+    /// so nothing there looks "held" for it.</summary>
+    public bool HasPendingRestore =>
+        (_effects?.HasPendingRelease ?? false) ||
+        _restorePending != VisibilityLayers.None ||
+        (_selfShow.HoldsAny && (_lastRequested & VisibilityLayers.Self) == 0) ||
+        (_entityShow.HoldsAny && (_lastRequested & VisibilityLayers.OtherPlayers) == 0);
 
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
+        _lastRequested = requested;
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: false);
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: false);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
@@ -67,6 +80,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     /// through the entity-show plan, which rewrites only what differs.</summary>
     public VisibilityLayers Reassert(VisibilityLayers requested)
     {
+        _lastRequested = requested;
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: true);
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: true);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);

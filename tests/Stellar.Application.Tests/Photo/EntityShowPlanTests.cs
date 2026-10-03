@@ -237,4 +237,25 @@ public sealed class EntityShowPlanTests
         Assert.Null(EntityShowPlan.TryHideTypeFor(99));
         Assert.Equal(7, EntityShowPlan.TryHideTypeFor(EntityShowPlan.OtherPlayer));
     }
+
+    // M2 follow-up: HasPendingRestore reads this to notice a failed show-back even though nothing is held "cleanly".
+    [Fact]
+    public void HoldsAny_reflects_whatever_is_currently_held()
+    {
+        var p = new EntityShowPlan();
+        Assert.False(p.HoldsAny);
+        p.Apply(true, false, Write);
+        Assert.True(p.HoldsAny);
+        p.Apply(false, false, Write);
+        Assert.False(p.HoldsAny);
+    }
+
+    [Fact]
+    public void HoldsAny_stays_true_when_a_show_fails()
+    {
+        var p = new EntityShowPlan();
+        p.Apply(true, false, Write);
+        Assert.False(p.Apply(false, false, (_, _) => false));   // the show fails
+        Assert.True(p.HoldsAny);
+    }
 }

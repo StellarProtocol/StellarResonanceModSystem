@@ -16,6 +16,10 @@ internal sealed partial class GameEffectVisibility
     // I1: bounded prune threshold for the creation-hook path (PruneInstancesOverBudget) — see InstancePruneRule.
     private const int MaxInstances = 256;
     private static readonly HashSet<long> EmptyListed = new();   // asks ReleaseState about the instance alone (never "listed")
+    // Follow-up: hysteresis so a sustained raid (> MaxInstances live entries) doesn't re-pay the O(n) prune pass on
+    // every single creation-hook call (Init AND AddEffectDisplay both call OnEffectCreated — twice per spawn).
+    // Grows via InstancePruneRule.NextThreshold after every pass; never shrinks below MaxInstances.
+    private int _pruneAt = MaxInstances;
     private readonly IGameTypeRegistry _types;
     private readonly Func<long, VisibilityLayers> _classify;
     private readonly IPluginLog _log;
@@ -125,14 +129,19 @@ internal sealed partial class GameEffectVisibility
 
     /// <summary>I1: bounded prune for the creation-hook path, where Apply may not run again for a long time while the
     /// wanted set stays unchanged (so <see cref="PruneStaleInstances"/> never fires). Reuses <see cref="ReleaseState"/>
-    /// (and so <see cref="EffectReleaseRule"/>) with an empty "listed" set to ask purely about the held instance.</summary>
+    /// (and so <see cref="EffectReleaseRule"/>) with an empty "listed" set to ask purely about the held instance.
+    /// Follow-up: gated on <see cref="_pruneAt"/> rather than the fixed <see cref="MaxInstances"/>, and <see cref="_pruneAt"/>
+    /// grows after every pass — a steady-state raid with hundreds of live entries pays the O(n) pass once, not on
+    /// every hook call.</summary>
     private void PruneInstancesOverBudget()
     {
-        foreach (var uid in InstancePruneRule.OverBudget(_instances.Keys, _instances.Count, MaxInstances, u => ReleaseState(EmptyListed, u)))
+        if (_instances.Count <= _pruneAt) return;
+        foreach (var uid in InstancePruneRule.OverBudget(_instances.Keys, _instances.Count, _pruneAt, u => ReleaseState(EmptyListed, u)))
         {
             _instances.Remove(uid);
             _ledger.Remove(uid);
         }
+        _pruneAt = InstancePruneRule.NextThreshold(_instances.Count, MaxInstances);
     }
 
     private bool IsAlive(HashSet<long> listed, long uid) =>
@@ -162,11 +171,13 @@ internal sealed partial class GameEffectVisibility
     }
 
     /// <summary>Creation hooks (AddEffectDisplay(ZEffect) / ZEffect.Init): hide a new effect while an effect layer is
-    /// wanted. I2(c): <see cref="OnEffectSeen"/> runs BEFORE the early return so the born-hidden diagnostic covers
-    /// pool reuse even when no effect layer is currently wanted.</summary>
-    private void OnEffectCreated(object? fx)
+    /// wanted. <paramref name="hook"/> is which one fired ("Init" or "AddEffectDisplay" — follow-up: so the
+    /// born-hidden diagnostic can tell apart "invisible at Init, visible by AddEffectDisplay" from a genuine pooled
+    /// born-hidden effect). I2(c): <see cref="OnEffectSeen"/> runs BEFORE the early return so the born-hidden
+    /// diagnostic covers pool reuse even when no effect layer is currently wanted.</summary>
+    private void OnEffectCreated(object? fx, string hook)
     {
-        OnEffectSeen(fx);
+        OnEffectSeen(fx, hook);
         if (_wanted == VisibilityLayers.None || fx is null || Environment.CurrentManagedThreadId != _mainThread || !IsEffect(fx)) return;
         try
         {
@@ -184,7 +195,7 @@ internal sealed partial class GameEffectVisibility
 
     partial void OnClassified(long uid, (long Caster, long From, long Belong, bool Visible) ctx, VisibilityLayers owner, bool viaInstance, object fx);
     partial void OnZeroCaster(long uid, object fx);
-    partial void OnEffectSeen(object? fx);
+    partial void OnEffectSeen(object? fx, string hook);
     partial void OnSwept(VisibilityLayers wanted, int hidden, int shown, int held);
     partial void OnSweepHidden(VisibilityLayers owner);
 }

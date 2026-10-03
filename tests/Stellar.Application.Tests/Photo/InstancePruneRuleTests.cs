@@ -37,4 +37,14 @@ public sealed class InstancePruneRuleTests
         var drop = InstancePruneRule.OverBudget(new long[] { 1, 2, 3, 4 }, count: 300, threshold: 256, State);
         Assert.Equal(new long[] { 2, 4 }, drop);
     }
+
+    // Follow-up: prune hysteresis — the threshold doubles the post-prune count so a sustained raid above the floor
+    // doesn't re-pay the O(n) pass on every creation-hook call, but never drops below the floor.
+    [Fact]
+    public void NextThreshold_doubles_the_post_prune_count_but_never_below_the_floor()
+    {
+        Assert.Equal(256, InstancePruneRule.NextThreshold(countAfterPrune: 10, floor: 256));
+        Assert.Equal(256, InstancePruneRule.NextThreshold(countAfterPrune: 0, floor: 256));
+        Assert.Equal(600, InstancePruneRule.NextThreshold(countAfterPrune: 300, floor: 256));
+    }
 }
