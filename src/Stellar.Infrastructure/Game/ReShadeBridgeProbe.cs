@@ -25,6 +25,7 @@ internal sealed partial class ReShadeBridgeProbe
     private float _t;
     private int _step;
     private bool _finished;
+    private bool _depthEverOn, _effectsEverOff;
 
     public ReShadeBridgeProbe(IPluginLog log, string gameMiniDir)
     {
@@ -62,7 +63,25 @@ internal sealed partial class ReShadeBridgeProbe
     {
         if (_finished) return;
         _finished = true;
+        RestoreBestEffort();
         _log.Info(Tag + "done");
+    }
+
+    // Best effort: whatever the probe switched must not outlive it, also after a step threw. Queued; the add-on applies
+    // them on a later present.
+    private void RestoreBestEffort()
+    {
+        if (_bridge is null) return;
+        if (_depthEverOn)
+        {
+            try { _log.Info(Tag + $"cleanup: set_technique({DepthTechnique},0) queued={_bridge.SetTechnique(DepthTechnique, 0)}"); }
+            catch (Exception ex) { _log.Warning(Tag + "cleanup depth off threw: " + ex.Message); }
+        }
+        if (_effectsEverOff)
+        {
+            try { _log.Info(Tag + $"cleanup: set_enabled(1) queued={_bridge.SetEnabled(1)}"); }
+            catch (Exception ex) { _log.Warning(Tag + "cleanup effects on threw: " + ex.Message); }
+        }
     }
 
     private void BuildSteps()

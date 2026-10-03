@@ -18,8 +18,10 @@ internal sealed partial class ReShadeBridgeProbe
         private readonly Stopwatch _clock = new();
         private double _lastTry = double.NegativeInfinity;
         private int _tries;
+        // depth: Vignette alone already passes "> 0" (its permutation exists by then) — require both techniques drawn.
+        private readonly int _minDrawn;
 
-        public RenderSeries(ReShadeBridgeProbe p, string label, int scale) { _p = p; _label = label; _scale = scale; }
+        public RenderSeries(ReShadeBridgeProbe p, string label, int scale) { _p = p; _label = label; _scale = scale; _minDrawn = label == "depth" ? 2 : 1; }
 
         public bool Step()
         {
@@ -33,9 +35,9 @@ internal sealed partial class ReShadeBridgeProbe
             var (before, after, w, h, last, info, diff) = r.Value;
             var ms = _clock.Elapsed.TotalMilliseconds;
             _p._log.Info(Tag + $"{_label} {_scale}x try={_tries} {w}x{h} last_render={last} meanAbsDiff={diff:F2} info=\"{info}\" t={ms:F0}ms");
-            if (last > 0 && diff > 1)
+            if (last >= _minDrawn && diff > 1)
             {
-                _p._log.Info(Tag + $"{_label} {_scale}x FIRST SUCCESS tries={_tries} elapsedMs={ms:F0}");
+                _p._log.Info(Tag + $"{_label} {_scale}x FIRST SUCCESS (last_render>={_minDrawn}) tries={_tries} elapsedMs={ms:F0}");
                 _p.SavePair(before, after, w, h, $"{_label}-{_scale}x");
                 return true;
             }

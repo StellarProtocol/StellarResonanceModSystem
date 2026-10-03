@@ -43,6 +43,7 @@ internal sealed partial class ReShadeBridgeProbe
     private bool StepRequestEnabled(int on)
     {
         _requestFrame = B.SnapshotFrames();
+        if (on == 0) _effectsEverOff = true;
         _log.Info(Tag + $"set_enabled({on}) queued={B.SetEnabled(on)} (snapshotFrame={_requestFrame})");
         return true;
     }

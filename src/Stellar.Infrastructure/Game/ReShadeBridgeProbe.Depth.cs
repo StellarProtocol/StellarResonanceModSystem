@@ -8,6 +8,7 @@ internal sealed partial class ReShadeBridgeProbe
 
     private bool StepRequestDepth(int on)
     {
+        if (on != 0) _depthEverOn = true;
         _log.Info(Tag + $"set_technique({DepthTechnique},{on}) queued={B.SetTechnique(DepthTechnique, on)}");
         return true;
     }
