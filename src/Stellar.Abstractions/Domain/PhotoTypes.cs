@@ -18,6 +18,24 @@ public enum VisibilityLayers
     OtherPlayers = 8,
     /// <summary>Modifier for <see cref="OtherPlayers"/>: keep party members visible.</summary>
     KeepParty = 16,
+    /// <summary>The local player's own character, their pet and their summons — hidden on this screen only.</summary>
+    Self = 32,
+    /// <summary>Effects (skills, buffs, hits, ground areas) caused by the local player or their summons.</summary>
+    EffectsMine = 64,
+    /// <summary>Effects caused by party members or their summons.</summary>
+    EffectsParty = 128,
+    /// <summary>Effects caused by other players outside the party, or their summons.</summary>
+    EffectsOthers = 256,
+    /// <summary>Effects caused by monsters and bosses, including their warning areas.</summary>
+    EffectsMonsters = 512,
+}
+
+/// <summary>Named combinations of <see cref="VisibilityLayers"/>.</summary>
+public static class VisibilityLayerSets
+{
+    /// <summary>All four effect layers. An effect with no caster (scenery) belongs to none of them and is never hidden.</summary>
+    public const VisibilityLayers Effects = VisibilityLayers.EffectsMine | VisibilityLayers.EffectsParty |
+                                            VisibilityLayers.EffectsOthers | VisibilityLayers.EffectsMonsters;
 }
 
 /// <summary>Image file format for a capture.</summary>
