@@ -26,6 +26,8 @@ _**2.15.0** (minor) — Posing by person, with or without the free camera. Adds 
 ### Changed
 - In the free camera you can now click NPCs to orbit them, not just players.
 ### Developer notes
+- `ColorPickerElement.ShowAlpha` (init, default true): false hides the Opacity slider for colours with no alpha
+  (Photo Studio lights). Additive — the two-argument constructor is unchanged.
 - New `IPluginServices.Lights` (`ILights`: `IsAvailable`, `AddLamp`, `UpdateLamp`, `RemoveLamp`, `PeopleLevel`,
   `SetPersonLight`, `ResetAll`, `Released`) and domain types `LampId`, `LampSettings`, `KeyLight`, `RimLight`,
   `PersonLight`, `LightLimits` (spec devkit 2026-10-03-photo-studio-lights; recon `free-camera-recon.md` § Run 13). Lamps =

@@ -141,12 +141,15 @@ internal sealed partial class WindowBuilder
     // opaque-only — matches the IMGUI DrawOpacityRow); hex is the precise-entry path (6/8-digit).
     private void BuildPickerControls(GameObject col, ColorPickerElement cp, ColorRgba seed, WindowToken token, ColorPickerBinding binding)
     {
-        var opacity = UGuiPrimitives.NewChild("Opacity", col.transform);
-        UGuiPrimitives.AddLayout(opacity, gap: 6f, columns: UGuiPrimitives.RowMode);
-        BuildText(new TextElement(() => "Opacity"), opacity.transform, token);
-        BuildSlider(new SliderElement(() => cp.Get().A,
-            a => { var g = cp.Get(); cp.Set(new ColorRgba(g.R, g.G, g.B, a)); }, 0f, 1f), opacity.transform, token);
-        BuildText(new TextElement(() => $"{Mathf.RoundToInt(cp.Get().A * 100f)}%"), opacity.transform, token);
+        if (cp.ShowAlpha)   // ColorPickerElement.ShowAlpha = false: an opaque colour (lights) — no slider that does nothing
+        {
+            var opacity = UGuiPrimitives.NewChild("Opacity", col.transform);
+            UGuiPrimitives.AddLayout(opacity, gap: 6f, columns: UGuiPrimitives.RowMode);
+            BuildText(new TextElement(() => "Opacity"), opacity.transform, token);
+            BuildSlider(new SliderElement(() => cp.Get().A,
+                a => { var g = cp.Get(); cp.Set(new ColorRgba(g.R, g.G, g.B, a)); }, 0f, 1f), opacity.transform, token);
+            BuildText(new TextElement(() => $"{Mathf.RoundToInt(cp.Get().A * 100f)}%"), opacity.transform, token);
+        }
 
         var hexRow = UGuiPrimitives.NewChild("HexRow", col.transform);
         UGuiPrimitives.AddLayout(hexRow, gap: 6f, columns: UGuiPrimitives.RowMode);

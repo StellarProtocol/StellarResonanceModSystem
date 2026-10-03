@@ -90,7 +90,13 @@ public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudE
 
 /// <summary>HSV colour picker (SV square + hue bar + hex field). <paramref name="Get"/> reflects the slot's
 /// colour; a pick calls <paramref name="Set"/>. The one hand-drawn custom widget.</summary>
-public sealed record ColorPickerElement(Func<ColorRgba> Get, Action<ColorRgba> Set) : HudElement;
+public sealed record ColorPickerElement(Func<ColorRgba> Get, Action<ColorRgba> Set) : HudElement
+{
+    /// <summary>Draw the Opacity (alpha) slider. Default true. Set false for a colour that has no alpha (e.g. a light's
+    /// colour) — the picker then shows only the SV square, hue bar and hex field. An init property (not a constructor
+    /// parameter) so plugins built against the two-argument constructor keep loading.</summary>
+    public bool ShowAlpha { get; init; } = true;
+}
 
 /// <summary>Solid-colour box (the theme-editor colour swatch). <paramref name="Color"/> is poll-diffed so
 /// it tracks live edits.</summary>
