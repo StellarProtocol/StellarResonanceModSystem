@@ -14,6 +14,7 @@ public sealed class SceneVisibilityServiceTests
     {
         public VisibilityLayers Unsupported;
         public VisibilityLayers Available = (VisibilityLayers)31; // every defined bit, by default
+        public bool HasPendingRestore;
         public readonly List<VisibilityLayers> Calls = new();
         public readonly List<VisibilityLayers> Reasserts = new();
         public VisibilityLayers Apply(VisibilityLayers requested)
@@ -27,6 +28,7 @@ public sealed class SceneVisibilityServiceTests
             return requested & ~Unsupported;
         }
         VisibilityLayers IVisibilityBackend.Available => Available;
+        bool IVisibilityBackend.HasPendingRestore => HasPendingRestore;
     }
 
     [Fact]
@@ -165,6 +167,17 @@ public sealed class SceneVisibilityServiceTests
         s.Hide(VisibilityLayers.GameHud).Dispose();
         s.Reassert();
         Assert.Empty(b.Reasserts);
+    }
+
+    // M2: a release Apply couldn't complete earlier (e.g. the effect manager was briefly unavailable) — nothing
+    // looks "held" on the SceneVisibilityService side, so without this the retry would never happen.
+    [Fact]
+    public void Reassert_with_nothing_held_but_backend_pending_restore_calls_the_backend()
+    {
+        var b = new FakeBackend { HasPendingRestore = true };
+        var s = new SceneVisibilityService(b);
+        s.Reassert();
+        Assert.Equal(new[] { VisibilityLayers.None }, b.Reasserts);
     }
 
     [Fact]

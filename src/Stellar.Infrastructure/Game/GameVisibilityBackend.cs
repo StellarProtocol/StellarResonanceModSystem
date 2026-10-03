@@ -44,6 +44,10 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         _effects = effects;
     }
 
+    /// <summary>M2: effects report their own pending release (the manager/listing was unavailable when Apply(None)
+    /// tried to show them back), OR any layer still carries its own restore-retry bit.</summary>
+    public bool HasPendingRestore => (_effects?.HasPendingRelease ?? false) || _restorePending != VisibilityLayers.None;
+
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: false);

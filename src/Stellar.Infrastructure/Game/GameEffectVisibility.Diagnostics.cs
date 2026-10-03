@@ -7,18 +7,22 @@ internal sealed partial class GameEffectVisibility
 {
     private const int MaxClassifiedLines = 400;
     private const int MaxClassifiedWithCasterUids = 300;
+    private const int MaxZeroCasterUids = 50;   // I2(a)
+    private const int MaxBornHiddenUids = 50;   // I2(c)
     private int _classifiedLines;
     // First-sighting cap keyed by uid, not a per-call counter: Sweep re-classifies every listed uid on every
     // Apply/Reassert, so a counter of calls fills the budget in a handful of sweeps and a live effect further
     // down the list (a summon's, a party member's) is never logged. Bounded at MaxClassifiedWithCasterUids entries.
     private readonly HashSet<long> _classifiedWithCasterUids = new();
+    private readonly HashSet<long> _zeroCasterUids = new();   // I2(a): distinct zero-caster uids logged this session
+    private readonly HashSet<long> _bornHiddenUids = new();   // I2(c): distinct born-hidden uids logged this session
     private int _mineHidden, _partyHidden, _othersHidden, _monstersHidden;   // reset every OnSwept — per-sweep, not cumulative
 
-    partial void OnClassified(long uid, long from, long belong, VisibilityLayers owner)
+    partial void OnClassified(long uid, (long Caster, long From, long Belong, bool Visible) ctx, VisibilityLayers owner, bool viaInstance, object fx)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        LogUnresolved(uid, from, belong, owner);
-        LogClassifiedWithCaster(uid, from, belong, owner);
+        LogUnresolved(uid, ctx.From, ctx.Belong, owner);
+        LogClassifiedWithCaster(uid, ctx, owner, viaInstance, fx);
     }
 
     private void LogUnresolved(long uid, long from, long belong, VisibilityLayers owner)
@@ -33,15 +37,36 @@ internal sealed partial class GameEffectVisibility
     /// DISTINCT classified effects that had a caster (one line per uid, the first time it is seen), so a wrong
     /// owner can be spotted straight from the log (never from the unresolved-only line above, which only fires when
     /// owner is None) without the budget being consumed by the same handful of long-lived effects re-classified on
-    /// every sweep.</summary>
-    private void LogClassifiedWithCaster(long uid, long from, long belong, VisibilityLayers owner)
+    /// every sweep. I2(b): carries visible/via/addr too, so a line can be matched to what is on screen.</summary>
+    private void LogClassifiedWithCaster(long uid, (long Caster, long From, long Belong, bool Visible) ctx, VisibilityLayers owner, bool viaInstance, object fx)
     {
-        if (from == 0 && belong == 0) return;   // scenery: never logged, never counted
+        if (ctx.From == 0 && ctx.Belong == 0) return;   // scenery: never logged, never counted
         if (_classifiedWithCasterUids.Contains(uid)) return;   // already logged this uid once
         if (_classifiedWithCasterUids.Count >= MaxClassifiedWithCasterUids) return;   // budget exhausted
         _classifiedWithCasterUids.Add(uid);
-        _log.Info($"[EffectHide] classified uid={uid} from={from}({Kind(from)}) belong={belong}({Kind(belong)}) owner={owner}");
+        var (addr, _) = ReadAsset(fx);
+        var via = viaInstance ? "hook" : "sweep";
+        _log.Info($"[EffectHide] classified uid={uid} from={ctx.From}({Kind(ctx.From)}) belong={ctx.Belong}({Kind(ctx.Belong)}) " +
+                  $"owner={owner} visible={ctx.Visible} via={via} addr={addr}");
     }
+
+    /// <summary>I2(a): the owner's § 5 Q1 pass could not be run on the test client — this is its replacement for the
+    /// "scenery" case specifically (FromUuid==0 && BelongUuid==0, which the classified/unresolved lines above both
+    /// skip as expected). Logs whatever caster-shaped fields the context DOES carry so a genuinely-scenery effect can
+    /// be told apart from one whose caster lives in a field this framework doesn't read yet. Capped at
+    /// <see cref="MaxZeroCasterUids"/> distinct uids.</summary>
+    partial void OnZeroCaster(long uid, object fx)
+    {
+        if (!StellarDiagnostics.IsEnabled || uid == 0) return;
+        if (_zeroCasterUids.Contains(uid) || _zeroCasterUids.Count >= MaxZeroCasterUids) return;
+        _zeroCasterUids.Add(uid);
+        var (addr, path) = ReadAsset(fx);
+        var (owner, attacker, host) = ReadZeroCasterIds(fx);
+        _log.Info($"[EffectHide] zero-caster uid={uid} addr={addr} owner={Fmt(owner)} attacker={Fmt(attacker)} " +
+                  $"host={Fmt(host)} path={path ?? "absent"}");
+    }
+
+    private static string Fmt(long? v) => v?.ToString() ?? "absent";
 
     /// <summary>Simple, low-bits-only classification (EntityId's own 640=player / 64,32832=monster markers) for a log
     /// label. Deliberately never relabels a caster "self" from <paramref name="uuid"/>'s own uuid — <c>owner</c> is
@@ -53,6 +78,29 @@ internal sealed partial class GameEffectVisibility
         if (low == 640) return "player";
         if (low == 64 || low == 32832) return "monster";
         return $"other(low={low})";
+    }
+
+    /// <summary>I2(c), pool reuse: runs BEFORE OnEffectCreated's early return, so this covers an effect being
+    /// recycled even when no effect layer is currently wanted. An effect whose context already reads invisible at
+    /// Init/AddEffectDisplay means the pool handed back a wrapper the game (or an earlier hide) had already hidden —
+    /// `recorded` says whether OUR ledger already knows about it (a pooled wrapper's uid can be reused across
+    /// effects, so a stale `_instances`/ledger entry would otherwise look like a live hide). Capped at
+    /// <see cref="MaxBornHiddenUids"/> distinct uids; must cost nothing when diagnostics are off — the IsEnabled
+    /// check is the very first thing this partial method does.</summary>
+    partial void OnEffectSeen(object? fx)
+    {
+        if (!StellarDiagnostics.IsEnabled || fx is null) return;
+        if (_bornHiddenUids.Count >= MaxBornHiddenUids) return;
+        if (System.Environment.CurrentManagedThreadId != _mainThread || !IsEffect(fx)) return;
+        try
+        {
+            var uid = ReadUid(fx);
+            if (uid == 0 || _bornHiddenUids.Contains(uid) || ReadVisible(fx)) return;
+            _bornHiddenUids.Add(uid);
+            var (addr, _) = ReadAsset(fx);
+            _log.Info($"[EffectHide] born-hidden uid={uid} addr={addr} recorded={_ledger.Contains(uid)}");
+        }
+        catch { /* diagnostics only */ }
     }
 
     partial void OnSweepHidden(VisibilityLayers owner)

@@ -43,4 +43,36 @@ public sealed class EffectHideLedgerTests
         l.MarkHidden(0, Mine);
         Assert.Equal(0, l.Count);
     }
+
+    [Fact]
+    public void TryGetOwner_returns_the_recorded_group()
+    {
+        var l = new EffectHideLedger();
+        l.MarkHidden(1, Mine);
+        Assert.True(l.TryGetOwner(1, out var owner));
+        Assert.Equal(Mine, owner);
+        Assert.False(l.TryGetOwner(2, out _));
+    }
+
+    [Fact]
+    public void Remove_drops_a_recorded_uid_without_touching_others()
+    {
+        var l = new EffectHideLedger();
+        l.MarkHidden(1, Mine);
+        l.MarkHidden(2, Mon);
+        Assert.True(l.Remove(1));
+        Assert.False(l.Contains(1));
+        Assert.True(l.Contains(2));
+        Assert.False(l.Remove(1));   // already gone
+    }
+
+    // M1: a separate pure decision from ShouldHide, which deliberately stays false for already-held uids.
+    [Fact]
+    public void ShouldReHide_only_when_held_and_visible_again()
+    {
+        Assert.True(EffectHideLedger.ShouldReHide(held: true, visible: true));
+        Assert.False(EffectHideLedger.ShouldReHide(held: true, visible: false));
+        Assert.False(EffectHideLedger.ShouldReHide(held: false, visible: true));
+        Assert.False(EffectHideLedger.ShouldReHide(held: false, visible: false));
+    }
 }

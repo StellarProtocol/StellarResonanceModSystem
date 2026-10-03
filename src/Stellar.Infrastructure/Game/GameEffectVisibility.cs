@@ -13,6 +13,9 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class GameEffectVisibility
 {
     private const string Tag = "[PhotoStudio] ";
+    // I1: bounded prune threshold for the creation-hook path (PruneInstancesOverBudget) — see InstancePruneRule.
+    private const int MaxInstances = 256;
+    private static readonly HashSet<long> EmptyListed = new();   // asks ReleaseState about the instance alone (never "listed")
     private readonly IGameTypeRegistry _types;
     private readonly Func<long, VisibilityLayers> _classify;
     private readonly IPluginLog _log;
@@ -31,14 +34,22 @@ internal sealed partial class GameEffectVisibility
 
     public VisibilityLayers Available => _unavailable ? VisibilityLayers.None : VisibilityLayerSets.Effects;
 
+    /// <summary>M2: true when a release is still owed even though nothing is wanted any more — Apply couldn't show
+    /// the ledger's uids back (manager missing / listing unreadable) this tick. Lets
+    /// <see cref="GameVisibilityBackend.HasPendingRestore"/> ask for a retry via Reassert instead of stranding them.</summary>
+    public bool HasPendingRelease => _ledger.Count > 0 && _wanted == VisibilityLayers.None;
+
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
         _wanted = requested & VisibilityLayerSets.Effects;
         if (_unavailable) return VisibilityLayers.None;   // already known dead on this client — don't re-resolve every call
         if (_wanted == VisibilityLayers.None && _ledger.Count == 0) return VisibilityLayers.None;
-        if (!Resolve() || Manager() is not { } mgr) { if (_wanted != 0) WarnOnce("fx", "effect hiding unavailable on this client"); return VisibilityLayers.None; }
+        if (!Resolve()) { if (_wanted != 0) WarnOnce("fx", "effect hiding unavailable on this client"); return VisibilityLayers.None; }
+        if (_wanted != VisibilityLayers.None) EnsureHooksInstalled();   // I4: lazy — first effect-layer hide, not hot-update-ready
+        if (Manager() is not { } mgr) { if (_wanted != 0) WarnOnce("fx", "effect hiding unavailable on this client"); return VisibilityLayers.None; }
         var listed = ListUids(mgr);
         var shown = listed is null ? 0 : Release(mgr, listed);
+        PruneStaleInstances();   // I1: TakeReleasable may have dropped an ended uid from the ledger above
         var hidden = _wanted == VisibilityLayers.None || listed is null ? 0 : Sweep(mgr, listed);
         OnSwept(_wanted, hidden, shown, _ledger.Count);
         return _wanted;
@@ -63,25 +74,65 @@ internal sealed partial class GameEffectVisibility
         var hidden = 0;
         foreach (var uid in listed)
         {
-            try { if (Effect(mgr, uid) is { } fx && TryHide(fx, uid, viaInstance: false, mgr)) hidden++; }
+            try { if (SweepOne(mgr, uid)) hidden++; }
             catch (Exception ex) { WarnOnce("fxsweep", "effect sweep failed for uid " + uid + ": " + (ex.InnerException ?? ex).Message); }
         }
         return hidden;
+    }
+
+    /// <summary>One sweep step. M1 + perf: a uid the ledger already holds costs one visibility read (re-hide it if
+    /// the game showed it again — e.g. a cutscene ending resets effect visibility) instead of the full
+    /// classify-and-hide path everything else goes through.</summary>
+    private bool SweepOne(object mgr, long uid) =>
+        _ledger.Contains(uid) ? ReHideIfNeeded(mgr, uid) : Effect(mgr, uid) is { } fx && TryHide(fx, uid, viaInstance: false, mgr);
+
+    /// <summary>M1: re-hides a held uid the game re-showed. <see cref="EffectHideLedger.ShouldReHide"/> is the pure
+    /// decision; this only reads the one field it needs (<see cref="ReadVisible"/>) rather than the full context
+    /// <see cref="ReadContext"/> reads for a fresh classify.</summary>
+    private bool ReHideIfNeeded(object mgr, long uid)
+    {
+        if (Effect(mgr, uid) is not { } fx) return false;
+        if (!EffectHideLedger.ShouldReHide(held: true, ReadVisible(fx))) return false;
+        if (!SetManagerVisible(mgr, uid, false)) return false;
+        if (_ledger.TryGetOwner(uid, out var owner)) OnSweepHidden(owner);
+        return true;
     }
 
     /// <summary>Classifies and hides one effect; records it. <paramref name="viaInstance"/>: the creation hooks hide
     /// through the instance (it may never be listed).</summary>
     private bool TryHide(object fx, long uid, bool viaInstance, object? mgr)
     {
-        var (caster, from, belong, visible) = ReadContext(fx);
-        var owner = _classify(caster);
-        OnClassified(uid, from, belong, owner);
-        if (!_ledger.ShouldHide(uid, owner, _wanted, visible)) return false;
+        var ctx = ReadContext(fx);
+        var owner = _classify(ctx.Caster);
+        OnClassified(uid, ctx, owner, viaInstance, fx);
+        if (ctx.From == 0 && ctx.Belong == 0) OnZeroCaster(uid, fx);
+        if (!_ledger.ShouldHide(uid, owner, _wanted, ctx.Visible)) return false;
         if (!(viaInstance || mgr is null ? SetInstanceVisible(fx, false) : SetManagerVisible(mgr, uid, false))) return false;
         _ledger.MarkHidden(uid, owner);
         if (viaInstance) _instances[uid] = fx;
         if (!viaInstance) OnSweepHidden(owner);   // the creation-hook path (viaInstance) isn't part of a sweep
         return true;
+    }
+
+    /// <summary>I1: drops `_instances` entries the ledger no longer holds — TakeReleasable (inside Release) can drop
+    /// an ended uid from the ledger without ever showing it back, which previously left its wrapper here forever.</summary>
+    private void PruneStaleInstances()
+    {
+        if (_instances.Count == 0) return;
+        foreach (var uid in InstancePruneRule.NotInLedger(_instances.Keys, _ledger.Contains))
+            _instances.Remove(uid);
+    }
+
+    /// <summary>I1: bounded prune for the creation-hook path, where Apply may not run again for a long time while the
+    /// wanted set stays unchanged (so <see cref="PruneStaleInstances"/> never fires). Reuses <see cref="ReleaseState"/>
+    /// (and so <see cref="EffectReleaseRule"/>) with an empty "listed" set to ask purely about the held instance.</summary>
+    private void PruneInstancesOverBudget()
+    {
+        foreach (var uid in InstancePruneRule.OverBudget(_instances.Keys, _instances.Count, MaxInstances, u => ReleaseState(EmptyListed, u)))
+        {
+            _instances.Remove(uid);
+            _ledger.Remove(uid);
+        }
     }
 
     private bool IsAlive(HashSet<long> listed, long uid) =>
@@ -110,14 +161,18 @@ internal sealed partial class GameEffectVisibility
         return EffectReleaseRule.Resolve(listed, uid, readback, false);
     }
 
-    /// <summary>Creation hooks (AddEffectDisplay(ZEffect) / ZEffect.Init): hide a new effect while an effect layer is wanted.</summary>
+    /// <summary>Creation hooks (AddEffectDisplay(ZEffect) / ZEffect.Init): hide a new effect while an effect layer is
+    /// wanted. I2(c): <see cref="OnEffectSeen"/> runs BEFORE the early return so the born-hidden diagnostic covers
+    /// pool reuse even when no effect layer is currently wanted.</summary>
     private void OnEffectCreated(object? fx)
     {
+        OnEffectSeen(fx);
         if (_wanted == VisibilityLayers.None || fx is null || Environment.CurrentManagedThreadId != _mainThread || !IsEffect(fx)) return;
         try
         {
             var uid = ReadUid(fx);
             if (uid != 0) TryHide(fx, uid, viaInstance: true, mgr: null);
+            PruneInstancesOverBudget();
         }
         catch (Exception ex) { WarnOnce("fxnew", "could not hide a new effect: " + (ex.InnerException ?? ex).Message); }
     }
@@ -127,7 +182,9 @@ internal sealed partial class GameEffectVisibility
         if (_warned.Add(key)) _log.Warning(Tag + message);
     }
 
-    partial void OnClassified(long uid, long from, long belong, VisibilityLayers owner);
+    partial void OnClassified(long uid, (long Caster, long From, long Belong, bool Visible) ctx, VisibilityLayers owner, bool viaInstance, object fx);
+    partial void OnZeroCaster(long uid, object fx);
+    partial void OnEffectSeen(object? fx);
     partial void OnSwept(VisibilityLayers wanted, int hidden, int shown, int held);
     partial void OnSweepHidden(VisibilityLayers owner);
 }

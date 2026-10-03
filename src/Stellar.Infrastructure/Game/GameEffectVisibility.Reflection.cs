@@ -15,15 +15,30 @@ internal sealed partial class GameEffectVisibility
     private readonly object[] _uidBool = new object[2];
     private readonly object[] _bool = new object[1];
     private readonly object[] _uid = new object[1];
-    private PropertyInfo? _effectDict, _fxUid, _fxContext, _fxNeedDestroyed, _ctxFrom, _ctxBelong, _ctxVisible;
+    private PropertyInfo? _effectDict, _fxUid, _fxContext, _fxNeedDestroyed, _ctxFrom, _ctxBelong, _ctxVisible, _ctxAddr;
     private MethodInfo? _getEffect, _mgrSetVisible, _fxSetVisible;
     private Type? _fxType;
     private bool _hotUpdateReady, _unavailable;
+    private HarmonyGameMethodHooker? _hooker;
+    private bool _effectHooksInstalled;
 
+    /// <summary>Hot-update ready: stores the hooker and resolves the reflection surface, but installs nothing yet
+    /// (I4, spec § 3: "installed lazily on the first effect-layer hide"). <see cref="EnsureHooksInstalled"/>, called
+    /// from <see cref="GameEffectVisibility.Apply"/>, does the actual patching the first time an effect layer is
+    /// wanted.</summary>
     public void InstallHooks(HarmonyGameMethodHooker hooker)
     {
+        _hooker = hooker;
         _hotUpdateReady = true;
-        if (!Resolve()) { _unavailable = true; WarnOnce("fxres", "effect hiding unavailable: ZEffectManager / ZEffect members not found"); return; }
+        if (!Resolve()) WarnOnce("fxres", "effect hiding unavailable: ZEffectManager / ZEffect members not found");
+    }
+
+    /// <summary>Patches AddEffectDisplay(ZEffect) + ZEffect.Init once. Idempotent — safe to call on every Apply once
+    /// an effect layer is wanted; the sweep already covers effects that existed before this runs.</summary>
+    private void EnsureHooksInstalled()
+    {
+        if (_effectHooksInstalled || _hooker is not { } hooker) return;
+        _effectHooksInstalled = true;
         try { hooker.PostfixAllOverloads(_types.FindType(EffectManagerType)!, "AddEffectDisplay", (_, args) => OnEffectCreated(args.Length == 1 ? args[0] : null)); }
         catch (Exception ex) { WarnOnce("fxhook", "effect-display hook failed: " + ex.Message); }
         try { hooker.PostfixAllOverloads(_fxType!, "Init", (fx, _) => OnEffectCreated(fx)); }
@@ -46,6 +61,7 @@ internal sealed partial class GameEffectVisibility
         _ctxFrom = ctx is null ? null : StellarInterop.FindPropertyUp(ctx, "FromUuid");
         _ctxBelong = ctx is null ? null : StellarInterop.FindPropertyUp(ctx, "BelongUuid");
         _ctxVisible = ctx is null ? null : StellarInterop.FindPropertyUp(ctx, "IsVisible");
+        _ctxAddr = ctx is null ? null : StellarInterop.FindPropertyUp(ctx, "Addr");   // diagnostics-only (I2); never required below
         var fxSet = fx.GetMethod("SetEffectVisible", new[] { typeof(bool) });
         if (_effectDict is null || _getEffect is null || _mgrSetVisible is null || _fxUid is null || _fxContext is null ||
             _ctxFrom is null || _ctxVisible is null || fxSet is null)
@@ -70,6 +86,43 @@ internal sealed partial class GameEffectVisibility
         var from = Convert.ToInt64(_ctxFrom!.GetValue(c));
         var belong = _ctxBelong is null ? 0L : Convert.ToInt64(_ctxBelong.GetValue(c));
         return (from != 0 ? from : belong, from, belong, _ctxVisible!.GetValue(c) is true);
+    }
+
+    /// <summary>M1 / perf: visibility only, for Sweep's common held-and-still-hidden case — skips the caster field
+    /// reads <see cref="ReadContext"/> also does, which a re-hide check never needs.</summary>
+    private bool ReadVisible(object fx) => _fxContext!.GetValue(fx) is { } c && _ctxVisible!.GetValue(c) is true;
+
+    /// <summary>I2(a)/(b)/(c), diagnostics only: the effect's asset id (<c>Context.Addr</c>, cached like the other
+    /// context fields in <see cref="Resolve"/>) and, if present, a path/name property (resolved by name fresh each
+    /// call — only ever reached from the bounded diagnostic log paths, never production).</summary>
+    private (uint Addr, string? Path) ReadAsset(object fx)
+    {
+        if (_fxContext?.GetValue(fx) is not { } c) return (0, null);
+        uint addr = 0;
+        try { if (_ctxAddr?.GetValue(c) is { } a) addr = Convert.ToUInt32(a); } catch { /* diagnostics only */ }
+        string? path = null;
+        try
+        {
+            var p = StellarInterop.FindPropertyUp(c.GetType(), "Path") ?? StellarInterop.FindPropertyUp(c.GetType(), "Name");
+            path = p?.GetValue(c)?.ToString();
+        }
+        catch { /* diagnostics only */ }
+        return (addr, path);
+    }
+
+    /// <summary>I2(a), diagnostics only: OwnerUuid / AttackerUuid / HostUuid off the effect's context, resolved by
+    /// name — a property absent on this context type (or a failed read) comes back null, never a thrown exception.</summary>
+    private (long? Owner, long? Attacker, long? Host) ReadZeroCasterIds(object fx)
+    {
+        if (_fxContext?.GetValue(fx) is not { } c) return (null, null, null);
+        var t = c.GetType();
+        return (ReadLongPropertyOrNull(c, t, "OwnerUuid"), ReadLongPropertyOrNull(c, t, "AttackerUuid"), ReadLongPropertyOrNull(c, t, "HostUuid"));
+    }
+
+    private static long? ReadLongPropertyOrNull(object instance, Type t, string name)
+    {
+        try { return StellarInterop.FindPropertyUp(t, name) is { } p ? Convert.ToInt64(p.GetValue(instance)) : null; }
+        catch { return null; }
     }
 
     private object? Effect(object mgr, long uid)
