@@ -245,29 +245,41 @@ internal sealed partial class GameVisibilityBackend
         try
         {
             if (EntityShowPlan.TryHideTypeFor(cameraType) is not { } hideType) return null;
-            var mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
-            if (mgr is null) return null;
-            if (_getHideCount is null)
-            {
-                var m = StellarInterop.FindMethod(t, "getHideCount", 2);
-                var ps = m?.GetParameters();
-                if (m is null || ps![0].ParameterType is not { IsEnum: true } hideTypeEnum || ps[1].ParameterType is not { IsEnum: true } sourceType)
-                {
-                    WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
-                    return null;
-                }
-                _hideTypeEnum = hideTypeEnum;
-                _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
-                _getHideCount = m;
-            }
+            if (!EnsureHoldCountReflection(out var mgr)) return null;
             var hide = Enum.ToObject(_hideTypeEnum!, hideType);
-            return _getHideCount.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
+            return _getHideCount!.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
         }
         catch (Exception ex)
         {
             WarnOnce("x:HoldCount", "Hold-count check failed: " + (ex.InnerException ?? ex).Message);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Resolves (once) the ZEntityMgr singleton + its <c>getHideCount(EntityRenderLayerHideType, EVisibleSource)</c>
+    /// method, caching <see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> / <see cref="_holdCountSource"/> for
+    /// every later caller — <see cref="HoldCount"/> AND the Self-holds diagnostic (GameVisibilityBackend.Diagnostics.cs),
+    /// which needs the same fields but has no camera type to resolve through <see cref="EntityShowPlan.TryHideTypeFor"/>
+    /// (Oneself/SelfPet aren't in that map). False (with the same warning as before extraction) when the singleton or
+    /// method isn't available right now; callers decide how to react (HoldCount returns null, the diagnostic no-ops).
+    /// </summary>
+    private bool EnsureHoldCountReflection(out object? mgr)
+    {
+        mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
+        if (mgr is null) return false;
+        if (_getHideCount is not null) return true;
+        var m = StellarInterop.FindMethod(t, "getHideCount", 2);
+        var ps = m?.GetParameters();
+        if (m is null || ps![0].ParameterType is not { IsEnum: true } hideTypeEnum || ps[1].ParameterType is not { IsEnum: true } sourceType)
+        {
+            WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
+            return false;
+        }
+        _hideTypeEnum = hideTypeEnum;
+        _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
+        _getHideCount = m;
+        return true;
     }
 
     /// <summary>
