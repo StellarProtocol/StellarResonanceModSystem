@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Stellar.Abstractions.Domain;
 using Stellar.Infrastructure.Rendering;
 using Xunit;
 
@@ -30,7 +31,7 @@ public sealed class ReShadeServiceTests
     {
         _native.IsLoaded = false;
         _service.Refresh();
-        Assert.False(_service.IsAvailable);
+        Assert.Equal(ReShadeState.NotInstalled, _service.State);
         Assert.Empty(_service.Techniques);
         Assert.Null(_service.CurrentPreset);
         Assert.False(_service.Enabled);
@@ -44,7 +45,7 @@ public sealed class ReShadeServiceTests
         _native.Add("MXAO", "MXAO.fx", enabled: false);
         _native.Preset = "C:\\game\\ReShadePreset.ini";
         Tick();
-        Assert.True(_service.IsAvailable);
+        Assert.Equal(ReShadeState.Ready, _service.State);
         Assert.Equal(2, _service.Techniques.Count);
         Assert.Equal("Clarity", _service.Techniques[0].Name);
         Assert.Equal("Clarity.fx", _service.Techniques[0].EffectFile);
@@ -107,12 +108,12 @@ public sealed class ReShadeServiceTests
         Tick();
         _native.Loading = true;
         Tick();
-        Assert.False(_service.IsAvailable);
+        Assert.Equal(ReShadeState.Loading, _service.State);
         Assert.Empty(_service.Techniques);
         Assert.Equal(2, _changed);
         _native.Loading = false;
         Tick();
-        Assert.True(_service.IsAvailable);
+        Assert.Equal(ReShadeState.Ready, _service.State);
         Assert.Single(_service.Techniques);
         Assert.Equal(3, _changed);
     }
@@ -123,7 +124,7 @@ public sealed class ReShadeServiceTests
         _native.Ready = false;
         _native.Add("Clarity", "Clarity.fx");
         Tick();
-        Assert.False(_service.IsAvailable);
+        Assert.Equal(ReShadeState.Loading, _service.State);
         Assert.Empty(_service.Techniques);
     }
 
@@ -135,7 +136,7 @@ public sealed class ReShadeServiceTests
         Tick();
         _native.IsLoaded = false;
         _service.Refresh();
-        Assert.False(_service.IsAvailable);
+        Assert.Equal(ReShadeState.NotInstalled, _service.State);
         Assert.Empty(_service.Techniques);
         Assert.Null(_service.CurrentPreset);
         Assert.Equal(2, _changed);
@@ -358,5 +359,85 @@ public sealed class ReShadeServiceTests
         Assert.Equal(1, _changed);
         Assert.Equal(1, other);
         Assert.Contains(_log.WarningLines, l => l.Contains("boom"));
+    }
+
+    // Final review: availability is a three-state lifecycle, not a bool.
+    [Fact]
+    public void State_is_NotInstalled_before_any_refresh_and_without_the_add_on()
+    {
+        Assert.Equal(ReShadeState.NotInstalled, _service.State);
+        _native.IsLoaded = false;
+        Tick();
+        Assert.Equal(ReShadeState.NotInstalled, _service.State);
+    }
+
+    [Fact]
+    public void State_is_Loading_while_bound_but_not_ready_or_reloading_and_Ready_after()
+    {
+        _native.Add("Clarity", "Clarity.fx");
+        _native.Ready = false;
+        Tick();
+        Assert.Equal(ReShadeState.Loading, _service.State);
+        _native.Ready = true;
+        Tick();
+        Assert.Equal(ReShadeState.Ready, _service.State);
+        _native.Loading = true;
+        Tick();
+        Assert.Equal(ReShadeState.Loading, _service.State);
+        _native.Loading = false;
+        Tick();
+        Assert.Equal(ReShadeState.Ready, _service.State);
+        Assert.Equal(4, _changed);   // every state move raises Changed
+    }
+
+    [Fact]
+    public void Losing_the_add_on_returns_to_NotInstalled()
+    {
+        _native.Add("Clarity", "Clarity.fx");
+        Tick();
+        _native.IsLoaded = false;
+        Tick();
+        Assert.Equal(ReShadeState.NotInstalled, _service.State);
+    }
+
+    [Fact]
+    public void Turning_effects_on_or_off_raises_Changed()
+    {
+        _native.Add("Clarity", "Clarity.fx");
+        Tick();
+        Assert.Equal(1, _changed);
+        _native.EffectsEnabled = false;   // e.g. ReShade's own toggle key
+        Tick();
+        Assert.Equal(2, _changed);
+        Assert.False(_service.Enabled);
+        Tick();
+        Assert.Equal(2, _changed);
+        _native.EffectsEnabled = true;
+        Tick();
+        Assert.Equal(3, _changed);
+    }
+
+    [Fact]
+    public void Identical_search_paths_are_sent_once_so_ReShade_does_not_reload_again()
+    {
+        for (var i = 0; i < 3; i++)
+            _service.SetSearchPaths(new[] { "/pack" }, new[] { "/tex" });
+        var sep = Path.DirectorySeparatorChar;
+        Assert.Equal(new[] { $"paths effects=/pack{sep}** textures=/tex{sep}**" }, _native.Requests);
+
+        _service.SetSearchPaths(new[] { "/other" }, new[] { "/tex" });   // a real change is still sent
+        Assert.Equal(2, _native.Requests.Count);
+    }
+
+    [Fact]
+    public void Identical_search_paths_held_before_bind_are_held_once()
+    {
+        _native.IsLoaded = false;
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        _native.IsLoaded = true;
+        Tick();
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        Assert.Single(_native.Requests);
     }
 }

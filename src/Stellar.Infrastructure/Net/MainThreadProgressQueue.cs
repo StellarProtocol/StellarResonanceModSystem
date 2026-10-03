@@ -87,9 +87,6 @@ internal sealed class MainThreadProgressQueue
         return ready.Count;
     }
 
-    /// <summary>Lock-free-ish check for the main-thread tick: is anything waiting to be delivered?</summary>
-    public bool HasQueued { get { lock (_gate) return _dirty.Count > 0; } }
-
     /// <summary>One download's progress channel: the real target plus the latest undelivered value.</summary>
     internal sealed class Slot
     {

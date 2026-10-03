@@ -4,7 +4,7 @@ using Stellar.Abstractions.Domain;
 
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary>The per-tick poll. Steady-state cost per tick: one status read (five add-on calls). The snapshot frame
+/// <summary>The per-tick poll. Raises <c>Changed</c> on a state, effects-on/off, technique-list, depth or preset change. Steady-state cost per tick: one status read (five add-on calls). The snapshot frame
 /// counter advances on every presented frame, so the early return ("counter unchanged") only saves work when no frame
 /// was presented since the last tick — it is not the common path. The technique list (one add-on call per technique)
 /// and the preset (one call) are re-read when the status moved (ready / loading / count), after a Stellar request, and
@@ -23,7 +23,7 @@ internal sealed partial class ReShadeService
     private IReadOnlyList<ReShadeTechnique> _techniques = Array.Empty<ReShadeTechnique>();
     private ReShadeNativeStatus _status;
     private bool _hasStatus;
-    private bool _available;
+    private ReShadeState _state = ReShadeState.NotInstalled;
     private string? _preset;
     private bool _forceRead;
     private bool _depthDirty;
@@ -70,6 +70,7 @@ internal sealed partial class ReShadeService
     {
         var moved = !_hasStatus || status.Ready != _status.Ready || status.Loading != _status.Loading
                     || status.TechniqueCount != _status.TechniqueCount;
+        var enabledChanged = _hasStatus && status.Enabled != _status.Enabled;   // effects on/off (ReShade's toggle key too)
         if (_hasStatus && _status.Loading && !status.Loading)
         {
             _depth.MarkStale(); // ReShade reloaded: re-check the effect files it compiled
@@ -78,8 +79,9 @@ internal sealed partial class ReShadeService
         _hasStatus = true;
         _status = status;
         var available = status.Ready && !status.Loading;
-        var changed = available != _available;
-        _available = available;
+        var state = available ? ReShadeState.Ready : ReShadeState.Loading;
+        var changed = state != _state || enabledChanged;
+        _state = state;
 
         var listChanged = false;
         if (moved || _forceRead || ++_ticksSinceRead >= ReReadEveryTicks)
@@ -179,9 +181,9 @@ internal sealed partial class ReShadeService
 
     private void Lose()
     {
-        var hadState = _available || _raw.Count > 0 || _preset is not null;
+        var hadState = _state != ReShadeState.NotInstalled || _raw.Count > 0 || _preset is not null;
         _hasStatus = false;
-        _available = false;
+        _state = ReShadeState.NotInstalled;
         _raw.Clear();
         _techniques = Array.Empty<ReShadeTechnique>();
         _preset = null;

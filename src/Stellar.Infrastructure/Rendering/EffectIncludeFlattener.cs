@@ -35,11 +35,8 @@ internal static class EffectIncludeFlattener
 
     /// <param name="read">Path → text, or null when unreadable.</param>
     /// <param name="resolveInclude">(including file, include name) → path, or null when not found.</param>
-    internal static string? Flatten(string rootPath, Func<string, string?> read, Func<string, string, string?> resolveInclude) =>
-        Flatten(rootPath, read, (file, name) => resolveInclude(file, name) is { } p ? new[] { p } : Array.Empty<string>());
-
-    /// <summary>As above, but an include may resolve to several candidate files (an ambiguous name in a recursive
-    /// search root): EVERY candidate is inlined, so a depth scan of the result ORs them. No candidate = null.</summary>
+    /// <summary>Inlines every <c>#include</c> (ReShade's standard headers skipped). An include may resolve to several
+    /// candidate files (an ambiguous name in a recursive search root): EVERY candidate is inlined, so a depth scan of the result ORs them. No candidate = null.</summary>
     internal static string? Flatten(string rootPath, Func<string, string?> read, Func<string, string, IReadOnlyList<string>> resolveCandidates)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

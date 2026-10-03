@@ -121,7 +121,10 @@ public sealed class PluginDownloadServiceTests : IDisposable
     [InlineData("..")]
     [InlineData("../escape")]
     [InlineData("/etc/passwd")]
-    public async Task Folder_rules_reject_unsafe_target_folders_without_dispatching(string unsafeFolder)
+    [InlineData("")]
+    [InlineData("a\\b")]
+    [InlineData("bad\0name")]
+    public async Task Path_rules_reject_unsafe_target_paths_without_dispatching(string unsafeFolder)
     {
         var handler = new FakeHandler();
         var svc = NewService(handler, out _);
@@ -130,7 +133,30 @@ public sealed class PluginDownloadServiceTests : IDisposable
         var result = await svc.DownloadAsync(req, null, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Equal("folder not allowed", result.Error);
+        Assert.Equal("invalid request", result.Error);
+        Assert.Empty(handler.Requested);
+    }
+
+    // Minor 8: DownloadAsync never throws except on cancellation — a malformed request is a result, not an exception.
+    public static TheoryData<DownloadRequest?> MalformedRequests() => new()
+    {
+        null,
+        new DownloadRequest(null!, "deadbeef", 1024, "pack/file.bin", false),
+        new DownloadRequest(new Uri("relative/pack.bin", UriKind.Relative), "deadbeef", 1024, "pack/file.bin", false),
+        new DownloadRequest(new Uri("https://cdn.example.com/pack.bin"), "deadbeef", 1024, null!, false),
+        new DownloadRequest(new Uri("https://cdn.example.com/pack.bin"), null!, 1024, "pack/file.bin", false),
+    };
+
+    [Theory]
+    [MemberData(nameof(MalformedRequests))]
+    public async Task A_malformed_request_is_an_invalid_request_result_never_an_exception(DownloadRequest? request)
+    {
+        var handler = new FakeHandler();
+        var svc = NewService(handler, out _);
+
+        var result = await svc.DownloadAsync(request!, null, CancellationToken.None);
+
+        Assert.Equal(new DownloadResult(false, null, "invalid request"), result);
         Assert.Empty(handler.Requested);
     }
 
@@ -408,7 +434,7 @@ public sealed class PluginDownloadServiceTests : IDisposable
         var result = await svc.DownloadAsync(req, progress, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.False(queue.HasQueued, "a failed download must not leave a pending progress value for a later drain");
+        Assert.Equal(0, queue.Drain()); // a failed download must not leave a pending progress value for a later drain
         Assert.Equal(0, queue.Drain());
         Assert.Empty(progress.Values); // nothing was ever drained, so nothing was ever delivered
     }
@@ -428,14 +454,13 @@ public sealed class PluginDownloadServiceTests : IDisposable
 
         Assert.True(result.Ok, result.Error);
         Assert.Empty(progress.Values);    // never delivered directly from the worker
-        Assert.True(queue.HasQueued);
 
         var delivered = queue.Drain();
 
         Assert.True(delivered > 0);
         Assert.NotEmpty(progress.Values);
         Assert.Equal(1.0, progress.Values[^1]);
-        Assert.False(queue.HasQueued);
+        Assert.Equal(0, queue.Drain());
         Assert.Equal(payload, File.ReadAllBytes(Path.Combine(dataDir, "reshade", "ReShade64.dll")));
     }
 

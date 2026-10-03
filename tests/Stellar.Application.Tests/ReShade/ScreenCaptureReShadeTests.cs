@@ -39,7 +39,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
 
     private sealed class FakeReShade : IReShade
     {
-        public bool IsAvailable { get; set; } = true;
+        public ReShadeState State { get; set; } = ReShadeState.Ready;
         public bool Enabled { get; set; } = true;
         public List<ReShadeTechnique> List { get; } = new()
         {
@@ -106,10 +106,12 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         Assert.Null(Assert.Single(_grabber.Targets).ReShade);
     }
 
-    [Fact]
-    public async Task Unavailable_passes_nothing()
+    [Theory]
+    [InlineData(ReShadeState.NotInstalled)]
+    [InlineData(ReShadeState.Loading)]
+    public async Task Anything_but_Ready_passes_nothing(ReShadeState state)
     {
-        await Service(new FakeReShade { IsAvailable = false }).CaptureAsync(Request());
+        await Service(new FakeReShade { State = state }).CaptureAsync(Request());
         Assert.Null(Assert.Single(_grabber.Targets).ReShade);
     }
 
@@ -169,7 +171,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         native.NextFrame();
         service.Refresh();
 
-        Assert.False(service.IsAvailable);
+        Assert.Equal(ReShadeState.NotInstalled, service.State);
         Assert.False(service.Enabled);
         var r = await Service(service).CaptureAsync(Request());
         Assert.True(r.Success, r.Error);
@@ -203,7 +205,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
     [Fact]
     public async Task The_live_read_happens_before_availability_is_checked()
     {
-        var reShade = new LiveReadReShade { IsAvailable = false };
+        var reShade = new LiveReadReShade { State = ReShadeState.Loading };
         await Service(reShade).CaptureAsync(Request());
         Assert.Equal(1, reShade.RefreshCount);
         Assert.NotNull(Assert.Single(_grabber.Targets).ReShade);   // RefreshNow made it available
@@ -220,11 +222,11 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
     private sealed class LiveReadReShade : IReShade, IReShadeLiveRead
     {
         public int RefreshCount;
-        public bool IsAvailable { get; set; } = true;
+        public ReShadeState State { get; set; } = ReShadeState.Ready;
         public bool Enabled { get; set; } = true;
         public IReadOnlyList<ReShadeTechnique> Techniques { get; } = new[] { new ReShadeTechnique("Bloom", "Bloom.fx", true, false) };
         public string? CurrentPreset => null;
-        public void RefreshNow() { RefreshCount++; IsAvailable = true; }
+        public void RefreshNow() { RefreshCount++; State = ReShadeState.Ready; }
         public void SetTechnique(string effectFile, string name, bool enabled) { }
         public void SetPreset(string path) { }
         public void SetSearchPaths(IReadOnlyList<string> effectFolders, IReadOnlyList<string> textureFolders) { }

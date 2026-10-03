@@ -8,8 +8,9 @@ namespace Stellar.Application.Services;
 
 /// <summary>
 /// Null-object <see cref="IPluginDownloads"/> — every request fails immediately with "not available" and
-/// the data folder is empty. Host wires this in (shared aggregator) and <c>PerPluginServices</c> forwards
-/// it per-plugin until a later task replaces both with the real per-plugin download service.
+/// the data folder is empty. Only the shared aggregator holds it, as a fallback: every plugin gets its own real
+/// download service from the per-plugin factory, and <c>PerPluginServices</c> falls back to this only when a
+/// composition supplies no factory (tests).
 /// </summary>
 internal sealed class UnavailablePluginDownloads : IPluginDownloads
 {

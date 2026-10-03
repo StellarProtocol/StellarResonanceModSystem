@@ -6,7 +6,7 @@ using Stellar.Abstractions.Services;
 namespace Stellar.Application.Services;
 
 /// <summary>
-/// Null-object <see cref="IReShade"/> — always unavailable, every mutator a no-op. The Host wires the real
+/// Null-object <see cref="IReShade"/> — always <see cref="ReShadeState.NotInstalled"/>, every mutator a no-op. The Host wires the real
 /// Infrastructure <c>ReShadeService</c> (which is itself unavailable without ReShade); this remains for tests and
 /// any composition without a ReShade bridge.
 /// </summary>
@@ -16,7 +16,7 @@ internal sealed class UnavailableReShade : IReShade
     public static readonly UnavailableReShade Instance = new();
 
     /// <inheritdoc/>
-    public bool IsAvailable => false;
+    public ReShadeState State => ReShadeState.NotInstalled;
     /// <inheritdoc/>
     public bool Enabled { get => false; set { } }
     /// <inheritdoc/>

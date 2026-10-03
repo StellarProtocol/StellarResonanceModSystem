@@ -22,7 +22,10 @@ public sealed class EffectIncludeFlattenerTests
         return _files.ContainsKey(shared) ? shared : null;
     }
 
-    private string? Flatten(string root) => EffectIncludeFlattener.Flatten(root, Read, Resolve);
+    private IReadOnlyList<string> ResolveAll(string includingFile, string name) =>
+        Resolve(includingFile, name) is { } path ? new[] { path } : Array.Empty<string>();
+
+    private string? Flatten(string root) => EffectIncludeFlattener.Flatten(root, Read, ResolveAll);
 
     private const string StandardHeader =
         "namespace ReShade { texture DepthBufferTex : DEPTH; sampler DepthBuffer { Texture = DepthBufferTex; };\n" +

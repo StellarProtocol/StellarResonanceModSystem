@@ -9,8 +9,9 @@ namespace Stellar.Infrastructure.Rendering;
 /// <summary>
 /// <see cref="IReShade"/> over the Stellar ReShade bridge add-on. Polls nothing on its own: the Host calls
 /// <see cref="Refresh"/> once per framework tick (ReShadeService.Refresh.cs). Every setter only queues a request the
-/// add-on applies on ReShade's own present; requests made before the add-on binds are held (latest wins) and sent
-/// once it does. A preset switch is additionally held until ReShade lists techniques — the add-on's host contract
+/// add-on applies on ReShade's own present. While the add-on is not bound, <see cref="Enabled"/> and
+/// <see cref="SetTechnique"/> are dropped (no-ops); only a preset switch and the search paths are held (latest wins)
+/// and sent once it binds. A preset switch is additionally held until ReShade lists techniques — the add-on's host contract
 /// (it ignores a preset request while there are none). Main thread only.
 /// </summary>
 internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abstractions.IReShadeLiveRead
@@ -23,6 +24,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
 
     private string? _pendingPreset;
     private (string? Effects, string? Textures)? _pendingSearchPaths;
+    private (string? Effects, string? Textures)? _lastSentSearchPaths;   // this session's last request (dedupe)
 
     internal ReShadeService(IReShadeNative native, EffectDepthIndex depth, IPluginLog log)
     {
@@ -33,7 +35,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
 
     public event Action? Changed;
 
-    public bool IsAvailable => _available;
+    public ReShadeState State => _state;
 
     public IReadOnlyList<ReShadeTechnique> Techniques => _techniques;
 
@@ -72,13 +74,17 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
         var effects = FormatFolders(effectFolders);
         var textures = FormatFolders(textureFolders);
         if (effects.Count == 0 && textures.Count == 0) return;
+        var request = (Join(effects), Join(textures));
+        // Identical to what was last sent (or is already held): sending again would make ReShade rewrite ReShade.ini
+        // and recompile every effect for nothing — e.g. a plugin re-applying its folders when it starts.
+        if (request == _lastSentSearchPaths || request == _pendingSearchPaths) return;
         if (effects.Count > 0)
         {
             _depth.SetSearchPaths(effects);
             _depthDirty = true;
             _forceRead = true;
         }
-        _pendingSearchPaths = (Join(effects), Join(textures));
+        _pendingSearchPaths = request;
         TrySendPendingSearchPaths();
         if (_pendingSearchPaths is not null) OnHeld("search paths", _pendingSearchPaths.Value.Effects ?? "");
     }
@@ -87,6 +93,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
     {
         if (_pendingSearchPaths is not { } paths || !_native.IsLoaded) return;
         _pendingSearchPaths = null;
+        _lastSentSearchPaths = paths;
         _native.RequestSearchPaths(paths.Effects, paths.Textures);
         OnRequest("search paths", paths.Effects ?? "");
     }

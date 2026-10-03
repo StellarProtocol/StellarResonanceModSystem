@@ -41,7 +41,7 @@ internal sealed class PerPluginServices : IPluginServices
     private readonly ITimeOfDay? _timeOfDay;
     private readonly FreeCameraScope? _freeCam;
     // Per-plugin download channel, backed by its own data folder + busy-gate. Null in a bare test host
-    // that supplies no per-plugin factory — falls back to the shared bag's (placeholder) Downloads.
+    // that supplies no per-plugin factory — falls back to the shared bag's Downloads (the null-object fallback).
     private readonly IPluginDownloads? _downloads;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)

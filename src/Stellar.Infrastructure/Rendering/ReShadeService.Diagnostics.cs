@@ -14,7 +14,7 @@ internal sealed partial class ReShadeService
     private void OnTechniquesRead(int count)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        Diag($"techniques={count} available={_available}");
+        Diag($"techniques={count} state={_state}");
     }
 
     private void OnPresetSeen(string? preset)

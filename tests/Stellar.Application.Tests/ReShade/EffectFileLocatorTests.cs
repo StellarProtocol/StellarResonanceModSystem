@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Stellar.Infrastructure.Rendering;
 using Xunit;
 
@@ -6,6 +7,9 @@ namespace Stellar.Application.Tests.ReShade;
 public sealed class EffectFileLocatorTests
 {
     private readonly InMemoryEffectFiles _fs = new();
+
+    // The single answer, null when none; an ambiguous result fails the test (these cases expect exactly one).
+    private static string? Only(IReadOnlyList<string> candidates) => candidates.Count == 0 ? null : Assert.Single(candidates);
 
     private EffectFileLocator Locator(params string[] paths) => LocatorWithCap(EffectFileLocator.MaxFilesPerRoot, paths);
 
@@ -33,16 +37,16 @@ public sealed class EffectFileLocatorTests
     public void A_plain_search_path_only_looks_in_its_own_folder()
     {
         _fs.Add("/a/sub/X.fx", "x");
-        Assert.Null(Locator("/a").FindEffect("X.fx"));
+        Assert.Null(Only(Locator("/a").FindEffectCandidates("X.fx")));
         _fs.Add("/a/X.fx", "x");
-        Assert.Equal("/a/X.fx", Locator("/a").FindEffect("X.fx"));
+        Assert.Equal("/a/X.fx", Only(Locator("/a").FindEffectCandidates("X.fx")));
     }
 
     [Fact]
     public void A_recursive_search_path_looks_in_every_subfolder()
     {
         _fs.Add("/a/sub/deep/X.fx", "x");
-        Assert.Equal("/a/sub/deep/X.fx", Locator("/a/**").FindEffect("X.fx"));
+        Assert.Equal("/a/sub/deep/X.fx", Only(Locator("/a/**").FindEffectCandidates("X.fx")));
     }
 
     [Fact]
@@ -50,7 +54,7 @@ public sealed class EffectFileLocatorTests
     {
         _fs.Add("/one/X.fx", "1");
         _fs.Add("/two/X.fx", "2");
-        Assert.Equal("/two/X.fx", Locator("/missing/**", "/two/**", "/one/**").FindEffect("X.fx"));
+        Assert.Equal("/two/X.fx", Only(Locator("/missing/**", "/two/**", "/one/**").FindEffectCandidates("X.fx")));
     }
 
     [Fact]
@@ -60,9 +64,9 @@ public sealed class EffectFileLocatorTests
         _fs.Add("/pack/Shaders/Local.fxh", "l");
         _fs.Add("/pack/Shaders/lib/Shared.fxh", "s");
         var locator = Locator("/pack/**");
-        Assert.Equal("/pack/Shaders/Local.fxh", locator.ResolveInclude("/pack/Shaders/A.fx", "Local.fxh"));
-        Assert.Equal("/pack/Shaders/lib/Shared.fxh", locator.ResolveInclude("/pack/Shaders/A.fx", "Shared.fxh"));
-        Assert.Null(locator.ResolveInclude("/pack/Shaders/A.fx", "Nowhere.fxh"));
+        Assert.Equal("/pack/Shaders/Local.fxh", Only(locator.ResolveIncludeCandidates("/pack/Shaders/A.fx", "Local.fxh")));
+        Assert.Equal("/pack/Shaders/lib/Shared.fxh", Only(locator.ResolveIncludeCandidates("/pack/Shaders/A.fx", "Shared.fxh")));
+        Assert.Null(Only(locator.ResolveIncludeCandidates("/pack/Shaders/A.fx", "Nowhere.fxh")));
     }
 
     [Fact]
@@ -74,10 +78,10 @@ public sealed class EffectFileLocatorTests
         var locator = Locator("/a/**", "/b");
         for (var i = 0; i < 20; i++)
         {
-            locator.FindEffect("X.fx");
-            locator.FindEffect("Y.fx");
-            locator.FindEffect("Missing.fx");
-            locator.ResolveInclude("/a/sub/X.fx", "Shared.fxh");
+            Only(locator.FindEffectCandidates("X.fx"));
+            Only(locator.FindEffectCandidates("Y.fx"));
+            Only(locator.FindEffectCandidates("Missing.fx"));
+            Only(locator.ResolveIncludeCandidates("/a/sub/X.fx", "Shared.fxh"));
         }
         Assert.Equal(1, _fs.WalksOf("/a"));
         Assert.Equal(1, _fs.WalksOf("/b"));
@@ -87,11 +91,11 @@ public sealed class EffectFileLocatorTests
     public void The_file_index_is_rebuilt_after_the_cache_is_cleared()
     {
         var locator = Locator("/a/**");
-        Assert.Null(locator.FindEffect("Late.fx"));
+        Assert.Null(Only(locator.FindEffectCandidates("Late.fx")));
         _fs.Add("/a/sub/Late.fx", "x");
-        Assert.Null(locator.FindEffect("Late.fx"));
+        Assert.Null(Only(locator.FindEffectCandidates("Late.fx")));
         locator.ClearCache();
-        Assert.Equal("/a/sub/Late.fx", locator.FindEffect("Late.fx"));
+        Assert.Equal("/a/sub/Late.fx", Only(locator.FindEffectCandidates("Late.fx")));
         Assert.Equal(2, _fs.WalksOf("/a"));
     }
 
@@ -99,7 +103,7 @@ public sealed class EffectFileLocatorTests
     public void Lookups_ignore_letter_case()
     {
         _fs.Add("/a/sub/Clarity.fx", "x");
-        Assert.Equal("/a/sub/Clarity.fx", Locator("/a/**").FindEffect("CLARITY.fx"));
+        Assert.Equal("/a/sub/Clarity.fx", Only(Locator("/a/**").FindEffectCandidates("CLARITY.fx")));
     }
 
     [Fact]
@@ -107,7 +111,7 @@ public sealed class EffectFileLocatorTests
     {
         _fs.Add("/a/A/X.fx", "sub");
         _fs.Add("/a/X.fx", "direct");
-        Assert.Equal("/a/X.fx", Locator("/a/**").FindEffect("X.fx"));
+        Assert.Equal("/a/X.fx", Only(Locator("/a/**").FindEffectCandidates("X.fx")));
     }
 
     [Fact]
@@ -116,7 +120,7 @@ public sealed class EffectFileLocatorTests
         _fs.Add("/pack/Shaders/A.fx", "a");
         _fs.Add("/pack/Shaders/other/Shared.fxh", "wrong folder");
         _fs.Add("/pack/Shaders/lib/Shared.fxh", "s");
-        Assert.Equal("/pack/Shaders/lib/Shared.fxh", Locator("/pack/**").ResolveInclude("/elsewhere/A.fx", "lib/Shared.fxh"));
+        Assert.Equal("/pack/Shaders/lib/Shared.fxh", Only(Locator("/pack/**").ResolveIncludeCandidates("/elsewhere/A.fx", "lib/Shared.fxh")));
     }
 
     [Fact]
@@ -126,29 +130,29 @@ public sealed class EffectFileLocatorTests
         _fs.Add("/a/2.fx", "2");
         _fs.Add("/a/3.fx", "3");
         var locator = LocatorWithCap(2, "/a/**");
-        Assert.Equal("/a/1.fx", locator.FindEffect("1.fx"));
-        Assert.Null(locator.FindEffect("3.fx"));
+        Assert.Equal("/a/1.fx", Only(locator.FindEffectCandidates("1.fx")));
+        Assert.Null(Only(locator.FindEffectCandidates("3.fx")));
     }
 
     [Fact]
     public void A_rooted_include_is_refused()
     {
         _fs.Add("/pack/Shaders/Local.fxh", "l");
-        Assert.Null(Locator("/pack/**").ResolveInclude("/pack/Shaders/A.fx", "/pack/Shaders/Local.fxh"));
+        Assert.Null(Only(Locator("/pack/**").ResolveIncludeCandidates("/pack/Shaders/A.fx", "/pack/Shaders/Local.fxh")));
     }
 
     [Fact]
     public void A_relative_include_resolves_to_a_normalized_full_path()
     {
         _fs.Add("/pack/Shaders/Local.fxh", "l");
-        Assert.Equal("/pack/Shaders/Local.fxh", Locator().ResolveInclude("/pack/Shaders/A.fx", "../Shaders/Local.fxh"));
+        Assert.Equal("/pack/Shaders/Local.fxh", Only(Locator().ResolveIncludeCandidates("/pack/Shaders/A.fx", "../Shaders/Local.fxh")));
     }
 
     [Fact]
     public void No_search_paths_finds_nothing()
     {
         _fs.Add("/a/X.fx", "x");
-        Assert.Null(Locator().FindEffect("X.fx"));
+        Assert.Null(Only(Locator().FindEffectCandidates("X.fx")));
     }
 
     [Fact]

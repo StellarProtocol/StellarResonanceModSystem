@@ -38,14 +38,10 @@ internal sealed class EffectFileLocator
 
     internal void ClearCache() => _index.Clear();
 
-    internal string? FindEffect(string fileName) => First(FindEffectCandidates(fileName));
-
     /// <summary>Every file the effect name could be. Usually one; several when a recursive root holds the name in more
     /// than one subfolder and none sits directly in the root — which one ReShade loads then depends on its own walk
     /// order, so a D8 caller must treat them all as possible (OR their depth use).</summary>
     internal IReadOnlyList<string> FindEffectCandidates(string fileName) => SearchPaths(fileName);
-
-    internal string? ResolveInclude(string includingFile, string name) => First(ResolveIncludeCandidates(includingFile, name));
 
     /// <summary>Every file an include could resolve to (see <see cref="FindEffectCandidates"/>); empty when none.</summary>
     internal IReadOnlyList<string> ResolveIncludeCandidates(string includingFile, string name)
@@ -56,8 +52,6 @@ internal sealed class EffectFileLocator
             return new[] { local };
         return SearchPaths(name);
     }
-
-    private static string? First(IReadOnlyList<string> candidates) => candidates.Count > 0 ? candidates[0] : null;
 
     private IReadOnlyList<string> SearchPaths(string name)
     {

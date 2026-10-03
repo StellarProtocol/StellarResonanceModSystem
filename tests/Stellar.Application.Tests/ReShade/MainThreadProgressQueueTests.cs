@@ -32,7 +32,8 @@ public sealed class MainThreadProgressQueueTests
         q.Report(slot, 0.5);
 
         Assert.Empty(target.Values);
-        Assert.True(q.HasQueued);
+        Assert.Equal(1, q.Drain());   // it was queued for the main-thread drain
+        Assert.Equal(new[] { 0.5 }, target.Values);
     }
 
     [Fact]
@@ -49,7 +50,7 @@ public sealed class MainThreadProgressQueueTests
 
         Assert.Equal(1, delivered);
         Assert.Equal(new[] { 0.9 }, target.Values);
-        Assert.False(q.HasQueued);
+        Assert.Equal(0, q.Drain());
     }
 
     [Fact]
@@ -63,7 +64,7 @@ public sealed class MainThreadProgressQueueTests
 
         q.Report(slot, 0.5); // same value again — must not re-mark dirty
 
-        Assert.False(q.HasQueued);
+        Assert.Equal(0, q.Drain());
         Assert.Equal(0, q.Drain());
         Assert.Equal(new[] { 0.5 }, target.Values); // delivered only the first time
     }
@@ -73,7 +74,7 @@ public sealed class MainThreadProgressQueueTests
     {
         var q = NewQueue();
         q.Report(null, 0.5);
-        Assert.False(q.HasQueued);
+        Assert.Equal(0, q.Drain());
         Assert.Equal(0, q.Drain());
     }
 
@@ -140,7 +141,7 @@ public sealed class MainThreadProgressQueueTests
 
         q.Finish(slot, null);
 
-        Assert.False(q.HasQueued);
+        Assert.Equal(0, q.Drain());
         Assert.Equal(0, q.Drain());
         Assert.Empty(target.Values);
     }
@@ -150,6 +151,6 @@ public sealed class MainThreadProgressQueueTests
     {
         var q = NewQueue();
         q.Finish(null, 1.0);
-        Assert.False(q.HasQueued);
+        Assert.Equal(0, q.Drain());
     }
 }

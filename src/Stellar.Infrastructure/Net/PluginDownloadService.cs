@@ -50,10 +50,7 @@ internal sealed class PluginDownloadService : IPluginDownloads
 
     public async Task<DownloadResult> DownloadAsync(DownloadRequest request, IProgress<double>? progress, CancellationToken ct)
     {
-        if (request.Url.Scheme != Uri.UriSchemeHttps) return new DownloadResult(false, null, "https only");
-        var target = DownloadPlan.ResolveTarget(DataFolder, request.TargetFolder);
-        if (target is null) return new DownloadResult(false, null, "folder not allowed");
-        if (request.MaxBytes <= 0 || request.MaxBytes > Array.MaxLength) return new DownloadResult(false, null, "invalid size");
+        if (Validate(request, out var target) is { } refused) return refused;
         if (!_gate.Wait(0)) return new DownloadResult(false, null, "busy");
         try
         {
@@ -79,6 +76,30 @@ internal sealed class PluginDownloadService : IPluginDownloads
             await ResumeQuietly().ConfigureAwait(false);
         }
     }
+
+    // Every check runs inside a try: a malformed request (null request/Url/Sha256/path, a relative Url, a path the
+    // platform refuses) is an "invalid request" RESULT — DownloadAsync never throws except on cancellation.
+    private DownloadResult? Validate(DownloadRequest? request, out string target)
+    {
+        target = "";
+        try
+        {
+            if (request?.Url is not { IsAbsoluteUri: true } url || request.Sha256 is null) return Invalid;
+            if (url.Scheme != Uri.UriSchemeHttps) return new DownloadResult(false, null, "https only");
+            if (request.TargetPath is not { } path || path.IndexOf('\0') >= 0) return Invalid;
+            if (DownloadPlan.ResolveTarget(DataFolder, path) is not { } resolved) return Invalid;
+            if (request.MaxBytes <= 0 || request.MaxBytes > Array.MaxLength) return new DownloadResult(false, null, "invalid size");
+            target = resolved;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[PluginDownloads] invalid request: {ex.GetType().Name}: {ex.Message}");
+            return Invalid;
+        }
+    }
+
+    private static readonly DownloadResult Invalid = new(false, null, "invalid request");
 
     // Fix round 2 (N2): the slot is FLUSHED exactly once on every exit path — 1.0 on success, dropped
     // (never delivered) on any failure — so no stale progress can arrive on a later tick after

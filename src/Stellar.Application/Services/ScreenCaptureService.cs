@@ -140,7 +140,7 @@ internal sealed class ScreenCaptureService : IScreenCapture
     {
         if (!r.ApplyReShade || _reShade is null) return null;
         if (_reShade is IReShadeLiveRead live) live.RefreshNow();   // a toggle made just before the shutter counts
-        if (_reShade is not { IsAvailable: true, Enabled: true } reShade) return null;
+        if (_reShade is not { State: ReShadeState.Ready, Enabled: true } reShade) return null;
         List<ReShadeTechnique>? active = null;
         foreach (var technique in reShade.Techniques)
         {
