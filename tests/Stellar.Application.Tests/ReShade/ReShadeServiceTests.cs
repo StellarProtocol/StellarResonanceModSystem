@@ -155,23 +155,25 @@ public sealed class ReShadeServiceTests
     }
 
     [Fact]
-    public void SetTechnique_requests_a_saved_change_for_that_name_in_any_effect_and_rereads_next_tick()
+    public void SetTechnique_requests_a_saved_change_for_that_effect_and_name_and_rereads_next_tick()
     {
         _native.Add("Clarity", "Clarity.fx");
+        _native.Add("Clarity", "OtherPack.fx");
         Tick();
-        _service.SetTechnique("Clarity", false);
-        Assert.Equal(new[] { "technique <any>/Clarity on=False save=True" }, _native.Requests);
+        _service.SetTechnique("Clarity.fx", "Clarity", false);
+        Assert.Equal(new[] { "technique Clarity.fx/Clarity on=False save=True" }, _native.Requests);
         _native.Techniques[0] = ("Clarity", "Clarity.fx", false);
         Tick();
         Assert.False(_service.Techniques[0].Enabled);
     }
 
     [Fact]
-    public void SetTechnique_ignores_an_empty_name_and_a_missing_add_on()
+    public void SetTechnique_ignores_an_empty_name_or_effect_and_a_missing_add_on()
     {
-        _service.SetTechnique("", true);
+        _service.SetTechnique("Clarity.fx", "", true);
+        _service.SetTechnique("", "Clarity", true);
         _native.IsLoaded = false;
-        _service.SetTechnique("Clarity", true);
+        _service.SetTechnique("Clarity.fx", "Clarity", true);
         Assert.Empty(_native.Requests);
     }
 

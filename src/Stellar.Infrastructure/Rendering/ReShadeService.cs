@@ -48,10 +48,11 @@ internal sealed partial class ReShadeService : IReShade
         }
     }
 
-    public void SetTechnique(string name, bool enabled)
+    public void SetTechnique(string effectFile, string name, bool enabled)
     {
-        if (string.IsNullOrEmpty(name) || !_native.IsLoaded) return;
-        _native.RequestTechnique(null, name, enabled, save: true); // name-only contract: that name in every effect
+        // An empty effect file would make the add-on match the name in EVERY effect: refused.
+        if (string.IsNullOrEmpty(effectFile) || string.IsNullOrEmpty(name) || !_native.IsLoaded) return;
+        _native.RequestTechnique(effectFile, name, enabled, save: true);
         _forceRead = true;
         OnRequest("technique", name);
     }

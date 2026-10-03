@@ -12,8 +12,9 @@ public sealed class EffectDepthIndexTests
     {
         _index = new EffectDepthIndex(_fs);
         _index.SetSearchPaths(new[] { "/pack/**" });
-        _fs.Add("/pack/Shaders/ReShade.fxh", "namespace ReShade { float GetAspectRatio() { return 1; } }");
-        _fs.Add("/pack/Shaders/Plain.fx", "#include \"ReShade.fxh\"\nfloat4 PS() { return tex2D(ReShade::BackBuffer, uv); }");
+        _fs.Add("/pack/Shaders/ReShade.fxh", "namespace ReShade { texture DepthBufferTex : DEPTH; float GetLinearizedDepth(float2 uv) { return 0; } }");
+        _fs.Add("/pack/Shaders/PackLib.fxh", "float4 Tone(float4 c) { return c; }");
+        _fs.Add("/pack/Shaders/Plain.fx", "#include \"ReShade.fxh\"\n#include \"PackLib.fxh\"\nfloat4 PS() { return tex2D(ReShade::BackBuffer, uv); }");
         _fs.Add("/pack/Shaders/Deep.fx", "#include \"DepthLib.fxh\"");
         _fs.Add("/pack/Shaders/lib/DepthLib.fxh", "float d = ReShade::GetLinearizedDepth(uv);");
     }
@@ -45,9 +46,24 @@ public sealed class EffectDepthIndexTests
     }
 
     [Fact]
+    public void An_effect_that_only_includes_ReShade_fxh_and_never_reads_depth_is_false()
+    {
+        _fs.Add("/pack/Shaders/Bloom.fx", "#include \"ReShade.fxh\"\nfloat4 PS() { return tex2D(ReShade::BackBuffer, uv); }");
+        Assert.False(_index.Resolve("Bloom.fx"));
+        Assert.Equal(0, _fs.ReadsOf("/pack/Shaders/ReShade.fxh"));
+    }
+
+    [Fact]
+    public void An_effect_calling_GetLinearizedDepth_is_true()
+    {
+        _fs.Add("/pack/Shaders/MXAO.fx", "#include \"ReShade.fxh\"\nfloat d = ReShade::GetLinearizedDepth(uv);");
+        Assert.True(_index.Resolve("MXAO.fx"));
+    }
+
+    [Fact]
     public void An_unreadable_include_counts_as_using_depth()
     {
-        _fs.MarkUnreadable("/pack/Shaders/ReShade.fxh");
+        _fs.MarkUnreadable("/pack/Shaders/PackLib.fxh");
         Assert.True(_index.Resolve("Plain.fx"));
     }
 
@@ -64,10 +80,10 @@ public sealed class EffectDepthIndexTests
     [Fact]
     public void A_shared_include_is_read_once_across_effects()
     {
-        _fs.Add("/pack/Shaders/Other.fx", "#include \"ReShade.fxh\"");
+        _fs.Add("/pack/Shaders/Other.fx", "#include \"PackLib.fxh\"");
         _index.Resolve("Plain.fx");
         _index.Resolve("Other.fx");
-        Assert.Equal(1, _fs.ReadsOf("/pack/Shaders/ReShade.fxh"));
+        Assert.Equal(1, _fs.ReadsOf("/pack/Shaders/PackLib.fxh"));
     }
 
     [Fact]
@@ -85,7 +101,7 @@ public sealed class EffectDepthIndexTests
     public void A_changed_include_is_reread_after_a_reload()
     {
         Assert.False(_index.Resolve("Plain.fx"));
-        _fs.Touch("/pack/Shaders/ReShade.fxh", "namespace ReShade { texture DepthBufferTex : DEPTH; }");
+        _fs.Touch("/pack/Shaders/PackLib.fxh", "float4 Tone(float4 c) { return ReShade::GetLinearizedDepth(c.xy); }");
         _index.MarkStale();
         Assert.True(_index.Resolve("Plain.fx"));
     }

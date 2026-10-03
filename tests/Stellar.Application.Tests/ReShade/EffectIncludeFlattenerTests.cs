@@ -24,6 +24,10 @@ public sealed class EffectIncludeFlattenerTests
 
     private string? Flatten(string root) => EffectIncludeFlattener.Flatten(root, Read, Resolve);
 
+    private const string StandardHeader =
+        "namespace ReShade { texture DepthBufferTex : DEPTH; sampler DepthBuffer { Texture = DepthBufferTex; };\n" +
+        "float GetLinearizedDepth(float2 uv) { return tex2Dlod(DepthBuffer, float4(uv, 0, 0)).x; } }";
+
     [Fact]
     public void Source_without_includes_comes_back_unchanged()
     {
@@ -62,12 +66,43 @@ public sealed class EffectIncludeFlattenerTests
         Assert.True(EffectDepthScanner.UsesDepth(Flatten("/fx/A.fx")));
     }
 
-    [Fact]
-    public void Depth_use_hidden_in_ReShade_fxh_is_seen_by_the_scanner()
+    [Theory]
+    [InlineData("ReShade.fxh")]
+    [InlineData("RESHADE.FXH")]
+    [InlineData("ReShadeUI.fxh")]
+    [InlineData("reshadeui.fxh")]
+    public void ReShades_standard_headers_are_skipped_in_any_case(string header)
     {
-        _files["/fx/Bloom.fx"] = "#include \"ReShade.fxh\"\nfloat4 PS() { return tex2D(ReShade::BackBuffer, uv); }";
-        _files["/shared/ReShade.fxh"] = "namespace ReShade { texture DepthBufferTex : DEPTH; }";
-        Assert.True(EffectDepthScanner.UsesDepth(Flatten("/fx/Bloom.fx")));
+        _files["/fx/Bloom.fx"] = $"#include \"{header}\"\nfloat4 PS() {{ return tex2D(ReShade::BackBuffer, uv); }}";
+        _files[$"/shared/{header}"] = StandardHeader;
+        var flat = Flatten("/fx/Bloom.fx");
+        Assert.NotNull(flat);
+        Assert.DoesNotContain("DepthBufferTex", flat);
+        Assert.False(EffectDepthScanner.UsesDepth(flat));
+    }
+
+    [Fact]
+    public void A_skipped_standard_header_need_not_exist()
+    {
+        _files["/fx/Bloom.fx"] = "#include \"ReShade.fxh\"\nbody";
+        Assert.Contains("body", Flatten("/fx/Bloom.fx"));
+    }
+
+    [Fact]
+    public void An_effect_calling_GetLinearizedDepth_itself_still_uses_depth_with_the_header_skipped()
+    {
+        _files["/fx/MXAO.fx"] = "#include \"ReShade.fxh\"\nfloat d = ReShade::GetLinearizedDepth(uv);";
+        _files["/shared/ReShade.fxh"] = StandardHeader;
+        Assert.True(EffectDepthScanner.UsesDepth(Flatten("/fx/MXAO.fx")));
+    }
+
+    [Fact]
+    public void A_pack_helper_header_that_reads_depth_is_still_flattened()
+    {
+        _files["/fx/Fog.fx"] = "#include \"ReShade.fxh\"\n#include \"PackHelpers.fxh\"\nfloat4 PS() { return Fog(uv); }";
+        _files["/shared/ReShade.fxh"] = StandardHeader;
+        _files["/shared/PackHelpers.fxh"] = "#include \"ReShade.fxh\"\nfloat4 Fog(float2 uv) { return ReShade::GetLinearizedDepth(uv); }";
+        Assert.True(EffectDepthScanner.UsesDepth(Flatten("/fx/Fog.fx")));
     }
 
     [Fact]

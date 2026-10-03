@@ -8,11 +8,27 @@ namespace Stellar.Infrastructure.Rendering;
 /// <summary>Pure <c>#include</c> flattening for the depth scan: each <c>#include "x"</c> / <c>&lt;x&gt;</c> line is
 /// replaced by the included file's own flattened text, so depth use hidden in a shared .fxh is visible to
 /// <c>EffectDepthScanner</c>. Each file is inlined at most once (cycles and repeats are skipped — the scan only needs
-/// presence). Returns null — "cannot tell, assume depth" — when the root or any include cannot be resolved or read,
+/// presence). ReShade's own standard headers (<see cref="IsStandardHeader"/>) are skipped: they DECLARE the depth
+/// texture and define <c>GetLinearizedDepth</c>, which is not use — an effect that reads depth calls or samples it in
+/// its own text or in a pack's shared .fxh, which are flattened. Returns null — "cannot tell, assume depth" — when the root or any include cannot be resolved or read,
 /// or nesting goes past <see cref="MaxDepth"/>. Preprocessor conditionals are ignored: every include is followed.</summary>
 internal static class EffectIncludeFlattener
 {
     internal const int MaxDepth = 16;
+
+    private static readonly string[] StandardHeaders = { "ReShade.fxh", "ReShadeUI.fxh" };
+
+    /// <summary>True for ReShade's standard headers, by file name, in any letter case.</summary>
+    internal static bool IsStandardHeader(string includeName)
+    {
+        var fileName = includeName.Replace('\\', '/');
+        fileName = fileName[(fileName.LastIndexOf('/') + 1)..];
+        foreach (var header in StandardHeaders)
+        {
+            if (string.Equals(fileName, header, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 
     private static readonly Regex IncludeLine = new(
         @"^[ \t]*#[ \t]*include[ \t]*[""<]([^"">\r\n]+)["">]", RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.CultureInvariant);
@@ -41,7 +57,9 @@ internal static class EffectIncludeFlattener
         {
             ctx.Output.Append(text, copied, match.Index - copied);
             copied = match.Index + match.Length;
-            var included = ctx.Resolve(path, match.Groups[1].Value.Trim());
+            var name = match.Groups[1].Value.Trim();
+            if (IsStandardHeader(name)) continue;
+            var included = ctx.Resolve(path, name);
             if (included is null || !Append(included, depth + 1, ctx)) return false;
             ctx.Output.Append('\n');
         }

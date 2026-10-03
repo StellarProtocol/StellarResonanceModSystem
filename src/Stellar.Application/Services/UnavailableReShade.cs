@@ -21,7 +21,7 @@ internal sealed class UnavailableReShade : IReShade
     /// <inheritdoc/>
     public IReadOnlyList<ReShadeTechnique> Techniques => Array.Empty<ReShadeTechnique>();
     /// <inheritdoc/>
-    public void SetTechnique(string name, bool enabled) { }
+    public void SetTechnique(string effectFile, string name, bool enabled) { }
     /// <inheritdoc/>
     public string? CurrentPreset => null;
     /// <inheritdoc/>
