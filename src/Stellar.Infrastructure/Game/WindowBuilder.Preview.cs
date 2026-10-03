@@ -61,7 +61,7 @@ internal sealed partial class WindowBuilder
         UGuiPrimitives.ConfigureText(label, Scaled(12), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(label);
         label.color = _assets.MenuText;
-        token.Texts.Add(new TextBinding { C = label, TextFn = p.Text, ColorFn = p.Color });
+        token.Texts.Add(new TextBinding { C = label, TextFn = p.Text, ColorFn = p.Color, DefaultColor = MenuTextColorFn });
         RegisterTextReskin(token, label, 12);
     }
 

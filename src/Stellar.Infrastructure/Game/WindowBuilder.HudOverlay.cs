@@ -55,7 +55,7 @@ internal sealed partial class WindowBuilder
             le.preferredWidth = t.Width;
             le.flexibleWidth = 0f;
         }
-        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color, DynamicFontSizeFn = t.DynamicFontSize, Emphasis = t.Emphasis });
+        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = t.Text, ColorFn = t.Color, DefaultColor = HudTextColorFn, DynamicFontSizeFn = t.DynamicFontSize, Emphasis = t.Emphasis });
     }
 
     // Port of HudElementBuilder.BuildPill (:246-263): transparent HudPillBg 9-slice chip (ignore-layout stretched
@@ -78,7 +78,7 @@ internal sealed partial class WindowBuilder
 
         var (_, fg, shadow) = MakeShadowedTextHud(go.transform, HudPillTextSize, TextAnchor.MiddleCenter, bold: true);
         HudTextReskin(token, fg, shadow);
-        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = p.Text, ColorFn = p.Color, Emphasis = true });
+        token.Texts.Add(new TextBinding { C = fg, Shadow = shadow, TextFn = p.Text, ColorFn = p.Color, DefaultColor = HudTextColorFn, Emphasis = true });
     }
 
     // Port of HudElementBuilder.BuildBar (Default path, :269-311): rounded 9-slice HudBarBg track + an

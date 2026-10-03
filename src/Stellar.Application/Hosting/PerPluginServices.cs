@@ -28,6 +28,18 @@ internal sealed class PerPluginServices : IPluginServices
     // Per-plugin localization façade (namespaced to this plugin's GUID). Null in a bare test host — falls
     // back to the shared bag's façade (the framework's own).
     private readonly ILocalization? _localization;
+    // Per-plugin scene-visibility façade (tokens + Changed handlers released on unload). Null in a bare test
+    // host — falls back to the shared service.
+    private readonly ISceneVisibility? _sceneVisibility;
+    // Per-plugin look / photo-mode façades (live handles disposed + handlers dropped on unload). Null in a bare
+    // test host — fall back to the shared services.
+    private readonly IRenderLook? _renderLook;
+    private readonly IPhotoModeState? _photoMode;
+    // Per-plugin render-quality / time-of-day façades (tokens + pins released on unload). Null in a bare test
+    // host — fall back to the shared services.
+    private readonly IRenderQuality? _renderQuality;
+    private readonly ITimeOfDay? _timeOfDay;
+    private readonly FreeCameraScope? _freeCam;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -38,6 +50,12 @@ internal sealed class PerPluginServices : IPluginServices
         _hotkeys = scope.Hotkeys;
         _harmony = scope.Harmony;
         _localization = scope.Localization;
+        _sceneVisibility = scope.SceneVisibility;
+        _renderLook = scope.RenderLook;
+        _photoMode = scope.PhotoMode;
+        _renderQuality = scope.RenderQuality;
+        _timeOfDay = scope.TimeOfDay;
+        _freeCam = scope.FreeCamera;
     }
 
     public IPluginConfig Config { get; }
@@ -91,6 +109,20 @@ internal sealed class PerPluginServices : IPluginServices
     public ILocalization Localization => _localization ?? _shared.Localization;
     public IDeepSlumber DeepSlumber => _shared.DeepSlumber;
     public IBossVitals BossVitals => _shared.BossVitals;
+    public IScreenCapture ScreenCapture => _shared.ScreenCapture;
+    public ISceneVisibility SceneVisibility => _sceneVisibility ?? _shared.SceneVisibility;
+    public IRenderLook RenderLook => _renderLook ?? _shared.RenderLook;
+    public IPhotoModeState PhotoMode => _photoMode ?? _shared.PhotoMode;
+    public IRenderQuality RenderQuality => _renderQuality ?? _shared.RenderQuality;
+    public ITimeOfDay TimeOfDay => _timeOfDay ?? _shared.TimeOfDay;
+    public ICameraOverride CameraOverride => (ICameraOverride?)_freeCam?.Camera ?? _shared.CameraOverride;
+    public IInputShield InputShield => (IInputShield?)_freeCam?.Shield ?? _shared.InputShield;
+    public ISceneFreeze SceneFreeze => (ISceneFreeze?)_freeCam?.Freeze ?? _shared.SceneFreeze;
+    public IEmotes Emotes => (IEmotes?)_freeCam?.Emotes ?? _shared.Emotes;
+    public ICombatState CombatState => (ICombatState?)_freeCam?.Combat ?? _shared.CombatState;
+    public IEntityPicker EntityPicker => _shared.EntityPicker;
+    public IPosing Posing => (IPosing?)_freeCam?.Posing ?? _shared.Posing;
+    public ILights Lights => (ILights?)_freeCam?.Lights ?? _shared.Lights;
 }
 
 /// <summary>
@@ -103,4 +135,10 @@ internal readonly record struct PerPluginScope(
     IFramework Framework,
     IHotkeys? Hotkeys,
     IHarmonyHost? Harmony,
-    ILocalization? Localization);
+    ILocalization? Localization,
+    ISceneVisibility? SceneVisibility = null,
+    IRenderLook? RenderLook = null,
+    IPhotoModeState? PhotoMode = null,
+    IRenderQuality? RenderQuality = null,
+    ITimeOfDay? TimeOfDay = null,
+    FreeCameraScope? FreeCamera = null);

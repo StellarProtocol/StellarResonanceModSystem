@@ -55,6 +55,20 @@ internal sealed class PluginServices : IPluginServices
     public ILocalization Localization { get; }
     public IDeepSlumber DeepSlumber { get; }
     public IBossVitals BossVitals { get; }
+    public IScreenCapture ScreenCapture { get; }
+    public ISceneVisibility SceneVisibility { get; }
+    public IRenderLook RenderLook { get; }
+    public IPhotoModeState PhotoMode { get; }
+    public IRenderQuality RenderQuality { get; }
+    public ITimeOfDay TimeOfDay { get; }
+    public ICameraOverride CameraOverride { get; }
+    public IInputShield InputShield { get; }
+    public ISceneFreeze SceneFreeze { get; }
+    public IEmotes Emotes { get; }
+    public ICombatState CombatState { get; }
+    public IEntityPicker EntityPicker { get; }
+    public IPosing Posing { get; }
+    public ILights Lights { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -106,7 +120,14 @@ internal sealed class PluginServices : IPluginServices
         IWardrobePreview wardrobePreview,
         IRunTimer runTimer,
         IBossVitals bossVitals,
-        ILoadoutSave loadoutSave)
+        ILoadoutSave loadoutSave,
+        IScreenCapture screenCapture,
+        ISceneVisibility sceneVisibility,
+        IRenderLook renderLook,
+        IPhotoModeState photoMode,
+        IRenderQuality renderQuality,
+        ITimeOfDay timeOfDay,
+        FreeCameraServiceSet freeCamera)
     {
         Log = log;
         Framework = framework;
@@ -158,5 +179,19 @@ internal sealed class PluginServices : IPluginServices
         RunTimer = runTimer;
         BossVitals = bossVitals;
         LoadoutSave = loadoutSave;
+        ScreenCapture = screenCapture;
+        SceneVisibility = sceneVisibility;
+        RenderLook = renderLook;
+        PhotoMode = photoMode;
+        RenderQuality = renderQuality;
+        TimeOfDay = timeOfDay;
+        CameraOverride = freeCamera.Camera;
+        InputShield = freeCamera.Shield;
+        SceneFreeze = freeCamera.Freeze;
+        Emotes = freeCamera.Emotes;
+        CombatState = freeCamera.Combat;
+        EntityPicker = freeCamera.Picker;
+        Posing = freeCamera.Posing;
+        Lights = freeCamera.Lights;
     }
 }

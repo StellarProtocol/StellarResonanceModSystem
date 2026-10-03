@@ -71,11 +71,22 @@ internal sealed partial class LayoutEditorOverlay
         _theme = theme;
         _log = log;
         _clientState = clientState;
+        _chrome.Warn = log.Warning;
     }
 
     /// <summary>True while layout edit-mode is active — its chrome draws through OnGUI,
     /// so the host counts it as live IMGUI content for the overlay lifecycle.</summary>
     public bool IsEditing => _editor.IsEditing;
+
+    /// <summary>The layout-edit chrome canvas root, or null outside edit mode (photo overlay hide).</summary>
+    public GameObject? ChromeCanvas => _chrome.CanvasObject;
+
+    /// <summary>Raised when the chrome canvas is created (edit mode entered).</summary>
+    public event System.Action? ChromeCanvasCreated
+    {
+        add => _chrome.CanvasCreated += value;
+        remove => _chrome.CanvasCreated -= value;
+    }
 
     /// <summary>Phase 9a: bind the native-UI service so Shift+` also outlines + drags game HUD elements.</summary>
     public void SetNativeUi(NativeUiService nativeUi) => _nativeUi = nativeUi;

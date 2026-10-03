@@ -159,6 +159,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     //   6. BuildWindowServices       — WindowRenderer, WindowService
     //   7. BuildLauncherServices     — LauncherRegistry
     //   8. BuildInventoryServices    — PandaInventoryProbe, ModuleEquipProbe
+    //   8b. WireRenderQuality        — render quality + time-of-day arbiters (Wiring.RenderQuality.cs)
+    //   8c. WirePhotoStudio          — scene visibility, render look, screen capture, photo-mode state
+    //   8d. WireFreeCamera          — camera override, input shield, freeze, emotes, combat state (Wiring.FreeCamera.cs)
     //   9. WireGameEventsAndPluginHost → BuildUGuiAdapters → ConstructPluginServices → WireFrameworkUpdateEvents
     //
     // Wiring call order in OnHotUpdateReady():
@@ -207,6 +210,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
         // GameAssetsService takes IGameDataResonance via its constructor. Cheap +
         // idempotent; the post-hot-update ConstructGameDataProbe shares the result.
         ConstructResonanceData(log, typeRegistry);
+        WireRenderQuality(log); // render quality + time of day; before WirePhotoStudio (capture takes the scale guard)
+        WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
+        WireFreeCamera(log);    // free-camera services; needs _photoMode (release on the game's camera mode / cutscene)
         WireGameEventsAndPluginHost(log, configFactory);
 
         watcher.WaitForAll(ExpectedHotUpdateAssemblies, () => OnHotUpdateReady(log, typeRegistry, hooker));
@@ -218,6 +224,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         HarmonyGameMethodHooker hooker)
     {
         log.Info("[boot] all hot-update assemblies loaded; wiring services");
+        typeRegistry.MarkHotUpdateReady();   // forget pre-ready misses; FindType memoizes from here on
 
         var gameType = typeRegistry.FindType(GameTypeFullName);
         if (gameType is null)
@@ -275,6 +282,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallWireAndStubProbes(log, typeRegistry);
         HookGameLifecycleMethods(log, hooker, gameType);
         HookEntityStateSignals(log, typeRegistry, hooker);
+        InstallPhotoModeHooks(hooker);
+        InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
     }
 
@@ -367,6 +376,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         catch (Exception ex) { log.Warning($"[Bootstrap] WireTap DisposeCapture threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _pluginRegistry?.DisposeAll(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] PluginRegistry DisposeAll threw: {ex.GetType().Name}: {ex.Message}"); }
+        try { DisposePhotoStudio(); }
+        catch (Exception ex) { log.Warning($"[Bootstrap] photo services (after plugins released their looks) dispose threw: {ex.GetType().Name}: {ex.Message}"); }
         try { _themeRenderer?.DestroyBakedTextures(); }
         catch (Exception ex) { log.Warning($"[Bootstrap] ThemeRenderer DestroyBakedTextures threw: {ex.GetType().Name}: {ex.Message}"); }
         return base.Unload();

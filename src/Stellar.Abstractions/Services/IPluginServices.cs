@@ -24,6 +24,44 @@ public interface IPluginServices
     ILoadout Loadout { get; }
     /// <summary>Save the worn setup into another saved loadout (the game's own loadout Save). See <see cref="ILoadoutSave"/>.</summary>
     ILoadoutSave LoadoutSave { get; }
+    /// <summary>Capture the rendered scene to a PNG/JPG file at 1×, 2× or 4× (clean: no game UI or overlay). See <see cref="IScreenCapture"/>.</summary>
+    IScreenCapture ScreenCapture { get; }
+    /// <summary>Reference-counted hiding of the game HUD, the Stellar overlay, nameplates and other players. Tokens a
+    /// plugin still holds are released when it unloads. See <see cref="ISceneVisibility"/>.</summary>
+    ISceneVisibility SceneVisibility { get; }
+    /// <summary>Apply a camera look (depth of field, colour, LUT, bloom, vignette, grain) through the game's own
+    /// renderer effects; one active look framework-wide. See <see cref="IRenderLook"/>.</summary>
+    IRenderLook RenderLook { get; }
+    /// <summary>The game's own photo / selfie mode and cutscene state. See <see cref="IPhotoModeState"/>.</summary>
+    IPhotoModeState PhotoMode { get; }
+    /// <summary>Raise render quality (supersampling + TAA, high shadows) while a token is held; reference-counted
+    /// across plugins, the game's values restored when the last token goes. See <see cref="IRenderQuality"/>.</summary>
+    IRenderQuality RenderQuality { get; }
+    /// <summary>Pin the in-world time of day to an hour, then hand it back to the server. See <see cref="ITimeOfDay"/>.</summary>
+    ITimeOfDay TimeOfDay { get; }
+    /// <summary>Exclusive free-camera takeover of the game camera (60 m hard cap, framework-ended on zone change,
+    /// cutscene, the game's camera mode, disconnect or unload). See <see cref="ICameraOverride"/>.</summary>
+    ICameraOverride CameraOverride { get; }
+    /// <summary>Blocks the game's movement/camera/combat input and every game key while held, and exposes raw key/mouse
+    /// reads. See <see cref="IInputShield"/>.</summary>
+    IInputShield InputShield { get; }
+    /// <summary>Freezes the animation, effects and drawn positions of every entity on screen, including ones that appear
+    /// while frozen (visual and local only). See <see cref="ISceneFreeze"/>.</summary>
+    ISceneFreeze SceneFreeze { get; }
+    /// <summary>The local player's unlocked emotes and playing one through the game's own emote action. See <see cref="IEmotes"/>.</summary>
+    IEmotes Emotes { get; }
+    /// <summary>Whether the local player is in combat (event-driven). See <see cref="ICombatState"/>.</summary>
+    ICombatState CombatState { get; }
+    /// <summary>The character drawn under a screen point. See <see cref="IEntityPicker"/>.</summary>
+    IEntityPicker EntityPicker { get; }
+
+    /// <summary>Pose people in the world, with or without the free camera — you live, other players as a local copy, NPCs
+    /// as a stand-in model; everyone reset when the scene ends (zone change, cutscene, disconnect). See
+    /// <see cref="IPosing"/>.</summary>
+    IPosing Posing { get; }
+    /// <summary>Photo lights — lamps in the world, how strongly characters take them, and a key light and rim per person;
+    /// all ended and restored exactly when the scene ends. See <see cref="ILights"/>.</summary>
+    ILights Lights { get; }
     /// <summary>The in-game player exchange/marketplace: query listings/care-list/notice items and
     /// buy through the game's own trade system. (Named <c>Market</c> because <see cref="Exchange"/>
     /// is the inter-plugin channel.)</summary>

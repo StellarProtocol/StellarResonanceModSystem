@@ -85,7 +85,14 @@ public sealed partial class BootstrapPlugin
             wardrobePreview,
             _dungeonStateService!,
             entityVitals,
-            _loadoutSaveService!);
+            _loadoutSaveService!,
+            _screenCapture!,
+            _sceneVisibility!,
+            _renderLook!,
+            _photoMode!,
+            _renderQuality!,
+            _timeOfDay!,
+            FreeCameraSet());
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
@@ -134,6 +141,7 @@ public sealed partial class BootstrapPlugin
     {
         var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
+        _entityTransforms = entityTransforms;   // photo look focus-on-player (Wiring.PhotoStudio.cs)
         // Native boss-HP tap (2026-08-26 raid-bosshp-capture-design § decision 2) — reads the SAME
         // merged entity store the game's own boss bar reads, immune by construction to the wire
         // mirror's AOI-eviction starvation. _combatService doubles as ICombatLookup for the native-

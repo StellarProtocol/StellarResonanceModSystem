@@ -10,7 +10,7 @@ namespace Stellar.Application.Services;
 /// <summary>Runtime for the uGUI interactive window toolkit. Mounts windows when the canvas is present,
 /// re-applies display values at a capped ~10 Hz (or immediately on MarkDirty), self-heals on scene-change
 /// destroys. Gating + persistence + focus→keyboard-gate signal land in sibling partials (Plans 3–4).</summary>
-internal sealed partial class WindowService : IWindowHost
+internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
 {
     private const float ApplyInterval = 0.1f;
     private readonly IWindowRenderer _renderer;

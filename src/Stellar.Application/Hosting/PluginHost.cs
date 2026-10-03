@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using Stellar.Abstractions.Plugins;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -97,22 +96,20 @@ internal sealed class PluginHost : IDisposable
         // Discover + register this plugin's embedded Lang/*.json catalogs and mint its scoped façade.
         var perPluginLoc = _factories.Localization.RegisterPlugin(pluginGuid, asm);
 
-        // Shared mutable cell: both the factory lambda (writer) and the onDispose
-        // lambda (reader) capture the same StrongBox so each soft-cycle enable
-        // updates the reference that onDispose will unregister.
-        // frameworkCell → scheduler unregister; harmonyCell → unpatch every instance the plugin created.
-        var frameworkCell = new StrongBox<PerPluginFramework?>();
-        var harmonyCell = new StrongBox<IHarmonyHost?>();
+        // Shared mutable holder: both the factory lambda (writer) and the onDispose
+        // lambda (reader) capture the same instance so each soft-cycle enable
+        // updates the references that onDispose will release (scheduler unregister,
+        // scene-visibility tokens + handlers, live look handles + photo-mode handlers, unpatch every Harmony instance the plugin created).
+        var lifetime = new PluginLifetime();
 
         // Bundled so BuildAndInvoke stays within the STELLAR0003 5-parameter cap
         // (pluginGuid + perPluginConfig + perPluginData would otherwise push it to 6).
         var bindContext = new PluginBindContext(pluginGuid, perPluginConfig, perPluginData, ScopedHotkeys(pluginGuid), perPluginLoc);
 
         Func<IPluginServices, object> factory = sharedServices =>
-            BuildAndInvoke(ctor, bindContext, frameworkCell, harmonyCell, sharedServices);
+            BuildAndInvoke(ctor, bindContext, lifetime, sharedServices);
 
-        _registry.Register(pluginGuid, displayName, version, factory,
-            onDispose: () => { frameworkCell.Value?.Unregister(); (harmonyCell.Value as IDisposable)?.Dispose(); });
+        _registry.Register(pluginGuid, displayName, version, factory, onDispose: lifetime.Release);
         _log.Info($"[PluginHost] discovered: {pluginType.FullName} (config={pluginGuid})");
         return true;
     }
@@ -140,31 +137,65 @@ internal sealed class PluginHost : IDisposable
 
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
     // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
-    // On plugin-ctor failure the facade is unregistered from the scheduler before rethrowing,
-    // so a failed plugin leaves no dangling scheduler entry.
+    // On plugin-ctor failure every per-plugin resource is released before rethrowing,
+    // so a failed plugin leaves no dangling scheduler entry, hide token or patch.
     private IStellarPlugin BuildAndInvoke(
         ConstructorInfo ctor,
         PluginBindContext bind,
-        StrongBox<PerPluginFramework?> frameworkCell,
-        StrongBox<IHarmonyHost?> harmonyCell,
+        PluginLifetime lifetime,
         IPluginServices sharedServices)
     {
-        var perPluginFramework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
-        frameworkCell.Value = perPluginFramework;
-        var perPluginHarmony = _harmonyFactory.Create(bind.PluginGuid);
-        harmonyCell.Value = perPluginHarmony;
+        lifetime.Framework = new PerPluginFramework(bind.PluginGuid, _scheduler, sharedServices.Framework);
+        lifetime.Harmony = _harmonyFactory.Create(bind.PluginGuid);
+        // Per-plugin view of the shared arbiter; a fresh owner key per enable so a soft-cycle starts clean.
+        lifetime.Visibility = sharedServices.SceneVisibility is SceneVisibilityService svc
+            ? new PluginSceneVisibility(svc, owner: new object())
+            : null;
+        // Look handles disposed + photo-mode handlers dropped on unload (spec § 6 framework backstop).
+        lifetime.Look = sharedServices.RenderLook is { } look ? new PluginRenderLook(look) : null;
+        lifetime.PhotoMode = sharedServices.PhotoMode is { } photo ? new PluginPhotoModeState(photo) : null;
+        // Render-quality tokens + time-of-day pins released on unload (fresh owner key per enable).
+        lifetime.Quality = sharedServices.RenderQuality is RenderQualityService rq ? new PluginRenderQuality(rq, new object()) : null;
+        lifetime.Time = sharedServices.TimeOfDay is { } tod ? new PluginTimeOfDay(tod) : null;
+        lifetime.FreeCam = FreeCameraScope.Mint(sharedServices);   // camera/shield/freeze/handlers released on unload
         var perPluginServices = new PerPluginServices(sharedServices,
-            new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, perPluginFramework,
-                               bind.PerPluginHotkeys, perPluginHarmony, bind.PerPluginLocalization));
+            new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
+                               bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
+                               lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
+                               FreeCamera: lifetime.FreeCam));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
         }
         catch
         {
-            perPluginFramework.Unregister();
-            (perPluginHarmony as IDisposable)?.Dispose();
+            lifetime.Release();
             throw;
+        }
+    }
+
+    /// <summary>The per-plugin resources minted on each enable, released together on dispose (or ctor failure).</summary>
+    private sealed class PluginLifetime
+    {
+        public PerPluginFramework? Framework;
+        public IHarmonyHost? Harmony;
+        public PluginSceneVisibility? Visibility;
+        public PluginRenderLook? Look;
+        public PluginPhotoModeState? PhotoMode;
+        public PluginRenderQuality? Quality;
+        public PluginTimeOfDay? Time;
+        public FreeCameraScope? FreeCam;
+
+        public void Release()
+        {
+            Framework?.Unregister();
+            Visibility?.ReleaseAll();
+            Look?.ReleaseAll();
+            PhotoMode?.ReleaseAll();
+            Quality?.ReleaseAll();
+            Time?.ReleaseAll();
+            FreeCam?.ReleaseAll();
+            (Harmony as IDisposable)?.Dispose();
         }
     }
 

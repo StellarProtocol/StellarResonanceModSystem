@@ -18,4 +18,7 @@ internal interface IHotkeyOwnedDeclarations
 {
     /// <summary>Declare an action on behalf of <paramref name="pluginId"/> (null = framework-owned).</summary>
     IHotkeyAction DeclareAction(HotkeyAction action, Action callback, string? pluginId);
+
+    /// <summary>Forwarded from <c>PerPluginHotkeys</c>; see <c>IHotkeys.MigrateSavedBinding</c>.</summary>
+    SavedBindingMigration MigrateSavedBinding(string actionId, KeyBinding from, KeyBinding to);
 }

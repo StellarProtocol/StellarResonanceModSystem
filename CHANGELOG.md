@@ -14,6 +14,201 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.15.0] - 2026-10-03
+_**2.15.0** (minor) — Photo mode support for plugins: screenshots and looks, a free camera, posing, a scene freeze, photo shapes and lights. Includes the never-released 2.13.0 and 2.14.0. Adds API for plugins (Abstractions 2.15.0); additive, no plugin rebuild._
+### Added
+- Screenshot support for plugins: hide the interface, take high-resolution screenshots and apply camera looks. Plugins can also sharpen the picture for screenshots and set the time of day, and your own graphics settings come back exactly when they stop.
+- Free camera support for plugins: move the camera freely around your character or anyone you click, fly anywhere nearby, and freeze the moment.
+- Free camera posing: pick a person — you, another player or an NPC — and set their pose, the exact moment of it, a facial expression that stays, where their head and eyes look, and which way they face. Other players and NPCs are posed as a copy only you can see. Posing works with the free camera off too, and leaving the free camera keeps everyone as you posed them — they return to normal when you change zone, a cutscene starts or you disconnect.
+- The free camera orbits the copy you are posing, and freezing the scene freezes posed copies too.
+- Freezing the scene now pauses the whole world, your own character included: skills stop mid-cast, effects and animations hold still, and players and monsters stay where they were, in the pose they had. While frozen your character ignores movement and skill keys (the camera still turns). The free camera, the Photo Studio panel, screenshots and all your plugin windows and hotkeys keep working while paused, and leaving the free camera keeps the world paused until you unfreeze. The game itself keeps running on the server: a fight goes on, and damage taken meanwhile shows when you unfreeze. If something hits you while frozen, your own character may still flinch in place.
+- Picking someone who is already doing an emote shows that emote and how far along it is, and pausing holds it right where it is.
+- Photo lights: place lamps around the people in your shot — each with its own colour, strength and reach — that light the ground and scene, let characters take their light, and give anyone a key light from one side and a coloured rim. Lights stay when you leave the free camera and are gone, with everything back as it was, when you change zone, a cutscene starts or you disconnect.
+- Screenshots can now be taken in other shapes — portrait, square or wide — at full detail: the camera draws the photo in that shape instead of cropping a wide shot, and very large sizes are reduced to what your graphics card allows.
+### Changed
+- In the free camera you can now click NPCs to orbit them, not just players.
+### Fixed
+- A hotkey you set yourself can no longer end up sharing its key with another action's default.
+### Developer notes
+- `ColorPickerElement.ShowAlpha` (init, default true): false hides the Opacity slider for colours with no alpha
+  (Photo Studio lights). Additive — the two-argument constructor is unchanged.
+- New `IPluginServices.Lights` (`ILights`: `IsAvailable`, `AddLamp`, `UpdateLamp`, `RemoveLamp`, `PeopleLevel`,
+  `SetPersonLight`, `ResetAll`, `Released`) and domain types `LampId`, `LampSettings`, `KeyLight`, `RimLight`,
+  `PersonLight`, `LightLimits` (spec devkit 2026-10-03-photo-studio-lights; recon `free-camera-recon.md` § Run 13). Lamps =
+  a GameObject with a Unity point `Light` + the game's `Bokura.Rendering.MultiLight` (`lightLayer = Everything`,
+  `type = Common`, `maxDistance = 128`), set up inactive then activated so `MultiLight.OnEnable` adds it to the light
+  cluster; off = inactive; removal = inactive + `Destroy`. The cap (8 per plugin) is enforced framework-side. The
+  character gate is `CameraManager.weatherParamsVolume_.creaturePointlightColorIntensity`: raised = snapshot all
+  `parameterList` override flags (101 on release_3.7) + the parameter's value + `active`, every flag off, only the gate
+  overriding, `active = true`; restored (value, flags, active) exactly when no lamp is on or every level is 0
+  (`LightGate`, `LightGatePolicy`). Key light = `RenderCompBase.SetFixedLight(ref ModelFixedLightData{LightParms}, 0x3FFFFFFF)`
+  → `_CameraLightParm` (a camera-space direction, w = 1); rim = `SetFresnelEffect(1, colour × strength, (−0.7, 1, 1, 1),
+  All)`; both written back from a per-material snapshot taken before the first write (`ModelLightSnapshot`; the game's own
+  Fresnel "off" leaves colour + params). Plain reflected calls only — `ModelFixedLightData` is by-ref and is never
+  HarmonyX-patched. The posed copy / NPC stand-in comes from the posing backend; lit people are re-resolved on every
+  `IPosing.Changed`. `FreeCameraReleaser` releases lights after the camera and before posing (people written back while
+  their copy lives → lamps → gate); `ReleaseAll` is idempotent and raises `Released` only when it ended something; the
+  per-plugin facade ends a plugin's lights on unload. Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Lights] lamp add|remove`,
+  `[Lights] gate raised|restored …`, `[Lights] person <uuid> key|rim written|restored`. Hardening (lights review
+  2026-10-03): every key / rim apply first reads any material the model gained since (equipment) so it is written back
+  too; a posed copy cloned from a lit person saves that person's originals for the values we wrote; a gate write that
+  throws is rolled back from the snapshot and the restore attempts every write; the gate is put back only while the
+  volume still holds exactly what we wrote — if the game wrote it since (a cutscene, its own weather) it is left to the
+  game — and a volume the game already has active keeps its own overrides (only ours is added); lamps live on a
+  persistent root (`DontDestroyOnLoad`), never in a streamed scene chunk.
+- New `ICameraOverride.TryProjectToScreen(Position3D, out ScreenPoint)` + domain `ScreenPoint(X, Y, InFront)`: where a
+  world point appears through the camera rendering now (the free camera while held, else the game camera), in screen
+  pixels top-left (the `IEntityPicker` space) — for on-screen markers (Photo Studio's lamp markers). A plugin that
+  IMPLEMENTS `ICameraOverride` must add it.
+- `WindowSpec.Passive` (Borderless windows): a visual-only layer with no content padding and no click blocker, so
+  presses reach the game and every window behind it — for full-screen guides/overlays (Photo Studio's frame guide).
+  `IScreenCapture.PlanSize` is a new interface member: a plugin that IMPLEMENTS `IScreenCapture` must add it.
+- Photo shapes (spec 2026-10-03 photo-studio-portrait-capture): new `CaptureRequest.Aspect` (`CaptureAspect?`, a
+  width:height ratio of whole numbers, valid 1:4 … 4:1; null = the window's shape, unchanged) and
+  `IScreenCapture.PlanSize(CaptureRequest)` (the real output size before the shot — scale caps, shape and the GPU's
+  `SystemInfo.maxTextureSize` included; empty for an invalid scale/shape). Pure maths on the new `CaptureSizing`
+  (`OutputSize`, `EffectiveScale`, `GuideRect`, `VerticalFieldOfView`, `MaxLongSide`, `MaxPixels`) with
+  `CaptureSize` / `NormalizedRect`: a shape's long side = the window's long side × `Scale`, the short side follows the
+  shape rounded to an even pixel count (2× on 1920 × 1080: 9:16 = 2160 × 3840, 4:5 = 3072 × 3840, 2:3 = 2560 × 3840,
+  1:1 = 3840 × 3840, 21:9 = 3840 × 1646); over the long-side limit (16384 or the GPU's, whichever is smaller) or 64 MP
+  both sides shrink by the same factor (a window-shaped capture keeps its 4× → 2× → 1× halving). The camera renders
+  straight into a target of that size with `Camera.aspect` set to it for that one render (and, for a shape wider than
+  the window, `fieldOfView` narrowed so the horizontal angle is kept) and both put back before anything else renders
+  (`CaptureLensOverride`: automatic aspect again when it was the window's) — so the photo frames exactly
+  `GuideRect`, the largest centred rectangle of the shape. Property writes only, no new hook. An invalid shape fails with
+  a readable error; a failed shaped 4× grab retries once at the 2× shape. A PHYSICAL camera (`usePhysicalProperties`,
+  which the game sets) stays physical for the shaped render: the framing rule is applied through an explicit Vertical
+  `gateFit` + the matching `focalLength` (never `fieldOfView`, which would move the focal length), computed from the
+  on-screen gate fit (Vertical/Horizontal/Fill/Overscan/None) by the pure `CaptureLensPlanner`; every property it
+  changed is put back exactly once, even when a write or a restore step throws. Diagnostics log the lens
+  set/restore and whether the next frame's whole lens equals the pre-shot one (`[PhotoCapture] lens next-frame ok=…`).
+  New `IScreenCapture.MaxTextureSize` (the GPU limit `PlanSize` applies — pass it to `CaptureSizing.EffectiveScale`).
+- New `IPluginServices.Posing` (`IPosing`: `IsAvailable`, `NearbyPeople`, `Expressions`, `Select`, `ResetAll`, `Changed`;
+  `IPoseTarget`: `State`, `PlayAction`, `Moment`, `SetExpression`, `SetLook`, `Aim`, `Yaw`, `Reset`) and domain types
+  `PersonKind`, `PersonInfo`, `ExpressionInfo`, `LookMode`, `LookPart`, `PoseTargetState`, `PoseResult`.
+  `IPosing.IsAvailable` = `IClientState.IsWorldActive` and outside the posing scene-change settle window (~2 s after a
+  leave/enter) — no camera override needed; a camera release resets nobody. The scene end (`FreeCameraReleaser.Release`:
+  `Game.OnLeaveScene` prefix / `SceneChanged`, cutscene, game photo mode, logout, framework unload — the reasons the scene
+  freeze already ends on) resets every touched person in the same call, a `ZEntityMgr.RemoveEntity` prefix releases a despawning person, the per-plugin facade releases a
+  plugin's people on unload, and a scene-freeze end re-applies held pauses.
+- Game calls (devkit `docs/recon/photo-posing-recon.md` runs 4–5): you = live model, `ZAnimActionPlayMgr.PlayAction(id,
+  syncServer: false, …)` / `SetActionPersistTime` / `ResetAction` and `LuaAsyncBridge.SetEntityRotation` (an action start
+  and a reset each ride one NewMove — the game's own photo behaviour); players = `CloneModelForPhoto` +
+  `CameraFrameCtrl.SetTargetEntityVisible(e, false)` … `RecyclePhotoModel`; NPCs = `NpcTable.ModelID` →
+  `LuaAsyncBridge.GenerateNormalModelAsyncByLua(…, isCameraScene: true)` with `ApplyModelBaseIdleByLua`, removed by
+  `ZModelManager.RecycleModelByLua` (the live NPC is never posed); held expression = `ZModel.SetLuaAttrEmoteInfo(faceId, -1,
+  true)`; head/eyes = `ZModelHelper.SetLookAtIKParam` / `SetLookAtTransform` / `SetLookAtPos` / `LuaWorldPosToLocal`. Copies
+  and NPC models send nothing.
+- `IPosing.TryGetVisiblePosition` (the copy / stand-in position for an orbit centre, allocation-free); copies are capped
+  at the game's `PhotographTeamMemberLimit` (PC `[1]`, 30 in release_3.7: you + 29 players; NPC models 30) with
+  `PoseTargetState.Full` / `PoseResult.Full` beyond it; while `ISceneFreeze` is frozen, posed copies/models get the
+  model-level freeze stage (`AnimComp.Speed` 0, prior restored on unfreeze and before release).
+- `ISceneFreeze` is a global time pause (Photo Studio scene-stays spec amendment 2026-10-02 late; devkit recon
+  `free-camera-recon.md` § Run 9): `GameClockPause` saves `Time.timeScale` and sets 0; a HarmonyX prefix on
+  `UnityEngine.Time.set_timeScale(float)` (`TimeScalePatch`, by-value float — allowed by `Il2CppPatchSafety`) holds the
+  game's own writes while paused (hit-stop `ZTimeScaleShowInfo.OnStop` writes 1.0) and keeps the latest as the restore
+  value (else the saved one; never ≤ 0). A watchdog (`TimePauseWatchdog`) at the framework's global rate, OUTSIDE the world
+  gate beside the login / loading-screen probes (never on the world-gated `IFramework.Update`), re-asserts 0 if the clock
+  was set behind the hook, resumes a pause its freeze already dropped and releases a pause outside the world; a stall
+  check after every paused frame's tick (no framework tick for 10 s, persisting over 3 checks and 1 s — one long hitch is
+  no stall) and the paused driver's destruction release too. Every such release is the FULL release path
+  (`FreeCameraReleaser`: camera, posing, every freeze token → animation replay + gate disarmed, hold stopped, clock
+  resumed, input shield), never a bare clock resume; framework unload resumes as well. While paused the
+  framework tick runs from real time (`StellarPausedTicker`, enabled only while paused; `TickPacer` keeps one dt and one
+  tick per frame across both drivers — the `InvokeRepeating` path is unchanged), and the free camera's acquire / release
+  cut (`CinemachineBrain.m_DefaultBlend` = Cut for the pause, the game's blend put back on resume). Kept from the per-entity
+  freeze: the `ModelGoComp` position + rotation hold for remote movers (never the local player or their own mount) and the
+  deferred removal of a monster killed while frozen. New (owner report on the TEST window, recon runs 11–12): at timeScale 0
+  the ECS animator's clock is frozen (0 animation events over a 20 s pause) but the game keeps REQUESTING states for movers
+  (a walking monster: 9 `PlayBaseState` in 20 s), and one request re-poses a model with the clock stopped (45 % of its region
+  changed). So a run-original gate on `ECSAnimController.Play{Base,Upper,Additive}State` / `PlayManualClip` and their
+  internal `play…` twins holds the requests of the press's entities' controllers (never the local player, their mount or a
+  posing copy) and replays the latest per layer on unfreeze, each only while its entity still serves the same (pooled)
+  controller (`AnimRequestGate`; kill switch `STELLAR_FREEZE_ANIM_GATE=0`). The gate is four TYPED HarmonyX prefixes
+  (`AnimGatePatch`, by-position arguments, exact-signature check) on the internal `playBaseState` / `playUpperState` /
+  `playAdditiveState` / `playManualClip` only — the public, sequence and state-end requests all funnel through them
+  (release_3.7 ISIL) — so an unfrozen call costs a counter and a field check and allocates nothing; installed on the first
+  freeze for the session. A press that does not know the local player tracks nobody. The local player's movement / combat
+  input is masked while paused (`ZIgnoreMgr.SetInputIgnore`, mask `ShieldMask.PauseBits` = `0x10FFB6679`, camera bits
+  open) as a second layer of the free camera's `EGm` source: `InputShieldService` owns that one source and moves it
+  between unions by the difference only (the game counts each bit per source). Removed: the attr factor freeze, the `AnimCompBase.set_Speed` gate,
+  the ECS layer gate and its native play detours (`EcsPlayDetours`), the effect freeze at `AddEffectDisplay` /
+  `ZEffect.Init`, the appear / ride-up re-checks and the combat-freeze diagnostics capture; diagnostics keep one freeze
+  on/off summary (time scale saved/restored, game writes held, drifts, positions held, animation requests held / replayed /
+  stale, the gated entry points' calls this freeze and since install, deferred removals).
+- **While frozen, Unity's scaled time stops for every plugin**, not just the game: `Time.deltaTime` is 0 and `Time.time`
+  stands still, `WaitForSeconds`, `UniTask.Delay` (default `DelayType.DeltaTime`) and anything else on scaled time wait
+  until the unfreeze. Use `Time.unscaledDeltaTime` / `Time.realtimeSinceStartup`, `WaitForSecondsRealtime` or
+  `DelayType.Realtime` / `IFramework` timers for anything that must keep running. The position hold covers players and
+  monsters within 80 m of you (`FreezeKinds.HoldRadius`); farther ones may glide in their paused pose. `ISceneFreeze.Changed`
+  handlers each run on their own (a throwing one is logged once); one throwing `IFramework.Update` subscriber no longer
+  stops the others.
+- Known limits: the server keeps driving the local player's hit reactions while frozen, so your own character can still
+  re-pose in stop-motion when something hits you (its requests are not held — holding them would also hold your own
+  movement); a disconnect ends the freeze only through the game's logout (`IClientState.Logout`).
+- `IPosing.TryGetCurrentAction(person, out actionId, out moment)`: the running action (posed copy/model first, else the live
+  entity's model) via compiled `ZModel.GetLuaAttrActionInfo{ActionId,TotalTime,PassedTime}` reads, liveness- and
+  settle-gated, 0 sends; setting `IPoseTarget.Moment` 0–1 before any `PlayAction` adopts and holds that action without
+  re-playing it (a reset only releases the hold on an adopted action). The read reports the posed model's own state
+  whenever one exists; an adopted action the opened model lacks is dropped. Diagnostics: `[Posing] action-raw` (≤ 5/s).
+- `IEntityPicker` also returns NPCs. `HarmonyGameMethodHooker` skips abstract overloads (they cannot be patched).
+- Diagnostics (`STELLAR_DIAGNOSTICS=1`): `[Posing] open …` / `[Posing] npc model … loaded=…` lines, a
+  `[Posing] despawn prefix fired on managed thread …` line on every `ZEntityMgr.RemoveEntity` prefix, and
+  `[Posing.Send] svc=… method=…` for every outgoing RPC while a person is selected.
+- Whole-feature review: `Expressions` and the photo-member limit read are each behind a bounded retry latch
+  (`NegativeProbeCache`, same pattern as `GameVisibilityBackend`'s probes) — an empty/zero answer or a throw is cached
+  and retried at most every 5 s instead of re-running the Lua query (and re-warning) on every 10 Hz panel poll.
+- HarmonyX patch safety (unreleased-code fixes, review of the freeze-crash fix): the hooker now refuses — logged as an
+  error, never patched — any method with a by-ref value type other than an integer primitive (blittable struct, enum,
+  float, double, char) or a register-sized / unknown-size IL2CPP struct RETURN, besides the by-value 1/2/4/8-byte and
+  by-ref IL2CPP struct parameters it already refused. Measured on the game's CoreCLR 6.0.7 (TEST): Il2CppInterop's
+  trampoline hands a by-ref `Vector3`/`Quaternion`/`QualityData` to the original with only its first 8 bytes and writes
+  8 garbage bytes back over the caller's; a `ref float` makes it throw so the original never runs. By-value blittable
+  structs were byte-identical. `QualityGradeSetting.ApplyAllData(ref QualityData)` (the render-quality re-assert signal)
+  is therefore a native detour (`QualityApplyDetour`, original first, then the signal), the diagnostics-only
+  `MoveComp.MoveGo` / `MoveGoByCurve` / `MoveGoBySpeed` prefixes are gone, and every native detour (`QualityApplyDetour`)
+  goes live only on its full exact interop signature (`NativeSignature`), else an error line.
+
+## [2.14.0] - 2026-10-01 (never released — shipped in 2.15.0)
+_**2.14.0** (minor) — Free camera support for plugins. Adds API for plugins (Abstractions 2.14.0); additive, no plugin rebuild._
+### Added
+- Free camera support for plugins: move the camera freely around your character, freeze the moment (characters, NPCs, pets and effects stop), and strike a pose with your own emotes.
+### Fixed
+- A hotkey you set yourself can no longer end up sharing its key with another action's default.
+### Developer notes
+- New `IPluginServices` members: `CameraOverride` (exclusive Cinemachine vcam takeover; 60 m hard cap from the local player;
+  framework release on zone change / cutscene / game camera mode / disconnect / unload / frame-handler exception with
+  `CameraReleaseReason`; `LookAtCamera()` snapshot-restore), `InputShield` (ref-counted `ZIgnoreMgr` mask under
+  `EIgnoreMaskSource.EGm` plus the text-field `KeyboardInputGate` for every game key, raw key/mouse reads), `SceneFreeze`
+  (every `EntityDict` entity: effects via `SetEffectFreeze` + `AddEffectDisplay` postfix, animation via
+  `SkillStageTimeFactor` then `AnimComp.Speed` where the drawn speed stays above 0, drawn-position hold of movable kinds
+  within 80 m in LateUpdate with a 0.3 ms/frame self-check and a release snap, entities appearing while frozen via an
+  `AddEntity` postfix), `Emotes`
+  (the emote wheel's unlocked list and check-then-play path through the Lua VM), `CombatState` (attr 104 +
+  `SetLocalCombatData`/`SetLocalAttrInBattleShow` postfixes, no polling), `EntityPicker` (chest projection).
+- Kill switches: `STELLAR_FREECAM_OFF=1`, `STELLAR_FREEZE_NO_POSITIONS=1`.
+- `IHotkeys.MigrateSavedBinding(actionId, from, to)` (`SavedBindingMigration`): one-time move of a player-saved chord.
+  Resolution now lets a saved binding beat a suggested default whatever the declare order (it used to skip the collision
+  check); default-vs-default is unchanged.
+- A per-frame `FreeCameraFrameDriver` MonoBehaviour exists but is disabled unless a camera override or a position hold is live.
+- `IInputShieldHandle.TextFieldFocused`: true while a Stellar overlay text field has keyboard focus (the same source as the
+  keyboard gate), so a free-camera consumer can ignore movement/edge keys typed into a panel search box. False once disposed.
+
+## [2.13.0] - 2026-09-30 (never released — shipped in 2.15.0)
+_**2.13.0** (minor) — Screenshot support for plugins. Adds API for plugins (Abstractions 2.13.0); additive, no plugin rebuild._
+### Added
+- Screenshot support for plugins: hide the interface, take high-resolution screenshots and apply camera looks.
+- Plugins can now sharpen the picture for screenshots (supersampling, sharper shadows) and set the time of day; your own graphics settings come back exactly when they stop.
+### Developer notes
+- Four new services on `IPluginServices`: `ScreenCapture` (`IScreenCapture` — PNG/JPG at 1×/2×/4×, long side capped at 16384 px, a 4× failure retries once at 2×, never throws), `SceneVisibility` (`ISceneVisibility` — reference-counted hiding of the game HUD, the Stellar overlay, nameplates and other players; a plugin's tokens and `Changed` handlers are released when it unloads), `RenderLook` (`IRenderLook` — one active look framework-wide; `PlayMode` strips depth of field and film grain) and `PhotoMode` (`IPhotoModeState` — the game's camera / selfie mode and cutscene state).
+- Looks: the framework owns one global `Volume` (priority 10000, runtime `VolumeProfile`) and writes the game's own `ZRenderPipeline` components into it — `ZDofVolume` (Bokeh), `ZColorAdjustmentVolume`, `ZWhiteBalanceVolume`, `ZColorLookupVolume` (256×16 / 1024×32 PNG strips), `ZBloomVolume` (`intensity_UE`/`threshold_UE`), `ZUnityVignetteVolume`, `ZFilmGrainVolume` (every parameter written, as the game's cutscene grain track does: `filmType` Custom + a framework-generated 256×256 linear mid-grey noise texture in R=G=B=A, Tiling (1,1), white Color — the bundled Thin1 texture showed no visible grain). It never edits the game's profiles; omitted groups drop their overrides and revert to the game's value. Evidence: devkit `docs/recon/photo-studio-render-recon.md` (DXVK section).
+- Capture renders the main camera into an N× `RenderTexture` at end of frame (clean: no game UI, nameplates or overlay) and reads it back as RGBA32; PNG encoding is a managed encoder run off the main thread; the result completes on the main thread.
+- Hide switches: `ZUiRoot.SetUIInvisible`, `HudMgr.SetHudSwitch(…, ECamera)`, `CameraFrameCtrl.SetEntityShow` (per-type hold counters shared with the game's camera panel: `11` OtherPlayer hides everyone; keep-party hides Stranger `6` + Chum `2` + Union `4` and never writes `11`, because 11 is a master switch checked before Team; one show per hide issued; `ZEntityMgr.ForceRefreshCharVisible(ETakePhotos)` on a party change while keep-party is held), and the framework's window + layout-edit canvases (the toast canvas stays visible). Photo mode: `CameraFrameCtrl.Record/ResetCameraInitialParameters` + `CameraStateSelfPhoto.OnEnter/OnExit`; cutscene: `CutsceneManager.Play` / `afterStop`, seeded from `InCutscene`. Every game member is resolved by name at runtime and fails open with one warning.
+- Two more services on `IPluginServices`: `RenderQuality` (`IRenderQuality` — `Request(RenderQualityRequest)` returns a token; reference-counted union across plugins: `Supersample` = render scale 2.0 + TAA on, `HighShadows` = 4096 shadow map, 3 cascades, soft shadows; `Live` read-back, `Capabilities` per lever) and `TimeOfDay` (`ITimeOfDay` — `Pin(hour)` returns an `ITimePin`; newest pin wins, disposing falls back, the last dispose hands time back to the server; `SetHour` on a held pin). A plugin's tokens and pins are released when it unloads.
+- Each lever captures the game's value before the first write and restores it when the last token goes; a value the game writes while a lever is held (its grade re-apply, the settings panel) becomes the restore target. Every write happens only when the live value differs. Levers: `ZRenderPipeline.asset.renderScale`; `QualityGradeSetting.EnableAA` + `applyEnableAA`; `ZShadowCastPass` `shadowSettings.shadowmapResolution` / `cascadesCount` / `supportsSoftShadows`; time of day through `Panda.LuaAsyncBridge` (`SetWeatherIsUpdateFromServer`, `SetCurWeatherTime`, `GetCurWeatherTime24`, `GetWeatherIsUpdateFromServer`) — `ZServerTime` is never touched.
+- Re-assert is event-driven (no timer): scene/phase change, postfixes on the game's quality-apply entry points (`QualityGradeSetting.ApplyAllData`, `applyRenderScale`, `applyShadowGrade`, the resolution/grade setters and the settings panel's Lua wrap), `ZShadowCastPass.OnInitialize`, the game's own `LuaAsyncBridge` time calls (bridge + Lua wrap), and the end of the game's photo mode or a cutscene; it drains on the next tick once `IsWorldActive`. Hook list and known gaps: devkit `docs/recon/photo-studio-render-recon.md` § Render quality + time of day recon.
+- Capture render-scale guard (drops a supersampled render scale to 1.0 for the grab frame) ships OFF; `STELLAR_CAPTURE_SCALE_GUARD=1` turns it on for the in-game measurement. `HarmonyGameMethodHooker.PostfixStaticOverloads` added for static game methods. The render-quality / time-of-day game hooks install lazily on the first `Request` / `Pin` (never at boot); `STELLAR_RQ_NO_APPLYALLDATA=1` skips just the by-ref `ApplyAllData` hook.
+
 ## [2.12.0] - 2026-09-30
 _**2.12.0** (minor) — Showing and hiding the Combat Meter no longer freezes the game, the meter opens much faster, and layout edit mode no longer lags. Adds a diagnostics API for plugins (Abstractions 2.12.0); binary-compatible, no plugin rebuild._
 ### Fixed

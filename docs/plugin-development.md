@@ -492,6 +492,39 @@ yourself (a small script in CI is enough): every key your code passes to `T` / `
 in `en.json`, and every `en.json` key should exist in ja/th/id/fil. Copying the English text in as a
 placeholder is better than leaving a key out.
 
+## Photo lights (`ILights`)
+
+`services.Lights` places lamps in the world and lights people for a photo. Everything is local and visual, and belongs to
+the **scene**: the framework removes every lamp and puts every game value back exactly as it was when the scene ends (zone
+change, cutscene, the game's own camera mode, logout, framework unload) and raises `Released`; your plugin's lights also go
+when it unloads and on your own `ResetAll()`. Leaving a free camera keeps them.
+
+```csharp
+var lights = services.Lights;
+if (!lights.IsAvailable) return;                         // in the world, scene settled (same as IPosing)
+var lamp = lights.AddLamp(new LampSettings(pos, new RgbColor(1f, 0.6f, 0.3f), Strength: 40f, Range: 6f, Enabled: true));
+lights.PeopleLevel = 2f;                                 // let characters take lamp light (shared — see below)
+lights.SetPersonLight(person, new PersonLight(new KeyLight(Direction: -60f, Height: 25f),
+                                              new RimLight(new RgbColor(1f, 0.45f, 0.15f), 0.45f)));
+lights.Released += () => { /* the scene ended: forget your lamp ids */ };
+```
+
+- **Lamps** (at most `LightLimits.MaxLampsPerPlugin` = 8 per plugin — the 9th `AddLamp` returns `LampId.None`) join the
+  game's own clustered lights: real pools of light on the ground and scene. On a character a lamp is an even colour wash
+  scaled by distance, range and colour — not a directional shade.
+- **`PeopleLevel`** (0–20, default 0) is the game's character-lamp multiplier. It is **shared**: while it is raised every
+  character near ANY lamp — street lamps included — is tinted. Your level counts only while one of YOUR lamps is on (the
+  highest level among plugins with a lamp on wins; another plugin's level never lights people through your lamps), and
+  the game's own value comes back the moment no plugin with a level above 0 has a lamp on — unless the game itself wrote
+  that value meanwhile (a cutscene, its weather), which is then left as the game set it.
+- **`SetPersonLight`** gives one person a key light (direction / height relative to the camera that draws them — the only
+  per-person directional shade) and a coloured rim (hair, headwear and weapons; the body has none). People are addressed
+  like `IPosing`: a posed copy or NPC stand-in is lit on that visible model, and the light follows the person when they are
+  posed or reset. `PersonLight.None` puts them back exactly. One plugin per person.
+- **Markers:** `services.CameraOverride.TryProjectToScreen(lampPosition, out var p)` gives where a lamp appears through
+  the camera rendering now (free camera or game camera) in screen pixels, top-left origin; draw it only when
+  `p.InFront`.
+
 ## The no-cheating boundary
 
 Stellar holds the same line Dalamud does — QoL, not exploitation:

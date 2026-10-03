@@ -19,6 +19,27 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.15.0 adds posing by person: <c>IPosing</c> / <c>IPoseTarget</c> (the local player live, other players as a
+    /// local photo copy, NPCs as a generated model; action + moment, held expression, head/eye look, facing; available
+    /// in the world with or without the free camera; every touched person reset when the scene ends — zone change,
+    /// cutscene, the game's camera mode, disconnect — or on despawn or unload; the scene freeze never holds the local
+    /// player) plus the domain types
+    /// <c>PersonKind</c>, <c>PersonInfo</c>, <c>ExpressionInfo</c>, <c>LookMode</c>, <c>LookPart</c>,
+    /// <c>PoseTargetState</c>, <c>PoseResult</c>; <c>IEntityPicker</c> also picks NPCs. Additive.
+    /// 2.14.0 adds the free-camera contracts on top of 2.13.0's photo services:
+    /// <c>ICameraOverride</c>/<c>ICameraControl</c> (exclusive, main-thread-only camera takeover with a 60 m
+    /// hard leash and a <c>CameraReleaseReason</c> raised on every forced release), <c>IInputShield</c>/
+    /// <c>IInputShieldHandle</c> (reference-counted game-input blocking plus raw keyboard/mouse reads for the
+    /// holder), <c>ISceneFreeze</c> (freezes entity animation, effects and — budget permitting — drawn
+    /// positions), <c>IEmotes</c> (the local player's unlocked emote wheel + <c>PlayAsync</c> through the
+    /// game's own action, no packet construction), <c>ICombatState</c> (local-player in-combat, event-driven)
+    /// and <c>IEntityPicker</c> (screen-point → <c>EntityId</c> hit-testing for <c>IEntityTransforms</c>).
+    /// Domain-only additions: <c>CameraPose</c>, <c>CameraReleaseReason</c>, <c>EmoteInfo</c>, <c>EmoteResult</c>.
+    /// Every service is implemented and wired on <c>IPluginServices</c>; <c>IInputShieldHandle.TextFieldFocused</c>
+    /// reports a focused Stellar text field so a holder can ignore keys typed into a panel. Additive,
+    /// binary-compatible with plugins built against ≤2.13.0.
+    /// 2.13.0 — photo services: <c>IScreenCapture</c>, <c>ISceneVisibility</c>, <c>IRenderLook</c>, <c>IPhotoModeState</c>
+    /// (<c>IPluginServices.ScreenCapture</c> / <c>.SceneVisibility</c> / <c>.RenderLook</c> / <c>.PhotoMode</c>). Additive only.
     /// 2.12.0 adds <c>HitchProbe</c> (diagnostics-gated render-frame hitch attribution) and makes windows cheaper:
     /// a hidden window is parked (deactivated) rather than destroyed, ConditionalElement branches build on first
     /// show, and meter debuff cells are created on demand. Additive only.
@@ -232,5 +253,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.12.0";
+    public const string Value = "2.15.0";
 }

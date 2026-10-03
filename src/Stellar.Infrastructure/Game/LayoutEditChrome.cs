@@ -51,6 +51,15 @@ internal sealed class LayoutEditChrome
         public bool EyeInteractive;  // false for unsafe-to-hide (greyed) elements
     }
 
+    /// <summary>The edit-chrome canvas root (<c>StellarLayoutEditCanvas</c>), or null outside layout edit mode.</summary>
+    public GameObject? CanvasObject => _canvas;
+
+    /// <summary>Raised (main thread) when the edit-chrome canvas is created (layout edit mode entered).</summary>
+    public event System.Action? CanvasCreated;
+
+    /// <summary>Optional warning sink (the chrome has no logger of its own).</summary>
+    public System.Action<string>? Warn { get; set; }
+
     /// <summary>Optional label font (the menu OS font); null falls back to the builtin.</summary>
     public void SetFont(Font? font) => _font = font;
 
@@ -66,6 +75,8 @@ internal sealed class LayoutEditChrome
         EnsureSprites();
         _canvas = go;
         _root = go.transform;
+        try { CanvasCreated?.Invoke(); }
+        catch (System.Exception ex) { Warn?.Invoke($"[Layout] CanvasCreated handler threw: {ex.Message}"); }
         return true;
     }
 

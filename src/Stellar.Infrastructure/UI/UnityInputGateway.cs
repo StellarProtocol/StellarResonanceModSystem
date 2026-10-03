@@ -84,21 +84,7 @@ internal sealed class UnityInputGateway : IInputGateway
         catch { return false; }
     }
 
-    public ModifierKeys CurrentModifiers
-    {
-        get
-        {
-            var m = ModifierKeys.None;
-            try
-            {
-                if (Input.GetKey(KeyCode.LeftShift)   || Input.GetKey(KeyCode.RightShift))   m |= ModifierKeys.Shift;
-                if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) m |= ModifierKeys.Ctrl;
-                if (Input.GetKey(KeyCode.LeftAlt)     || Input.GetKey(KeyCode.RightAlt))     m |= ModifierKeys.Alt;
-            }
-            catch { }
-            return m;
-        }
-    }
+    public ModifierKeys CurrentModifiers => UnityModifiers.Read();
 
     public AbsResolution CurrentResolution
     {

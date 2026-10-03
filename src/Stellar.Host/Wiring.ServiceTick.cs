@@ -107,6 +107,7 @@ public sealed partial class BootstrapPlugin
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
         _framework!.SetCanvasScale(_windowService?.CanvasScale ?? 1f);   // canvas-unit dims for IFramework.CanvasWidth/Height
         ReclampLayoutOnResolutionChange();   // pull windows/HUD back on-screen when the resolution changes
+        _frameGrabber?.DrainQueuedResumes();  // photo capture: a late resume completes here, on the main thread
         // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
         // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
         // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.
@@ -116,8 +117,7 @@ public sealed partial class BootstrapPlugin
         // while IsWorldActive is false (the zone-load handshake), so the gated menu-state probe below is frozen
         // and can't own the Loading bit. This pure active-state read is the SOLE owner of GameUIState.Loading,
         // set every phase; the gated menu-state probe no longer touches that bit (SetUiState strips it).
-        _loadingScreenProbe?.Tick();
-        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
+        TickLoadingAndPauseWatchdog();
         // uGUI native-canvas injection — UN-gated so title-screen anchors (LoginSidebar) inject too. It reads
         // GameObject active-state + builds uGUI buttons (no game-state/network touch), safe every phase like the
         // probes above. In-world anchors (MainMenuRail/HudTopRight) simply won't resolve until their parents exist.
@@ -159,6 +159,15 @@ public sealed partial class BootstrapPlugin
     // the frame — the "repositioned game HUD element snaps back on scene change" bug. Pure GameObject reads/writes
     // via PandaHudAdapter (TryResolve/SetRect), no game-state or network touch — safe every phase like the
     // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so TryResolveAll no-ops.
+    // The loading-screen probe, then the scene freeze's time-pause watchdog (Wiring.FreeCamera.cs) — un-gated like the probes:
+    // the watchdog must see a pause outside the world, which the world-gated IFramework.Update never could (qa I-1).
+    private void TickLoadingAndPauseWatchdog()
+    {
+        _loadingScreenProbe?.Tick();
+        _clientState!.SetLoadingActive(_loadingScreenProbe?.IsLoadingScreenActive ?? false);
+        TickTimePauseWatchdog();
+    }
+
     private void SelfHealNativeUiUngated(float globalDt)
         => _nativeUi?.Tick(globalDt, _inputGateway?.CurrentResolution ?? default);
 
@@ -344,8 +353,9 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
         _windowService?.Tick(deltaTime);
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:window");
+        // One gate, two demands: a focused Stellar text field, or a held input shield (free camera — spec D8).
         if (_keyboardGate != null)
-            _keyboardGate.SetSuppressed(_windowService?.AnyFieldFocused ?? false);
+            _keyboardGate.SetSuppressed((_windowService?.AnyFieldFocused ?? false) || (_inputShield?.KeyboardBlocked ?? false));
         _hotkeysCapturePoll?.Invoke();   // uGUI Hotkeys panel key capture (no-op unless a cell is capturing)
         _themeEditorPoll?.Invoke();      // uGUI Themes colour-editor drag-release flush (no-op unless editing)
     }

@@ -439,7 +439,7 @@ internal sealed partial class WindowBuilder
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
-        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, Emphasis = t.Emphasis };
+        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis };
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }
