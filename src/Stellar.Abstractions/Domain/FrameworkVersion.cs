@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.16.0 adds hiding yourself and effects by caster: <c>VisibilityLayers.Self</c> and the four effect layers
+    /// (<c>EffectsMine</c>/<c>EffectsParty</c>/<c>EffectsOthers</c>/<c>EffectsMonsters</c>, <c>VisibilityLayerSets.Effects</c>).
     /// 2.15.0 adds posing by person: <c>IPosing</c> / <c>IPoseTarget</c> (the local player live, other players as a
     /// local photo copy, NPCs as a generated model; action + moment, held expression, head/eye look, facing; available
     /// in the world with or without the free camera; every touched person reset when the scene ends — zone change,
@@ -253,5 +255,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.15.0";
+    public const string Value = "2.16.0";
 }
