@@ -38,42 +38,54 @@ internal sealed class EffectFileLocator
 
     internal void ClearCache() => _index.Clear();
 
-    internal string? FindEffect(string fileName) => SearchPaths(fileName);
+    internal string? FindEffect(string fileName) => First(FindEffectCandidates(fileName));
 
-    internal string? ResolveInclude(string includingFile, string name)
+    /// <summary>Every file the effect name could be. Usually one; several when a recursive root holds the name in more
+    /// than one subfolder and none sits directly in the root — which one ReShade loads then depends on its own walk
+    /// order, so a D8 caller must treat them all as possible (OR their depth use).</summary>
+    internal IReadOnlyList<string> FindEffectCandidates(string fileName) => SearchPaths(fileName);
+
+    internal string? ResolveInclude(string includingFile, string name) => First(ResolveIncludeCandidates(includingFile, name));
+
+    /// <summary>Every file an include could resolve to (see <see cref="FindEffectCandidates"/>); empty when none.</summary>
+    internal IReadOnlyList<string> ResolveIncludeCandidates(string includingFile, string name)
     {
-        if (Path.IsPathRooted(name)) return null;
+        if (Path.IsPathRooted(name)) return Array.Empty<string>();
         var folder = Path.GetDirectoryName(includingFile);
         if (folder is not null && FullPath(Path.Combine(folder, name)) is { } local && _fs.LastWriteTicks(local) is not null)
-            return local;
+            return new[] { local };
         return SearchPaths(name);
     }
 
-    private string? SearchPaths(string name)
+    private static string? First(IReadOnlyList<string> candidates) => candidates.Count > 0 ? candidates[0] : null;
+
+    private IReadOnlyList<string> SearchPaths(string name)
     {
         var fileName = Path.GetFileName(name);
-        if (fileName.Length == 0) return null;
+        if (fileName.Length == 0) return Array.Empty<string>();
         foreach (var path in _paths)
         {
             if (!IndexOf(path).TryGetValue(fileName, out var candidates)) continue;
-            if (Pick(candidates, path.Root, name) is { } found) return found;
+            var matched = Matches(candidates, path.Root, name);
+            if (matched.Count > 0) return matched;
         }
-        return null;
+        return Array.Empty<string>();
     }
 
-    // A file directly in the root wins; otherwise the first indexed path ending in the (possibly folder-qualified) name.
-    private static string? Pick(List<string> candidates, string root, string name)
+    // A file directly in the root is the only answer; otherwise EVERY indexed path ending in the (possibly
+    // folder-qualified) name — never just the first, whose identity depends on the folder walk's order.
+    private static IReadOnlyList<string> Matches(List<string> candidates, string root, string name)
     {
         var direct = Unify(Path.Combine(root, name));
         var suffix = "/" + Unify(name).TrimStart('/');
-        string? first = null;
+        List<string>? found = null;
         foreach (var candidate in candidates)
         {
             var unified = Unify(candidate);
-            if (string.Equals(unified, direct, StringComparison.OrdinalIgnoreCase)) return candidate;
-            if (first is null && unified.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) first = candidate;
+            if (string.Equals(unified, direct, StringComparison.OrdinalIgnoreCase)) return new[] { candidate };
+            if (unified.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) (found ??= new List<string>(1)).Add(candidate);
         }
-        return first;
+        return (IReadOnlyList<string>?)found ?? Array.Empty<string>();
     }
 
     private Dictionary<string, List<string>> IndexOf(ReShadeSearchPath path)

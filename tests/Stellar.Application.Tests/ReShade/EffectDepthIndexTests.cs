@@ -150,4 +150,49 @@ public sealed class EffectDepthIndexTests
         Assert.Null(_index.Known("Plain.fx"));
         Assert.True(_index.Resolve("Plain.fx"));
     }
+
+    // Item 0 (D8 under-flag): two packs under one ** root each ship a Common.fxh and only one reads depth. Whichever the
+    // walk lists first, the effect must be flagged — every candidate is scanned and the results are ORed.
+    [Theory]
+    [InlineData("packA")]
+    [InlineData("packB")]
+    public void An_ambiguous_include_flags_depth_when_any_candidate_reads_it_regardless_of_order(string depthPack)
+    {
+        var fs = new InMemoryEffectFiles();
+        var index = new EffectDepthIndex(fs);
+        index.SetSearchPaths(new[] { "/two/**" });
+        fs.Add("/two/fx/Look.fx", "#include \"Common.fxh\"\nfloat4 PS() { return Tone(c); }");
+        foreach (var pack in new[] { "packA", "packB" })
+        {
+            fs.Add($"/two/{pack}/Common.fxh", pack == depthPack
+                ? "float4 Tone(float4 c) { return ReShade::GetLinearizedDepth(c.xy); }"
+                : "float4 Tone(float4 c) { return c; }");
+        }
+        Assert.True(index.Resolve("Look.fx"));
+    }
+
+    [Fact]
+    public void An_ambiguous_include_where_no_candidate_reads_depth_stays_false()
+    {
+        var fs = new InMemoryEffectFiles();
+        var index = new EffectDepthIndex(fs);
+        index.SetSearchPaths(new[] { "/two/**" });
+        fs.Add("/two/fx/Look.fx", "#include \"Common.fxh\"");
+        fs.Add("/two/packA/Common.fxh", "float4 A;");
+        fs.Add("/two/packB/Common.fxh", "float4 B;");
+        Assert.False(index.Resolve("Look.fx"));
+    }
+
+    [Theory]
+    [InlineData("packA")]
+    [InlineData("packB")]
+    public void Duplicate_effect_files_are_all_scanned_and_ORed(string depthPack)
+    {
+        var fs = new InMemoryEffectFiles();
+        var index = new EffectDepthIndex(fs);
+        index.SetSearchPaths(new[] { "/two/**" });
+        foreach (var pack in new[] { "packA", "packB" })
+            fs.Add($"/two/{pack}/Dup.fx", pack == depthPack ? "float d = ReShade::GetLinearizedDepth(uv);" : "float4 PS() { return 0; }");
+        Assert.True(index.Resolve("Dup.fx"));
+    }
 }

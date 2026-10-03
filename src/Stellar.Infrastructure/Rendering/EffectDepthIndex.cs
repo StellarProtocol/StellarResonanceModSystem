@@ -73,15 +73,21 @@ internal sealed class EffectDepthIndex
         return true;
     }
 
+    // Every candidate file (an ambiguous name in a recursive root) is scanned and the results ORed, and every
+    // candidate of an ambiguous include is inlined — the answer never depends on the folder walk's order (D8).
     private Entry Scan(string effectFile)
     {
-        var path = _locator.FindEffect(effectFile);
-        if (path is null) return new Entry { UsesDepth = true };
+        var paths = _locator.FindEffectCandidates(effectFile);
+        if (paths.Count == 0) return new Entry { UsesDepth = true };
         var files = new List<(string Path, long Ticks)>();
-        var source = EffectIncludeFlattener.Flatten(path, p => ReadTracked(p, files), _locator.ResolveInclude);
-        return source is null
-            ? new Entry { UsesDepth = true }
-            : new Entry { UsesDepth = EffectDepthScanner.UsesDepth(source), Files = files };
+        var usesDepth = false;
+        foreach (var path in paths)
+        {
+            var source = EffectIncludeFlattener.Flatten(path, p => ReadTracked(p, files), _locator.ResolveIncludeCandidates);
+            if (source is null) return new Entry { UsesDepth = true };
+            usesDepth |= EffectDepthScanner.UsesDepth(source);
+        }
+        return new Entry { UsesDepth = usesDepth, Files = files };
     }
 
     private string? ReadTracked(string path, List<(string Path, long Ticks)> files)

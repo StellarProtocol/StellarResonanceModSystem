@@ -35,15 +35,20 @@ internal static class EffectIncludeFlattener
 
     /// <param name="read">Path → text, or null when unreadable.</param>
     /// <param name="resolveInclude">(including file, include name) → path, or null when not found.</param>
-    internal static string? Flatten(string rootPath, Func<string, string?> read, Func<string, string, string?> resolveInclude)
+    internal static string? Flatten(string rootPath, Func<string, string?> read, Func<string, string, string?> resolveInclude) =>
+        Flatten(rootPath, read, (file, name) => resolveInclude(file, name) is { } p ? new[] { p } : Array.Empty<string>());
+
+    /// <summary>As above, but an include may resolve to several candidate files (an ambiguous name in a recursive
+    /// search root): EVERY candidate is inlined, so a depth scan of the result ORs them. No candidate = null.</summary>
+    internal static string? Flatten(string rootPath, Func<string, string?> read, Func<string, string, IReadOnlyList<string>> resolveCandidates)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var output = new StringBuilder();
-        return Append(rootPath, 0, new Context(read, resolveInclude, visited, output)) ? output.ToString() : null;
+        return Append(rootPath, 0, new Context(read, resolveCandidates, visited, output)) ? output.ToString() : null;
     }
 
     private readonly record struct Context(
-        Func<string, string?> Read, Func<string, string, string?> Resolve, HashSet<string> Visited, StringBuilder Output);
+        Func<string, string?> Read, Func<string, string, IReadOnlyList<string>> Resolve, HashSet<string> Visited, StringBuilder Output);
 
     private static bool Append(string path, int depth, Context ctx)
     {
@@ -59,9 +64,13 @@ internal static class EffectIncludeFlattener
             copied = match.Index + match.Length;
             var name = match.Groups[1].Value.Trim();
             if (IsStandardHeader(name)) continue;
-            var included = ctx.Resolve(path, name);
-            if (included is null || !Append(included, depth + 1, ctx)) return false;
-            ctx.Output.Append('\n');
+            var candidates = ctx.Resolve(path, name);
+            if (candidates.Count == 0) return false;
+            foreach (var included in candidates)
+            {
+                if (!Append(included, depth + 1, ctx)) return false;
+                ctx.Output.Append('\n');
+            }
         }
         ctx.Output.Append(text, copied, text.Length - copied);
         return true;

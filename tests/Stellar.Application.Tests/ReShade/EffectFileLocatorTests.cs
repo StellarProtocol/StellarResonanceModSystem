@@ -150,4 +150,31 @@ public sealed class EffectFileLocatorTests
         _fs.Add("/a/X.fx", "x");
         Assert.Null(Locator().FindEffect("X.fx"));
     }
+
+    [Fact]
+    public void Ambiguous_suffix_matches_in_one_root_are_all_returned_in_enumeration_order()
+    {
+        _fs.Add("/root/packB/Common.fxh", "b");
+        _fs.Add("/root/packA/Common.fxh", "a");
+        var candidates = Locator("/root/**").ResolveIncludeCandidates("/elsewhere/X.fx", "Common.fxh");
+        Assert.Equal(new[] { "/root/packA/Common.fxh", "/root/packB/Common.fxh" }, candidates);
+    }
+
+    [Fact]
+    public void A_direct_match_is_the_only_candidate()
+    {
+        _fs.Add("/root/Common.fxh", "root");
+        _fs.Add("/root/packA/Common.fxh", "a");
+        Assert.Equal(new[] { "/root/Common.fxh" }, Locator("/root/**").FindEffectCandidates("Common.fxh"));
+    }
+
+    [Fact]
+    public void A_local_include_is_the_only_candidate_and_a_rooted_one_has_none()
+    {
+        _fs.Add("/pack/Shaders/Local.fxh", "l");
+        _fs.Add("/pack/Other/Local.fxh", "o");
+        var locator = Locator("/pack/**");
+        Assert.Equal(new[] { "/pack/Shaders/Local.fxh" }, locator.ResolveIncludeCandidates("/pack/Shaders/A.fx", "Local.fxh"));
+        Assert.Empty(locator.ResolveIncludeCandidates("/pack/Shaders/A.fx", "/pack/Shaders/Local.fxh"));
+    }
 }
