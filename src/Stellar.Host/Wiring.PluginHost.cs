@@ -92,7 +92,10 @@ public sealed partial class BootstrapPlugin
             _photoMode!,
             _renderQuality!,
             _timeOfDay!,
-            FreeCameraSet());
+            FreeCameraSet(),
+            // Placeholders until a later task wires in the real download service / ReShade bridge.
+            Stellar.Application.Services.UnavailablePluginDownloads.Instance,
+            Stellar.Application.Services.UnavailableReShade.Instance);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

@@ -69,6 +69,8 @@ internal sealed class PluginServices : IPluginServices
     public IEntityPicker EntityPicker { get; }
     public IPosing Posing { get; }
     public ILights Lights { get; }
+    public IPluginDownloads Downloads { get; }
+    public IReShade ReShade { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -127,7 +129,9 @@ internal sealed class PluginServices : IPluginServices
         IPhotoModeState photoMode,
         IRenderQuality renderQuality,
         ITimeOfDay timeOfDay,
-        FreeCameraServiceSet freeCamera)
+        FreeCameraServiceSet freeCamera,
+        IPluginDownloads downloads,
+        IReShade reShade)
     {
         Log = log;
         Framework = framework;
@@ -193,5 +197,7 @@ internal sealed class PluginServices : IPluginServices
         EntityPicker = freeCamera.Picker;
         Posing = freeCamera.Posing;
         Lights = freeCamera.Lights;
+        Downloads = downloads;
+        ReShade = reShade;
     }
 }

@@ -1,4 +1,5 @@
 using Stellar.Abstractions.Services;
+using Stellar.Application.Services;
 
 namespace Stellar.Application.Hosting;
 
@@ -123,6 +124,11 @@ internal sealed class PerPluginServices : IPluginServices
     public IEntityPicker EntityPicker => _shared.EntityPicker;
     public IPosing Posing => (IPosing?)_freeCam?.Posing ?? _shared.Posing;
     public ILights Lights => (ILights?)_freeCam?.Lights ?? _shared.Lights;
+    // Per-plugin download channel — not yet backed by a real per-plugin data folder/service, so this
+    // forwards a placeholder rather than the shared aggregator's own Downloads. A later task replaces
+    // this with a real per-plugin service (see UnavailablePluginDownloads).
+    public IPluginDownloads Downloads => UnavailablePluginDownloads.Instance;
+    public IReShade ReShade => _shared.ReShade;
 }
 
 /// <summary>

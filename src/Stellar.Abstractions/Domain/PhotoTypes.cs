@@ -82,6 +82,9 @@ public sealed record CaptureRequest
     /// (<see cref="CaptureAspect.IsValid"/>), or the capture fails with a readable error.
     /// </summary>
     public CaptureAspect? Aspect { get; init; }
+    /// <summary>Draw ReShade's active effects into the photo when ReShade is available and enabled (default true).
+    /// In a non-screen <see cref="Aspect"/>, techniques that use depth are skipped for this photo.</summary>
+    public bool ApplyReShade { get; init; } = true;
 }
 
 /// <summary>A photo shape as a width:height ratio of whole numbers, for example 9:16 (portrait) or 21:9 (wide).</summary>
