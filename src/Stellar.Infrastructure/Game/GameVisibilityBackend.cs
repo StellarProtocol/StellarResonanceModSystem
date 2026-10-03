@@ -27,6 +27,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     private readonly IGameTypeRegistry _types;
     private readonly Func<IReadOnlyList<GameObject>> _overlayRoots;
     private readonly IPluginLog _log;
+    private readonly GameEffectVisibility? _effects;
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private readonly EntityShowPlan _entityShow = new();
     private VisibilityLayers _applied;
@@ -35,11 +36,12 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     // restore never silently strands the layer hidden — see LayerStepDecision.
     private VisibilityLayers _restorePending;
 
-    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log)
+    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log, GameEffectVisibility? effects = null)
     {
         _types = types;
         _overlayRoots = overlayRoots;
         _log = log;
+        _effects = effects;
     }
 
     public VisibilityLayers Apply(VisibilityLayers requested)
@@ -49,6 +51,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepOtherPlayers(requested);
         StepSelf(requested);
+        var fx = _effects?.Apply(requested) ?? VisibilityLayers.None;
+        _applied = (_applied & ~VisibilityLayerSets.Effects) | fx;
         return _applied;
     }
 
@@ -56,8 +60,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     /// have undone it), AND retries any layer whose earlier restore (show) call failed because its singleton was
     /// briefly unavailable — even though that failure already cleared the layer from <c>_applied</c>, so nothing
     /// looks "held" for it. This is the path <c>TargetRebuilt</c> drives (via the host's one-tick-later drain),
-    /// which is exactly when a previously-missing singleton is likely to have appeared. Other players go through
-    /// the entity-show plan, which rewrites only what differs.</summary>
+    /// which is exactly when a previously-missing singleton is likely to have appeared. Other players and Self go
+    /// through the entity-show plan, which rewrites only what differs.</summary>
     public VisibilityLayers Reassert(VisibilityLayers requested)
     {
         Step(VisibilityLayers.GameHud, requested, SetGameHudHidden, force: true);
@@ -65,6 +69,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
         StepOtherPlayers(requested);
         StepSelf(requested);
+        var fx = _effects?.Apply(requested) ?? VisibilityLayers.None;
+        _applied = (_applied & ~VisibilityLayerSets.Effects) | fx;
         return _applied;
     }
 

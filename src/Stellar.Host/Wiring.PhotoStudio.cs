@@ -33,7 +33,11 @@ public sealed partial class BootstrapPlugin
     /// </summary>
     private void WirePhotoStudio(BepInExPluginLog log)
     {
-        _visibilityBackend = new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log);
+        var summons = new SummonOwnerIndex();
+        _combatService!.CombatEventOccurred += summons.OnCombatEvent;
+        var classifier = new EffectOwnerClassifier(() => _combatService.LocalEntityId, () => _partyService!.Members, summons.TopOwner);
+        var effects = new GameEffectVisibility(_gameTypeRegistry!, classifier.Classify, log);
+        _visibilityBackend = new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log, effects);
         _sceneVisibility = new SceneVisibilityService(_visibilityBackend);
         _lookBackend = new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log);
         _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));

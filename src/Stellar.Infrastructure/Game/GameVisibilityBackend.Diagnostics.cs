@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 namespace Stellar.Infrastructure.Game;
@@ -15,5 +17,28 @@ internal sealed partial class GameVisibilityBackend
     {
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[PhotoVis] SetEntityShow({type},{show}) by Stellar");
+    }
+
+    /// <summary>Owner's in-game pass could not be run for this change — this line replaces it: every NON-ZERO
+    /// ETakePhotos hold count over all EntityRenderLayerHideType values right after a Self write, so a stray hold
+    /// (ours or the game's own) is visible from the log alone. Reuses the same reflection HoldCount resolves
+    /// (<see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> / <see cref="_holdCountSource"/>); silent when any
+    /// of them, or the ZEntityMgr singleton, isn't resolved yet.</summary>
+    partial void OnSelfHoldsChanged(bool hide)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        try
+        {
+            var mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out _);
+            if (mgr is null || _getHideCount is null || _hideTypeEnum is null || _holdCountSource is null) return;
+            var parts = new List<string>();
+            foreach (var value in Enum.GetValues(_hideTypeEnum))
+            {
+                if (_getHideCount.Invoke(mgr, new[] { value, _holdCountSource }) is int count && count != 0)
+                    parts.Add($"{value}({Convert.ToInt32(value)})={count}");
+            }
+            _log.Info($"[PhotoVis] holds after Self hide={hide}: {string.Join(" ", parts)}");
+        }
+        catch { /* diagnostics only — a reflection miss here must never surface */ }
     }
 }

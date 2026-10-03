@@ -77,6 +77,7 @@ internal sealed partial class GameVisibilityBackend
             // are NOT re-hidden (a second hide would need a second show) — EntityShowPlan never double-hides.
             if (_types.FindType(CameraFrameCtrlType) is { } cfi)
                 hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
+            _effects?.InstallHooks(hooker);
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
     }
@@ -102,8 +103,8 @@ internal sealed partial class GameVisibilityBackend
         (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
         | VisibilityLayers.StellarOverlay
         | (ProbeNameplates() ? VisibilityLayers.Nameplates : VisibilityLayers.None)
-        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty : VisibilityLayers.None)
-        | (ProbeOtherPlayers() ? VisibilityLayers.Self : VisibilityLayers.None);
+        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty | VisibilityLayers.Self : VisibilityLayers.None)
+        | (_effects?.Available ?? VisibilityLayers.None);
 
     private bool ProbeGameHud()
     {
@@ -206,17 +207,32 @@ internal sealed partial class GameVisibilityBackend
     /// (one show per hide we issued; refcount semantics from the disassembly, recon-party-grain.md).</summary>
     private bool SetOtherPlayersHidden(bool hidden, bool keepParty)
     {
-        var ctrl = CreatedSingleton(CameraFrameCtrlType, "OtherPlayers", out var t);
-        if (ctrl is null) return false;
+        if (EntityShowWriter("OtherPlayers") is not { } write) return false;
+        return _entityShow.Apply(hidden, keepParty, write, HoldCount);
+    }
+
+    /// <summary>Shared by <see cref="SetOtherPlayersHidden"/> and <c>GameVisibilityBackend.Self.cs</c>'s
+    /// SetSelfHidden: resolves CameraFrameCtrl + its cached SetEntityShow method (once, via <see cref="_setEntityShow"/>)
+    /// and hands back the write closure both <see cref="EntityShowPlan"/> instances call through — one less copy of
+    /// the "resolve singleton, cache the method, warn once, write + OnEntityShowWritten" sequence to keep in sync.
+    /// Null when the singleton or method can't be resolved right now (the caller's layer is reported not hidden).</summary>
+    private Func<int, bool, bool>? EntityShowWriter(string layerTag)
+    {
+        var ctrl = CreatedSingleton(CameraFrameCtrlType, layerTag, out var t);
+        if (ctrl is null) return null;
         _setEntityShow ??= t!.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
-        if (_setEntityShow is null) { WarnOnce("m:OtherPlayers", "Hide OtherPlayers unavailable: CameraFrameCtrl.SetEntityShow not found."); return false; }
+        if (_setEntityShow is null)
+        {
+            WarnOnce("m:" + layerTag, $"Hide {layerTag} unavailable: CameraFrameCtrl.SetEntityShow not found.");
+            return null;
+        }
         var setter = _setEntityShow;
-        return _entityShow.Apply(hidden, keepParty, (type, show) =>
+        return (type, show) =>
         {
             setter.Invoke(ctrl, new object[] { type, show });
             OnEntityShowWritten(type, show);
             return true;
-        }, HoldCount);
+        };
     }
 
     /// <summary>

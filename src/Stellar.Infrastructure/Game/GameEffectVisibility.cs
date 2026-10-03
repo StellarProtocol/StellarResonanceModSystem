@@ -80,6 +80,7 @@ internal sealed partial class GameEffectVisibility
         if (!(viaInstance || mgr is null ? SetInstanceVisible(fx, false) : SetManagerVisible(mgr, uid, false))) return false;
         _ledger.MarkHidden(uid, owner);
         if (viaInstance) _instances[uid] = fx;
+        if (!viaInstance) OnSweepHidden(owner);   // the creation-hook path (viaInstance) isn't part of a sweep
         return true;
     }
 
@@ -128,4 +129,5 @@ internal sealed partial class GameEffectVisibility
 
     partial void OnClassified(long uid, long from, long belong, VisibilityLayers owner);
     partial void OnSwept(VisibilityLayers wanted, int hidden, int shown, int held);
+    partial void OnSweepHidden(VisibilityLayers owner);
 }

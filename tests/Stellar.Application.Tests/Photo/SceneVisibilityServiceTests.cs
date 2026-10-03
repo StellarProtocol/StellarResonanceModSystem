@@ -221,4 +221,20 @@ public sealed class SceneVisibilityServiceTests
         b.Available = VisibilityLayers.None;
         Assert.Equal(VisibilityLayers.None, p.Available);
     }
+
+    // Task 5: Self + the four effect layers are additive bits the service already treats generically —
+    // this pins that the union/release bookkeeping needs no Self/Effects-specific logic in Recompute.
+    [Fact]
+    public void New_layers_union_and_release_like_the_old_ones()
+    {
+        var b = new FakeBackend();
+        var s = new SceneVisibilityService(b);
+        var a = s.Hide(VisibilityLayers.Self | VisibilityLayers.EffectsMine);
+        var c = s.Hide(VisibilityLayers.EffectsMonsters);
+        Assert.Equal(VisibilityLayers.Self | VisibilityLayers.EffectsMine | VisibilityLayers.EffectsMonsters, b.Calls[^1]);
+        a.Dispose();
+        Assert.Equal(VisibilityLayers.EffectsMonsters, b.Calls[^1]);
+        c.Dispose();
+        Assert.Equal(VisibilityLayers.None, b.Calls[^1]);
+    }
 }

@@ -15,21 +15,19 @@ internal sealed partial class GameVisibilityBackend
         var wrote = _selfShow.NeedsWrite(target, HoldCount);
         var ok = !wrote || Invoke(VisibilityLayers.Self, want, () => SetSelfHidden(target));
         _applied = (_applied & ~VisibilityLayers.Self) | (want && ok ? VisibilityLayers.Self : VisibilityLayers.None);
-        if (wrote) OnLayerSet(VisibilityLayers.Self, want, ok);
+        if (wrote)
+        {
+            OnLayerSet(VisibilityLayers.Self, want, ok);
+            OnSelfHoldsChanged(want);
+        }
     }
 
     private bool SetSelfHidden(int[] target)
     {
-        var ctrl = CreatedSingleton(CameraFrameCtrlType, "Self", out var t);
-        if (ctrl is null) return false;
-        _setEntityShow ??= t!.GetMethod("SetEntityShow", AnyInstance, null, new[] { typeof(int), typeof(bool) }, null);
-        if (_setEntityShow is null) { WarnOnce("m:Self", "Hide Self unavailable: CameraFrameCtrl.SetEntityShow not found."); return false; }
-        var setter = _setEntityShow;
-        return _selfShow.Apply(target, (type, show) =>
-        {
-            setter.Invoke(ctrl, new object[] { type, show });
-            OnEntityShowWritten(type, show);
-            return true;
-        }, HoldCount);
+        if (EntityShowWriter("Self") is not { } write) return false;
+        return _selfShow.Apply(target, write, HoldCount);
     }
+
+    /// <summary>StellarDiagnostics-only: logs the live ETakePhotos hold counts after a Self write (GameVisibilityBackend.Diagnostics.cs).</summary>
+    partial void OnSelfHoldsChanged(bool hide);
 }
