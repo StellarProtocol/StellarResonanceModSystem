@@ -48,6 +48,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: false);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepOtherPlayers(requested);
+        StepSelf(requested);
         return _applied;
     }
 
@@ -63,6 +64,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: true);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
         StepOtherPlayers(requested);
+        StepSelf(requested);
         return _applied;
     }
 

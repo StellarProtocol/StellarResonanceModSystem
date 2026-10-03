@@ -205,4 +205,36 @@ public sealed class EntityShowPlanTests
     [InlineData(11, 7)]   // OtherPlayer → OtherPlayer
     public void Camera_types_map_to_the_render_layer_hide_types(int camera, int layer) =>
         Assert.Equal(layer, EntityShowPlan.HideTypeFor(camera));
+
+    [Fact]
+    public void Self_target_hides_oneself_and_self_pet_once_and_shows_each_once()
+    {
+        var p = new EntityShowPlan();
+        Assert.True(p.Apply(EntityShowPlan.SelfSet, Write));
+        Assert.Equal(new[] { (1, false), (14, false) }, _calls);
+        _calls.Clear();
+        Assert.False(p.NeedsWrite(EntityShowPlan.SelfSet));
+        Assert.True(p.Apply(System.Array.Empty<int>(), Write));
+        Assert.Equal(new[] { (1, true), (14, true) }, _calls);
+        Assert.Equal(0, Count(1) + Count(14));
+    }
+
+    [Fact]
+    public void Self_and_other_player_plans_are_independent()
+    {
+        var self = new EntityShowPlan();
+        var others = new EntityShowPlan();
+        self.Apply(EntityShowPlan.SelfSet, Write);
+        others.Apply(true, false, Write);
+        Assert.False(self.HoldsKeepPartySet);
+        Assert.Equal(1, Count(11));
+        Assert.Equal(1, Count(1));
+    }
+
+    [Fact]
+    public void Unknown_camera_type_has_no_hide_type()
+    {
+        Assert.Null(EntityShowPlan.TryHideTypeFor(99));
+        Assert.Equal(7, EntityShowPlan.TryHideTypeFor(EntityShowPlan.OtherPlayer));
+    }
 }

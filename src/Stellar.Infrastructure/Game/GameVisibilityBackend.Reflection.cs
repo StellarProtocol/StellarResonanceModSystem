@@ -102,7 +102,8 @@ internal sealed partial class GameVisibilityBackend
         (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
         | VisibilityLayers.StellarOverlay
         | (ProbeNameplates() ? VisibilityLayers.Nameplates : VisibilityLayers.None)
-        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty : VisibilityLayers.None);
+        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty : VisibilityLayers.None)
+        | (ProbeOtherPlayers() ? VisibilityLayers.Self : VisibilityLayers.None);
 
     private bool ProbeGameHud()
     {
@@ -227,22 +228,23 @@ internal sealed partial class GameVisibilityBackend
     {
         try
         {
+            if (EntityShowPlan.TryHideTypeFor(cameraType) is not { } hideType) return null;
             var mgr = CreatedSingleton(ZEntityMgrType, "HoldCount", out var t);
             if (mgr is null) return null;
             if (_getHideCount is null)
             {
                 var m = StellarInterop.FindMethod(t, "getHideCount", 2);
                 var ps = m?.GetParameters();
-                if (m is null || ps![0].ParameterType is not { IsEnum: true } hideType || ps[1].ParameterType is not { IsEnum: true } sourceType)
+                if (m is null || ps![0].ParameterType is not { IsEnum: true } hideTypeEnum || ps[1].ParameterType is not { IsEnum: true } sourceType)
                 {
                     WarnOnce("m:HoldCount", "Hold-count check unavailable: ZEntityMgr.getHideCount not found.");
                     return null;
                 }
-                _hideTypeEnum = hideType;
+                _hideTypeEnum = hideTypeEnum;
                 _holdCountSource = Enum.ToObject(sourceType, PhotoVisibleSource);
                 _getHideCount = m;
             }
-            var hide = Enum.ToObject(_hideTypeEnum!, EntityShowPlan.HideTypeFor(cameraType));
+            var hide = Enum.ToObject(_hideTypeEnum!, hideType);
             return _getHideCount.Invoke(mgr, new[] { hide, _holdCountSource! }) is int n ? n : null;
         }
         catch (Exception ex)
