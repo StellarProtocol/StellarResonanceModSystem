@@ -238,6 +238,16 @@ public sealed class EntityShowPlanTests
         Assert.Equal(7, EntityShowPlan.TryHideTypeFor(EntityShowPlan.OtherPlayer));
     }
 
+    // Measured on the owner's client 2026-10-03 ([PhotoVis] holds after Self hide=True: SelfPet(12)=1): SetEntityShow(1)
+    // + SetEntityShow(14) move exactly one ETakePhotos counter, EntityRenderLayerHideType.SelfPet = 12. Oneself (1)
+    // keeps no counter in that source, so it stays unmapped (bookkeeping only, no reset check).
+    [Fact]
+    public void Self_pet_maps_to_the_measured_hide_type_and_oneself_has_none()
+    {
+        Assert.Equal(12, EntityShowPlan.TryHideTypeFor(EntityShowPlan.SelfPet));
+        Assert.Null(EntityShowPlan.TryHideTypeFor(EntityShowPlan.Oneself));
+    }
+
     // M2 follow-up: HasPendingRestore reads this to notice a failed show-back even though nothing is held "cleanly".
     [Fact]
     public void HoldsAny_reflects_whatever_is_currently_held()

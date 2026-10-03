@@ -54,7 +54,8 @@ internal sealed class EntityShowPlan
         Chum => 5,          // Friend
         Union => 3,         // Union
         OtherPlayer => 7,   // OtherPlayer
-        // Oneself (1) / SelfPet (14): hide types pending the photo-hide probe (docs/recon/photo-hide-recon.md).
+        SelfPet => 12,      // SelfPet — measured 2026-10-03 (owner client: "holds after Self … SelfPet(12)=1")
+        // Oneself (1) keeps no ETakePhotos counter (same measurement), so it stays unmapped: bookkeeping only.
         _ => null,
     };
 
