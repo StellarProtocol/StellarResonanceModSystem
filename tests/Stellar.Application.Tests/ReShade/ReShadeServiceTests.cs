@@ -16,7 +16,7 @@ public sealed class ReShadeServiceTests
 
     public ReShadeServiceTests()
     {
-        _service = new ReShadeService(_native, new EffectDepthIndex(_fs), _log);
+        _service = new ReShadeService(_native, new EffectDepthIndex(_fs), new EffectSizeLockIndex(_fs), _log);
         _service.Changed += () => _changed++;
     }
 
@@ -311,6 +311,39 @@ public sealed class ReShadeServiceTests
         Assert.False(_service.Techniques[0].UsesDepth);
         Assert.True(_service.Techniques[1].UsesDepth);
         Assert.True(_service.Techniques[2].UsesDepth);
+    }
+
+    [Fact]
+    public void SizeLocked_comes_from_the_effect_source_found_on_the_search_paths()
+    {
+        _fs.Add("/pack/Shaders/Clarity.fx", "float4 PS() { return tex2D(ReShade::BackBuffer, uv); }");
+        _fs.Add("/pack/Shaders/Bloom.fx", "#include \"BloomLib.fxh\"");
+        _fs.Add("/pack/Shaders/BloomLib.fxh", "texture BloomTex { Width = BUFFER_WIDTH / 2; Height = BUFFER_HEIGHT / 2; };");
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        _native.Add("Clarity", "Clarity.fx");
+        _native.Add("Bloom", "Bloom.fx");
+        _native.Add("Unknown", "NotOnDisk.fx");
+        Tick();
+        Assert.False(_service.Techniques[0].SizeLocked);
+        Assert.True(_service.Techniques[1].SizeLocked);
+        Assert.True(_service.Techniques[2].SizeLocked);   // not found -> assume locked
+    }
+
+    [Fact]
+    public void Effects_beyond_the_per_tick_budget_read_as_size_locked_until_resolved()
+    {
+        var count = ReShadeService.DepthResolvesPerTick + 1;
+        for (var i = 0; i < count; i++)
+        {
+            _fs.Add($"/pack/E{i}.fx", "float4 PS() { return 0; }");
+            _native.Add($"T{i}", $"E{i}.fx");
+        }
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        Tick();
+        Assert.True(_service.Techniques[count - 1].SizeLocked);
+        Assert.False(_service.Techniques[0].SizeLocked);
+        Tick();
+        Assert.All(_service.Techniques, t => Assert.False(t.SizeLocked));
     }
 
     [Fact]

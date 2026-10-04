@@ -84,7 +84,10 @@ public sealed record CaptureRequest
     /// </summary>
     public CaptureAspect? Aspect { get; init; }
     /// <summary>Draw ReShade's active effects into the photo when ReShade is available and enabled (default true).
-    /// In a non-screen <see cref="Aspect"/>, techniques that use depth are skipped for this photo.</summary>
+    /// In a non-screen <see cref="Aspect"/>, techniques that use depth are skipped for this photo. When an active
+    /// technique only works at screen size (<see cref="ReShadeTechnique.SizeLocked"/>), a window-shaped photo is taken at
+    /// 1× instead of <see cref="Scale"/> (the result's size says so) and a shaped photo skips that technique; either way
+    /// <see cref="CaptureResult.Notes"/> explains it.</summary>
     public bool ApplyReShade { get; init; } = true;
 }
 

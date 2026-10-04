@@ -11,12 +11,14 @@ internal sealed record FrameGrab(byte[] RgbaBottomUp, int Width, int Height, byt
 /// <summary>
 /// Draw ReShade's active effects into this capture. <see cref="Active"/> holds only enabled techniques (never empty
 /// when passed). When <see cref="Shaped"/>, the ones that use depth are switched off for this capture only (D8) — the
-/// depth buffer is the screen's, which does not line up with a differently shaped render.
+/// depth buffer is the screen's, which does not line up with a differently shaped render. When
+/// <see cref="SkipSizeLocked"/>, the size-locked ones (<see cref="ReShadeTechnique.SizeLocked"/>) are switched off too
+/// (a capture that is not screen-sized and cannot fall back to it).
 /// </summary>
-internal sealed record ReShadeCaptureOptions(bool Shaped, IReadOnlyList<ReShadeTechnique> Active)
+internal sealed record ReShadeCaptureOptions(bool Shaped, IReadOnlyList<ReShadeTechnique> Active, bool SkipSizeLocked = false)
 {
     /// <summary>The note a capture carries when ReShade did not draw in time and the photo was taken without it.</summary>
-    internal const string NotReadyNote = "ReShade was not ready — photo taken without it.";
+    internal const string NotReadyNote = Stellar.Application.Services.ReShadeCaptureNotes.NotReady;
 }
 
 internal sealed class FrameGrabException : Exception

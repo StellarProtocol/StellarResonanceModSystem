@@ -16,7 +16,6 @@ internal static class EffectDepthScanner
     // system-value "SV_Depth", a depth OUTPUT that does not read the game's depth. Case-insensitive like every token
     // here (semantics are case-insensitive in HLSL).
     private static readonly Regex DepthSemantic = new(@":\s*DEPTH\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private static readonly Regex BlockComment = new(@"/\*.*?\*/", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.CultureInvariant);
     private static readonly Regex ReShadeNamespace = new(@"\bnamespace\s+ReShade\s*\{", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>True when <paramref name="fxSource"/> (comments and any <c>namespace ReShade { … }</c> copy of the standard
@@ -27,7 +26,7 @@ internal static class EffectDepthScanner
     internal static bool UsesDepth(string? fxSource)
     {
         if (fxSource is null) return false;
-        var stripped = WithoutReShadeNamespaces(BlockComment.Replace(StripLineComments(fxSource), " "));
+        var stripped = WithoutReShadeNamespaces(EffectSourceText.WithoutComments(fxSource));
         return stripped.Contains(DepthBufferToken, StringComparison.OrdinalIgnoreCase)
             || stripped.Contains(LinearizedDepthToken, StringComparison.OrdinalIgnoreCase)
             || DepthSemantic.IsMatch(stripped);
@@ -58,17 +57,5 @@ internal static class EffectDepthScanner
         }
         output.Append(source, copied, source.Length - copied);
         return output.ToString();
-    }
-
-    private static string StripLineComments(string source)
-    {
-        var lines = source.Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var index = lines[i].IndexOf("//", StringComparison.Ordinal);
-            if (index >= 0)
-                lines[i] = lines[i][..index];
-        }
-        return string.Join('\n', lines);
     }
 }

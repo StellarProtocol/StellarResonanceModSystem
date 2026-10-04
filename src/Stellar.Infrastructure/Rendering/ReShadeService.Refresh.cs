@@ -4,13 +4,14 @@ using Stellar.Abstractions.Domain;
 
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary>The per-tick poll. Raises <c>Changed</c> on a state, effects-on/off, technique-list, depth or preset change. Steady-state cost per tick: one status read (five add-on calls). The snapshot frame
+/// <summary>The per-tick poll. Raises <c>Changed</c> on a state, effects-on/off, technique-list, depth/size-lock or preset change. Steady-state cost per tick: one status read (five add-on calls). The snapshot frame
 /// counter advances on every presented frame, so the early return ("counter unchanged") only saves work when no frame
 /// was presented since the last tick — it is not the common path. The technique list (one add-on call per technique)
 /// and the preset (one call) are re-read when the status moved (ready / loading / count), after a Stellar request, and
 /// otherwise every <see cref="ReReadEveryTicks"/> ticks (a toggle made in ReShade's own overlay changes nothing the
-/// status shows). At most <see cref="DepthResolvesPerTick"/> effect files' depth use is resolved per tick so a first
-/// listing of a large shader pack never stalls a frame; an effect not yet resolved reads as using depth. The
+/// status shows). At most <see cref="DepthResolvesPerTick"/> effect files are scanned per tick (depth use and size lock
+/// together) so a first listing of a large shader pack never stalls a frame; an effect not yet resolved reads as using
+/// depth AND as size-locked (both fail-safe). The
 /// steady-state path allocates nothing; a new technique list is built only when something changed.</summary>
 internal sealed partial class ReShadeService
 {
@@ -74,6 +75,7 @@ internal sealed partial class ReShadeService
         if (_hasStatus && _status.Loading && !status.Loading)
         {
             _depth.MarkStale(); // ReShade reloaded: re-check the effect files it compiled
+            _sizeLock.MarkStale();
             _depthDirty = true;
         }
         _hasStatus = true;
@@ -149,18 +151,25 @@ internal sealed partial class ReShadeService
         var changed = false;
         foreach (var technique in _raw)
         {
-            if (!_depth.NeedsWork(technique.EffectFile)) continue;
+            var file = technique.EffectFile;
+            if (!_depth.NeedsWork(file) && !_sizeLock.NeedsWork(file)) continue;
             if (budget == 0)
             {
                 pending = true;
                 break;
             }
-            var before = _depth.Known(technique.EffectFile);
-            changed |= _depth.Resolve(technique.EffectFile) != before;
+            changed |= ResolveIfNeeded(_depth, file) | ResolveIfNeeded(_sizeLock, file);
             budget--;
         }
         _depthDirty = pending;
         return changed;
+    }
+
+    private static bool ResolveIfNeeded(EffectScanIndex index, string file)
+    {
+        if (!index.NeedsWork(file)) return false;
+        var before = index.Known(file);
+        return index.Resolve(file) != before;
     }
 
     private void Publish()
@@ -174,7 +183,10 @@ internal sealed partial class ReShadeService
         for (var i = 0; i < list.Length; i++)
         {
             var raw = _raw[i];
-            list[i] = new ReShadeTechnique(raw.Name, raw.EffectFile, raw.Enabled, _depth.Known(raw.EffectFile) ?? true);
+            list[i] = new ReShadeTechnique(raw.Name, raw.EffectFile, raw.Enabled, _depth.Known(raw.EffectFile) ?? true)
+            {
+                SizeLocked = _sizeLock.Known(raw.EffectFile) ?? true,
+            };
         }
         _techniques = list;
     }

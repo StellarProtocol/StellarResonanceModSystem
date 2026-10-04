@@ -23,7 +23,8 @@ public sealed partial class BootstrapPlugin
     {
         _reShadeLog = log;
         _reShadeBridge = new ReShadeBridge(log);
-        _reShadeService = new ReShadeService(_reShadeBridge, new EffectDepthIndex(new PhysicalEffectFileSystem()), log);
+        var effectFiles = new PhysicalEffectFileSystem();
+        _reShadeService = new ReShadeService(_reShadeBridge, new EffectDepthIndex(effectFiles), new EffectSizeLockIndex(effectFiles), log);
     }
 
     /// <summary>Called from <c>RunGlobalRateWork</c> (un-gated: ReShade is usable at the title screen too). The service

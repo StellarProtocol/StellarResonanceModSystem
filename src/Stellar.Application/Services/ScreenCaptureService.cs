@@ -8,7 +8,8 @@ using Stellar.Application.Abstractions;
 using Stellar.Application.Imaging;
 namespace Stellar.Application.Services;
 
-internal sealed class ScreenCaptureService : IScreenCapture
+// ReShade options + the size-locked guard live in ScreenCaptureService.ReShade.cs.
+internal sealed partial class ScreenCaptureService : IScreenCapture
 {
     private const int SettleFramesWhenHiding = 2;
     private const int SettleFramesForScaleGuard = 1;   // a render-scale write reallocates the pipeline's targets
@@ -59,7 +60,9 @@ internal sealed class ScreenCaptureService : IScreenCapture
             if (error is not null) return CaptureResult.Fail(error);
             hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
             scaleGuard = _renderScaleGuard?.Invoke();
-            FrameGrab? grab = await GrabWithFallback(request, scale, SettleFrames(hide, scaleGuard));
+            var (grabbed, guardNote) = await GrabWithFallback(request, scale, SettleFrames(hide, scaleGuard));
+            FrameGrab? grab = grabbed;
+            grabbed = null!;
             scaleGuard?.Dispose(); // still on the main thread (grabber contract)
             scaleGuard = null;
             hide?.Dispose();
@@ -75,7 +78,7 @@ internal sealed class ScreenCaptureService : IScreenCapture
             });
             await ResumeQuietly(); // never throws, so the catch below can never resume a second time
             var ok = CaptureResult.Ok(path, width, height);
-            return note is null ? ok : ok with { Notes = new[] { note } };
+            return guardNote is null && note is null ? ok : ok with { Notes = Notes(guardNote, note) };
         }
         catch (Exception ex)
         {
@@ -110,21 +113,24 @@ internal sealed class ScreenCaptureService : IScreenCapture
     }
 
     // A window-shaped grab uses the validator's (already capped) scale; a shaped one sizes from the REQUESTED scale
-    // and caps both sides equally inside CaptureSizing.OutputSize.
-    private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
+    // and caps both sides equally inside CaptureSizing.OutputSize. The ReShade size guard may lower a window-shaped
+    // scale to 1 (its note comes back alongside the grab).
+    private async Task<(FrameGrab Grab, string? GuardNote)> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
     {
-        var scale = r.Aspect is null ? effectiveScale : r.Scale;
-        var reShade = ReShadeOptions(r);
+        var (reShade, scale, guardNote) = GuardSize(r, ReShadeOptions(r), r.Aspect is null ? effectiveScale : r.Scale);
         try
         {
-            return await _grabber.GrabAsync(Target(r, scale, reShade), settle, r.Format, r.JpgQuality);
+            return (await _grabber.GrabAsync(Target(r, scale, reShade), settle, r.Format, r.JpgQuality), guardNote);
         }
         // A 4× frame can also run the managed heap out (OutOfMemoryException) — 2× gets the same second chance.
         catch (Exception ex) when (scale > 2 && ex is FrameGrabException or OutOfMemoryException)
         {
-            return await _grabber.GrabAsync(Target(r, 2, reShade), settle, r.Format, r.JpgQuality);
+            return (await _grabber.GrabAsync(Target(r, 2, reShade), settle, r.Format, r.JpgQuality), guardNote);
         }
     }
+
+    private static IReadOnlyList<string> Notes(string? first, string? second) =>
+        first is null ? new[] { second! } : second is null ? new[] { first } : new[] { first, second };
 
     private GrabTarget Target(CaptureRequest r, int scale, ReShadeCaptureOptions? reShade)
     {
@@ -132,21 +138,6 @@ internal sealed class ScreenCaptureService : IScreenCapture
         return r.Aspect is null
             ? new GrabTarget(new CaptureSize(w * scale, h * scale), Shaped: false, reShade)
             : new GrabTarget(CaptureSizing.OutputSize(w, h, scale, r.Aspect, _grabber.MaxTextureSize), Shaped: true, reShade);
-    }
-
-    // ReShade draws into the photo only when the request asks for it, ReShade is available, its effects are on, and at
-    // least one technique is active — otherwise the capture is exactly the pre-ReShade one (no options at all).
-    private ReShadeCaptureOptions? ReShadeOptions(CaptureRequest r)
-    {
-        if (!r.ApplyReShade || _reShade is null) return null;
-        if (_reShade is IReShadeLiveRead live) live.RefreshNow();   // a toggle made just before the shutter counts
-        if (_reShade is not { State: ReShadeState.Ready, Enabled: true } reShade) return null;
-        List<ReShadeTechnique>? active = null;
-        foreach (var technique in reShade.Techniques)
-        {
-            if (technique.Enabled) (active ??= new List<ReShadeTechnique>()).Add(technique);
-        }
-        return active is null ? null : new ReShadeCaptureOptions(Shaped: r.Aspect is not null, active);
     }
 
     private static string MapError(Exception ex) => ex switch

@@ -166,7 +166,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
     {
         var native = new FakeReShadeNative { IsLoaded = false };
         native.Add("Bloom", "Bloom.fx");
-        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new NullLog());
+        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new NullLog());
         service.Refresh();
         native.NextFrame();
         service.Refresh();
@@ -188,7 +188,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         var native = new FakeReShadeNative();
         native.Add("Bloom", "Bloom.fx");
         native.Add("MXAO", "MXAO.fx", enabled: false);
-        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new NullLog());
+        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new NullLog());
         service.Refresh();
         Assert.Equal(new[] { "Bloom" }, service.Techniques.Where(t => t.Enabled).Select(t => t.Name));
 
@@ -217,6 +217,89 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         var reShade = new LiveReadReShade();
         await Service(reShade).CaptureAsync(Request(apply: false));
         Assert.Equal(0, reShade.RefreshCount);
+    }
+
+    // ---- Fix 1 (2026-10-04): ReShade creates a screen-sized texture once and reuses it for every other size, so a 4x
+    // render of an effect that declares one reads its top-left quarter magnified (AcerolaFX Draft: a 256x hatch).
+
+    private static FakeReShade WithLocked()
+    {
+        var reShade = new FakeReShade();
+        reShade.List[0] = reShade.List[0] with { SizeLocked = true };   // Bloom
+        return reShade;
+    }
+
+    [Fact]
+    public async Task A_size_locked_active_effect_takes_a_window_shaped_4x_photo_at_1x_with_ReShade()
+    {
+        var r = await Service(WithLocked()).CaptureAsync(Request() with { Scale = 4 });
+        Assert.True(r.Success, r.Error);
+        var target = Assert.Single(_grabber.Targets);
+        Assert.Equal(new CaptureSize(4, 2), target.Size);   // the screen size
+        Assert.NotNull(target.ReShade);
+        Assert.False(target.ReShade!.SkipSizeLocked);
+        Assert.Equal((4, 2), (r.Width, r.Height));          // the result says what was really written
+        Assert.Equal(new[] { ReShadeCaptureNotes.ScreenSizeOnly }, r.Notes);
+    }
+
+    [Fact]
+    public async Task Only_unlocked_effects_keep_4x()
+    {
+        var r = await Service(new FakeReShade()).CaptureAsync(Request() with { Scale = 4 });
+        Assert.Equal(new CaptureSize(16, 8), Assert.Single(_grabber.Targets).Size);
+        Assert.Empty(r.Notes);
+    }
+
+    [Fact]
+    public async Task A_size_locked_effect_that_is_switched_off_does_not_lower_the_scale()
+    {
+        var reShade = new FakeReShade();
+        reShade.List[1] = reShade.List[1] with { SizeLocked = true };   // "Off": not enabled
+        await Service(reShade).CaptureAsync(Request() with { Scale = 4 });
+        Assert.Equal(new CaptureSize(16, 8), Assert.Single(_grabber.Targets).Size);
+    }
+
+    [Fact]
+    public async Task A_1x_photo_with_a_size_locked_effect_is_unchanged_and_has_no_note()
+    {
+        var r = await Service(WithLocked()).CaptureAsync(Request() with { Scale = 1 });
+        Assert.Equal(new CaptureSize(4, 2), Assert.Single(_grabber.Targets).Size);
+        Assert.Empty(r.Notes);
+    }
+
+    [Fact]
+    public async Task ApplyReShade_false_never_lowers_the_scale()
+    {
+        await Service(WithLocked()).CaptureAsync(Request(apply: false) with { Scale = 4 });
+        Assert.Equal(new CaptureSize(16, 8), Assert.Single(_grabber.Targets).Size);
+    }
+
+    [Fact]
+    public async Task The_guard_note_and_the_grab_note_both_reach_the_result()
+    {
+        _grabber.Note = ReShadeCaptureNotes.DrewNothing;
+        var r = await Service(WithLocked()).CaptureAsync(Request() with { Scale = 4 });
+        Assert.Equal(new[] { ReShadeCaptureNotes.ScreenSizeOnly, ReShadeCaptureNotes.DrewNothing }, r.Notes);
+    }
+
+    // A shaped photo is never the screen's size, so it cannot fall back to 1x: its size-locked effects are left out.
+    [Fact]
+    public async Task A_shaped_photo_skips_its_size_locked_effects_and_keeps_its_size()
+    {
+        var r = await Service(WithLocked()).CaptureAsync(Request(aspect: new CaptureAspect(1, 1)));
+        var target = Assert.Single(_grabber.Targets);
+        Assert.Equal(new CaptureSize(8, 8), target.Size);
+        Assert.True(target.ReShade!.SkipSizeLocked);
+        Assert.Equal(new[] { ReShadeCaptureNotes.ScreenSizeOnlySkipped }, r.Notes);
+    }
+
+    [Fact]
+    public async Task The_4x_to_2x_retry_never_happens_after_the_guard_chose_1x()
+    {
+        _grabber.FailAtScale = 1;
+        var r = await Service(WithLocked()).CaptureAsync(Request() with { Scale = 4 });
+        Assert.False(r.Success);
+        Assert.Single(_grabber.Targets);
     }
 
     private sealed class LiveReadReShade : IReShade, IReShadeLiveRead

@@ -167,4 +167,23 @@ public sealed class EffectIncludeFlattenerTests
         _files["/fx/A.fx"] = "// #include \"Gone.fxh\"\nbody";
         Assert.Equal("// #include \"Gone.fxh\"\nbody", Flatten("/fx/A.fx"));
     }
+
+    // SweetFX FXAA.fxh documents its use with "#include "Fxaa3_11.h"" inside a /* */ block: following it made every
+    // FXAA user "unreadable" (assumed depth AND size-locked) although FXAA reads only the back buffer.
+    [Fact]
+    public void An_include_inside_a_block_comment_is_left_alone()
+    {
+        _files["/fx/A.fx"] = "/* Usage:\n  #include \"Fxaa3_11.h\"\n*/\nbody";
+        Assert.Equal("/* Usage:\n  #include \"Fxaa3_11.h\"\n*/\nbody", Flatten("/fx/A.fx"));
+    }
+
+    [Fact]
+    public void An_include_after_a_closed_block_comment_is_still_followed()
+    {
+        _files["/fx/A.fx"] = "/* note */\n#include \"B.fxh\"\nend";
+        _files["/fx/B.fxh"] = "inner";
+        var flat = Flatten("/fx/A.fx")!;
+        Assert.Contains("inner", flat);
+        Assert.DoesNotContain("#include", flat);
+    }
 }

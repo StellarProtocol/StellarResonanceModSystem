@@ -17,8 +17,8 @@ public interface IReShade
     ReShadeState State { get; }
     /// <summary>ReShade's effects on/off (saved). Setting it is asynchronous (applied at ReShade's next frame).</summary>
     bool Enabled { get; set; }
-    /// <summary>Techniques of the loaded effects (empty while unavailable or loading). UsesDepth is only known for
-    /// effects under the folders given to <see cref="SetSearchPaths"/>; others are reported as using depth.</summary>
+    /// <summary>Techniques of the loaded effects (empty while unavailable or loading). UsesDepth and SizeLocked are only
+    /// known for effects under the folders given to <see cref="SetSearchPaths"/>; others are reported as true.</summary>
     IReadOnlyList<ReShadeTechnique> Techniques { get; }
     /// <summary>Turns one technique on/off (saved to the current preset). A technique is identified by its effect file
     /// (<see cref="ReShadeTechnique.EffectFile"/>, e.g. "Clarity.fx") and its name, because names repeat across

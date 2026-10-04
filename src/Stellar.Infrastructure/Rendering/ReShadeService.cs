@@ -18,6 +18,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
 {
     private readonly IReShadeNative _native;
     private readonly EffectDepthIndex _depth;
+    private readonly EffectSizeLockIndex _sizeLock;
     private readonly IPluginLog _log;
 
     private readonly HashSet<string> _warnedFolders = new(StringComparer.Ordinal);
@@ -26,10 +27,11 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
     private (string? Effects, string? Textures)? _pendingSearchPaths;
     private (string? Effects, string? Textures)? _lastSentSearchPaths;   // this session's last request (dedupe)
 
-    internal ReShadeService(IReShadeNative native, EffectDepthIndex depth, IPluginLog log)
+    internal ReShadeService(IReShadeNative native, EffectDepthIndex depth, EffectSizeLockIndex sizeLock, IPluginLog log)
     {
         _native = native;
         _depth = depth;
+        _sizeLock = sizeLock;
         _log = log;
     }
 
@@ -81,6 +83,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
         if (effects.Count > 0)
         {
             _depth.SetSearchPaths(effects);
+            _sizeLock.SetSearchPaths(effects);
             _depthDirty = true;
             _forceRead = true;
         }

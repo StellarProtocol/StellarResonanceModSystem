@@ -47,6 +47,24 @@ internal static class EffectIncludeFlattener
     private readonly record struct Context(
         Func<string, string?> Read, Func<string, string, IReadOnlyList<string>> Resolve, HashSet<string> Visited, StringBuilder Output);
 
+    private static string BlankBlockComments(string text)
+    {
+        var start = text.IndexOf("/*", StringComparison.Ordinal);
+        if (start < 0) return text;
+        var chars = text.ToCharArray();
+        while (start >= 0)
+        {
+            var end = text.IndexOf("*/", start + 2, StringComparison.Ordinal);
+            var stop = end < 0 ? chars.Length : end + 2;
+            for (var i = start; i < stop; i++)
+            {
+                if (chars[i] != '\n') chars[i] = ' ';
+            }
+            start = end < 0 ? -1 : text.IndexOf("/*", stop, StringComparison.Ordinal);
+        }
+        return new string(chars);
+    }
+
     private static bool Append(string path, int depth, Context ctx)
     {
         if (depth > MaxDepth) return false;
@@ -55,7 +73,9 @@ internal static class EffectIncludeFlattener
         if (text is null) return false;
 
         var copied = 0;
-        foreach (Match match in IncludeLine.Matches(text))
+        // Matched on a copy with /* */ comments blanked (same length, so indices line up with the real text): an include
+        // written inside a block comment — SweetFX FXAA.fxh documents its usage that way — is not followed.
+        foreach (Match match in IncludeLine.Matches(BlankBlockComments(text)))
         {
             ctx.Output.Append(text, copied, match.Index - copied);
             copied = match.Index + match.Length;

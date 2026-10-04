@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Stellar.Infrastructure.Rendering;
 
-/// <summary>The file reads <see cref="EffectDepthIndex"/> needs, so effect lookup and include flattening are testable
+/// <summary>The file reads <see cref="EffectScanIndex"/> needs, so effect lookup and include flattening are testable
 /// over an in-memory tree.</summary>
 internal interface IEffectFileSystem
 {

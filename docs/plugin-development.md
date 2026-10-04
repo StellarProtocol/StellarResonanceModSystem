@@ -574,7 +574,9 @@ reShade.SetTechnique("Clarity.fx", "Clarity", enabled: true);   // identity = ef
 - **Photos:** `CaptureRequest.ApplyReShade` (default true) draws ReShade's active effects into an `IScreenCapture` photo
   when `State` is `Ready` and `Enabled` is on. Each photo is briefly prepared for its size; if ReShade is not ready in time
   the photo is taken without it and `CaptureResult.Notes` says so — show that note to the player. A photo in a shape
-  other than the screen's switches depth-based effects (`UsesDepth`) off for that photo only.
+  other than the screen's switches depth-based effects (`UsesDepth`) off for that photo only. Effects that only work at
+  screen size (`SizeLocked`) keep a 2×/4× photo at 1× (the result's `Width`/`Height` are the real size — derive the
+  scale from them, not from the request) and are switched off in a photo of another shape; a note says which.
 
 ## The no-cheating boundary
 

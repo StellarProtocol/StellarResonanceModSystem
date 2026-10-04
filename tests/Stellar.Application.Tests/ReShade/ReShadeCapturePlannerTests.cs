@@ -73,7 +73,8 @@ public sealed class ReShadeCapturePlannerTests
     [Fact]
     public void WarmUp_timeout_with_depth_disabled_restores_then_done_false()
     {
-        var planner = new ReShadeCapturePlanner(shaped: true, new[] { WithDepth("DepthOfField") }, nowMs: 0);
+        // Bloom stays drawable: a plan whose every technique is switched off ends at once (NothingActive) instead.
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { NoDepth("Bloom"), WithDepth("DepthOfField") }, nowMs: 0);
 
         planner.Next(lastDrawn: 0, nowMs: 0); // DisableDepth — warm-up clock starts here.
         Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 1000));
@@ -143,7 +144,7 @@ public sealed class ReShadeCapturePlannerTests
     [InlineData(-3)]
     public void A_hard_error_during_warm_up_restores_then_done_false_without_waiting(int code)
     {
-        var planner = new ReShadeCapturePlanner(shaped: true, new[] { WithDepth("DepthOfField") }, nowMs: 0);
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { NoDepth("Bloom"), WithDepth("DepthOfField") }, nowMs: 0);
         planner.Next(lastDrawn: 0, nowMs: 0);   // DisableDepth
         Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, nowMs: 16));
 
@@ -185,5 +186,151 @@ public sealed class ReShadeCapturePlannerTests
         slow.Next(0, 16);
         slow.Next(0, ReShadeCapturePlanner.WarmUpTimeoutMs);
         Assert.Equal(ReShadeWarmUpOutcome.TimedOut, slow.Outcome);
+    }
+
+    // ---- Fix 2 (2026-10-04): "ReShade was not ready" with warmUpEndCode=8 renderCode=0. After the first warm-up compiled
+    // the effects at the new size, ReShade's preset re-apply switched on another technique; the next warm-up queued its
+    // compile and the real render ran while ReShade was loading (render_effects returns early -> 0 drawn).
+
+    [Fact]
+    public void Loading_waits_instead_of_rendering_even_after_a_warm_up_drew()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, loading: false, nowMs: 16));
+        Assert.IsType<CaptureStep.Wait>(planner.Next(lastDrawn: 8, loading: true, nowMs: 32));
+        Assert.IsType<CaptureStep.Wait>(planner.Next(lastDrawn: 8, loading: true, nowMs: 48));
+        // Loading is over, but the 8 drawn predates it: warm up again before the real render.
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 8, loading: false, nowMs: 64));
+        Assert.IsType<CaptureStep.Render>(planner.Next(lastDrawn: 9, loading: false, nowMs: 80));
+    }
+
+    [Fact]
+    public void A_render_that_drew_nothing_goes_back_to_warm_up_instead_of_a_photo_without_ReShade()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        planner.Next(lastDrawn: 0, loading: false, nowMs: 16);
+        Assert.IsType<CaptureStep.Render>(planner.Next(lastDrawn: 8, loading: false, nowMs: 32));
+
+        Assert.Equal(RenderVerdict.Retry, planner.AfterRender(renderCode: 0, nowMs: 600));
+        Assert.Equal(ReShadeWarmUpOutcome.Pending, planner.Outcome);
+
+        Assert.IsType<CaptureStep.Wait>(planner.Next(lastDrawn: 0, loading: true, nowMs: 616));
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(lastDrawn: 0, loading: false, nowMs: 632));
+        Assert.IsType<CaptureStep.Render>(planner.Next(lastDrawn: 9, loading: false, nowMs: 648));
+        Assert.Equal(RenderVerdict.Keep, planner.AfterRender(renderCode: 9, nowMs: 700));
+        Assert.Equal(ReShadeWarmUpOutcome.Drew, planner.Outcome);
+        Assert.True(Assert.IsType<CaptureStep.Done>(planner.Next(lastDrawn: 9, loading: false, nowMs: 716)).Applied);
+    }
+
+    [Fact]
+    public void A_render_that_drew_nothing_past_the_deadline_keeps_the_photo_without_ReShade()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        planner.Next(lastDrawn: 0, loading: false, nowMs: 16);
+        planner.Next(lastDrawn: 8, loading: false, nowMs: 32);
+
+        Assert.Equal(RenderVerdict.KeepWithoutReShade, planner.AfterRender(0, ReShadeCapturePlanner.WarmUpTimeoutMs));
+        Assert.Equal(ReShadeWarmUpOutcome.RenderDrewNothing, planner.Outcome);
+        Assert.False(Assert.IsType<CaptureStep.Done>(planner.Next(0, false, ReShadeCapturePlanner.WarmUpTimeoutMs + 16)).Applied);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-3)]
+    public void A_render_hard_error_keeps_the_photo_without_ReShade_at_once(int code)
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        planner.Next(lastDrawn: 0, loading: false, nowMs: 16);
+        planner.Next(lastDrawn: 8, loading: false, nowMs: 32);
+
+        Assert.Equal(RenderVerdict.KeepWithoutReShade, planner.AfterRender(code, nowMs: 48));
+        Assert.Equal(ReShadeWarmUpOutcome.Error, planner.Outcome);
+    }
+
+    [Fact]
+    public void A_drew_nothing_retry_with_depth_disabled_keeps_the_overrides_until_the_end()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { NoDepth("Bloom"), WithDepth("MXAO") }, nowMs: 0);
+        Assert.IsType<CaptureStep.DisableDepth>(planner.Next(0, false, 0));
+        planner.Next(0, false, 16);
+        Assert.IsType<CaptureStep.Render>(planner.Next(4, false, 32));
+        Assert.Equal(RenderVerdict.Retry, planner.AfterRender(0, 48));
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(0, false, 64));   // no Restore in between
+        Assert.IsType<CaptureStep.Render>(planner.Next(4, false, 80));
+        Assert.Equal(RenderVerdict.Keep, planner.AfterRender(4, 96));
+        Assert.IsType<CaptureStep.Restore>(planner.Next(4, false, 112));
+        Assert.True(Assert.IsType<CaptureStep.Done>(planner.Next(4, false, 128)).Applied);
+    }
+
+    [Fact]
+    public void Loading_time_does_not_count_against_the_warm_up_deadline()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        planner.Next(0, false, 0);
+        for (var t = 16L; t <= 10_000; t += 16)
+            Assert.IsType<CaptureStep.Wait>(planner.Next(0, true, t));
+        // 10 s of loading, then 2 s of warm-up: still inside the 5 s of non-loading time.
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(0, false, 12_000));
+        Assert.Equal(ReShadeWarmUpOutcome.Pending, planner.Outcome);
+    }
+
+    [Fact]
+    public void Loading_never_waits_past_the_hard_cap()
+    {
+        var planner = new ReShadeCapturePlanner(shaped: false, new[] { NoDepth("Bloom") }, nowMs: 0);
+        planner.Next(0, false, 0);
+        CaptureStep step = new CaptureStep.Wait();
+        for (var t = 16L; t <= ReShadeCapturePlanner.MaxWaitMs && step is not CaptureStep.Done; t += 16)
+            step = planner.Next(0, true, t);
+        Assert.False(Assert.IsType<CaptureStep.Done>(step).Applied);
+        Assert.Equal(ReShadeWarmUpOutcome.TimedOut, planner.Outcome);
+        Assert.Equal(20_000, ReShadeCapturePlanner.MaxWaitMs);
+    }
+
+    // ---- Fix 1: size-locked effects. A shaped photo cannot fall back to screen size, so they are left out of it.
+
+    [Fact]
+    public void Skipping_size_locked_disables_them_with_the_depth_ones()
+    {
+        var locked = NoDepth("Draft") with { SizeLocked = true };
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { NoDepth("Bloom"), WithDepth("MXAO"), locked }, nowMs: 0,
+            skipSizeLocked: true);
+        var disable = Assert.IsType<CaptureStep.DisableDepth>(planner.Next(0, false, 0));
+        Assert.Equal(new[] { new ReShadeTechniqueRef("MXAO.fx", "MXAO"), new ReShadeTechniqueRef("Draft.fx", "Draft") },
+            disable.Techniques);
+    }
+
+    [Fact]
+    public void Size_locked_techniques_are_kept_when_not_asked_to_skip_them()
+    {
+        var locked = NoDepth("Draft") with { SizeLocked = true };
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { locked }, nowMs: 0);
+        Assert.IsType<CaptureStep.WarmUp>(planner.Next(0, false, 0));
+    }
+
+    // Before: a shaped photo whose active techniques all used depth disabled them all and waited out the 5 s warm-up.
+    [Fact]
+    public void Nothing_left_after_skipping_is_done_false_at_once_instead_of_a_5_s_timeout()
+    {
+        var locked = NoDepth("Draft") with { SizeLocked = true };
+        var planner = new ReShadeCapturePlanner(shaped: true, new[] { WithDepth("MXAO"), locked }, nowMs: 0, skipSizeLocked: true);
+        Assert.False(Assert.IsType<CaptureStep.Done>(planner.Next(0, false, 0)).Applied);
+        Assert.Equal(ReShadeWarmUpOutcome.NothingActive, planner.Outcome);
+    }
+
+    [Theory]
+    [InlineData((int)ReShadeWarmUpOutcome.TimedOut, ReShadeCaptureNotes.NotReady)]
+    [InlineData((int)ReShadeWarmUpOutcome.Error, ReShadeCaptureNotes.Error)]
+    [InlineData((int)ReShadeWarmUpOutcome.RenderDrewNothing, ReShadeCaptureNotes.DrewNothing)]
+    [InlineData((int)ReShadeWarmUpOutcome.NothingActive, ReShadeCaptureNotes.NothingToDraw)]
+    public void Each_failure_has_its_own_note(int outcome, string note)
+    {
+        Assert.Equal(note, ReShadeCaptureNotes.For((ReShadeWarmUpOutcome)outcome));
+    }
+
+    [Fact]
+    public void The_not_ready_note_text_is_unchanged_for_plugins_that_match_it()
+    {
+        Assert.Equal("ReShade was not ready — photo taken without it.", ReShadeCaptureNotes.NotReady);
     }
 }

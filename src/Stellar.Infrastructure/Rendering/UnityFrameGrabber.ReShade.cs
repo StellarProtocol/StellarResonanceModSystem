@@ -11,11 +11,13 @@ namespace Stellar.Infrastructure.Rendering;
 /// <summary>
 /// ReShade in the capture (design § 11): a <see cref="ReShadeCapturePlanner"/> is advanced ONE step per frame, each at
 /// the end of the frame — never two <c>render_effects</c> in one frame. WarmUp renders into a scratch target of the
-/// photo's size until ReShade reports techniques drawn (the first render at a new size draws nothing); Render is the real
-/// capture with the bridge's render event between the camera render and the readback, then alpha forced to 255 (ReShade
-/// leaves it 0). A shaped photo switches its depth-using techniques off first, as temporary (never saved) overrides that
-/// are restored after the render — and in every exit path (failure, timeout, host loss). On warm-up timeout the photo is
-/// taken without ReShade and carries <see cref="ReShadeCaptureOptions.NotReadyNote"/>.
+/// photo's size until ReShade reports techniques drawn (the first render at a new size draws nothing); Wait draws nothing
+/// while ReShade is loading (the bridge's snapshot, published after ReShade's own update in its present); Render is the
+/// real capture with the bridge's render event between the camera render and the readback, then alpha forced to 255
+/// (ReShade leaves it 0). A real render that drew nothing is discarded and the plan warms up again (until its deadline).
+/// Techniques the plan skips (depth in a shaped photo, size-locked when asked) are switched off first, as temporary
+/// (never saved) overrides that are restored after the photo — and in every exit path (failure, timeout, host loss).
+/// A photo taken without ReShade carries the note for why (<see cref="ReShadeCaptureNotes.For"/>).
 /// </summary>
 internal sealed partial class UnityFrameGrabber
 {
@@ -41,7 +43,7 @@ internal sealed partial class UnityFrameGrabber
             box.Value = target.ReShade is null ? plain : plain with { Note = ReShadeCaptureOptions.NotReadyNote };
             yield break;
         }
-        var planner = new ReShadeCapturePlanner(options.Shaped, options.Active, Environment.TickCount64);
+        var planner = new ReShadeCapturePlanner(options.Shaped, options.Active, Environment.TickCount64, options.SkipSizeLocked);
         var started = Environment.TickCount64;
         _renderCode = NoRealRender;
         var queued = false;   // LastRender reflects THIS capture only after its first warm-up render
@@ -50,21 +52,21 @@ internal sealed partial class UnityFrameGrabber
             while (box.Value is null)
             {
                 yield return new WaitForEndOfFrame();
-                var step = planner.Next(queued ? _reShade.LastRender() : 0, Environment.TickCount64);
+                var step = planner.Next(queued ? _reShade.LastRender() : 0, _reShade.ReadStatus().Loading, Environment.TickCount64);
                 if (step is CaptureStep.WarmUp) queued = true;
-                box.Value = RunStep(step, target, format, q);
+                box.Value = RunStep(step, planner, target, format, q);
             }
         }
         finally
         {
             RestoreDepthOverrides();
             ReleaseWarmUpTarget();
-            OnReShadeCapture(planner, _renderCode, box.Value is { Note: null }, Environment.TickCount64 - started);
+            OnReShadeCapture(planner, _renderCode, box.Value is { Note: null }, Environment.TickCount64 - started, target.Size);
         }
     }
 
     // One planner step; returns the grab once the photo is taken (Render, or Done without ReShade), else null.
-    private FrameGrab? RunStep(CaptureStep step, GrabTarget target, CaptureFormat format, int q)
+    private FrameGrab? RunStep(CaptureStep step, ReShadeCapturePlanner planner, GrabTarget target, CaptureFormat format, int q)
     {
         switch (step)
         {
@@ -78,26 +80,25 @@ internal sealed partial class UnityFrameGrabber
                 RestoreDepthOverrides();
                 return null;
             case CaptureStep.Render:
-                return RenderWithReShade(target, format, q);
-            default:   // Done(false): timed out (or nothing to draw) — the photo goes ahead without ReShade
-                return Capture(target, format, q) with { Note = ReShadeCaptureOptions.NotReadyNote };
+                return RenderWithReShade(planner, target, format, q);
+            case CaptureStep.Wait:
+                return null;   // ReShade is loading: a render now would return early and draw nothing
+            default:   // Done(false): nothing to draw, timed out or a hard error — the photo goes ahead without ReShade
+                return Capture(target, format, q) with { Note = ReShadeCaptureNotes.For(planner.Outcome) ?? ReShadeCaptureNotes.NotReady };
         }
     }
 
-    private FrameGrab RenderWithReShade(GrabTarget target, CaptureFormat format, int q)
+    // Null = the render drew nothing and the planner retries (the frame is dropped; any overrides stay off for the retry).
+    private FrameGrab? RenderWithReShade(ReShadeCapturePlanner planner, GrabTarget target, CaptureFormat format, int q)
     {
-        FrameGrab grab;
-        try
-        {
-            grab = Capture(target, format, q, applyReShade: true);
-        }
-        finally
-        {
-            RestoreDepthOverrides();   // right after the real render: its effects are already drawn and read back
-        }
+        var grab = Capture(target, format, q, applyReShade: true);   // a throw: CaptureFrames' finally restores
         // The readback synced with the render thread, so LastRender is this render's result.
         _renderCode = _reShade!.LastRender();
-        if (_renderCode <= 0) return grab with { Note = ReShadeCaptureOptions.NotReadyNote };
+        var verdict = planner.AfterRender(_renderCode, Environment.TickCount64);
+        if (verdict == RenderVerdict.Retry) return null;
+        RestoreDepthOverrides();   // right after the real render: its effects are already drawn and read back
+        if (verdict == RenderVerdict.KeepWithoutReShade)
+            return grab with { Note = ReShadeCaptureNotes.For(planner.Outcome) ?? ReShadeCaptureNotes.NotReady };
         RgbaAlpha.ForceOpaque(grab.RgbaBottomUp);   // empty for JPG (encoded already; JPG carries no alpha)
         return grab;
     }
