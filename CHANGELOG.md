@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.17.1] - 2026-10-05
+_**2.17.1** (patch) — stable release of the 2.17 line. Identical code to the 2.17.0 testing build; the number moves only because 2.17.0 was already published to the testing channel and a taken version is never re-minted. No API change; binary-compatible with plugins built against 2.17.0._
+### Added
+- Stable release of the 2.17 line: ReShade support for Photo Studio. With Photo Studio 1.5.1 you can install ReShade from Photo Studio's page in the Stellar launcher (this needs launcher 2.1.1), pick effect packs inside Photo Studio, and turn effects on and off there. Your photos get the same effects you see on screen.
+- Effects that only work at your screen size (many bloom, sharpening, depth-of-field and AcerolaFX effects) are drawn at the photo's own size in 2x and 4x photos and in other photo shapes, so they look right. Big photos no longer make such an effect switch itself off on screen.
+- Portrait, square and wide photos turn off depth-based effects for that photo only, so nothing is drawn in the wrong place. If ReShade is not ready in time, the photo is taken without its effects and Photo Studio tells you so.
+### Developer notes
+- Promotion only — no source change besides `FrameworkVersion.Value` 2.17.1 (and its exact-version test pin). What the 2.17 line adds (`IPluginDownloads`, `IReShade`, `IReShadeUniforms`, `CaptureRequest.ApplyReShade`, `CaptureResult.Notes`, isolated capture with bridge 1.1.0) is under the 2.17.0 entry below.
+- 2.17.0 cannot be re-used for the stable publish: `Stellar-2.17.0.zip` is already on the CDN under the bundle-immutability guard and a GitHub pre-release tagged `v2.17.0` exists, so the stable promotion rides a patch bump.
+
 ## [2.17.0] - 2026-10-04
 _**2.17.0** (minor) — ReShade support for plugins: effects live and in photos, plus checked downloads into a plugin's own folder. Adds API for plugins (Abstractions 2.17.0); additive, no plugin rebuild._
 ### Added
