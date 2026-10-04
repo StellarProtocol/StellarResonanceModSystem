@@ -41,16 +41,31 @@ internal sealed class UGuiTextInput
     /// <summary>Current field text (empty when not built).</summary>
     public string Text => _field != null ? _field.text : string.Empty;
 
-    /// <summary>Builds the single-line field under <paramref name="parent"/> and returns its root GameObject.
-    /// Visuals mirror the prior raw spike InputField (white bg, black 13px MiddleLeft text).</summary>
-    public GameObject Build(Transform parent)
+    /// <summary>Builds the field under <paramref name="parent"/> and returns its root GameObject.
+    /// Visuals mirror the prior raw spike InputField (white bg, black 13px MiddleLeft text).
+    /// <para><paramref name="singleLine"/> (opt-in, default false → unchanged) renders one visible line that
+    /// NEVER grows vertically: the LayoutElement height is pinned (min == preferred, flexibleHeight 0), the
+    /// text overflows horizontally instead of wrapping, and a RectMask2D clips the overflow to the box so
+    /// long/pasted text scrolls sideways within the field rather than wrapping to more lines and growing the
+    /// field (and, in an auto-height window, the window). The <c>lineType</c> stays MultiLineNewline in BOTH
+    /// modes — switching to SingleLine here would reintroduce the chat-flash-on-Enter bug documented below.</para></summary>
+    public GameObject Build(Transform parent, bool singleLine = false)
     {
         if (_field != null)
             throw new InvalidOperationException("UGuiTextInput.Build called twice; call Destroy first.");
         var go = NewChild("UGuiTextInput", parent);
-        go.AddComponent<LayoutElement>().minHeight = 28f;
+        var le = go.AddComponent<LayoutElement>();
+        le.minHeight = 28f;
+        // Single line: pin preferred == min and kill flexibleHeight so the field can NEVER expand vertically,
+        // regardless of how much text it holds (a pasted multi-paragraph code would otherwise grow it).
+        if (singleLine) { le.preferredHeight = 28f; le.flexibleHeight = 0f; }
         var bg = go.AddComponent<Image>();
         bg.color = new Color(0.95f, 0.95f, 0.95f, 1f);
+        // Single line: clip the text to the field box. This (a) stops long/pasted text spilling OUTSIDE the
+        // box, and (b) gives Unity's InputField a masked viewport so its caret-follow scrolling keeps the
+        // caret visible as you type/paste past the right edge. RectMask2D clips descendants (the Text child);
+        // the bg Image sits on this same GO (fills the rect exactly) so clipping it to itself is a no-op.
+        if (singleLine) go.AddComponent<RectMask2D>();
 
         var textGo = NewChild("Text", go.transform);
         Stretch(textGo);
@@ -58,6 +73,13 @@ internal sealed class UGuiTextInput
         txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         txt.fontSize = 13; txt.color = Color.black; txt.alignment = TextAnchor.MiddleLeft;
         txt.supportRichText = false;
+        if (singleLine)
+        {
+            // Overflow horizontally (text runs off the edge instead of wrapping to a new line) and truncate
+            // vertically (never add lines). Height is already pinned above, so the field holds one line.
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Truncate;
+        }
 
         _field = go.AddComponent<InputField>();
         _field.textComponent = txt;

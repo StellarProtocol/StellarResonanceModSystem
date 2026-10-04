@@ -99,7 +99,17 @@ public sealed record XYPadElement(
 /// <paramref name="OnChange"/> (optional) fires per-keystroke — use it for live filters that should reflow
 /// as-you-type rather than on Enter.</summary>
 public sealed record InputElement(Func<string> Get, Action<string> Submit, float Width = 180f,
-    Action<string>? OnChange = null) : HudElement;
+    Action<string>? OnChange = null) : HudElement
+{
+    /// <summary>Opt-in: render on a single visible line that never grows vertically. Long/pasted text
+    /// overflows (scrolls) HORIZONTALLY within a fixed-height box instead of wrapping to more lines and
+    /// growing the field — which, in an auto-height window, grows the whole window. Default
+    /// <c>false</c> keeps the existing behaviour (the field wraps and grows), so every current
+    /// InputElement is byte-for-byte unchanged. Added as an <c>init</c> property (NOT a primary-ctor
+    /// param) so the record constructor stays source AND binary compatible with already-compiled plugins
+    /// — see PerPluginServices-Decoration.md §3 / WindowBuilder-Patterns.md "Binary compatibility rules".</summary>
+    public bool SingleLine { get; init; }
+}
 
 /// <summary>Compact dropdown for a small, fixed set of mutually-exclusive choices (e.g. a mode selector) — a
 /// reusable replacement for a click-to-cycle button. The trigger shows the current option (caption + ▾); a

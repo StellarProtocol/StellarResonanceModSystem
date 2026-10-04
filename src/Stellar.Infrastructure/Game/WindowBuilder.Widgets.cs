@@ -281,7 +281,7 @@ internal sealed partial class WindowBuilder
         var submit = inp.Submit;
         var onChange = inp.OnChange;
         var field = new UGuiTextInput(onSubmit: s => submit(s), onChange: onChange != null ? s => onChange(s) : (System.Action<string>?)null);
-        var go = field.Build(parent);
+        var go = field.Build(parent, inp.SingleLine);
         var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
         le.preferredWidth = inp.Width; le.flexibleWidth = 0f;
         field.SetFont(_assets.MenuFont);
