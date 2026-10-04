@@ -40,6 +40,11 @@ internal sealed class PerPluginServices : IPluginServices
     private readonly IRenderQuality? _renderQuality;
     private readonly ITimeOfDay? _timeOfDay;
     private readonly FreeCameraScope? _freeCam;
+    // Per-plugin download channel, backed by its own data folder + busy-gate. Null in a bare test host
+    // that supplies no per-plugin factory — falls back to the shared bag's Downloads (the null-object fallback).
+    private readonly IPluginDownloads? _downloads;
+    // Per-plugin ReShade uniform overrides (removed on unload). Null in a bare test host — falls back to the shared.
+    private readonly IReShadeUniforms? _reShadeUniforms;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -56,6 +61,8 @@ internal sealed class PerPluginServices : IPluginServices
         _renderQuality = scope.RenderQuality;
         _timeOfDay = scope.TimeOfDay;
         _freeCam = scope.FreeCamera;
+        _downloads = scope.Downloads;
+        _reShadeUniforms = scope.ReShadeUniforms;
     }
 
     public IPluginConfig Config { get; }
@@ -123,6 +130,9 @@ internal sealed class PerPluginServices : IPluginServices
     public IEntityPicker EntityPicker => _shared.EntityPicker;
     public IPosing Posing => (IPosing?)_freeCam?.Posing ?? _shared.Posing;
     public ILights Lights => (ILights?)_freeCam?.Lights ?? _shared.Lights;
+    public IPluginDownloads Downloads => _downloads ?? _shared.Downloads;
+    public IReShade ReShade => _shared.ReShade;
+    public IReShadeUniforms ReShadeUniforms => _reShadeUniforms ?? _shared.ReShadeUniforms;
 }
 
 /// <summary>
@@ -141,4 +151,6 @@ internal readonly record struct PerPluginScope(
     IPhotoModeState? PhotoMode = null,
     IRenderQuality? RenderQuality = null,
     ITimeOfDay? TimeOfDay = null,
-    FreeCameraScope? FreeCamera = null);
+    FreeCameraScope? FreeCamera = null,
+    IPluginDownloads? Downloads = null,
+    IReShadeUniforms? ReShadeUniforms = null);

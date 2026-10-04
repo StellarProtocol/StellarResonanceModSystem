@@ -155,4 +155,11 @@ public interface IPluginServices
     /// reads, immune to the combat wire mirror's AOI-eviction (see <see cref="ICombatLookup.GetVitals"/>
     /// for the wire-derived fallback).</summary>
     IBossVitals BossVitals { get; }
+    /// <summary>Downloads a plugin-requested file or zip into this plugin's own data folder. See <see cref="IPluginDownloads"/>.</summary>
+    IPluginDownloads Downloads { get; }
+    /// <summary>ReShade bridge — effects on/off, technique toggles and preset switching. See <see cref="IReShade"/>.</summary>
+    IReShade ReShade { get; }
+    /// <summary>ReShade uniform overrides — hold an effect setting at a value in every ReShade runtime (bridge 1.1.0+).
+    /// See <see cref="IReShadeUniforms"/>.</summary>
+    IReShadeUniforms ReShadeUniforms { get; }
 }

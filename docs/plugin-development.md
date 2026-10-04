@@ -525,6 +525,72 @@ lights.Released += () => { /* the scene ended: forget your lamp ids */ };
   the camera rendering now (free camera or game camera) in screen pixels, top-left origin; draw it only when
   `p.InFront`.
 
+## Checked downloads (`IPluginDownloads`)
+
+`services.Downloads` fetches one https file or zip into **your plugin's own data folder** (`Downloads.DataFolder` — the
+same folder `IPluginDataStore` uses; it may not exist until the first download). The bytes are verified against the
+SHA-256 you pin before anything is written, so a plugin ships a small catalog of known-good assets instead of trusting a
+URL blindly.
+
+```csharp
+var request = new DownloadRequest(
+    Url: new Uri("https://example.com/packs/standard.zip"),
+    Sha256: "3f0a…",                       // 64 hex chars of the exact file; compared case-insensitively
+    MaxBytes: 40_000_000,                  // downloaded (compressed) bytes — held in memory, keep it tight
+    TargetPath: "packs/standard",          // a FOLDER for a zip, a FILE path for a plain download
+    ExtractZip: true,
+    IncludePrefixes: new[] { "Shaders/", "Textures/" });   // "Shaders/Bloom.fx" -> packs/standard/Shaders/Bloom.fx
+var result = await services.Downloads.DownloadAsync(request, new Progress<double>(p => _bar = p), ct);
+if (!result.Ok) ShowError(result.Error);   // short player-safe text, e.g. "checksum mismatch"
+```
+
+- https only; `TargetPath` is relative, "/"-separated, and can never leave the data folder.
+- A zip **replaces the whole target folder** atomically — keep anything else of yours in a different folder.
+  `IncludePrefixes` filters entries but keeps the prefix in the output path.
+- One download per plugin at a time (a second call returns "busy"). It completes, and reports progress, on the main
+  thread. It never throws except when your `CancellationToken` fires; a malformed request returns "invalid request".
+
+## ReShade (`IReShade`)
+
+`services.ReShade` talks to ReShade through the Stellar ReShade bridge add-on. Without ReShade and the add-on, `State`
+is `ReShadeState.NotInstalled` and every member is a no-op — check it before showing any ReShade UI.
+
+```csharp
+var reShade = services.ReShade;
+reShade.Changed += Redraw;                          // main thread: state, on/off, techniques or preset changed
+// Set your folders once at start, whatever the state: the call is held until the add-on binds, and a repeat is ignored.
+reShade.SetSearchPaths(new[] { Path.Combine(services.Downloads.DataFolder, "packs") }, Array.Empty<string>());
+if (reShade.State != ReShadeState.Ready) return;     // Loading = bound but not ready yet, or reloading effects
+foreach (var t in reShade.Techniques)
+    AddRow(t.EffectFile, t.Name, t.Enabled, t.UsesDepth);
+reShade.SetTechnique("Clarity.fx", "Clarity", enabled: true);   // identity = effect file + technique name
+```
+
+- **Main thread only, and every setter is asynchronous:** a request is applied at ReShade's next frame, and
+  `Techniques` / `CurrentPreset` show it after the next `Changed`. `Changed` can fire while a screenshot is being taken.
+- `SetSearchPaths` **replaces** ReShade's effect and texture search paths, saves them in ReShade's own settings file and
+  triggers a full effect reload (`State` goes `Loading` meanwhile). Sending the same folders again does nothing.
+- `SetPreset(path)` is held until ReShade lists techniques; a later call replaces a held one.
+- **Photos:** `CaptureRequest.ApplyReShade` (default true) draws ReShade's active effects into an `IScreenCapture` photo
+  when `State` is `Ready` and `Enabled` is on. Each photo is briefly prepared for its size; if ReShade is not ready in time
+  the photo is taken without it and `CaptureResult.Notes` says so — show that note to the player. A photo in a shape
+  other than the screen's switches depth-based effects (`UsesDepth`) off for that photo only. Effects that only work at
+  screen size (`SizeLocked`) make a photo that is not screen-sized draw in a separate ReShade runtime of its own size
+  (bridge 1.1.0+; depth effects left out). If that is unavailable or fails, a 2×/4× photo is taken at 1× (the result's
+  `Width`/`Height` are the real size — derive the scale from them, not from the request) and a photo of another shape
+  switches them off; a note says which.
+- **Uniform overrides** (`services.ReShadeUniforms`, bridge 1.1.0+): hold an effect setting at a value in every ReShade
+  runtime, whatever preset is loaded and across every reload (ReShade resets uniforms to their defaults on each reload):
+
+  ```csharp
+  // AcerolaFX's _MaskUI (default true) hides its output in this game: keep it off.
+  services.ReShadeUniforms.SetUniformOverride(null, "_MaskUI", "false");   // null effect = every effect
+  ```
+
+  Values are 1–16 comma-separated numbers or `true`/`false`; a null value removes the override. It returns false for
+  bad input or a bridge older than 1.1.0; before the bridge is loaded the override is held and sent when it is.
+  `ClearUniformOverrides()` removes only your plugin's overrides, and they are all removed when your plugin unloads.
+
 ## The no-cheating boundary
 
 Stellar holds the same line Dalamud does — QoL, not exploitation:

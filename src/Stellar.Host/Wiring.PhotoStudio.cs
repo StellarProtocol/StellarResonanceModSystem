@@ -44,9 +44,9 @@ public sealed partial class BootstrapPlugin
         _sceneVisibility = new SceneVisibilityService(_visibilityBackend);
         _lookBackend = new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log);
         _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));
-        _frameGrabber = new UnityFrameGrabber(log);
+        _frameGrabber = new UnityFrameGrabber(log, _reShadeBridge, IsolatedCaptureConfigPath());
         _screenCapture = new ScreenCaptureService(_frameGrabber, _sceneVisibility, new CaptureFileSink(),
-            m => log.Warning("[PhotoStudio] capture: " + m), CaptureScaleGuard(log));
+            m => log.Warning("[PhotoStudio] capture: " + m), CaptureScaleGuard(log), _reShadeService);
         _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, _clientState!, log);
         _photoMode = new PhotoModeService(_photoModeProbe);
         WirePhotoReassert();

@@ -99,6 +99,14 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.RecordFrame(masterDt);
     }
 
+    // Main-thread drains that run in every phase (un-gated), extracted to keep RunGlobalRateWork under STELLAR0002.
+    private void DrainDownloadsCaptureAndReShade()
+    {
+        _pluginDownloadProgress?.Drain();      // download progress — drained BEFORE the resume below (fix round 2, N2)
+        _frameGrabber?.DrainQueuedResumes();  // photo capture: a late resume completes here, on the main thread
+        TickReShade();                         // IReShade poll/diff/publish — guarded (Wiring.ReShade)
+    }
+
     // Extracted so RunFrameworkTick stays under the 50-LoC analyzer limit (STELLAR0002).
     // Runs only on the global-gated beat (PerfControls.UpdateRateHz); globalDt is _globalGate.LastDt.
     private void RunGlobalRateWork(float globalDt)
@@ -107,7 +115,7 @@ public sealed partial class BootstrapPlugin
         _framework!.SetScreen(UnityEngine.Screen.width, UnityEngine.Screen.height);
         _framework!.SetCanvasScale(_windowService?.CanvasScale ?? 1f);   // canvas-unit dims for IFramework.CanvasWidth/Height
         ReclampLayoutOnResolutionChange();   // pull windows/HUD back on-screen when the resolution changes
-        _frameGrabber?.DrainQueuedResumes();  // photo capture: a late resume completes here, on the main thread
+        DrainDownloadsCaptureAndReShade();
         // Login-view detection — UN-gated (runs in every phase, incl. Startup where IsWorldActive is false, so it
         // MUST NOT sit behind the IsWorldActive gate below). A pure UI active-state read, safe every phase like the
         // draw services. Latches Startup→TitleScreen once login_main is up; the one-way guard lives in the service.

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Stellar.Abstractions.Domain;
 
@@ -82,6 +83,14 @@ public sealed record CaptureRequest
     /// (<see cref="CaptureAspect.IsValid"/>), or the capture fails with a readable error.
     /// </summary>
     public CaptureAspect? Aspect { get; init; }
+    /// <summary>Draw ReShade's active effects into the photo when ReShade is available and enabled (default true).
+    /// In a non-screen <see cref="Aspect"/>, techniques that use depth are skipped for this photo. When an active
+    /// technique only works at screen size (<see cref="ReShadeTechnique.SizeLocked"/>) and the photo is not screen-sized,
+    /// the photo is drawn in a separate ReShade runtime of its own size (ReShade bridge 1.1.0+; depth techniques are left
+    /// out there, and a window-shaped photo notes it). If that fails, a window-shaped photo is taken at 1× instead of
+    /// <see cref="Scale"/> (the result's size says so) and a shaped photo skips that technique; either way
+    /// <see cref="CaptureResult.Notes"/> explains it.</summary>
+    public bool ApplyReShade { get; init; } = true;
 }
 
 /// <summary>A photo shape as a width:height ratio of whole numbers, for example 9:16 (portrait) or 21:9 (wide).</summary>
@@ -127,6 +136,10 @@ public readonly record struct NormalizedRect(float X, float Y, float Width, floa
 /// <param name="Error">Player-readable error, or null.</param>
 public sealed record CaptureResult(bool Success, string? Path, int Width, int Height, string? Error)
 {
+    /// <summary>Player-readable remarks about a capture that still succeeded — for example "ReShade was not ready — photo
+    /// taken without it." Empty when there is nothing to say (always empty on failure).</summary>
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
+
     /// <summary>A successful result.</summary>
     public static CaptureResult Ok(string path, int width, int height) => new(true, path, width, height, null);
     /// <summary>A failed result.</summary>

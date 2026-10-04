@@ -92,7 +92,11 @@ public sealed partial class BootstrapPlugin
             _photoMode!,
             _renderQuality!,
             _timeOfDay!,
-            FreeCameraSet());
+            FreeCameraSet(),
+            // Shared-bag fallback only: every plugin gets its own IPluginDownloads from the per-plugin factory
+            // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
+            Stellar.Application.Services.UnavailablePluginDownloads.Instance,
+            _reShadeService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
@@ -124,9 +128,30 @@ public sealed partial class BootstrapPlugin
     {
         var pluginsSection = _pluginConfigService!.GetSection("plugins");
         _pluginRegistry = new PluginRegistry(pluginsSection, log, services);
+        // Fix round 2 (N4): assigned here at the call site, not inside BuildPluginDownloadsFactory — the
+        // shared progress relay drained alongside the frame grabber's resume queue in Wiring.ServiceTick.
+        _pluginDownloadProgress = new Stellar.Infrastructure.Net.MainThreadProgressQueue(log);
         _pluginHost = new PluginHost(services,
-            new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!),
+            new PerPluginResourceFactories(configFactory, _pluginDataStoreFactory!, _localizationEngine!, BuildPluginDownloadsFactory(log)),
             _pluginRegistry, _scheduler!, _harmonyHostFactory!);
+    }
+
+    /// <summary>
+    /// Rooted at the same <c>stellar/plugindata</c> base dir as <see cref="_pluginDataStoreFactory"/> (Task 5 —
+    /// real <c>IPluginDownloads</c>). Shares one <see cref="System.Net.Http.HttpClient"/> across every plugin
+    /// (no per-request timeout — the service's own 30s inactivity timeout replaces it) and reuses
+    /// <see cref="_frameGrabber"/>'s main-thread resume pump — the same mechanism screen capture uses — rather
+    /// than building a second one. <see cref="_frameGrabber"/> is built in <c>WirePhotoStudio</c>, which always
+    /// runs before <see cref="WireGameEventsAndPluginHost"/> (see BootstrapPlugin.Load's ordering comment).
+    /// <see cref="_pluginDownloadProgress"/> is assigned by the caller (<see cref="BuildRegistryAndHost"/>),
+    /// not here.
+    /// </summary>
+    private Stellar.Infrastructure.Net.PluginDownloadsFactory BuildPluginDownloadsFactory(BepInExPluginLog log)
+    {
+        var pluginDataRoot = Path.Combine(BepInEx.Paths.GameRootPath, Stellar.Infrastructure.Configuration.FrameworkPaths.PluginDataSubdir);
+        var http = new System.Net.Http.HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"StellarFramework/{Stellar.Abstractions.Domain.FrameworkVersion.Value}");
+        return new Stellar.Infrastructure.Net.PluginDownloadsFactory(pluginDataRoot, http, _frameGrabber!, log, _pluginDownloadProgress!);
     }
 
     /// <summary>

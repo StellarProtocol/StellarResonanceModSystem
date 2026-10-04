@@ -57,5 +57,38 @@ internal sealed partial class UnityFrameGrabber
                   $"fit={now.GateFit} focal={now.FocalLength:F3} screen={ScreenAspect():F4} frames={Time.frameCount - frame}");
     }
 
+    /// <summary>One line per ReShade capture: the bridge's raw LastRender code where the warm-up ended and after the real
+    /// render (-1 no runtime, -2 nothing queued, -3 view creation failed, else techniques drawn), plus why it ended.</summary>
+    private void OnReShadeCapture(Stellar.Application.Services.ReShadeCapturePlanner planner, int renderCode, bool applied, long elapsedMs,
+        Stellar.Abstractions.Domain.CaptureSize size)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var render = renderCode == NoRealRender ? "none" : renderCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _log.Info($"[PhotoCapture] reshade isolated=0 applied={applied} reason={ReShadeReason(planner.Outcome, renderCode)} " +
+                  $"warmUpEndCode={planner.WarmUpEndCode} renderCode={render} retries={planner.Retries} " +
+                  $"size={size.Width}x{size.Height} elapsedMs={elapsedMs}");
+    }
+
+    /// <summary>One line per isolated attempt: how it ended, the last isolated state / render code, frames spent waiting
+    /// for the runtime to start and compile, and the add-on version (null before 1.1.0).</summary>
+    private void OnIsolatedCapture(Stellar.Application.Services.IsolatedCapturePlanner planner, bool drew, long elapsedMs,
+        Stellar.Abstractions.Domain.CaptureSize size)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoCapture] reshade isolated=1 applied={drew} outcome={planner.Outcome} state={planner.FinalState} " +
+                  $"renderCode={planner.RenderCode} framesWaited={planner.FramesWaited} warmups={planner.WarmUps} size={size.Width}x{size.Height} " +
+                  $"elapsedMs={elapsedMs} addon={_reShade?.AddonVersion() ?? "none"}");
+    }
+
+    private static string ReShadeReason(Stellar.Application.Services.ReShadeWarmUpOutcome outcome, int renderCode) => outcome switch
+    {
+        Stellar.Application.Services.ReShadeWarmUpOutcome.Drew => renderCode > 0 ? "drew" : "warm-up-drew",
+        Stellar.Application.Services.ReShadeWarmUpOutcome.TimedOut => "timeout",
+        Stellar.Application.Services.ReShadeWarmUpOutcome.Error => "error-code",
+        Stellar.Application.Services.ReShadeWarmUpOutcome.NothingActive => "nothing-active",
+        Stellar.Application.Services.ReShadeWarmUpOutcome.RenderDrewNothing => "render-drew-nothing",
+        _ => "aborted",   // the capture threw before the plan ended
+    };
+
     private static float ScreenAspect() => Screen.height > 0 ? (float)Screen.width / Screen.height : 0f;
 }
