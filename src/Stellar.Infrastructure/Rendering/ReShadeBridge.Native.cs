@@ -66,6 +66,7 @@ internal sealed partial class ReShadeBridge
                 return false;
             }
             _exports = BindAll(module);
+            _isolated = TryBindIsolated(module);   // optional: bridge 1.1.0+ (ABI stays 1)
             return true;
         }
         catch (Exception ex)

@@ -34,7 +34,25 @@ internal sealed partial class UnityFrameGrabber
         internal FrameGrab? Value;
     }
 
+    // An isolated capture (UnityFrameGrabber.Isolated.cs) runs first when planned; if it does not produce the photo,
+    // its planned fallback (the size guard) runs on the game's runtime and carries the fallback's note.
     private IEnumerator CaptureFrames(GrabTarget target, CaptureFormat format, int q, GrabBox box)
+    {
+        if (target.ReShade is { Isolated: { } isolated } options)
+        {
+            var frames = IsolatedFrames(target, options, format, q, box);
+            while (frames.MoveNext()) yield return frames.Current;
+            if (box.Value is not null) yield break;
+            var fallback = GameRuntimeFrames(isolated.Fallback, format, q, box);
+            while (fallback.MoveNext()) yield return fallback.Current;
+            if (box.Value is { } grab) box.Value = grab with { GuardNote = isolated.FallbackNote };
+            yield break;
+        }
+        var game = GameRuntimeFrames(target, format, q, box);
+        while (game.MoveNext()) yield return game.Current;
+    }
+
+    private IEnumerator GameRuntimeFrames(GrabTarget target, CaptureFormat format, int q, GrabBox box)
     {
         if (target.ReShade is not { } options || _reShade is null || _reShade.RenderEventFunc() == IntPtr.Zero)
         {
@@ -91,7 +109,7 @@ internal sealed partial class UnityFrameGrabber
     // Null = the render drew nothing and the planner retries (the frame is dropped; any overrides stay off for the retry).
     private FrameGrab? RenderWithReShade(ReShadeCapturePlanner planner, GrabTarget target, CaptureFormat format, int q)
     {
-        var grab = Capture(target, format, q, applyReShade: true);   // a throw: CaptureFrames' finally restores
+        var grab = Capture(target, format, q, IssueReShadeRender);   // a throw: GameRuntimeFrames' finally restores
         // The readback synced with the render thread, so LastRender is this render's result.
         _renderCode = _reShade!.LastRender();
         var verdict = planner.AfterRender(_renderCode, Environment.TickCount64);
@@ -120,7 +138,7 @@ internal sealed partial class UnityFrameGrabber
         {
             cam.targetTexture = prevTarget;
         }
-        IssueReShadeRender(rt, w, h);
+        IssueReShadeRender(rt);
     }
 
     private RenderTexture WarmUpTarget(int w, int h)
@@ -146,10 +164,10 @@ internal sealed partial class UnityFrameGrabber
         _warmUpTarget = null;
     }
 
-    private void IssueReShadeRender(RenderTexture rt, int w, int h)
+    private void IssueReShadeRender(RenderTexture rt)
     {
         var bridge = _reShade!;
-        bridge.QueueRender(rt.GetNativeTexturePtr(), (uint)w, (uint)h);
+        bridge.QueueRender(rt.GetNativeTexturePtr(), (uint)rt.width, (uint)rt.height);
         var callback = bridge.RenderEventFunc();
         if (callback != IntPtr.Zero) GL.IssuePluginEvent(callback, ReShadeRenderEventId);
     }

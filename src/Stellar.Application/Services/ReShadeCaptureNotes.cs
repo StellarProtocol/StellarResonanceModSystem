@@ -25,6 +25,10 @@ internal static class ReShadeCaptureNotes
     /// <summary>A shaped photo (never screen-sized) left its size-locked techniques out.</summary>
     internal const string ScreenSizeOnlySkipped = "Some ReShade effects only work at screen size, so they were left out of this photo.";
 
+    /// <summary>A window-shaped photo drawn in the isolated runtime (bridge 1.1.0), which has no game depth, left the
+    /// active depth-using techniques out.</summary>
+    internal const string DepthLeftOut = "ReShade effects that use depth were left out of this photo.";
+
     /// <summary>The note for a plan that ended without ReShade, or null when it drew (or is still running).</summary>
     internal static string? For(ReShadeWarmUpOutcome outcome) => outcome switch
     {

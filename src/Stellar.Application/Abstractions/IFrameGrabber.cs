@@ -6,16 +6,32 @@ namespace Stellar.Application.Abstractions;
 
 /// <summary>Raw frame, rows bottom-up (Unity order). <see cref="Jpeg"/> is set when JPG was requested. <see cref="Note"/> is
 /// a player-readable remark about how the frame was made (for example ReShade was not ready), or null.</summary>
-internal sealed record FrameGrab(byte[] RgbaBottomUp, int Width, int Height, byte[]? Jpeg, string? Note = null);
+internal sealed record FrameGrab(byte[] RgbaBottomUp, int Width, int Height, byte[]? Jpeg, string? Note = null)
+{
+    /// <summary>Set when the grab took an isolated capture's fallback (<see cref="IsolatedCapture.FallbackNote"/>): it
+    /// comes first in the result's notes, before <see cref="Note"/>.</summary>
+    public string? GuardNote { get; init; }
+}
+
+/// <summary>
+/// Draw this capture in a SEPARATE ReShade effect runtime of the capture's size (bridge 1.1.0 "isolated capture"), so
+/// size-locked techniques (<see cref="ReShadeTechnique.SizeLocked"/>) work at any size. Planned only when the capture is
+/// not screen-sized and an active technique is size-locked. When the bridge cannot do it (1.0.0, an error state, a
+/// timeout), the grabber takes <see cref="Fallback"/> instead — the size guard: a window-shaped photo at 1×, or a shaped
+/// photo without its size-locked techniques — and attaches <see cref="FallbackNote"/>.
+/// </summary>
+internal sealed record IsolatedCapture(GrabTarget Fallback, string FallbackNote);
 
 /// <summary>
 /// Draw ReShade's active effects into this capture. <see cref="Active"/> holds only enabled techniques (never empty
 /// when passed). When <see cref="Shaped"/>, the ones that use depth are switched off for this capture only (D8) — the
 /// depth buffer is the screen's, which does not line up with a differently shaped render. When
 /// <see cref="SkipSizeLocked"/>, the size-locked ones (<see cref="ReShadeTechnique.SizeLocked"/>) are switched off too
-/// (a capture that is not screen-sized and cannot fall back to it).
+/// (a capture that is not screen-sized and cannot fall back to it). When <see cref="Isolated"/> is set, the capture is
+/// drawn in a separate runtime first (see <see cref="IsolatedCapture"/>).
 /// </summary>
-internal sealed record ReShadeCaptureOptions(bool Shaped, IReadOnlyList<ReShadeTechnique> Active, bool SkipSizeLocked = false)
+internal sealed record ReShadeCaptureOptions(bool Shaped, IReadOnlyList<ReShadeTechnique> Active, bool SkipSizeLocked = false,
+    IsolatedCapture? Isolated = null)
 {
     /// <summary>The note a capture carries when ReShade did not draw in time and the photo was taken without it.</summary>
     internal const string NotReadyNote = Stellar.Application.Services.ReShadeCaptureNotes.NotReady;

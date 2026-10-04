@@ -11,8 +11,10 @@ public sealed record ReShadeTechnique(string Name, string EffectFile, bool Enabl
     /// <summary>Whether the effect only works at screen size: it declares a texture sized from the screen
     /// (<c>BUFFER_WIDTH</c>/<c>BUFFER_HEIGHT</c> and the like), which ReShade shares between sizes, so in a larger photo
     /// it would read the wrong part of that texture. True when that cannot be determined. While such a technique is on,
-    /// a 2×/4× photo in the window's shape is taken at 1× (with ReShade), and a photo in another shape leaves it out;
-    /// the photo's <see cref="CaptureResult.Notes"/> say so.</summary>
+    /// a photo that is not screen-sized is drawn in a separate ReShade runtime of the photo's size (ReShade bridge 1.1.0
+    /// or later; depth-based effects are left out there). When that is not possible, a 2×/4× photo in the window's shape
+    /// is taken at 1× (with ReShade) and a photo in another shape leaves the technique out; the photo's
+    /// <see cref="CaptureResult.Notes"/> say so.</summary>
     public bool SizeLocked { get; init; }
 }
 

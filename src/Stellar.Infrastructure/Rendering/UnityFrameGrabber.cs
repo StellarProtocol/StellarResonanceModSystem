@@ -37,11 +37,14 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
     private bool _registered;
 
     /// <summary>Construct on the Unity main thread (the framework's Load()); its thread id is the main-thread id.
-    /// <paramref name="reShade"/> is the bridge used when a grab asks for ReShade (null = never).</summary>
-    public UnityFrameGrabber(IPluginLog log, ReShadeBridge? reShade = null)
+    /// <paramref name="reShade"/> is the bridge used when a grab asks for ReShade (null = never).
+    /// <paramref name="isolatedConfigPath"/> is the absolute config file the bridge's isolated capture may write (with
+    /// its preset copy beside it); null = never use the isolated capture.</summary>
+    public UnityFrameGrabber(IPluginLog log, ReShadeBridge? reShade = null, string? isolatedConfigPath = null)
     {
         _log = log;
         _reShade = reShade;
+        _isolatedConfigPath = isolatedConfigPath;
         _mainThreadId = Environment.CurrentManagedThreadId;
     }
 
@@ -186,6 +189,7 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
         _host = null;
         RestoreDepthOverrides();   // the coroutine that would have restored them is gone with the host
         ReleaseWarmUpTarget();     // ...and so is the one that would have released the scratch target
+        EndIsolatedIfOpen();       // ...and the one that would have ended an isolated session
         Action<Exception>[] pending;
         lock (_gate)
         {

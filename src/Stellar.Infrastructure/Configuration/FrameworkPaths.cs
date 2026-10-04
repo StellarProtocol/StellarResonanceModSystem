@@ -16,4 +16,12 @@ internal static class FrameworkPaths
 
     /// <summary>Game-root-relative directory under which each plugin's <c>&lt;guid&gt;.data/</c> store is rooted. A sibling of <see cref="PluginScanSubdir"/>, never a descendant.</summary>
     internal const string PluginDataSubdir = "stellar/plugindata";
+
+    /// <summary>Game-root-relative directory for the ReShade bridge's isolated-capture config and preset copy (rewritten
+    /// for every isolated photo; outside both scan paths).</summary>
+    internal const string ReShadeCaptureSubdir = "stellar/reshade-capture";
+
+    /// <summary>The isolated-capture config file name inside <see cref="ReShadeCaptureSubdir"/>; the bridge writes
+    /// "<c>&lt;name&gt;.preset.ini</c>" beside it.</summary>
+    internal const string ReShadeCaptureConfigFile = "StellarPhoto.ini";
 }

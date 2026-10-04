@@ -60,14 +60,12 @@ internal sealed partial class ScreenCaptureService : IScreenCapture
             if (error is not null) return CaptureResult.Fail(error);
             hide = request.HideDuringCapture == VisibilityLayers.None ? null : _visibility.Hide(request.HideDuringCapture);
             scaleGuard = _renderScaleGuard?.Invoke();
-            var (grabbed, guardNote) = await GrabWithFallback(request, scale, SettleFrames(hide, scaleGuard));
-            FrameGrab? grab = grabbed;
-            grabbed = null!;
+            FrameGrab? grab = await GrabWithFallback(request, scale, SettleFrames(hide, scaleGuard));
             scaleGuard?.Dispose(); // still on the main thread (grabber contract)
             scaleGuard = null;
             hide?.Dispose();
             hide = null;
-            var (width, height, note) = (grab.Width, grab.Height, grab.Note);
+            var (width, height, guardNote, note) = (grab.Width, grab.Height, grab.GuardNote, grab.Note);
             // Off-thread: stream the PNG straight into the file (or write the JPG bytes). The frame reference is
             // dropped the moment the write returns, so the pixel buffer is collectable before the main-thread resume.
             var path = await Task.Run(() =>
@@ -113,19 +111,20 @@ internal sealed partial class ScreenCaptureService : IScreenCapture
     }
 
     // A window-shaped grab uses the validator's (already capped) scale; a shaped one sizes from the REQUESTED scale
-    // and caps both sides equally inside CaptureSizing.OutputSize. The ReShade size guard may lower a window-shaped
-    // scale to 1 (its note comes back alongside the grab).
-    private async Task<(FrameGrab Grab, string? GuardNote)> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
+    // and caps both sides equally inside CaptureSizing.OutputSize. PlannedTarget adds the isolated capture (and its
+    // size-guard fallback) when size-locked effects are on.
+    private async Task<FrameGrab> GrabWithFallback(CaptureRequest r, int effectiveScale, int settle)
     {
-        var (reShade, scale, guardNote) = GuardSize(r, ReShadeOptions(r), r.Aspect is null ? effectiveScale : r.Scale);
+        var scale = r.Aspect is null ? effectiveScale : r.Scale;
+        var reShade = ReShadeOptions(r);
         try
         {
-            return (await _grabber.GrabAsync(Target(r, scale, reShade), settle, r.Format, r.JpgQuality), guardNote);
+            return await _grabber.GrabAsync(PlannedTarget(r, scale, reShade), settle, r.Format, r.JpgQuality);
         }
         // A 4× frame can also run the managed heap out (OutOfMemoryException) — 2× gets the same second chance.
         catch (Exception ex) when (scale > 2 && ex is FrameGrabException or OutOfMemoryException)
         {
-            return (await _grabber.GrabAsync(Target(r, 2, reShade), settle, r.Format, r.JpgQuality), guardNote);
+            return await _grabber.GrabAsync(PlannedTarget(r, 2, reShade), settle, r.Format, r.JpgQuality);
         }
     }
 

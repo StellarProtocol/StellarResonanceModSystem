@@ -64,9 +64,20 @@ internal sealed partial class UnityFrameGrabber
     {
         if (!StellarDiagnostics.IsEnabled) return;
         var render = renderCode == NoRealRender ? "none" : renderCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        _log.Info($"[PhotoCapture] reshade applied={applied} reason={ReShadeReason(planner.Outcome, renderCode)} " +
+        _log.Info($"[PhotoCapture] reshade isolated=0 applied={applied} reason={ReShadeReason(planner.Outcome, renderCode)} " +
                   $"warmUpEndCode={planner.WarmUpEndCode} renderCode={render} retries={planner.Retries} " +
                   $"size={size.Width}x{size.Height} elapsedMs={elapsedMs}");
+    }
+
+    /// <summary>One line per isolated attempt: how it ended, the last isolated state / render code, frames spent waiting
+    /// for the runtime to start and compile, and the add-on version (null before 1.1.0).</summary>
+    private void OnIsolatedCapture(Stellar.Application.Services.IsolatedCapturePlanner planner, bool drew, long elapsedMs,
+        Stellar.Abstractions.Domain.CaptureSize size)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[PhotoCapture] reshade isolated=1 applied={drew} outcome={planner.Outcome} state={planner.FinalState} " +
+                  $"renderCode={planner.RenderCode} framesWaited={planner.FramesWaited} size={size.Width}x{size.Height} " +
+                  $"elapsedMs={elapsedMs} addon={_reShade?.AddonVersion() ?? "none"}");
     }
 
     private static string ReShadeReason(Stellar.Application.Services.ReShadeWarmUpOutcome outcome, int renderCode) => outcome switch

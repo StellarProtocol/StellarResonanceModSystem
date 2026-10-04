@@ -4,7 +4,7 @@ using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 namespace Stellar.Application.Services;
 
-/// <summary>Which ReShade effects go into a capture, and the size-locked guard.</summary>
+/// <summary>Which ReShade effects go into a capture, and how size-locked effects are drawn (isolated, or the guard).</summary>
 internal sealed partial class ScreenCaptureService
 {
     // ReShade draws into the photo only when the request asks for it, ReShade is available, its effects are on, and at
@@ -24,26 +24,30 @@ internal sealed partial class ScreenCaptureService
 
 
     /// <summary>
-    /// The size-locked guard. ReShade 6.8.0 compiles a permutation of each effect per render-target size, but its named
-    /// textures live in ONE global list: a texture sized from the screen (<see cref="EffectSizeLockScanner"/>) that the
-    /// screen-size permutation already created is reused by a larger capture's permutation, which then reads only its
-    /// top-left corner, magnified. So when the capture is not screen-sized and an ACTIVE technique is size-locked, ReShade
-    /// never runs at that size: a window-shaped photo is taken at 1× (screen size, ReShade applied), and a shaped photo —
-    /// never screen-sized — leaves the size-locked techniques out. Each says so in a note.
+    /// The capture target, with the isolated capture planned when it is needed. ReShade 6.8.0 compiles a permutation of
+    /// each effect per render-target size, but its named textures live in ONE global list: a texture sized from the screen
+    /// (<see cref="EffectSizeLockScanner"/>) that the screen-size permutation already created is reused by a larger
+    /// capture's permutation, which then reads only its top-left corner, magnified. So when the capture is not
+    /// screen-sized and an ACTIVE technique is size-locked, the game's runtime never draws at that size: the photo is
+    /// drawn in a separate runtime of its own size (bridge 1.1.0, <see cref="IsolatedCapture"/>), and when that is not
+    /// possible the grabber takes the size guard planned here as its fallback — a window-shaped photo at 1× (screen size,
+    /// ReShade applied), a shaped photo (never screen-sized) without its size-locked techniques — each with its note.
     /// <para>This also keeps a large-size compile failure off the screen: ReShade compiles a permutation only for
     /// effects it is asked to draw at that size, and a failed compile (AcerolaFX AutoExposure's
     /// <c>numthreads(3600,1,1)</c> at 4×) sets the effect's single <c>compiled</c> flag false and disables its techniques
-    /// — on screen too (runtime.cpp:2164, 3763-3775). No size-locked effect ever gets a non-screen permutation here.</para>
+    /// — on screen too (runtime.cpp:2164, 3763-3775). The game's runtime never gets a non-screen permutation of a
+    /// size-locked effect here; the isolated runtime's failures stay in the isolated runtime.</para>
     /// <para>Effects not scanned yet read as size-locked (fail-safe), like depth.</para>
     /// </summary>
-    private (ReShadeCaptureOptions? Options, int Scale, string? Note) GuardSize(CaptureRequest r, ReShadeCaptureOptions? options, int scale)
+    private GrabTarget PlannedTarget(CaptureRequest r, int scale, ReShadeCaptureOptions? options)
     {
-        if (options is null || !AnySizeLocked(options.Active)) return (options, scale, null);
-        if (r.Aspect is null)
-            return scale > 1 ? (options, 1, ReShadeCaptureNotes.ScreenSizeOnly) : (options, scale, null);
+        var target = Target(r, scale, options);
         var (w, h) = _grabber.ScreenSize;
-        if (Target(r, scale, null).Size == new CaptureSize(w, h)) return (options, scale, null);
-        return (options with { SkipSizeLocked = true }, scale, ReShadeCaptureNotes.ScreenSizeOnlySkipped);
+        if (options is null || !AnySizeLocked(options.Active) || target.Size == new CaptureSize(w, h)) return target;
+        var isolated = r.Aspect is null
+            ? new IsolatedCapture(Target(r, 1, options), ReShadeCaptureNotes.ScreenSizeOnly)
+            : new IsolatedCapture(Target(r, scale, options with { SkipSizeLocked = true }), ReShadeCaptureNotes.ScreenSizeOnlySkipped);
+        return target with { ReShade = options with { Isolated = isolated } };
     }
 
     private static bool AnySizeLocked(IReadOnlyList<ReShadeTechnique> active)

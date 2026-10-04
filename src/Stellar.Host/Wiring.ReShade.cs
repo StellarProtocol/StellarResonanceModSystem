@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using BepInEx;
+using Stellar.Infrastructure.Configuration;
 using Stellar.Infrastructure.BepInExAdapters;
 using Stellar.Infrastructure.Rendering;
 
@@ -25,6 +28,22 @@ public sealed partial class BootstrapPlugin
         _reShadeBridge = new ReShadeBridge(log);
         var effectFiles = new PhysicalEffectFileSystem();
         _reShadeService = new ReShadeService(_reShadeBridge, new EffectDepthIndex(effectFiles), new EffectSizeLockIndex(effectFiles), log);
+    }
+
+    /// <summary>The absolute config file the bridge's isolated capture writes (with its preset copy beside it); the
+    /// bridge creates the folder. Null (no isolated capture) if the game root cannot be resolved.</summary>
+    private string? IsolatedCaptureConfigPath()
+    {
+        try
+        {
+            return Path.GetFullPath(Path.Combine(Paths.GameRootPath, FrameworkPaths.ReShadeCaptureSubdir,
+                FrameworkPaths.ReShadeCaptureConfigFile));
+        }
+        catch (Exception ex)
+        {
+            _reShadeLog?.Warning($"[ReShade] isolated capture off: no config path ({ex.GetType().Name}: {ex.Message})");
+            return null;
+        }
     }
 
     /// <summary>Called from <c>RunGlobalRateWork</c> (un-gated: ReShade is usable at the title screen too). The service
