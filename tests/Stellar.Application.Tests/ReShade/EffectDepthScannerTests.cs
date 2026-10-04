@@ -83,4 +83,36 @@ public sealed class EffectDepthScannerTests
     {
         Assert.False(EffectDepthScanner.UsesDepth(null));
     }
+
+    // A pack may carry its own copy of ReShade's standard header (AcerolaFX_Common.fxh): a `namespace ReShade { … }`
+    // block that DECLARES the depth texture and DEFINES GetLinearizedDepth. Declarations are not use — every effect
+    // including that header was marked depth, so shaped photos dropped the whole pack (2026-10-04).
+    private const string OwnReShadeNamespace =
+        "namespace ReShade\n{\n" +
+        "    texture DepthBufferTex : DEPTH;\n" +
+        "    sampler DepthBuffer { Texture = DepthBufferTex; };\n" +
+        "    float GetLinearizedDepth(float2 texcoord)\n    {\n" +
+        "        float depth = tex2Dlod(DepthBuffer, float4(texcoord, 0, 0)).x; /* { brace in a comment */\n" +
+        "        return depth;\n    }\n}\n";
+
+    [Fact]
+    public void UsesDepth_false_when_depth_is_only_declared_inside_a_packs_own_ReShade_namespace()
+    {
+        var fx = OwnReShadeNamespace + "float4 main(float2 uv : TEXCOORD) : SV_Target { return tex2D(ReShade::BackBuffer, uv); }";
+        Assert.False(EffectDepthScanner.UsesDepth(fx));
+    }
+
+    [Fact]
+    public void UsesDepth_true_when_an_effect_reads_the_depth_its_own_ReShade_namespace_declares()
+    {
+        var fx = OwnReShadeNamespace + "float4 main(uint2 id : SV_POSITION) : SV_Target { return tex2Dfetch(ReShade::DepthBuffer, id).r; }";
+        Assert.True(EffectDepthScanner.UsesDepth(fx));
+    }
+
+    [Fact]
+    public void UsesDepth_still_sees_depth_in_other_namespaces()
+    {
+        const string fx = "namespace Common { float d(float2 uv) { return ReShade::GetLinearizedDepth(uv); } }";
+        Assert.True(EffectDepthScanner.UsesDepth(fx));
+    }
 }
