@@ -19,6 +19,7 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.17.1 is the stable release of the 2.17 line (identical code to the 2.17.0 testing build).
     /// 2.17.0 adds ReShade support: <c>IReShade</c> (<c>IPluginServices.ReShade</c> — effects on/off, technique toggles by
     /// effect file + name, preset switching, shader/texture search paths; unavailable and a no-op without ReShade and
     /// the Stellar bridge add-on), <c>IPluginDownloads</c> (<c>IPluginServices.Downloads</c> — sha256-pinned https
@@ -261,5 +262,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.17.0";
+    public const string Value = "2.17.1";
 }

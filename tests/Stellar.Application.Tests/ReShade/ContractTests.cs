@@ -46,9 +46,10 @@ public sealed class ContractTests
             new ReShadeTechnique("Bloom", "Bloom.fx", false, false));
     }
 
-    // ReShade support ships in framework 2.17.0 (IPluginDownloads, IReShade, CaptureRequest.ApplyReShade, CaptureResult.Notes).
+    // ReShade support ships in framework 2.17.0 (IPluginDownloads, IReShade, CaptureRequest.ApplyReShade, CaptureResult.Notes);
+    // 2.17.1 is its stable release (same code). The exact pin follows the current version.
     [Fact]
-    public void Framework_version_is_2_17_0() => Assert.Equal("2.17.0", FrameworkVersion.Value);
+    public void Framework_version_is_2_17_1() => Assert.Equal("2.17.1", FrameworkVersion.Value);
 
     [Fact]
     public void CaptureResult_Notes_defaults_to_empty_for_ok_and_fail()
