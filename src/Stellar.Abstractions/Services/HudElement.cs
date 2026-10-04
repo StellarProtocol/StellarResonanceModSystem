@@ -126,6 +126,15 @@ public sealed record BarElement(
     public bool  LabelInside   { get; init; }
     /// <summary>Bar label colour; null (default) = the theme's muted text colour.</summary>
     public ColorRgba? LabelColor { get; init; }
+    /// <summary><see cref="BarStyle.Modern"/> primary (left/inside) label colour, evaluated PER REFRESH so it can
+    /// track which item occupies a reused/pooled row slot — the static <see cref="LabelColor"/> is captured once and
+    /// cannot (e.g. the Nearby Monsters list colouring a boss name red vs. an elite yellow in the same recycled row).
+    /// Returning null falls back to <see cref="LabelColor"/> if set, else today's default (white). Default null →
+    /// unchanged; a Modern bar that sets neither renders the plain white overlay exactly as before. Added as an init
+    /// property (NOT a ctor param) so the record stays source + binary compatible with already-compiled plugins (see
+    /// WindowBuilder-Patterns.md "Binary compatibility rules"). Honoured only on the <see cref="BarStyle.Modern"/>
+    /// path; the Default bar path keeps using the static <see cref="LabelColor"/>.</summary>
+    public Func<ColorRgba?>? LabelColorFn { get; init; }
     /// <summary>Visual style. <see cref="BarStyle.Default"/> (0) = today's rounded-pill render; <see cref="BarStyle.Modern"/>
     /// = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual
     /// left/right overlay text). Existing bars omit it → render unchanged.</summary>

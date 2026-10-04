@@ -196,7 +196,21 @@ internal sealed partial class WindowBuilder
         token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 });
 
         if (b.Label != null)
-            token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label });
+        {
+            // Primary label colour (the Modern path's label was hard-white before this): per-refresh LabelColorFn
+            // wins; else the static LabelColor; else null → the overlay's build-time white (today's default, via
+            // TextBinding's restore-default). Only attach a ColorFn when a colour was actually requested, so a
+            // Modern bar that sets neither keeps the plain white overlay with no override machinery — byte-for-byte
+            // unchanged. The size/font reskin (RegisterTextSizeReskin) never touches colour, so this survives theme
+            // switches. Secondary (right) label is intentionally left white — primary is the requirement.
+            var bind = new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label };
+            if (b.LabelColorFn != null || b.LabelColor is not null)
+            {
+                var fn = b.LabelColorFn; var stat = b.LabelColor;
+                bind.ColorFn = () => fn?.Invoke() ?? stat;
+            }
+            token.Texts.Add(bind);
+        }
         if (b.SecondaryLabel != null)
             token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
     }
