@@ -67,18 +67,10 @@ internal sealed class UGuiTextInput
         var go = NewChild("UGuiTextInput", parent);
         var le = go.AddComponent<LayoutElement>();
         le.minHeight = boxHeight;
-        // Single/multi line: pin preferred == min and kill flexibleHeight so the field can NEVER expand
-        // vertically, regardless of how much text it holds (a pasted multi-paragraph code would otherwise grow
-        // it — single line grows by wrapping, multi line grows by adding rows; a fixed box + scroll avoids both).
-        if (singleLine || multiLine) { le.preferredHeight = boxHeight; le.flexibleHeight = 0f; }
         var bg = go.AddComponent<Image>();
         bg.color = new Color(0.95f, 0.95f, 0.95f, 1f);
-        // Single/multi line: clip the text to the field box. This (a) stops long/pasted text spilling OUTSIDE the
-        // box, and (b) gives Unity's InputField a masked viewport so its caret-follow scrolling keeps the caret
-        // visible as you type/paste past the edge (single line scrolls sideways, multi line scrolls down).
-        // RectMask2D clips descendants (the Text child); the bg Image sits on this same GO (fills the rect
-        // exactly) so clipping it to itself is a no-op.
-        if (singleLine || multiLine) go.AddComponent<RectMask2D>();
+        // Single/multi line pin the field to a fixed, clipped box (see helper); default mode is unchanged.
+        ConfigureFixedBox(go, le, singleLine, multiLine, boxHeight);
 
         var textGo = NewChild("Text", go.transform);
         Stretch(textGo);
@@ -86,23 +78,7 @@ internal sealed class UGuiTextInput
         txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         txt.fontSize = 13; txt.color = Color.black; txt.alignment = TextAnchor.MiddleLeft;
         txt.supportRichText = false;
-        if (singleLine)
-        {
-            // Overflow horizontally (text runs off the edge instead of wrapping to a new line) and truncate
-            // vertically (never add lines). Height is already pinned above, so the field holds one line.
-            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
-            txt.verticalOverflow = VerticalWrapMode.Truncate;
-        }
-        else if (multiLine)
-        {
-            // Wrap within the box width (so lines break at the right edge, no sideways scroll) and overflow
-            // DOWNWARD past the box — the RectMask2D clips it and InputField scrolls to keep the caret visible.
-            // Top-left so content starts at the top like a normal text area (MiddleLeft would vertically centre
-            // short content, which reads oddly for a multi-line box).
-            txt.horizontalOverflow = HorizontalWrapMode.Wrap;
-            txt.verticalOverflow = VerticalWrapMode.Overflow;
-            txt.alignment = TextAnchor.UpperLeft;
-        }
+        ConfigureTextOverflow(txt, singleLine, multiLine);
 
         _field = go.AddComponent<InputField>();
         _field.textComponent = txt;
@@ -124,6 +100,44 @@ internal sealed class UGuiTextInput
         _field.text = string.Empty;
         _field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(OnFieldValueChanged));
         return go;
+    }
+
+    // Single/multi line: pin the field to a FIXED box so it can NEVER grow vertically no matter how much text it
+    // holds (a pasted multi-paragraph code would otherwise grow it — single line grows by wrapping, multi line by
+    // adding rows). Pin preferred == min and kill flexibleHeight so layout can't expand it, then clip the text to
+    // the box with a RectMask2D — this both stops long/pasted text spilling OUTSIDE the box and gives Unity's
+    // InputField a masked viewport so its caret-follow scrolling keeps the caret visible past the edge (single
+    // line scrolls sideways, multi line scrolls down). RectMask2D clips descendants (the Text child); the bg Image
+    // sits on this same GO (fills the rect exactly) so clipping it to itself is a no-op. No-op in the default
+    // (neither flag) mode, so that path is byte-for-byte unchanged.
+    private static void ConfigureFixedBox(GameObject go, LayoutElement le, bool singleLine, bool multiLine, float boxHeight)
+    {
+        if (!(singleLine || multiLine)) return;
+        le.preferredHeight = boxHeight; le.flexibleHeight = 0f;
+        go.AddComponent<RectMask2D>();
+    }
+
+    // Single/multi line: set the Text wrap/overflow modes so the fixed box holds the text correctly. No-op in the
+    // default (neither flag) mode, leaving the MiddleLeft single-line visuals of the prior raw spike unchanged.
+    private static void ConfigureTextOverflow(Text txt, bool singleLine, bool multiLine)
+    {
+        if (singleLine)
+        {
+            // Overflow horizontally (text runs off the edge instead of wrapping to a new line) and truncate
+            // vertically (never add lines). Height is already pinned, so the field holds one line.
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Truncate;
+        }
+        else if (multiLine)
+        {
+            // Wrap within the box width (so lines break at the right edge, no sideways scroll) and overflow
+            // DOWNWARD past the box — the RectMask2D clips it and InputField scrolls to keep the caret visible.
+            // Top-left so content starts at the top like a normal text area (MiddleLeft would vertically centre
+            // short content, which reads oddly for a multi-line box).
+            txt.horizontalOverflow = HorizontalWrapMode.Wrap;
+            txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.alignment = TextAnchor.UpperLeft;
+        }
     }
 
     /// <summary>Override the field's font (the builtin Arial set in Build is absent from IL2CPP player
