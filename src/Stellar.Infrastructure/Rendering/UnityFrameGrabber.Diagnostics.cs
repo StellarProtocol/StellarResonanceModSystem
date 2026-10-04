@@ -76,7 +76,7 @@ internal sealed partial class UnityFrameGrabber
     {
         if (!StellarDiagnostics.IsEnabled) return;
         _log.Info($"[PhotoCapture] reshade isolated=1 applied={drew} outcome={planner.Outcome} state={planner.FinalState} " +
-                  $"renderCode={planner.RenderCode} framesWaited={planner.FramesWaited} size={size.Width}x{size.Height} " +
+                  $"renderCode={planner.RenderCode} framesWaited={planner.FramesWaited} warmups={planner.WarmUps} size={size.Width}x{size.Height} " +
                   $"elapsedMs={elapsedMs} addon={_reShade?.AddonVersion() ?? "none"}");
     }
 

@@ -19,7 +19,7 @@ public sealed class ReShadeUniformOverrideTests
     public ReShadeUniformOverrideTests()
     {
         var fs = new InMemoryEffectFiles();
-        _service = new ReShadeService(_native, new EffectDepthIndex(fs), new EffectSizeLockIndex(fs), new NullLog());
+        _service = new ReShadeService(_native, new EffectDepthIndex(fs), new EffectSizeLockIndex(fs), new EffectTemporalIndex(fs), new NullLog());
     }
 
     private void Tick()

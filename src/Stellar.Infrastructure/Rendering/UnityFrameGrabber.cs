@@ -190,6 +190,7 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
         RestoreDepthOverrides();   // the coroutine that would have restored them is gone with the host
         ReleaseWarmUpTarget();     // ...and so is the one that would have released the scratch target
         EndIsolatedIfOpen();       // ...and the one that would have ended an isolated session
+        ReleaseIsolatedTargets();  // ...and released its camera copies
         Action<Exception>[] pending;
         lock (_gate)
         {

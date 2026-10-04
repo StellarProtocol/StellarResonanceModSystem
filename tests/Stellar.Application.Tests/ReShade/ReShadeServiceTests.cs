@@ -16,7 +16,7 @@ public sealed class ReShadeServiceTests
 
     public ReShadeServiceTests()
     {
-        _service = new ReShadeService(_native, new EffectDepthIndex(_fs), new EffectSizeLockIndex(_fs), _log);
+        _service = new ReShadeService(_native, new EffectDepthIndex(_fs), new EffectSizeLockIndex(_fs), new EffectTemporalIndex(_fs), _log);
         _service.Changed += () => _changed++;
     }
 
@@ -327,6 +327,21 @@ public sealed class ReShadeServiceTests
         Assert.False(_service.Techniques[0].SizeLocked);
         Assert.True(_service.Techniques[1].SizeLocked);
         Assert.True(_service.Techniques[2].SizeLocked);   // not found -> assume locked
+    }
+
+    [Fact]
+    public void IsTemporal_comes_from_the_effect_source_and_unknown_counts_as_temporal()
+    {
+        _fs.Add("/pack/Shaders/Clarity.fx", "float4 PS() { return tex2D(ReShade::BackBuffer, uv); }");
+        _fs.Add("/pack/Shaders/Bloom.fx", "uniform float frametime < source = \"frametime\"; >;");
+        _service.SetSearchPaths(new[] { "/pack" }, Array.Empty<string>());
+        _native.Add("Clarity", "Clarity.fx");
+        _native.Add("Bloom", "Bloom.fx");
+        Assert.True(_service.IsTemporal("Clarity.fx"));   // not resolved yet
+        Tick();
+        Assert.False(_service.IsTemporal("Clarity.fx"));
+        Assert.True(_service.IsTemporal("Bloom.fx"));
+        Assert.True(_service.IsTemporal("NotListed.fx"));
     }
 
     [Fact]

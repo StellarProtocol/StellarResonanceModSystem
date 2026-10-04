@@ -18,9 +18,10 @@ internal sealed record FrameGrab(byte[] RgbaBottomUp, int Width, int Height, byt
 /// size-locked techniques (<see cref="ReShadeTechnique.SizeLocked"/>) work at any size. Planned only when the capture is
 /// not screen-sized and an active technique is size-locked. When the bridge cannot do it (1.0.0, an error state, a
 /// timeout), the grabber takes <see cref="Fallback"/> instead — the size guard: a window-shaped photo at 1×, or a shaped
-/// photo without its size-locked techniques — and attaches <see cref="FallbackNote"/>.
+/// photo without its size-locked techniques — and attaches <see cref="FallbackNote"/>. <see cref="WarmUp"/>: an active
+/// technique is temporal (or unknown), so the fresh runtime renders it for a while before the photo.
 /// </summary>
-internal sealed record IsolatedCapture(GrabTarget Fallback, string FallbackNote);
+internal sealed record IsolatedCapture(GrabTarget Fallback, string FallbackNote, bool WarmUp = true);
 
 /// <summary>
 /// Draw ReShade's active effects into this capture. <see cref="Active"/> holds only enabled techniques (never empty

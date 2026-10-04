@@ -27,7 +27,8 @@ public sealed partial class BootstrapPlugin
         _reShadeLog = log;
         _reShadeBridge = new ReShadeBridge(log);
         var effectFiles = new PhysicalEffectFileSystem();
-        _reShadeService = new ReShadeService(_reShadeBridge, new EffectDepthIndex(effectFiles), new EffectSizeLockIndex(effectFiles), log);
+        _reShadeService = new ReShadeService(_reShadeBridge, new EffectDepthIndex(effectFiles), new EffectSizeLockIndex(effectFiles),
+            new EffectTemporalIndex(effectFiles), log);
     }
 
     /// <summary>The absolute config file the bridge's isolated capture writes (with its preset copy beside it); the

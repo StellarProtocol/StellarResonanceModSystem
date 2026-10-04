@@ -38,7 +38,8 @@ internal sealed partial class UnityFrameGrabber
     {
         var supported = _reShade is { IsolatedSupported: true } && _isolatedConfigPath is not null
                         && _reShade.IsolatedEventFunc() != IntPtr.Zero;
-        var planner = new IsolatedCapturePlanner(options.Active, options.Shaped, supported, Environment.TickCount64);
+        var planner = new IsolatedCapturePlanner(options.Active, options.Shaped, supported, Environment.TickCount64,
+            warmUp: options.Isolated?.WarmUp ?? true);
         var started = Environment.TickCount64;
         var session = new IsolatedSession(planner, target, format, q);
         try
@@ -61,6 +62,7 @@ internal sealed partial class UnityFrameGrabber
                 EndIsolatedIfOpen();
                 planner.MarkEnded();
             }
+            ReleaseIsolatedTargets();
             OnIsolatedCapture(planner, box.Value is not null, Environment.TickCount64 - started, target.Size);
         }
     }
@@ -77,8 +79,13 @@ internal sealed partial class UnityFrameGrabber
             case IsolatedStep.Pump:
                 IssueIsolatedEvent();
                 break;
-            case IsolatedStep.Render:
-                var grab = Capture(session.Target, session.Format, session.Quality, IssueIsolatedRender);
+            case IsolatedStep.WarmUpRender warm:
+                IssueIsolatedRender(FillIsolatedWork(session.Target, warm.FreshCamera));   // nothing read back
+                break;
+            case IsolatedStep.Render render:
+                var work = FillIsolatedWork(session.Target, render.FreshCamera);
+                IssueIsolatedRender(work);
+                var grab = ReadBack(work, session.Format, session.Quality);
                 // The readback synced with the render thread, so the last render is this render's result.
                 planner.AfterRender(_reShade!.IsolatedLastRender(), Environment.TickCount64);
                 if (planner.Outcome != IsolatedOutcome.Drew) break;   // retried or failed: this frame is dropped
@@ -87,6 +94,7 @@ internal sealed partial class UnityFrameGrabber
                 break;
             case IsolatedStep.End:
                 EndIsolatedIfOpen();
+                ReleaseIsolatedTargets();
                 break;
         }
     }

@@ -31,7 +31,7 @@ public sealed class IsolatedCapturePlannerTests
         var planner = Begun();
         Assert.IsType<IsolatedStep.Pump>(planner.Next(state: 1, nowMs: 16));
         Assert.IsType<IsolatedStep.Pump>(planner.Next(state: 2, nowMs: 32));
-        Assert.IsType<IsolatedStep.Render>(planner.Next(state: 3, nowMs: 48));
+        Assert.True(Assert.IsType<IsolatedStep.Render>(planner.Next(state: 3, nowMs: 48)).FreshCamera);
         planner.AfterRender(5, nowMs: 64);
         Assert.True(Assert.IsType<IsolatedStep.End>(planner.Next(state: 3, nowMs: 80)).Success);
         Assert.False(planner.NeedsEnd);
@@ -211,5 +211,130 @@ public sealed class IsolatedCapturePlannerTests
         Assert.Single(steps, s => s is IsolatedStep.End);
         Assert.IsType<IsolatedStep.End>(steps[^2]);
         Assert.False(planner.NeedsEnd);
+    }
+
+    // ---- Warm-up (2026-10-05, in-game: Stella Medium at 4x came out almost white). A fresh isolated runtime renders
+    // once, so adaptive effects (prod80 Bloom's previous-frame average luma, AutoExposure, ...) start from 0. When an
+    // active effect is temporal, the plan renders it every frame for a while — each time from the pristine camera copy —
+    // before the real render.
+
+    private static IsolatedCapturePlanner WarmBegun()
+    {
+        var planner = new IsolatedCapturePlanner(new[] { Locked }, shaped: false, supported: true, nowMs: 0, warmUp: true);
+        planner.Next(0, 0);
+        planner.AfterBegin(1, 0);
+        return planner;
+    }
+
+    [Fact]
+    public void Warm_up_renders_come_before_the_real_render_and_only_the_first_takes_the_camera()
+    {
+        var planner = WarmBegun();
+        var t = 0L;
+        var first = Assert.IsType<IsolatedStep.WarmUpRender>(planner.Next(3, t += 16));
+        Assert.True(first.FreshCamera);
+        Assert.True(planner.HoldsCameraCopy);
+        var warmUps = 1;
+        IsolatedStep step;
+        while ((step = planner.Next(3, t += 16)) is IsolatedStep.WarmUpRender w)
+        {
+            Assert.False(w.FreshCamera);   // every later render starts from the pristine copy
+            warmUps++;
+        }
+        var render = Assert.IsType<IsolatedStep.Render>(step);
+        Assert.False(render.FreshCamera);
+        Assert.True(warmUps >= IsolatedCapturePlanner.MinWarmUpFrames);
+        Assert.True(t >= IsolatedCapturePlanner.WarmUpMs);
+        Assert.Equal(warmUps, planner.WarmUps);
+        planner.AfterRender(4, t);
+        Assert.True(Assert.IsType<IsolatedStep.End>(planner.Next(3, t + 16)).Success);
+        Assert.False(planner.HoldsCameraCopy);
+    }
+
+    [Fact]
+    public void Warm_up_needs_both_the_time_and_the_frame_count()
+    {
+        var fast = WarmBegun();   // 1 ms frames: the time decides
+        var t = 0L;
+        var n = 0;
+        while (fast.Next(3, ++t) is IsolatedStep.WarmUpRender) n++;
+        Assert.True(t >= IsolatedCapturePlanner.WarmUpMs);
+
+        var slow = WarmBegun();   // 500 ms frames: the frame count decides
+        t = 0;
+        n = 0;
+        while (slow.Next(3, t += 500) is IsolatedStep.WarmUpRender) n++;
+        Assert.Equal(IsolatedCapturePlanner.MinWarmUpFrames, n);
+    }
+
+    [Fact]
+    public void Without_a_temporal_effect_there_is_no_warm_up_and_the_render_takes_the_camera()
+    {
+        var planner = Begun();
+        var render = Assert.IsType<IsolatedStep.Render>(planner.Next(3, 16));
+        Assert.True(render.FreshCamera);
+        Assert.Equal(0, planner.WarmUps);
+    }
+
+    [Fact]
+    public void A_reload_during_warm_up_pumps_then_continues_from_the_copy()
+    {
+        var planner = WarmBegun();
+        Assert.IsType<IsolatedStep.WarmUpRender>(planner.Next(3, 16));
+        Assert.IsType<IsolatedStep.Pump>(planner.Next(2, 32));
+        Assert.False(Assert.IsType<IsolatedStep.WarmUpRender>(planner.Next(3, 48)).FreshCamera);
+    }
+
+    [Fact]
+    public void A_retried_final_render_starts_from_the_copy()
+    {
+        var planner = Begun();
+        Assert.True(Assert.IsType<IsolatedStep.Render>(planner.Next(3, 16)).FreshCamera);
+        planner.AfterRender(-4, 32);
+        Assert.IsType<IsolatedStep.Pump>(planner.Next(2, 48));
+        Assert.False(Assert.IsType<IsolatedStep.Render>(planner.Next(3, 64)).FreshCamera);
+    }
+
+    [Theory]
+    [InlineData(-8)]
+    [InlineData(4)]
+    public void An_error_during_warm_up_ends_and_releases(int state)
+    {
+        var planner = WarmBegun();
+        planner.Next(3, 16);
+        Assert.True(planner.HoldsCameraCopy);
+        Assert.False(Assert.IsType<IsolatedStep.End>(planner.Next(state, 32)).Success);
+        Assert.False(planner.HoldsCameraCopy);
+        Assert.False(planner.NeedsEnd);
+    }
+
+    [Fact]
+    public void Warm_up_counts_inside_the_session_bound()
+    {
+        var planner = WarmBegun();
+        var t = IsolatedCapturePlanner.TimeoutMs - 100;   // ready only after a long first compile
+        IsolatedStep step;
+        while ((step = planner.Next(3, t += 16)) is IsolatedStep.WarmUpRender) { }
+        Assert.False(Assert.IsType<IsolatedStep.End>(step).Success);
+        Assert.Equal(IsolatedOutcome.TimedOut, planner.Outcome);
+    }
+
+    [Fact]
+    public void A_throw_mid_warm_up_leaves_the_grabber_an_end_and_a_release_to_do()
+    {
+        var planner = WarmBegun();
+        planner.Next(3, 16);
+        Assert.True(planner.NeedsEnd);
+        Assert.True(planner.HoldsCameraCopy);
+        planner.MarkEnded();
+        Assert.False(planner.NeedsEnd);
+        Assert.False(planner.HoldsCameraCopy);
+    }
+
+    [Fact]
+    public void Warm_up_values()
+    {
+        Assert.Equal(2000, IsolatedCapturePlanner.WarmUpMs);
+        Assert.Equal(30, IsolatedCapturePlanner.MinWarmUpFrames);
     }
 }

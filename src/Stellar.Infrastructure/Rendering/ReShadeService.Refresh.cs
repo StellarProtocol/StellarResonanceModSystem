@@ -80,6 +80,7 @@ internal sealed partial class ReShadeService
         {
             _depth.MarkStale(); // ReShade reloaded: re-check the effect files it compiled
             _sizeLock.MarkStale();
+            _temporal.MarkStale();
             _depthDirty = true;
         }
         _hasStatus = true;
@@ -156,13 +157,14 @@ internal sealed partial class ReShadeService
         foreach (var technique in _raw)
         {
             var file = technique.EffectFile;
-            if (!_depth.NeedsWork(file) && !_sizeLock.NeedsWork(file)) continue;
+            if (!_depth.NeedsWork(file) && !_sizeLock.NeedsWork(file) && !_temporal.NeedsWork(file)) continue;
             if (budget == 0)
             {
                 pending = true;
                 break;
             }
             changed |= ResolveIfNeeded(_depth, file) | ResolveIfNeeded(_sizeLock, file);
+            ResolveIfNeeded(_temporal, file);   // capture-only fact: not part of the published list, raises no Changed
             budget--;
         }
         _depthDirty = pending;

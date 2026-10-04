@@ -167,7 +167,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
     {
         var native = new FakeReShadeNative { IsLoaded = false };
         native.Add("Bloom", "Bloom.fx");
-        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new NullLog());
+        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new EffectTemporalIndex(new InMemoryEffectFiles()), new NullLog());
         service.Refresh();
         native.NextFrame();
         service.Refresh();
@@ -189,7 +189,7 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         var native = new FakeReShadeNative();
         native.Add("Bloom", "Bloom.fx");
         native.Add("MXAO", "MXAO.fx", enabled: false);
-        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new NullLog());
+        var service = new ReShadeService(native, new EffectDepthIndex(new InMemoryEffectFiles()), new EffectSizeLockIndex(new InMemoryEffectFiles()), new EffectTemporalIndex(new InMemoryEffectFiles()), new NullLog());
         service.Refresh();
         Assert.Equal(new[] { "Bloom" }, service.Techniques.Where(t => t.Enabled).Select(t => t.Name));
 
@@ -320,6 +320,51 @@ public sealed class ScreenCaptureReShadeTests : IDisposable
         Assert.Equal(2, _grabber.Targets.Count);
         Assert.Equal(new CaptureSize(8, 4), _grabber.Targets[1].Size);
         Assert.Equal(new CaptureSize(4, 2), _grabber.Targets[1].ReShade!.Isolated!.Fallback.Size);
+    }
+
+    // Warm-up before the isolated photo only when an ACTIVE effect is temporal; unknown (no traits) = warm up.
+    private sealed class TraitsReShade : IReShade, IReShadeEffectTraits
+    {
+        public readonly HashSet<string> Temporal = new();
+        public ReShadeState State => ReShadeState.Ready;
+        public bool Enabled { get; set; } = true;
+        public IReadOnlyList<ReShadeTechnique> Techniques { get; } = new[]
+        {
+            new ReShadeTechnique("Draft", "Draft.fx", true, false) { SizeLocked = true },
+            new ReShadeTechnique("Bloom", "Bloom.fx", true, false),
+            new ReShadeTechnique("Adapt", "Adapt.fx", false, false),
+        };
+        public string? CurrentPreset => null;
+        public bool IsTemporal(string effectFile) => Temporal.Contains(effectFile);
+        public void SetTechnique(string effectFile, string name, bool enabled) { }
+        public void SetPreset(string path) { }
+        public void SetSearchPaths(IReadOnlyList<string> effectFolders, IReadOnlyList<string> textureFolders) { }
+        public event Action? Changed { add { } remove { } }
+    }
+
+    [Fact]
+    public async Task An_isolated_photo_warms_up_when_an_active_effect_is_temporal()
+    {
+        var reShade = new TraitsReShade();
+        reShade.Temporal.Add("Bloom.fx");
+        await Service(reShade).CaptureAsync(Request() with { Scale = 4 });
+        Assert.True(Assert.Single(_grabber.Targets).ReShade!.Isolated!.WarmUp);
+    }
+
+    [Fact]
+    public async Task An_isolated_photo_skips_the_warm_up_when_no_active_effect_is_temporal()
+    {
+        var reShade = new TraitsReShade();
+        reShade.Temporal.Add("Adapt.fx");   // temporal, but switched off
+        await Service(reShade).CaptureAsync(Request() with { Scale = 4 });
+        Assert.False(Assert.Single(_grabber.Targets).ReShade!.Isolated!.WarmUp);
+    }
+
+    [Fact]
+    public async Task Without_effect_traits_an_isolated_photo_always_warms_up()
+    {
+        await Service(WithLocked()).CaptureAsync(Request() with { Scale = 4 });
+        Assert.True(Assert.Single(_grabber.Targets).ReShade!.Isolated!.WarmUp);
     }
 
     private sealed class LiveReadReShade : IReShade, IReShadeLiveRead

@@ -47,7 +47,18 @@ internal sealed partial class ScreenCaptureService
         var isolated = r.Aspect is null
             ? new IsolatedCapture(Target(r, 1, options), ReShadeCaptureNotes.ScreenSizeOnly)
             : new IsolatedCapture(Target(r, scale, options with { SkipSizeLocked = true }), ReShadeCaptureNotes.ScreenSizeOnlySkipped);
-        return target with { ReShade = options with { Isolated = isolated } };
+        return target with { ReShade = options with { Isolated = isolated with { WarmUp = AnyTemporal(options.Active) } } };
+    }
+
+    // Unknown (no traits) = temporal: a needless warm-up costs time, a missing one a wrong photo.
+    private bool AnyTemporal(IReadOnlyList<ReShadeTechnique> active)
+    {
+        if (_reShade is not IReShadeEffectTraits traits) return true;
+        foreach (var technique in active)
+        {
+            if (traits.IsTemporal(technique.EffectFile)) return true;
+        }
+        return false;
     }
 
     private static bool AnySizeLocked(IReadOnlyList<ReShadeTechnique> active)

@@ -14,28 +14,72 @@ internal sealed partial class UnityFrameGrabber
     private bool _nativeReadbackFailed;
 
     /// <param name="drawEffects">Queues ReShade's effects into the render target between the camera render and the
-    /// readback — the game's runtime (UnityFrameGrabber.ReShade.cs) or the isolated one (UnityFrameGrabber.Isolated.cs).
-    /// Null = no ReShade. The caller checks the result and fixes alpha.</param>
+    /// readback — the game's runtime (UnityFrameGrabber.ReShade.cs). Null = no ReShade. The caller checks the result
+    /// and fixes alpha.</param>
     private FrameGrab Capture(GrabTarget target, CaptureFormat format, int q, Action<RenderTexture>? drawEffects = null)
+    {
+        if (Camera.main == null) throw new FrameGrabException("No camera is rendering the scene.");
+        var rt = NewTarget(target.Size);
+        try
+        {
+            RenderCamera(target, rt);
+            drawEffects?.Invoke(rt);   // render thread, before the readback below syncs with it
+            return ReadBack(rt, format, q);
+        }
+        finally
+        {
+            DestroyTarget(rt);
+        }
+    }
+
+    /// <summary>A created render target of the photo's size (RGBA8 + depth), or a <see cref="FrameGrabException"/>.</summary>
+    private static RenderTexture NewTarget(CaptureSize size, int depthBits = 24)
+    {
+        int w = size.Width, h = size.Height;
+        if (w <= 0 || h <= 0) throw new FrameGrabException("The photo size is empty.");
+        var rt = new RenderTexture(w, h, depthBits);
+        if (rt.Create()) return rt;
+        UnityEngine.Object.Destroy(rt);
+        throw new FrameGrabException($"A {w}x{h} render target could not be created.");
+    }
+
+    private static void DestroyTarget(RenderTexture? rt)
+    {
+        if (rt == null) return;
+        rt.Release();
+        UnityEngine.Object.Destroy(rt);
+    }
+
+    /// <summary>Renders the main camera into <paramref name="rt"/>. A shaped target gets the camera's lens for that
+    /// render only (<see cref="CaptureLensPlanner"/>); the camera's target and lens are back before this returns.</summary>
+    private void RenderCamera(GrabTarget target, RenderTexture rt)
     {
         var cam = Camera.main;
         if (cam == null) throw new FrameGrabException("No camera is rendering the scene.");
-        int w = target.Size.Width, h = target.Size.Height;
-        if (w <= 0 || h <= 0) throw new FrameGrabException("The photo size is empty.");
-        var rt = new RenderTexture(w, h, 24);
         var prevTarget = cam.targetTexture;
-        var prevActive = RenderTexture.active;
-        Texture2D? tex = null;
         CaptureLensOverride? lens = null, restored = null;
         try
         {
-            if (!rt.Create()) throw new FrameGrabException($"A {w}x{h} render target could not be created.");
             lens = CaptureLensOverride.Apply(new UnityCaptureLens(cam), target, Screen.width, Screen.height);
             cam.targetTexture = rt;
             cam.Render();
-            cam.targetTexture = prevTarget;
-            RestoreLens(ref lens, ref restored);
-            drawEffects?.Invoke(rt);   // render thread, before the readback below syncs with it
+        }
+        finally
+        {
+            try { RestoreLens(ref lens, ref restored); }   // the camera's lens is back before anything else renders
+            finally { cam.targetTexture = prevTarget; }   // a failed lens restore must not skip this
+            if (restored is not null) OnLensRestored(cam, restored);   // diagnostics last; never throws
+        }
+    }
+
+    /// <summary>Reads <paramref name="rt"/> back (syncing with the render thread) and encodes it.</summary>
+    private FrameGrab ReadBack(RenderTexture rt, CaptureFormat format, int q)
+    {
+        int w = rt.width, h = rt.height;
+        var prevActive = RenderTexture.active;
+        Texture2D? tex = null;
+        try
+        {
             RenderTexture.active = rt;
             tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
             // ReadPixels fills the texture's CPU copy, which is all the readback/JPG encode read — no Apply()
@@ -45,17 +89,8 @@ internal sealed partial class UnityFrameGrabber
         }
         finally
         {
-            try { RestoreLens(ref lens, ref restored); }   // the camera's lens is back before anything else renders
-            finally
-            {
-                // A failed lens restore must not skip the render-target cleanup.
-                cam.targetTexture = prevTarget;
-                RenderTexture.active = prevActive;
-                rt.Release();
-                UnityEngine.Object.Destroy(rt);
-                if (tex != null) UnityEngine.Object.Destroy(tex);
-            }
-            if (restored is not null) OnLensRestored(cam, restored);   // diagnostics last, after every cleanup; never throws
+            RenderTexture.active = prevActive;
+            if (tex != null) UnityEngine.Object.Destroy(tex);
         }
     }
 

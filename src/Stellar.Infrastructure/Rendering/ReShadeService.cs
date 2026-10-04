@@ -14,11 +14,13 @@ namespace Stellar.Infrastructure.Rendering;
 /// and sent once it binds. A preset switch is additionally held until ReShade lists techniques — the add-on's host contract
 /// (it ignores a preset request while there are none). Main thread only.
 /// </summary>
-internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abstractions.IReShadeLiveRead
+internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abstractions.IReShadeLiveRead,
+    Stellar.Application.Abstractions.IReShadeEffectTraits
 {
     private readonly IReShadeNative _native;
     private readonly EffectDepthIndex _depth;
     private readonly EffectSizeLockIndex _sizeLock;
+    private readonly EffectTemporalIndex _temporal;
     private readonly IPluginLog _log;
 
     private readonly HashSet<string> _warnedFolders = new(StringComparer.Ordinal);
@@ -27,11 +29,13 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
     private (string? Effects, string? Textures)? _pendingSearchPaths;
     private (string? Effects, string? Textures)? _lastSentSearchPaths;   // this session's last request (dedupe)
 
-    internal ReShadeService(IReShadeNative native, EffectDepthIndex depth, EffectSizeLockIndex sizeLock, IPluginLog log)
+    internal ReShadeService(IReShadeNative native, EffectDepthIndex depth, EffectSizeLockIndex sizeLock, EffectTemporalIndex temporal,
+        IPluginLog log)
     {
         _native = native;
         _depth = depth;
         _sizeLock = sizeLock;
+        _temporal = temporal;
         _log = log;
     }
 
@@ -40,6 +44,9 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
     public ReShadeState State => _state;
 
     public IReadOnlyList<ReShadeTechnique> Techniques => _techniques;
+
+    /// <inheritdoc/>
+    public bool IsTemporal(string effectFile) => _temporal.Known(effectFile) ?? true;
 
     public string? CurrentPreset => _preset;
 
@@ -84,6 +91,7 @@ internal sealed partial class ReShadeService : IReShade, Stellar.Application.Abs
         {
             _depth.SetSearchPaths(effects);
             _sizeLock.SetSearchPaths(effects);
+            _temporal.SetSearchPaths(effects);
             _depthDirty = true;
             _forceRead = true;
         }
