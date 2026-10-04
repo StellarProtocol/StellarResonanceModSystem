@@ -6,7 +6,7 @@ using UnityEngine.UI;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Reusable single-line uGUI text field that (1) submits on Enter WITHOUT losing focus — so the game's
+/// Reusable uGUI text field (single-line OR multi-line) that (1) submits on Enter WITHOUT losing focus — so the game's
 /// chat-open guard (which fires only when no field is focused) never triggers — and (2) never traps the
 /// user: while focused it forces a free, visible cursor (so the user can always click out — replacing the
 /// game's Alt-to-free-cursor, which is suppressed during focus) and honours Esc to defocus. Pure
@@ -27,6 +27,8 @@ internal sealed class UGuiTextInput
     private CursorLockMode _savedCursorLock;
     private bool _enterLatched;      // one-press-one-submit: blocks key-repeat from firing submit every frame
     private bool _strippingNewline;  // re-entrancy guard for text reset inside onValueChanged
+    private bool _multiLine;         // multi-line mode: Enter inserts a real newline + keeps focus (no strip, no submit)
+    private const float MultiLineRowPx = 16f;   // approx line-box height for the 13-px field font; fixes the box height
 
     public UGuiTextInput(Action<string>? onSubmit = null, Action<bool>? onFocusChanged = null, Action<string>? onChange = null)
     {
@@ -48,24 +50,35 @@ internal sealed class UGuiTextInput
     /// text overflows horizontally instead of wrapping, and a RectMask2D clips the overflow to the box so
     /// long/pasted text scrolls sideways within the field rather than wrapping to more lines and growing the
     /// field (and, in an auto-height window, the window). The <c>lineType</c> stays MultiLineNewline in BOTH
-    /// modes — switching to SingleLine here would reintroduce the chat-flash-on-Enter bug documented below.</para></summary>
-    public GameObject Build(Transform parent, bool singleLine = false)
+    /// modes — switching to SingleLine here would reintroduce the chat-flash-on-Enter bug documented below.</para>
+    /// <para><paramref name="multiLine"/> (opt-in, default false → unchanged; mutually exclusive with
+    /// <paramref name="singleLine"/>) is a true multi-line editable box of a FIXED height
+    /// (<paramref name="lines"/> visible rows) that NEVER grows the window: text WRAPS within the box width and
+    /// overflows DOWNWARD, a RectMask2D clips the overflow, and Unity's InputField scrolls vertically to follow
+    /// the caret. Unlike single-line-submit mode, Enter here inserts a REAL newline and keeps focus (no strip,
+    /// no submit) — the owner submits via its own button reading <see cref="Text"/> / the onChange buffer.</para></summary>
+    public GameObject Build(Transform parent, bool singleLine = false, bool multiLine = false, int lines = 4)
     {
         if (_field != null)
             throw new InvalidOperationException("UGuiTextInput.Build called twice; call Destroy first.");
+        _multiLine = multiLine;
+        // Fixed box height: single line = 28; multi line = lines × a 16-px line box + 8-px vertical padding.
+        float boxHeight = multiLine ? (lines < 1 ? 1 : lines) * MultiLineRowPx + 8f : 28f;
         var go = NewChild("UGuiTextInput", parent);
         var le = go.AddComponent<LayoutElement>();
-        le.minHeight = 28f;
-        // Single line: pin preferred == min and kill flexibleHeight so the field can NEVER expand vertically,
-        // regardless of how much text it holds (a pasted multi-paragraph code would otherwise grow it).
-        if (singleLine) { le.preferredHeight = 28f; le.flexibleHeight = 0f; }
+        le.minHeight = boxHeight;
+        // Single/multi line: pin preferred == min and kill flexibleHeight so the field can NEVER expand
+        // vertically, regardless of how much text it holds (a pasted multi-paragraph code would otherwise grow
+        // it — single line grows by wrapping, multi line grows by adding rows; a fixed box + scroll avoids both).
+        if (singleLine || multiLine) { le.preferredHeight = boxHeight; le.flexibleHeight = 0f; }
         var bg = go.AddComponent<Image>();
         bg.color = new Color(0.95f, 0.95f, 0.95f, 1f);
-        // Single line: clip the text to the field box. This (a) stops long/pasted text spilling OUTSIDE the
-        // box, and (b) gives Unity's InputField a masked viewport so its caret-follow scrolling keeps the
-        // caret visible as you type/paste past the right edge. RectMask2D clips descendants (the Text child);
-        // the bg Image sits on this same GO (fills the rect exactly) so clipping it to itself is a no-op.
-        if (singleLine) go.AddComponent<RectMask2D>();
+        // Single/multi line: clip the text to the field box. This (a) stops long/pasted text spilling OUTSIDE the
+        // box, and (b) gives Unity's InputField a masked viewport so its caret-follow scrolling keeps the caret
+        // visible as you type/paste past the edge (single line scrolls sideways, multi line scrolls down).
+        // RectMask2D clips descendants (the Text child); the bg Image sits on this same GO (fills the rect
+        // exactly) so clipping it to itself is a no-op.
+        if (singleLine || multiLine) go.AddComponent<RectMask2D>();
 
         var textGo = NewChild("Text", go.transform);
         Stretch(textGo);
@@ -79,6 +92,16 @@ internal sealed class UGuiTextInput
             // vertically (never add lines). Height is already pinned above, so the field holds one line.
             txt.horizontalOverflow = HorizontalWrapMode.Overflow;
             txt.verticalOverflow = VerticalWrapMode.Truncate;
+        }
+        else if (multiLine)
+        {
+            // Wrap within the box width (so lines break at the right edge, no sideways scroll) and overflow
+            // DOWNWARD past the box — the RectMask2D clips it and InputField scrolls to keep the caret visible.
+            // Top-left so content starts at the top like a normal text area (MiddleLeft would vertically centre
+            // short content, which reads oddly for a multi-line box).
+            txt.horizontalOverflow = HorizontalWrapMode.Wrap;
+            txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.alignment = TextAnchor.UpperLeft;
         }
 
         _field = go.AddComponent<InputField>();
@@ -183,12 +206,15 @@ internal sealed class UGuiTextInput
 
     // onValueChanged fires AFTER a char is committed to the field (full UTF-16 string — no IL2CPP char
     // truncation). When Enter is pressed in MultiLineNewline mode, '\n' is appended before this fires.
-    // We strip the newline, reset the field text, and submit. The _strippingNewline guard prevents
-    // processing the re-entrant onValueChanged that fires when we assign _field.text = clean.
+    // SINGLE-LINE-SUBMIT mode: we strip the newline, reset the field text, and submit — so Enter acts as submit
+    // WITHOUT deactivating the field (chat never flashes open). The _strippingNewline guard prevents processing
+    // the re-entrant onValueChanged that fires when we assign _field.text = clean.
+    // MULTI-LINE mode: Enter is a real newline, so we must NOT strip it and must NOT submit — the strip+submit
+    // branch is skipped and the '\n' flows straight through to _onChange (full buffer, newlines kept).
     private void OnFieldValueChanged(string value)
     {
         if (_strippingNewline) return;
-        if (value.Contains('\n') || value.Contains('\r'))
+        if (!_multiLine && (value.Contains('\n') || value.Contains('\r')))
         {
             var clean = value.Replace("\r", "").Replace("\n", "");
             _strippingNewline = true;

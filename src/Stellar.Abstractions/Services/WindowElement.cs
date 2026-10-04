@@ -111,6 +111,24 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     public bool SingleLine { get; init; }
 }
 
+/// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline
+/// and KEEPS focus — it does NOT submit; give the plugin its own submit button that reads the current buffer via
+/// <paramref name="OnChange"/>. The box is a FIXED height (<see cref="Lines"/> visible lines) that NEVER grows the
+/// window: text wraps within the width and overflows downward, clipped to the box and scrolled vertically to
+/// follow the caret. Esc defocuses and the cursor stays free, same as <see cref="InputElement"/>.
+/// <paramref name="Get"/> seeds the text; <paramref name="OnChange"/> fires per edit with the FULL buffer
+/// (newlines included). This is a brand-new record, so its positional parameters are safe to add; keep any later
+/// additions as <c>init</c> properties (see WindowBuilder-Patterns.md "Binary compatibility rules").</summary>
+/// <param name="Get">Supplies the initial text (and re-seeds on external change, diffed like InputElement).</param>
+/// <param name="OnChange">Invoked per edit with the full buffer (newlines kept) — the plugin's submit button reads this.</param>
+/// <param name="Width">Fixed box width in px.</param>
+public sealed record TextAreaElement(Func<string> Get, Action<string> OnChange, float Width = 260f) : HudElement
+{
+    /// <summary>Number of visible text lines → the box's FIXED height (it never grows past this; overflow
+    /// scrolls). Default 4. An init property so future additions stay binary-compatible.</summary>
+    public int Lines { get; init; } = 4;
+}
+
 /// <summary>Compact dropdown for a small, fixed set of mutually-exclusive choices (e.g. a mode selector) — a
 /// reusable replacement for a click-to-cycle button. The trigger shows the current option (caption + ▾); a
 /// click opens a themed floating option list that floats above the window's scroll clip. Picking an option

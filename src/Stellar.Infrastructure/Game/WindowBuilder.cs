@@ -179,6 +179,7 @@ internal sealed partial class WindowBuilder
             case SliderElement sl: BuildSlider(sl, parent, token); break;      // .Widgets.cs
             case XYPadElement xy: BuildXYPad(xy, parent, token); break;        // .XYPad.cs
             case InputElement inp: BuildInput(inp, parent, token); break;      // .Widgets.cs
+            case TextAreaElement ta: BuildTextArea(ta, parent, token); break;  // .Widgets.cs
             case DropdownElement dd: BuildDropdown(dd, parent, token); break;  // .Dropdown.cs
             case ScrollElement sc: BuildScroll(sc, parent, token); break;      // .Widgets.cs
             case ColorPickerElement cp: BuildColorPicker(cp, parent, token); break; // .ColorPicker.cs
