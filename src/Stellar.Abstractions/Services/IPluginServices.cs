@@ -159,4 +159,7 @@ public interface IPluginServices
     IPluginDownloads Downloads { get; }
     /// <summary>ReShade bridge — effects on/off, technique toggles and preset switching. See <see cref="IReShade"/>.</summary>
     IReShade ReShade { get; }
+    /// <summary>ReShade uniform overrides — hold an effect setting at a value in every ReShade runtime (bridge 1.1.0+).
+    /// See <see cref="IReShadeUniforms"/>.</summary>
+    IReShadeUniforms ReShadeUniforms { get; }
 }

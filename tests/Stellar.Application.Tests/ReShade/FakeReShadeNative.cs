@@ -4,8 +4,17 @@ using Stellar.Infrastructure.Rendering;
 namespace Stellar.Application.Tests.ReShade;
 
 /// <summary>Scriptable <see cref="IReShadeNative"/>: tests set the bridge's snapshot and read back the requests.</summary>
-internal sealed class FakeReShadeNative : IReShadeNative
+internal sealed class FakeReShadeNative : IReShadeNative, IReShadeUniformNative
 {
+    public bool UniformOverridesSupported { get; set; } = true;
+    public bool RejectUniformValues { get; set; }   // the add-on returns 0 (e.g. a value it cannot parse)
+    public int SetUniformOverride(string? effectFile, string variable, string? value)
+    {
+        Requests.Add($"uniform {effectFile ?? "<all>"}/{variable}={value ?? "<remove>"}");
+        return RejectUniformValues ? 0 : 1;
+    }
+    public void ClearUniformOverrides() => Requests.Add("uniforms clear");
+
     public bool IsLoaded { get; set; } = true;
     public bool Ready { get; set; } = true;
     public bool Loading { get; set; }

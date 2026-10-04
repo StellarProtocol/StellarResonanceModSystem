@@ -56,7 +56,11 @@ internal sealed partial class ReShadeService
             Lose();
             return;
         }
-        if (!_hasStatus) OnBound();
+        if (!_hasStatus)
+        {
+            OnBound();
+            SendHeldUniformOverrides();
+        }
         TrySendPendingSearchPaths();
         var status = _native.ReadStatus();
         if (_hasStatus && status.Frames == _status.Frames && !force) return;

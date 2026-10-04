@@ -579,6 +579,17 @@ reShade.SetTechnique("Clarity.fx", "Clarity", enabled: true);   // identity = ef
   (bridge 1.1.0+; depth effects left out). If that is unavailable or fails, a 2×/4× photo is taken at 1× (the result's
   `Width`/`Height` are the real size — derive the scale from them, not from the request) and a photo of another shape
   switches them off; a note says which.
+- **Uniform overrides** (`services.ReShadeUniforms`, bridge 1.1.0+): hold an effect setting at a value in every ReShade
+  runtime, whatever preset is loaded and across every reload (ReShade resets uniforms to their defaults on each reload):
+
+  ```csharp
+  // AcerolaFX's _MaskUI (default true) hides its output in this game: keep it off.
+  services.ReShadeUniforms.SetUniformOverride(null, "_MaskUI", "false");   // null effect = every effect
+  ```
+
+  Values are 1–16 comma-separated numbers or `true`/`false`; a null value removes the override. It returns false for
+  bad input or a bridge older than 1.1.0; before the bridge is loaded the override is held and sent when it is.
+  `ClearUniformOverrides()` removes only your plugin's overrides, and they are all removed when your plugin unloads.
 
 ## The no-cheating boundary
 

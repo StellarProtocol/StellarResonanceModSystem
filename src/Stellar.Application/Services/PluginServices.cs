@@ -71,6 +71,8 @@ internal sealed class PluginServices : IPluginServices
     public ILights Lights { get; }
     public IPluginDownloads Downloads { get; }
     public IReShade ReShade { get; }
+    /// <summary>The shared ReShade service's uniform overrides, or a null object when it has none.</summary>
+    public IReShadeUniforms ReShadeUniforms => ReShade as IReShadeUniforms ?? UnavailableReShadeUniforms.Instance;
 
     public PluginServices(
         IPluginLog log,
