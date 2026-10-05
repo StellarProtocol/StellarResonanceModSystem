@@ -78,9 +78,12 @@ internal sealed partial class WindowBuilder
         var row = BuildBarRow(parent);
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
-        var clipRt = BuildBarTrack(row.transform, b);
+        var (clipRt, fill) = BuildBarTrack(row.transform, b);
         var label = BuildBarLabel(b, row.transform, clipRt, ls, token);
-        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label });
+        var bind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label };
+        // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
+        if (b.FillColorFn != null) { bind.FillGraphic = fill; bind.FillColorFn = b.FillColorFn; }
+        token.Bars.Add(bind);
     }
 
     // Shared "Bar" row host (HorizontalLayoutGroup, MiddleLeft, 6-px spacing) — reused by both bar styles.
@@ -153,7 +156,9 @@ internal sealed partial class WindowBuilder
     // ignores fillAmount and draws a FULL quad, so the migrated Filled fill stayed full regardless of the
     // fraction. Anchor-resize needs no sprite (so no rounded-corner stretch artifact) and mirrors how the
     // MeterRow/AccentRow clip their fill width. Geometry from Height/Width/FillWidth (defaults 14/150/fixed).
-    private RectTransform BuildBarTrack(Transform row, BarElement b)
+    // Returns the fill-clip RectTransform (its anchorMax.x drives width) and the fill Graphic (the BarBinding
+    // re-colours it per refresh when BarElement.FillColorFn is set).
+    private (RectTransform ClipRt, Graphic Fill) BuildBarTrack(Transform row, BarElement b)
     {
         var track = UGuiPrimitives.NewChild("Track", row);
         var tle = track.AddComponent<LayoutElement>();
@@ -175,7 +180,7 @@ internal sealed partial class WindowBuilder
         var fill = fillGo.AddComponent<Image>();
         fill.type = Image.Type.Simple; fill.raycastTarget = false;
         fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
-        return clipRt;
+        return (clipRt, fill);
     }
 
     // Modern (BarStyle.Modern) window bar — the CombatMeter metric-bar look, REUSING the WindowBuilder.MeterRow
@@ -190,21 +195,39 @@ internal sealed partial class WindowBuilder
         var row = BuildBarRow(parent);
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
-        var (track, clipRt) = BuildModernTrack(b, row.transform);
+        var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
         if (b.Sheen) BuildModernSheen(clipRt, token);
         if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
-        token.Bars.Add(new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 });
+        var fillBind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 };
+        // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
+        if (b.FillColorFn != null) { fillBind.FillGraphic = fill; fillBind.FillColorFn = b.FillColorFn; }
+        token.Bars.Add(fillBind);
 
         if (b.Label != null)
-            token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label });
+        {
+            // Primary label colour (the Modern path's label was hard-white before this): per-refresh LabelColorFn
+            // wins; else the static LabelColor; else null → the overlay's build-time white (today's default, via
+            // TextBinding's restore-default). Only attach a ColorFn when a colour was actually requested, so a
+            // Modern bar that sets neither keeps the plain white overlay with no override machinery — byte-for-byte
+            // unchanged. The size/font reskin (RegisterTextSizeReskin) never touches colour, so this survives theme
+            // switches. Secondary (right) label is intentionally left white — primary is the requirement.
+            var bind = new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label };
+            if (b.LabelColorFn != null || b.LabelColor is not null)
+            {
+                var fn = b.LabelColorFn; var stat = b.LabelColor;
+                bind.ColorFn = () => fn?.Invoke() ?? stat;
+            }
+            token.Texts.Add(bind);
+        }
         if (b.SecondaryLabel != null)
             token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
     }
 
     // Flat translucent track + width-anchored RectMask2D clip + flat role-coloured fill. Mirrors
     // WindowBuilder.MeterRow.BuildMeterBar (MeterRow.cs:322-336), honouring the BarElement geometry. Returns the
-    // track transform (overlay-text parent) and the fill-clip RectTransform (the BarBinding drives its anchorMax.x).
-    private (Transform Track, RectTransform ClipRt) BuildModernTrack(BarElement b, Transform row)
+    // track transform (overlay-text parent), the fill-clip RectTransform (the BarBinding drives its anchorMax.x),
+    // and the fill Graphic (the BarBinding re-colours it per refresh when BarElement.FillColorFn is set).
+    private (Transform Track, RectTransform ClipRt, Graphic Fill) BuildModernTrack(BarElement b, Transform row)
     {
         var track = UGuiPrimitives.NewChild("Track", row);
         var tle = track.AddComponent<LayoutElement>();
@@ -226,7 +249,7 @@ internal sealed partial class WindowBuilder
         var fill = fillGo.AddComponent<Image>();   // flat, NO sprite, no Image.Type.Filled
         fill.raycastTarget = false;
         fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
-        return (track.transform, clipRt);
+        return (track.transform, clipRt, fill);
     }
 
     // Sheen: a soft white band scrolled left→right within the clipped fill (per-frame, ticker-driven via the

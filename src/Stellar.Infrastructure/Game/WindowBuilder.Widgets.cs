@@ -281,7 +281,7 @@ internal sealed partial class WindowBuilder
         var submit = inp.Submit;
         var onChange = inp.OnChange;
         var field = new UGuiTextInput(onSubmit: s => submit(s), onChange: onChange != null ? s => onChange(s) : (System.Action<string>?)null);
-        var go = field.Build(parent);
+        var go = field.Build(parent, inp.SingleLine);
         var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
         le.preferredWidth = inp.Width; le.flexibleWidth = 0f;
         field.SetFont(_assets.MenuFont);
@@ -293,6 +293,34 @@ internal sealed partial class WindowBuilder
         _registerField?.Invoke(field);
         token.Fields.Add(field);
         token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get() });
+    }
+
+    // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where
+    // Enter is a real newline that keeps focus (NOT submit; the plugin submits via its own button reading OnChange).
+    // Text wraps; the field grows inside a ScrollRect (UGuiTextInput.TextArea.cs) that gets the SAME themed
+    // scrollbar as BuildScroll (AutoHide, re-tinted on theme change), inset inside the box padding — the window
+    // never grows. Mirrors BuildInput for seeding / theming / field-tick registration; no onSubmit.
+    // ReadOnly: select/copy only (InputField.readOnly) — still focusable and still re-seeded from Get().
+    private void BuildTextArea(TextAreaElement ta, Transform parent, WindowToken token)
+    {
+        var onChange = ta.OnChange;
+        var field = new UGuiTextInput(onChange: s => onChange(s));
+        var go = field.Build(parent, multiLine: true, lines: ta.Lines);
+        var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
+        le.preferredWidth = ta.Width; le.flexibleWidth = 0f;
+        field.SetFont(_assets.MenuFont);
+        field.SetText(ta.Get());   // seed BEFORE readOnly (the text setter isn't gated anyway, but keep the order obvious)
+        if (ta.ReadOnly) field.SetReadOnly(true);
+        // Same chrome theming as BuildInput: dark rounded inset + light text (see BuildInput); the bg lands on the
+        // outer box, the pad is the TextArea's left/right inner padding (right side also clears the bar lane).
+        // Read-only hint: the same fixed dark bg, a bit more translucent — subtle, and like the editable colour it
+        // isn't a theme token, so it reads the same under every theme.
+        var bgAlpha = ta.ReadOnly ? 0.70f : 0.95f;
+        field.ApplyStyle(_assets.Capsule, new Color(0.05f, 0.07f, 0.10f, bgAlpha), new Color(0.92f, 0.94f, 0.97f, 1f), UGuiTextInput.TextAreaPadX);
+        if (field.TextAreaScroll is { } sr) { BuildScrollbar(sr, go, token); field.InsetTextAreaScrollbar(); }
+        _registerField?.Invoke(field);
+        token.Fields.Add(field);
+        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = ta.Get, Last = ta.Get() });
     }
 
     // Scroll: vertical ScrollRect with a masked viewport + content-sized child + thin accent thumb.
