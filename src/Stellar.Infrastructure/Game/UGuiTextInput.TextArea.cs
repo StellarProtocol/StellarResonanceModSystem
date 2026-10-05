@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -36,6 +37,8 @@ internal sealed partial class UGuiTextInput
     private Vector2 _lastFieldSize = new(-1f, -1f);
     private int _lastCaret = -1;
     private int _followUntilFrame = -1;
+    private CanvasRenderer? _caretRenderer;        // InputField's lazily-created caret/selection renderer (ClipCaret)
+    private readonly List<RectMask2D> _clipMasks = new();   // every RectMask2D from the Viewport up (ClipCaret)
 
     /// <summary>TextArea mode: the ScrollRect the owner hangs its themed scrollbar on (null in other modes).</summary>
     internal ScrollRect? TextAreaScroll => _scroll;
@@ -138,6 +141,7 @@ internal sealed partial class UGuiTextInput
         if (_field == null || _fieldRect == null || _scroll == null) return;
         var size = _fieldRect.rect.size;
         if (size.x != _lastFieldSize.x || size.y != _lastFieldSize.y) { _lastFieldSize = size; _field.ForceLabelUpdate(); }
+        ClipCaret(focused);
         if (!focused) { _lastCaret = -1; return; }
         var caret = _field.caretPosition;
         if (caret != _lastCaret) { _lastCaret = caret; _followUntilFrame = Time.frameCount + FollowFrames; }
@@ -172,5 +176,63 @@ internal sealed partial class UGuiTextInput
         p.y = Mathf.Clamp(p.y + delta, 0f, Mathf.Max(0f, _fieldRect.rect.height - view.height));
         _fieldRect.anchoredPosition = p;
         _scroll.velocity = Vector2.zero;
+    }
+
+    // Legacy InputField draws the caret AND the selection highlight on its own child "<name> Input Caret" (a raw
+    // CanvasRenderer + ignoreLayout LayoutElement, held in the private m_CachedInputRenderer) — NOT a MaskableGraphic /
+    // IClippable, so the Viewport's RectMask2D never clips it: after a manual wheel/bar scroll (caret-follow idle) the
+    // caret, or a selection on a scrolled-out line, drew over the padding and the window. So clip it ourselves exactly
+    // as RectMask2D clips its children: intersect the canvasRect (ROOT-canvas space — the space RectMask2D hands its
+    // clippables) of every enabled RectMask2D from the Viewport up (an enclosing window scroll mask included) and pass
+    // it to CanvasRenderer.EnableRectClipping. Re-applied every tick once found — the window drags and the canvas
+    // rescales — and canvasRect is a native corner transform returning a struct (no managed allocation).
+    private void ClipCaret(bool focused)
+    {
+        if (_caretRenderer == null && (!focused || !FindCaretRenderer())) return;
+        var any = false;
+        var clip = default(Rect);
+        for (var i = 0; i < _clipMasks.Count; i++)
+        {
+            var m = _clipMasks[i];
+            if (m == null || !m.isActiveAndEnabled) continue;
+            var r = m.canvasRect;
+            clip = any ? Intersect(clip, r) : r;
+            any = true;
+        }
+        if (any) _caretRenderer!.EnableRectClipping(clip);
+        else _caretRenderer!.DisableRectClipping();
+    }
+
+    // The caret GO doesn't exist until InputField's first geometry pass after focus (parented under the Text's parent
+    // = our Field), so this keeps looking each FOCUSED tick until it appears. Matched structurally — a Field child with
+    // a CanvasRenderer but no Graphic (the Text child has one) — not by name (no per-frame string marshalling) and not
+    // via the private m_CachedInputRenderer (keeps this file pure UnityEngine.UI). The mask chain is fixed once built.
+    private bool FindCaretRenderer()
+    {
+        var t = _fieldRect!;
+        for (var i = 0; i < t.childCount; i++)
+        {
+            var c = t.GetChild(i);
+            if (c.GetComponent<Graphic>() != null) continue;
+            var cr = c.GetComponent<CanvasRenderer>();
+            if (cr == null) continue;
+            _caretRenderer = cr;
+            _clipMasks.Clear();
+            for (var p = t.parent; p != null; p = p.parent)   // t.parent = the Viewport
+            {
+                var m = p.GetComponent<RectMask2D>();
+                if (m != null) _clipMasks.Add(m);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // Overlap of two rects; zero-size when they don't overlap (EnableRectClipping then hides the caret entirely).
+    private static Rect Intersect(Rect a, Rect b)
+    {
+        float xMin = Mathf.Max(a.xMin, b.xMin), yMin = Mathf.Max(a.yMin, b.yMin);
+        float xMax = Mathf.Max(xMin, Mathf.Min(a.xMax, b.xMax)), yMax = Mathf.Max(yMin, Mathf.Min(a.yMax, b.yMax));
+        return new Rect(xMin, yMin, xMax - xMin, yMax - yMin);
     }
 }
