@@ -321,7 +321,7 @@ internal sealed partial class PandaCombatStubProbe
         {
             if (d.BuffEvents is not { } be || !be.Touched) continue;
             var entityId = new EntityId(d.Uuid);
-            DiagBuffEvents(d.Uuid, be.Upserts, be.Removes);
+            DiagBuffEvents(d.Uuid, be);
             _sink.ApplyBuffEvents(entityId, be.Upserts, be.Removes, timestampMs);
         }
     }

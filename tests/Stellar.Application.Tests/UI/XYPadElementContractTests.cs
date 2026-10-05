@@ -18,7 +18,7 @@ public sealed class XYPadElementContractTests
         Assert.IsAssignableFrom<HudElement>(pad);
     }
 
-    // The XY pad ships in framework 2.18.0; the exact current-version pin follows the latest release (2.19.0).
+    // The XY pad ships in framework 2.18.0; the exact current-version pin follows the latest release (2.19.1).
     [Fact]
-    public void Framework_version_is_2_19_0() => Assert.Equal("2.19.0", FrameworkVersion.Value);
+    public void Framework_version_is_2_19_1() => Assert.Equal("2.19.1", FrameworkVersion.Value);
 }

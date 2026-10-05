@@ -110,7 +110,7 @@ internal static class AoiSyncDeltaReader
                     break;
                 case (10, 2):
                     if (!WireProtocol.TryReadLengthDelimited(span, ref pos, out var bb)) { delta = default; return false; }
-                    buffEvents = BuffEffectSyncReader.TryRead(bb);
+                    buffEvents = BuffEffectSyncReader.TryRead(bb, trace: Stellar.Abstractions.Diagnostics.StellarDiagnostics.IsEnabled);
                     break;
                 default:
                     if (!WireProtocol.SkipField(span, ref pos, wire)) { delta = default; return false; }

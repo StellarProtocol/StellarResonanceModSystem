@@ -13,11 +13,19 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 internal readonly record struct BuffEventBatch(
     bool Touched,
     IReadOnlyList<ActiveBuff> Upserts,
-    IReadOnlyList<int> Removes)
+    IReadOnlyList<int> Removes,
+    IReadOnlyList<BuffEffectTrace>? Trace = null)
 {
     public static BuffEventBatch None { get; } =
         new(false, Array.Empty<ActiveBuff>(), Array.Empty<int>());
 }
+
+/// <summary>
+/// Diagnostics-only raw view of one <c>BuffEffect</c>: event type, the effect's BuffUuid, the payload kind
+/// (18 AddBuff, 19 BuffChange, 0 none) and the payload's uuid/layer/duration/create time as parsed.
+/// </summary>
+internal readonly record struct BuffEffectTrace(
+    int Type, int BuffUuid, int PayloadKind, int PayloadUuid, int Layer, int DurationMs, long CreateTimeMs);
 
 /// <summary>
 /// Pure parser for the <c>BuffEffectSync</c> sub-message carried in
@@ -31,10 +39,13 @@ internal readonly record struct BuffEventBatch(
 ///     EffectType==18 (AddBuff)    → RawData = BuffInfo   (BaseId etc.)
 ///     EffectType==19 (BuffChange) → RawData = BuffChange (layer/dur/create)
 /// </code>
-/// Per BuffEffect: <c>Type == Remove(2)</c>, or a <c>RemoveLayer(6)</c> carrying no
-/// buff payload → remove BuffUuid; else (incl. RemoveLayer + BuffChange, the
-/// potion/food re-eat time extension) upsert the resolved <see cref="ActiveBuff"/>
-/// (with BuffUuid set). Never throws.
+/// Per BuffEffect: <c>Type == Remove(2)</c>, or a <c>RemoveLayer(6)</c> that leaves
+/// no layers (no buff payload, or a payload whose Layer is 0 / absent — the
+/// consumable's final expiry) → remove BuffUuid; else (incl. RemoveLayer +
+/// BuffChange with layers left, the potion/food re-eat time extension) upsert the
+/// resolved <see cref="ActiveBuff"/> (with BuffUuid set). Never throws.
+/// <c>trace: true</c> (diagnostics) also returns every effect raw in
+/// <see cref="BuffEventBatch.Trace"/>.
 /// </summary>
 internal static class BuffEffectSyncReader
 {
@@ -43,10 +54,11 @@ internal static class BuffEffectSyncReader
     private const int EventRemove = 2;
     private const int EventRemoveLayer = 6;
 
-    public static BuffEventBatch TryRead(ReadOnlySpan<byte> payload)
+    public static BuffEventBatch TryRead(ReadOnlySpan<byte> payload, bool trace = false)
     {
         var upserts = new List<ActiveBuff>(2);
         var removes = new List<int>(1);
+        var traces = trace ? new List<BuffEffectTrace>(2) : null;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -54,16 +66,17 @@ internal static class BuffEffectSyncReader
             if (field == 2 && wire == 2)
             {
                 if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var be)) return BuffEventBatch.None;
-                if (!ApplyBuffEffect(be, upserts, removes)) return BuffEventBatch.None;
+                if (!ApplyBuffEffect(be, upserts, removes, traces)) return BuffEventBatch.None;
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) return BuffEventBatch.None;
         }
-        return new BuffEventBatch(upserts.Count > 0 || removes.Count > 0, upserts, removes);
+        return new BuffEventBatch(upserts.Count > 0 || removes.Count > 0, upserts, removes, traces);
     }
 
-    private static bool ApplyBuffEffect(ReadOnlySpan<byte> payload, List<ActiveBuff> upserts, List<int> removes)
+    private static bool ApplyBuffEffect(ReadOnlySpan<byte> payload, List<ActiveBuff> upserts, List<int> removes,
+        List<BuffEffectTrace>? traces)
     {
-        int type = 0, buffUuid = 0;
+        int type = 0, buffUuid = 0, payloadKind = 0;
         ActiveBuff? info = null;
         int pos = 0;
         while (pos < payload.Length)
@@ -75,16 +88,22 @@ internal static class BuffEffectSyncReader
                 case (2, 0): if (!WireProtocol.TryReadVarint(payload, ref pos, out var u)) return false; buffUuid = (int)u; break;
                 case (5, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var le)) return false;
-                    if (TryReadLogic(le, out var parsed)) info = parsed;   // AddBuff/BuffChange; last wins
+                    if (TryReadLogic(le, out var parsed, out var kind)) { info = parsed; payloadKind = kind; }   // last wins
                     break;
                 default: if (!WireProtocol.SkipField(payload, ref pos, wire)) return false; break;
             }
         }
 
-        // RemoveLayer WITH a buff payload is an UPDATE, not a removal: re-eating a potion/food keeps the same uuid
-        // and announces the extended time as RemoveLayer + BuffChange (owner 2026-10-05; ZDPS reads it the same
-        // way). Only Remove, or a bare RemoveLayer with nothing to update, drops the buff.
-        if (type == EventRemove || (type == EventRemoveLayer && info is null))
+        traces?.Add(info is { } tr
+            ? new BuffEffectTrace(type, buffUuid, payloadKind, tr.BuffUuid, tr.Layer, tr.DurationMs, tr.CreateTimeMs)
+            : new BuffEffectTrace(type, buffUuid, 0, 0, 0, 0, 0));
+
+        // RemoveLayer that still leaves layers is an UPDATE: re-eating a potion/food keeps the same uuid and
+        // announces the extended time as RemoveLayer + BuffChange (owner 2026-10-05; ZDPS reads it the same way).
+        // The consumable's final expiry is ALSO a payload-carrying RemoveLayer, with no layers left (Layer 0 /
+        // absent) — that, Remove, and a bare RemoveLayer with nothing to update all drop the buff.
+        bool removeLayerEnds = type == EventRemoveLayer && (info is null || info.Value.Layer <= 0);
+        if (type == EventRemove || removeLayerEnds)
         {
             removes.Add(buffUuid);
             return true;
@@ -97,9 +116,9 @@ internal static class BuffEffectSyncReader
     // Parses one BuffEffectLogicInfo. Returns true + the resolved ActiveBuff when
     // it carries a buff payload (AddBuff → full; BuffChange → partial). Other
     // logic types (gravity, zoom, …) return false (skipped).
-    private static bool TryReadLogic(ReadOnlySpan<byte> payload, out ActiveBuff buff)
+    private static bool TryReadLogic(ReadOnlySpan<byte> payload, out ActiveBuff buff, out int effectKind)
     {
-        buff = default;
+        buff = default; effectKind = 0;
         int effectType = 0;
         ReadOnlySpan<byte> raw = default;
         bool hasRaw = false;
@@ -114,6 +133,7 @@ internal static class BuffEffectSyncReader
                 default: if (!WireProtocol.SkipField(payload, ref pos, wire)) return false; break;
             }
         }
+        effectKind = effectType;
         if (!hasRaw) return false;
         if (effectType == LogicAddBuff)
             return BuffInfoReader.TryRead(raw, out buff);
