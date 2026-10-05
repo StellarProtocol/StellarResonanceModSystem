@@ -135,6 +135,15 @@ public sealed record BarElement(
     /// WindowBuilder-Patterns.md "Binary compatibility rules"). Honoured only on the <see cref="BarStyle.Modern"/>
     /// path; the Default bar path keeps using the static <see cref="LabelColor"/>.</summary>
     public Func<ColorRgba?>? LabelColorFn { get; init; }
+    /// <summary><see cref="BarStyle.Modern"/> fill colour, evaluated PER REFRESH so it can track which item occupies
+    /// a reused/pooled row slot — the static <see cref="Fill"/> ctor arg is captured once and cannot (e.g. the Nearby
+    /// Monsters list colouring the HP fill by monster rank in the same recycled row). <see cref="FillColorFn"/>
+    /// non-null wins; returning null falls back to the static <see cref="Fill"/>. Default null → unchanged; a Modern
+    /// bar that leaves it null renders with the static <see cref="Fill"/> exactly as before, with no override
+    /// machinery attached. Added as an init property (NOT a positional ctor param) so the record stays source +
+    /// binary compatible with already-compiled plugins (see WindowBuilder-Patterns.md "Binary compatibility rules").
+    /// Honoured on the <see cref="BarStyle.Modern"/> path and the Default (window) bar path.</summary>
+    public Func<ColorRgba?>? FillColorFn { get; init; }
     /// <summary>Visual style. <see cref="BarStyle.Default"/> (0) = today's rounded-pill render; <see cref="BarStyle.Modern"/>
     /// = the CombatMeter metric-bar look (flat translucent track + flat role-coloured anchor-clipped fill + dual
     /// left/right overlay text). Existing bars omit it → render unchanged.</summary>
