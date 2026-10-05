@@ -18,7 +18,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 _**2.18.0** (minor) — a two-axis pad control for plugin windows. Adds API for plugins (Abstractions 2.18.0); additive, no plugin rebuild._
 ### Added
 - A new control for plugins: a square pad you click or drag to set two values at once — for example, where a character looks in Photo Studio.
+### Fixed
+- Dragging inside a colour picker (the colour square or the hue bar) no longer scrolls the window at the same time.
 ### Developer notes
+- Drag sink: `UGuiPrimitives.AddDragSink` puts a non-interactable `Slider` (no target graphic, transition and navigation off) on the raycast target of the XY pad and of the colour picker's SV square and hue bar, so uGUI drag events stop there instead of bubbling to the window's `ScrollRect`; the mouse wheel still scrolls the window over them. The pointer itself is still read by the window interaction ticker.
 - New `XYPadElement(Func<(float X, float Y)> Get, Action<float, float> Set, float Min = -1f, float Max = 1f, Func<bool>? Enabled = null) : HudElement`, with `Size` (init; square side in px, 0 = fill the cell width) and `GridLines` (init; divisions per axis, default 8; the centre crosshair is always drawn). X grows right, Y grows UP (the top edge is `Max`). A press or a drag anywhere on the pad sets the value from the pointer, clamped; `Set` runs on press and on every drag frame, like `SliderElement` (no release callback — persist from `Set`). `Get` is poll-diffed, so the dot follows external changes; `Enabled` false dims the pad and ignores the pointer. Window surface only (like the slider). Pointer mapping: `Stellar.Application.Services.XYPadMapping` (tested); the uGUI builder is `WindowBuilder.XYPad.cs` (drag via the window interaction ticker, as the colour picker's SV square).
   ```csharp
   new XYPadElement(() => (_aim.X, _aim.Y), (x, y) => { _aim = new(x, y); SaveAim(); }) { Size = 120f, GridLines = 8 }
