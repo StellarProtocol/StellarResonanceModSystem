@@ -14,6 +14,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.19.0] - 2026-10-05
+_**2.19.0** (minor) — one-line and multi-line text boxes for plugin windows, plus per-row bar colours. Adds API for plugins (Abstractions 2.19.0); additive, no plugin rebuild._
+### Added
+- Plugins can now use one-line text boxes that stay one line. Long or pasted text scrolls sideways instead of making the window grow.
+- Pressing Enter in these one-line boxes no longer briefly opens the game chat.
+- A new multi-line text box for plugins, with a scrollbar and mouse-wheel scrolling. It can also be read-only, so you can select and copy its text without changing it.
+- Bars in plugin lists can now change colour on each row, for example red for a boss and yellow for an elite.
+### Developer notes
+- New `InputElement.SingleLine` (init, default `false`; existing fields unchanged). A true one-line field that never grows: it uses uGUI `LineType.SingleLine`, because `MultiLineNewline` makes `InputField.EnforceTextHOverflow()` force `Wrap`. Long text scrolls sideways in uGUI's draw window, clipped by a `RectMask2D`. Pasted `\r`/`\n` are stripped in `onValueChanged` and forwarded as a change, never a submit. Enter submits AND ends editing (one press = one submit). The field deactivates while Enter is still held, and the keyboard gate samples `IsFocused` on the throttled tick, so a submit arms a grace: `UGuiTextInput.IsFocused` stays true while Enter/KeypadEnter is held plus 0.15 s after release, and the game never opens chat. The grace also covers a submit that hides (parks) the window. Esc and click-away blur report unfocused immediately. Validated in-game.
+- New `TextAreaElement(Func<string> Get, Action<string> OnChange, float Width = 260f) : HudElement`, with `Lines` (init, default 4; the visible line count sets the fixed box height) and `ReadOnly` (init). Enter inserts a newline and keeps focus. There is **no submit**: give the window its own button that reads the buffer captured from `OnChange` (full text, newlines kept). The box is a `ScrollRect` (themed scrollbar, mouse wheel, 8 px / 6 px inner padding) around a field that grows to its wrapped text, so uGUI's draw window never slices it. A focused caret move or edit scrolls the minimum needed to keep the caret line in view. Caret and selection are clipped to the viewport with `CanvasRenderer.EnableRectClipping`, because `RectMask2D` doesn't clip InputField's raw caret renderer. `ReadOnly` maps to `InputField.readOnly`: focus, caret, selection, Ctrl+A and Ctrl+C work; typing, paste, cut and delete are blocked. `Get` still replaces the text and may echo through `OnChange`, so pass a no-op there. The read-only background is slightly more translucent. When the text fits, the wheel over the box does not reach an enclosing `ScrollElement`. Built; only the no-growth layout is validated in-game so far.
+  ```csharp
+  new TextAreaElement(() => _draft, s => _draft = s, Width: 320f) { Lines = 6 },
+  new ButtonElement(() => "Import", () => Import(_draft))
+  ```
+- Layout fix: uGUI `InputField` is itself an `ILayoutElement` (priority 1), and on a priority tie `LayoutUtility` takes the MAX, so a sibling `LayoutElement` at the default priority could not stop wrapped text from growing the field (height, or width once it overflows). Fixed-box fields (`SingleLine`, and the outer box of `TextAreaElement`) now pin `layoutPriority = 2`. The default `InputElement` mode keeps priority 1 and is unchanged.
+- New `BarElement.FillColorFn` and `BarElement.LabelColorFn` (both `Func<ColorRgba?>?`, init, default null). They are evaluated per refresh, so a pooled or recycled list row can follow the item it currently shows; the static `Fill` / `LabelColor` are captured once at build. Returning null falls back to `Fill`, or to `LabelColor` and then white. `FillColorFn` is honoured on both the `BarStyle.Modern` and the Default window bar paths; `LabelColorFn` only on `Modern` (the primary left/inside label).
+- Internal file-size splits, no behaviour change: `WindowBuilder.WindowToken` moved to `WindowBuilder.Token.cs`, `UGuiTextInput.Build` was split for the 50-LoC method gate, and the TextArea mode lives in `UGuiTextInput.TextArea.cs`.
+
 ## [2.18.0] - 2026-10-05
 _**2.18.0** (minor) — a two-axis pad control for plugin windows. Adds API for plugins (Abstractions 2.18.0); additive, no plugin rebuild._
 ### Added

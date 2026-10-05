@@ -19,6 +19,10 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.19.0 adds <c>InputElement.SingleLine</c> (a true one-line field: never grows, scrolls sideways, strips pasted
+    /// newlines, Enter submits and ends editing; a submit grace on <c>IsFocused</c> keeps Enter from opening chat),
+    /// <c>TextAreaElement</c> (fixed-height multi-line box with a themed scrollbar; <c>Lines</c>, <c>ReadOnly</c>) and
+    /// per-row <c>BarElement.FillColorFn</c>/<c>LabelColorFn</c>; fixed-box fields pin <c>layoutPriority</c> 2. Additive.
     /// 2.18.0 adds <c>XYPadElement</c>: a two-axis pad (grid + centre crosshair + dot; click or drag sets X/Y over
     /// [Min, Max], Y up; <c>Set</c> on every drag frame like <c>SliderElement</c>; <c>Size</c>, <c>GridLines</c>). Additive.
     /// 2.17.1 is the stable release of the 2.17 line (identical code to the 2.17.0 testing build).
@@ -264,5 +268,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.18.0";
+    public const string Value = "2.19.0";
 }
