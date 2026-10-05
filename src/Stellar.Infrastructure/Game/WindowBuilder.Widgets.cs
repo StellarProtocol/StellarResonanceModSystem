@@ -295,10 +295,11 @@ internal sealed partial class WindowBuilder
         token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get() });
     }
 
-    // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows) where Enter is a
-    // real newline that keeps focus (NOT submit; the plugin submits via its own button reading OnChange), text
-    // wraps and overflows are clipped + scrolled vertically so the window never grows. Mirrors BuildInput for
-    // seeding / theming / field-tick registration; no onSubmit (multi-line mode never submits on Enter).
+    // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where
+    // Enter is a real newline that keeps focus (NOT submit; the plugin submits via its own button reading OnChange).
+    // Text wraps; the field grows inside a ScrollRect (UGuiTextInput.TextArea.cs) that gets the SAME themed
+    // scrollbar as BuildScroll (AutoHide, re-tinted on theme change), inset inside the box padding — the window
+    // never grows. Mirrors BuildInput for seeding / theming / field-tick registration; no onSubmit.
     private void BuildTextArea(TextAreaElement ta, Transform parent, WindowToken token)
     {
         var onChange = ta.OnChange;
@@ -308,8 +309,10 @@ internal sealed partial class WindowBuilder
         le.preferredWidth = ta.Width; le.flexibleWidth = 0f;
         field.SetFont(_assets.MenuFont);
         field.SetText(ta.Get());
-        // Same chrome theming as BuildInput: dark rounded inset + light text + left padding (see BuildInput).
-        field.ApplyStyle(_assets.Capsule, new Color(0.05f, 0.07f, 0.10f, 0.95f), new Color(0.92f, 0.94f, 0.97f, 1f), 8f);
+        // Same chrome theming as BuildInput: dark rounded inset + light text (see BuildInput); the bg lands on the
+        // outer box, the pad is the TextArea's left/right inner padding (right side also clears the bar lane).
+        field.ApplyStyle(_assets.Capsule, new Color(0.05f, 0.07f, 0.10f, 0.95f), new Color(0.92f, 0.94f, 0.97f, 1f), UGuiTextInput.TextAreaPadX);
+        if (field.TextAreaScroll is { } sr) { BuildScrollbar(sr, go, token); field.InsetTextAreaScrollbar(); }
         _registerField?.Invoke(field);
         token.Fields.Add(field);
         token.FieldSyncs.Add(new FieldBinding { Field = field, Get = ta.Get, Last = ta.Get() });
