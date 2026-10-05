@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.18.1] - 2026-10-05
+_**2.18.1** (patch) — re-applied buffs no longer disappear from the plugins that show them. No API change, no plugin rebuild._
+### Fixed
+- Eating a potion or food again to add more time no longer makes that buff disappear from the CombatMeter's Buffs & Debuffs icons, for you and for party members. The buff stays and shows its longer time.
+### Developer notes
+- `BuffEffectSyncReader`: a `BuffEffect` of type `RemoveLayer(6)` that carries a buff payload (AddBuff/BuffChange) is now an UPSERT, not a removal. The game re-applies a stacking consumable on the SAME buff uuid and announces the extended duration as RemoveLayer + BuffChange; the reader dropped the payload and removed the still-live buff, so `ICombatLookup.BuffsFor`, `CombatEvent.BuffChanged` (a spurious `Removed`) and anything downstream (CombatMeter's buff spool/uploads) lost it until the next AOI re-seed. Measured on a real spool: Potion 2033179 "removed" at the re-eat, then expired by the game at create + 2×600 s. `Remove(2)` still removes; a bare RemoveLayer with no payload keeps the old removal behaviour. Pinned by `BuffEffectSyncReaderTests`.
+
 ## [2.18.0] - 2026-10-05
 _**2.18.0** (minor) — a two-axis pad control for plugin windows. Adds API for plugins (Abstractions 2.18.0); additive, no plugin rebuild._
 ### Added
