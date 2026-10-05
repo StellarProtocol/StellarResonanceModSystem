@@ -6,8 +6,10 @@ using UnityEngine.UI;
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// Reusable uGUI text field (single-line OR multi-line) that (1) submits on Enter WITHOUT losing focus — so the game's
-/// chat-open guard (which fires only when no field is focused) never triggers — and (2) never traps the
+/// Reusable uGUI text field (default / single-line / multi-line) that (1) submits on Enter without the game's
+/// chat-open guard (which fires only when no field is focused) ever seeing an unfocused frame — the default mode
+/// never loses focus; single-line mode does (uGUI SingleLine deactivates on Enter) but <see cref="IsFocused"/>
+/// bridges that gap with a submit grace — and (2) never traps the
 /// user: while focused it forces a free, visible cursor (so the user can always click out — replacing the
 /// game's Alt-to-free-cursor, which is suppressed during focus) and honours Esc to defocus. Pure
 /// UnityEngine.UI (no Il2CppInterop) so it builds identically in the headless UI sandbox and in-game.
@@ -28,7 +30,11 @@ internal sealed class UGuiTextInput
     private bool _enterLatched;      // one-press-one-submit: blocks key-repeat from firing submit every frame
     private bool _strippingNewline;  // re-entrancy guard for text reset inside onValueChanged
     private bool _multiLine;         // multi-line mode: Enter inserts a real newline + keeps focus (no strip, no submit)
+    private bool _singleLine;        // single-line mode: uGUI SingleLine lineType; Enter submits via onSubmit + deactivates
+    private bool _submitGrace;       // single-line: a submit just deactivated the field — keep reporting focus (see IsFocused)
+    private float _graceReleaseAt = -1f;   // unscaled time Enter was seen released during the grace (-1 = still held)
     private const float MultiLineRowPx = 16f;   // approx line-box height for the 13-px field font; fixes the box height
+    private const float SubmitGraceTailSec = 0.15f;   // focus tail after Enter is released (input-update ordering slack)
 
     public UGuiTextInput(Action<string>? onSubmit = null, Action<bool>? onFocusChanged = null, Action<string>? onChange = null)
     {
@@ -37,20 +43,23 @@ internal sealed class UGuiTextInput
         _onChange = onChange;
     }
 
-    /// <summary>True while the field holds keyboard focus — the signal KeyboardInputGate consumes.</summary>
-    public bool IsFocused => _field != null && _field.isFocused;
+    /// <summary>True while the field holds keyboard focus — the signal KeyboardInputGate consumes. In single-line
+    /// mode it ALSO stays true through the submit grace (Enter held + a short tail after release), see
+    /// <see cref="SubmitGraceActive"/>.</summary>
+    public bool IsFocused => _field != null && (_field.isFocused || SubmitGraceActive());
 
     /// <summary>Current field text (empty when not built).</summary>
     public string Text => _field != null ? _field.text : string.Empty;
 
     /// <summary>Builds the field under <paramref name="parent"/> and returns its root GameObject.
     /// Visuals mirror the prior raw spike InputField (white bg, black 13px MiddleLeft text).
-    /// <para><paramref name="singleLine"/> (opt-in, default false → unchanged) renders one visible line that
-    /// NEVER grows vertically: the LayoutElement height is pinned (min == preferred, flexibleHeight 0), the
-    /// text overflows horizontally instead of wrapping, and a RectMask2D clips the overflow to the box so
-    /// long/pasted text scrolls sideways within the field rather than wrapping to more lines and growing the
-    /// field (and, in an auto-height window, the window). The <c>lineType</c> stays MultiLineNewline in BOTH
-    /// modes — switching to SingleLine here would reintroduce the chat-flash-on-Enter bug documented below.</para>
+    /// <para><paramref name="singleLine"/> (opt-in, default false → unchanged) is a TRUE uGUI single line
+    /// (<c>lineType = SingleLine</c>): the text never wraps and the caret scrolls the visible window sideways on
+    /// long/pasted text, inside a fixed box whose LayoutElement out-ranks InputField's own ILayoutElement
+    /// (<c>layoutPriority</c> 2, height pinned) so it can never grow the field — or an auto-height window.
+    /// MultiLineNewline can NOT do this (uGUI's EnforceTextHOverflow forces Wrap whenever multiLine). Enter submits
+    /// via <c>onSubmit</c>; uGUI then deactivates the field, and the resulting unfocused gap that would flash the
+    /// game's chat open is bridged by the submit grace in <see cref="IsFocused"/>.</para>
     /// <para><paramref name="multiLine"/> (opt-in, default false → unchanged; mutually exclusive with
     /// <paramref name="singleLine"/>) is a true multi-line editable box of a FIXED height
     /// (<paramref name="lines"/> visible rows) that NEVER grows the window: text WRAPS within the box width and
@@ -62,6 +71,7 @@ internal sealed class UGuiTextInput
         if (_field != null)
             throw new InvalidOperationException("UGuiTextInput.Build called twice; call Destroy first.");
         _multiLine = multiLine;
+        _singleLine = singleLine && !multiLine;   // mutually exclusive (no caller passes both); multiLine wins
         // Fixed box height: single line = 28; multi line = lines × a 16-px line box + 8-px vertical padding.
         float boxHeight = multiLine ? (lines < 1 ? 1 : lines) * MultiLineRowPx + 8f : 28f;
         var go = NewChild("UGuiTextInput", parent);
@@ -89,17 +99,29 @@ internal sealed class UGuiTextInput
         // white text"; the "sometimes black" is the pre-transition frame). Transition.None keeps the themed
         // colours in every state; the blinking caret is the focus affordance.
         _field.transition = Selectable.Transition.None;
-        // MultiLineNewline is the ONLY mode uGUI does NOT deactivate on Enter. SingleLine returns
-        // EditState.Finish on Enter -> DeactivateInputField() runs right after onEndEdit -> the field
-        // loses focus for a frame -> the game (chat opens only when no field is focused) flashes chat
-        // open then closed. We stay in MultiLineNewline and strip the '\n' in onValueChanged (full
-        // UTF-16 string — no char-level IL2CPP truncation) and fire submit there, so the field never
-        // deactivates and chat never opens. onValidateInput is NOT used: its char parameter is truncated
-        // to 8 bits across the IL2CPP delegate bridge, breaking non-ASCII input (e.g. Thai).
-        _field.lineType = InputField.LineType.MultiLineNewline;
-        _field.text = string.Empty;
-        _field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(OnFieldValueChanged));
+        ConfigureLineMode(_field);
         return go;
+    }
+
+    // Line type + listeners.
+    // DEFAULT + MULTI-LINE: MultiLineNewline is the ONLY mode uGUI does NOT deactivate on Enter. SingleLine returns
+    // EditState.Finish on Enter -> DeactivateInputField() -> the field loses focus for a frame -> the game (chat
+    // opens only when no field is focused) flashes chat open. The default mode therefore stays in MultiLineNewline,
+    // strips the '\n' in onValueChanged (full UTF-16 string — no char-level IL2CPP truncation) and submits there;
+    // multi-line keeps the '\n'. onValidateInput is NOT used: its char parameter is truncated to 8 bits across the
+    // IL2CPP delegate bridge, breaking non-ASCII input (e.g. Thai).
+    // SINGLE-LINE: MultiLineNewline can never be a non-wrapping line — uGUI's EnforceTextHOverflow (run on the
+    // lineType setter) forces textComponent.horizontalOverflow = Wrap whenever multiLine, overriding our Overflow,
+    // and its caret scrolling is line-based (never sideways). So single-line uses the real SingleLine lineType
+    // (the InputField default — the setter is a no-op, our Overflow stands), submits from onSubmit (Enter only:
+    // Esc sets m_WasCanceled, click-away goes through OnDeselect — neither fires onSubmit), and accepts the
+    // Enter deactivation; the chat flash it would cause is neutralised by the submit grace in IsFocused.
+    private void ConfigureLineMode(InputField field)
+    {
+        field.lineType = _singleLine ? InputField.LineType.SingleLine : InputField.LineType.MultiLineNewline;
+        field.text = string.Empty;
+        field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(OnFieldValueChanged));
+        if (_singleLine) field.onSubmit.AddListener((UnityEngine.Events.UnityAction<string>)(OnFieldSubmit));
     }
 
     // Single/multi line: pin the field to a FIXED box so it can NEVER grow vertically no matter how much text it
@@ -110,10 +132,16 @@ internal sealed class UGuiTextInput
     // line scrolls sideways, multi line scrolls down). RectMask2D clips descendants (the Text child); the bg Image
     // sits on this same GO (fills the rect exactly) so clipping it to itself is a no-op. No-op in the default
     // (neither flag) mode, so that path is byte-for-byte unchanged.
+    // SINGLE-LINE also raises layoutPriority to 2: InputField is ITSELF an ILayoutElement (priority 1) reporting the
+    // text's preferred height AND width, and on a priority TIE LayoutUtility takes the MAX — so the text's size beat
+    // our pinned 28 / Width and a long paste still grew the field (wider, with Overflow) and the window. Priority 2
+    // makes every value we set win outright (minHeight is already pinned in Build); unset (-1) values still fall
+    // through to InputField. Multi-line is left at priority 1 (unchanged) for now.
     private static void ConfigureFixedBox(GameObject go, LayoutElement le, bool singleLine, bool multiLine, float boxHeight)
     {
         if (!(singleLine || multiLine)) return;
         le.preferredHeight = boxHeight; le.flexibleHeight = 0f;
+        if (singleLine && !multiLine) le.layoutPriority = 2;
         go.AddComponent<RectMask2D>();
     }
 
@@ -180,7 +208,7 @@ internal sealed class UGuiTextInput
         if (_field == null) return;
         // Release the submit latch once Enter is no longer held, so the NEXT press submits again
         // (held Enter / OS key-repeat fires one submit, not one per frame).
-        if (!Input.GetKey(KeyCode.Return) && !Input.GetKey(KeyCode.KeypadEnter)) _enterLatched = false;
+        if (!EnterHeld()) _enterLatched = false;
         var focused = _field.isFocused;
 
         if (focused && !_wasFocused)
@@ -215,6 +243,7 @@ internal sealed class UGuiTextInput
         }
         _wasFocused = false;   // always reset so a later Build() on a reused instance is clean
         _enterLatched = false;
+        _submitGrace = false;
         _field = null;
     }
 
@@ -225,6 +254,9 @@ internal sealed class UGuiTextInput
     // the re-entrant onValueChanged that fires when we assign _field.text = clean.
     // MULTI-LINE mode: Enter is a real newline, so we must NOT strip it and must NOT submit — the strip+submit
     // branch is skipped and the '\n' flows straight through to _onChange (full buffer, newlines kept).
+    // SINGLE-LINE mode: Enter never reaches here (SingleLine finishes the edit before appending), so a newline can
+    // only come from a PASTE — strip it (a multi-line code collapses to one line; done here rather than trusting
+    // the uGUI version's own paste filtering) and pass the clean text on as a CHANGE, never a submit.
     private void OnFieldValueChanged(string value)
     {
         if (_strippingNewline) return;
@@ -234,14 +266,44 @@ internal sealed class UGuiTextInput
             _strippingNewline = true;
             try { if (_field != null) _field.text = clean; }
             finally { _strippingNewline = false; }
-            if (!_enterLatched) { _enterLatched = true; _onSubmit?.Invoke(clean); }
+            if (_singleLine) _onChange?.Invoke(clean);
+            else if (!_enterLatched) { _enterLatched = true; _onSubmit?.Invoke(clean); }
             return;
         }
         _onChange?.Invoke(value);
     }
 
-    // DeactivateInputField fires onEndEdit — no listener is registered (submit is handled in
-    // OnValidateInput), so this is safe; note the coupling if an onEndEdit listener is ever added.
+    // SINGLE-LINE submit: onSubmit fires on Enter only. Same one-press-one-submit latch as the default mode (Tick
+    // releases it once Enter is up). uGUI deactivates the field right after this returns, so arm the submit grace:
+    // IsFocused keeps reporting focus while Enter is held, so KeyboardInputGate (sampled on the THROTTLED framework
+    // tick, which can land in the unfocused gap) never un-suppresses the game keyboard with Enter still down.
+    private void OnFieldSubmit(string value)
+    {
+        _submitGrace = true; _graceReleaseAt = -1f;
+        if (_enterLatched) return;
+        _enterLatched = true;
+        _onSubmit?.Invoke(value);
+    }
+
+    // Submit grace: true from a single-line submit until Enter has been released for SubmitGraceTailSec (the tail
+    // covers Rewired-vs-framework-tick update ordering around the key-up). Polled live from IsFocused, so it ends on
+    // its own even if Tick stops; it is armed ONLY by a submit, so Esc / click-away blurs report unfocused at once.
+    private bool SubmitGraceActive()
+    {
+        if (!_submitGrace) return false;
+        if (EnterHeld()) { _graceReleaseAt = -1f; return true; }
+        var now = Time.unscaledTime;
+        if (_graceReleaseAt < 0f) _graceReleaseAt = now;
+        if (now - _graceReleaseAt < SubmitGraceTailSec) return true;
+        _submitGrace = false;
+        return false;
+    }
+
+    private static bool EnterHeld() => Input.GetKey(KeyCode.Return) || Input.GetKey(KeyCode.KeypadEnter);
+
+    // DeactivateInputField fires onEndEdit — no listener is registered (submit is handled in onValueChanged /
+    // onSubmit, and onSubmit does NOT fire on Esc), so this is safe; note the coupling if an onEndEdit listener is
+    // ever added.
     private void Defocus()
     {
         _field?.DeactivateInputField();
