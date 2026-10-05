@@ -167,16 +167,15 @@ internal sealed partial class WindowBuilder
         internal int ZFront;     // BringToFront counter — non-zero overrides ZCat/ZSeq; higher = more recently fronted
         private bool _laidOut;   // first structural layout done? (mount = immediate; later per-tick = deferred)
 
-        /// <summary>Re-arm the immediate first-layout path. Called when a window is re-shown after being hidden so
-        /// a content-sized popup (e.g. a cursor-positioned context menu whose item count changed while hidden)
-        /// gets a synchronous size rebuild the same frame it reappears, instead of showing one frame at the
-        /// previous open's size (the deferred MarkLayoutForRebuild path).</summary>
+        /// <summary>Re-arm the immediate first-layout path when a hidden window is re-shown, so a content-sized popup
+        /// sizes the same frame it reappears instead of one frame at its previous size (deferred rebuild path).</summary>
         internal void ResetLayout() => _laidOut = false;
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<StyledTextBinding> StyledTexts = new();   // TMP real-bold emphasis headers
         internal readonly List<ButtonBinding> Buttons = new();
         internal readonly List<ToggleBinding> Toggles = new();
         internal readonly List<SliderBinding> Sliders = new();
+        internal readonly List<XYPadBinding> XYPads = new();   // .XYPad.cs: dot follows Get, enabled dim, square fill
         internal readonly List<UGuiTextInput> Fields = new();
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
@@ -271,6 +270,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < Buttons.Count; i++) Buttons[i].Apply();
             for (var i = 0; i < Toggles.Count; i++) Toggles[i].Apply();
             for (var i = 0; i < Sliders.Count; i++) Sliders[i].Apply();
+            for (var i = 0; i < XYPads.Count; i++) XYPads[i].Apply();
             for (var i = 0; i < Swatches.Count; i++) Swatches[i].Apply();
             for (var i = 0; i < Bars.Count; i++) Bars[i].Apply();
             for (var i = 0; i < Pickers.Count; i++) Pickers[i].Apply();
@@ -312,8 +312,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    // Binding inner-classes (Slider/Text/Button/Toggle/Swatch/Bar/FrameOpacity/Cond/List/Hover/Selectable)
-    // live in the sibling partial WindowBuilder.Bindings.cs (split out for the file-size gate).
+    // Binding inner-classes live in the sibling partial WindowBuilder.Bindings.cs (split out for the file-size gate).
 
     // ---- recursive builder ----
 
@@ -335,6 +334,7 @@ internal sealed partial class WindowBuilder
             case ButtonElement b:  BuildButton(b, parent, token); break;       // .Widgets.cs
             case ToggleElement tg: BuildToggle(tg, parent, token); break;      // .Widgets.cs
             case SliderElement sl: BuildSlider(sl, parent, token); break;      // .Widgets.cs
+            case XYPadElement xy: BuildXYPad(xy, parent, token); break;        // .XYPad.cs
             case InputElement inp: BuildInput(inp, parent, token); break;      // .Widgets.cs
             case DropdownElement dd: BuildDropdown(dd, parent, token); break;  // .Dropdown.cs
             case ScrollElement sc: BuildScroll(sc, parent, token); break;      // .Widgets.cs

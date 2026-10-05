@@ -47,9 +47,10 @@ public sealed class ContractTests
     }
 
     // ReShade support ships in framework 2.17.0 (IPluginDownloads, IReShade, CaptureRequest.ApplyReShade, CaptureResult.Notes);
-    // 2.17.1 is its stable release (same code). The exact pin follows the current version.
+    // 2.17.1 is its stable release (same code). The exact current-version pin lives with the newest feature (XYPad, 2.18.0).
     [Fact]
-    public void Framework_version_is_2_17_1() => Assert.Equal("2.17.1", FrameworkVersion.Value);
+    public void Framework_version_is_at_least_2_17_0() =>   // ReShade shipped in 2.17.0; later releases keep it
+        Assert.True(System.Version.Parse(FrameworkVersion.Value) >= new System.Version(2, 17, 0), FrameworkVersion.Value);
 
     [Fact]
     public void CaptureResult_Notes_defaults_to_empty_for_ok_and_fail()
