@@ -111,6 +111,15 @@ internal sealed partial class UGuiTextInput
         rt.sizeDelta = new Vector2(TextAreaBarWidth, -2f * TextAreaPadY);
     }
 
+    /// <summary>Select/copy-only (TextAreaElement.ReadOnly). Stock uGUI <c>readOnly</c> gates only the EDIT paths
+    /// (Append, Backspace/Delete, paste, cut, IME); focus, caret, mouse/keyboard selection, Ctrl+A and Ctrl+C still
+    /// run, so IsFocused / the keyboard gate / caret-follow are untouched. The <c>text</c> setter is NOT gated, so the
+    /// FieldBinding re-seed from Get() keeps working. No-op if not built.</summary>
+    internal void SetReadOnly(bool readOnly)
+    {
+        if (_field != null) _field.readOnly = readOnly;
+    }
+
     // onValueChanged fires BEFORE InputField's UpdateLabel (SendOnValueChangedAndUpdateLabel). Growing the field NOW
     // means UpdateLabel slices against the new height (whole text fits → no draw-window scroll, no hidden first line
     // after a multi-line paste). Then (re)arm the caret follow.

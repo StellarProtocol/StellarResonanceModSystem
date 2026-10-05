@@ -119,16 +119,27 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
 /// window: text wraps within the width and overflows downward, clipped to the box and scrolled vertically to
 /// follow the caret. Esc defocuses and the cursor stays free, same as <see cref="InputElement"/>.
 /// <paramref name="Get"/> seeds the text; <paramref name="OnChange"/> fires per edit with the FULL buffer
-/// (newlines included). This is a brand-new record, so its positional parameters are safe to add; keep any later
-/// additions as <c>init</c> properties (see WindowBuilder-Patterns.md "Binary compatibility rules").</summary>
-/// <param name="Get">Supplies the initial text (and re-seeds on external change, diffed like InputElement).</param>
-/// <param name="OnChange">Invoked per edit with the full buffer (newlines kept) — the plugin's submit button reads this.</param>
+/// (newlines included). Set <see cref="ReadOnly"/> for a select/copy-only display box (e.g. a generated code the
+/// user copies out). Add any later options as <c>init</c> properties, never new positional parameters (see
+/// WindowBuilder-Patterns.md "Binary compatibility rules").</summary>
+/// <param name="Get">Supplies the initial text (and re-seeds on external change, diffed like InputElement). It keeps
+/// driving the content when <see cref="ReadOnly"/>: change what it returns to replace the shown text.</param>
+/// <param name="OnChange">Invoked per edit with the full buffer (newlines kept) — the plugin's submit button reads this.
+/// With <see cref="ReadOnly"/> the user can't edit, so it never fires from user input (a <paramref name="Get"/>
+/// re-seed may still echo through it); it stays required for API stability — pass a no-op.</param>
 /// <param name="Width">Fixed box width in px.</param>
 public sealed record TextAreaElement(Func<string> Get, Action<string> OnChange, float Width = 260f) : HudElement
 {
     /// <summary>Number of visible text lines → the box's FIXED height (it never grows past this; overflow
     /// scrolls). Default 4. An init property so future additions stay binary-compatible.</summary>
     public int Lines { get; init; } = 4;
+
+    /// <summary>Read-only display (uGUI <c>InputField.readOnly</c>): the user can still focus the box, place the
+    /// caret, select with mouse or keyboard (Shift+arrows, Ctrl+A) and copy (Ctrl+C), but typing, paste, cut and
+    /// delete are blocked. Scrollbar, wheel and caret-follow keep working; focus suppresses the game's keys as
+    /// usual, so Ctrl+C never reaches a game binding. The box bg is drawn slightly more translucent as a subtle
+    /// "not editable" hint. Default false = the normal editable box, unchanged. An init property (binary-compatible).</summary>
+    public bool ReadOnly { get; init; }
 }
 
 /// <summary>Compact dropdown for a small, fixed set of mutually-exclusive choices (e.g. a mode selector) — a
