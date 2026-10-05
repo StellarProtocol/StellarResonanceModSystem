@@ -70,6 +70,51 @@ public sealed class BuffEffectSyncReaderTests
         Assert.Equal(100, batch.Removes[0]);
     }
 
+    // REGRESSION (owner 2026-10-05): re-eating a potion/food keeps the SAME buff uuid and the server announces the
+    // extended time as RemoveLayer(6) + a BuffChange. Treating it as a removal dropped the still-live buff from
+    // BuffsFor (meter Buffs & Debuffs block). Measured on the owner's spool: Potion 2033179 uuid 47438 "removed" at
+    // the re-eat, then the game expired it at create + 2×600 s. RemoveLayer WITH buff data is an update.
+    [Fact]
+    public void RemoveLayer_WithBuffChange_IsRefreshUpsert_NotRemoval()
+    {
+        var payload = Sync(Effect(type: 6, buffUuid: 47438,
+            Logic(19, BuffChange(layer: 1, dur: 1_200_000, create: 1_791_177_508_724))));
+
+        var batch = BuffEffectSyncReader.TryRead(payload);
+
+        Assert.True(batch.Touched);
+        Assert.Empty(batch.Removes);
+        Assert.Single(batch.Upserts);
+        Assert.Equal(47438,     batch.Upserts[0].BuffUuid);
+        Assert.Equal(1_200_000, batch.Upserts[0].DurationMs);
+        Assert.Equal(1_791_177_508_724, batch.Upserts[0].CreateTimeMs);
+    }
+
+    [Fact]
+    public void RemoveLayer_WithBuffInfo_IsUpsert_NotRemoval()
+    {
+        var payload = Sync(Effect(type: 6, buffUuid: 100,
+            Logic(18, BuffInfo(buffUuid: 100, baseId: 2033179, dur: 1_200_000, create: 1_700_000_000_000))));
+
+        var batch = BuffEffectSyncReader.TryRead(payload);
+
+        Assert.Empty(batch.Removes);
+        Assert.Single(batch.Upserts);
+        Assert.Equal(2033179, batch.Upserts[0].BaseId);
+    }
+
+    // A bare RemoveLayer (no buff payload) keeps the pre-fix removal behaviour — nothing to update with, and keeping
+    // it could strand a buff that never gets a Remove(2).
+    [Fact]
+    public void RemoveLayer_WithoutPayload_StillRemoves()
+    {
+        var batch = BuffEffectSyncReader.TryRead(Sync(Effect(type: 6, buffUuid: 100)));
+
+        Assert.Empty(batch.Upserts);
+        Assert.Single(batch.Removes);
+        Assert.Equal(100, batch.Removes[0]);
+    }
+
     [Fact]
     public void BuffChange_ProducesPartialUpsert_BaseIdZero_BuffUuidFromEffect()
     {

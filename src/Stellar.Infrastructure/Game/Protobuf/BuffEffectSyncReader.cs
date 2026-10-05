@@ -31,9 +31,10 @@ internal readonly record struct BuffEventBatch(
 ///     EffectType==18 (AddBuff)    → RawData = BuffInfo   (BaseId etc.)
 ///     EffectType==19 (BuffChange) → RawData = BuffChange (layer/dur/create)
 /// </code>
-/// Per BuffEffect: <c>Type ∈ {Remove(2), RemoveLayer(6)}</c> → remove BuffUuid;
-/// else upsert the resolved <see cref="ActiveBuff"/> (with BuffUuid set). Never
-/// throws.
+/// Per BuffEffect: <c>Type == Remove(2)</c>, or a <c>RemoveLayer(6)</c> carrying no
+/// buff payload → remove BuffUuid; else (incl. RemoveLayer + BuffChange, the
+/// potion/food re-eat time extension) upsert the resolved <see cref="ActiveBuff"/>
+/// (with BuffUuid set). Never throws.
 /// </summary>
 internal static class BuffEffectSyncReader
 {
@@ -80,7 +81,10 @@ internal static class BuffEffectSyncReader
             }
         }
 
-        if (type == EventRemove || type == EventRemoveLayer)
+        // RemoveLayer WITH a buff payload is an UPDATE, not a removal: re-eating a potion/food keeps the same uuid
+        // and announces the extended time as RemoveLayer + BuffChange (owner 2026-10-05; ZDPS reads it the same
+        // way). Only Remove, or a bare RemoveLayer with nothing to update, drops the buff.
+        if (type == EventRemove || (type == EventRemoveLayer && info is null))
         {
             removes.Add(buffUuid);
             return true;
