@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.19.1] - 2026-10-05
+_**2.19.1** (patch) — expired potion and food buffs leave the meter again. No API change, no plugin rebuild._
+### Fixed
+- Potion and food buffs now disappear from the CombatMeter's Buffs & Debuffs icons when they run out. In 2.19.0 they could stay there after expiring.
+### Developer notes
+- `BuffEffectSyncReader`: a `RemoveLayer(6)` that leaves no layers (no payload, or a payload whose `Layer` is 0 / absent) now removes the buff; one that leaves layers is still an upsert (the 2.19.0 re-eat time extension). 2.19.0 upserted EVERY payload-carrying RemoveLayer, but the consumable's final expiry also arrives as RemoveLayer + payload with no layers left, so the expired buff stayed in `ICombatLookup.BuffsFor` forever. Pinned by `BuffEffectSyncReaderTests` (re-eat keeps, zero-layers removes).
+- Diagnostics: with `STELLAR_DIAGNOSTICS=1`, every raw `BuffEffect` is logged as `[CooldownBar][diag]   raw entity=… type=… uuid=… payload=… payloadUuid=… layer=… dur=… create=…` (`BuffEventBatch.Trace`, collected only when diagnostics are on).
+
 ## [2.19.0] - 2026-10-05
 _**2.19.0** (minor) — one-line and multi-line text boxes for plugin windows, plus per-row bar colours, and re-eaten potion/food buffs no longer vanish. Adds API for plugins (Abstractions 2.19.0); additive, no plugin rebuild._
 ### Added

@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.19.1 fixes expired potion/food buffs staying in <c>ICombatLookup.BuffsFor</c> (a RemoveLayer that leaves no layers
+    /// now ends the buff). No API change.
     /// 2.19.0 adds <c>InputElement.SingleLine</c> (a true one-line field: never grows, scrolls sideways, strips pasted
     /// newlines, Enter submits and ends editing; a submit grace on <c>IsFocused</c> keeps Enter from opening chat),
     /// <c>TextAreaElement</c> (fixed-height multi-line box with a themed scrollbar; <c>Lines</c>, <c>ReadOnly</c>) and
@@ -268,5 +270,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.19.0";
+    public const string Value = "2.19.1";
 }
