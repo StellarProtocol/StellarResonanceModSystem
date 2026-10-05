@@ -62,7 +62,8 @@ internal sealed class UGuiTextInput
     /// game's chat open is bridged by the submit grace in <see cref="IsFocused"/>.</para>
     /// <para><paramref name="multiLine"/> (opt-in, default false → unchanged; mutually exclusive with
     /// <paramref name="singleLine"/>) is a true multi-line editable box of a FIXED height
-    /// (<paramref name="lines"/> visible rows) that NEVER grows the window: text WRAPS within the box width and
+    /// (<paramref name="lines"/> visible rows; same <c>layoutPriority</c> 2 pinned box as single-line, so the wrapped
+    /// text's own preferred size can't out-vote it) that NEVER grows the window: text WRAPS within the box width and
     /// overflows DOWNWARD, a RectMask2D clips the overflow, and Unity's InputField scrolls vertically to follow
     /// the caret. Unlike single-line-submit mode, Enter here inserts a REAL newline and keeps focus (no strip,
     /// no submit) — the owner submits via its own button reading <see cref="Text"/> / the onChange buffer.</para></summary>
@@ -132,16 +133,19 @@ internal sealed class UGuiTextInput
     // line scrolls sideways, multi line scrolls down). RectMask2D clips descendants (the Text child); the bg Image
     // sits on this same GO (fills the rect exactly) so clipping it to itself is a no-op. No-op in the default
     // (neither flag) mode, so that path is byte-for-byte unchanged.
-    // SINGLE-LINE also raises layoutPriority to 2: InputField is ITSELF an ILayoutElement (priority 1) reporting the
-    // text's preferred height AND width, and on a priority TIE LayoutUtility takes the MAX — so the text's size beat
-    // our pinned 28 / Width and a long paste still grew the field (wider, with Overflow) and the window. Priority 2
-    // makes every value we set win outright (minHeight is already pinned in Build); unset (-1) values still fall
-    // through to InputField. Multi-line is left at priority 1 (unchanged) for now.
+    // BOTH fixed-box modes raise layoutPriority to 2: InputField is ITSELF an ILayoutElement (priority 1) reporting
+    // the text's preferred height AND width, and on a priority TIE LayoutUtility takes the MAX — so the text's size
+    // beat our pinned box: a long single-line paste grew the field (wider, with Overflow) and the window (validated
+    // fix in-game 2026-10-05), and a TextArea past `lines` rows would grow by its full wrapped-text height (its
+    // preferredWidth is the UNWRAPPED longest line, so a long line would also widen it past TextAreaElement.Width).
+    // Priority 2 makes every value we set win outright — minHeight (Build), preferredHeight/flexibleHeight (here),
+    // and preferredWidth/flexibleWidth (BuildInput / BuildTextArea set them on this same LayoutElement after Build);
+    // unset (-1) values still fall through to InputField. Default mode keeps priority 1 (untouched).
     private static void ConfigureFixedBox(GameObject go, LayoutElement le, bool singleLine, bool multiLine, float boxHeight)
     {
         if (!(singleLine || multiLine)) return;
         le.preferredHeight = boxHeight; le.flexibleHeight = 0f;
-        if (singleLine && !multiLine) le.layoutPriority = 2;
+        le.layoutPriority = 2;
         go.AddComponent<RectMask2D>();
     }
 
