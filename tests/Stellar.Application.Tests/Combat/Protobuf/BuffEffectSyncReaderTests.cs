@@ -103,6 +103,50 @@ public sealed class BuffEffectSyncReaderTests
         Assert.Equal(2033179, batch.Upserts[0].BaseId);
     }
 
+    // REGRESSION (owner 2026-10-05, 2.19.0): the potion's final expiry ALSO arrives as RemoveLayer + payload, now with
+    // no layers left. Treating every payload-carrying RemoveLayer as an update left the expired potion on the meter
+    // forever. Zero layers left (proto3 omits 0, so the field is absent) = the buff is gone.
+    [Fact]
+    public void RemoveLayer_WithBuffChange_ZeroLayersLeft_Removes()
+    {
+        var payload = Sync(Effect(type: 6, buffUuid: 47438,
+            Logic(19, BuffChange(layer: 0, dur: 1_200_000, create: 1_791_177_508_724))));
+
+        var batch = BuffEffectSyncReader.TryRead(payload);
+
+        Assert.Empty(batch.Upserts);
+        Assert.Single(batch.Removes);
+        Assert.Equal(47438, batch.Removes[0]);
+    }
+
+    [Fact]
+    public void RemoveLayer_WithBuffInfo_ZeroLayersLeft_Removes()
+    {
+        var info = new WireBytes()
+            .Tag(1, 0).Varint(100UL).Tag(2, 0).Varint(2033179UL).Tag(11, 0).Varint(600_000UL).ToArray();   // no layer field
+        var batch = BuffEffectSyncReader.TryRead(Sync(Effect(type: 6, buffUuid: 100, Logic(18, info))));
+
+        Assert.Empty(batch.Upserts);
+        Assert.Single(batch.Removes);
+    }
+
+    // Diagnostics trace: every BuffEffect's raw type/uuid/payload, so a run with STELLAR_DIAGNOSTICS=1 shows exactly
+    // what the server sent (the re-eat vs expiry RemoveLayer question was unanswerable without it).
+    [Fact]
+    public void Trace_RecordsEachEffect_OnlyWhenAsked()
+    {
+        var payload = Sync(
+            Effect(type: 6, buffUuid: 47438, Logic(19, BuffChange(layer: 2, dur: 1_200_000, create: 5))),
+            Effect(type: 2, buffUuid: 9));
+
+        Assert.Null(BuffEffectSyncReader.TryRead(payload).Trace);
+        var trace = BuffEffectSyncReader.TryRead(payload, trace: true).Trace!;
+
+        Assert.Equal(2, trace.Count);
+        Assert.Equal(new BuffEffectTrace(6, 47438, 19, 0, 2, 1_200_000, 5), trace[0]);
+        Assert.Equal(new BuffEffectTrace(2, 9, 0, 0, 0, 0, 0), trace[1]);
+    }
+
     // A bare RemoveLayer (no buff payload) keeps the pre-fix removal behaviour — nothing to update with, and keeping
     // it could strand a buff that never gets a Remove(2).
     [Fact]
