@@ -47,6 +47,7 @@ internal sealed partial class WindowBuilder
         prt.sizeDelta = new Vector2(side, side); prt.anchoredPosition = Vector2.zero;
         var bg = pad.AddComponent<Image>();
         bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; bg.color = XYPadBackground; bg.raycastTarget = true;
+        UGuiPrimitives.AddDragSink(pad);   // the raycast target: a drag here must not scroll the window
 
         var travel = UGuiPrimitives.NewChild("Travel", pad.transform);
         var trt = travel.GetComponent<RectTransform>();

@@ -45,11 +45,13 @@ internal sealed partial class WindowBuilder
         var sle = sv.AddComponent<LayoutElement>(); sle.preferredWidth = 150f; sle.preferredHeight = 88f; sle.flexibleWidth = 0f;
         binding.SvRaw = sv.AddComponent<RawImage>(); binding.SvTex = BakeSv(binding.H);
         binding.SvRaw.texture = binding.SvTex; binding.SvRaw.raycastTarget = true;
+        UGuiPrimitives.AddDragSink(sv);   // a drag on the square must not scroll the window
         binding.SvMarker = AddMarker(sv.transform, binding.S, 1f - binding.V);
 
         var hue = UGuiPrimitives.NewChild("Hue", col.transform);
         var hle = hue.AddComponent<LayoutElement>(); hle.preferredWidth = 212f; hle.preferredHeight = 16f; hle.flexibleWidth = 0f;
         var hueRaw = hue.AddComponent<RawImage>(); binding.HueTex = BakeHue(); hueRaw.texture = binding.HueTex; hueRaw.raycastTarget = true;
+        UGuiPrimitives.AddDragSink(hue);
         binding.HueMarker = AddMarker(hue.transform, binding.H, 0.5f);
 
         // Drag wiring (renderer's interaction ticker polls these; null in the sandbox → static render).
