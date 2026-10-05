@@ -66,6 +66,34 @@ public sealed record SliderElement(
     public bool SquareHandle { get; init; }
 }
 
+/// <summary>
+/// Two-axis pad: a square with a grid and a centre crosshair, and a dot at the current value. A click or a drag
+/// anywhere on the pad moves the dot to the pointer and calls <paramref name="Set"/> with the pointer's value, clamped to
+/// [<paramref name="Min"/>,<paramref name="Max"/>] on both axes. <c>X</c> grows to the right and <c>Y</c> grows UP
+/// (math convention: the top edge is <paramref name="Max"/>), so an "up" arrow beside the pad means +Y.
+/// <para>Like <see cref="SliderElement"/>, <paramref name="Set"/> is called on every drag frame (not only on release)
+/// and there is no separate release callback: persist from <paramref name="Set"/> (cheaply, e.g. a config write that
+/// coalesces) exactly as you would for a slider. <paramref name="Get"/> reflects external state (poll-diffed), so the
+/// dot follows changes made elsewhere — arrow buttons, a reset. <paramref name="Enabled"/> null = always enabled;
+/// while it returns false the pad is dimmed and ignores the pointer.</para>
+/// </summary>
+/// <param name="Get">Current value (X, Y).</param>
+/// <param name="Set">Called with the new value (X, Y) on press and on every drag frame.</param>
+/// <param name="Min">Lowest value on both axes (left / bottom edge).</param>
+/// <param name="Max">Highest value on both axes (right / top edge).</param>
+/// <param name="Enabled">Whether the pad takes input (poll-diffed); null = always.</param>
+public sealed record XYPadElement(
+    Func<(float X, float Y)> Get, Action<float, float> Set, float Min = -1f, float Max = 1f, Func<bool>? Enabled = null)
+    : HudElement
+{
+    /// <summary>Side of the square pad in px; 0 → fill the width of its cell (the pad stays square).</summary>
+    public float Size { get; init; }
+
+    /// <summary>Grid divisions per axis (8 → 7 faint lines each way); 0 or 1 → no grid. The centre crosshair is always
+    /// drawn.</summary>
+    public int GridLines { get; init; } = 8;
+}
+
 /// <summary>Single-line text field (wraps the proven UGuiTextInput: Enter submits without opening chat,
 /// Esc/cursor escape). <paramref name="Get"/> seeds the text; Enter/blur calls <paramref name="Submit"/>.
 /// <paramref name="OnChange"/> (optional) fires per-keystroke — use it for live filters that should reflow

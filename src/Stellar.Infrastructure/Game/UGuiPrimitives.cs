@@ -113,4 +113,34 @@ internal static class UGuiPrimitives
         ol.effectDistance = new Vector2(1.1f, -1.1f);
         return ol;
     }
+
+    /// <summary>
+    /// Makes <paramref name="go"/> (the raycast target of a ticker-driven drag area — the XY pad, the colour picker's SV
+    /// square and hue bar) CONSUME uGUI drag events, so a drag there no longer bubbles to an ancestor <c>ScrollRect</c> and
+    /// scrolls the window (in-game 2026-10-05). The ticker reads the pointer itself (Input + rect hit-test), so the
+    /// EventSystem only needs a drag handler to stop at — no IL2CPP interface injection.
+    /// <para>The consumer is a NON-interactable <see cref="Slider"/> with no fill, handle or target graphic: Unity resolves
+    /// the drag/press target by interface, so it receives OnInitializePotentialDrag/OnDrag/OnPointerDown, and every one of
+    /// them returns at once (<c>MayDrag</c> = active AND interactable). Chosen over an inert <c>ScrollRect</c> (null
+    /// content is inert too — <c>IsActive()</c> requires content) because a ScrollRect is also an <c>IScrollHandler</c>
+    /// and would swallow the mouse wheel, so the window could not be wheel-scrolled over the pad; a Slider is not a scroll
+    /// handler, so the wheel still bubbles to the window. Transition and navigation are off: no tint, never selected.</para>
+    /// </summary>
+    public static Slider AddDragSink(GameObject go)
+    {
+        var sink = go.AddComponent<Slider>();
+        // Order matters: Selectable.Awake adopts the GameObject's Graphic as its target, and switching interactable
+        // off while the ColorTint transition is still set would CrossFade that graphic to the disabled tint (half
+        // alpha) — measured in the sandbox as a pad background dimmed from (55,70,76) to (47,62,69). Transition off
+        // and target cleared first, then interactable off.
+        sink.transition = Selectable.Transition.None;
+        sink.targetGraphic = null;
+        sink.interactable = false;
+        sink.fillRect = null;
+        sink.handleRect = null;
+        var nav = sink.navigation;
+        nav.mode = Navigation.Mode.None;
+        sink.navigation = nav;
+        return sink;
+    }
 }
