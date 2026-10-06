@@ -257,10 +257,12 @@ internal sealed partial class WindowBuilder
         xt.color = _assets.MenuMuted; xt.text = "✕"; xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14, muted: true);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;
+        DisableKeyboardNav(closeBtn);
         closeBtn.onClick.AddListener((UnityEngine.Events.UnityAction)(() =>
         {
             if (onClose != null) onClose();
             else if (token.Root != null) token.Root.SetActive(false);
+            ClearSelectionAfterClick();   // don't leave the ✕ selected → keyboard stays with the game
         }));
     }
 
@@ -278,10 +280,12 @@ internal sealed partial class WindowBuilder
         xt.color = _assets.MenuText; xt.text = "✕"; xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;
+        DisableKeyboardNav(closeBtn);
         closeBtn.onClick.AddListener((UnityEngine.Events.UnityAction)(() =>
         {
             if (onClose != null) onClose();
             else if (token.Root != null) token.Root.SetActive(false);
+            ClearSelectionAfterClick();   // don't leave the ✕ selected → keyboard stays with the game
         }));
     }
 }

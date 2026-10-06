@@ -165,7 +165,8 @@ internal sealed partial class WindowBuilder
         var voiceBtn = voiceImg.gameObject.AddComponent<Button>();
         voiceBtn.targetGraphic = voiceImg;
         voiceBtn.transition = Selectable.Transition.None;
-        System.Action onVoiceClick = () => el.Data().OnVoiceIconClick?.Invoke();
+        DisableKeyboardNav(voiceBtn);
+        System.Action onVoiceClick = () => { el.Data().OnVoiceIconClick?.Invoke(); ClearSelectionAfterClick(); };
         voiceBtn.onClick.AddListener((UnityAction)onVoiceClick);
 
         if (el.OnRightClick is { } rc)

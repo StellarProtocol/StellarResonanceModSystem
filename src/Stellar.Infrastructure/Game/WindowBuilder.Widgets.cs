@@ -20,6 +20,13 @@ internal sealed partial class WindowBuilder
         if (es != null) es.SetSelectedGameObject(null);
     }
 
+    // Window Buttons are pointer-only — kill keyboard navigation so arrow/d-pad focus can never land on one.
+    // Belt-and-suspenders with ClearSelectionAfterClick: Navigation.None alone does NOT stop a POINTER click
+    // from selecting the Button (uGUI selects on pointer-down regardless of nav mode), so the click handlers
+    // still clear the EventSystem selection — that is the primary fix; this just closes the keyboard path.
+    private static void DisableKeyboardNav(Selectable s)
+        => s.navigation = new Navigation { mode = Navigation.Mode.None };
+
     // Normal (non-active) button sprite for a style: Outline = faint outline, Filled = accent, Glass = frosted.
     private Sprite? NormalButtonSprite(MenuButtonStyle style) => style switch
     {
@@ -58,7 +65,7 @@ internal sealed partial class WindowBuilder
         var normalSprite = NormalButtonSprite(b.Style ?? _assets.ButtonStyle);
         img.sprite = (b.Active?.Invoke() ?? false) ? _assets.ButtonAccentBg : normalSprite;
         img.type = Image.Type.Sliced; img.raycastTarget = true;
-        var btn = go.AddComponent<Button>(); btn.targetGraphic = img;
+        var btn = go.AddComponent<Button>(); btn.targetGraphic = img; DisableKeyboardNav(btn);
 
         // Icon-only button (icon + empty label, e.g. the meter row's inspect magnifier): the icon must be the
         // SOLE centred child — so symmetric horizontal padding + no inter-child spacing (otherwise the trailing
@@ -173,7 +180,7 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("Toggle", parent);
         var le = go.AddComponent<LayoutElement>(); le.preferredWidth = 30f; le.preferredHeight = 15f; le.flexibleWidth = 0f;
         var track = go.AddComponent<Image>(); track.sprite = _assets.Capsule; track.type = Image.Type.Sliced; track.raycastTarget = true;
-        var btn = go.AddComponent<Button>(); btn.targetGraphic = track;
+        var btn = go.AddComponent<Button>(); btn.targetGraphic = track; DisableKeyboardNav(btn);
 
         var knobGo = UGuiPrimitives.NewChild("Knob", go.transform);
         var krt = knobGo.GetComponent<RectTransform>();

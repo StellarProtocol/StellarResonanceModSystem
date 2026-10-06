@@ -72,8 +72,9 @@ internal sealed partial class WindowBuilder
             var btn = clickerGo.AddComponent<Button>();
             btn.targetGraphic = clickImg;
             btn.transition = Selectable.Transition.None;
+            DisableKeyboardNav(btn);
             var onClick = ct.OnClick;
-            btn.onClick.AddListener((UnityAction)onClick);
+            btn.onClick.AddListener((UnityAction)(() => { onClick(); ClearSelectionAfterClick(); }));
         }
     }
 
