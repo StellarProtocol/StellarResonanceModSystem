@@ -185,7 +185,7 @@ if [ -z "$ONLY_PLUGINS" ]; then
     rm -f "$FW_DIR"/*.dll
 
     for dll in "${FRAMEWORK_DLLS[@]}"; do
-        cp -v "$dll" "$FW_DIR/"
+        cp -v --remove-destination "$dll" "$FW_DIR/"   # new inode: a running client keeps its mapped copy
     done
 fi
 
@@ -222,7 +222,7 @@ for entry in "${USER_PLUGINS[@]}"; do
     evacuate_case_variants "$GAME/stellar/plugins" "$slot"  # BEFORE writing, else the stale copy shadows it
     PLUGIN_DIR="$GAME/stellar/plugins/$slot"
     mkdir -p "$PLUGIN_DIR"
-    cp -v "$dll" "$PLUGIN_DIR/"
+    cp -v --remove-destination "$dll" "$PLUGIN_DIR/"   # new inode: a running client keeps its mapped copy
 done
 
 # Retire the old HelloWorld plugin if it's still around.
