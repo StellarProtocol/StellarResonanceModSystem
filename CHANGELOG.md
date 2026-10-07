@@ -14,7 +14,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.20.0] - 2026-10-07
+## [2.20.0] - 2026-10-08
 _**2.20.0** (minor) — plugins can hide everything the game's own photo screen can hide, and use the [, ] and backslash keys as hotkeys. Adds API for plugins (Abstractions 2.20.0); additive, no plugin rebuild._
 ### Added
 - Photo plugins can now hide each thing the game's own photo screen lists on its own: you, your Spirit Echo, other adventurers, friends, party, guild, non-players, enemies, weapons, collectibles and other players' Spirit Echoes.
@@ -30,6 +30,7 @@ _**2.20.0** (minor) — plugins can hide everything the game's own photo screen 
 - Internals: the visibility backend now drives every world layer through ONE `EntityShowPlan` holding the union of the requested layers' camera types (`EntityShowTargets`), so two layers sharing a type (`Self` + `SelfCharacter`) hold it once; a layer is reported in `Hidden` only when every type it needs is held. The party refresh (`ForceRefreshCharVisible`) now runs while any player-group type is held without the master switch. The diagnostics line `[PhotoVis] holds after Self …` became `[PhotoVis] holds after entity write target=[…]: …` and covers every world layer.
 - New `IHotkeys.IsActionHeld(string actionId)` — the level query the framework's own hold-to-hide-HUD already used, now for plugins (poll it from `Update` for repeat-while-held). Default-implemented (returns false) so existing test doubles still compile.
 - New `StellarKeyCode.LeftBracket` (91), `Backslash` (92), `RightBracket` (93), Unity `KeyCode` values; the input gateway polls them like every key, and a chord captured in Settings → Hotkeys now saves and displays by name.
+- Dev tooling: `tools/install-stellar.sh` now copies DLLs with `cp --remove-destination` (a new inode), so a deploy into a running client never rewrites the copy the game has mapped.
 
 ## [2.19.1] - 2026-10-05
 _**2.19.1** (patch) — expired potion and food buffs leave the meter again. No API change, no plugin rebuild._
