@@ -27,6 +27,12 @@ public enum StellarKeyCode
     // Punctuation
     /// <summary>Back-quote / grave accent key (`)</summary>
     BackQuote = 96,
+    /// <summary>Left square bracket key ([). Since 2.20.0.</summary>
+    LeftBracket = 91,
+    /// <summary>Backslash key (\). Since 2.20.0.</summary>
+    Backslash = 92,
+    /// <summary>Right square bracket key (]). Since 2.20.0.</summary>
+    RightBracket = 93,
 
     // Digits
     /// <summary>Top-row digit 0.</summary>

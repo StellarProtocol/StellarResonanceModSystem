@@ -13,6 +13,10 @@ namespace Stellar.Abstractions.Services;
 /// the framework adds exactly one hold per switch it uses and removes exactly that one, so a switch the player also
 /// turned off in the game's own camera panel stays off. With <see cref="VisibilityLayers.KeepParty"/>, party members
 /// stay visible and every other player (strangers, friends and guildmates outside the party) is hidden.
+/// <see cref="VisibilityLayers.Friends"/>, <see cref="VisibilityLayers.Party"/>, <see cref="VisibilityLayers.Guild"/> and
+/// <see cref="VisibilityLayers.Weapons"/> are also applied character by character as players come into view, join or leave
+/// your party, friend list or guild, or the game rebuilds their weapon; on release only the characters the framework hid
+/// are shown back.
 /// </remarks>
 public interface ISceneVisibility
 {

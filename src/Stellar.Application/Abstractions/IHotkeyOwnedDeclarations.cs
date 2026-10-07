@@ -21,4 +21,7 @@ internal interface IHotkeyOwnedDeclarations
 
     /// <summary>Forwarded from <c>PerPluginHotkeys</c>; see <c>IHotkeys.MigrateSavedBinding</c>.</summary>
     SavedBindingMigration MigrateSavedBinding(string actionId, KeyBinding from, KeyBinding to);
+
+    /// <summary>Forwarded from <c>PerPluginHotkeys</c>; see <c>IHotkeys.IsActionHeld</c>.</summary>
+    bool IsActionHeld(string actionId);
 }

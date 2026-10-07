@@ -18,6 +18,7 @@ public sealed partial class BootstrapPlugin
     private PhotoModeService? _photoMode;
     private PandaPhotoModeProbe? _photoModeProbe;
     private GameVisibilityBackend? _visibilityBackend;
+    private GameCharacterHides? _characterHides;   // Friends / Party / Guild real hides + every player's weapon
     private ZRenderLookBackend? _lookBackend;
     private UnityFrameGrabber? _frameGrabber;   // its late resumes are drained from RunGlobalRateWork (main thread, un-gated)
     private bool _photoReassertPending;   // set by game signals, drained on the next framework tick
@@ -40,7 +41,9 @@ public sealed partial class BootstrapPlugin
         var classifier = new EffectOwnerClassifier(() => _combatService.LocalEntityId, () => _partyService!.Members, summons,
             ownerLookup.TopSummonerOf);
         var effects = new GameEffectVisibility(_gameTypeRegistry!, classifier.Classify, log);
-        _visibilityBackend = new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log, effects);
+        _characterHides = new GameCharacterHides(_gameTypeRegistry!, new GameEntityAccess(_gameTypeRegistry!),
+            () => _partyService!.Members, log);
+        _visibilityBackend = new GameVisibilityBackend(_gameTypeRegistry!, OverlayRoots, log, effects, _characterHides);
         _sceneVisibility = new SceneVisibilityService(_visibilityBackend);
         _lookBackend = new ZRenderLookBackend(_gameTypeRegistry!, () => LocalPlayerFocus.Measure(_entityTransforms, _combatService), log);
         _renderLook = new RenderLookService(_lookBackend, m => log.Warning("[PhotoStudio] " + m));
@@ -65,17 +68,25 @@ public sealed partial class BootstrapPlugin
         _photoMode!.Exited += () => _photoReassertPending = true;
         _photoMode.CutsceneChanged += on => { if (!on) _photoReassertPending = true; };
         _visibilityBackend!.TargetRebuilt += () => _photoReassertPending = true;
+        _characterHides!.LocalPlayerRebuilt += () => _photoReassertPending = true;   // Me / Weapon are flags on that entity
         var visibility = _sceneVisibility!;
         if (_windowRenderer is not null) _windowRenderer.CanvasCreated += visibility.Reassert;
         if (_layoutOverlay is not null) _layoutOverlay.ChromeCanvasCreated += visibility.Reassert;
-        _partyService!.MemberJoined += _ => _partyVisibilityRefresh.Request();
-        _partyService.MemberLeft += (_, _) => _partyVisibilityRefresh.Request();
-        _partyService.PartyDissolved += _partyVisibilityRefresh.Request;
+        _partyService!.MemberJoined += _ => OnPartyRosterChanged();
+        _partyService.MemberLeft += (_, _) => OnPartyRosterChanged();
+        _partyService.PartyDissolved += OnPartyRosterChanged;
+    }
+
+    private void OnPartyRosterChanged()
+    {
+        _partyVisibilityRefresh.Request();
+        _characterHides?.MarkMembershipChanged();
     }
 
     private void DrainPhotoReassert()
     {
         if (_partyVisibilityRefresh.TryTake(_clientState!.IsWorldActive)) _visibilityBackend?.RefreshPartyVisibility();
+        _characterHides?.Drain();   // two field reads unless a membership change / rebuilt weapon is pending
         if (!_photoReassertPending) return;
         _photoReassertPending = false;
         _sceneVisibility?.Reassert();
