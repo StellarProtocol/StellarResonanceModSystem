@@ -77,7 +77,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | `Config` (`IPluginConfig`) | Per-plugin JSON config, organised into named sections. |
 | `Theme` (`ITheme`) | Active palette (`Theme.Colors.*`), semantic text helpers, and the colour registry. |
 | `NamedTheme` (`INamedTheme`) | Active preset + global font scale. |
-| `Hotkeys` (`IHotkeys`) | `DeclareAction(...)` to bind a keyboard shortcut to a callback. |
+| `Hotkeys` (`IHotkeys`) | `DeclareAction(...)` to bind a keyboard shortcut to a callback; `IsActionHeld(id)` for repeat-while-held. |
 | `Windows` (`IWindowHost`) | Register uGUI **windows** — both interactive panels (draggable, closable, themed chrome) *and* on-screen HUD overlays (borderless, `Surface = SurfaceStyle.HudOverlay`, position-persisted). |
 | `NativeUi` (`INativeUiHost`) | Inject your own uGUI into the game's own UI anchors. |
 | `Launcher` (`ILauncher`) | Register a tile in the Stellar launcher menu. |
@@ -394,6 +394,13 @@ _toggleAction = _services.Hotkeys.DeclareAction(
 ```
 
 `DeclareAction` returns an `IHotkeyAction` (`IDisposable`) — dispose it in `Dispose()`. If the hotkey just toggles a window, prefer the combined `Windows.Register(..., HotkeyAction, IHotkeys)` overload instead.
+
+The callback fires once per press. For an action that repeats while the key is held (zoom, nudge), poll
+`IsActionHeld(id)` from your `Update` — it is true while the bound key is down with exactly its modifiers:
+
+```csharp
+if (_services.Hotkeys.IsActionHeld("mymod.zoomin")) _zoom += ZoomPerSecond * dt;
+```
 
 ## Lifecycle and the Dispose contract
 

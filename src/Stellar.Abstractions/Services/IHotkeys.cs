@@ -23,4 +23,12 @@ public interface IHotkeys
     /// <param name="from">The old chord.</param>
     /// <param name="to">The new chord.</param>
     SavedBindingMigration MigrateSavedBinding(string actionId, KeyBinding from, KeyBinding to);
+
+    /// <summary>
+    /// True while the key bound to <paramref name="actionId"/> is held down with exactly its modifiers — a level
+    /// query for actions that repeat while held (poll it from your <c>Update</c>; the callback still fires once per
+    /// press). False for an unbound or undeclared action. Since 2.20.0 (the default implementation, for test doubles, always returns false).
+    /// </summary>
+    /// <param name="actionId">The action id, as passed to <see cref="DeclareAction"/>.</param>
+    bool IsActionHeld(string actionId) => false;
 }

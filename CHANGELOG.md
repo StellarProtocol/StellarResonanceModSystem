@@ -14,6 +14,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.20.0] - 2026-10-07
+_**2.20.0** (minor) — plugins can hide everything the game's own photo screen can hide, and use the [, ] and backslash keys as hotkeys. Adds API for plugins (Abstractions 2.20.0); additive, no plugin rebuild._
+### Added
+- Photo plugins can now hide each thing the game's own photo screen lists on its own: you, your Spirit Echo, other adventurers, friends, party, guild, non-players, enemies, weapons, collectibles and other players' Spirit Echoes.
+- The [, ] and backslash keys can now be used as hotkeys.
+### Developer notes
+- New `VisibilityLayers` (one bit each, through `ISceneVisibility.Hide` like every layer): `SelfCharacter` (1024), `OwnSpiritEcho` (2048), `Strangers` (4096), `Friends` (8192), `Party` (16384), `Guild` (32768), `NonPlayers` (65536), `Enemies` (131072), `Weapons` (262144), `Collectibles` (524288), `OtherSpiritEchoes` (1048576); sets `VisibilityLayerSets.PlayerGroups` (the four player groups) and `VisibilityLayerSets.World` (every world layer). Each drives the game photo screen's own `CameraFrameCtrl.SetEntityShow` type, transcribed from its show list (`camerasys_data.lua` `ShowEntityCfg`): Oneself 1, SelfPet 14, Stranger 6, Chum 2, Team 3, Union 4, FriendlyNPCS 7, Enemy 9, WeaponsAppearance 10 (the game's Weapon toggle never writes AngelWeapons 8), Collection 12, OtherPet 15.
+- Legacy layers are unchanged in value AND meaning: `OtherPlayers` = the master switch 11, `OtherPlayers | KeepParty` = Stranger + Chum + Union, `Self` = Oneself + SelfPet. Plugins built against 2.16–2.19 behave exactly as before. A new plugin can split "Me" into `SelfCharacter` / `OwnSpiritEcho`, and replace `KeepParty` with `Strangers | Friends | Guild`.
+- The game shows a player while ANY group they belong to is shown, and `OtherPlayers` (11) is checked before the groups: while it is hidden no group brings anyone back, and hiding all four `PlayerGroups` still leaves a player in none of them visible.
+- Internals: the visibility backend now drives every world layer through ONE `EntityShowPlan` holding the union of the requested layers' camera types (`EntityShowTargets`), so two layers sharing a type (`Self` + `SelfCharacter`) hold it once; a layer is reported in `Hidden` only when every type it needs is held. The party refresh (`ForceRefreshCharVisible`) now runs while any player-group type is held without the master switch. The diagnostics line `[PhotoVis] holds after Self …` became `[PhotoVis] holds after entity write target=[…]: …` and covers every world layer.
+- New `IHotkeys.IsActionHeld(string actionId)` — the level query the framework's own hold-to-hide-HUD already used, now for plugins (poll it from `Update` for repeat-while-held). Default-implemented (returns false) so existing test doubles still compile.
+- New `StellarKeyCode.LeftBracket` (91), `Backslash` (92), `RightBracket` (93), Unity `KeyCode` values; the input gateway polls them like every key, and a chord captured in Settings → Hotkeys now saves and displays by name.
+
 ## [2.19.1] - 2026-10-05
 _**2.19.1** (patch) — expired potion and food buffs leave the meter again. No API change, no plugin rebuild._
 ### Fixed

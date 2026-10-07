@@ -103,7 +103,7 @@ internal sealed partial class GameVisibilityBackend
         (ProbeGameHud() ? VisibilityLayers.GameHud : VisibilityLayers.None)
         | VisibilityLayers.StellarOverlay
         | (ProbeNameplates() ? VisibilityLayers.Nameplates : VisibilityLayers.None)
-        | (ProbeOtherPlayers() ? VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty | VisibilityLayers.Self : VisibilityLayers.None)
+        | (ProbeOtherPlayers() ? EntityShowTargets.Layers : VisibilityLayers.None)
         | (_effects?.Available ?? VisibilityLayers.None);
 
     private bool ProbeGameHud()
@@ -202,20 +202,12 @@ internal sealed partial class GameVisibilityBackend
         return true;
     }
 
-    /// <summary>OTHER_PLAYERS_HIDE: <c>Panda.ZGame.CameraFrameCtrl.Instance.SetEntityShow(type, show)</c> — OtherPlayer
-    /// (11) to hide everyone, Stranger/Chum/Union (6/2/4) to keep the party — driven by <see cref="EntityShowPlan"/>
-    /// (one show per hide we issued; refcount semantics from the disassembly, recon-party-grain.md).</summary>
-    private bool SetOtherPlayersHidden(bool hidden, bool keepParty)
-    {
-        if (EntityShowWriter("OtherPlayers") is not { } write) return false;
-        return _entityShow.Apply(hidden, keepParty, write, HoldCount);
-    }
-
-    /// <summary>Shared by <see cref="SetOtherPlayersHidden"/> and <c>GameVisibilityBackend.Self.cs</c>'s
-    /// SetSelfHidden: resolves CameraFrameCtrl + its cached SetEntityShow method (once, via <see cref="_setEntityShow"/>)
-    /// and hands back the write closure both <see cref="EntityShowPlan"/> instances call through — one less copy of
-    /// the "resolve singleton, cache the method, warn once, write + OnEntityShowWritten" sequence to keep in sync.
-    /// Null when the singleton or method can't be resolved right now (the caller's layer is reported not hidden).</summary>
+    /// <summary>OTHER_PLAYERS_HIDE and every other world layer: <c>Panda.ZGame.CameraFrameCtrl.Instance.SetEntityShow(type,
+    /// show)</c>, used by <c>GameVisibilityBackend.Entities.cs</c>'s SetEntitiesHidden. Resolves CameraFrameCtrl + its cached
+    /// SetEntityShow method (once, via <see cref="_setEntityShow"/>) and hands back the write closure the
+    /// <see cref="EntityShowPlan"/> calls through (one show per hide we issued; refcount semantics from the disassembly,
+    /// recon-party-grain.md). Null when the singleton or method can't be resolved right now (the caller's layers are
+    /// reported not hidden).</summary>
     private Func<int, bool, bool>? EntityShowWriter(string layerTag)
     {
         var ctrl = CreatedSingleton(CameraFrameCtrlType, layerTag, out var t);
@@ -259,9 +251,9 @@ internal sealed partial class GameVisibilityBackend
     /// <summary>
     /// Resolves (once) the ZEntityMgr singleton + its <c>getHideCount(EntityRenderLayerHideType, EVisibleSource)</c>
     /// method, caching <see cref="_getHideCount"/> / <see cref="_hideTypeEnum"/> / <see cref="_holdCountSource"/> for
-    /// every later caller — <see cref="HoldCount"/> AND the Self-holds diagnostic (GameVisibilityBackend.Diagnostics.cs),
-    /// which needs the same fields but has no camera type to resolve through <see cref="EntityShowPlan.TryHideTypeFor"/>
-    /// (Oneself/SelfPet aren't in that map). False (with the same warning as before extraction) when the singleton or
+    /// every later caller — <see cref="HoldCount"/> AND the entity-holds diagnostic (GameVisibilityBackend.Diagnostics.cs),
+    /// which needs the same fields but may have no camera type to resolve through <see cref="EntityShowPlan.TryHideTypeFor"/>
+    /// (unmeasured types aren't in that map). False (with the same warning as before extraction) when the singleton or
     /// method isn't available right now; callers decide how to react (HoldCount returns null, the diagnostic no-ops).
     /// </summary>
     private bool EnsureHoldCountReflection(out object? mgr)
@@ -283,14 +275,15 @@ internal sealed partial class GameVisibilityBackend
     }
 
     /// <summary>
-    /// While the keep-party set is held, asks the game to re-evaluate every character's photo-source visibility
+    /// While a player-group hide is held without the master switch (the keep-party set, or any of the Strangers /
+    /// Friends / Party / Guild layers), asks the game to re-evaluate every character's photo-source visibility
     /// (<c>ZEntityMgr.Instance.ForceRefreshCharVisible(ETakePhotos, false)</c>): party membership is read live, so a
     /// member who joined (or left) during the hide is shown (or hidden) without waiting for the next switch write.
     /// No-op otherwise; fails open with one warning. Main thread.
     /// </summary>
     public void RefreshPartyVisibility()
     {
-        if (!_entityShow.HoldsKeepPartySet) return;
+        if (!_entityShow.HoldsRelationHide) return;
         try
         {
             var mgr = CreatedSingleton(ZEntityMgrType, "PartyRefresh", out var t);

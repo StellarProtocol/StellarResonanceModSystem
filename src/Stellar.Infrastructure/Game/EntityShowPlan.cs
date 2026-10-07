@@ -19,7 +19,8 @@ namespace Stellar.Infrastructure.Game;
 /// show). The game can reset the counters under us; given the live count (<c>ZEntityMgr.getHideCount</c> for the photo
 /// source, see <see cref="HideTypeFor"/>), a held type whose count reads 0 is re-hidden exactly once and gets no show
 /// at release (a show there could cancel a hold someone took after the reset). An unreadable count (null) changes
-/// nothing. Pure — no Unity/game types — so it is unit-tested.
+/// nothing. Pure — no Unity/game types — so it is unit-tested. Since 2.20.0 one plan carries every world layer's types
+/// (<see cref="EntityShowTargets"/>), so two layers sharing a type (Self and SelfCharacter both use Oneself) hold it once.
 /// </summary>
 internal sealed class EntityShowPlan
 {
@@ -45,6 +46,17 @@ internal sealed class EntityShowPlan
     /// stays held for retry (see <see cref="Apply(IReadOnlyList{int},Func{int,bool,bool},Func{int,int?})"/>'s doc),
     /// so this is exactly "a restore is still owed" for this plan even once its layer is no longer requested.</summary>
     public bool HoldsAny => _held.Count > 0;
+
+    /// <summary>True while <paramref name="type"/> is one WE hid and haven't shown back.</summary>
+    public bool Holds(int type) => _held.Contains(type);
+
+    /// <summary>True while we hold a type <paramref name="target"/> no longer wants — a failed show-back still owed.</summary>
+    public bool HoldsAnyOutside(IReadOnlyList<int> target) => _held.Any(t => !target.Contains(t));
+
+    /// <summary>True while a player-group type (Stranger 6 / Chum 2 / Team 3 / Union 4) is held without the master
+    /// switch 11: who is shown then depends on live relations (party, friends, guild), so a change needs a refresh.</summary>
+    public bool HoldsRelationHide =>
+        !_held.Contains(OtherPlayer) && _held.Any(t => t is Stranger or Chum or Union or EntityShowTargets.Team);
 
     /// <summary><c>EntityRenderLayerHideType</c> behind a camera type, or null when not measured (the hold-count check
     /// is then skipped for it — bookkeeping only).</summary>

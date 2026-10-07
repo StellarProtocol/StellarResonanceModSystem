@@ -15,11 +15,15 @@ public enum VisibilityLayers
     StellarOverlay = 2,
     /// <summary>Names and nameplates above characters.</summary>
     Nameplates = 4,
-    /// <summary>Other players' characters.</summary>
+    /// <summary>Every other player's character — the game's master switch: while it is hidden, no group switch
+    /// (<see cref="Friends"/>, <see cref="Party"/>, <see cref="Guild"/>) can bring anyone back.</summary>
     OtherPlayers = 8,
-    /// <summary>Modifier for <see cref="OtherPlayers"/>: keep party members visible.</summary>
+    /// <summary>Modifier for <see cref="OtherPlayers"/>: keep party members visible. Kept for compatibility — the
+    /// combination means exactly <see cref="Strangers"/> | <see cref="Friends"/> | <see cref="Guild"/>, which plugins
+    /// can now ask for directly.</summary>
     KeepParty = 16,
-    /// <summary>The local player's own character, their pet and their summons — hidden on this screen only.</summary>
+    /// <summary>The local player's own character, their pet and their summons — hidden on this screen only. Kept for
+    /// compatibility: it means <see cref="SelfCharacter"/> | <see cref="OwnSpiritEcho"/>.</summary>
     Self = 32,
     /// <summary>Effects (skills, buffs, hits, ground areas) caused by the local player or their summons.</summary>
     EffectsMine = 64,
@@ -29,6 +33,31 @@ public enum VisibilityLayers
     EffectsOthers = 256,
     /// <summary>Effects caused by monsters and bosses, including their warning areas.</summary>
     EffectsMonsters = 512,
+    /// <summary>The local player's own character only (the game photo screen's "Me"); their pet stays. Since 2.20.0.</summary>
+    SelfCharacter = 1024,
+    /// <summary>The local player's own pet (the game photo screen's "My own Spirit Echo"). Since 2.20.0.</summary>
+    OwnSpiritEcho = 2048,
+    /// <summary>Other players who are not a friend, party member or guild mate (the game photo screen's "Other
+    /// adventurers"). The game shows a player while ANY group they belong to is shown, so a friend stays visible
+    /// unless <see cref="Friends"/> is hidden too. Since 2.20.0.</summary>
+    Strangers = 4096,
+    /// <summary>Players on your friend list (the game photo screen's "Friends"). Since 2.20.0.</summary>
+    Friends = 8192,
+    /// <summary>Your party members (the game photo screen's "Party"). Since 2.20.0.</summary>
+    Party = 16384,
+    /// <summary>Your guild mates (the game photo screen's "Guild"). Since 2.20.0.</summary>
+    Guild = 32768,
+    /// <summary>Friendly NPCs (the game photo screen's "Non-players"). Since 2.20.0.</summary>
+    NonPlayers = 65536,
+    /// <summary>Monsters and bosses (the game photo screen's "Enemy"). Their effects are <see cref="EffectsMonsters"/>.
+    /// Since 2.20.0.</summary>
+    Enemies = 131072,
+    /// <summary>Weapons carried on characters' backs and in their hands (the game photo screen's "Weapon"). Since 2.20.0.</summary>
+    Weapons = 262144,
+    /// <summary>Collectibles in the world (the game photo screen's "Collectible"). Since 2.20.0.</summary>
+    Collectibles = 524288,
+    /// <summary>Other players' pets (the game photo screen's "Other Spirit Echo"). Since 2.20.0.</summary>
+    OtherSpiritEchoes = 1048576,
 }
 
 /// <summary>Named combinations of <see cref="VisibilityLayers"/>.</summary>
@@ -37,6 +66,20 @@ public static class VisibilityLayerSets
     /// <summary>All four effect layers. An effect with no caster (scenery) belongs to none of them and is never hidden.</summary>
     public const VisibilityLayers Effects = VisibilityLayers.EffectsMine | VisibilityLayers.EffectsParty |
                                             VisibilityLayers.EffectsOthers | VisibilityLayers.EffectsMonsters;
+
+    /// <summary>The four player groups of the game's photo screen: <see cref="VisibilityLayers.Strangers"/>,
+    /// <see cref="VisibilityLayers.Friends"/>, <see cref="VisibilityLayers.Party"/> and <see cref="VisibilityLayers.Guild"/>.
+    /// Hiding all four is not quite <see cref="VisibilityLayers.OtherPlayers"/>: a player in none of the groups stays
+    /// visible. Ask for <see cref="VisibilityLayers.OtherPlayers"/> to hide every other player.</summary>
+    public const VisibilityLayers PlayerGroups = VisibilityLayers.Strangers | VisibilityLayers.Friends |
+                                                 VisibilityLayers.Party | VisibilityLayers.Guild;
+
+    /// <summary>Every layer that hides people or things in the world (characters, pets, NPCs, monsters, weapons,
+    /// collectibles) — all of them except the HUD, overlay, nameplate and effect layers.</summary>
+    public const VisibilityLayers World = VisibilityLayers.OtherPlayers | VisibilityLayers.KeepParty | VisibilityLayers.Self |
+                                          VisibilityLayers.SelfCharacter | VisibilityLayers.OwnSpiritEcho | PlayerGroups |
+                                          VisibilityLayers.NonPlayers | VisibilityLayers.Enemies | VisibilityLayers.Weapons |
+                                          VisibilityLayers.Collectibles | VisibilityLayers.OtherSpiritEchoes;
 }
 
 /// <summary>Image file format for a capture.</summary>
