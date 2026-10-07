@@ -38,21 +38,30 @@ public enum VisibilityLayers
     /// <summary>The local player's own pet (the game photo screen's "My own Spirit Echo"). Since 2.20.0.</summary>
     OwnSpiritEcho = 2048,
     /// <summary>Other players who are not a friend, party member or guild mate (the game photo screen's "Other
-    /// adventurers"). The game shows a player while ANY group they belong to is shown, so a friend stays visible
-    /// unless <see cref="Friends"/> is hidden too. Since 2.20.0.</summary>
+    /// adventurers"). A player who IS in one of those groups follows that group's own switch instead: they stay visible
+    /// while any group they belong to is shown (<see cref="Friends"/>, <see cref="Party"/>, <see cref="Guild"/>). Since
+    /// 2.20.0.</summary>
     Strangers = 4096,
-    /// <summary>Players on your friend list (the game photo screen's "Friends"). Since 2.20.0.</summary>
+    /// <summary>Players on your friend list (the game photo screen's "Friends") — hidden even while
+    /// <see cref="Strangers"/> is shown. A friend who is also in a group that is still shown (your party, your guild)
+    /// stays visible: a player is hidden only when every group they belong to is hidden. Since 2.20.0.</summary>
     Friends = 8192,
-    /// <summary>Your party members (the game photo screen's "Party"). Since 2.20.0.</summary>
+    /// <summary>Your party members (the game photo screen's "Party") — hidden even while <see cref="Strangers"/> is
+    /// shown, unless they are also in a group that is still shown (<see cref="Friends"/>, <see cref="Guild"/>). Since
+    /// 2.20.0.</summary>
     Party = 16384,
-    /// <summary>Your guild mates (the game photo screen's "Guild"). Since 2.20.0.</summary>
+    /// <summary>Your guild mates (the game photo screen's "Guild") — hidden even while <see cref="Strangers"/> is shown,
+    /// unless they are also in a group that is still shown (<see cref="Friends"/>, <see cref="Party"/>). Since
+    /// 2.20.0.</summary>
     Guild = 32768,
     /// <summary>Friendly NPCs (the game photo screen's "Non-players"). Since 2.20.0.</summary>
     NonPlayers = 65536,
     /// <summary>Monsters and bosses (the game photo screen's "Enemy"). Their effects are <see cref="EffectsMonsters"/>.
     /// Since 2.20.0.</summary>
     Enemies = 131072,
-    /// <summary>Weapons carried on characters' backs and in their hands (the game photo screen's "Weapon"). Since 2.20.0.</summary>
+    /// <summary>Every player's weapon — yours, your party's and other players' — on their back and in their hands, on
+    /// your screen only. (The game photo screen's own "Weapon" switch hides only yours; the framework extends it to every
+    /// player.) Since 2.20.0.</summary>
     Weapons = 262144,
     /// <summary>Collectibles in the world (the game photo screen's "Collectible"). Since 2.20.0.</summary>
     Collectibles = 524288,
@@ -69,8 +78,9 @@ public static class VisibilityLayerSets
 
     /// <summary>The four player groups of the game's photo screen: <see cref="VisibilityLayers.Strangers"/>,
     /// <see cref="VisibilityLayers.Friends"/>, <see cref="VisibilityLayers.Party"/> and <see cref="VisibilityLayers.Guild"/>.
-    /// Hiding all four is not quite <see cref="VisibilityLayers.OtherPlayers"/>: a player in none of the groups stays
-    /// visible. Ask for <see cref="VisibilityLayers.OtherPlayers"/> to hide every other player.</summary>
+    /// Hiding all four hides every other player: the game falls back to <see cref="VisibilityLayers.Strangers"/> for
+    /// anyone no shown group keeps visible. <see cref="VisibilityLayers.OtherPlayers"/> is the game's own single switch
+    /// for the same result.</summary>
     public const VisibilityLayers PlayerGroups = VisibilityLayers.Strangers | VisibilityLayers.Friends |
                                                  VisibilityLayers.Party | VisibilityLayers.Guild;
 

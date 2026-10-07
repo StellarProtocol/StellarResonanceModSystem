@@ -78,6 +78,7 @@ internal sealed partial class GameVisibilityBackend
             if (_types.FindType(CameraFrameCtrlType) is { } cfi)
                 hooker.PostfixAllOverloads(cfi, "Init", (_, _) => { ClearNegativeProbes(); TargetRebuilt?.Invoke(); });
             _effects?.InstallHooks(hooker);
+            _characters?.InstallHooks(hooker);
         }
         catch (Exception ex) { WarnOnce("hooks", "visibility hooks not installed: " + ex.Message); }
     }

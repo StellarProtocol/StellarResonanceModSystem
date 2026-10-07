@@ -28,6 +28,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     private readonly Func<IReadOnlyList<GameObject>> _overlayRoots;
     private readonly IPluginLog _log;
     private readonly GameEffectVisibility? _effects;
+    private readonly GameCharacterHides? _characters;
     private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
     private VisibilityLayers _applied;
     // Layers whose restore (show) call failed because the target singleton was briefly unavailable. Reassert
@@ -39,12 +40,14 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     // are all held — see GameVisibilityBackend.Entities.cs).
     private VisibilityLayers _lastRequested;
 
-    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log, GameEffectVisibility? effects = null)
+    public GameVisibilityBackend(IGameTypeRegistry types, Func<IReadOnlyList<GameObject>> overlayRoots, IPluginLog log,
+        GameEffectVisibility? effects = null, GameCharacterHides? characters = null)
     {
         _types = types;
         _overlayRoots = overlayRoots;
         _log = log;
         _effects = effects;
+        _characters = characters;
     }
 
     /// <summary>M2: true when a restore is still owed. Effects report their own pending release (the manager/listing
@@ -55,7 +58,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     public bool HasPendingRestore =>
         (_effects?.HasPendingRelease ?? false) ||
         _restorePending != VisibilityLayers.None ||
-        _entityShow.HoldsAnyOutside(EntityShowTargets.For(_lastRequested));
+        _entityShow.HoldsAnyOutside(EntityShowTargets.For(_lastRequested)) ||
+        (_lastRequested == VisibilityLayers.None && (_characters?.HoldsAny ?? false));
 
     public VisibilityLayers Apply(VisibilityLayers requested)
     {
@@ -64,6 +68,7 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: false);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: false);
         StepEntities(requested);
+        _characters?.Apply(requested);
         StepEffects(requested);
         return _applied;
     }
@@ -73,7 +78,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
     /// briefly unavailable — even though that failure already cleared the layer from <c>_applied</c>, so nothing
     /// looks "held" for it. This is the path <c>TargetRebuilt</c> drives (via the host's one-tick-later drain),
     /// which is exactly when a previously-missing singleton is likely to have appeared. The world layers go through
-    /// the entity-show plan, which rewrites only what differs.</summary>
+    /// the entity-show plan, which rewrites only what differs — except the on/off flag types (Me, Weapon), which a
+    /// re-assert always re-writes (<see cref="ReassertEntityFlags"/>) — and the per-character hides re-run their pass.</summary>
     public VisibilityLayers Reassert(VisibilityLayers requested)
     {
         _lastRequested = requested;
@@ -81,6 +87,8 @@ internal sealed partial class GameVisibilityBackend : IVisibilityBackend
         Step(VisibilityLayers.StellarOverlay, requested, SetOverlayHidden, force: true);
         Step(VisibilityLayers.Nameplates, requested, SetNameplatesHidden, force: true);
         StepEntities(requested);
+        ReassertEntityFlags(requested);
+        _characters?.Apply(requested);   // idempotent: re-hides weapons the game re-showed, prunes who left
         StepEffects(requested);
         return _applied;
     }

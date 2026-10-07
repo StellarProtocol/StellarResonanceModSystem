@@ -19,6 +19,15 @@ internal sealed partial class GameVisibilityBackend
         _log.Info($"[PhotoVis] SetEntityShow({type},{show}) by Stellar");
     }
 
+    partial void OnEntityFlagsReasserted(IReadOnlyList<int> target, bool written)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var flags = new List<int>();
+        foreach (var type in target)
+            if (EntityShowPlan.IsFlagType(type) && _entityShow.Holds(type)) flags.Add(type);
+        _log.Info($"[PhotoVis] flag re-assert types=[{string.Join(",", flags)}] ok={written}");
+    }
+
     partial void OnEntitiesSet(IReadOnlyList<int> target, bool ok)
     {
         if (!StellarDiagnostics.IsEnabled) return;

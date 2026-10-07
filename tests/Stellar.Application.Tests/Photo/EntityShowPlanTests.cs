@@ -203,6 +203,14 @@ public sealed class EntityShowPlanTests
     [InlineData(2, 5)]    // Chum → Friend
     [InlineData(4, 3)]    // Union → Union
     [InlineData(11, 7)]   // OtherPlayer → OtherPlayer
+    [InlineData(14, 12)]  // SelfPet → SelfPet (owner MAIN 2026-10-03)
+    // Measured on the owner's MAIN client 2026-10-07 (one switch at a time, "[PhotoVis] holds after entity write …") and
+    // read from the native CameraFrameCtrl.SetEntityShow switch table (0x184255334) — both agree:
+    [InlineData(7, 1)]    // FriendlyNPCS → Npc
+    [InlineData(9, 2)]    // Enemy → Monster
+    [InlineData(3, 4)]    // Team → Team
+    [InlineData(12, 9)]   // Collection → Collection
+    [InlineData(15, 13)]  // OtherPet → OtherPet
     public void Camera_types_map_to_the_render_layer_hide_types(int camera, int layer) =>
         Assert.Equal(layer, EntityShowPlan.HideTypeFor(camera));
 
@@ -267,5 +275,45 @@ public sealed class EntityShowPlanTests
         p.Apply(true, false, Write);
         Assert.False(p.Apply(false, false, (_, _) => false));   // the show fails
         Assert.True(p.HoldsAny);
+    }
+
+    // Me (Oneself 1) and Weapon (WeaponsAppearance 10) are per-entity on/off BITS on the local player, not counters (native
+    // SetEntityShow cases 0x184254E61 / 0x1842550FB; owner MAIN 2026-10-07: neither leaves an ETakePhotos counter). The
+    // game's photo-screen exit writes them back (ResetCameraInitialParameters → ChangeWeaponVisible(default, EPhoto);
+    // ResetEntityVisible → SetEntityShow(1, true) when the game hid Me), so a re-assert re-writes OUR held flags — and only
+    // those: a counter type is never re-written (a second hide would stack a hold).
+    [Fact]
+    public void Only_oneself_and_weapons_are_flag_types_and_neither_has_a_counter()
+    {
+        for (var t = 0; t <= 15; t++)
+            Assert.Equal(t is 1 or 10, EntityShowPlan.IsFlagType(t));
+        Assert.Null(EntityShowPlan.TryHideTypeFor(1));
+        Assert.Null(EntityShowPlan.TryHideTypeFor(10));
+    }
+
+    [Fact]
+    public void Rewrite_held_flags_rehides_only_held_flag_types_and_is_idempotent()
+    {
+        var p = new EntityShowPlan();
+        p.Apply(new[] { 1, 10, 6, 14 }, Write);
+        _calls.Clear();
+        Assert.Equal(2, p.RewriteHeldFlags(new[] { 1, 10, 6, 14 }, Write));
+        Assert.Equal(new[] { (1, false), (10, false) }, _calls);
+        Assert.Equal(2, p.RewriteHeldFlags(new[] { 1, 10, 6, 14 }, Write));   // again: same writes, nothing stacks in game
+        Assert.True(p.Holds(1) && p.Holds(10) && p.Holds(6));
+        Assert.False(p.NeedsWrite(new[] { 1, 10, 6, 14 }));                  // bookkeeping untouched
+    }
+
+    [Fact]
+    public void Rewrite_held_flags_skips_a_flag_type_not_held_or_not_wanted()
+    {
+        var p = new EntityShowPlan();
+        p.Apply(new[] { 10 }, (t, show) => t != 10 && Write(t, show));   // the Weapon hide failed: not held
+        _calls.Clear();
+        Assert.Equal(0, p.RewriteHeldFlags(new[] { 10 }, Write));
+        p.Apply(new[] { 1 }, Write);
+        _calls.Clear();
+        Assert.Equal(0, p.RewriteHeldFlags(new[] { 6 }, Write));          // held but no longer in the target
+        Assert.Empty(_calls);
     }
 }
