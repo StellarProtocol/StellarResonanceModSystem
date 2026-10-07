@@ -50,12 +50,16 @@ public sealed class CharacterHideRulesTests
         new object[] { OA, (int)(CharacterRelation.None), false },
         // Other adventurers hidden + Party hidden → the party is hidden too.
         new object[] { OA | P, (int)(Party), false },
-        // A still-shown group keeps rescuing: party member + guild mate with only Guild hidden stays (keep-party fix).
+        // Party shown keeps a party member whatever else they are (2026-10-01 keep-party fix).
         new object[] { G, (int)(Party | Guild), true },
         new object[] { OA | F | G, (int)(Party | Guild), true },     // "Keep my party visible" (1.6.0 migration) keeps them
         new object[] { OA | F | G, (int)(Guild), false },
         new object[] { P | G, (int)(Party | Guild), false },          // every group they are in is hidden
-        new object[] { P | G, (int)(Party | Guild | Friend), true },  // ...but they are also a friend, and Friends is shown
+        new object[] { P | G, (int)(Party | Guild | Friend), false }, // hide wins: in a hidden group (owner 2026-10-08)
+        // Owner MAIN 2026-10-08: guild mate who is ALSO a friend, only Guild ticked → hidden (hide wins over Friends shown).
+        new object[] { G, (int)(Friend | Guild), false },
+        new object[] { F, (int)(Friend | Guild), false },
+        new object[] { VisibilityLayers.None | P, (int)(Friend | Guild), true },
         // Nothing requested: nobody is hidden.
         new object[] { VisibilityLayers.None, (int)(Party | Friend | Guild), true },
         // The local player is never hidden by these switches, whatever they are.
