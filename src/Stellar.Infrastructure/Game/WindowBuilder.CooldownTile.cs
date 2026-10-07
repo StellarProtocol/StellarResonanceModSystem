@@ -67,8 +67,7 @@ internal sealed partial class WindowBuilder
             clickerGo.AddComponent<LayoutElement>().ignoreLayout = true;
             UGuiPrimitives.Stretch(clickerGo);
             var clickImg = clickerGo.AddComponent<Image>();
-            clickImg.color = Color.clear;
-            clickImg.raycastTarget = true;
+            clickImg.color = Color.clear; clickImg.raycastTarget = true;
             var btn = clickerGo.AddComponent<Button>();
             btn.targetGraphic = clickImg;
             btn.transition = Selectable.Transition.None;
