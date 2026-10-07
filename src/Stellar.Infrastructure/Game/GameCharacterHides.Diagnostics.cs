@@ -26,6 +26,14 @@ internal sealed partial class GameCharacterHides
                   $"weapon={(_weapons.Holds(uuid) ? "hidden" : "shown")}");
     }
 
+    private readonly HashSet<long> _loggedRelations = new();
+
+    partial void OnRelationRead(long uuid, long charId, CharacterRelation relation)
+    {
+        if (!StellarDiagnostics.IsEnabled || _loggedRelations.Count >= MaxEntityLines || !_loggedRelations.Add(uuid)) return;
+        _log.Info($"[PhotoVis] relation uuid={uuid} charId={charId} rel={relation}");
+    }
+
     partial void OnWeaponReapplied(long uuid, bool hidden)
     {
         if (!StellarDiagnostics.IsEnabled || _weaponLines++ >= MaxEntityLines) return;

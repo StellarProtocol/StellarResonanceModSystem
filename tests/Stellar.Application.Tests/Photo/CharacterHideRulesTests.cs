@@ -103,4 +103,15 @@ public sealed class CharacterHideRulesTests
             Assert.False(CharacterHideRules.HideBody(legacy, who));
         Assert.False(CharacterHideRules.Needed(legacy));
     }
+
+    // Owner MAIN 2026-10-07: guild mate stayed visible with Guild ticked — the cache holds CHAR IDS, we asked by uuid only.
+    [Fact]
+    public void Membership_cache_matches_by_char_id_as_well_as_uuid()
+    {
+        var charIdSet = new HashSet<long> { 2066899 };
+        Assert.True(CharacterHideRules.InCache(charIdSet.Contains, uuid: (2066899L << 16) | 640, charId: 2066899));
+        var uuidSet = new HashSet<long> { (2066899L << 16) | 640 };
+        Assert.True(CharacterHideRules.InCache(uuidSet.Contains, uuid: (2066899L << 16) | 640, charId: 2066899));
+        Assert.False(CharacterHideRules.InCache(new HashSet<long> { 0 }.Contains, uuid: 5, charId: 0));
+    }
 }

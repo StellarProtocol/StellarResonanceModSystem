@@ -145,10 +145,12 @@ internal sealed partial class GameCharacterHides
     {
         if (uuid == local) return CharacterRelation.Local;
         if ((_requested & CharacterHideRules.Groups) == 0) return CharacterRelation.None;
+        var charId = CharIdOf(entity);
         var relation = CharacterRelation.None;
-        if (InParty(CharIdOf(entity))) relation |= CharacterRelation.Party;
-        if (IsFriend(uuid)) relation |= CharacterRelation.Friend;
-        if (IsGuildMate(uuid)) relation |= CharacterRelation.Guild;
+        if (InParty(charId)) relation |= CharacterRelation.Party;
+        if (CharacterHideRules.InCache(IsFriend, uuid, charId)) relation |= CharacterRelation.Friend;
+        if (CharacterHideRules.InCache(IsGuildMate, uuid, charId)) relation |= CharacterRelation.Guild;
+        OnRelationRead(uuid, charId, relation);
         return relation;
     }
 
@@ -167,6 +169,7 @@ internal sealed partial class GameCharacterHides
         if (_warned.Add(key)) _log.Warning(Tag + message);
     }
 
+    partial void OnRelationRead(long uuid, long charId, CharacterRelation relation);
     partial void OnPass(string why, int characters, (int Bodies, int Weapons) before);
     partial void OnWeaponReapplied(long uuid, bool hidden);
 }

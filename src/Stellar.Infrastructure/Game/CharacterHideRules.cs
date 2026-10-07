@@ -58,4 +58,10 @@ internal static class CharacterHideRules
     private static bool GroupHidden(VisibilityLayers requested, CharacterRelation relation, CharacterRelation group,
         VisibilityLayers layer) =>
         (relation & group) == 0 || (requested & layer) != 0;
+
+    /// <summary>Membership in one of the game's friend / guild caches. They are named "Uuid" sets, but the game's Lua fills
+    /// them from char-id lists (union_vm.lua:45, friends_main_vm.lua:281), so ask with both keys. Owner MAIN 2026-10-07:
+    /// asking by uuid alone matched nobody — guild mate "Sey" stayed visible with Guild ticked.</summary>
+    public static bool InCache(System.Func<long, bool> contains, long uuid, long charId) =>
+        contains(uuid) || (charId != 0 && contains(charId));
 }
