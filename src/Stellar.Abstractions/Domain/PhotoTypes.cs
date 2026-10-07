@@ -38,21 +38,22 @@ public enum VisibilityLayers
     /// <summary>The local player's own pet (the game photo screen's "My own Spirit Echo"). Since 2.20.0.</summary>
     OwnSpiritEcho = 2048,
     /// <summary>Other players who are not a friend, party member or guild mate (the game photo screen's "Other
-    /// adventurers"). A player who IS in one of those groups follows that group's own switch instead: they stay visible
-    /// while any group they belong to is shown (<see cref="Friends"/>, <see cref="Party"/>, <see cref="Guild"/>). Since
-    /// 2.20.0.</summary>
+    /// adventurers"). A player who IS in one of those groups follows those groups instead: they are hidden while any group
+    /// they belong to is hidden (hide wins), except that a party member stays visible while <see cref="Party"/> is shown
+    /// (<see cref="Friends"/>, <see cref="Party"/>, <see cref="Guild"/>). Since 2.20.0.</summary>
     Strangers = 4096,
     /// <summary>Players on your friend list (the game photo screen's "Friends") — hidden even while
-    /// <see cref="Strangers"/> is shown. A friend who is also in a group that is still shown (your party, your guild)
-    /// stays visible: a player is hidden only when every group they belong to is hidden. Since 2.20.0.</summary>
+    /// <see cref="Strangers"/> is shown, and even when they are also in your guild and <see cref="Guild"/> is shown (hide
+    /// wins). The one exception: a friend who is in your party stays visible while <see cref="Party"/> is shown. Since
+    /// 2.20.0.</summary>
     Friends = 8192,
     /// <summary>Your party members (the game photo screen's "Party") — hidden even while <see cref="Strangers"/> is
-    /// shown, unless they are also in a group that is still shown (<see cref="Friends"/>, <see cref="Guild"/>). Since
-    /// 2.20.0.</summary>
+    /// shown, and even when they are also a friend or guild mate whose group is shown (hide wins). While Party is shown,
+    /// a party member stays visible whatever else is hidden. Since 2.20.0.</summary>
     Party = 16384,
     /// <summary>Your guild mates (the game photo screen's "Guild") — hidden even while <see cref="Strangers"/> is shown,
-    /// unless they are also in a group that is still shown (<see cref="Friends"/>, <see cref="Party"/>). Since
-    /// 2.20.0.</summary>
+    /// and even when they are also a friend and <see cref="Friends"/> is shown (hide wins). The one exception: a guild
+    /// mate who is in your party stays visible while <see cref="Party"/> is shown. Since 2.20.0.</summary>
     Guild = 32768,
     /// <summary>Friendly NPCs (the game photo screen's "Non-players"). Since 2.20.0.</summary>
     NonPlayers = 65536,
