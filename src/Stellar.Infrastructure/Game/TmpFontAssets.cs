@@ -13,7 +13,8 @@ namespace Stellar.Infrastructure.Game;
 /// cannot reliably reach a real face, while a file-path TMP asset works on every machine. The merged faces
 /// also carry U+005F, which TMP requires IN THE PRIMARY ASSET to draw underline/strikethrough. CJK ships
 /// no face (size); <see cref="CjkRegular"/>/<see cref="CjkBold"/> resolve a real system family instead —
-/// Source Han Sans ships in every Proton prefix, and Yu Gothic UI / Meiryo cover real Windows. Assets are
+/// Source Han Sans ships in every Proton prefix, and Yu Gothic UI / Meiryo cover real Windows (with Malgun
+/// Gothic attached as a Hangul fallback, since neither carries Korean). Assets are
 /// created once and never destroyed (mirrors <see cref="WindowThemeAssets.MenuFont"/> — live TMP texts
 /// keep referencing them). Game-only file: the Mono UI-sandbox has no TextMeshPro package, so this must
 /// never be symlinked into it.
@@ -38,9 +39,17 @@ internal static class TmpFontAssets
     /// <summary>Real-bold CJK/kana/Hangul face from a system family. Null when no candidate resolved.</summary>
     public static TMP_FontAsset? CjkBold { get { Ensure(); return _cjkBold; } }
 
-    // First candidate that resolves wins. Source Han Sans: every GE-Proton prefix (sourcehansans.ttc);
-    // Yu Gothic UI: Windows 8.1+; Meiryo: Windows Vista+ AND Wine prefixes — in practice never all-null.
-    private static readonly string[] CjkFamilies = { "Source Han Sans", "Yu Gothic UI", "Meiryo" };
+    // First candidate that resolves wins. Source Han Sans: every GE-Proton prefix (sourcehansans.ttc —
+    // includes Hangul); Yu Gothic UI: Windows 8.1+; Meiryo: Windows Vista+ AND Wine prefixes — in practice
+    // never all-null. Malgun Gothic (Windows Vista+, Hangul) is last so a box with no Japanese face still
+    // gets Korean.
+    private static readonly string[] CjkFamilies = { "Source Han Sans", "Yu Gothic UI", "Meiryo", HangulFamily };
+
+    // Yu Gothic UI / Meiryo carry NO Hangul, and the pick above is a single family with no per-glyph
+    // fallback — so on real Windows (Yu Gothic resolves first) Korean would tofu. Malgun Gothic is therefore
+    // also attached as a TMP FALLBACK asset of the chosen CJK asset: TMP looks a glyph up in the primary
+    // atlas first and only then walks fallbackFontAssetTable. Created once at init (never per frame).
+    private const string HangulFamily = "Malgun Gothic";
 
     private static void Ensure()
     {
@@ -71,11 +80,32 @@ internal static class TmpFontAssets
             try
             {
                 var asset = TMP_FontAsset.CreateFontAsset(family, style, 90);
-                if (asset != null) return SeedDecorationGlyph(asset);
+                if (asset == null) continue;
+                if (family != HangulFamily) AttachHangulFallback(asset, style);
+                return SeedDecorationGlyph(asset);
             }
             catch { /* try the next candidate */ }
         }
         return null;
+    }
+
+    // Attach Malgun Gothic (same style) as a fallback of the chosen CJK asset when it resolves on this
+    // machine. Absent (every Proton prefix — Source Han Sans already covers Hangul there) = no-op.
+    private static void AttachHangulFallback(TMP_FontAsset primary, string style)
+    {
+        try
+        {
+            var hangul = TMP_FontAsset.CreateFontAsset(HangulFamily, style, 90);
+            if (hangul == null) return;
+            var table = primary.fallbackFontAssetTable;
+            if (table == null)
+            {
+                table = new Il2CppSystem.Collections.Generic.List<TMP_FontAsset>();
+                primary.fallbackFontAssetTable = table;
+            }
+            table.Add(hangul);
+        }
+        catch { /* Korean degrades to the primary family's coverage; other scripts are unaffected */ }
     }
 
     // Pre-rasterize U+005F into the dynamic atlas AND flush the texture. TMP draws underline/strikethrough

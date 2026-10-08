@@ -30,6 +30,22 @@ public sealed class UiLanguagesTests
         }
     }
 
+    // ko shipped as an English copy until translated; only symbol/number-only values may equal English.
+    [Fact]
+    public void Korean_catalog_is_translated()
+    {
+        var langDir = Path.Combine(RepoRoot(), "src", "Stellar.Infrastructure", "Lang");
+        var en = Values(Path.Combine(langDir, "en.json"));
+        var ko = Values(Path.Combine(langDir, "ko.json"));
+        var same = en.Keys.Where(k => en[k] == ko[k]).OrderBy(k => k, System.StringComparer.Ordinal).ToArray();
+        Assert.Equal(new[] { "layout.px", "perf.hz", "perf.ramp.hz" }, same);
+    }
+
+    // Korean is the 2.21.0 feature; the exact current-version pin follows the latest release.
+    [Fact]
+    public void Framework_version_is_2_21_0()
+        => Assert.Equal("2.21.0", Stellar.Abstractions.Domain.FrameworkVersion.Value);
+
     [Theory]
     [MemberData(nameof(AllCodes))]
     public void Engine_accepts_every_listed_code(string code)
@@ -41,6 +57,9 @@ public sealed class UiLanguagesTests
 
     public static System.Collections.Generic.IEnumerable<object[]> AllCodes()
         => UiLanguages.Codes.Select(c => new object[] { c });
+
+    private static System.Collections.Generic.Dictionary<string, string> Values(string path)
+        => JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, string>>(File.ReadAllText(path))!;
 
     private static string[] Keys(string path)
         => JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, string>>(File.ReadAllText(path))!

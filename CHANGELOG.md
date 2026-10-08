@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.21.0] - Unreleased
+_**2.21.0** (minor) — Korean UI language. Adds `"ko"` as a language code plugins can receive (Abstractions 2.21.0); additive, no plugin rebuild._
+### Added
+- Korean (한국어) is now a language option — pick it under Settings → Themes → Language, or keep "Follow game client" on a Korean game client.
+### Developer notes
+- New `ko` catalog code; plugins ship `Lang/ko.json` (embedded as `<Ns>.Lang.ko.json`). The framework's own UI ships a full Korean catalog (`Stellar.Infrastructure/Lang/ko.json`).
+- Supported languages now come from one list (`UiLanguages`) shared by the engine, resource scan and Settings dropdown; a test fails the build if a listed language lacks a complete catalog.
+- `ClientLanguageProbe` maps `LanguageType.ko = 4`. Hangul font coverage: Noto Sans CJK KR + Malgun Gothic added to the OS-font chain (`WindowThemeAssets.FontFamilies`), and Malgun Gothic is attached as a TMP fallback asset of the chosen CJK face (`TmpFontAssets`) — Yu Gothic UI / Meiryo carry no Hangul, so on real Windows Korean styled text would otherwise render as boxes. On Proton, Source Han Sans already covers Hangul.
+
 ## [2.20.0] - 2026-10-08
 _**2.20.0** (minor) — plugins can hide everything the game's own photo screen can hide, and use the [, ] and backslash keys as hotkeys. Adds API for plugins (Abstractions 2.20.0); additive, no plugin rebuild._
 ### Added

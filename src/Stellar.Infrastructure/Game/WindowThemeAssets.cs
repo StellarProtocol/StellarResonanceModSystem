@@ -86,14 +86,16 @@ internal sealed class WindowThemeAssets
 
     // OS-font fallback chain: CreateDynamicFontFromOSFont renders each glyph from the first listed family
     // that provides it, so the chain must cover every UI language Stellar localizes into (i18n P0):
-    // Latin (Noto Sans) → CJK for ja/zh (Noto Sans CJK JP/SC) → Thai for th (Noto Sans Thai/Thai UI) →
+    // Latin (Noto Sans) → CJK for ja/zh (Noto Sans CJK JP/SC) → Hangul for ko (Noto Sans CJK KR / Malgun
+    // Gothic — Windows' Korean UI face; Yu Gothic/Meiryo carry no Hangul) → Thai for th (Noto Sans Thai/Thai UI) →
     // the DejaVu/Liberation tail that covers the Proton box → Arial (Unity's always-synthesised last resort).
-    // Indonesian (id) is Latin, covered by Noto Sans. Without the Thai families, th text tofu'd (the chain
+    // Indonesian (id) and Filipino (fil) are Latin, covered by Noto Sans. Without the Thai families, th text tofu'd (the chain
     // had CJK but no Thai) — the glyph-coverage gate (i18n Task 0) added them.
     private static readonly string[] FontFamilies =
     {
         "Noto Sans", "NotoSans",
-        "Noto Sans CJK JP", "Noto Sans CJK SC",
+        "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK KR",
+        "Malgun Gothic",
         "Noto Sans Thai", "Noto Sans Thai UI",
         "DejaVu Sans", "Liberation Sans", "Arial",
     };
