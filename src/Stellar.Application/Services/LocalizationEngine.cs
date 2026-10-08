@@ -19,7 +19,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
 {
     private const string LanguageKey = "language";
     private const string Follow = "follow";
-    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal) { "en", "ja", "th", "id", "fil" };
+    private static readonly HashSet<string> Supported = new(UiLanguages.Codes, StringComparer.Ordinal);
 
     // ns → (langCode → (key → value))
     private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _catalogs = new(StringComparer.Ordinal);
@@ -44,7 +44,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
     /// <summary>Raw persisted setting: <c>"follow"</c> or a supported code.</summary>
     public string LanguageSetting => _setting;
 
-    /// <summary>Resolved active language — always one of <c>"en"/"ja"/"th"/"id"</c>.</summary>
+    /// <summary>Resolved active language — always one of <see cref="UiLanguages.Codes"/>.</summary>
     public string ActiveLanguage => _setting == Follow ? Normalize(_probe.SupportedLanguage) : _setting;
 
     /// <summary>Parse and store one catalog under <paramref name="ns"/>/<paramref name="langCode"/>.</summary>

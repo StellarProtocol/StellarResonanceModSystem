@@ -9,10 +9,10 @@ namespace Stellar.Abstractions.Services;
 /// </summary>
 public interface ILocalizationControl
 {
-    /// <summary>Raw persisted setting: <c>"follow"</c> (game client) or <c>"en"/"ja"/"th"/"id"</c>.</summary>
+    /// <summary>Raw persisted setting: <c>"follow"</c> (game client) or <c>"en"/"ja"/"th"/"id"/"fil"/"ko"</c>.</summary>
     string LanguageSetting { get; }
 
-    /// <summary>Resolved active language — always one of <c>"en"/"ja"/"th"/"id"</c>.</summary>
+    /// <summary>Resolved active language — always one of <c>"en"/"ja"/"th"/"id"/"fil"/"ko"</c>.</summary>
     string ActiveLanguage { get; }
 
     /// <summary>Set the language setting (<c>"follow"</c> or a supported code). Persists and raises

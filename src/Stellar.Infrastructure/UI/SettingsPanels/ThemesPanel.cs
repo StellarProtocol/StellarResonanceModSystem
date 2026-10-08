@@ -16,9 +16,10 @@ internal sealed class ThemesPanel
     private static readonly ThemePreset[] Presets =
         { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
 
-    // Language dropdown: setting codes (index-aligned to the option labels). Index 0 ("follow") is the only
-    // descriptive option (localized); indices 1-4 are language NAMES shown in their own script in every locale.
-    private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id", "fil" };
+    // Language dropdown: index 0 = "follow" (the only localized option); indices 1..N = UiLanguages, each shown
+    // in its own script in every locale.
+    private static readonly string[] LangCodes =
+        System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Prepend(UiLanguages.Codes, "follow"));
     // Options cached + rebuilt only when the active language changes (the "follow" label localizes), so the
     // per-frame dropdown poll doesn't allocate a fresh array.
     private string[]? _langOptCache;
@@ -30,7 +31,10 @@ internal sealed class ThemesPanel
             if (_langOptCache == null || _langOptLang != _text.Language)
             {
                 _langOptLang = _text.Language;
-                _langOptCache = new[] { _text.T("themes.language.follow"), "English", "日本語", "ไทย", "Bahasa Indonesia", "Filipino" };
+                var opts = new string[UiLanguages.NativeNames.Count + 1];
+                opts[0] = _text.T("themes.language.follow");
+                for (var n = 0; n < UiLanguages.NativeNames.Count; n++) opts[n + 1] = UiLanguages.NativeNames[n];
+                _langOptCache = opts;
             }
             return _langOptCache;
         }
