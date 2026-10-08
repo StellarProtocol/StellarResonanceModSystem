@@ -31,13 +31,16 @@ public sealed class UiLanguagesTests
     }
 
     [Theory]
-    [InlineData("ko")]
+    [MemberData(nameof(AllCodes))]
     public void Engine_accepts_every_listed_code(string code)
     {
         var e = new LocalizationEngine(new FakeConfigSection(), new FakeProbe(), new FakeLog());
         e.SetLanguageSetting(code);
         Assert.Equal(code, e.ActiveLanguage);
     }
+
+    public static System.Collections.Generic.IEnumerable<object[]> AllCodes()
+        => UiLanguages.Codes.Select(c => new object[] { c });
 
     private static string[] Keys(string path)
         => JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, string>>(File.ReadAllText(path))!

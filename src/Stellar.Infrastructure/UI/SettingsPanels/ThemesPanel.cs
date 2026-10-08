@@ -88,8 +88,9 @@ internal sealed class ThemesPanel
         return new ColumnElement(items.ToArray());
     }
 
-    // Language selector — Follow game client (default) or one of the four shipped UI languages. Persists via
-    // ILocalizationControl and switches the overlay live (Func<string> labels re-poll; baked renderers flush).
+    // Language selector — Follow game client (default) or one of the shipped UI languages
+    // (UiLanguages.Codes). Persists via ILocalizationControl and switches the overlay live
+    // (Func<string> labels re-poll; baked renderers flush).
     private void AddLanguage(System.Collections.Generic.List<HudElement> items)
     {
         items.Add(new TextElement(() => _text.T("themes.language"), Emphasis: true));
