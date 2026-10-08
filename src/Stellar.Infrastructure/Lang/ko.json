@@ -44,7 +44,7 @@
   "perf.ramp.hz": "→ {0} Hz",
   "perf.rateDesc.default": "바닐라에 가까운 게임 FPS를 유지하면서도 HUD와 입력은 대부분의 플레이어가 차이를 느끼지 못할 만큼 부드럽습니다. 최적 지점입니다.",
   "perf.rateDesc.high": "기본값보다 Stellar UI가 부드럽지만 게임 FPS에 약간의 부담이 있습니다. 높을수록 부드럽지만 부담도 커집니다.",
-  "perf.rateDesc.low": "최고의 게임 FPS — Stellar가 프레임 레이트에 거의 영향을 주지 않습니다. HUD, 재사용 대기시간, 화면 정보가 초당 약 10-15회만 갱신되므로 눈에 띄게 지연되고, Stellar에서의 입력과 드래그도 지연됩니다.",
+  "perf.rateDesc.low": "최고의 게임 FPS — Stellar가 프레임 레이트에 거의 영향을 주지 않습니다. HUD, 쿨타임, 화면 정보가 초당 약 10-15회만 갱신되므로 눈에 띄게 지연되고, Stellar에서의 입력과 드래그도 지연됩니다.",
   "perf.rateDesc.max": "가장 부드럽고 반응성이 좋은 Stellar UI — 렌더링되는 매 프레임마다 갱신합니다. 게임 FPS 부담이 가장 큽니다.",
   "perf.self.boost": "부스트",
   "perf.self.managed": "자체 관리",
