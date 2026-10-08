@@ -40,6 +40,27 @@ internal sealed partial class PandaSocialDataProbe
         _log.Info($"[Stellar] first avatar URLs parsed: char={s.CharId} profile={s.ProfileUrl} halfBody={s.HalfBodyUrl}");
     }
 
+    // Last-logged location per charId. Nameplate/avatar queries re-fetch the same player constantly, so
+    // the location probe only logs when a player's location actually changed (incl. present↔absent).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, SocialLocation?> _lastLoggedLocation = new();
+
+    /// <summary>Location probe (fires regardless of the diagnostics toggle): logs a player's
+    /// <c>SocialData.scene_data</c> whenever it differs from the last one logged for that char, so we can
+    /// learn in-game whether the server fills it for OTHER players or blanks it for privacy
+    /// (<c>present=False</c> = section absent; <c>present=True</c> with all zeros = sent but blanked).</summary>
+    private void LogLocationProbe(SocialSnapshot s)
+    {
+        var loc = s.Location;
+        if (_lastLoggedLocation.TryGetValue(s.CharId, out var prev) && prev == loc) return;
+        _lastLoggedLocation[s.CharId] = loc;
+
+        var l = loc.GetValueOrDefault();
+        _log.Info(
+            $"[SocialLocation] char={s.CharId} name={s.Name} present={loc is not null} map={l.MapId} " +
+            $"layer={l.SceneLayer} line={l.LineId} pos=({l.Pos.X:F1},{l.Pos.Y:F1},{l.Pos.Z:F1}) dir={l.Dir:F1} " +
+            $"area={l.SceneAreaId} levelMap={l.LevelMapId} levelPos=({l.LevelPos.X:F1},{l.LevelPos.Y:F1},{l.LevelPos.Z:F1})");
+    }
+
     private bool _collectPointsOneShot;
 
     /// <summary>One-shot (fires regardless of the diagnostics toggle) confirmation that a parsed

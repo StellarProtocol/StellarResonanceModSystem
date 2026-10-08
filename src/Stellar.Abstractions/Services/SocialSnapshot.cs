@@ -62,4 +62,25 @@ public sealed record SocialSnapshot(
     IReadOnlyList<FashionEntry> Fashion,
     SocialIdentity Identity,
     string ProfileUrl = "",
-    string HalfBodyUrl = "");
+    string HalfBodyUrl = "")
+{
+    /// <summary>The player's scene location from <c>SocialData.scene_data</c> (field 10); null when the reply
+    /// omitted that section entirely. A non-null value may still be all-zero — the server can send the section
+    /// but blank its contents for privacy, and that present-vs-absent distinction is deliberately preserved.
+    /// Init-only (not a positional parameter) so existing compiled callers of the constructor stay binary-compatible.</summary>
+    public SocialLocation? Location { get; init; }
+}
+
+/// <summary>A player's scene location as carried by <c>SocialData.scene_data</c> (<c>zproto.SceneData</c>).
+/// Every member defaults to 0 when its wire field is absent.</summary>
+/// <param name="MapId">Scene/map id from <c>scene_data.map_id</c>.</param>
+/// <param name="SceneLayer">Scene layer from <c>scene_data.scene_layer</c>.</param>
+/// <param name="LineId">Server line (channel shard) from <c>scene_data.line_id</c>.</param>
+/// <param name="Pos">World-space position from <c>scene_data.pos</c> (x/y/z).</param>
+/// <param name="Dir">Facing from <c>scene_data.pos.dir</c>.</param>
+/// <param name="SceneAreaId">Scene area id from <c>scene_data.scene_area_id</c>.</param>
+/// <param name="LevelMapId">Level (instance) map id from <c>scene_data.level_map_id</c>; 0 outside a level.</param>
+/// <param name="LevelPos">Position inside the level from <c>scene_data.level_pos</c> (x/y/z).</param>
+public readonly record struct SocialLocation(
+    int MapId, int SceneLayer, int LineId, Position3D Pos, float Dir,
+    int SceneAreaId, int LevelMapId, Position3D LevelPos);
