@@ -81,7 +81,7 @@ internal static class TmpFontAssets
             {
                 var asset = TMP_FontAsset.CreateFontAsset(family, style, 90);
                 if (asset == null) continue;
-                if (family != HangulFamily) AttachHangulFallback(asset, style);
+                if (!CoversHangul(family)) AttachHangulFallback(asset, style);
                 return SeedDecorationGlyph(asset);
             }
             catch { /* try the next candidate */ }
@@ -89,8 +89,12 @@ internal static class TmpFontAssets
         return null;
     }
 
+    // Source Han Sans (sourcehansans.ttc) and Malgun Gothic already carry Hangul — skipping the Malgun lookup for
+    // them also avoids TMP's "Unable to find a font file" log lines on every Proton boot (Malgun is absent there).
+    private static bool CoversHangul(string family) => family == "Source Han Sans" || family == HangulFamily;
+
     // Attach Malgun Gothic (same style) as a fallback of the chosen CJK asset when it resolves on this
-    // machine. Absent (every Proton prefix — Source Han Sans already covers Hangul there) = no-op.
+    // machine (only reached when the primary lacks Hangul). Absent = no-op.
     private static void AttachHangulFallback(TMP_FontAsset primary, string style)
     {
         try
