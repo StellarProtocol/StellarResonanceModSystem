@@ -26,7 +26,7 @@ public sealed partial class BootstrapPlugin
         ConstructResonanceData(log, typeRegistry);   // idempotent — shares _mlStrings / _gameDataResonance
         // Cached client UI language — locale-gates the empty-Name → NameDesign fallback so an English client
         // never surfaces the Chinese design label. Cheap: reads LocalizationMgr.CurrentLanguageTypeIndex once.
-        _clientLanguage ??= new PandaClientLanguage(log, typeRegistry);
+        EnsureClientLanguage(log);
         _gameDataProbe = new PandaGameDataProbe(log, typeRegistry, _mlStrings!, _clientLanguage);
         _gameDataLog = log;
     }

@@ -27,6 +27,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
     private readonly IClientLanguageProbe _probe;
     private readonly IPluginLog _log;
     private string _setting;
+    private string _followResolved;   // the client language follow last resolved to (raise only on a real change)
 
     public LocalizationEngine(IConfigSection settings, IClientLanguageProbe probe, IPluginLog log)
     {
@@ -35,6 +36,8 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         _log = log;
         var stored = settings.Get(LanguageKey, Follow) ?? Follow;
         _setting = IsValidSetting(stored) ? stored : Follow;
+        _followResolved = Normalize(probe.SupportedLanguage);
+        probe.Changed += OnClientLanguageChanged;
         _log.Info($"[Stellar][i18n] localization setting='{_setting}'");
     }
 
@@ -74,6 +77,25 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         _settings.Save();
         _log.Info($"[Stellar][i18n] language setting → '{setting}' (active={ActiveLanguage})");
         if (ActiveLanguage != oldActive) LanguageChanged?.Invoke();
+    }
+
+    // The client language became known (or the player switched it in-game): under `follow`, live UI re-resolves.
+    // Raised from a game-side signal, never from a T() read, so no handler runs mid-render of a framework window.
+    private void OnClientLanguageChanged()
+    {
+        var now = Normalize(_probe.SupportedLanguage);
+        if (now == _followResolved) return;
+        var was = _followResolved;
+        _followResolved = now;
+        _log.Info($"[Stellar][i18n] client language '{was}' → '{now}' (setting='{_setting}')");
+        if (_setting != Follow) return;
+        var handlers = LanguageChanged;
+        if (handlers == null) return;
+        foreach (var d in handlers.GetInvocationList())
+        {
+            try { ((Action)d)(); }
+            catch (Exception ex) { _log.Warning($"[Stellar][i18n] LanguageChanged handler threw: {ex.Message}"); }
+        }
     }
 
     private bool TryResolve(string ns, string key, out string value)

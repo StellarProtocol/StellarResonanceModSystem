@@ -54,9 +54,9 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe, IStallSubcate
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
     private readonly PandaMLStringResolver _mlStrings;
-    private readonly PandaClientLanguage _clientLanguage;
+    private readonly Stellar.Application.Services.ClientLanguageLatch _clientLanguage;
 
-    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings, PandaClientLanguage clientLanguage)
+    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings, Stellar.Application.Services.ClientLanguageLatch clientLanguage)
     {
         _log = log;
         _typeRegistry = typeRegistry;
