@@ -21,8 +21,8 @@ internal sealed partial class WindowBuilder
         var result = reg.Spec.Style switch
         {
             WindowPanelStyle.Borderless => BuildBorderless(reg.Spec, parent),
-            WindowPanelStyle.Tracker    => BuildTrackerChrome(reg.Spec, parent),
-            WindowPanelStyle.Party      => BuildPartyChrome(reg.Spec, parent),
+            WindowPanelStyle.Tracker    => BuildTrackerChrome(reg.Spec, parent, token),
+            WindowPanelStyle.Party      => BuildPartyChrome(reg.Spec, parent, token),
             WindowPanelStyle.PillStatus => BuildPillChrome(reg.Spec, parent),
             _                            => BuildGlassChrome(reg, parent, token),   // GlassMenu + default
         };
@@ -225,7 +225,7 @@ internal sealed partial class WindowBuilder
         if (h != null)
         {
             token.ReskinActions.Add(() => { h.SetFontSize(Scaled(13)); h.SetColor(_assets.MenuText); });
-            if (spec.TitleProvider != null) token.ReskinActions.Add(() => h.SetText(TitleOf(spec)));
+            RegisterTitleReskin(spec, token, h, null);
             return;
         }
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
@@ -234,22 +234,41 @@ internal sealed partial class WindowBuilder
         title.color = _assets.MenuText; title.text = text; title.raycastTarget = false;
         title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, text);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
-        if (spec.TitleProvider != null)
-            token.ReskinActions.Add(() =>
-            {
-                if (title == null) return;
-                var s = TitleOf(spec);
-                title.text = s; title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
-            });
+        RegisterTitleReskin(spec, token, null, title);
+    }
+
+    // Live-localized title (spec.TitleProvider): re-read on the reskin pass (InvalidateTheme — theme change and
+    // LanguageChanged), never per frame. Shared by the title-bar and the tracker/party overlay chromes. No-op
+    // without a provider, so plain-title windows gain no reskin work.
+    private void RegisterTitleReskin(WindowSpec spec, WindowToken token, IStyledTextHandle? handle, Text? legacy)
+    {
+        if (spec.TitleProvider == null) return;
+        token.ReskinActions.Add(() =>
+        {
+            var s = TitleOf(spec);
+            if (handle != null) handle.SetText(s);
+            if (legacy != null) { legacy.text = s; legacy.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s); }
+        });
     }
 
     // spec.DisplayTitle runs caller code (TitleProvider): fail-safe like WindowService.SafeApply — a throwing
-    // provider shows the plain Title rather than aborting the window build / reskin pass.
-    private static string TitleOf(WindowSpec spec)
+    // provider shows the plain Title rather than aborting the window build / reskin pass, warned once per window id.
+    private string TitleOf(WindowSpec spec)
     {
         try { return spec.DisplayTitle; }
-        catch (System.Exception) { return spec.Title; }
+        catch (System.Exception ex)
+        {
+            if (_titleProviderWarned.Add(spec.Id))
+                Warn?.Invoke($"[Window] '{spec.Id}' TitleProvider threw; showing its Title: {ex.Message}");
+            return spec.Title;
+        }
     }
+
+    private readonly System.Collections.Generic.HashSet<string> _titleProviderWarned = new(System.StringComparer.Ordinal);
+
+    /// <summary>Warning sink (a settable property, not a ctor param — ctor-dependency cap); set by WindowRenderer.
+    /// Null in the sandbox → silent fallback.</summary>
+    internal System.Action<string>? Warn { get; set; }
 
     // 1 px accent divider pinned to the title bar's bottom edge (ignore-layout overlay).
     private void BuildTitleDivider(GameObject bar, WindowToken token)

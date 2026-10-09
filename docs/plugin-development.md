@@ -494,6 +494,11 @@ to English; a key that exists nowhere renders as the key itself (so it's obvious
 on a switch (subscribe only if you cache built text; draw-time labels need no handler). Plugins **read**
 the language — they never set it (that's the framework's Settings → Themes → Language control).
 
+**Window titles and launcher tiles** are plain strings captured at registration, so localize them with
+`TitleProvider` (`WindowSpec.TitleProvider`, `LauncherEntry.TitleProvider` — e.g. `TitleProvider = () => s.T("window.title")`),
+which the framework evaluates when it draws them. Keep `Title` a stable English string (a launcher tile's pin is saved
+under it), and never call `T()` while registering — the game's language may not be known yet that early.
+
 **3. Validate before you commit.** The framework never fails on a missing key, so check your catalogs
 yourself (a small script in CI is enough): every key your code passes to `T` / `TFormat` should exist
 in `en.json`, and every `en.json` key should exist in ja/th/id/fil/ko. Copying the English text in as a

@@ -389,6 +389,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
         TmpStyledText.Register();
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));

@@ -124,10 +124,12 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// once it is first shown) and again on a theme/language change, never per frame. <c>null</c> (the default)
     /// shows <see cref="Title"/>. Set it to <c>() =&gt; services.Localization.T("your.title.key")</c> so the title
     /// is read in the player's language without resolving it at registration time. <see cref="Title"/> stays the
-    /// fallback (used if the provider throws) — identity is <see cref="Id"/>, never the title.</summary>
+    /// fallback: the window chrome falls back to <see cref="Title"/> if the provider throws (and logs it once).
+    /// Identity is <see cref="Id"/>, never the title.</summary>
     public Func<string>? TitleProvider { get; init; }
 
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
-    /// <see cref="Title"/>. Invokes the provider — read it only where the window is being drawn.</summary>
+    /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window
+    /// is being drawn.</summary>
     public string DisplayTitle => TitleProvider?.Invoke() ?? Title;
 }

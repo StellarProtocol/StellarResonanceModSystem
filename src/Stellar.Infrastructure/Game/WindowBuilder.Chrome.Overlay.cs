@@ -12,7 +12,7 @@ internal sealed partial class WindowBuilder
 {
     // Tracker: translucent dark body, a title row (mint dot + bold title), a mint→transparent gradient
     // divider, then the read-only content. No close. Drag handle = title row (wired in Plan 4).
-    private (RectTransform root, Transform content) BuildTrackerChrome(WindowSpec spec, Transform parent)
+    private (RectTransform root, Transform content) BuildTrackerChrome(WindowSpec spec, Transform parent, WindowToken token)
     {
         var root = NewOverlayRoot(spec, parent, _assets.PanelBg);
         var title = UGuiPrimitives.NewChild("TrackerTitle", root.transform);
@@ -26,13 +26,17 @@ internal sealed partial class WindowBuilder
         var dimg = dot.AddComponent<Image>(); dimg.sprite = _assets.Capsule; dimg.type = Image.Type.Sliced;
         dimg.color = _assets.MenuAccent; dimg.raycastTarget = false;
         var titleText = TitleOf(spec);   // display title, read once at build (see BuildTitleText)
-        if (TryBuildBoldTitle(title.transform, titleText, 13, _assets.MenuText) == null)
+        var th = TryBuildBoldTitle(title.transform, titleText, 13, _assets.MenuText);
+        Text? tl = null;
+        if (th == null)
         {
             var tGo = UGuiPrimitives.NewChild("Title", title.transform);
             var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true);
             t.color = _assets.MenuText; t.text = titleText; t.raycastTarget = false;
             t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, titleText);   // crisp per-script weight
+            tl = t;
         }
+        RegisterTitleReskin(spec, token, th, tl);   // live-localized title follows a language switch
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);
@@ -41,7 +45,7 @@ internal sealed partial class WindowBuilder
 
     // Party: translucent dark body, a left accent edge bar, a mint banner tab (bold dark title),
     // a gradient divider, then read-only roster content.
-    private (RectTransform root, Transform content) BuildPartyChrome(WindowSpec spec, Transform parent)
+    private (RectTransform root, Transform content) BuildPartyChrome(WindowSpec spec, Transform parent, WindowToken token)
     {
         var root = NewOverlayRoot(spec, parent, _assets.PanelBg);
         // Left accent edge (ignore-layout overlay, 3 px, full height).
@@ -64,13 +68,17 @@ internal sealed partial class WindowBuilder
         var bbgImg = bbg.AddComponent<Image>(); bbgImg.color = _assets.MenuAccent; bbgImg.raycastTarget = true;
         var bannerTitleColor = new Color(0.06f, 0.16f, 0.15f, 1f);
         var titleText = TitleOf(spec);   // display title, read once at build (see BuildTitleText)
-        if (TryBuildBoldTitle(banner.transform, titleText, 12, bannerTitleColor) == null)
+        var th = TryBuildBoldTitle(banner.transform, titleText, 12, bannerTitleColor);
+        Text? tl = null;
+        if (th == null)
         {
             var tGo = UGuiPrimitives.NewChild("Title", banner.transform);
             var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true);
             t.color = bannerTitleColor; t.text = titleText; t.raycastTarget = false;
             t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, titleText);   // crisp per-script weight
+            tl = t;
         }
+        RegisterTitleReskin(spec, token, th, tl);   // live-localized title follows a language switch
 
         AddHGradientDivider(root.transform);
         var content = AddContentContainer(root.transform);
