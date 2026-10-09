@@ -19,6 +19,9 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
     private readonly ILauncherOwnedRegistrations _launcher;
     private readonly IPluginLog _log;
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);   // threw once → skipped + logged once
+    // The last title each plugin's tile resolved to. A plugin disposes its tile when disabled, so this keeps its
+    // Settings row on the localized name instead of reverting to the internal one; dropped on a language switch.
+    private readonly Dictionary<string, string> _lastTitles = new(StringComparer.Ordinal);
 
     public PluginDisplayNames(ILauncherOwnedRegistrations launcher, IPluginLog log)
     {
@@ -31,11 +34,14 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
         // A provider that threw once is skipped from then on (row Funcs re-resolve every apply — an exception per
         // frame is a real cost). The same set gates the log-once.
         if (_failed.Contains(pluginId)) return fallback;
-        if (_launcher.FirstEntryOwnedBy(pluginId) is not { } entry) return fallback;
+        if (_launcher.FirstEntryOwnedBy(pluginId) is not { } entry)
+            return _lastTitles.TryGetValue(pluginId, out var last) ? last : fallback;
         try
         {
             var title = entry.DisplayTitle;   // runs the plugin's TitleProvider (its own T() lookup)
-            return string.IsNullOrWhiteSpace(title) ? fallback : title;
+            if (string.IsNullOrWhiteSpace(title)) return fallback;
+            _lastTitles[pluginId] = title;
+            return title;
         }
         catch (Exception ex)
         {
@@ -44,4 +50,8 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
             return fallback;
         }
     }
+
+    /// <summary>Forget every remembered title (wired to <c>LanguageChanged</c>): a disabled plugin's remembered
+    /// title is in the old language, so it shows its internal name until its tile is registered again.</summary>
+    public void ForgetRemembered() => _lastTitles.Clear();
 }

@@ -42,6 +42,7 @@
   "hotkeys.none": "ホットキーはありません。",
   "hotkeys.passthrough": "ホットキーをゲームに渡さない",
   "hotkeys.resetAll": "すべて初期設定に戻す",
+  "hotkeys.unbound": "未設定",
   "launcher.plugins": "プラグイン",
   "launcher.settings": "設定",
   "layout.editEnter": "編集モード: Shift+` で開始",

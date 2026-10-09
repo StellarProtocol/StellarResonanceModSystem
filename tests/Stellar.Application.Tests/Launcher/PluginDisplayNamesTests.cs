@@ -52,6 +52,23 @@ public sealed class PluginDisplayNamesTests
     }
 
     [Fact]
+    public void Resolve_DisabledPlugin_KeepsItsLastTitle_UntilTheLanguageChanges()
+    {
+        // A plugin disposes its launcher tile when disabled; its Settings row must keep the display name it had
+        // (never revert to the assembly-derived internal name), and drop it only on a language switch.
+        var reg = NewRegistry(out var log);
+        var handle = new PerPluginLauncher("p", reg, reg).Register(Entry("Photo Studio", () => "포토 스튜디오"));
+        var names = new PluginDisplayNames(reg, log);
+        Assert.Equal("포토 스튜디오", names.Resolve("p", "StellarPhotoStudioPlugin"));
+
+        handle.Dispose();   // plugin disabled
+        Assert.Equal("포토 스튜디오", names.Resolve("p", "StellarPhotoStudioPlugin"));
+
+        names.ForgetRemembered();   // LanguageChanged
+        Assert.Equal("Photo Studio Internal", names.Resolve("p", "Photo Studio Internal"));
+    }
+
+    [Fact]
     public void Resolve_ThrowingProvider_FallsBack_AndLogsOnce()
     {
         var reg = NewRegistry(out var log);

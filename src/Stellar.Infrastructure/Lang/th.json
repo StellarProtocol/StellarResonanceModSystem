@@ -42,6 +42,7 @@
   "hotkeys.none": "ไม่มีปุ่มลัด",
   "hotkeys.passthrough": "ไม่ส่งปุ่มลัดต่อไปยังเกม",
   "hotkeys.resetAll": "รีเซ็ตทั้งหมดเป็นค่าเริ่มต้น",
+  "hotkeys.unbound": "ไม่ได้ตั้งค่า",
   "launcher.plugins": "ปลั๊กอิน",
   "launcher.settings": "ตั้งค่า",
   "layout.editEnter": "โหมดแก้ไข: Shift+` เพื่อเริ่ม",

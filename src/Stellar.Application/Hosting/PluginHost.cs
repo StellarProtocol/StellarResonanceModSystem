@@ -90,7 +90,9 @@ internal sealed class PluginHost : IDisposable
         // requires construction. The PluginRegistry calls the factory on enable;
         // until the first successful enable, we fall back to the assembly's
         // short name for the Plugins panel listing.
-        var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
+        // (The registry prefers the name remembered from the plugin's last enable; this readable form of the
+        // assembly name is only for a plugin that has never been constructed on this install.)
+        var displayName = PluginNameFallback.FromAssemblyName(asm.GetName().Name ?? pluginType.FullName ?? pluginGuid);
         var perPluginConfig = _factories.Config.Create(pluginGuid);
         var perPluginData = _factories.DataStore.Create(pluginGuid);
         var perPluginDownloads = _factories.Downloads.Create(pluginGuid);

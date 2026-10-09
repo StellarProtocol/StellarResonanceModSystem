@@ -42,6 +42,7 @@
   "hotkeys.none": "Tidak ada hotkey.",
   "hotkeys.passthrough": "Jangan teruskan hotkey ke game",
   "hotkeys.resetAll": "Atur ulang semua ke bawaan",
+  "hotkeys.unbound": "belum diatur",
   "launcher.plugins": "PLUGIN",
   "launcher.settings": "Pengaturan",
   "layout.editEnter": "Mode edit: Shift+` untuk masuk",

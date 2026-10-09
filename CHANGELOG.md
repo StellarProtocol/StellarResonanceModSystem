@@ -27,6 +27,8 @@ _**2.21.0** (minor) — Korean UI language. Adds `"ko"` as a language code plugi
 ### Fixed
 - Follow game client now picks your game's language reliably (it could fall back to English).
 - Coloured text on HUD bars, windows and notifications is no longer blurred by its shadow.
+- Hotkeys with no key set now say so in your language.
+- Turned-off plugins keep their proper name in Settings instead of a file name.
 ### Developer notes
 - New `ko` catalog code; plugins ship `Lang/ko.json` (embedded as `<Ns>.Lang.ko.json`). The framework's own UI ships a full Korean catalog (`Stellar.Infrastructure/Lang/ko.json`).
 - Supported languages now come from one list (`UiLanguages`) shared by the engine, resource scan and Settings dropdown; a test fails the build if a listed language lacks a complete catalog.
@@ -44,6 +46,7 @@ _**2.21.0** (minor) — Korean UI language. Adds `"ko"` as a language code plugi
 - Only full-mask replies (the ID card fetch, mask 0) carry `scene_data`; nameplate/avatar thin-mask replies do not. `SocialDataCache` therefore carries the previous `Location` forward when a newer reply for the same char has none (a present-but-zeroed one still replaces it), and stamps `ReceivedAtMs` from the framework's interpolated server clock (injected in `Wiring.Core`, read lazily). `IEntityDetail.RefreshSocialSnapshot` already requests mask 0, so it returns a location too.
 - Diagnostics: `[SocialLocation] char=… name=… present=… map=… layer=… line=… pos=(…) dir=… area=… levelMap=… levelPos=(…) levelArea=…`, logged by `PandaSocialDataProbe` once per change per char.
 - Tests: `SocialDataReaderTests` (present / empty / absent `scene_data`, field 19, `Current*`) and `SocialDataCacheTests` (carry-forward, stamping, zeroed replaces, no clock → 0).
+- Settings → Hotkeys: the unbound cell (`[ unbound ]`) resolves `hotkeys.unbound` (new key, all six catalogs); `HotkeysPanel` drops its per-action binding-label cache on `LanguageChanged`. Disabled plugins no longer list under their assembly name: `PluginRegistry` remembers each plugin's declared `Name` from its last successful enable (`plugins` section, key `name.<id>`, written only when it changes; a save failure only logs) and seeds a later boot's disabled slot with it; `PluginDisplayNames` keeps the last localized tile title it resolved for a plugin whose tile was disposed by disabling it (`ForgetRemembered` on `LanguageChanged` — the remembered title is in the old language); a plugin never constructed on this install shows `PluginNameFallback.FromAssemblyName` (`StellarMahiruUtilityPlugin` → `Mahiru Utility`). Display only — ids, config keys and enable state are unchanged. Pinned by `PluginRegistryDisplayNameTests` / `PluginDisplayNamesTests`.
 
 ## [2.20.0] - 2026-10-08
 _**2.20.0** (minor) — plugins can hide everything the game's own photo screen can hide, and use the [, ] and backslash keys as hotkeys. Adds API for plugins (Abstractions 2.20.0); additive, no plugin rebuild._

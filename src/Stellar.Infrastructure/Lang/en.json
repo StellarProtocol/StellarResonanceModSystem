@@ -42,6 +42,7 @@
   "hotkeys.none": "No hotkeys.",
   "hotkeys.passthrough": "Don't pass hotkeys through to the game",
   "hotkeys.resetAll": "Reset all to defaults",
+  "hotkeys.unbound": "unbound",
   "launcher.plugins": "PLUGINS",
   "launcher.settings": "Settings",
   "layout.editEnter": "Edit mode: Shift+` to enter",

@@ -42,6 +42,7 @@
   "hotkeys.none": "Walang hotkey.",
   "hotkeys.passthrough": "Huwag ipasa ang mga hotkey sa laro",
   "hotkeys.resetAll": "I-reset lahat sa default",
+  "hotkeys.unbound": "hindi naka-set",
   "launcher.plugins": "MGA PLUGIN",
   "launcher.settings": "Mga Setting",
   "layout.editEnter": "Edit mode: Shift+` para pumasok",

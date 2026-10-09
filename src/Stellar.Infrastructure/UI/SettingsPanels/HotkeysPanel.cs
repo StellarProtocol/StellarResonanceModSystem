@@ -72,6 +72,8 @@ internal sealed partial class HotkeysPanel
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
         _directory.BindingChanged += OnBindingChanged;
+        // The "[ unbound ]" label is localized and cached per action — drop the cache on a language switch.
+        _loc.LanguageChanged += _bindingLabelCache.Clear;
         // Group HEADERS show the plugin's DisplayName, which only becomes the real
         // declared name ("Mahiru Utility") once the registry enables the plugin —
         // and plugins load AFTER the hub is built. Without this subscription the
@@ -362,7 +364,7 @@ internal sealed partial class HotkeysPanel
     private string GetOrBuildBindingLabel(IHotkeyAction action)
     {
         if (_bindingLabelCache.TryGetValue(action.Id, out var cached)) return cached;
-        var inner = action.CurrentBinding is { } b ? b.ToString() : "unbound";
+        var inner = action.CurrentBinding is { } b ? b.ToString() : _loc.T("hotkeys.unbound");
         var label = $"[ {inner} ]";
         _bindingLabelCache[action.Id] = label;
         return label;
