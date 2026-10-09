@@ -69,12 +69,13 @@ public static class SocialDataReader
     }
 
     // scene_data (zproto.SceneData) { map_id = 1, pos = 3 Position, level_pos = 5 Position, level_map_id = 6,
-    // scene_layer = 10, line_id = 15, scene_area_id = 18 (int32) }. Present-but-empty still yields a
+    // scene_layer = 10, line_id = 15, scene_area_id = 18 (int32), level_area_id = 19 (int32) }.
+    // Present-but-empty still yields a
     // (zeroed) location — the caller distinguishes that from an absent section (null), which is exactly
     // what the far-player location probe measures (the server may blank it for privacy).
     private static SocialLocation ReadSceneData(ReadOnlySpan<byte> p)
     {
-        int mapId = 0, layer = 0, line = 0, area = 0, levelMap = 0;
+        int mapId = 0, layer = 0, line = 0, area = 0, levelMap = 0, levelArea = 0;
         Position3D pos3 = default, levelPos = default; float dir = 0f;
         int pos = 0;
         while (pos < p.Length)
@@ -89,6 +90,7 @@ public static class SocialDataReader
                     case 10: layer = (int)v; break;
                     case 15: line = (int)v; break;
                     case 18: area = (int)(long)v; break;   // int32: negatives arrive sign-extended to 10 bytes
+                    case 19: levelArea = (int)(long)v; break; // level_area_id, same int32 sign-extension
                 }
             }
             else if (w == 2 && (f == 3 || f == 5) && WireProtocol.TryReadLengthDelimited(p, ref pos, out var inner))
@@ -98,7 +100,8 @@ public static class SocialDataReader
             }
             else if (!WireProtocol.SkipField(p, ref pos, w)) break;
         }
-        return new SocialLocation(mapId, layer, line, pos3, dir, area, levelMap, levelPos);
+        // ReceivedAtMs stays 0 here — the wire has no clock; SocialDataCache stamps it on push.
+        return new SocialLocation(mapId, layer, line, pos3, dir, area, levelMap, levelPos, levelArea);
     }
 
     // Position { float x = 1, y = 2, z = 3, dir = 4 } — floats are wire type 5 (fixed32), NOT varints.

@@ -58,7 +58,8 @@ internal sealed partial class PandaSocialDataProbe
         _log.Info(
             $"[SocialLocation] char={s.CharId} name={s.Name} present={loc is not null} map={l.MapId} " +
             $"layer={l.SceneLayer} line={l.LineId} pos=({l.Pos.X:F1},{l.Pos.Y:F1},{l.Pos.Z:F1}) dir={l.Dir:F1} " +
-            $"area={l.SceneAreaId} levelMap={l.LevelMapId} levelPos=({l.LevelPos.X:F1},{l.LevelPos.Y:F1},{l.LevelPos.Z:F1})");
+            $"area={l.SceneAreaId} levelMap={l.LevelMapId} levelPos=({l.LevelPos.X:F1},{l.LevelPos.Y:F1},{l.LevelPos.Z:F1}) " +
+            $"levelArea={l.LevelAreaId}");
     }
 
     private bool _collectPointsOneShot;

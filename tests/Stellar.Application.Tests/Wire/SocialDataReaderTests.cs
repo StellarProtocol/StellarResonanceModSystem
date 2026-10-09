@@ -165,6 +165,7 @@ public class SocialDataReaderTests
             VInt(s, 10, 2);                                     // scene_layer
             VInt(s, 15, 9);                                     // line_id
             VInt(s, 18, unchecked((ulong)(long)-5));            // scene_area_id (negative int32)
+            VInt(s, 19, 80006);                                 // level_area_id
             Len(data, 10, s.ToArray());
         }
         var reply = new List<byte>(); Len(reply, 2, data.ToArray());
@@ -186,6 +187,12 @@ public class SocialDataReaderTests
         Assert.Equal(1f, loc.LevelPos.X);
         Assert.Equal(2f, loc.LevelPos.Y);
         Assert.Equal(3f, loc.LevelPos.Z);
+        Assert.Equal(80006, loc.LevelAreaId);
+        Assert.Equal(0L, loc.ReceivedAtMs);                     // the wire has no clock — the cache stamps it
+        // Current* prefer the level fields (observed live) over the stale map/pos pair.
+        Assert.Equal(20020, loc.CurrentSceneId);
+        Assert.Equal(1f, loc.CurrentPos.X);
+        Assert.Equal(80006, loc.CurrentAreaId);
     }
 
     [Fact]

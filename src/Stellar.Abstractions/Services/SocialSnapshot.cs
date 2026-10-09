@@ -67,20 +67,43 @@ public sealed record SocialSnapshot(
     /// <summary>The player's scene location from <c>SocialData.scene_data</c> (field 10); null when the reply
     /// omitted that section entirely. A non-null value may still be all-zero — the server can send the section
     /// but blank its contents for privacy, and that present-vs-absent distinction is deliberately preserved.
+    /// Only FULL-mask replies (the ID-card fetch, mask 0) carry the section; the framework cache therefore keeps
+    /// the last known location when a later thin (nameplate/avatar) reply for the same player arrives without
+    /// one — check <see cref="SocialLocation.ReceivedAtMs"/> for its age.
     /// Init-only (not a positional parameter) so existing compiled callers of the constructor stay binary-compatible.</summary>
     public SocialLocation? Location { get; init; }
 }
 
 /// <summary>A player's scene location as carried by <c>SocialData.scene_data</c> (<c>zproto.SceneData</c>).
-/// Every member defaults to 0 when its wire field is absent.</summary>
-/// <param name="MapId">Scene/map id from <c>scene_data.map_id</c>.</param>
+/// Every member defaults to 0 when its wire field is absent.
+/// <para>In-game (release_3.7) the <c>level_*</c> fields were the LIVE ones — <c>level_map_id</c>/<c>level_pos</c>
+/// tracked the player while <c>map_id</c>/<c>pos</c> stayed stale (apparently the last world/return position;
+/// a player inside a dungeon reported <c>map_id</c> = the town and <c>level_map_id</c> = the dungeon). Prefer the
+/// <c>Current*</c> members, which pick the level fields when set and fall back to the map fields.</para></summary>
+/// <param name="MapId">Scene/map id from <c>scene_data.map_id</c> (observed stale — see remarks).</param>
 /// <param name="SceneLayer">Scene layer from <c>scene_data.scene_layer</c>.</param>
-/// <param name="LineId">Server line (channel shard) from <c>scene_data.line_id</c>.</param>
-/// <param name="Pos">World-space position from <c>scene_data.pos</c> (x/y/z).</param>
-/// <param name="Dir">Facing from <c>scene_data.pos.dir</c>.</param>
-/// <param name="SceneAreaId">Scene area id from <c>scene_data.scene_area_id</c>.</param>
+/// <param name="LineId">Server line (channel shard) from <c>scene_data.line_id</c> — the in-game "Line N".</param>
+/// <param name="Pos">World-space position from <c>scene_data.pos</c> (x/y/z; observed stale — see remarks).</param>
+/// <param name="Dir">Facing from <c>scene_data.pos.dir</c> (observed always 0 — no facing for far players).</param>
+/// <param name="SceneAreaId">Scene area id from <c>scene_data.scene_area_id</c> (pairs with <paramref name="MapId"/>).</param>
 /// <param name="LevelMapId">Level (instance) map id from <c>scene_data.level_map_id</c>; 0 outside a level.</param>
 /// <param name="LevelPos">Position inside the level from <c>scene_data.level_pos</c> (x/y/z).</param>
+/// <param name="LevelAreaId">Area id inside the level from <c>scene_data.level_area_id</c> (field 19; pairs with
+/// <paramref name="LevelMapId"/>).</param>
+/// <param name="ReceivedAtMs">Framework server clock (<see cref="ICombatSnapshot.ServerNowMs"/> domain, Unix ms)
+/// when the reply carrying this location arrived; 0 when it arrived before the first server-time sync.
+/// Stamped by the framework cache, not the wire.</param>
 public readonly record struct SocialLocation(
     int MapId, int SceneLayer, int LineId, Position3D Pos, float Dir,
-    int SceneAreaId, int LevelMapId, Position3D LevelPos);
+    int SceneAreaId, int LevelMapId, Position3D LevelPos,
+    int LevelAreaId = 0, long ReceivedAtMs = 0)
+{
+    /// <summary>The scene the player is in now: <see cref="LevelMapId"/> when set, else <see cref="MapId"/>.</summary>
+    public int CurrentSceneId => LevelMapId != 0 ? LevelMapId : MapId;
+
+    /// <summary>The player's position in <see cref="CurrentSceneId"/>: <see cref="LevelPos"/> when in a level, else <see cref="Pos"/>.</summary>
+    public Position3D CurrentPos => LevelMapId != 0 ? LevelPos : Pos;
+
+    /// <summary>The area id in <see cref="CurrentSceneId"/>: <see cref="LevelAreaId"/> when in a level, else <see cref="SceneAreaId"/>.</summary>
+    public int CurrentAreaId => LevelMapId != 0 ? LevelAreaId : SceneAreaId;
+}
