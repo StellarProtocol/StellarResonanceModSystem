@@ -52,7 +52,7 @@
   "layout.threshold": "ค่าขีดเริ่ม",
   "layout.toolbar.heading": "โหมดแก้ไขเลย์เอาต์",
   "layout.toolbar.resetSelected": "รีเซ็ตที่เลือก",
-  "layout.toolbar.selected": "เลือก: {0}",
+  "layout.toolbar.selected": "ที่เลือก: {0}",
   "layout.toolbar.slot": "สล็อต:",
   "layout.windowControls": "การควบคุมหน้าต่าง",
   "perf.everyFrame": "ทุกเฟรม",
@@ -88,6 +88,7 @@
   "theme.color.menuBackground": "พื้นหลังแผง",
   "theme.color.menuBorder": "ขอบแผง",
   "theme.color.warning": "คำเตือน",
+  "theme.owner.framework": "ธีม",
   "themes.addOverride.closed": "+ เพิ่มการแทนที่สี",
   "themes.addOverride.open": "▾ เพิ่มการแทนที่สี",
   "themes.addSelected": "เพิ่มที่เลือก",
@@ -124,8 +125,8 @@
   "themes.style.track": "แทร็ก",
   "themes.type.bold": "ตัวหนา",
   "themes.type.italic": "ตัวเอียง",
-  "themes.type.strike": "ขีดฆ่า",
   "themes.type.underline": "ขีดเส้นใต้",
+  "themes.type.strike": "ขีดฆ่า",
   "themes.uiScale": "ขนาด UI",
   "themes.windowOpacity": "ความทึบของหน้าต่าง"
 }

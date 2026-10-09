@@ -13,7 +13,6 @@ using Stellar.Infrastructure.Events;
 using Stellar.Infrastructure.Game;
 using Stellar.Infrastructure.Game.Protobuf;
 using Stellar.Infrastructure.Hooks;
-using Stellar.Infrastructure.Theme;
 using Stellar.Infrastructure.UI;
 using Stellar.Infrastructure.Unity;
 
@@ -231,13 +230,6 @@ public sealed partial class BootstrapPlugin : BasePlugin
     {
         log.Info("[boot] all hot-update assemblies loaded; wiring services");
         typeRegistry.MarkHotUpdateReady();   // forget pre-ready misses; FindType memoizes from here on
-
-        // The real "follow" client language only resolves once the hot-update assemblies are loaded (the
-        // probe returns the English fallback before this). FrameworkColorRegistration.RegisterAll ran during
-        // Load() with that English fallback baked in — relabel the editable theme-colour slots once now that
-        // the language is actually known (WirePhase9Ui below is the first thing that can show them).
-        if (_colorRegistry != null && _frameworkLocalization != null)
-            FrameworkColorRegistration.RelabelAll(_colorRegistry, _frameworkLocalization);
 
         var gameType = typeRegistry.FindType(GameTypeFullName);
         if (gameType is null)

@@ -88,6 +88,7 @@
   "theme.color.menuBackground": "Background ng Panel",
   "theme.color.menuBorder": "Border ng Panel",
   "theme.color.warning": "Babala",
+  "theme.owner.framework": "Tema",
   "themes.addOverride.closed": "+ Magdagdag ng colour override",
   "themes.addOverride.open": "▾ Magdagdag ng colour override",
   "themes.addSelected": "Idagdag ang napili",
@@ -124,8 +125,8 @@
   "themes.style.track": "Track",
   "themes.type.bold": "Bold",
   "themes.type.italic": "Italic",
-  "themes.type.strike": "Strikethrough",
   "themes.type.underline": "Underline",
+  "themes.type.strike": "Strikethrough",
   "themes.uiScale": "UI Scale",
   "themes.windowOpacity": "Window Opacity"
 }

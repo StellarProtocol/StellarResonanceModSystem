@@ -170,18 +170,25 @@ internal sealed partial class ThemeEditorBody
     private int SlotRowCount() => System.Math.Min(_overrides.SlotCount, MaxSlots);
 
     // Cache the slot list — IThemeOverrides.Slots allocates a fresh List + a record per slot on every call,
-    // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh only when the registered
-    // count changes (late plugin registration), so the steady-state poll allocates nothing here.
+    // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh when the registered count
+    // changes (late plugin registration) OR Revision changes (a Relabel — e.g. a language switch — never
+    // changes the count, so SlotCount alone would miss it), so the steady-state poll allocates nothing here.
     private System.Collections.Generic.IReadOnlyList<ColorSlotInfo>? _slotCache;
     private int _slotCacheCount = -1;
+    private int _slotCacheRevision = -1;
     private ColorSlotInfo? SlotAt(int i)
     {
-        if (_overrides.SlotCount != _slotCacheCount) { _slotCache = _overrides.Slots; _slotCacheCount = _overrides.SlotCount; }
+        if (_overrides.SlotCount != _slotCacheCount || _overrides.Revision != _slotCacheRevision)
+        {
+            _slotCache = _overrides.Slots;
+            _slotCacheCount = _overrides.SlotCount;
+            _slotCacheRevision = _overrides.Revision;
+        }
         var list = _slotCache;
         return list != null && i >= 0 && i < list.Count ? list[i] : null;
     }
     private string KeyAt(int i) => SlotAt(i)?.Key ?? "";
-    private string LabelAt(int i) => SlotAt(i) is { } s ? $"{s.Owner} · {s.Label}" : "";
+    private string LabelAt(int i) => SlotAt(i) is { } s ? $"{OwnerDisplay(s.Owner)} · {s.Label}" : "";
     private string HexAt(int i) => KeyAt(i) is { Length: > 0 } k ? ToHex(_overrides.Resolve(k)) : "";
     private ColorRgba ColorAt(int i) => KeyAt(i) is { Length: > 0 } k ? _overrides.Resolve(k) : new ColorRgba(0f, 0f, 0f, 0f);
     private bool IsSystemAt(int i) => SlotAt(i)?.Owner == SystemOwner;

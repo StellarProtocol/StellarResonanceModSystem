@@ -88,6 +88,7 @@
   "theme.color.menuBackground": "Panel background",
   "theme.color.menuBorder": "Panel border",
   "theme.color.warning": "Warning",
+  "theme.owner.framework": "Theme",
   "themes.addOverride.closed": "+ Add colour override",
   "themes.addOverride.open": "▾ Add colour override",
   "themes.addSelected": "Add selected",
@@ -124,8 +125,8 @@
   "themes.style.track": "Track",
   "themes.type.bold": "Bold",
   "themes.type.italic": "Italic",
-  "themes.type.strike": "Strikethrough",
   "themes.type.underline": "Underline",
+  "themes.type.strike": "Strikethrough",
   "themes.uiScale": "UI Scale",
   "themes.windowOpacity": "Window Opacity"
 }

@@ -75,16 +75,19 @@ internal sealed partial class LayoutEditorOverlay
         // Text cells get explicit widths so they don't collapse/wrap inside the bar (window TextElements wrap
         // at minWidth=0; buttons size to their own labels). Leading/trailing flexible Spacers centre the
         // content block within the fixed-width panel.
+        // _text is always bound (SetLocalization, called before SetWindows below it in Wiring.Settings.cs)
+        // by the time a player can ever enter edit mode and reach this method — use it directly rather than
+        // keeping a second, driftable copy of the English text as a "??" fallback.
         var items = new List<HudElement>
         {
             new SpacerElement(),
-            new TextElement(() => _text?.T("layout.toolbar.heading") ?? "Layout edit mode", () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
+            new TextElement(() => _text!.T("layout.toolbar.heading"), () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
             new SpacerElement(10f),
-            FilterChip(() => _text?.T("hotkeys.filter.all") ?? "All", EditFilter.All),
+            FilterChip(() => _text!.T("hotkeys.filter.all"), EditFilter.All),
             FilterChip(() => "Stellar", EditFilter.StellarOnly),   // brand name — kept English in every language
-            FilterChip(() => _text?.T("tab.gameui") ?? "Game UI", EditFilter.GameUiOnly),
+            FilterChip(() => _text!.T("tab.gameui"), EditFilter.GameUiOnly),
             new SpacerElement(10f),
-            new TextElement(() => _text?.T("layout.toolbar.slot") ?? "Slot:", () => _theme.Colors.MenuMuted, Width: 34f),
+            new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
         };
         for (int i = 0; i < MaxSlots; i++)
         {
@@ -96,12 +99,12 @@ internal sealed partial class LayoutEditorOverlay
         items.Add(new SpacerElement(10f));
         items.Add(new TextElement(SelectedLabel, Width: 210f));
         items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => _text?.T("layout.toolbar.resetSelected") ?? "Reset selected",
+        items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetSelected"),
             () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
             Enabled: () => _editor.SelectedWindowId != null));
-        items.Add(new ButtonElement(() => _text?.T("common.resetAll") ?? "Reset all", ResetAllWindows));
+        items.Add(new ButtonElement(() => _text!.T("common.resetAll"), ResetAllWindows));
         items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => _text?.T("common.exit") ?? "Exit", () => _editor.ToggleEditMode()));
+        items.Add(new ButtonElement(() => _text!.T("common.exit"), () => _editor.ToggleEditMode()));
         items.Add(new SpacerElement());
         // Column wrap so the Row gets full panel width (childForceExpandWidth) → the flex spacers can centre.
         return new ColumnElement(new HudElement[] { new RowElement(items.ToArray(), Gap: 6f) });
@@ -109,9 +112,8 @@ internal sealed partial class LayoutEditorOverlay
 
     private string SelectedLabel()
     {
-        var none = _text?.T("common.none") ?? "(none)";
-        var id = _editor.SelectedWindowId ?? none;
-        return _text != null ? _text.TFormat("layout.toolbar.selected", id) : $"Selected: {id}";
+        var id = _editor.SelectedWindowId ?? _text!.T("common.none");
+        return _text!.TFormat("layout.toolbar.selected", id);
     }
 
     private HudElement FilterChip(System.Func<string> label, EditFilter filter)

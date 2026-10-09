@@ -52,7 +52,7 @@
   "layout.threshold": "しきい値",
   "layout.toolbar.heading": "レイアウト編集モード",
   "layout.toolbar.resetSelected": "選択項目をリセット",
-  "layout.toolbar.selected": "選択: {0}",
+  "layout.toolbar.selected": "選択中: {0}",
   "layout.toolbar.slot": "スロット:",
   "layout.windowControls": "ウィンドウ操作",
   "perf.everyFrame": "毎フレーム",
@@ -88,6 +88,7 @@
   "theme.color.menuBackground": "パネル背景",
   "theme.color.menuBorder": "パネル枠線",
   "theme.color.warning": "警告",
+  "theme.owner.framework": "テーマ",
   "themes.addOverride.closed": "＋ 色の上書きを追加",
   "themes.addOverride.open": "▾ 色の上書きを追加",
   "themes.addSelected": "選択を追加",
@@ -124,8 +125,8 @@
   "themes.style.track": "トラック",
   "themes.type.bold": "太字",
   "themes.type.italic": "斜体",
-  "themes.type.strike": "取り消し線",
   "themes.type.underline": "下線",
+  "themes.type.strike": "取り消し線",
   "themes.uiScale": "UI スケール",
   "themes.windowOpacity": "ウィンドウの不透明度"
 }

@@ -88,6 +88,7 @@
   "theme.color.menuBackground": "Latar belakang panel",
   "theme.color.menuBorder": "Garis tepi panel",
   "theme.color.warning": "Peringatan",
+  "theme.owner.framework": "Tema",
   "themes.addOverride.closed": "+ Tambah penggantian warna",
   "themes.addOverride.open": "▾ Tambah penggantian warna",
   "themes.addSelected": "Tambah yang dipilih",
@@ -107,7 +108,7 @@
   "themes.newTheme": "Tema baru:",
   "themes.noCustom": "Belum ada tema kustom — duplikat sebuah preset untuk memulai.",
   "themes.preset": "Preset",
-  "themes.preset.crimson": "Merah Marun",
+  "themes.preset.crimson": "Merah Tua",
   "themes.preset.dark": "Gelap",
   "themes.preset.default": "Bawaan",
   "themes.preset.light": "Terang",
@@ -124,8 +125,8 @@
   "themes.style.track": "Trek",
   "themes.type.bold": "Tebal",
   "themes.type.italic": "Miring",
-  "themes.type.strike": "Coret",
   "themes.type.underline": "Garis bawah",
+  "themes.type.strike": "Coret",
   "themes.uiScale": "Skala UI",
   "themes.windowOpacity": "Opasitas jendela"
 }

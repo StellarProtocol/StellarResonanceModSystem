@@ -21,6 +21,9 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
     private readonly List<string> _order = new();
     private readonly INamedTheme _namedTheme;
     private readonly IColorOverrideStore _overrides;
+    // Bumped by RegisterOwned/Unregister/Relabel — lets a consumer that caches Slots by SlotCount (stable
+    // across a Relabel) also detect a label-only change and refresh. See IThemeOverrides.Revision.
+    private int _revision;
 
     public ColorRegistryService(INamedTheme namedTheme, IColorOverrideStore overrides)
     {
@@ -51,12 +54,13 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
             throw new ArgumentException($"colour slot already registered: {key}", nameof(key));
         _slots[key] = new Descriptor(key, owner, label, new Dictionary<ThemePreset, ColorRgba>(defaults));
         _order.Add(key);
+        _revision++;
         return new RegisteredColorSlot(this, this, key);
     }
 
     public void Unregister(string key)
     {
-        if (_slots.Remove(key)) _order.Remove(key);
+        if (_slots.Remove(key)) { _order.Remove(key); _revision++; }
     }
 
     /// <summary>Framework-only: re-sets an already-registered slot's display LABEL (never its key, owner or
@@ -64,8 +68,14 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
     /// the plugin-facing <see cref="IColorRegistry"/> surface; a no-op if <paramref name="key"/> isn't registered.</summary>
     internal void Relabel(string key, string label)
     {
-        if (_slots.TryGetValue(key, out var d)) _slots[key] = d with { Label = label };
+        if (!_slots.TryGetValue(key, out var d) || d.Label == label) return;   // no-op: unknown key or unchanged
+        _slots[key] = d with { Label = label };
+        _revision++;
     }
+
+    /// <summary>Bumped on every Register/Unregister/Relabel — a slot-list cache keyed on <see cref="SlotCount"/>
+    /// alone misses a Relabel (the count doesn't change), so key the cache on this too.</summary>
+    public int Revision => _revision;
 
     public ColorRgba Resolve(string slotKey)
     {

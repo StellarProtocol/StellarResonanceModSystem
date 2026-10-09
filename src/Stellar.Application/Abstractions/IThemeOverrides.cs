@@ -15,6 +15,10 @@ internal interface IThemeOverrides
     /// detect slot-set changes per frame instead of materialising <see cref="Slots"/>.</summary>
     int SlotCount { get; }
 
+    /// <summary>Bumped on every slot register/unregister/relabel. A cache keyed on <see cref="SlotCount"/>
+    /// alone misses a label-only change (a Relabel never changes the count) — key the cache on this too.</summary>
+    int Revision { get; }
+
     ColorRgba Resolve(string slotKey);
     bool HasOverride(string slotKey);
     void SetOverride(string slotKey, ColorRgba value);

@@ -2,6 +2,7 @@ using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using Stellar.Application.Services;
+using Stellar.Infrastructure.Theme;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
@@ -55,7 +56,17 @@ internal sealed class ThemesPanel
     private readonly ITheme _theme;
     private readonly ILocalizationControl _loc;    // language setting (the dropdown)
     private readonly ILocalization _text;          // framework text lookup (labels)
+    private readonly IThemeOverrides _overrides;
     private readonly ThemeEditorBody _editor;
+    // FrameworkColorRegistration.RegisterAll (Load(), B-04) registers the editable Theme.* slots with an
+    // English fallback label — the hot-update assemblies (and so the real "follow" client language) aren't
+    // resolvable that early. Relabel lazily instead: once on this panel's first real poll (PollEditorUgui,
+    // which only runs from the next scheduled tick onward — never synchronously during OnHotUpdateReady wiring,
+    // the same timing the rest of the framework's Func-based labels already rely on) and again on every later
+    // explicit language switch. ColorReg is null for a test double that isn't the real ColorRegistryService —
+    // Relabel is internal-only, so there is no interface seam for it (IThemeOverrides stays plugin-safe).
+    private ColorRegistryService? ColorReg => _overrides as ColorRegistryService;
+    private bool _colorLabelsRelabeled;
     // Pending Font Scale while dragging — drives the knob + the "x" label. The value is ALSO applied LIVE during
     // the drag (ApplyFontScalePreview → NamedThemeService.SetFontScalePreview, an un-persisted ActiveChanged that
     // re-skins windows in place) and persisted ONCE on mouse-release (PollEditorUgui → SetFontScale). The garble
@@ -77,7 +88,16 @@ internal sealed class ThemesPanel
         _theme = theme;
         _loc = loc;
         _text = text;
+        _overrides = overrides;
         _editor = new ThemeEditorBody(namedTheme, customThemes, overrides, theme, text);
+        // Later explicit language switches (the dropdown this same panel hosts) — the initial relabel is
+        // lazy, see ColorReg's doc above.
+        text.LanguageChanged += RelabelFrameworkColors;
+    }
+
+    private void RelabelFrameworkColors()
+    {
+        if (ColorReg is { } reg) FrameworkColorRegistration.RelabelAll(reg, _text);
     }
 
     /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration) — the functional
@@ -199,6 +219,10 @@ internal sealed class ThemesPanel
     /// sliders (committing those per drag-frame rebuilds the window canvas → flicker).</summary>
     public void PollEditorUgui()
     {
+        // Lazy initial relabel (see ColorReg's doc above) — PollEditorUgui only runs from the framework's
+        // regular tick (RunFrameworkTick → RunGlobalRateWork → RefreshPerTickServices), the SAME cadence every
+        // other Func-based label in this hub already resolves on; never synchronously during OnHotUpdateReady.
+        if (!_colorLabelsRelabeled) { RelabelFrameworkColors(); _colorLabelsRelabeled = true; }
         _editor.TickUgui();
         if (Input.GetMouseButton(0)) return;   // still dragging — hold the pending value (already applied live)
         if (_pendingFontScale is { } fs) { _namedTheme.SetFontScale(fs); _pendingFontScale = null; }

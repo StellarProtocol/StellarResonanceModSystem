@@ -36,6 +36,11 @@ internal sealed partial class ThemeEditorBody
     // opt-in via the add-picker. Derived from the key prefix (see OwnerOf).
     private const string SystemOwner = "Theme";
 
+    // DISPLAY only — every identity comparison (IsSystemAt, the picker's IsAddable/MatchesFilter) keeps
+    // comparing against the raw SystemOwner constant above. A plugin owner (e.g. "CombatMeter") is a brand
+    // name and is never translated, same as every other kept plugin name in the glossary.
+    private string OwnerDisplay(string owner) => owner == SystemOwner ? _text.T("theme.owner.framework") : owner;
+
     private readonly INamedTheme _namedTheme;
     private readonly ICustomThemeStore _store;
     private readonly IThemeOverrides _overrides;
