@@ -4,10 +4,13 @@ using Xunit;
 
 namespace Stellar.Application.Tests.Theme;
 
-// Pins the consumer-side cache-refresh decision (ThemeEditorBody.SlotAt) that the owner review of 64ddcb4
-// found untested: a Relabel bumps Revision without ever changing SlotCount, so keying the cache on count
-// alone misses it. Reverting ThemeEditorBody.Describe.cs's SlotAt back to a count-only key must fail this
-// suite's RevisionChangeWithEqualCount_Refreshes case.
+// Pins the pure refresh-decision helper (extracted from ThemeEditorBody.SlotAt, which the owner review of
+// 64ddcb4 found untested) that was the actual root cause: a Relabel bumps Revision without ever changing
+// SlotCount, so keying the cache on count alone misses it. This suite pins SlotCacheRefresh.ShouldRefresh
+// itself — reverting ITS body back to a count-only check fails RevisionChangeWithEqualCount_Refreshes.
+// It does NOT exercise SlotAt's own call site (that class needs UnityEngine.Input and can't be built here);
+// SlotAt just forwards to this helper, so a regression THERE (e.g. inlining a different check instead of
+// calling ShouldRefresh) would not be caught by this suite.
 public sealed class SlotCacheRefreshTests
 {
     [Fact]

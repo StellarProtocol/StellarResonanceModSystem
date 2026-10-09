@@ -31,6 +31,9 @@ internal sealed class LauncherRegistry : ILauncher
     public IDisposable Register(LauncherEntry entry)
     {
         if (entry is null) throw new ArgumentNullException(nameof(entry));
+        // Carries forward a pin saved under this entry's OLD displayed title (before it had a TitleProvider)
+        // to its CURRENT Title — the persisted pin identity. See LauncherPrefs.MigratePinIfNeeded.
+        _prefs.MigratePinIfNeeded(entry.Title, entry.DisplayTitle);
         _entries.Add(entry);
         _revision++;
         return new Registration(this, entry);

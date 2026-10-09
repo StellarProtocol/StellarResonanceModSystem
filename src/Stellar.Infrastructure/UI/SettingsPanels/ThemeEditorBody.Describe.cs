@@ -181,8 +181,8 @@ internal sealed partial class ThemeEditorBody
     {
         // Lazy, RENDER-driven initial relabel (see ColorReg's doc, ThemeEditorBody.cs): SlotAt is reachable
         // only when this editor's own Funcs are pulled by WindowService, which never happens while the
-        // Settings window is hidden — so this is the first point in the whole framework that is guaranteed
-        // to run AFTER the player has actually opened Settings, not merely after some tick count since boot.
+        // Settings window is hidden — so this relabel's first client-language read runs only AFTER the
+        // player has actually opened Settings, not merely after some tick count since boot.
         if (!_colorLabelsRelabeled) { RelabelFrameworkColors(); _colorLabelsRelabeled = true; }
         if (SlotCacheRefresh.ShouldRefresh(_overrides.SlotCount, _overrides.Revision, _slotCacheCount, _slotCacheRevision))
         {

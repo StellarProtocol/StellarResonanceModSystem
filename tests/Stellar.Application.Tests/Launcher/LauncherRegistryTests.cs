@@ -98,6 +98,53 @@ public sealed class LauncherRegistryTests
         Assert.False(reloaded.IsPinned(entry));
     }
 
+    // ---- pin migration on Register (translated-Title -> fixed-Title+TitleProvider, owner-approved train) ----
+
+    private static LauncherEntry EntryWithProvider(string title, string displayTitle) =>
+        new(title, IconPng: null, IconKey: null, OnOpen: () => { }) { TitleProvider = () => displayTitle };
+
+    [Fact]
+    public void Register_MigratesStalePinFromOldTranslatedTitle_ToTheNewFixedTitle()
+    {
+        var reg = NewRegistry(out var config);
+        // Simulate a pin saved by last version of the plugin, which had no TitleProvider and passed the
+        // translated string directly as Title.
+        reg.SetPinned(Entry("컴뱃미터"), true);
+
+        // This version ships a fixed English Title + a TitleProvider for display.
+        var entry = EntryWithProvider("CombatMeter", "컴뱃미터");
+        reg.Register(entry);
+
+        Assert.True(reg.IsPinned(entry));
+        Assert.False(reg.IsPinned(Entry("컴뱃미터")));
+
+        var reloaded = new LauncherRegistry(new LauncherPrefs(config));
+        Assert.True(reloaded.IsPinned(entry));   // migration was actually persisted, not just in-memory
+    }
+
+    [Fact]
+    public void Register_DoesNotTouchPin_WhenAlreadyUnderCurrentTitle()
+    {
+        var reg = NewRegistry(out _);
+        var entry = EntryWithProvider("CombatMeter", "컴뱃미터");
+        reg.SetPinned(Entry("CombatMeter"), true);
+
+        reg.Register(entry);
+
+        Assert.True(reg.IsPinned(entry));
+    }
+
+    [Fact]
+    public void Register_DoesNotMigrate_WhenNoTitleProvider()
+    {
+        var reg = NewRegistry(out _);
+        reg.SetPinned(Entry("Module Optimizer"), true);
+
+        reg.Register(Entry("Module Optimizer"));   // DisplayTitle == Title (no TitleProvider) — nothing to migrate
+
+        Assert.True(reg.IsPinned(Entry("Module Optimizer")));
+    }
+
     [Fact]
     public void Revision_BumpsOnContentChange_NotOnReads()
     {

@@ -74,10 +74,10 @@ internal static class FrameworkColorRegistration
     /// are resolvable, so its labels are always the English fallback; <see cref="Stellar.Infrastructure.UI.SettingsPanels.ThemeEditorBody"/>
     /// calls this RENDER-driven — the first time is folded into its own slot-list cache refresh
     /// (<c>SlotAt</c>), which is reachable only when the editor's element-tree Funcs are actually pulled by
-    /// <c>WindowService</c>, and that pull is skipped entirely while the Settings window is hidden. So the
-    /// first call is guaranteed to happen only after the player has opened Settings — never merely "after
-    /// some tick count since boot" — and the client language has had every chance to resolve by then. The
-    /// second trigger is a later explicit language switch (<see cref="ILocalization.LanguageChanged"/>).</summary>
+    /// <c>WindowService</c>, and that pull is skipped entirely while the Settings window is hidden. So this
+    /// relabel's first call happens only after the player has opened Settings — never merely "after some
+    /// tick count since boot" — giving the client language every chance to resolve first. The second trigger
+    /// is a later explicit language switch (<see cref="ILocalization.LanguageChanged"/>).</summary>
     public static void RelabelAll(ColorRegistryService registry, ILocalization loc)
     {
         foreach (var (key, labelKey) in LabelKeys)
