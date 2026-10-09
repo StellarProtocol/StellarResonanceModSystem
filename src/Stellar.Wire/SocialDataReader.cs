@@ -32,6 +32,7 @@ public static class SocialDataReader
         string profileUrl = "", halfBodyUrl = "";
         var gear = new List<GearSlotRef>(11);
         IReadOnlyList<FashionEntry> fashion = Array.Empty<FashionEntry>();
+        SocialLocation? location = null;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -51,6 +52,7 @@ public static class SocialDataReader
                     case 16: ReadPersonalZone(inner, out titleId, out fashionCollect, out rideCollect, out weaponSkinCollect); break; // personal_zone
                     case 22: masterScore = ReadMasterScore(inner); break;
                     case 4:  AvatarInfoReader.Read(inner, out profileUrl, out halfBodyUrl); break;
+                    case 10: location = ReadSceneData(inner); break;                     // scene_data
                 }
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
@@ -63,7 +65,66 @@ public static class SocialDataReader
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return new SocialSnapshot(charId, name, level, fightPoint, professionId, gear, fashion,
             new SocialIdentity(guild, partySize, masterScore, titleId, fashionCollect, rideCollect, weaponSkinCollect),
-            profileUrl, halfBodyUrl);
+            profileUrl, halfBodyUrl) { Location = location };
+    }
+
+    // scene_data (zproto.SceneData) { map_id = 1, pos = 3 Position, level_pos = 5 Position, level_map_id = 6,
+    // scene_layer = 10, line_id = 15, scene_area_id = 18 (int32), level_area_id = 19 (int32) }.
+    // Present-but-empty still yields a
+    // (zeroed) location — the caller distinguishes that from an absent section (null), which is exactly
+    // what the far-player location probe measures (the server may blank it for privacy).
+    private static SocialLocation ReadSceneData(ReadOnlySpan<byte> p)
+    {
+        int mapId = 0, layer = 0, line = 0, area = 0, levelMap = 0, levelArea = 0;
+        Position3D pos3 = default, levelPos = default; float dir = 0f;
+        int pos = 0;
+        while (pos < p.Length)
+        {
+            if (!WireProtocol.TryReadTag(p, ref pos, out var f, out var w)) break;
+            if (w == 0 && WireProtocol.TryReadVarint(p, ref pos, out var v))
+            {
+                switch (f)
+                {
+                    case 1:  mapId = (int)v; break;
+                    case 6:  levelMap = (int)v; break;
+                    case 10: layer = (int)v; break;
+                    case 15: line = (int)v; break;
+                    case 18: area = (int)(long)v; break;   // int32: negatives arrive sign-extended to 10 bytes
+                    case 19: levelArea = (int)(long)v; break; // level_area_id, same int32 sign-extension
+                }
+            }
+            else if (w == 2 && (f == 3 || f == 5) && WireProtocol.TryReadLengthDelimited(p, ref pos, out var inner))
+            {
+                if (f == 3) pos3 = ReadPosition(inner, out dir);
+                else levelPos = ReadPosition(inner, out _);
+            }
+            else if (!WireProtocol.SkipField(p, ref pos, w)) break;
+        }
+        // ReceivedAtMs stays 0 here — the wire has no clock; SocialDataCache stamps it on push.
+        return new SocialLocation(mapId, layer, line, pos3, dir, area, levelMap, levelPos, levelArea);
+    }
+
+    // Position { float x = 1, y = 2, z = 3, dir = 4 } — floats are wire type 5 (fixed32), NOT varints.
+    private static Position3D ReadPosition(ReadOnlySpan<byte> p, out float dir)
+    {
+        float x = 0f, y = 0f, z = 0f; dir = 0f;
+        int pos = 0;
+        while (pos < p.Length)
+        {
+            if (!WireProtocol.TryReadTag(p, ref pos, out var f, out var w)) break;
+            if (w == 5 && WireProtocol.TryReadFloat(p, ref pos, out var v))
+            {
+                switch (f)
+                {
+                    case 1: x = v; break;
+                    case 2: y = v; break;
+                    case 3: z = v; break;
+                    case 4: dir = v; break;
+                }
+            }
+            else if (!WireProtocol.SkipField(p, ref pos, w)) break;
+        }
+        return new Position3D(x, y, z);
     }
 
     // personal_zone { title_id = 11, fashion_collect_point = 13, ride_collect_point = 18,

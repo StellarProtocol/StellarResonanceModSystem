@@ -152,6 +152,19 @@ public static partial class WireProtocol
     }
 
     /// <summary>
+    /// Read a proto3 <c>float</c> (wire type 5 = 32-bit fixed, little-endian IEEE-754) whose tag has
+    /// already been consumed. Advances <paramref name="pos"/> by 4. Returns false on truncation.
+    /// </summary>
+    public static bool TryReadFloat(ReadOnlySpan<byte> data, ref int pos, out float value)
+    {
+        value = 0f;
+        if (pos + 4 > data.Length) return false;
+        value = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(data.Slice(pos, 4));
+        pos += 4;
+        return true;
+    }
+
+    /// <summary>
     /// Skip a wire-type-typed field whose tag has already been consumed.
     /// </summary>
     public static bool SkipField(ReadOnlySpan<byte> data, ref int pos, int wireType)
