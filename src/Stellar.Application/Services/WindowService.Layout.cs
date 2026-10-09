@@ -42,7 +42,7 @@ internal sealed partial class WindowService
         {
             var rect = e.Token != null ? _renderer.GetRect(e.Token)
                      : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
-            _storage.Save(_storage.ActiveSlot, id, _resolution(), rect, visible);
+            SaveRect(e.Reg.Spec, rect, visible);
         }
     }
 
@@ -124,6 +124,7 @@ internal sealed partial class WindowService
             return;
         }
         var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Reg.Spec.Id, _resolution(), fallback, CanvasScale);
+        rect = Reanchor(e.Reg.Spec, rect);   // 2.22.0: anchored windows re-placed from their anchor offset
         _renderer.SetRect(e.Token, rect);
         e.LastRect = e.LastSavedRect = rect;
         if (applyVisibility && !visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
@@ -138,7 +139,7 @@ internal sealed partial class WindowService
         var cur = _renderer.GetRect(e.Token);
         if (RectClose(cur, e.LastRect) && !RectClose(cur, e.LastSavedRect))
         {
-            _storage.Save(_storage.ActiveSlot, e.Reg.Spec.Id, _resolution(), cur, e.Visible);
+            SaveRect(e.Reg.Spec, cur, e.Visible);
             e.LastSavedRect = cur;
         }
         e.LastRect = cur;

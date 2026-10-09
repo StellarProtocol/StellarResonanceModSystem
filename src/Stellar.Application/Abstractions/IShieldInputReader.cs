@@ -12,4 +12,6 @@ internal interface IShieldInputReader
     /// <summary>Wheel notches this frame (sampled once per frame).</summary>
     float Wheel { get; }
     (float X, float Y) Pointer { get; }
+    /// <summary>The top-most UI raycast hit under the pointer belongs to a game canvas, not a Stellar one (sampled once per frame).</summary>
+    bool PointerOverGameUi { get; }
 }

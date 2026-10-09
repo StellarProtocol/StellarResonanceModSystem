@@ -17,6 +17,15 @@ public interface IInputShield
 
     /// <summary>True while the game's input mask is up (the keyboard gate follows any held handle).</summary>
     bool IsShielded { get; }
+
+    /// <summary>
+    /// True when the pointer is over the game's own interface (a game window, button or slider) and not over a Stellar
+    /// window. A free camera that lets the player use the game's interface leaves clicks, drags and the wheel to the game
+    /// while this is true. Game interface hidden through <see cref="ISceneVisibility"/> may still answer, so consult it
+    /// only while the game interface is shown. Works with or without a held handle. Main thread; evaluated at most once
+    /// per rendered frame.
+    /// </summary>
+    bool IsPointerOverGameUi { get; }
 }
 
 /// <summary>A held input shield plus raw input reads. Reads return defaults once disposed.</summary>
