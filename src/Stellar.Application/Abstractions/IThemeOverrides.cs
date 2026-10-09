@@ -6,7 +6,9 @@ namespace Stellar.Application.Abstractions;
 
 /// <summary>Editor-facing view of the active theme's colours: enumerate slots,
 /// read the resolved value, and set/clear a per-theme override. Overrides only
-/// apply when a custom theme is active (built-ins are read-only).</summary>
+/// apply when a custom theme is active (built-ins are read-only).
+/// AT THE STELLAR0005 8-member cap (Slots, SlotCount, Revision, Resolve, HasOverride, SetOverride,
+/// ClearOverride, Flush) — split this interface rather than adding a 9th member.</summary>
 internal interface IThemeOverrides
 {
     IReadOnlyList<ColorSlotInfo> Slots { get; }

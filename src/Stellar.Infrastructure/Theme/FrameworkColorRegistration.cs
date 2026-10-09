@@ -41,7 +41,7 @@ internal static class FrameworkColorRegistration
     };
 
     // Localization keys for the same slots, resolved by RelabelAll once the real client language is known
-    // and again on every later explicit language switch — see ThemesPanel.RelabelFrameworkColors. Internal
+    // and again on every later explicit language switch — see ThemeEditorBody.RelabelFrameworkColors. Internal
     // (not private) so FrameworkColorRegistrationTests can assert this covers EXACTLY EditableTokens: a slot
     // key present in one dictionary and missing from the other fails silently at runtime otherwise.
     internal static readonly IReadOnlyDictionary<string, string> LabelKeys = new Dictionary<string, string>
@@ -71,9 +71,13 @@ internal static class FrameworkColorRegistration
 
     /// <summary>Re-applies the editable slots' display labels in the active language. <see cref="RegisterAll"/>
     /// runs during <c>Load()</c>, before the hot-update assemblies (and so the real "follow" client language)
-    /// are resolvable, so its labels are always the English fallback; <see cref="Stellar.Infrastructure.UI.SettingsPanels.ThemesPanel"/>
-    /// calls this lazily — once on its first real poll (never synchronously during wiring) and again on every
-    /// later explicit language switch — so the client language has had a chance to resolve first.</summary>
+    /// are resolvable, so its labels are always the English fallback; <see cref="Stellar.Infrastructure.UI.SettingsPanels.ThemeEditorBody"/>
+    /// calls this RENDER-driven — the first time is folded into its own slot-list cache refresh
+    /// (<c>SlotAt</c>), which is reachable only when the editor's element-tree Funcs are actually pulled by
+    /// <c>WindowService</c>, and that pull is skipped entirely while the Settings window is hidden. So the
+    /// first call is guaranteed to happen only after the player has opened Settings — never merely "after
+    /// some tick count since boot" — and the client language has had every chance to resolve by then. The
+    /// second trigger is a later explicit language switch (<see cref="ILocalization.LanguageChanged"/>).</summary>
     public static void RelabelAll(ColorRegistryService registry, ILocalization loc)
     {
         foreach (var (key, labelKey) in LabelKeys)

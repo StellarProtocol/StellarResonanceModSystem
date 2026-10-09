@@ -3,6 +3,8 @@ using System.Globalization;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
+using Stellar.Infrastructure.Theme;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
@@ -47,6 +49,20 @@ internal sealed partial class ThemeEditorBody
     private readonly ITheme _theme;
     private readonly ILocalization _text;
 
+    // FrameworkColorRegistration.RegisterAll (Load(), B-04) registers the editable Theme.* slots with an
+    // English fallback label — the hot-update assemblies (and so the real "follow" client language) aren't
+    // resolvable that early. Relabel RENDER-DRIVEN, not on a timer/tick: the first time is folded into
+    // SlotAt's own cache-refresh (ThemeEditorBody.Describe.cs) — reachable ONLY when this editor's own
+    // element-tree Funcs are actually pulled, which WindowService.TickEntry skips entirely while the
+    // Settings window is hidden (`if (!e.Visible) { ParkOrDestroy(e); return; }` — no value-pull at all, so
+    // no T()/ActiveLanguage call, until the player opens Settings). The SECOND trigger is a later explicit
+    // language switch (LanguageChanged) — always late enough, since it requires the player to already be
+    // looking at the Settings → Themes tab. ColorReg is null for a test double that isn't the real
+    // ColorRegistryService — Relabel is internal-only, so there is no interface seam for it (IThemeOverrides
+    // stays plugin-safe).
+    private ColorRegistryService? ColorReg => _overrides as ColorRegistryService;
+    private bool _colorLabelsRelabeled;
+
     // Editor state.
     private string _nameBuffer = "";
     private NameMode _nameMode = NameMode.None;
@@ -67,6 +83,15 @@ internal sealed partial class ThemeEditorBody
         _overrides = overrides;
         _theme = theme;
         _text = text;
+        // Later explicit language switches — the lazy, render-driven initial relabel is documented on
+        // ColorReg above (triggered from SlotAt, not here: a ctor runs during wiring, before the window is
+        // ever shown).
+        text.LanguageChanged += RelabelFrameworkColors;
+    }
+
+    private void RelabelFrameworkColors()
+    {
+        if (ColorReg is { } reg) FrameworkColorRegistration.RelabelAll(reg, _text);
     }
 
     // A slider drag holds the mouse down and fires many SetOverride calls; the

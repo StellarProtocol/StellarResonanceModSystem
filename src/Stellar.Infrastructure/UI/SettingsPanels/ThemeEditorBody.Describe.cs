@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
@@ -178,7 +179,12 @@ internal sealed partial class ThemeEditorBody
     private int _slotCacheRevision = -1;
     private ColorSlotInfo? SlotAt(int i)
     {
-        if (_overrides.SlotCount != _slotCacheCount || _overrides.Revision != _slotCacheRevision)
+        // Lazy, RENDER-driven initial relabel (see ColorReg's doc, ThemeEditorBody.cs): SlotAt is reachable
+        // only when this editor's own Funcs are pulled by WindowService, which never happens while the
+        // Settings window is hidden — so this is the first point in the whole framework that is guaranteed
+        // to run AFTER the player has actually opened Settings, not merely after some tick count since boot.
+        if (!_colorLabelsRelabeled) { RelabelFrameworkColors(); _colorLabelsRelabeled = true; }
+        if (SlotCacheRefresh.ShouldRefresh(_overrides.SlotCount, _overrides.Revision, _slotCacheCount, _slotCacheRevision))
         {
             _slotCache = _overrides.Slots;
             _slotCacheCount = _overrides.SlotCount;
