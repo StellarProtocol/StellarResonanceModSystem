@@ -67,6 +67,38 @@ public sealed class PluginDisplayNamesTests
     }
 
     [Fact]
+    public void Resolve_ThrowingProvider_IsNotReinvoked()
+    {
+        // Row Funcs re-resolve every apply; a provider that threw once must not throw (and cost) every frame.
+        var reg = NewRegistry(out var log);
+        var calls = 0;
+        new PerPluginLauncher("p", reg, reg).Register(Entry("T", () => { calls++; throw new InvalidOperationException("boom"); }));
+        calls = 0;   // Register's pin-migration check reads DisplayTitle once
+        var names = new PluginDisplayNames(reg, log);
+
+        names.Resolve("p", "Internal");
+        names.Resolve("p", "Internal");
+        names.Resolve("p", "Internal");
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void SameInstanceRegisteredTwice_DisposingOneHandle_KeepsTheOwner()
+    {
+        var reg = NewRegistry(out _);
+        var launcher = new PerPluginLauncher("p", reg, reg);
+        var e = Entry("Twice");
+        var h1 = launcher.Register(e);
+        launcher.Register(e);
+
+        h1.Dispose();
+
+        Assert.Same(e, Assert.Single(reg.Entries));
+        Assert.Same(e, reg.FirstEntryOwnedBy("p"));
+    }
+
+    [Fact]
     public void Resolve_EntriesOwnedByOthers_DoNotLeak()
     {
         var reg = NewRegistry(out var log);

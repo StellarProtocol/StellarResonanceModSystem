@@ -118,4 +118,16 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// through to the game and to every window behind it. For full-screen guides and overlays that must never take
     /// input (e.g. a photo frame guide). Default false.</summary>
     public bool Passive { get; init; }
+
+    /// <summary>Optional live-localized DISPLAY title for the window chrome, mirroring
+    /// <see cref="Services.LauncherEntry.TitleProvider"/>: evaluated when the window is built (which happens only
+    /// once it is first shown) and again on a theme/language change, never per frame. <c>null</c> (the default)
+    /// shows <see cref="Title"/>. Set it to <c>() =&gt; services.Localization.T("your.title.key")</c> so the title
+    /// is read in the player's language without resolving it at registration time. <see cref="Title"/> stays the
+    /// fallback (used if the provider throws) — identity is <see cref="Id"/>, never the title.</summary>
+    public Func<string>? TitleProvider { get; init; }
+
+    /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
+    /// <see cref="Title"/>. Invokes the provider — read it only where the window is being drawn.</summary>
+    public string DisplayTitle => TitleProvider?.Invoke() ?? Title;
 }

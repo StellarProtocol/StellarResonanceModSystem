@@ -217,19 +217,38 @@ internal sealed partial class WindowBuilder
 
     private void BuildTitleText(WindowSpec spec, GameObject bar, WindowToken token)
     {
+        // The DISPLAY title (spec.TitleProvider, else Title) is read here — at build, which happens only once the
+        // window is first shown — and again by a reskin action on a theme/language change. Never per frame.
+        var text = TitleOf(spec);
         // Real bold in every script via the game-only TMP factory; legacy crisp Text when unavailable.
-        var h = TryBuildBoldTitle(bar.transform, spec.Title, Scaled(13), _assets.MenuText);
+        var h = TryBuildBoldTitle(bar.transform, text, Scaled(13), _assets.MenuText);
         if (h != null)
         {
             token.ReskinActions.Add(() => { h.SetFontSize(Scaled(13)); h.SetColor(_assets.MenuText); });
+            if (spec.TitleProvider != null) token.ReskinActions.Add(() => h.SetText(TitleOf(spec)));
             return;
         }
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
         var title = titleGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
-        title.color = _assets.MenuText; title.text = spec.Title; title.raycastTarget = false;
-        title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, spec.Title);   // crisp per-script weight
+        title.color = _assets.MenuText; title.text = text; title.raycastTarget = false;
+        title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, text);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
+        if (spec.TitleProvider != null)
+            token.ReskinActions.Add(() =>
+            {
+                if (title == null) return;
+                var s = TitleOf(spec);
+                title.text = s; title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
+            });
+    }
+
+    // spec.DisplayTitle runs caller code (TitleProvider): fail-safe like WindowService.SafeApply — a throwing
+    // provider shows the plain Title rather than aborting the window build / reskin pass.
+    private static string TitleOf(WindowSpec spec)
+    {
+        try { return spec.DisplayTitle; }
+        catch (System.Exception) { return spec.Title; }
     }
 
     // 1 px accent divider pinned to the title bar's bottom edge (ignore-layout overlay).

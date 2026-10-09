@@ -46,11 +46,11 @@ internal sealed partial class HotkeysPanel
     // per-row string interpolation under DrawRow.
     private readonly Dictionary<string, string> _bindingLabelCache = new();
     // The framework's own actions are declared (English) during wiring, before the client language is safely
-    // readable, so this panel relabels them — see FrameworkHotkeyLabels. RENDER-driven: the first relabel is
+    // readable, so this panel relabels them — see FrameworkHotkeyRelabeler. RENDER-driven: the first relabel is
     // folded into RowLabel, an action-row Func that WindowService only pulls while the Settings window is shown
     // AND its Hotkeys tab branch is active (hidden windows are parked unapplied; Conditional branches build
     // lazily). Never from PollCaptureUgui or any other per-tick path — those must not read the language.
-    private bool _frameworkLabelsRelabeled;
+    private readonly FrameworkHotkeyRelabeler _relabeler;
 
     /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
     /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
@@ -78,14 +78,8 @@ internal sealed partial class HotkeysPanel
         // header would keep showing the seeded assembly name until the user happened
         // to toggle a filter chip (the only other RebuildDisplay trigger).
         _inventory.StatusChanged += OnPluginStatusChanged;
-        // A later explicit language switch re-applies the framework action descriptions even if the panel is
-        // closed (the player is necessarily past boot by then). Constructed once in wiring → subscribed once.
-        _loc.LanguageChanged += RelabelFrameworkActions;
-    }
-
-    private void RelabelFrameworkActions()
-    {
-        if (_directory is HotkeyService hotkeys) FrameworkHotkeyLabels.RelabelAll(hotkeys, _loc);
+        // Reads nothing now; relabels on the first row render and on every later explicit language switch.
+        _relabeler = new FrameworkHotkeyRelabeler(_directory as HotkeyService, _loc);
     }
 
     private void OnBindingChanged(string actionId)
@@ -256,15 +250,20 @@ internal sealed partial class HotkeysPanel
     /// language) without re-flattening; <see cref="HkRow.GroupLabel"/> is the internal-name fallback. Display
     /// only — collapse state and sorting stay on <see cref="HkRow.GroupKey"/>.</summary>
     private string HeaderText(HkRow row)
-        => DisplayNames is { } names && !string.IsNullOrEmpty(row.GroupKey) ? names.Resolve(row.GroupKey, row.GroupLabel) : row.GroupLabel;
+        => DisplayNames is { } names && !string.IsNullOrEmpty(row.GroupKey) && row.GroupKey != FrameworkGroupKey
+            ? names.Resolve(row.GroupKey, row.GroupLabel) : row.GroupLabel;
+
+    // GroupKeyOf for every framework.* action (id prefix; framework actions carry no PluginId). Its header is the
+    // framework product name, never a plugin's launcher title — skip the resolver for it.
+    private const string FrameworkGroupKey = "framework";
 
     /// <summary>Row text: the declared human-readable description, falling back to the
     /// prefix-stripped id for actions that shipped without one. Also the render-driven trigger of the first
-    /// framework-action relabel (see <see cref="_frameworkLabelsRelabeled"/>).</summary>
+    /// framework-action relabel (see <see cref="_relabeler"/>).</summary>
     private string RowLabel(IHotkeyAction? a)
     {
         if (a is null) return "";
-        if (!_frameworkLabelsRelabeled) { _frameworkLabelsRelabeled = true; RelabelFrameworkActions(); }
+        _relabeler.EnsureRelabeled();
         return string.IsNullOrWhiteSpace(a.Description) ? ShortName(a.Id) : a.Description;
     }
 

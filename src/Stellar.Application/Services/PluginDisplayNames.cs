@@ -12,13 +12,13 @@ namespace Stellar.Application.Services;
 /// <c>PerPluginLauncher</c> at Register), so another plugin's entries never leak in. Evaluated on demand by the
 /// panels' row Funcs (render-driven: <c>WindowService</c> pulls nothing from a hidden window) — never call it from
 /// a per-tick path. A throwing <c>TitleProvider</c> is fail-safe like <c>WindowService.SafeApply</c> / the launcher
-/// pin migration: fall back to the internal name and log once per plugin.
+/// pin migration: fall back to the internal name, log once, and stop invoking that plugin's provider.
 /// </summary>
 internal sealed class PluginDisplayNames : IPluginDisplayNames
 {
     private readonly ILauncherOwnedRegistrations _launcher;
     private readonly IPluginLog _log;
-    private readonly HashSet<string> _loggedFailures = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _failed = new(StringComparer.Ordinal);   // threw once → skipped + logged once
 
     public PluginDisplayNames(ILauncherOwnedRegistrations launcher, IPluginLog log)
     {
@@ -28,6 +28,9 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
 
     public string Resolve(string pluginId, string fallback)
     {
+        // A provider that threw once is skipped from then on (row Funcs re-resolve every apply — an exception per
+        // frame is a real cost). The same set gates the log-once.
+        if (_failed.Contains(pluginId)) return fallback;
         if (_launcher.FirstEntryOwnedBy(pluginId) is not { } entry) return fallback;
         try
         {
@@ -36,7 +39,7 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
         }
         catch (Exception ex)
         {
-            if (_loggedFailures.Add(pluginId))
+            if (_failed.Add(pluginId))
                 _log.Warning($"[Settings] plugin '{pluginId}' launcher TitleProvider threw; showing its internal name: {ex.Message}");
             return fallback;
         }

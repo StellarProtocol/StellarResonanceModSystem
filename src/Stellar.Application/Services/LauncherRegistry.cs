@@ -114,13 +114,14 @@ internal sealed class LauncherRegistry : ILauncher, ILauncherOwnedRegistrations
 
     private void Remove(LauncherEntry entry)
     {
-        _owners.Remove(entry);
         // By REFERENCE: LauncherEntry is a record, so List.Remove would match a value-equal entry another
         // registration owns.
         var i = _entries.FindIndex(e => ReferenceEquals(e, entry));
         if (i < 0) return;
         _entries.RemoveAt(i);
         _revision++;
+        // Drop the owner only once no copy of this instance remains (the same instance registered twice keeps it).
+        if (_entries.FindIndex(e => ReferenceEquals(e, entry)) < 0) _owners.Remove(entry);
     }
 
     // Reference-identity comparer (BCL ReferenceEqualityComparer is .NET 5+; this file also compiles into the
@@ -132,9 +133,8 @@ internal sealed class LauncherRegistry : ILauncher, ILauncherOwnedRegistrations
         public int GetHashCode(LauncherEntry obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 
-    // Removes exactly the registered instance once; idempotent so a double
-    // Dispose can't evict a later same-titled entry (List.Remove is by reference
-    // equality for the captured instance).
+    // Removes exactly the registered instance once; idempotent so a double Dispose can't evict a later
+    // same-titled entry. Removal is by reference (Remove → FindIndex/ReferenceEquals), not record value equality.
     private sealed class Registration : IDisposable
     {
         private readonly LauncherRegistry _owner;

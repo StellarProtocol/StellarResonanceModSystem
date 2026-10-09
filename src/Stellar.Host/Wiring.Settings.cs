@@ -105,10 +105,9 @@ public sealed partial class BootstrapPlugin
         if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
             && tabEnv is >= 0 and <= 6)
             tab = tabEnv;
-        var spec = new WindowSpec("stellar.settings.ugui", _frameworkLocalization!.T("settings.window.title"),
-            new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
-        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
-        { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, Closable = true, Draggable = true, StartVisible = false };
+        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen. The title is
+        // resolved by the chrome when the hub is first shown (SettingsHubSpec), not here: this is pre-Game.Init.
+        var spec = SettingsHubSpec.Create(_frameworkLocalization!, () => (_clientState!.UiState & GameUIState.Loading) == 0);
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
         // Colour editor: coalesce ColorPicker-drag edits to one persist+rebake on mouse-release.
