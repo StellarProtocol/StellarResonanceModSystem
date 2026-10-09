@@ -15,12 +15,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [Unreleased]
-_**2.22.0** (minor) — fixes window text that could occasionally turn into garbled letters, and lets a free camera leave clicks on the game's own windows to the game (`IInputShield.IsPointerOverGameUi`, Abstractions 2.22.0; additive, no plugin rebuild)._
+_**2.22.0** (minor) — fixes window text that could occasionally turn into garbled letters, keeps centred / edge-anchored windows in place across resolutions and width changes, and lets a free camera leave clicks on the game's own windows to the game (`IInputShield.IsPointerOverGameUi`, Abstractions 2.22.0; additive, no plugin rebuild)._
 ### Added
 - Plugins with a free camera can now let you use the game's own windows and sliders while the camera is on.
 ### Fixed
 - Fixed window text (close button, HUD-style overlays) occasionally showing garbled letters.
+- Windows that sit at the top centre, the middle or a screen edge now stay there at every resolution and after a plugin update changes their size (they could drift off centre).
 ### Developer notes
+- Anchored window layouts (`WindowAnchor` ≠ `TopLeft`): a save also stores the offset of the window's anchor point from the canvas anchor point in design units (`slots.<n>.windows.<id>.<res>.anc/.ax/.ay`, beside the unchanged `x/y/w/h` — rollback-safe), and every restore re-places the window from that offset at the current canvas, UI scale and size (`AnchoredPlacement`, `WindowService.Anchor.cs`). A legacy exact-resolution save keeps the anchor point it had. Root cause: a Top-anchored window kept its saved absolute left edge when its width changed (Photo Studio's free-camera HUD 800 → 1240 px sat 220 px right of centre at 2560×1440). Pinned in `WindowAnchorLayoutTests` (5 resolutions × 3 UI scales).
 - `IInputShield.IsPointerOverGameUi`: one `EventSystem.RaycastAll` per rendered frame (only when asked); true when the TOP-MOST hit sorts below Stellar's band (`sortingOrder < 32749`), so a Stellar window over a game window answers false. With `STELLAR_DIAGNOSTICS=1` every flip logs `[FreeCam] pointer over game UI=yes|no hits=N top=<object> order=<n>`. Hidden game HUD may still answer the raycast — consult it only while the game interface is shown.
 - `WindowRenderer.OnFontTextureRebuilt` no longer filters to `MenuFont`: it refreshes, on every live window, the legacy `Text` bound to whichever font rebuilt (`WindowToken.RefreshFontTexture(Font)`). HudOverlay text intentionally stays on `ConfigureText`'s builtin font (native-HUD look), and that font's atlas repacks were previously ignored → stale glyph UVs.
 - Window chrome close buttons (✕, title-bar and overlay-corner) and the legacy-`Text` title fallbacks (title bar, Tracker/Party overlay) now get `MenuFont` at build time instead of only on the first theme switch.

@@ -239,7 +239,7 @@ internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
             // otherwise rewrote the whole framework config ~30x/s for nothing (owner report 2026-09-30).
             if (Owner._storage != null && Owner._resolution != null && !RectClose(rect, LastSavedRect))
             {
-                Owner._storage.Save(Owner._storage.ActiveSlot, Reg.Spec.Id, Owner._resolution(), rect, Visible);
+                Owner.SaveRect(Reg.Spec, rect, Visible);
                 LastRect = LastSavedRect = rect;
             }
         }
