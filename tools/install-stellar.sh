@@ -83,6 +83,18 @@ USER_PLUGINS=(
     "ModuleOptimizer|build|$DEVKIT_ROOT/plugin-repos/StellarModuleOptimizerPlugin/Stellar.ModuleOptimizer.csproj"
     "EntityInspector|build|$DEVKIT_ROOT/plugin-repos/StellarEntityInspectorPlugin/Stellar.EntityInspector.csproj"
     "LoadoutSwitcher|build|$DEVKIT_ROOT/plugin-repos/StellarLoadoutSwitcherPlugin/Stellar.LoadoutSwitcher.csproj"
+    "AutoFishing|build|$DEVKIT_ROOT/plugin-repos/StellarAutoFishingPlugin/Stellar.AutoFishing.csproj"
+    "AutoGather|build|$DEVKIT_ROOT/plugin-repos/StellarAutoGather/Stellar.AutoGather.csproj"
+    "CustomProfleImage|build|$DEVKIT_ROOT/plugin-repos/StellaCustomProfileImagePlugin/Stellar.CustomProfleImage.csproj"  # sic: the real slot + assembly name
+    "Maestro|build|$DEVKIT_ROOT/plugin-repos/StellarMaestroPlugin/Stellar.Maestro.csproj"
+    "MinimalNameplate|build|$DEVKIT_ROOT/plugin-repos/StellarMinimalNameplatePlugin/Stellar.MinimalNameplate.csproj"
+    "PhotoStudio|build|$DEVKIT_ROOT/plugin-repos/StellarPhotoStudioPlugin/Stellar.PhotoStudio.csproj"
+    "RaidManager|build|$DEVKIT_ROOT/plugin-repos/StellarRaidManagerPlugin/Stellar.RaidManager.csproj"
+    "TargetLens|build|$DEVKIT_ROOT/plugin-repos/StellarTargetLensPlugin/Stellar.TargetLens.csproj"
+    "WardrobeLoadout|build|$DEVKIT_ROOT/plugin-repos/StellarWardrobeLoadout/Stellar.WardrobeLoadout.csproj"
+    # Never published (registry/CDN) — deployed only to local clients. Its csproj reads $(GameInterop)/$(BepInExCore),
+    # which the build step below points at this prefix's release dir.
+    "ExchangeBuyer|build|$DEVKIT_ROOT/plugin-repos/StellarExchangeBuyerPlugin/src/Stellar.ExchangeBuyer.Plugin/Stellar.ExchangeBuyer.Plugin.csproj"
 )
 
 # Framework-only mode (STELLAR_FRAMEWORK_ONLY=1): deploy the framework set and touch NOTHING under
@@ -131,7 +143,11 @@ plugin_dll() {  # $1 = "subdir|mode|path" -> echoes the expected DLL path
     local mode="${rest%%|*}"
     local path="${rest#*|}"
     if [ "$mode" = build ]; then
-        echo "${path%/*}/bin/Release/Stellar.$subdir.dll"   # ${path%/*} = csproj dir (pure bash, no dirname)
+        # Every shipping csproj sets AppendTargetFrameworkToOutputPath=false, so the DLL sits in bin/Release/ under
+        # its <AssemblyName> (fallback Stellar.<subdir>). ${path%/*} = csproj dir (pure bash, no dirname).
+        local asm
+        asm="$(sed -n 's:.*<AssemblyName>\([^<]*\)</AssemblyName>.*:\1:p' "$path" | head -1)"
+        echo "${path%/*}/bin/Release/${asm:-Stellar.$subdir}.dll"
     else
         echo "$path"
     fi
@@ -157,7 +173,11 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
         subdir="${entry%%|*}"; rest="${entry#*|}"; mode="${rest%%|*}"; path="${rest#*|}"
         if [ "$mode" = build ]; then
             echo "building plugin $subdir…"
-            "$DOTNET" build "$path" -c Release --nologo -v quiet
+            interop_props=()
+            if grep -q '$(GameInterop)' "$path"; then   # csproj builds against local game interop: use THIS prefix's release
+                interop_props=("-p:GameInterop=$GAME/BepInEx/interop" "-p:BepInExCore=$GAME/BepInEx/core")
+            fi
+            "$DOTNET" build "$path" -c Release --nologo -v quiet "${interop_props[@]}"
         else
             echo "using prebuilt $subdir (plugins/ monorepo — not built from source here)"
         fi
