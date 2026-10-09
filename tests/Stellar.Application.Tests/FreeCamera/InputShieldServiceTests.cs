@@ -29,6 +29,7 @@ public sealed class InputShieldServiceTests
         public (float X, float Y) MouseDelta => (3f, -2f);
         public float Wheel => 1f;
         public (float X, float Y) Pointer => (100f, 200f);
+        public bool PointerOverGameUi { get; set; }
     }
 
     private sealed class FakeFocus : ITextFieldFocus
@@ -62,6 +63,21 @@ public sealed class InputShieldServiceTests
         focus.Focused = true;
         h.Dispose();
         Assert.False(h.TextFieldFocused);
+    }
+
+    // 2.22.0 (Photo Studio "show game UI in the free camera"): the over-game-UI answer is the reader's, live, with or
+    // without a held handle — the free camera asks it to leave clicks on a game slider to the game.
+    [Fact]
+    public void IsPointerOverGameUi_reports_the_reader_live_with_or_without_a_handle()
+    {
+        var reader = new FakeReader();
+        var svc = new InputShieldService(new FakeBackend(), reader, new FakeFocus(), _ => { });
+        Assert.False(svc.IsPointerOverGameUi);
+        reader.PointerOverGameUi = true;
+        Assert.True(svc.IsPointerOverGameUi);
+        using (svc.Shield()) Assert.True(svc.IsPointerOverGameUi);
+        reader.PointerOverGameUi = false;
+        Assert.False(svc.IsPointerOverGameUi);
     }
 
     [Fact]

@@ -44,7 +44,7 @@ public sealed class UiLanguagesTests
     // Korean is the 2.21.0 feature; the exact current-version pin follows the latest release.
     [Fact]
     public void Framework_version_is_2_21_0()
-        => Assert.Equal("2.21.0", Stellar.Abstractions.Domain.FrameworkVersion.Value);
+        => Assert.Equal("2.22.0", Stellar.Abstractions.Domain.FrameworkVersion.Value);
 
     [Theory]
     [MemberData(nameof(AllCodes))]

@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.22.0 adds <c>IInputShield.IsPointerOverGameUi</c> (is the pointer over the game's own interface, not a Stellar
+    /// window — a free camera that shows the game interface leaves clicks on it to the game). Additive.
     /// 2.21.0 adds Korean (<c>"ko"</c>, 한국어) as a UI language: <c>ILocalization.Language</c> may now return
     /// <c>"ko"</c> and plugins can ship <c>Lang/ko.json</c>; "Follow game client" maps the game's Korean client.
     /// Hangul font coverage added to the overlay font chains. Additive.
@@ -278,5 +280,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.21.0";
+    public const string Value = "2.22.0";
 }

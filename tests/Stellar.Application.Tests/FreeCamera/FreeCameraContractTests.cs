@@ -16,7 +16,7 @@ public sealed class FreeCameraContractTests
     [Theory]
     [InlineData(typeof(ICameraOverride), 5)]   // + TryProjectToScreen (2.15.0 lamp markers)
     [InlineData(typeof(ICameraControl), 5)]
-    [InlineData(typeof(IInputShield), 2)]
+    [InlineData(typeof(IInputShield), 3)]      // + IsPointerOverGameUi (2.22.0 Photo Studio game UI in the free camera)
     [InlineData(typeof(IInputShieldHandle), 8)]
     [InlineData(typeof(ISceneFreeze), 4)]
     [InlineData(typeof(IEmotes), 3)]
