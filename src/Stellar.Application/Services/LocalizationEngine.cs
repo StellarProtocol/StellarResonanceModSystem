@@ -19,7 +19,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
 {
     private const string LanguageKey = "language";
     private const string Follow = "follow";
-    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal) { "en", "ja", "th", "id", "fil" };
+    private static readonly HashSet<string> Supported = new(UiLanguages.Codes, StringComparer.Ordinal);
 
     // ns → (langCode → (key → value))
     private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> _catalogs = new(StringComparer.Ordinal);
@@ -27,6 +27,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
     private readonly IClientLanguageProbe _probe;
     private readonly IPluginLog _log;
     private string _setting;
+    private string _followResolved;   // the client language follow last resolved to (raise only on a real change)
 
     public LocalizationEngine(IConfigSection settings, IClientLanguageProbe probe, IPluginLog log)
     {
@@ -35,6 +36,8 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         _log = log;
         var stored = settings.Get(LanguageKey, Follow) ?? Follow;
         _setting = IsValidSetting(stored) ? stored : Follow;
+        _followResolved = Normalize(probe.SupportedLanguage);
+        probe.Changed += OnClientLanguageChanged;
         _log.Info($"[Stellar][i18n] localization setting='{_setting}'");
     }
 
@@ -44,7 +47,7 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
     /// <summary>Raw persisted setting: <c>"follow"</c> or a supported code.</summary>
     public string LanguageSetting => _setting;
 
-    /// <summary>Resolved active language — always one of <c>"en"/"ja"/"th"/"id"</c>.</summary>
+    /// <summary>Resolved active language — always one of <see cref="UiLanguages.Codes"/>.</summary>
     public string ActiveLanguage => _setting == Follow ? Normalize(_probe.SupportedLanguage) : _setting;
 
     /// <summary>Parse and store one catalog under <paramref name="ns"/>/<paramref name="langCode"/>.</summary>
@@ -73,7 +76,32 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         _settings.Set(LanguageKey, setting);
         _settings.Save();
         _log.Info($"[Stellar][i18n] language setting → '{setting}' (active={ActiveLanguage})");
-        if (ActiveLanguage != oldActive) LanguageChanged?.Invoke();
+        if (ActiveLanguage != oldActive) RaiseLanguageChanged();
+    }
+
+    // The client language became known (or the player switched it in-game): under `follow`, live UI re-resolves.
+    // Raised from the latch's tick drain (main thread), never from a T() read or inside the game's setter.
+    private void OnClientLanguageChanged()
+    {
+        var now = Normalize(_probe.SupportedLanguage);
+        if (now == _followResolved) return;
+        var was = _followResolved;
+        _followResolved = now;
+        _log.Info($"[Stellar][i18n] client language '{was}' → '{now}' (setting='{_setting}')");
+        if (_setting == Follow) RaiseLanguageChanged();
+    }
+
+    // The one raise path (Settings switch + client-language change): one throwing subscriber is logged and must not
+    // starve the others (framework renderers, panels, plugin window rebuilds).
+    private void RaiseLanguageChanged()
+    {
+        var handlers = LanguageChanged;
+        if (handlers == null) return;
+        foreach (var d in handlers.GetInvocationList())
+        {
+            try { ((Action)d)(); }
+            catch (Exception ex) { _log.Warning($"[Stellar][i18n] LanguageChanged handler threw: {ex.Message}"); }
+        }
     }
 
     private bool TryResolve(string ns, string key, out string value)

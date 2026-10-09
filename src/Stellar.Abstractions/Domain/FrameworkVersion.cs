@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.21.0 adds Korean (<c>"ko"</c>, 한국어) as a UI language: <c>ILocalization.Language</c> may now return
+    /// <c>"ko"</c> and plugins can ship <c>Lang/ko.json</c>; "Follow game client" maps the game's Korean client.
+    /// Hangul font coverage added to the overlay font chains. Additive.
     /// 2.20.0 adds the game photo screen's full hide list as <c>VisibilityLayers</c> (<c>SelfCharacter</c>,
     /// <c>OwnSpiritEcho</c>, <c>Strangers</c>, <c>Friends</c>, <c>Party</c>, <c>Guild</c>, <c>NonPlayers</c>, <c>Enemies</c>,
     /// <c>Weapons</c>, <c>Collectibles</c>, <c>OtherSpiritEchoes</c>; sets <c>PlayerGroups</c>/<c>World</c>; legacy layers
@@ -275,5 +278,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.20.0";
+    public const string Value = "2.21.0";
 }

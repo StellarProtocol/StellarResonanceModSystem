@@ -131,6 +131,19 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
     private void InvalidateActionsCache() => _cachedActionsList = null;
 
     /// <summary>
+    /// Replaces ONLY the display description of an already-declared action (id, binding, suggested default,
+    /// callback and persisted config are untouched; nothing is saved and <see cref="BindingChanged"/> does not
+    /// fire). An unknown id is a silent no-op. Internal: used to put the framework's own actions — declared
+    /// with an English description before the client language is safely readable — into the active language
+    /// (see <c>FrameworkHotkeyLabels</c>). The Hotkeys panel reads <see cref="IHotkeyAction.Description"/>
+    /// live, so there is no cache to invalidate.
+    /// </summary>
+    internal void Relabel(string id, string description)
+    {
+        if (_actions.TryGetValue(id, out var action)) action.Description = description;
+    }
+
+    /// <summary>
     /// Lockout safety net — if framework.settings-toggle has no binding AND
     /// no other framework.* action has a binding, restore the suggested
     /// default so the user can always reopen the Settings hub. Called once
@@ -138,14 +151,14 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
     /// </summary>
     internal void RestoreSettingsHotkeyIfLocked()
     {
-        if (!_actions.TryGetValue("framework.settings-toggle", out var settings)) return;
+        if (!_actions.TryGetValue(FrameworkHotkeyIds.SettingsToggle, out var settings)) return;
         if (settings.CurrentBinding is not null) return;
         foreach (var a in _actions.Values)
             if (a.Id.StartsWith("framework.", StringComparison.Ordinal) && a.CurrentBinding is not null)
                 return;   // some other framework hotkey is bound; user can still reach Settings via Hotkeys panel
-        if (_suggestedDefaults.TryGetValue("framework.settings-toggle", out var fallback) && fallback is not null)
+        if (_suggestedDefaults.TryGetValue(FrameworkHotkeyIds.SettingsToggle, out var fallback) && fallback is not null)
         {
-            Rebind("framework.settings-toggle", fallback);
+            Rebind(FrameworkHotkeyIds.SettingsToggle, fallback);
             _log.Warning("[Hotkeys] settings hotkey unbound — restoring suggested default to keep Settings reachable.");
         }
     }
@@ -286,7 +299,7 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
         public KeyBinding? CurrentBinding  { get; internal set; }
         public Action      Callback        { get; internal set; }
         public string?     PluginId        { get; init; }
-        public string      Description     { get; init; } = "";
+        public string      Description     { get; internal set; } = "";   // set by Relabel
         /// <summary>True when the binding is the player's saved choice (config / Rebind), false for a suggested default.</summary>
         public bool        Saved           { get; internal set; }
 

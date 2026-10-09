@@ -54,9 +54,9 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe, IStallSubcate
     private readonly IPluginLog _log;
     private readonly IGameTypeRegistry _typeRegistry;
     private readonly PandaMLStringResolver _mlStrings;
-    private readonly PandaClientLanguage _clientLanguage;
+    private readonly IClientLanguageInfo _clientLanguage;
 
-    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings, PandaClientLanguage clientLanguage)
+    public PandaGameDataProbe(IPluginLog log, IGameTypeRegistry typeRegistry, PandaMLStringResolver mlStrings, IClientLanguageInfo clientLanguage)
     {
         _log = log;
         _typeRegistry = typeRegistry;

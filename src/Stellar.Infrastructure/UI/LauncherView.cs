@@ -29,6 +29,7 @@ internal sealed class LauncherView
     private readonly LauncherRegistry _registry;
     private readonly Action _openSettings;
     private readonly Action _close;
+    private readonly ILocalization _text;   // framework text lookup (labels) — same pattern as the Settings panels
 
     // LIVE plugin lists, rebuilt only when the registry revision changes (plugin register/unregister or a pin
     // toggle bump it). The tile pools below read these by index so plugins that register AFTER the launcher is
@@ -38,8 +39,8 @@ internal sealed class LauncherView
     private readonly List<LauncherEntry> _pinned = new();
     private int _rev = -1;
 
-    public LauncherView(LauncherRegistry registry, Action openSettings, Action close)
-    { _registry = registry; _openSettings = openSettings; _close = close; }
+    public LauncherView(LauncherRegistry registry, Action openSettings, Action close, ILocalization text)
+    { _registry = registry; _openSettings = openSettings; _close = close; _text = text; }
 
     private void Refresh()
     {
@@ -103,7 +104,7 @@ internal sealed class LauncherView
     private HudElement CloseBtn => new TileElement(() => null, () => "✕", _close, Width: CloseWidth, IconSize: 14f);
 
     private HudElement SettingsTile(float width) => new TileElement(
-        () => Icon("settings"), () => "Settings", _openSettings, Width: width);
+        () => Icon("settings"), () => _text.T("launcher.settings"), _openSettings, Width: width);
 
     // A live plugin tile reading the idx-th entry of the all/pinned list each apply (null when out of range).
     private HudElement LivePluginTile(int idx, bool pinnedOnly)
@@ -123,7 +124,7 @@ internal sealed class LauncherView
         var body = new List<HudElement>
         {
             new RowElement(new HudElement[] { Logo, new TextElement(() => "Stellar", null, Emphasis: true), new SpacerElement(), ModeToggle, CloseBtn }, Gap: 6f),
-            new ConditionalElement(() => AllCount() > 0, new TextElement(() => "PLUGINS", () => SectionMuted, Emphasis: true)),
+            new ConditionalElement(() => AllCount() > 0, new TextElement(() => _text.T("launcher.plugins"), () => SectionMuted, Emphasis: true)),
         };
         for (var r = 0; r < MaxRows; r++)
         {

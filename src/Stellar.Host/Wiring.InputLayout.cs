@@ -46,10 +46,13 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.LogSink = log.Info;
         _layoutOverlay = new LayoutEditorOverlay(_layoutEditor, _inputGateway, _layoutStorage, _themeRenderer!, log, _clientState!);
 
-        // Framework-level edit-mode hotkey (Alt+E toggles layout edit mode).
+        // Framework-level edit-mode hotkey (Alt+E toggles layout edit mode). The framework's own hotkey
+        // descriptions are English HERE on purpose: this runs before hot-update / Game.Init, when reading the
+        // client language could latch the wrong one for the session. Settings → Hotkeys relabels them into the
+        // active language render-driven (Infrastructure FrameworkHotkeyLabels) — Ids must never change.
         _hotkeyService.DeclareAction(
             new HotkeyAction(
-                Id: "framework.layout-edit",
+                Id: FrameworkHotkeyIds.LayoutEdit,
                 Description: "Toggle layout edit mode",
                 SuggestedDefault: new KeyBinding(StellarKeyCode.E, ModifierKeys.Alt)),
             callback: () => _layoutEditor.ToggleEditMode());
@@ -67,7 +70,7 @@ public sealed partial class BootstrapPlugin
         // false on process restart, so it is intentionally NOT persisted.
         _hotkeyService!.DeclareAction(
             new HotkeyAction(
-                Id: "framework.hud-toggle",
+                Id: FrameworkHotkeyIds.HudToggle,
                 Description: "Toggle all HUD overlays",
                 SuggestedDefault: new KeyBinding(StellarKeyCode.H, ModifierKeys.Alt)),
             callback: () => Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill
@@ -80,7 +83,7 @@ public sealed partial class BootstrapPlugin
         // reverts to whatever it was before the hold began, not unconditionally false.
         _hotkeyService!.DeclareAction(
             new HotkeyAction(
-                Id: "framework.hud-hold",
+                Id: FrameworkHotkeyIds.HudHold,
                 Description: "Hold to hide all HUD overlays",
                 SuggestedDefault: null),          // unbound by default
             callback: () => { });                  // no press action; effect is polled via IsActionHeld each tick

@@ -35,17 +35,7 @@ public sealed partial class BootstrapPlugin
             return;
         }
 
-        var loc = _frameworkLocalization!;
-        var panels = new SettingsPanelSet
-        {
-            Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled, loc),
-            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName, loc),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
-            Themes  = new ThemesPanel(_namedTheme, _themeRenderer, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
-            Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer, loc),
-            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log, _layoutEditor, loc),
-            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor, loc),
-            About   = new AboutPanel(_themeRenderer, loc),
-        };
+        var panels = BuildSettingsPanels(log);
 
         RegisterSettingsHub(panels);
         RegisterLauncher(log);
@@ -61,6 +51,9 @@ public sealed partial class BootstrapPlugin
         // Hand the native UI service to the overlay so Shift+` outlines + drags
         // game HUD elements alongside Stellar windows.
         _layoutOverlay.SetNativeUi(_nativeUi);
+        // Localized toolbar/outline text (heading, filter chips, reset/exit buttons, native-UI entry names) —
+        // same façade every other Phase 9a panel uses.
+        _layoutOverlay.SetLocalization(_frameworkLocalization!);
 
         // uGUI window toolkit: bind layout storage + resolution provider (Tick from
         // RefreshPerTickServices; dispose from DisposePhase9).
@@ -70,6 +63,29 @@ public sealed partial class BootstrapPlugin
         // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
         // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
         log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (7 tabs) registered");
+    }
+
+    // The 7 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
+    // WirePhase9Ui null-checks every field before calling this, hence the `!`s.
+    private SettingsPanelSet BuildSettingsPanels(BepInExPluginLog log)
+    {
+        var loc = _frameworkLocalization!;
+        var registry = _pluginRegistry!;
+        var theme = _themeRenderer!;
+        var hotkeys = _hotkeyService!;
+        // Display-only plugin names = each plugin's own (localized) launcher tile title, else its internal name.
+        var names = new PluginDisplayNames(_launcher!, log);
+        if (_localizationEngine != null) _localizationEngine.LanguageChanged += names.ForgetRemembered;
+        return new SettingsPanelSet
+        {
+            Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },
+            Hotkeys = new HotkeysPanel(hotkeys, hotkeys, registry, theme, PluginName, loc) { DisplayNames = names },   // registry = IPluginInventory (group-header fallback names); PluginName labels the framework's own group
+            Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
+            Layout  = new LayoutPanel(_layoutStorage!, _layoutEditor!, theme, loc),
+            GameUi  = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc),
+            Perf    = new PerformancePanel(_perfPrefs!, theme, registry, _scheduler!.EffectiveRateFor, loc) { DisplayNames = names },
+            About   = new AboutPanel(theme, loc),
+        };
     }
 
     private void AttachOverlayLayout()
@@ -90,10 +106,9 @@ public sealed partial class BootstrapPlugin
         if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
             && tabEnv is >= 0 and <= 6)
             tab = tabEnv;
-        var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
-            new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
-        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
-        { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, Closable = true, Draggable = true, StartVisible = false };
+        // Framework chrome — usable at title/menus in every phase, but hide over the loading screen. The title is
+        // resolved by the chrome when the hub is first shown (SettingsHubSpec), not here: this is pre-Game.Init.
+        var spec = SettingsHubSpec.Create(_frameworkLocalization!, () => (_clientState!.UiState & GameUIState.Loading) == 0);
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
         // Colour editor: coalesce ColorPicker-drag edits to one persist+rebake on mouse-release.
@@ -137,7 +152,9 @@ public sealed partial class BootstrapPlugin
     private void DeclareSettingsHotkey(BepInExPluginLog log)
     {
         var action = new HotkeyAction(
-            Id: "framework.settings-toggle",
+            Id: FrameworkHotkeyIds.SettingsToggle,
+            // English on purpose — this runs in OnHotUpdateReady, before Game.Init: a T() here was an early
+            // client-language read. HotkeysPanel relabels it render-driven (FrameworkHotkeyLabels).
             Description: "Toggle Stellar Settings",
             SuggestedDefault: new KeyBinding(StellarKeyCode.Home, ModifierKeys.Shift));
         _hotkeyService!.DeclareAction(action, () => Toggle(_launcherControl));

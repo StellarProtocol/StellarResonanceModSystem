@@ -75,6 +75,28 @@ internal sealed class LauncherPrefs
         Persist();
     }
 
+    /// <summary>
+    /// Carries a pin saved under an entry's OLD displayed title forward to its CURRENT <c>Title</c> (see
+    /// <see cref="LauncherPinMigration"/>). Called once per <see cref="LauncherRegistry.Register"/>; both
+    /// early-outs below are <c>HashSet.Contains</c> — O(1), no allocation — so the steady state (every entry
+    /// whose title never changed, or whose one-time migration already ran) costs nothing. Only the rare case
+    /// (a stale pin actually exists) allocates the ordered snapshot <see cref="LauncherPinMigration.Migrate"/>
+    /// needs to preserve the pin SET's position.
+    /// </summary>
+    internal void MigratePinIfNeeded(string title, string displayTitle)
+    {
+        if (string.Equals(displayTitle, title, StringComparison.Ordinal)) return;
+        if (!_pinned.Contains(displayTitle)) return;
+
+        var ordered = new List<string>(_pinned);
+        var migrated = LauncherPinMigration.Migrate(ordered, title, displayTitle);
+        if (migrated is null) return;   // defensive — the two checks above already imply a change
+
+        _pinned.Clear();
+        foreach (var p in migrated) _pinned.Add(p);
+        Persist();
+    }
+
     private void Persist()
     {
         var arr = new string[_pinned.Count];

@@ -45,6 +45,9 @@ internal sealed partial class LayoutEditorOverlay
     private readonly IPluginLog _log;
     private readonly IClientState _clientState;   // for the toolbar window's loading-screen ShouldRender gate
     private NativeUiService? _nativeUi;   // bound late via SetNativeUi (Phase 9a)
+    // Localized toolbar/outline text — bound late via SetLocalization (Wiring.Settings.cs, after the framework
+    // localization engine exists) rather than a ctor param: this ctor is already at the STELLAR0004 cap (6 deps).
+    private ILocalization? _text;
 
     // Stage B: per-element outline/handle/label now render on a uGUI overlay canvas (LayoutEditChrome),
     // driven from the tick — not IMGUI GUI.DrawTexture. The toolbar is still IMGUI (Stage C migrates it).
@@ -90,6 +93,10 @@ internal sealed partial class LayoutEditorOverlay
 
     /// <summary>Phase 9a: bind the native-UI service so Shift+` also outlines + drags game HUD elements.</summary>
     public void SetNativeUi(NativeUiService nativeUi) => _nativeUi = nativeUi;
+
+    /// <summary>Bind the framework localization façade so the toolbar heading/filters/buttons and the
+    /// per-entry "[Game UI] …" outline labels follow the active language.</summary>
+    public void SetLocalization(ILocalization text) => _text = text;
 
     /// <summary>Input half — driven from the framework TICK (not OnGUI), so edit-mode select/drag works at the
     /// throttled tick rate and no longer depends on the IMGUI OnGUI handler firing. Stage A of the layout-editor

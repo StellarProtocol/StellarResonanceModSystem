@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.Theme;
 
@@ -27,6 +28,8 @@ internal static class FrameworkColorRegistration
         ["Theme.HudAccent"]      = ThemePresets.HudAccent,
     };
 
+    // English fallback labels, used ONLY at RegisterAll time (Load(), before the hot-update assemblies — and
+    // therefore the real client language — are available; see RelabelAll). Nobody sees the editor this early.
     private static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
     {
         ["Theme.Accent"]         = "Accent",
@@ -35,6 +38,20 @@ internal static class FrameworkColorRegistration
         ["Theme.MenuBorder"]     = "Panel border",
         ["Theme.Warning"]        = "Warning",
         ["Theme.HudAccent"]      = "HUD accent",
+    };
+
+    // Localization keys for the same slots, resolved by RelabelAll once the real client language is known
+    // and again on every later explicit language switch — see ThemeEditorBody.RelabelFrameworkColors. Internal
+    // (not private) so FrameworkColorRegistrationTests can assert this covers EXACTLY EditableTokens: a slot
+    // key present in one dictionary and missing from the other fails silently at runtime otherwise.
+    internal static readonly IReadOnlyDictionary<string, string> LabelKeys = new Dictionary<string, string>
+    {
+        ["Theme.Accent"]         = "theme.color.accent",
+        ["Theme.MenuBackground"] = "theme.color.menuBackground",
+        ["Theme.MenuAccent"]     = "theme.color.menuAccent",
+        ["Theme.MenuBorder"]     = "theme.color.menuBorder",
+        ["Theme.Warning"]        = "theme.color.warning",
+        ["Theme.HudAccent"]      = "theme.color.hudAccent",
     };
 
     private static readonly ThemePreset[] AllPresets =
@@ -50,5 +67,20 @@ internal static class FrameworkColorRegistration
                     defaults[preset] = table[index];
             registry.Register(key, Labels[key], defaults);
         }
+    }
+
+    /// <summary>Re-applies the editable slots' display labels in the active language. <see cref="RegisterAll"/>
+    /// runs during <c>Load()</c>, before the hot-update assemblies (and so the real "follow" client language)
+    /// are resolvable, so its labels are always the English fallback; <see cref="Stellar.Infrastructure.UI.SettingsPanels.ThemeEditorBody"/>
+    /// calls this RENDER-driven — the first time is folded into its own slot-list cache refresh
+    /// (<c>SlotAt</c>), which is reachable only when the editor's element-tree Funcs are actually pulled by
+    /// <c>WindowService</c>, and that pull is skipped entirely while the Settings window is hidden. So this
+    /// relabel's first call happens only after the player has opened Settings — never merely "after some
+    /// tick count since boot" — giving the client language every chance to resolve first. The second trigger
+    /// is a later explicit language switch (<see cref="ILocalization.LanguageChanged"/>).</summary>
+    public static void RelabelAll(ColorRegistryService registry, ILocalization loc)
+    {
+        foreach (var (key, labelKey) in LabelKeys)
+            registry.Relabel(key, loc.T(labelKey));
     }
 }

@@ -21,8 +21,8 @@ internal sealed partial class WindowBuilder
         var result = reg.Spec.Style switch
         {
             WindowPanelStyle.Borderless => BuildBorderless(reg.Spec, parent),
-            WindowPanelStyle.Tracker    => BuildTrackerChrome(reg.Spec, parent),
-            WindowPanelStyle.Party      => BuildPartyChrome(reg.Spec, parent),
+            WindowPanelStyle.Tracker    => BuildTrackerChrome(reg.Spec, parent, token),
+            WindowPanelStyle.Party      => BuildPartyChrome(reg.Spec, parent, token),
             WindowPanelStyle.PillStatus => BuildPillChrome(reg.Spec, parent),
             _                            => BuildGlassChrome(reg, parent, token),   // GlassMenu + default
         };
@@ -217,20 +217,58 @@ internal sealed partial class WindowBuilder
 
     private void BuildTitleText(WindowSpec spec, GameObject bar, WindowToken token)
     {
+        // The DISPLAY title (spec.TitleProvider, else Title) is read here — at build, which happens only once the
+        // window is first shown — and again by a reskin action on a theme/language change. Never per frame.
+        var text = TitleOf(spec);
         // Real bold in every script via the game-only TMP factory; legacy crisp Text when unavailable.
-        var h = TryBuildBoldTitle(bar.transform, spec.Title, Scaled(13), _assets.MenuText);
+        var h = TryBuildBoldTitle(bar.transform, text, Scaled(13), _assets.MenuText);
         if (h != null)
         {
             token.ReskinActions.Add(() => { h.SetFontSize(Scaled(13)); h.SetColor(_assets.MenuText); });
+            RegisterTitleReskin(spec, token, h, null);
             return;
         }
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
         var title = titleGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
-        title.color = _assets.MenuText; title.text = spec.Title; title.raycastTarget = false;
-        title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, spec.Title);   // crisp per-script weight
+        title.color = _assets.MenuText; title.text = text; title.raycastTarget = false;
+        title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, text);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
+        RegisterTitleReskin(spec, token, null, title);
     }
+
+    // Live-localized title (spec.TitleProvider): re-read on the reskin pass (InvalidateTheme — theme change and
+    // LanguageChanged), never per frame. Shared by the title-bar and the tracker/party overlay chromes. No-op
+    // without a provider, so plain-title windows gain no reskin work.
+    private void RegisterTitleReskin(WindowSpec spec, WindowToken token, IStyledTextHandle? handle, Text? legacy)
+    {
+        if (spec.TitleProvider == null) return;
+        token.ReskinActions.Add(() =>
+        {
+            var s = TitleOf(spec);
+            if (handle != null) handle.SetText(s);
+            if (legacy != null) { legacy.text = s; legacy.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s); }
+        });
+    }
+
+    // spec.DisplayTitle runs caller code (TitleProvider): fail-safe like WindowService.SafeApply — a throwing
+    // provider shows the plain Title rather than aborting the window build / reskin pass, warned once per window id.
+    private string TitleOf(WindowSpec spec)
+    {
+        try { return spec.DisplayTitle; }
+        catch (System.Exception ex)
+        {
+            if (_titleProviderWarned.Add(spec.Id))
+                Warn?.Invoke($"[Window] '{spec.Id}' TitleProvider threw; showing its Title: {ex.Message}");
+            return spec.Title;
+        }
+    }
+
+    private readonly System.Collections.Generic.HashSet<string> _titleProviderWarned = new(System.StringComparer.Ordinal);
+
+    /// <summary>Warning sink (a settable property, not a ctor param — ctor-dependency cap); set by WindowRenderer.
+    /// Null in the sandbox → silent fallback.</summary>
+    internal System.Action<string>? Warn { get; set; }
 
     // 1 px accent divider pinned to the title bar's bottom edge (ignore-layout overlay).
     private void BuildTitleDivider(GameObject bar, WindowToken token)

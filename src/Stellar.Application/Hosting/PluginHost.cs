@@ -90,7 +90,9 @@ internal sealed class PluginHost : IDisposable
         // requires construction. The PluginRegistry calls the factory on enable;
         // until the first successful enable, we fall back to the assembly's
         // short name for the Plugins panel listing.
-        var displayName = asm.GetName().Name ?? pluginType.FullName ?? pluginGuid;
+        // (The registry prefers the name remembered from the plugin's last enable; this readable form of the
+        // assembly name is only for a plugin that has never been constructed on this install.)
+        var displayName = PluginNameFallback.FromAssemblyName(asm.GetName().Name ?? pluginType.FullName ?? pluginGuid);
         var perPluginConfig = _factories.Config.Create(pluginGuid);
         var perPluginData = _factories.DataStore.Create(pluginGuid);
         var perPluginDownloads = _factories.Downloads.Create(pluginGuid);
@@ -136,6 +138,12 @@ internal sealed class PluginHost : IDisposable
         return null;
     }
 
+    /// <summary>The plugin's own <see cref="ILauncher"/>: every tile it registers is tagged with its guid, so
+    /// Settings can name the plugin by its own localized tile title (<see cref="Services.PluginDisplayNames"/>).
+    /// Null when the shared launcher doesn't expose the owner-tagged sink (a bare test host).</summary>
+    private static ILauncher? ScopedLauncher(string pluginGuid, IPluginServices shared)
+        => shared.Launcher is ILauncherOwnedRegistrations sink ? new PerPluginLauncher(pluginGuid, sink, shared.Launcher) : null;
+
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
     // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
     // On plugin-ctor failure every per-plugin resource is released before rethrowing,
@@ -165,7 +173,7 @@ internal sealed class PluginHost : IDisposable
                                bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
                                lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
                                FreeCamera: lifetime.FreeCam, Downloads: bind.PerPluginDownloads,
-                               ReShadeUniforms: lifetime.Uniforms));
+                               ReShadeUniforms: lifetime.Uniforms, Launcher: ScopedLauncher(bind.PluginGuid, sharedServices)));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
