@@ -22,10 +22,16 @@ namespace Stellar.Application.Services;
 /// set — the game's own language setter running, or the client reaching character select
 /// (<see cref="OnLanguageSet"/>) — so a genuine Simplified-Chinese client still latches <c>0</c>.
 /// Reads of <see cref="CurrentLanguageIndex"/> / <see cref="SupportedLanguage"/> never touch the game (hot path:
-/// every <c>T()</c> call) and never latch; <see cref="Changed"/> is raised only from the two signal methods.
+/// every <c>T()</c> call) and never latch.
+/// </para>
+///
+/// <para>
+/// <see cref="Changed"/> is NOT raised inside a signal (the signals run inside the game's own language setter, a Harmony
+/// postfix on an unverified thread): a latch only records the index and sets a pending flag, and the framework tick calls
+/// <see cref="DrainPendingChange"/> on the main thread, which raises it once. Event-driven — the tick only checks a flag.
 /// </para>
 /// </summary>
-internal sealed partial class ClientLanguageLatch : IClientLanguageProbe
+internal sealed partial class ClientLanguageLatch : IClientLanguageProbe, IClientLanguageInfo
 {
     /// <summary>The index reported while the client language is not yet known.</summary>
     public const int Unknown = -1;
@@ -36,7 +42,8 @@ internal sealed partial class ClientLanguageLatch : IClientLanguageProbe
 
     private readonly IClientLanguageReader _reader;
     private readonly IPluginLog _log;
-    private int _index = Unknown;
+    private volatile int _index = Unknown;
+    private volatile bool _pendingChange;
 
     public ClientLanguageLatch(IClientLanguageReader reader, IPluginLog log)
     {
@@ -82,7 +89,8 @@ internal sealed partial class ClientLanguageLatch : IClientLanguageProbe
 
     /// <summary>
     /// Game signal that its language IS set (its language setter ran, or the client reached character select):
-    /// latches the current value, <c>0</c> included, and raises <see cref="Changed"/> when it differs.
+    /// latches the current value, <c>0</c> included; when it differs, <see cref="Changed"/> is queued for the next
+    /// <see cref="DrainPendingChange"/>.
     /// </summary>
     public void OnLanguageSet(string source) => Latch(_reader.ReadLanguageIndex(), allowDefault: true, source);
 
@@ -93,6 +101,18 @@ internal sealed partial class ClientLanguageLatch : IClientLanguageProbe
         var first = _index == Unknown;
         _index = index;
         _log.Info($"[Stellar][GameData] client language index={index} designLanguage={IsDesignLanguage} source={source}{(first ? "" : " (changed)")}");
+        _pendingChange = true;
+    }
+
+    /// <summary>
+    /// Called from the framework tick (main thread, every phase): raises <see cref="Changed"/> once if a signal latched a
+    /// new value since the last drain. A flag check otherwise — no game read.
+    /// </summary>
+    public void DrainPendingChange()
+    {
+        if (!_pendingChange) return;
+        _pendingChange = false;
+        NoteDrain();
         Changed?.Invoke();
     }
 }

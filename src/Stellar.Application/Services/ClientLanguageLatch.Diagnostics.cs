@@ -20,6 +20,13 @@ internal sealed partial class ClientLanguageLatch
     private void NoteSignal(int raw, bool allowDefault, string source)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[Stellar][GameData][diag] client language signal source={source} raw={raw} allowDefault={allowDefault} latched={_index} provisionalReads={_provisionalReads}");
+        _log.Info($"[Stellar][GameData][diag] client language signal source={source} thread={Environment.CurrentManagedThreadId} raw={raw} allowDefault={allowDefault} latched={_index} provisionalReads={_provisionalReads}");
+    }
+
+    // STELLAR_DIAGNOSTICS: the tick drain that raises Changed (thread id = the framework tick's main thread).
+    private void NoteDrain()
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[Stellar][GameData][diag] client language change drained thread={Environment.CurrentManagedThreadId} index={_index} → '{SupportedLanguage}'");
     }
 }

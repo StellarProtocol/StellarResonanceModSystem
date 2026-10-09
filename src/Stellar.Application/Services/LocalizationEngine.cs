@@ -76,11 +76,11 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         _settings.Set(LanguageKey, setting);
         _settings.Save();
         _log.Info($"[Stellar][i18n] language setting → '{setting}' (active={ActiveLanguage})");
-        if (ActiveLanguage != oldActive) LanguageChanged?.Invoke();
+        if (ActiveLanguage != oldActive) RaiseLanguageChanged();
     }
 
     // The client language became known (or the player switched it in-game): under `follow`, live UI re-resolves.
-    // Raised from a game-side signal, never from a T() read, so no handler runs mid-render of a framework window.
+    // Raised from the latch's tick drain (main thread), never from a T() read or inside the game's setter.
     private void OnClientLanguageChanged()
     {
         var now = Normalize(_probe.SupportedLanguage);
@@ -88,7 +88,13 @@ internal sealed partial class LocalizationEngine : ILocalizationControl
         var was = _followResolved;
         _followResolved = now;
         _log.Info($"[Stellar][i18n] client language '{was}' → '{now}' (setting='{_setting}')");
-        if (_setting != Follow) return;
+        if (_setting == Follow) RaiseLanguageChanged();
+    }
+
+    // The one raise path (Settings switch + client-language change): one throwing subscriber is logged and must not
+    // starve the others (framework renderers, panels, plugin window rebuilds).
+    private void RaiseLanguageChanged()
+    {
         var handlers = LanguageChanged;
         if (handlers == null) return;
         foreach (var d in handlers.GetInvocationList())

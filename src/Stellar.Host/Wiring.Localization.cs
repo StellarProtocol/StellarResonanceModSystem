@@ -49,18 +49,22 @@ public sealed partial class BootstrapPlugin
     /// Latch signals for the client language (2.21.0 fix — the game's index reads 0 = zh_Hans until its
     /// LocalizationMgr initialises, which is AFTER this wiring): a postfix on the game's own language setter
     /// (the static <c>CurrentLanguageTypeIndex</c> setter + <c>SetLanguage</c>) latches the value the game just
-    /// set — and tracks a later in-game switch; then one opportunistic read in case the game set it before these
+    /// set — and tracks a later in-game switch (the UI re-resolve is raised from the framework tick's drain, not inside
+    /// the game's setter); then one opportunistic read in case the game set it before these
     /// hooks existed. The backstop is <c>Game.OnLogin</c> (character select — the language is certainly set by then).
     /// </summary>
-    private void HookClientLanguageSetter(HarmonyGameMethodHooker hooker, ReflectionGameTypeRegistry typeRegistry)
+    private void HookClientLanguageSetter(BepInExPluginLog log, HarmonyGameMethodHooker hooker, ReflectionGameTypeRegistry typeRegistry)
     {
-        var latch = _clientLanguage;
-        if (latch == null) return;
+        var latch = EnsureClientLanguage(log);
         var mgr = typeRegistry.FindType(PandaClientLanguage.LocalizationMgrTypeName);
         if (mgr != null)
         {
             hooker.PostfixStaticOverloads(mgr, "set_CurrentLanguageTypeIndex", (_, _) => latch.OnLanguageSet("game-setter"));
             hooker.PostfixAllOverloads(mgr, "SetLanguage", (_, _) => latch.OnLanguageSet("game-SetLanguage"));
+        }
+        else
+        {
+            log.Warning($"[Stellar][i18n] {PandaClientLanguage.LocalizationMgrTypeName} not found — follow resolves at character select only");
         }
         latch.TryLatchNonDefault("hook-install");
     }

@@ -47,12 +47,14 @@ public sealed class ClientLanguageLatchTests
 
         reader.Index = 2;                          // the game sets ja
         latch.OnLanguageSet("game-setter");
+        latch.DrainPendingChange();                // framework tick
         Assert.Equal(2, latch.CurrentLanguageIndex);
         Assert.Equal("ja", e.ActiveLanguage);
         Assert.Equal("ヤア", e.Resolve("p", "a.b"));
         Assert.Equal(1, fired);
 
         latch.OnLanguageSet("char-select");        // backstop re-signal with the same value: no second event
+        latch.DrainPendingChange();
         Assert.Equal(1, fired);
     }
 
@@ -79,6 +81,7 @@ public sealed class ClientLanguageLatchTests
         latch.TryLatchNonDefault("hook-install");
         Assert.Equal(ClientLanguageLatch.Unknown, latch.CurrentLanguageIndex);
         latch.OnLanguageSet("char-select");
+        latch.DrainPendingChange();
         Assert.Equal(0, latch.CurrentLanguageIndex);
         Assert.True(latch.IsDesignLanguage);
         Assert.Equal("en", e.ActiveLanguage);      // no zh catalog: follow stays English
@@ -97,6 +100,7 @@ public sealed class ClientLanguageLatchTests
 
         reader.Index = 2;
         latch.OnLanguageSet("game-setter");
+        latch.DrainPendingChange();
         Assert.Equal("ko", e.ActiveLanguage);
         Assert.Equal(0, fired);
     }
@@ -111,8 +115,10 @@ public sealed class ClientLanguageLatchTests
 
         reader.Index = 2;
         latch.OnLanguageSet("game-setter");
+        latch.DrainPendingChange();
         reader.Index = 1;
         latch.OnLanguageSet("game-SetLanguage");
+        latch.DrainPendingChange();
         Assert.Equal("en", e.ActiveLanguage);
         Assert.Equal(2, fired);
     }
@@ -136,5 +142,27 @@ public sealed class ClientLanguageLatchTests
         latch.OnLanguageSet("char-select");
         Assert.Equal(ClientLanguageLatch.Unknown, latch.CurrentLanguageIndex);
         Assert.Equal("en", latch.SupportedLanguage);
+    }
+
+    [Fact]
+    public void Changed_is_raised_on_the_tick_drain_not_inside_the_game_signal()
+    {
+        // The signals run inside the game's language setter (Harmony postfix); subscribers (window rebuilds) must not.
+        var (latch, reader) = NewLatch();
+        var e = NewEngine(latch, new FakeConfigSection());
+        var fired = 0;
+        e.LanguageChanged += () => fired++;
+
+        reader.Index = 2;
+        latch.OnLanguageSet("game-setter");
+        latch.OnLanguageSet("game-SetLanguage");   // the game calls both
+        Assert.Equal(0, fired);                    // nothing raised inside the signal
+        Assert.Equal(2, latch.CurrentLanguageIndex);   // but the value is latched already
+
+        latch.DrainPendingChange();
+        Assert.Equal(1, fired);
+        latch.DrainPendingChange();                // nothing pending: a flag check, no second raise
+        Assert.Equal(1, fired);
+        Assert.Equal(1, reader.Reads - 1);         // drains read nothing from the game (2 signal reads total)
     }
 }

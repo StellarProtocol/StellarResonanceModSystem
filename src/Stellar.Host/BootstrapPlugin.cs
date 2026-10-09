@@ -97,7 +97,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaGameDataProbe? _gameDataProbe;
     private GameDataResonance? _gameDataResonance;  // Battle Imagine (Resonance Skill) lookup
     private PandaMLStringResolver? _mlStrings;       // shared MLString resolver (probe + resonance)
-    private Stellar.Application.Services.ClientLanguageLatch? _clientLanguage;    // cached client UI language (locale-gates NameDesign fallback)
+    private Stellar.Application.Services.ClientLanguageLatch? _clientLanguage;    // client UI language latch (unknown until the game sets it; follow + NameDesign gate)
     private BepInExPluginLog? _gameDataLog;       // captured so the deferred eager-load can log via the same sink
     private bool _gameDataEagerLoaded;
     private bool _gameDataAllLoaded;             // one-shot guard for "all tables loaded" log
@@ -286,7 +286,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     {
         InstallWireAndStubProbes(log, typeRegistry);
         HookGameLifecycleMethods(log, hooker, gameType);
-        HookClientLanguageSetter(hooker, typeRegistry);
+        HookClientLanguageSetter(log, hooker, typeRegistry);
         HookEntityStateSignals(log, typeRegistry, hooker);
         InstallPhotoModeHooks(hooker);
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
