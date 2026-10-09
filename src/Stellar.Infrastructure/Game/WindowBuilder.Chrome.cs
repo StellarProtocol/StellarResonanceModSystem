@@ -231,6 +231,7 @@ internal sealed partial class WindowBuilder
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
         var title = titleGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
+        ApplyMenuFont(title);   // at BUILD, not only on reskin — see BuildCloseButton
         title.color = _assets.MenuText; title.text = text; title.raycastTarget = false;
         title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, text);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
@@ -292,6 +293,9 @@ internal sealed partial class WindowBuilder
         var x = UGuiPrimitives.NewChild("Close", bar.transform);
         var xt = x.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(xt, Scaled(14), TextAnchor.MiddleCenter, bold: true);
+        // MenuFont at BUILD: RegisterTextReskin only applies it on a theme switch, so until then the ✕ sat on
+        // ConfigureText's builtin font — whose atlas repacks OnFontTextureRebuilt used to ignore (garbled ✕).
+        ApplyMenuFont(xt);
         xt.color = _assets.MenuMuted; xt.text = "✕"; xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14, muted: true);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;
@@ -313,6 +317,7 @@ internal sealed partial class WindowBuilder
         rt.sizeDelta = new Vector2(18f, 18f); rt.anchoredPosition = new Vector2(-6f, -4f);
         var xt = x.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(xt, Scaled(14), TextAnchor.MiddleCenter, bold: true);
+        ApplyMenuFont(xt);   // at BUILD — see BuildCloseButton
         xt.color = _assets.MenuText; xt.text = "✕"; xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;

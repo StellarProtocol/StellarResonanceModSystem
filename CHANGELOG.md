@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+_Fixes window text that could occasionally turn into garbled letters. Framework-only; no plugin rebuild._
+### Fixed
+- Fixed window text (close button, HUD-style overlays) occasionally showing garbled letters.
+### Developer notes
+- `WindowRenderer.OnFontTextureRebuilt` no longer filters to `MenuFont`: it refreshes, on every live window, the legacy `Text` bound to whichever font rebuilt (`WindowToken.RefreshFontTexture(Font)`). HudOverlay text intentionally stays on `ConfigureText`'s builtin font (native-HUD look), and that font's atlas repacks were previously ignored → stale glyph UVs.
+- Window chrome close buttons (✕, title-bar and overlay-corner) and the legacy-`Text` title fallbacks (title bar, Tracker/Party overlay) now get `MenuFont` at build time instead of only on the first theme switch.
+- New rate-limited (≤1/s) `[Window] font atlas rebuilt: …` log line: font name, atlas size, Text refreshed, suppressed count.
+
 ## [2.21.0] - 2026-10-09
 _**2.21.0** (minor) — Korean UI language. Adds `"ko"` as a language code plugins can receive and `WindowSpec.TitleProvider` for live-localized window titles (Abstractions 2.21.0); additive, no plugin rebuild. Plugins can also see where another player is (zone, line and position) once their profile card has been opened (`SocialSnapshot.Location`, additive)._
 ### Added
