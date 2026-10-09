@@ -29,7 +29,8 @@ public sealed partial class BootstrapPlugin
     {
         _launcherView = new LauncherView(_launcher!,
             openSettings: () => Toggle(_settingsHubControl),
-            close: () => _launcherControl?.SetVisible(false));
+            close: () => _launcherControl?.SetVisible(false),
+            text: _frameworkLocalization!);
         _launcherControl = _windowService!.Register(new WindowRegistration(LauncherSpec(), _launcherView.Root));
 
         // Perf overlay (Shift+End, dev-only) is a uGUI window now (Phase E — no IMGUI). Registered here where

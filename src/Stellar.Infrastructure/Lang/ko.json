@@ -24,6 +24,8 @@
   "hotkeys.none": "단축키 없음",
   "hotkeys.passthrough": "단축키를 게임에 전달하지 않음",
   "hotkeys.resetAll": "모두 기본값으로 초기화",
+  "launcher.plugins": "플러그인",
+  "launcher.settings": "설정",
   "layout.editEnter": "편집 모드: Shift+` 키로 진입",
   "layout.editExit": "편집 모드: Shift+` 키로 종료",
   "layout.px": "{0:0} px",
