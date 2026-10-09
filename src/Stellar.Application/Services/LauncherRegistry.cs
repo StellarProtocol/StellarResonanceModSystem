@@ -14,9 +14,14 @@ internal sealed class LauncherRegistry : ILauncher
 {
     private readonly List<LauncherEntry> _entries = new();
     private readonly LauncherPrefs _prefs;
+    private readonly IPluginLog _log;
     private int _revision;
 
-    public LauncherRegistry(LauncherPrefs prefs) => _prefs = prefs;
+    public LauncherRegistry(LauncherPrefs prefs, IPluginLog log)
+    {
+        _prefs = prefs;
+        _log = log;
+    }
 
     public IReadOnlyList<LauncherEntry> Entries => _entries;
 
@@ -31,12 +36,38 @@ internal sealed class LauncherRegistry : ILauncher
     public IDisposable Register(LauncherEntry entry)
     {
         if (entry is null) throw new ArgumentNullException(nameof(entry));
-        // Carries forward a pin saved under this entry's OLD displayed title (before it had a TitleProvider)
-        // to its CURRENT Title — the persisted pin identity. See LauncherPrefs.MigratePinIfNeeded.
-        _prefs.MigratePinIfNeeded(entry.Title, entry.DisplayTitle);
+        TryMigratePin(entry);
         _entries.Add(entry);
         _revision++;
         return new Registration(this, entry);
+    }
+
+    // Carries forward a pin saved under this entry's OLD displayed title (before it had a TitleProvider) to
+    // its CURRENT Title — see LauncherPrefs.MigratePinIfNeeded. Reading DisplayTitle HERE, at Register, is
+    // deliberate, not an incidental early read: it is the SAME moment in plugin load the entry's OLD build
+    // read its (translated) Title at, so reproducing that read here reproduces the state the stale pin was
+    // saved under — which is what makes the saved key match. It adds no NEW early read either: every
+    // TitleProvider in the current catalog is itself just `_loc.T(key)`, already resolved no later than this
+    // point by the plugin's own Register call (owner review round 4, check 1).
+    private void TryMigratePin(LauncherEntry entry)
+    {
+        // DisplayTitle runs plugin code (TitleProvider) — fail-safe, like WindowService.SafeApply's
+        // ShouldRender guard: a throwing provider must never abort the plugin's Register call, only skip
+        // THIS entry's migration.
+        string displayTitle;
+        try { displayTitle = entry.DisplayTitle; }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Launcher] '{entry.Title}' TitleProvider threw while checking for a pin to migrate; skipped: {ex.Message}");
+            return;
+        }
+        // Collision guard: never migrate into or out of a title another already-registered entry owns (no
+        // entry in today's catalog collides — see the review's check 3 — but a future name clash must not
+        // silently steal or drop a DIFFERENT plugin's pin). _entries never yet contains THIS entry here —
+        // Register adds it only after TryMigratePin returns — so every match found is necessarily another one.
+        foreach (var other in _entries)
+            if (string.Equals(other.Title, displayTitle, StringComparison.Ordinal)) return;
+        _prefs.MigratePinIfNeeded(entry.Title, displayTitle);
     }
 
     /// <summary>Persisted layout mode (Minimal/Full). Default = Full.</summary>

@@ -15,11 +15,11 @@ public sealed partial class BootstrapPlugin
     private INativeUiElementHandle? _railButtonHandle;
     private INativeUiElementHandle? _loginSidebarButtonHandle;
 
-    private void BuildLauncherServices()
+    private void BuildLauncherServices(BepInExPluginLog log)
     {
         // Launcher registry (Phase B) — feeds the rail button + launcher menu.
         // Pinned ids + mode persist in the framework's "launcher" config section.
-        _launcher = new LauncherRegistry(new LauncherPrefs(_pluginConfigService!.GetSection("launcher")));
+        _launcher = new LauncherRegistry(new LauncherPrefs(_pluginConfigService!.GetSection("launcher")), log);
     }
 
     // Registers the native uGUI launcher (the redesigned hub — both modes via LauncherView) on the window

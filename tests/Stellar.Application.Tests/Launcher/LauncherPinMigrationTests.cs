@@ -21,8 +21,15 @@ public sealed class LauncherPinMigrationTests
         Assert.Equal(new[] { "A", "CombatMeter", "B" }, result);
     }
 
+    // Renamed from the original "NoOp_WhenTitleAlreadyPinned" (owner review round 4, Minor #3): that name
+    // suggested this exercises the "both already pinned" dedup branch, but Title being pinned here is
+    // incidental — the function returns null on the FIRST check, "displayTitle isn't in the pinned set at
+    // all", exactly like NoOp_WhenNeitherPresent below. This is still a genuine, distinct real-world
+    // scenario (a user who already has the plugin pinned under its current Title, and never had the OLD
+    // translated one pinned at all — e.g. a first-time pin after this fix shipped), so it stays as its own
+    // test, just honestly named.
     [Fact]
-    public void NoOp_WhenTitleAlreadyPinned()
+    public void NoOp_WhenTitleAlreadyPinned_AndDisplayTitleWasNeverPinned()
     {
         var pinned = new List<string> { "A", "CombatMeter", "B" };
 
