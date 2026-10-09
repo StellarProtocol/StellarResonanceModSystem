@@ -14,7 +14,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [Unreleased]
+## [2.22.0] - 2026-10-10
 _**2.22.0** (minor) — fixes window text that could occasionally turn into garbled letters, keeps centred / edge-anchored windows in place across resolutions and width changes, and lets a free camera leave clicks on the game's own windows to the game (`IInputShield.IsPointerOverGameUi`, Abstractions 2.22.0; additive, no plugin rebuild)._
 ### Added
 - Plugins with a free camera can now let you use the game's own windows and sliders while the camera is on.
