@@ -141,4 +141,87 @@ public class SocialDataReaderTests
         Assert.Equal("", snap!.ProfileUrl);
         Assert.Equal("", snap.HalfBodyUrl);
     }
+
+    // Position floats are wire type 5 (fixed32, little-endian IEEE-754).
+    private static void F32(List<byte> b, int field, float v)
+    { Tag(b, field, 5); b.AddRange(System.BitConverter.GetBytes(v)); }
+    private static byte[] Position(float x, float y, float z, float dir)
+    { var b = new List<byte>(); F32(b, 1, x); F32(b, 2, y); F32(b, 3, z); F32(b, 4, dir); return b.ToArray(); }
+
+    [Fact]
+    public void Read_decodes_scene_data_location()
+    {
+        var data = new List<byte>();
+        VInt(data, 1, 4242);
+        Len(data, 3, BasicData("Eiori", 60));
+        {
+            var s = new List<byte>();
+            VInt(s, 1, 10010);                                  // map_id
+            VInt(s, 2, 3);                                      // channel_id (ignored)
+            Len(s, 3, Position(123.5f, -4.25f, 987.75f, 1.5f)); // pos
+            VInt(s, 4, 77777777777);                            // level_uuid (int64, skipped)
+            Len(s, 5, Position(1f, 2f, 3f, 0f));                // level_pos
+            VInt(s, 6, 20020);                                  // level_map_id
+            VInt(s, 10, 2);                                     // scene_layer
+            VInt(s, 15, 9);                                     // line_id
+            VInt(s, 18, unchecked((ulong)(long)-5));            // scene_area_id (negative int32)
+            VInt(s, 19, 80006);                                 // level_area_id
+            Len(data, 10, s.ToArray());
+        }
+        var reply = new List<byte>(); Len(reply, 2, data.ToArray());
+
+        var snap = SocialDataReader.Read(reply.ToArray());
+
+        Assert.NotNull(snap);
+        Assert.NotNull(snap!.Location);
+        var loc = snap.Location!.Value;
+        Assert.Equal(10010, loc.MapId);
+        Assert.Equal(2, loc.SceneLayer);
+        Assert.Equal(9, loc.LineId);
+        Assert.Equal(123.5f, loc.Pos.X);
+        Assert.Equal(-4.25f, loc.Pos.Y);
+        Assert.Equal(987.75f, loc.Pos.Z);
+        Assert.Equal(1.5f, loc.Dir);
+        Assert.Equal(-5, loc.SceneAreaId);
+        Assert.Equal(20020, loc.LevelMapId);
+        Assert.Equal(1f, loc.LevelPos.X);
+        Assert.Equal(2f, loc.LevelPos.Y);
+        Assert.Equal(3f, loc.LevelPos.Z);
+        Assert.Equal(80006, loc.LevelAreaId);
+        Assert.Equal(0L, loc.ReceivedAtMs);                     // the wire has no clock — the cache stamps it
+        // Current* prefer the level fields (observed live) over the stale map/pos pair.
+        Assert.Equal(20020, loc.CurrentSceneId);
+        Assert.Equal(1f, loc.CurrentPos.X);
+        Assert.Equal(80006, loc.CurrentAreaId);
+    }
+
+    [Fact]
+    public void Read_location_is_zeroed_not_null_when_scene_data_present_but_empty()
+    {
+        // Present-but-blank (privacy) must stay distinguishable from absent — that's what the probe measures.
+        var data = new List<byte>();
+        VInt(data, 1, 4242);
+        Len(data, 3, BasicData("Eiori", 60));
+        Len(data, 10, System.Array.Empty<byte>());
+        var reply = new List<byte>(); Len(reply, 2, data.ToArray());
+
+        var snap = SocialDataReader.Read(reply.ToArray());
+
+        Assert.NotNull(snap!.Location);
+        Assert.Equal(default(SocialLocation), snap.Location!.Value);
+    }
+
+    [Fact]
+    public void Read_location_null_when_scene_data_absent()
+    {
+        var data = new List<byte>();
+        VInt(data, 1, 4242);
+        Len(data, 3, BasicData("Eiori", 60));
+        var reply = new List<byte>(); Len(reply, 2, data.ToArray());
+
+        var snap = SocialDataReader.Read(reply.ToArray());
+
+        Assert.NotNull(snap);
+        Assert.Null(snap!.Location);
+    }
 }

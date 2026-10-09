@@ -14,6 +14,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+_Plugins can now see where another player is (zone, line and position) after their profile card has been opened, even when that player is far away or in another zone. Adds API for plugins (Abstractions); additive, no plugin rebuild._
+### Added
+- Plugins can now show where another player is — their zone, line and spot on the map — once you've opened that player's profile card, even when they're far away or in a different zone.
+### Developer notes
+- `SocialDataReader` now parses `SocialData.scene_data` (field 10) instead of skipping it: `map_id`, `scene_layer`, `line_id`, `pos`, `scene_area_id`, `level_map_id`, `level_pos`, `level_area_id` (field 19, signed). New float reader `WireProtocol.TryReadFloat` (wire type 5) in `Stellar.Wire`.
+- New `SocialSnapshot.Location` (`SocialLocation?`) — an **init-only property**, not a positional ctor parameter, so plugins compiled against the old `SocialSnapshot` constructor still bind. `null` = the reply carried no `scene_data`; a present-but-zeroed value is kept distinct. `SocialLocation` adds `ReceivedAtMs` (server-now ms when the reply arrived; 0 pre-sync) and `CurrentSceneId` / `CurrentPos` / `CurrentAreaId`, which prefer the `level_*` trio (observed in-game: `level_map_id`/`level_pos` are live, `map_id`/`pos` stay at the last saved world spot, e.g. while the player is in a dungeon). `Position.dir` was always 0 in-game, so there is no facing for far players.
+- Only full-mask replies (the ID card fetch, mask 0) carry `scene_data`; nameplate/avatar thin-mask replies do not. `SocialDataCache` therefore carries the previous `Location` forward when a newer reply for the same char has none (a present-but-zeroed one still replaces it), and stamps `ReceivedAtMs` from the framework's interpolated server clock (injected in `Wiring.Core`, read lazily). `IEntityDetail.RefreshSocialSnapshot` already requests mask 0, so it returns a location too.
+- Diagnostics: `[SocialLocation] char=… name=… present=… map=… layer=… line=… pos=(…) dir=… area=… levelMap=… levelPos=(…) levelArea=…`, logged by `PandaSocialDataProbe` once per change per char.
+- Tests: `SocialDataReaderTests` (present / empty / absent `scene_data`, field 19, `Current*`) and `SocialDataCacheTests` (carry-forward, stamping, zeroed replaces, no clock → 0).
+
 ## [2.20.0] - 2026-10-08
 _**2.20.0** (minor) — plugins can hide everything the game's own photo screen can hide, and use the [, ] and backslash keys as hotkeys. Adds API for plugins (Abstractions 2.20.0); additive, no plugin rebuild._
 ### Added
