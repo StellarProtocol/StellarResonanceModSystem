@@ -105,10 +105,10 @@ internal sealed partial class ThemeEditorBody
         var name = (_nameBuffer ?? "").Trim();
         if (string.IsNullOrEmpty(name) || name.IndexOf(' ') >= 0)
         {
-            _nameError = "Name must be non-empty and contain no spaces";
+            _nameError = _text.T("themes.nameError.empty");
             return;
         }
-        if (NameExists(name)) { _nameError = "That name is taken"; return; }
+        if (NameExists(name)) { _nameError = _text.T("themes.nameError.taken"); return; }
         if (_nameMode == NameMode.New)
         {
             var basePreset = BaseFromActive();

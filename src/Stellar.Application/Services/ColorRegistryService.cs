@@ -59,6 +59,14 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
         if (_slots.Remove(key)) _order.Remove(key);
     }
 
+    /// <summary>Framework-only: re-sets an already-registered slot's display LABEL (never its key, owner or
+    /// colour defaults) — e.g. once the real UI language is known, or on a later language switch. Not part of
+    /// the plugin-facing <see cref="IColorRegistry"/> surface; a no-op if <paramref name="key"/> isn't registered.</summary>
+    internal void Relabel(string key, string label)
+    {
+        if (_slots.TryGetValue(key, out var d)) _slots[key] = d with { Label = label };
+    }
+
     public ColorRgba Resolve(string slotKey)
     {
         if (!_slots.TryGetValue(slotKey, out var d)) return MissingSentinel;

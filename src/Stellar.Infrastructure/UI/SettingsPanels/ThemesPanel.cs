@@ -16,6 +16,16 @@ internal sealed class ThemesPanel
     private static readonly ThemePreset[] Presets =
         { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
 
+    // DISPLAYED name only — never the persisted value: SetActive(pp) below always takes the enum itself, and
+    // NamedThemeService stores the enum (name), never this localized string.
+    private static string PresetNameKey(ThemePreset p) => p switch
+    {
+        ThemePreset.Dark    => "themes.preset.dark",
+        ThemePreset.Light   => "themes.preset.light",
+        ThemePreset.Crimson => "themes.preset.crimson",
+        _                   => "themes.preset.default",
+    };
+
     // Language dropdown: index 0 = "follow" (the only localized option); indices 1..N = UiLanguages, each shown
     // in its own script in every locale.
     private static readonly string[] LangCodes =
@@ -115,7 +125,8 @@ internal sealed class ThemesPanel
         {
             var pp = p;
             presetRow.Add(new ButtonElement(
-                () => _namedTheme.Active == pp && _namedTheme.ActiveCustomName == null ? $"{pp}*" : pp.ToString(),
+                () => _namedTheme.Active == pp && _namedTheme.ActiveCustomName == null
+                    ? $"{_text.T(PresetNameKey(pp))}*" : _text.T(PresetNameKey(pp)),
                 () => _namedTheme.SetActive(pp)));
         }
         items.Add(new RowElement(presetRow));
@@ -142,22 +153,22 @@ internal sealed class ThemesPanel
 
     private void AddControls(System.Collections.Generic.List<HudElement> items)
     {
-        HudElement Btn<T>(string label, T val, System.Func<T> get, System.Action<T> set) where T : System.Enum
-            => new ButtonElement(() => get().Equals(val) ? label + " ✓" : label, () => set(val));
+        HudElement Btn<T>(string labelKey, T val, System.Func<T> get, System.Action<T> set) where T : System.Enum
+            => new ButtonElement(() => get().Equals(val) ? _text.T(labelKey) + " ✓" : _text.T(labelKey), () => set(val));
 
         items.Add(new TextElement(() => _text.T("themes.controls"), Emphasis: true));
         items.Add(new RowElement(new HudElement[]
         {
             new TextElement(() => _text.T("themes.button")),
-            Btn("Outline", MenuButtonStyle.Outline, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
-            Btn("Filled", MenuButtonStyle.Filled, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
-            Btn("Glass", MenuButtonStyle.Glass, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.outline", MenuButtonStyle.Outline, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.filled", MenuButtonStyle.Filled, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.glass", MenuButtonStyle.Glass, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
         }));
         items.Add(new RowElement(new HudElement[]
         {
             new TextElement(() => _text.T("themes.scrollbar")),
-            Btn("Thumb", MenuScrollbarStyle.ThumbOnly, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
-            Btn("Track", MenuScrollbarStyle.ThinTrack, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
+            Btn("themes.style.thumb", MenuScrollbarStyle.ThumbOnly, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
+            Btn("themes.style.track", MenuScrollbarStyle.ThinTrack, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
         }));
     }
 
@@ -170,8 +181,8 @@ internal sealed class ThemesPanel
             new PillElement(() => "Lv 78", () => _theme.Colors.Accent),
             new TextElement(() => "Ribery / Wind Knight"),
         }));
-        items.Add(new BarElement(() => 0.78f, new ColorRgba(0.36f, 0.78f, 0.45f, 1f), () => "8240 / 10500", "HP"));
-        items.Add(new BarElement(() => 0.42f, new ColorRgba(0.93f, 0.78f, 0.33f, 1f), () => "126 / 300", "Stamina"));
+        items.Add(new BarElement(() => 0.78f, new ColorRgba(0.36f, 0.78f, 0.45f, 1f), () => "8240 / 10500", "HP"));   // HP stays an untranslated symbol (kept-list)
+        items.Add(new BarElement(() => 0.42f, new ColorRgba(0.93f, 0.78f, 0.33f, 1f), () => "126 / 300", _text.T("themes.preview.stamina")));
         // Typography sample — one element per style flag, localized, so every language's real-bold face,
         // italic, underline, and strikethrough are visible in the preview (and pinned by the visual scenario).
         items.Add(new RowElement(new HudElement[]

@@ -27,7 +27,7 @@ public sealed partial class BootstrapPlugin
         var gameUiSection = _pluginConfigService!.GetSection("gameui");
         var descriptors = new List<NativeUiEntryDescriptor>();
         foreach (var entry in NativeUiAllowlist.V1Targets)
-            descriptors.Add(new NativeUiEntryDescriptor(entry.Id, entry.DisplayName, entry.Path)
+            descriptors.Add(new NativeUiEntryDescriptor(entry.Id, entry.DisplayNameKey, entry.Path)
                 { SafeToHide = entry.SafeToHide, RectChild = entry.RectChild });
         _nativeUi = new NativeUiService(new PandaHudAdapter(log), gameUiSection,
                                         () => _layoutStorage!.ActiveSlot, log, descriptors);

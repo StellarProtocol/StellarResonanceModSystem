@@ -78,13 +78,13 @@ internal sealed partial class LayoutEditorOverlay
         var items = new List<HudElement>
         {
             new SpacerElement(),
-            new TextElement(() => "Layout edit mode", () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
+            new TextElement(() => _text?.T("layout.toolbar.heading") ?? "Layout edit mode", () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
             new SpacerElement(10f),
-            FilterChip("All", EditFilter.All),
-            FilterChip("Stellar", EditFilter.StellarOnly),
-            FilterChip("Game UI", EditFilter.GameUiOnly),
+            FilterChip(() => _text?.T("hotkeys.filter.all") ?? "All", EditFilter.All),
+            FilterChip(() => "Stellar", EditFilter.StellarOnly),   // brand name — kept English in every language
+            FilterChip(() => _text?.T("tab.gameui") ?? "Game UI", EditFilter.GameUiOnly),
             new SpacerElement(10f),
-            new TextElement(() => "Slot:", () => _theme.Colors.MenuMuted, Width: 34f),
+            new TextElement(() => _text?.T("layout.toolbar.slot") ?? "Slot:", () => _theme.Colors.MenuMuted, Width: 34f),
         };
         for (int i = 0; i < MaxSlots; i++)
         {
@@ -94,21 +94,28 @@ internal sealed partial class LayoutEditorOverlay
                     Active: () => idx == _storage.ActiveSlot)));
         }
         items.Add(new SpacerElement(10f));
-        items.Add(new TextElement(() => $"Selected: {_editor.SelectedWindowId ?? "(none)"}", Width: 210f));
+        items.Add(new TextElement(SelectedLabel, Width: 210f));
         items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => "Reset selected",
+        items.Add(new ButtonElement(() => _text?.T("layout.toolbar.resetSelected") ?? "Reset selected",
             () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
             Enabled: () => _editor.SelectedWindowId != null));
-        items.Add(new ButtonElement(() => "Reset all", ResetAllWindows));
+        items.Add(new ButtonElement(() => _text?.T("common.resetAll") ?? "Reset all", ResetAllWindows));
         items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => "Exit", () => _editor.ToggleEditMode()));
+        items.Add(new ButtonElement(() => _text?.T("common.exit") ?? "Exit", () => _editor.ToggleEditMode()));
         items.Add(new SpacerElement());
         // Column wrap so the Row gets full panel width (childForceExpandWidth) → the flex spacers can centre.
         return new ColumnElement(new HudElement[] { new RowElement(items.ToArray(), Gap: 6f) });
     }
 
-    private HudElement FilterChip(string label, EditFilter filter)
-        => new ButtonElement(() => label, () => _editFilter = filter, Active: () => _editFilter == filter);
+    private string SelectedLabel()
+    {
+        var none = _text?.T("common.none") ?? "(none)";
+        var id = _editor.SelectedWindowId ?? none;
+        return _text != null ? _text.TFormat("layout.toolbar.selected", id) : $"Selected: {id}";
+    }
+
+    private HudElement FilterChip(System.Func<string> label, EditFilter filter)
+        => new ButtonElement(label, () => _editFilter = filter, Active: () => _editFilter == filter);
 
     private void SwitchToSlot(int slotIndex)
     {

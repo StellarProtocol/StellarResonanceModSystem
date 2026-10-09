@@ -61,6 +61,9 @@ public sealed partial class BootstrapPlugin
         // Hand the native UI service to the overlay so Shift+` outlines + drags
         // game HUD elements alongside Stellar windows.
         _layoutOverlay.SetNativeUi(_nativeUi);
+        // Localized toolbar/outline text (heading, filter chips, reset/exit buttons, native-UI entry names) —
+        // same façade every other Phase 9a panel uses.
+        _layoutOverlay.SetLocalization(_frameworkLocalization!);
 
         // uGUI window toolkit: bind layout storage + resolution provider (Tick from
         // RefreshPerTickServices; dispose from DisposePhase9).
@@ -90,7 +93,7 @@ public sealed partial class BootstrapPlugin
         if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
             && tabEnv is >= 0 and <= 6)
             tab = tabEnv;
-        var spec = new WindowSpec("stellar.settings.ugui", "Stellar Settings",
+        var spec = new WindowSpec("stellar.settings.ugui", _frameworkLocalization!.T("settings.window.title"),
             new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
         // Framework chrome — usable at title/menus in every phase, but hide over the loading screen.
         { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, Closable = true, Draggable = true, StartVisible = false };
@@ -138,7 +141,7 @@ public sealed partial class BootstrapPlugin
     {
         var action = new HotkeyAction(
             Id: "framework.settings-toggle",
-            Description: "Toggle Stellar Settings",
+            Description: _frameworkLocalization!.T("settings.hotkey.toggle"),
             SuggestedDefault: new KeyBinding(StellarKeyCode.Home, ModifierKeys.Shift));
         _hotkeyService!.DeclareAction(action, () => Toggle(_launcherControl));
         log.Info("[Settings] hotkey framework.settings-toggle declared (Shift+Home)");

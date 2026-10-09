@@ -102,8 +102,8 @@ internal sealed partial class ThemeEditorBody
                 new TextElement(() => LabelAt(idx)),
                 new SpacerElement(),
                 new TextElement(() => HexAt(idx), () => _theme.Colors.TextMuted),
-                new ButtonElement(() => _expandedSlotKey == KeyAt(idx) && KeyAt(idx).Length > 0 ? "▾" : "Edit", () => ToggleExpandAt(idx)),
-                new ButtonElement(() => IsSystemAt(idx) ? "Reset" : "Remove", () => RemoveAt(idx), Enabled: () => HasOverrideAt(idx)),
+                new ButtonElement(() => _expandedSlotKey == KeyAt(idx) && KeyAt(idx).Length > 0 ? "▾" : _text.T("common.edit"), () => ToggleExpandAt(idx)),
+                new ButtonElement(() => IsSystemAt(idx) ? _text.T("common.reset") : _text.T("common.remove"), () => RemoveAt(idx), Enabled: () => HasOverrideAt(idx)),
             });
             slots[i] = new ConditionalElement(() => ShowInMainList(idx), row);
         }

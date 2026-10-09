@@ -3,6 +3,7 @@ using Stellar.Application.Services;
 using Stellar.Infrastructure.BepInExAdapters;
 using Stellar.Infrastructure.Game;
 using Stellar.Infrastructure.Localization;
+using Stellar.Infrastructure.Theme;
 
 namespace Stellar.Host;
 
@@ -35,5 +36,10 @@ public sealed partial class BootstrapPlugin
 
         if (_windowRenderer != null) engine.LanguageChanged += _windowRenderer.InvalidateTheme;
         if (_toastRenderer != null) engine.LanguageChanged += _toastRenderer.InvalidateTheme;
+        // Theme-editor colour slot labels (Accent, Panel background, …) are plain strings baked by
+        // FrameworkColorRegistration.RegisterAll at Load() time (English fallback — see RelabelAll's doc) —
+        // re-apply them in the now-active language on every later explicit switch, same as the renderers above.
+        if (_colorRegistry != null)
+            engine.LanguageChanged += () => FrameworkColorRegistration.RelabelAll(_colorRegistry, _frameworkLocalization!);
     }
 }
