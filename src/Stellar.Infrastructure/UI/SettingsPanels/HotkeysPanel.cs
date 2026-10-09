@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
@@ -44,6 +45,12 @@ internal sealed partial class HotkeysPanel
     // BindingChanged for that id (or when the row first appears). Avoids the
     // per-row string interpolation under DrawRow.
     private readonly Dictionary<string, string> _bindingLabelCache = new();
+    // The framework's own actions are declared (English) during wiring, before the client language is safely
+    // readable, so this panel relabels them — see FrameworkHotkeyLabels. RENDER-driven: the first relabel is
+    // folded into RowLabel, an action-row Func that WindowService only pulls while the Settings window is shown
+    // AND its Hotkeys tab branch is active (hidden windows are parked unapplied; Conditional branches build
+    // lazily). Never from PollCaptureUgui or any other per-tick path — those must not read the language.
+    private bool _frameworkLabelsRelabeled;
 
     private HudElement FilterChip(string key, Filter f)
         => new ButtonElement(() => _loc.T(key), () => { _filter = f; }, null, null, Active: () => _filter == f);
@@ -66,6 +73,14 @@ internal sealed partial class HotkeysPanel
         // header would keep showing the seeded assembly name until the user happened
         // to toggle a filter chip (the only other RebuildDisplay trigger).
         _inventory.StatusChanged += OnPluginStatusChanged;
+        // A later explicit language switch re-applies the framework action descriptions even if the panel is
+        // closed (the player is necessarily past boot by then). Constructed once in wiring → subscribed once.
+        _loc.LanguageChanged += RelabelFrameworkActions;
+    }
+
+    private void RelabelFrameworkActions()
+    {
+        if (_directory is HotkeyService hotkeys) FrameworkHotkeyLabels.RelabelAll(hotkeys, _loc);
     }
 
     private void OnBindingChanged(string actionId)
@@ -233,10 +248,12 @@ internal sealed partial class HotkeysPanel
     }
 
     /// <summary>Row text: the declared human-readable description, falling back to the
-    /// prefix-stripped id for actions that shipped without one.</summary>
-    private static string RowLabel(IHotkeyAction? a)
+    /// prefix-stripped id for actions that shipped without one. Also the render-driven trigger of the first
+    /// framework-action relabel (see <see cref="_frameworkLabelsRelabeled"/>).</summary>
+    private string RowLabel(IHotkeyAction? a)
     {
         if (a is null) return "";
+        if (!_frameworkLabelsRelabeled) { _frameworkLabelsRelabeled = true; RelabelFrameworkActions(); }
         return string.IsNullOrWhiteSpace(a.Description) ? ShortName(a.Id) : a.Description;
     }
 

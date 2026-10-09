@@ -140,8 +140,10 @@ public sealed partial class BootstrapPlugin
     private void DeclareSettingsHotkey(BepInExPluginLog log)
     {
         var action = new HotkeyAction(
-            Id: "framework.settings-toggle",
-            Description: _frameworkLocalization!.T("settings.hotkey.toggle"),
+            Id: FrameworkHotkeyIds.SettingsToggle,
+            // English on purpose — this runs in OnHotUpdateReady, before Game.Init: a T() here was an early
+            // client-language read. HotkeysPanel relabels it render-driven (FrameworkHotkeyLabels).
+            Description: "Toggle Stellar Settings",
             SuggestedDefault: new KeyBinding(StellarKeyCode.Home, ModifierKeys.Shift));
         _hotkeyService!.DeclareAction(action, () => Toggle(_launcherControl));
         log.Info("[Settings] hotkey framework.settings-toggle declared (Shift+Home)");

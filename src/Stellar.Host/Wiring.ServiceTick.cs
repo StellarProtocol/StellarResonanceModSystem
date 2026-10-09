@@ -245,7 +245,7 @@ public sealed partial class BootstrapPlugin
         // release restores the pre-hold state (HUD stays hidden if it was toggle-hidden, shows again if it wasn't).
         if (_hotkeyService is { } hk)
         {
-            var held = hk.IsActionHeld("framework.hud-hold");
+            var held = hk.IsActionHeld(Stellar.Application.Services.FrameworkHotkeyIds.HudHold);
             if (held != _hudHoldActive)
             {
                 if (held) { _hudHoldSavedKill = Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill; Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = true; }

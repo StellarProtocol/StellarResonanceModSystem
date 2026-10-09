@@ -272,8 +272,8 @@ public sealed partial class BootstrapPlugin : BasePlugin
         _perfOverlay = new PerfOverlayWindow(_clientState!);   // registered as a uGUI window in Phase 9 (needs _windowService)
         _hotkeyService?.DeclareAction(
             new HotkeyAction(
-                Id: "framework.perf-toggle",
-                Description: "Toggle Perf overlay",
+                Id: FrameworkHotkeyIds.PerfToggle,
+                Description: "Toggle Perf overlay",   // English; relabelled in Settings → Hotkeys (FrameworkHotkeyLabels)
                 SuggestedDefault: new KeyBinding(StellarKeyCode.End, ModifierKeys.Shift)),
             callback: () => { if (_perfOverlayControl != null) _perfOverlayControl.SetVisible(!_perfOverlayControl.IsShown); });
     }
