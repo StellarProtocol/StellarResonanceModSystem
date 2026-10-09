@@ -1,6 +1,7 @@
 using System;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
@@ -21,6 +22,11 @@ internal sealed partial class PerformancePanel
     private readonly IPluginInventory _inventory;
     private readonly Func<string, int> _effectiveRateFor;
     private readonly ILocalization _loc;
+
+    /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
+    /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
+    /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
+    internal IPluginDisplayNames? DisplayNames { get; init; }
 
     public PerformancePanel(PerfPrefs prefs, ITheme theme, IPluginInventory inventory, Func<string, int> effectiveRateFor, ILocalization loc)
     {

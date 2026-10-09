@@ -52,6 +52,11 @@ internal sealed partial class HotkeysPanel
     // lazily). Never from PollCaptureUgui or any other per-tick path — those must not read the language.
     private bool _frameworkLabelsRelabeled;
 
+    /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
+    /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
+    /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
+    internal IPluginDisplayNames? DisplayNames { get; init; }
+
     private HudElement FilterChip(string key, Filter f)
         => new ButtonElement(() => _loc.T(key), () => { _filter = f; }, null, null, Active: () => _filter == f);
 
@@ -247,6 +252,12 @@ internal sealed partial class HotkeysPanel
         return names.TryGetValue(GroupKeyOf(a), out var n) ? n : GroupOf(a.Id);
     }
 
+    /// <summary>Header text, resolved live so a plugin's localized name follows its launcher tile (and the
+    /// language) without re-flattening; <see cref="HkRow.GroupLabel"/> is the internal-name fallback. Display
+    /// only — collapse state and sorting stay on <see cref="HkRow.GroupKey"/>.</summary>
+    private string HeaderText(HkRow row)
+        => DisplayNames is { } names && !string.IsNullOrEmpty(row.GroupKey) ? names.Resolve(row.GroupKey, row.GroupLabel) : row.GroupLabel;
+
     /// <summary>Row text: the declared human-readable description, falling back to the
     /// prefix-stripped id for actions that shipped without one. Also the render-driven trigger of the first
     /// framework-action relabel (see <see cref="_frameworkLabelsRelabeled"/>).</summary>
@@ -269,7 +280,7 @@ internal sealed partial class HotkeysPanel
                     new RowElement(new HudElement[]
                     {
                         new TextElement(() => _collapsed.Contains(Row().GroupKey) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
-                        new TextElement(() => Row().GroupLabel, Emphasis: true),
+                        new TextElement(() => HeaderText(Row()), Emphasis: true),
                         new SpacerElement(),
                         new TextElement(() => $"({Row().Count})", () => _theme.Colors.TextMuted, Align: TextAlign.Right),
                     }),

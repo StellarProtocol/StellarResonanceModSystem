@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
@@ -24,6 +25,11 @@ internal sealed class PluginsPanel
         _setEnabled = setEnabled;
         _loc = loc;
     }
+
+    /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
+    /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
+    /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
+    internal IPluginDisplayNames? DisplayNames { get; init; }
 
     private const int MaxRows = 64;
     private const float NameColumnWidth = 280f;   // fixed name column → versions align in a clean column
@@ -55,12 +61,16 @@ internal sealed class PluginsPanel
         {
             new ToggleElement(() => "", () => At()?.IsEnabled ?? false,
                 v => { var p = At(); if (p != null) _setEnabled(p.Id, v); }),
-            new TextElement(() => At()?.DisplayName ?? "", Width: NameColumnWidth),
+            new TextElement(() => NameOf(At()), Width: NameColumnWidth),
             new ConditionalElement(() => At()?.IsErrored ?? false,
                 new ButtonElement(() => _loc.T("common.retry"), () => { var p = At(); if (p != null) _inventory.RequestRetry(p.Id); }),
                 new TextElement(() => At()?.Version ?? "")),
         }, Gap: 10f);
     }
+
+    // Display only: Id (enable/retry/config) and list order stay on the internal identity.
+    private string NameOf(PluginInfo? p)
+        => p is null ? "" : DisplayNames?.Resolve(p.Id, p.DisplayName) ?? p.DisplayName;
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s.Substring(0, max - 1) + "…";

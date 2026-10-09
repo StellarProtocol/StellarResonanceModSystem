@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
@@ -10,9 +11,13 @@ namespace Stellar.Application.Services;
 /// the launcher menu reads <see cref="Entries"/>, <see cref="Mode"/>, and the
 /// per-entry pin state. Pin/mode are persisted via <see cref="LauncherPrefs"/>.
 /// </summary>
-internal sealed class LauncherRegistry : ILauncher
+internal sealed class LauncherRegistry : ILauncher, ILauncherOwnedRegistrations
 {
     private readonly List<LauncherEntry> _entries = new();
+    // Owning plugin guid per registered INSTANCE (reference keys: LauncherEntry is a record, so two plugins'
+    // value-equal entries must not share an owner). Absent = registered untagged (the framework's own tiles,
+    // or a plugin host without PerPluginLauncher).
+    private readonly Dictionary<LauncherEntry, string> _owners = new(ByReference.Instance);
     private readonly LauncherPrefs _prefs;
     private readonly IPluginLog _log;
     private int _revision;
@@ -33,13 +38,28 @@ internal sealed class LauncherRegistry : ILauncher
     /// </summary>
     public int Revision => _revision;
 
-    public IDisposable Register(LauncherEntry entry)
+    public IDisposable Register(LauncherEntry entry) => RegisterCore(entry, ownerId: null);
+
+    /// <summary>Owner-tagged register, used by <c>PerPluginLauncher</c>.</summary>
+    IDisposable ILauncherOwnedRegistrations.Register(LauncherEntry entry, string ownerId) => RegisterCore(entry, ownerId);
+
+    private IDisposable RegisterCore(LauncherEntry entry, string? ownerId)
     {
         if (entry is null) throw new ArgumentNullException(nameof(entry));
         TryMigratePin(entry);
         _entries.Add(entry);
+        if (ownerId is not null) _owners[entry] = ownerId;
         _revision++;
         return new Registration(this, entry);
+    }
+
+    /// <inheritdoc />
+    public LauncherEntry? FirstEntryOwnedBy(string ownerId)
+    {
+        foreach (var e in _entries)
+            if (_owners.TryGetValue(e, out var owner) && string.Equals(owner, ownerId, StringComparison.Ordinal))
+                return e;
+        return null;
     }
 
     // Carries forward a pin saved under this entry's OLD displayed title (before it had a TitleProvider) to
@@ -94,7 +114,22 @@ internal sealed class LauncherRegistry : ILauncher
 
     private void Remove(LauncherEntry entry)
     {
-        if (_entries.Remove(entry)) _revision++;
+        _owners.Remove(entry);
+        // By REFERENCE: LauncherEntry is a record, so List.Remove would match a value-equal entry another
+        // registration owns.
+        var i = _entries.FindIndex(e => ReferenceEquals(e, entry));
+        if (i < 0) return;
+        _entries.RemoveAt(i);
+        _revision++;
+    }
+
+    // Reference-identity comparer (BCL ReferenceEqualityComparer is .NET 5+; this file also compiles into the
+    // netstandard2.1 UI sandbox).
+    private sealed class ByReference : IEqualityComparer<LauncherEntry>
+    {
+        public static readonly ByReference Instance = new();
+        public bool Equals(LauncherEntry? x, LauncherEntry? y) => ReferenceEquals(x, y);
+        public int GetHashCode(LauncherEntry obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 
     // Removes exactly the registered instance once; idempotent so a double

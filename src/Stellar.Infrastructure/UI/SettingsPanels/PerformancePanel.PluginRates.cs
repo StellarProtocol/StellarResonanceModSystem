@@ -51,6 +51,10 @@ internal sealed partial class PerformancePanel
         return n.StartsWith("Stellar.", StringComparison.Ordinal) ? n.Substring("Stellar.".Length) : n;
     }
 
+    // Display only: the rate prefs, ramp state and list order stay keyed on the plugin Id.
+    private string? NameOf(PluginInfo? p)
+        => p is null ? null : DisplayNames?.Resolve(p.Id, p.DisplayName) ?? p.DisplayName;
+
     private HudElement BuildPluginRow(int idx)
     {
         PluginInfo? At() => idx < _pluginCache.Count ? _pluginCache[idx] : null;
@@ -58,7 +62,7 @@ internal sealed partial class PerformancePanel
 
         return new RowElement(new HudElement[]
         {
-            new TextElement(() => ShortName(At()?.DisplayName),
+            new TextElement(() => ShortName(NameOf(At())),
                 () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
                 Width: PluginNameWidth, NoWrap: true),                                    // name (fixed; "Stellar." stripped)
 

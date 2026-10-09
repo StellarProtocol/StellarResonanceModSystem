@@ -35,17 +35,7 @@ public sealed partial class BootstrapPlugin
             return;
         }
 
-        var loc = _frameworkLocalization!;
-        var panels = new SettingsPanelSet
-        {
-            Plugins = new PluginsPanel(_pluginRegistry, _themeRenderer, _pluginRegistry.SetEnabled, loc),
-            Hotkeys = new HotkeysPanel((IHotkeyDirectory)_hotkeyService, (IHotkeyBlockDirectory)_hotkeyService, _pluginRegistry, _themeRenderer, PluginName, loc),   // _pluginRegistry = IPluginInventory (group-header names); PluginName labels the framework's own group
-            Themes  = new ThemesPanel(_namedTheme, _themeRenderer, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
-            Layout  = new LayoutPanel(_layoutStorage, _layoutEditor, _themeRenderer, loc),
-            GameUi  = new GameUiPanel(_nativeUi, _themeRenderer, log, _layoutEditor, loc),
-            Perf    = new PerformancePanel(_perfPrefs!, _themeRenderer, _pluginRegistry, _scheduler!.EffectiveRateFor, loc),
-            About   = new AboutPanel(_themeRenderer, loc),
-        };
+        var panels = BuildSettingsPanels(log);
 
         RegisterSettingsHub(panels);
         RegisterLauncher(log);
@@ -73,6 +63,28 @@ public sealed partial class BootstrapPlugin
         // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
         // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
         log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (7 tabs) registered");
+    }
+
+    // The 7 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
+    // WirePhase9Ui null-checks every field before calling this, hence the `!`s.
+    private SettingsPanelSet BuildSettingsPanels(BepInExPluginLog log)
+    {
+        var loc = _frameworkLocalization!;
+        var registry = _pluginRegistry!;
+        var theme = _themeRenderer!;
+        var hotkeys = _hotkeyService!;
+        // Display-only plugin names = each plugin's own (localized) launcher tile title, else its internal name.
+        var names = new PluginDisplayNames(_launcher!, log);
+        return new SettingsPanelSet
+        {
+            Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },
+            Hotkeys = new HotkeysPanel(hotkeys, hotkeys, registry, theme, PluginName, loc) { DisplayNames = names },   // registry = IPluginInventory (group-header fallback names); PluginName labels the framework's own group
+            Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
+            Layout  = new LayoutPanel(_layoutStorage!, _layoutEditor!, theme, loc),
+            GameUi  = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc),
+            Perf    = new PerformancePanel(_perfPrefs!, theme, registry, _scheduler!.EffectiveRateFor, loc) { DisplayNames = names },
+            About   = new AboutPanel(theme, loc),
+        };
     }
 
     private void AttachOverlayLayout()
