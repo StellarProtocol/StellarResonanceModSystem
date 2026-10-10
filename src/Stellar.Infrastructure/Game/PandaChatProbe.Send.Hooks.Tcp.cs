@@ -104,6 +104,7 @@ internal sealed partial class PandaChatProbe
         _log.Info($"[ChatProbe] resolved {tcpClientType.FullName}.Send({paramTypeName})");
 
         InstallTcpClientSendPrefix(tcpClientType, best);
+        InstallConnectionCloseHooks(tcpClientType);
     }
 
     /// <summary>
