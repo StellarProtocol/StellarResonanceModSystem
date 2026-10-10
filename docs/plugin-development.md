@@ -182,6 +182,22 @@ private static float Frac(int v, int max) => max > 0 ? (float)v / max : 0f;
 
 `MarkDirty()` is an optional "apply now" hint; forgetting it never freezes the overlay because the framework polls anyway. Canonical reference: `Stellar.PlayerHUD`.
 
+#### Where a window remembers its place
+
+The framework saves each window's position **per screen resolution** (a layout saved at another, nearby resolution is
+reused until one is saved for this one). For a `Draggable` or `Resizable` window, a save happens whenever its rect
+settles at a new value, which
+includes the **first mount** of a content-sized window (its height grows from 0 to fit), so a window has a saved
+position even if the player never dragged it. Since framework 2.22.0, a window whose `WindowSpec.Anchor` is not
+`TopLeft` also saves its offset from that anchor point and is re-placed from it every time, at the current resolution,
+UI scale and width: a `WindowAnchor.Top` HUD stays centred when your next version makes it wider, and a `TopRight`
+window keeps its distance from the right edge. A `TopLeft` window keeps its absolute top-left.
+
+Positions saved by framework builds before 2.22.0 hold only the absolute top-left, and the framework keeps the
+anchor point such a save had. If an older build already saved a window at a stale spot (for example, a centred HUD
+that was saved at its earlier, narrower width), give the window a new `WindowSpec.Id`: every player then starts from
+your `DefaultRect` once. Players can also reset one window themselves in the layout editor.
+
 ### A window (interactive)
 
 `IWindowHost.Register(WindowRegistration)` returns an `IWindowControl`. A window has themed chrome (`WindowSpec.Style`), an optional close button, and drag/resize behaviour. Build the `WindowSpec`, give it a root element, and (optionally) leading/trailing title content + an `OnClose`:
