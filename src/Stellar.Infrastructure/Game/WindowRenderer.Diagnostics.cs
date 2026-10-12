@@ -60,6 +60,28 @@ internal sealed partial class WindowRenderer
             if (rt.GetChild(i) is RectTransform c) Walk(c, depth + 1, sb);
     }
 
+    // Font-atlas rebuild trace (NOT diagnostics-gated — it's the evidence for a "garbled text" report): which
+    // font repacked, its new atlas size, and how many window Text we re-issued UVs for. Rate-limited to one line
+    // per second with a suppressed-count, so a repack storm (a scale-slider drag) can't flood the log.
+    private float _fontLogNextAt;
+    private int _fontLogSuppressed;
+    private void LogFontRebuild(Font f, int refreshed)
+    {
+        try
+        {
+            var now = Time.realtimeSinceStartup;
+            if (now < _fontLogNextAt) { _fontLogSuppressed++; return; }
+            _fontLogNextAt = now + 1f;
+            var tex = f.material != null ? f.material.mainTexture : null;   // material/texture can be null mid-teardown
+            var size = tex != null ? $"{tex.width}x{tex.height}" : "?";
+            var which = f == _assets.MenuFont ? "menu" : "other";
+            var sup = _fontLogSuppressed > 0 ? $" (+{_fontLogSuppressed} suppressed)" : "";
+            _fontLogSuppressed = 0;
+            _log.Info($"[Window] font atlas rebuilt: '{f.name}' ({which}) atlas={size}, refreshed {refreshed} text(s){sup}");
+        }
+        catch { /* diagnostics must never break the refresh */ }
+    }
+
     private static string Trunc(string? s)
         => string.IsNullOrEmpty(s) ? "" : s!.Length <= 24 ? s : s.Substring(0, 24) + "…";
 }

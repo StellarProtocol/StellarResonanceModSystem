@@ -55,14 +55,18 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private int _canvasGeneration;         // bumps on every canvas (re)create — Host fires a settled reapply on change
     private int _canvasCreatedFrame = -1;  // Time.frameCount at the last (re)create; scale settles a FRAME later
 
-    // The shared OS dynamic font repacks its glyph atlas when a text-heavy panel requests many glyphs; that
-    // strands earlier/hidden Text with stale UVs (garbled glyphs). Refresh every window's text on rebuild.
+    // A dynamic font repacks its glyph atlas when a text-heavy panel requests many glyphs; that strands
+    // earlier/hidden Text with stale UVs (garbled glyphs). Refresh every window's text ON THAT FONT on rebuild.
+    // No MenuFont-only filter: window Text also lives on ConfigureText's builtin font (HudOverlay text keeps it
+    // for its native-HUD look), and that font's repacks were ignored → garbled HUD-overlay glyphs.
     private void OnFontTextureRebuilt(Font f)
     {
-        if (_assets.MenuFont == null || f != _assets.MenuFont) return;
+        if (f == null) return;
         var hitchT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // count + cost of atlas rebuilds per hitch frame
-        for (var i = 0; i < _tokens.Count; i++) _tokens[i].RefreshFontTexture();
+        var refreshed = 0;
+        for (var i = 0; i < _tokens.Count; i++) refreshed += _tokens[i].RefreshFontTexture(f);
         Stellar.Abstractions.Diagnostics.HitchProbe.End("font-rebuild", hitchT);
+        LogFontRebuild(f, refreshed);
     }
 
     public WindowRenderer(IPluginLog log, IThemeMenuColors colors, IThemeHudColors hudColors, IChromeStyle chrome)
@@ -389,6 +393,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
         TmpStyledText.Register();
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));

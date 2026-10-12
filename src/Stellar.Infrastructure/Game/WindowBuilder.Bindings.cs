@@ -79,7 +79,9 @@ internal sealed partial class WindowBuilder
                 _last = s;
                 var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
-                if (Shadow != null) Shadow.text = text;   // twin mirrors the foreground string (HudOverlay)
+                // Twin mirrors the foreground string (HudOverlay) MINUS colour tags — a <color> span would otherwise
+                // override the twin's dark colour and draw an accent copy 1 px off (blurry word). See StripColorTags.
+                if (Shadow != null) Shadow.text = UGuiPrimitives.StripColorTags(text);
                 // Re-derive the legacy-fallback emphasis presentation from the new string (see the field
                 // comments): Latin real-bold, complex scripts crisp regular.
                 if (Emphasis)
@@ -247,7 +249,7 @@ internal sealed partial class WindowBuilder
             if (Label != null && LabelFn != null)
             {
                 var s = LabelFn();
-                if (s != _lastLabel) { Label.text = s; if (LabelShadow != null) LabelShadow.text = s; _lastLabel = s; }
+                if (s != _lastLabel) { Label.text = s; if (LabelShadow != null) LabelShadow.text = UGuiPrimitives.StripColorTags(s); _lastLabel = s; }
             }
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
         }

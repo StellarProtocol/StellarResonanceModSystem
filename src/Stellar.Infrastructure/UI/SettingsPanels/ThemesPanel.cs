@@ -16,9 +16,20 @@ internal sealed class ThemesPanel
     private static readonly ThemePreset[] Presets =
         { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
 
-    // Language dropdown: setting codes (index-aligned to the option labels). Index 0 ("follow") is the only
-    // descriptive option (localized); indices 1-4 are language NAMES shown in their own script in every locale.
-    private static readonly string[] LangCodes = { "follow", "en", "ja", "th", "id", "fil" };
+    // DISPLAYED name only — never the persisted value: SetActive(pp) below always takes the enum itself, and
+    // NamedThemeService stores the enum (name), never this localized string.
+    private static string PresetNameKey(ThemePreset p) => p switch
+    {
+        ThemePreset.Dark    => "themes.preset.dark",
+        ThemePreset.Light   => "themes.preset.light",
+        ThemePreset.Crimson => "themes.preset.crimson",
+        _                   => "themes.preset.default",
+    };
+
+    // Language dropdown: index 0 = "follow" (the only localized option); indices 1..N = UiLanguages, each shown
+    // in its own script in every locale.
+    private static readonly string[] LangCodes =
+        System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Prepend(UiLanguages.Codes, "follow"));
     // Options cached + rebuilt only when the active language changes (the "follow" label localizes), so the
     // per-frame dropdown poll doesn't allocate a fresh array.
     private string[]? _langOptCache;
@@ -30,7 +41,10 @@ internal sealed class ThemesPanel
             if (_langOptCache == null || _langOptLang != _text.Language)
             {
                 _langOptLang = _text.Language;
-                _langOptCache = new[] { _text.T("themes.language.follow"), "English", "日本語", "ไทย", "Bahasa Indonesia", "Filipino" };
+                var opts = new string[UiLanguages.NativeNames.Count + 1];
+                opts[0] = _text.T("themes.language.follow");
+                for (var n = 0; n < UiLanguages.NativeNames.Count; n++) opts[n + 1] = UiLanguages.NativeNames[n];
+                _langOptCache = opts;
             }
             return _langOptCache;
         }
@@ -63,6 +77,9 @@ internal sealed class ThemesPanel
         _theme = theme;
         _loc = loc;
         _text = text;
+        // ThemeEditorBody owns relabeling the framework's editable colour-slot labels into the active
+        // language (lazily, render-driven — see its ColorReg doc) since it is the class that actually reads
+        // them (SlotAt/LabelAt).
         _editor = new ThemeEditorBody(namedTheme, customThemes, overrides, theme, text);
     }
 
@@ -84,8 +101,9 @@ internal sealed class ThemesPanel
         return new ColumnElement(items.ToArray());
     }
 
-    // Language selector — Follow game client (default) or one of the four shipped UI languages. Persists via
-    // ILocalizationControl and switches the overlay live (Func<string> labels re-poll; baked renderers flush).
+    // Language selector — Follow game client (default) or one of the shipped UI languages
+    // (UiLanguages.Codes). Persists via ILocalizationControl and switches the overlay live
+    // (Func<string> labels re-poll; baked renderers flush).
     private void AddLanguage(System.Collections.Generic.List<HudElement> items)
     {
         items.Add(new TextElement(() => _text.T("themes.language"), Emphasis: true));
@@ -110,7 +128,8 @@ internal sealed class ThemesPanel
         {
             var pp = p;
             presetRow.Add(new ButtonElement(
-                () => _namedTheme.Active == pp && _namedTheme.ActiveCustomName == null ? $"{pp}*" : pp.ToString(),
+                () => _namedTheme.Active == pp && _namedTheme.ActiveCustomName == null
+                    ? $"{_text.T(PresetNameKey(pp))}*" : _text.T(PresetNameKey(pp)),
                 () => _namedTheme.SetActive(pp)));
         }
         items.Add(new RowElement(presetRow));
@@ -137,22 +156,22 @@ internal sealed class ThemesPanel
 
     private void AddControls(System.Collections.Generic.List<HudElement> items)
     {
-        HudElement Btn<T>(string label, T val, System.Func<T> get, System.Action<T> set) where T : System.Enum
-            => new ButtonElement(() => get().Equals(val) ? label + " ✓" : label, () => set(val));
+        HudElement Btn<T>(string labelKey, T val, System.Func<T> get, System.Action<T> set) where T : System.Enum
+            => new ButtonElement(() => get().Equals(val) ? _text.T(labelKey) + " ✓" : _text.T(labelKey), () => set(val));
 
         items.Add(new TextElement(() => _text.T("themes.controls"), Emphasis: true));
         items.Add(new RowElement(new HudElement[]
         {
             new TextElement(() => _text.T("themes.button")),
-            Btn("Outline", MenuButtonStyle.Outline, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
-            Btn("Filled", MenuButtonStyle.Filled, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
-            Btn("Glass", MenuButtonStyle.Glass, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.outline", MenuButtonStyle.Outline, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.filled", MenuButtonStyle.Filled, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
+            Btn("themes.style.glass", MenuButtonStyle.Glass, () => _chromeStyle.ButtonStyle, _chromeStyle.SetButtonStyle),
         }));
         items.Add(new RowElement(new HudElement[]
         {
             new TextElement(() => _text.T("themes.scrollbar")),
-            Btn("Thumb", MenuScrollbarStyle.ThumbOnly, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
-            Btn("Track", MenuScrollbarStyle.ThinTrack, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
+            Btn("themes.style.thumb", MenuScrollbarStyle.ThumbOnly, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
+            Btn("themes.style.track", MenuScrollbarStyle.ThinTrack, () => _chromeStyle.ScrollbarStyle, _chromeStyle.SetScrollbarStyle),
         }));
     }
 
@@ -165,8 +184,8 @@ internal sealed class ThemesPanel
             new PillElement(() => "Lv 78", () => _theme.Colors.Accent),
             new TextElement(() => "Ribery / Wind Knight"),
         }));
-        items.Add(new BarElement(() => 0.78f, new ColorRgba(0.36f, 0.78f, 0.45f, 1f), () => "8240 / 10500", "HP"));
-        items.Add(new BarElement(() => 0.42f, new ColorRgba(0.93f, 0.78f, 0.33f, 1f), () => "126 / 300", "Stamina"));
+        items.Add(new BarElement(() => 0.78f, new ColorRgba(0.36f, 0.78f, 0.45f, 1f), () => "8240 / 10500", "HP"));   // HP stays an untranslated symbol (kept-list)
+        items.Add(new BarElement(() => 0.42f, new ColorRgba(0.93f, 0.78f, 0.33f, 1f), () => "126 / 300", _text.T("themes.preview.stamina")));
         // Typography sample — one element per style flag, localized, so every language's real-bold face,
         // italic, underline, and strikethrough are visible in the preview (and pinned by the visual scenario).
         items.Add(new RowElement(new HudElement[]
@@ -183,6 +202,10 @@ internal sealed class ThemesPanel
     /// sliders (committing those per drag-frame rebuilds the window canvas → flicker).</summary>
     public void PollEditorUgui()
     {
+        // NOTE: this runs every framework tick regardless of whether the Settings window is even visible
+        // (Wiring.ServiceTick.cs calls it unconditionally) — do NOT add anything here that reads the active
+        // language/client-language probe (see ThemeEditorBody.cs's ColorReg doc for why: that read must stay
+        // gated behind the window actually being shown).
         _editor.TickUgui();
         if (Input.GetMouseButton(0)) return;   // still dragging — hold the pending value (already applied live)
         if (_pendingFontScale is { } fs) { _namedTheme.SetFontScale(fs); _pendingFontScale = null; }

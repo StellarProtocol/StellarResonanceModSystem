@@ -11,7 +11,8 @@ public sealed class ResourceScanTests
     [InlineData("Stellar.CombatMeter.Lang.th.json", "th")]
     [InlineData("Whatever.Lang.id.json", "id")]
     [InlineData("Stellar.Infrastructure.icons.gear.png", null)]
-    [InlineData("Lang.ko.json", null)]   // unsupported code ignored
+    [InlineData("Stellar.PhotoStudio.Lang.ko.json", "ko")]
+    [InlineData("Lang.de.json", null)]   // unsupported code ignored
     public void Matches_supported_lang_resources(string name, string? code)
         => Assert.Equal(code, LocalizationResourceScan.CodeFromResourceName(name));
 }

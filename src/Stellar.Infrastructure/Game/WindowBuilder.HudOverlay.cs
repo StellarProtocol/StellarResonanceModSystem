@@ -101,7 +101,7 @@ internal sealed partial class WindowBuilder
             var (pslot, pfg, pshadow) = MakeShadowedTextHud(row.transform, ls, TextAnchor.MiddleLeft, bold: true);
             HudTextReskin(token, pfg, pshadow);
             pslot.AddComponent<LayoutElement>().preferredWidth = HudBarPrefixWidth;
-            pfg.text = b.Prefix; pshadow.text = b.Prefix;   // static caption — no binding needed
+            pfg.text = b.Prefix; pshadow.text = UGuiPrimitives.StripColorTags(b.Prefix);   // static caption — no binding needed
             var pstyle = UGuiPrimitives.EmphasisStyle(true, b.Prefix);   // drop faux-bold if the caption is complex-script
             pfg.fontStyle = pstyle; pshadow.fontStyle = pstyle;
         }

@@ -6,10 +6,13 @@ namespace Stellar.Application.Tests.Theme;
 internal sealed class InMemoryConfigSection : IConfigSection
 {
     public readonly Dictionary<string, object?> Values = new();
+    // Tracked so a test can assert a steady-state call path performs no write (e.g. LauncherRegistry.Register
+    // migrating nothing should never call Save).
+    public int SaveCallCount { get; private set; }
     public T? Get<T>(string key, T? defaultValue)
         => Values.TryGetValue(key, out var v) && v is T t ? t : defaultValue;
     public void Set<T>(string key, T value) => Values[key] = value;
-    public void Save() { }
+    public void Save() => SaveCallCount++;
     public void SaveQuiet() { }
     public void RemoveByPrefix(string prefix)
     {

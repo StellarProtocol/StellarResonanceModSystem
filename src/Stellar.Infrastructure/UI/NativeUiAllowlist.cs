@@ -6,9 +6,13 @@ namespace Stellar.Infrastructure.UI;
 /// is the user-visible distinction between QoL (Dalamud-style) and
 /// reverse-engineering: we explicitly do NOT walk arbitrary game objects.
 /// </summary>
+/// <param name="DisplayNameKey">A framework localization key (<c>gameui.entry.*</c>), NOT display text —
+/// resolved via <see cref="Stellar.Abstractions.Services.ILocalization.T"/> at render time by
+/// <c>GameUiPanel</c> and the layout-editor outline label, so the Settings → Game UI list and the
+/// Shift+` edit-mode outline follow the active UI language.</param>
 internal sealed record NativeUiAllowlistEntry(
     string Id,
-    string DisplayName,
+    string DisplayNameKey,
     string Path)
 {
     /// <summary>
@@ -63,29 +67,29 @@ internal static class NativeUiAllowlist
         // visible widget. Party = the member panel (whole panel incl. raid grid, per user). Quickbar = the bar
         // container's own rect (excludes the skill-drawer slot that floats off to the top-right). Player-HP =
         // HP bar ⊎ stamina bar contents (with their numbers), excluding the class gauge between them.
-        new("gameui.party-panel",   "Party Panel",   MainHud + "/node_upper_right/anim_upper_right/node_team")
+        new("gameui.party-panel",   "gameui.entry.partyPanel",   MainHud + "/node_upper_right/anim_upper_right/node_team")
             { RectChild = "group_team/main_team_sub_pc(Clone)/node_member" },
-        new("gameui.minimap",       "Minimap",       MainHud + "/anim_upper_left/node_upper_left/group_minimap"),
-        new("gameui.quickbar",      "Quickbar",      BattleHud + "/button_pos_group_hide_root")     { SafeToHide = false,
+        new("gameui.minimap",       "gameui.entry.minimap",      MainHud + "/anim_upper_left/node_upper_left/group_minimap"),
+        new("gameui.quickbar",      "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")     { SafeToHide = false,
             RectChild = "button_pos_group" },
-        new("gameui.chat-window",   "Chat Window",   ChatWindow),
-        new("gameui.target-frame",  "Target Frame",  TargetFrame),
-        new("gameui.buff-bar",      "Buff Bar",      BattleHud + "/profession_buff_icon_group"),
-        new("gameui.player-hp",     "Player HP/MP",  BattleHud + "/node_player_state_bar_hide_root") { SafeToHide = false,
+        new("gameui.chat-window",   "gameui.entry.chatWindow",   ChatWindow),
+        new("gameui.target-frame",  "gameui.entry.targetFrame",  TargetFrame),
+        new("gameui.buff-bar",      "gameui.entry.buffBar",      BattleHud + "/profession_buff_icon_group"),
+        new("gameui.player-hp",     "gameui.entry.playerHp",     BattleHud + "/node_player_state_bar_hide_root") { SafeToHide = false,
             RectChild = "*node_player_state_bar/group_info_layout/group_blood;*node_player_state_bar/group_info_layout/group_str" },
         // The class/resonance gauge (the "100/100 ←→" energy bar) — a separate movable component. It's the
         // group_energy node, a sibling of HP/stamina under group_info_layout, so it translates independently of
         // (and additionally to) the Player HP/MP bar. Content union so the wide effect/arrows are framed.
-        new("gameui.class-gauge",   "Class Gauge",   BattleHud + "/node_player_state_bar_hide_root/node_player_state_bar/group_info_layout/group_energy")
+        new("gameui.class-gauge",   "gameui.entry.classGauge",   BattleHud + "/node_player_state_bar_hide_root/node_player_state_bar/group_info_layout/group_energy")
             { RectChild = "*." },
         // Player Profile = the bottom-left identity bar: level (node_lv_max), name (lab_name), UID (lab_uid),
         // title, talent emblem, AND the XP bar (node_experience is a child). Merges the old standalone EXP-bar
         // element into the whole identity component, per user. Content union so the level (anchored left of the
         // node origin) and all labels are framed.
-        new("gameui.player-profile", "Player Profile", BattleHud + "/node_protection") { RectChild = "*." },
+        new("gameui.player-profile", "gameui.entry.playerProfile", BattleHud + "/node_protection") { RectChild = "*." },
         // Whole body at the title's width: the scroll list is a fixed 534px and the text doesn't fill it, so
         // width comes from the title bar (330px) and HEIGHT extends down to the scroll list ("h:" = vertical-only).
-        new("gameui.quest-tracker", "Quest Tracker", MainHud + "/anim_upper_left/node_upper_left/node_left_track")
+        new("gameui.quest-tracker", "gameui.entry.questTracker", MainHud + "/anim_upper_left/node_upper_left/node_left_track")
             { RectChild = "node_track_title;h:node_track_sub/track_bar_sub_pc(Clone)/node_parent/scrollview" },
     };
 }

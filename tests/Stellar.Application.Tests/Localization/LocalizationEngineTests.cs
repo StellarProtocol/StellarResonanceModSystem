@@ -83,4 +83,24 @@ public sealed class LocalizationEngineTests
         Assert.Equal("th", e.LanguageSetting);
         Assert.Equal("th", e.ActiveLanguage);
     }
+
+    [Fact]
+    public void Throwing_LanguageChanged_handler_is_contained_on_both_raise_paths()
+    {
+        var probe = new FakeProbe { SupportedLanguage = "en" };
+        var e = New(probe, new FakeConfigSection());
+        var later = 0;
+        e.LanguageChanged += () => throw new System.InvalidOperationException("boom");
+        e.LanguageChanged += () => later++;
+
+        e.SetLanguageSetting("ja");                // Settings switch
+        Assert.Equal(1, later);
+
+        e.SetLanguageSetting("follow");            // back to follow (ja → en)
+        Assert.Equal(2, later);
+        probe.SupportedLanguage = "th";
+        probe.RaiseChanged();                      // client-language change under follow
+        Assert.Equal(3, later);
+        Assert.Equal("th", e.ActiveLanguage);
+    }
 }

@@ -101,6 +101,39 @@ internal static class UGuiPrimitives
         return "...";
     }
 
+    /// <summary>The string a drop-shadow TWIN (HudOverlay <c>MakeShadowedTextHud</c>, toast <c>MakeShadowedText</c>) shows
+    /// for foreground <paramref name="s"/>: identical except every uGUI <c>&lt;color=…&gt;</c>/<c>&lt;/color&gt;</c> tag is
+    /// removed. A colour tag OVERRIDES the twin's dark <c>Text.color</c>, so mirroring the string verbatim drew the
+    /// shadow of a coloured span in the ACCENT colour — two accent copies 1 px apart, the word reading blurry/smeared
+    /// (in-game 2026-10-07, the highlighted "You" in the Mechanic Callouts list). Every other tag (<c>&lt;b&gt;</c>,
+    /// <c>&lt;i&gt;</c>, <c>&lt;size=…&gt;</c>) is KEPT so the twin's glyph geometry still matches the foreground exactly.
+    /// Allocation-free (returns <paramref name="s"/> itself) unless the string contains "&lt;color"; callers only
+    /// invoke it when the string changes.</summary>
+    public static string StripColorTags(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.IndexOf("<color", System.StringComparison.OrdinalIgnoreCase) < 0) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        var i = 0;
+        while (i < s.Length)
+        {
+            var skip = s[i] == '<' ? ColorTagLength(s, i) : 0;
+            if (skip > 0) { i += skip; continue; }
+            sb.Append(s[i++]);
+        }
+        return sb.ToString();
+    }
+
+    // Length of the colour tag opening at s[i] — "<color=…>" (any value: #RRGGBB, #RRGGBBAA, a name) or "</color>",
+    // case-insensitive like uGUI's parser — else 0. An unterminated "<color=" (no '>') isn't a tag to uGUI either (it
+    // renders literally on the foreground), so it is kept verbatim to keep the twin's glyphs aligned.
+    private static int ColorTagLength(string s, int i)
+    {
+        if (string.Compare(s, i, "</color>", 0, 8, System.StringComparison.OrdinalIgnoreCase) == 0) return 8;
+        if (string.Compare(s, i, "<color=", 0, 7, System.StringComparison.OrdinalIgnoreCase) != 0) return 0;
+        var end = s.IndexOf('>', i + 7);
+        return end < 0 ? 0 : end - i + 1;
+    }
+
     /// <summary>The readability outline chrome-less overlays use (StatInspector's stat HUD, HUD-halo TextElements):
     /// a 4-direction dark halo behind the glyphs so light text reads over any background. <c>UnityEngine.UI.Shadow</c>
     /// is stripped from the game interop; <c>Outline</c> survives. The 1.1 px offset is deliberate — at exactly 1.0 px

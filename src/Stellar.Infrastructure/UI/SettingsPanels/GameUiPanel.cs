@@ -56,18 +56,18 @@ internal sealed partial class GameUiPanel
         var entry = e;
         var safe = entry.Descriptor.SafeToHide;
         var id = entry.Descriptor.Id;
-        var name = entry.Descriptor.DisplayName;
+        var nameKey = entry.Descriptor.DisplayNameKey;
         var items = new System.Collections.Generic.List<HudElement>
         {
             new ToggleElement(() => "", () => entry.Visible, v => { if (safe) _nativeUi.SetVisible(id, v); }, () => safe),
-            new TextElement(() => name),
+            new TextElement(() => _loc.T(nameKey)),
         };
         if (!safe) items.Add(new TextElement(() => _loc.T("gameui.unsafe"), () => _theme.Colors.Warning));
         items.Add(new SpacerElement());
         items.Add(new ButtonElement(() => _loc.T("common.reset"), () => _nativeUi.ResetToOriginal(id)));
         return new ConditionalElement(() => entry.IsResolved,
             new RowElement(items.ToArray()),
-            new TextElement(() => _loc.TFormat("gameui.notPresent", name), () => _theme.Colors.TextMuted));
+            new TextElement(() => _loc.TFormat("gameui.notPresent", _loc.T(nameKey)), () => _theme.Colors.TextMuted));
     }
 
 }

@@ -40,6 +40,7 @@ public sealed class FreeCameraReleaserTests
         public (float X, float Y) MouseDelta => (0, 0);
         public float Wheel => 0;
         public (float X, float Y) Pointer => (0, 0);
+        public bool PointerOverGameUi => false;
     }
 
     internal sealed class NoFocus : ITextFieldFocus

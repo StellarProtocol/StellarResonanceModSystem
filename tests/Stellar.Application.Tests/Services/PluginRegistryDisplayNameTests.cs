@@ -78,4 +78,30 @@ public sealed class PluginRegistryDisplayNameTests
         Assert.True(info.IsEnabled);
         Assert.Equal("The Thing", info.DisplayName);
     }
+
+    [Fact]
+    public void DisabledAtBoot_ListsUnderTheNameRememberedFromItsLastEnable()
+    {
+        var config = new InMemoryConfigSection();
+        var first = new PluginRegistry(config, new StubLog(), services: null!);
+        first.Register("stellarmahiruutilityplugin", "Mahiru Utility Fallback", "1.0.0", _ => new FakePlugin("Mahiru Utility"));
+        first.SetEnabled("stellarmahiruutilityplugin", false);   // persisted disabled
+
+        // Next boot: disabled per config, so the factory never runs — the remembered declared name is shown.
+        var next = new PluginRegistry(config, new StubLog(), services: null!);
+        next.Register("stellarmahiruutilityplugin", "Mahiru Utility Fallback", "1.0.0", _ => throw new System.InvalidOperationException("not constructed"));
+
+        var info = Assert.Single(next.List());
+        Assert.False(info.IsEnabled);
+        Assert.Equal("Mahiru Utility", info.DisplayName);
+    }
+
+    [Theory]
+    [InlineData("StellarMahiruUtilityPlugin", "Mahiru Utility")]
+    [InlineData("Stellar.AutoNav", "Auto Nav")]
+    [InlineData("StellarPlayerHUDPlugin", "Player HUD")]
+    [InlineData("Plugin", "Plugin")]
+    [InlineData("Stellar", "Stellar")]
+    public void NeverConstructed_FallbackNameIsReadable_NotTheAssemblyName(string assembly, string expected)
+        => Assert.Equal(expected, PluginNameFallback.FromAssemblyName(assembly));
 }

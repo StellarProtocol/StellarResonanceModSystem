@@ -35,9 +35,11 @@ public sealed class HotkeyServiceMigrationTests
         ((IHotkeyDirectory)svc).Actions.Count(a => a.CurrentBinding == b);
 
     [Fact]
-    public void Contract_IHotkeys_has_two_members_and_stable_outcomes()
+    public void Contract_IHotkeys_members_and_stable_outcomes()
     {
-        Assert.Equal(2, typeof(IHotkeys).GetMethods().Length);
+        // 2.20.0 added IsActionHeld (default-implemented, so existing test doubles still compile).
+        Assert.Equal(new[] { "DeclareAction", "IsActionHeld", "MigrateSavedBinding" },
+            typeof(IHotkeys).GetMethods().Select(m => m.Name).OrderBy(n => n, System.StringComparer.Ordinal));
         Assert.Equal(new[] { "NothingSaved", "KeptOther", "Moved", "Cleared" }, System.Enum.GetNames(typeof(SavedBindingMigration)));
     }
 

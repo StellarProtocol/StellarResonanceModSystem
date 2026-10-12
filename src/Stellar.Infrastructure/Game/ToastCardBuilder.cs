@@ -179,11 +179,11 @@ internal sealed class ToastCardBuilder
 
         var (_, tfg, tsh) = MakeShadowedText(header.transform, TitleSize, TextAnchor.MiddleLeft, bold: true);
         var title = TitleFor(kind);
-        tfg.text = title; tsh.text = title; tfg.color = kindColor;
+        tfg.text = title; tsh.text = UGuiPrimitives.StripColorTags(title); tfg.color = kindColor;
 
         var (mslot, mfg, msh) = MakeShadowedText(parent, MsgSize, TextAnchor.UpperLeft, bold: false);
         mfg.horizontalOverflow = HorizontalWrapMode.Wrap; msh.horizontalOverflow = HorizontalWrapMode.Wrap;
-        mfg.text = message; msh.text = message;
+        mfg.text = message; msh.text = UGuiPrimitives.StripColorTags(message);   // twin drops <color> (see helper)
         var le = mslot.AddComponent<LayoutElement>();
         le.flexibleWidth = 1f;   // message stretches to the content width so wrap measures correctly
     }

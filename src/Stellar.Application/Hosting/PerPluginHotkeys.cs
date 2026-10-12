@@ -16,7 +16,7 @@ namespace Stellar.Application.Hosting;
 /// dropped the caller's identity at the boundary and forced the panel to infer
 /// the owner from the action id's prefix — a plugin-chosen string, not identity.
 ///
-/// Plugins need no change: they still see the 1-member <see cref="IHotkeys"/>.
+/// Plugins need no change: they still see the same <see cref="IHotkeys"/>.
 /// This also covers <c>IWindowHost.Register(reg, toggleAction, hotkeys)</c>,
 /// because plugins hand it their own <c>IPluginServices.Hotkeys</c> — i.e. this.
 /// </summary>
@@ -36,4 +36,6 @@ internal sealed class PerPluginHotkeys : IHotkeys
 
     public SavedBindingMigration MigrateSavedBinding(string actionId, KeyBinding from, KeyBinding to)
         => _sink.MigrateSavedBinding(actionId, from, to);
+
+    public bool IsActionHeld(string actionId) => _sink.IsActionHeld(actionId);
 }

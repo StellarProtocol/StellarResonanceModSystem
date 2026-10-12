@@ -155,7 +155,7 @@ public static class ProfessionSpecs
     {
         { 10001, 101 }, { 10002, 102 },          // Stormblade: Iaido / Moonstrike
         { 20001, 104 }, { 20002, 105 },          // FrostMage: Icicle / Frostbeam
-        { 30001, 124 }, { 30002, 125 },          // TwinStriker: Formless / Crimson
+        { 30001, 128 }, { 30002, 129 },          // TwinStriker: Formless / Crimson
         { 40001, 107 }, { 40002, 108 },          // WindKnight: Vanguard / Skyward
         { 50001, 110 }, { 50002, 111 },          // VerdantOracle: Smite / Lifebind
         { 90001, 113 }, { 90002, 114 },          // HeavyGuardian: Earthfort / Block

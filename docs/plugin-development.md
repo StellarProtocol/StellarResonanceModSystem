@@ -77,7 +77,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | `Config` (`IPluginConfig`) | Per-plugin JSON config, organised into named sections. |
 | `Theme` (`ITheme`) | Active palette (`Theme.Colors.*`), semantic text helpers, and the colour registry. |
 | `NamedTheme` (`INamedTheme`) | Active preset + global font scale. |
-| `Hotkeys` (`IHotkeys`) | `DeclareAction(...)` to bind a keyboard shortcut to a callback. |
+| `Hotkeys` (`IHotkeys`) | `DeclareAction(...)` to bind a keyboard shortcut to a callback; `IsActionHeld(id)` for repeat-while-held. |
 | `Windows` (`IWindowHost`) | Register uGUI **windows** — both interactive panels (draggable, closable, themed chrome) *and* on-screen HUD overlays (borderless, `Surface = SurfaceStyle.HudOverlay`, position-persisted). |
 | `NativeUi` (`INativeUiHost`) | Inject your own uGUI into the game's own UI anchors. |
 | `Launcher` (`ILauncher`) | Register a tile in the Stellar launcher menu. |
@@ -181,6 +181,22 @@ private static float Frac(int v, int max) => max > 0 ? (float)v / max : 0f;
 ```
 
 `MarkDirty()` is an optional "apply now" hint; forgetting it never freezes the overlay because the framework polls anyway. Canonical reference: `Stellar.PlayerHUD`.
+
+#### Where a window remembers its place
+
+The framework saves each window's position **per screen resolution** (a layout saved at another, nearby resolution is
+reused until one is saved for this one). For a `Draggable` or `Resizable` window, a save happens whenever its rect
+settles at a new value, which
+includes the **first mount** of a content-sized window (its height grows from 0 to fit), so a window has a saved
+position even if the player never dragged it. Since framework 2.22.0, a window whose `WindowSpec.Anchor` is not
+`TopLeft` also saves its offset from that anchor point and is re-placed from it every time, at the current resolution,
+UI scale and width: a `WindowAnchor.Top` HUD stays centred when your next version makes it wider, and a `TopRight`
+window keeps its distance from the right edge. A `TopLeft` window keeps its absolute top-left.
+
+Positions saved by framework builds before 2.22.0 hold only the absolute top-left, and the framework keeps the
+anchor point such a save had. If an older build already saved a window at a stale spot (for example, a centred HUD
+that was saved at its earlier, narrower width), give the window a new `WindowSpec.Id`: every player then starts from
+your `DefaultRect` once. Players can also reset one window themselves in the layout editor.
 
 ### A window (interactive)
 
@@ -395,6 +411,13 @@ _toggleAction = _services.Hotkeys.DeclareAction(
 
 `DeclareAction` returns an `IHotkeyAction` (`IDisposable`) — dispose it in `Dispose()`. If the hotkey just toggles a window, prefer the combined `Windows.Register(..., HotkeyAction, IHotkeys)` overload instead.
 
+The callback fires once per press. For an action that repeats while the key is held (zoom, nudge), poll
+`IsActionHeld(id)` from your `Update` — it is true while the bound key is down with exactly its modifiers:
+
+```csharp
+if (_services.Hotkeys.IsActionHeld("mymod.zoomin")) _zoom += ZoomPerSecond * dt;
+```
+
 ## Lifecycle and the Dispose contract
 
 ![Plugin lifecycle](diagrams/plugin-lifecycle.svg)
@@ -447,12 +470,12 @@ Apart from `SelfGearChanged`, you can assume single-threaded handlers. If you st
 
 ## Localizing your plugin
 
-Stellar's own UI ships in English, 日本語, ไทย, Bahasa Indonesia and Filipino; your plugin can too, via
+Stellar's own UI ships in English, 日本語, ไทย, Bahasa Indonesia, Filipino and 한국어; your plugin can too, via
 `Services.Localization` (`ILocalization`). It's scoped to your plugin (like `Log`) — your keys never
 collide with another plugin's.
 
-**1. Ship five catalogs.** Add `Lang/en.json`, `Lang/ja.json`, `Lang/th.json`, `Lang/id.json`,
-`Lang/fil.json` to your project as embedded resources. `en.json` is the source of truth; the others are keyed by the same ids.
+**1. Ship six catalogs.** Add `Lang/en.json`, `Lang/ja.json`, `Lang/th.json`, `Lang/id.json`,
+`Lang/fil.json`, `Lang/ko.json` to your project as embedded resources. `en.json` is the source of truth; the others are keyed by the same ids.
 Values may carry positional placeholders (`{0}`) so other languages can reorder them:
 
 ```jsonc
@@ -483,13 +506,18 @@ new TextElement(() => s.TFormat("dps.line", dps));   // string.Format on the act
 
 Resolution is **active-language → English → the key literal**: a key you forgot to translate falls back
 to English; a key that exists nowhere renders as the key itself (so it's obvious in-game, never a crash).
-`Services.Localization.Language` is the active code (`"en"/"ja"/"th"/"id"/"fil"`), and `LanguageChanged` fires
+`Services.Localization.Language` is the active code (`"en"/"ja"/"th"/"id"/"fil"/"ko"`), and `LanguageChanged` fires
 on a switch (subscribe only if you cache built text; draw-time labels need no handler). Plugins **read**
 the language — they never set it (that's the framework's Settings → Themes → Language control).
 
+**Window titles and launcher tiles** are plain strings captured at registration, so localize them with
+`TitleProvider` (`WindowSpec.TitleProvider`, `LauncherEntry.TitleProvider` — e.g. `TitleProvider = () => s.T("window.title")`),
+which the framework evaluates when it draws them. Keep `Title` a stable English string (a launcher tile's pin is saved
+under it), and never call `T()` while registering — the game's language may not be known yet that early.
+
 **3. Validate before you commit.** The framework never fails on a missing key, so check your catalogs
 yourself (a small script in CI is enough): every key your code passes to `T` / `TFormat` should exist
-in `en.json`, and every `en.json` key should exist in ja/th/id/fil. Copying the English text in as a
+in `en.json`, and every `en.json` key should exist in ja/th/id/fil/ko. Copying the English text in as a
 placeholder is better than leaving a key out.
 
 ## Photo lights (`ILights`)

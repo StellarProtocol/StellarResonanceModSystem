@@ -17,6 +17,9 @@ namespace Stellar.Application.Services;
 internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
 {
     private const string DisabledIdsKey = "disabled_ids";
+    // "name.<id>" = the plugin's own declared Name, remembered from its last successful enable so a plugin that is
+    // disabled at boot (never constructed this session) still lists under that name, not its assembly name.
+    private const string NameKeyPrefix = "name.";
 
     private readonly Dictionary<string, PluginSlot> _slots = new();
     private readonly IConfigSection _config;
@@ -66,6 +69,8 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
             _log.Error($"[PluginRegistry] duplicate plugin id '{id}'; second registration ignored.");
             return;
         }
+        var remembered = _config.Get<string>(NameKeyPrefix + id, null);
+        if (!string.IsNullOrWhiteSpace(remembered)) displayName = remembered!;
         var info = new PluginInfo(id, displayName, version, IsEnabled: false, IsErrored: false);
         _slots[id] = new PluginSlot(info, factory, instance: null, onDispose);
 
@@ -153,7 +158,10 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
             // the `is` pattern is required. The non-empty guard stops a plugin that
             // returns "" from blanking its row in the Plugins / Performance panels.
             if (slot.Instance is IStellarPlugin p && !string.IsNullOrWhiteSpace(p.Name))
+            {
                 slot.Info = slot.Info with { DisplayName = p.Name };
+                RememberName(slot.Info.Id, p.Name);
+            }
             _disabledIds.Remove(slot.Info.Id);
             // Distinguish first construction from a soft-cycle reconstruction
             // so post-mortem log diffs can tell the two apart. The slot's
@@ -180,6 +188,20 @@ internal sealed class PluginRegistry : IPluginInventory, IPluginManagement
         slot.Info = slot.Info with { IsEnabled = false };
         _disabledIds.Add(slot.Info.Id);
         _log.Info($"[PluginRegistry] disabled '{slot.Info.Id}' (Disposed)");
+    }
+
+    private void RememberName(string id, string name)
+    {
+        try
+        {
+            if (_config.Get<string>(NameKeyPrefix + id, null) == name) return;
+            _config.Set(NameKeyPrefix + id, name);
+            _config.Save();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[PluginRegistry] could not remember the name of '{id}': {ex.Message}");   // display only — never fails the enable
+        }
     }
 
     private HashSet<string> LoadDisabledIds()

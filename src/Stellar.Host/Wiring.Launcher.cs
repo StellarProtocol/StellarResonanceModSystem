@@ -15,11 +15,11 @@ public sealed partial class BootstrapPlugin
     private INativeUiElementHandle? _railButtonHandle;
     private INativeUiElementHandle? _loginSidebarButtonHandle;
 
-    private void BuildLauncherServices()
+    private void BuildLauncherServices(BepInExPluginLog log)
     {
         // Launcher registry (Phase B) — feeds the rail button + launcher menu.
         // Pinned ids + mode persist in the framework's "launcher" config section.
-        _launcher = new LauncherRegistry(new LauncherPrefs(_pluginConfigService!.GetSection("launcher")));
+        _launcher = new LauncherRegistry(new LauncherPrefs(_pluginConfigService!.GetSection("launcher")), log);
     }
 
     // Registers the native uGUI launcher (the redesigned hub — both modes via LauncherView) on the window
@@ -29,7 +29,8 @@ public sealed partial class BootstrapPlugin
     {
         _launcherView = new LauncherView(_launcher!,
             openSettings: () => Toggle(_settingsHubControl),
-            close: () => _launcherControl?.SetVisible(false));
+            close: () => _launcherControl?.SetVisible(false),
+            text: _frameworkLocalization!);
         _launcherControl = _windowService!.Register(new WindowRegistration(LauncherSpec(), _launcherView.Root));
 
         // Perf overlay (Shift+End, dev-only) is a uGUI window now (Phase E — no IMGUI). Registered here where

@@ -84,19 +84,8 @@ internal sealed class WindowThemeAssets
     /// in which case the caller keeps its builtin-Arial attempt. Main-thread only (lazy-inits the font).</summary>
     public static Font? SharedMenuFont { get { EnsureFont(); return _menuFont; } }
 
-    // OS-font fallback chain: CreateDynamicFontFromOSFont renders each glyph from the first listed family
-    // that provides it, so the chain must cover every UI language Stellar localizes into (i18n P0):
-    // Latin (Noto Sans) → CJK for ja/zh (Noto Sans CJK JP/SC) → Thai for th (Noto Sans Thai/Thai UI) →
-    // the DejaVu/Liberation tail that covers the Proton box → Arial (Unity's always-synthesised last resort).
-    // Indonesian (id) is Latin, covered by Noto Sans. Without the Thai families, th text tofu'd (the chain
-    // had CJK but no Thai) — the glyph-coverage gate (i18n Task 0) added them.
-    private static readonly string[] FontFamilies =
-    {
-        "Noto Sans", "NotoSans",
-        "Noto Sans CJK JP", "Noto Sans CJK SC",
-        "Noto Sans Thai", "Noto Sans Thai UI",
-        "DejaVu Sans", "Liberation Sans", "Arial",
-    };
+    // OS-font fallback chain — ordering rules + the 2.21.0 regression pin live in OverlayFontFamilies (Unity-free).
+    private static readonly string[] FontFamilies = OverlayFontFamilies.Chain;
 
     private static void EnsureFont()
     {
@@ -287,4 +276,35 @@ internal sealed class WindowThemeAssets
         from.R + (to.R - from.R) * t, from.G + (to.G - from.G) * t, from.B + (to.B - from.B) * t, from.A);
     private static ColorRgba Translucent(ColorRgba c, float alpha) => new(c.R, c.G, c.B, alpha);
     private static Color ToColor(ColorRgba c) => new(c.R, c.G, c.B, c.A);
+}
+
+/// <summary>
+/// The OS-font family chain the legacy-<c>Text</c> overlay font is built from
+/// (<c>Font.CreateDynamicFontFromOSFont(string[], int)</c> in <see cref="WindowThemeAssets"/>). Kept in this
+/// Unity-free type (deliberately in WindowThemeAssets.cs, which the UI sandbox symlinks) so the ordering regression pin (<c>FontFamilyOrderTests</c>) can load it outside the game.
+/// </summary>
+internal static class OverlayFontFamilies
+{
+    // CreateDynamicFontFromOSFont renders each glyph from the FIRST listed family that provides it, so the
+    // chain must cover every UI language Stellar localizes into (i18n P0): Latin (Noto Sans) → CJK for ja/zh
+    // (Noto Sans CJK JP/SC) → Thai for th (Noto Sans Thai/Thai UI) → the DejaVu/Liberation tail that covers the
+    // Proton box → Arial (Unity's always-synthesised last resort) → Hangul for ko (Noto Sans CJK KR / Malgun
+    // Gothic — Windows' Korean UI face; Yu Gothic/Meiryo carry no Hangul). Indonesian (id) and Filipino (fil)
+    // are Latin, covered by Noto Sans. Without the Thai families, th text tofu'd — the glyph-coverage gate
+    // (i18n Task 0) added them.
+    //
+    // ORDERING RULE: a family added for a new script that ALSO covers Latin (Malgun Gothic, the Noto CJK faces)
+    // must never precede the Latin families ("Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial") — append it
+    // AFTER "Arial" so it only supplies glyphs no earlier family has. 2.21.0 pre-release inserted the Hangul
+    // families before the Latin tail and every English glyph on the owner's Proton prefix (no Noto/DejaVu;
+    // Liberation Sans + Arial + malgun.ttf) switched from Liberation Sans to Malgun Gothic; on real Windows
+    // Malgun would likewise have replaced Arial. Pinned by FontFamilyOrderTests (do not weaken).
+    internal static readonly string[] Chain =
+    {
+        "Noto Sans", "NotoSans",
+        "Noto Sans CJK JP", "Noto Sans CJK SC",
+        "Noto Sans Thai", "Noto Sans Thai UI",
+        "DejaVu Sans", "Liberation Sans", "Arial",
+        "Noto Sans CJK KR", "Malgun Gothic",
+    };
 }

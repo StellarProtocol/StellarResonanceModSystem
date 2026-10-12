@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
@@ -44,6 +45,17 @@ internal sealed partial class HotkeysPanel
     // BindingChanged for that id (or when the row first appears). Avoids the
     // per-row string interpolation under DrawRow.
     private readonly Dictionary<string, string> _bindingLabelCache = new();
+    // The framework's own actions are declared (English) during wiring, before the client language is safely
+    // readable, so this panel relabels them — see FrameworkHotkeyRelabeler. RENDER-driven: the first relabel is
+    // folded into RowLabel, an action-row Func that WindowService only pulls while the Settings window is shown
+    // AND its Hotkeys tab branch is active (hidden windows are parked unapplied; Conditional branches build
+    // lazily). Never from PollCaptureUgui or any other per-tick path — those must not read the language.
+    private readonly FrameworkHotkeyRelabeler _relabeler;
+
+    /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
+    /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
+    /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
+    internal IPluginDisplayNames? DisplayNames { get; init; }
 
     private HudElement FilterChip(string key, Filter f)
         => new ButtonElement(() => _loc.T(key), () => { _filter = f; }, null, null, Active: () => _filter == f);
@@ -60,12 +72,16 @@ internal sealed partial class HotkeysPanel
         // Invalidate the cached label + sort snapshot when a binding changes;
         // the next OnGUI pass rebuilds whatever it needs.
         _directory.BindingChanged += OnBindingChanged;
+        // The "[ unbound ]" label is localized and cached per action — drop the cache on a language switch.
+        _loc.LanguageChanged += _bindingLabelCache.Clear;
         // Group HEADERS show the plugin's DisplayName, which only becomes the real
         // declared name ("Mahiru Utility") once the registry enables the plugin —
         // and plugins load AFTER the hub is built. Without this subscription the
         // header would keep showing the seeded assembly name until the user happened
         // to toggle a filter chip (the only other RebuildDisplay trigger).
         _inventory.StatusChanged += OnPluginStatusChanged;
+        // Reads nothing now; relabels on the first row render and on every later explicit language switch.
+        _relabeler = new FrameworkHotkeyRelabeler(_directory as HotkeyService, _loc);
     }
 
     private void OnBindingChanged(string actionId)
@@ -232,11 +248,24 @@ internal sealed partial class HotkeysPanel
         return names.TryGetValue(GroupKeyOf(a), out var n) ? n : GroupOf(a.Id);
     }
 
+    /// <summary>Header text, resolved live so a plugin's localized name follows its launcher tile (and the
+    /// language) without re-flattening; <see cref="HkRow.GroupLabel"/> is the internal-name fallback. Display
+    /// only — collapse state and sorting stay on <see cref="HkRow.GroupKey"/>.</summary>
+    private string HeaderText(HkRow row)
+        => DisplayNames is { } names && !string.IsNullOrEmpty(row.GroupKey) && row.GroupKey != FrameworkGroupKey
+            ? names.Resolve(row.GroupKey, row.GroupLabel) : row.GroupLabel;
+
+    // GroupKeyOf for every framework.* action (id prefix; framework actions carry no PluginId). Its header is the
+    // framework product name, never a plugin's launcher title — skip the resolver for it.
+    private const string FrameworkGroupKey = "framework";
+
     /// <summary>Row text: the declared human-readable description, falling back to the
-    /// prefix-stripped id for actions that shipped without one.</summary>
-    private static string RowLabel(IHotkeyAction? a)
+    /// prefix-stripped id for actions that shipped without one. Also the render-driven trigger of the first
+    /// framework-action relabel (see <see cref="_relabeler"/>).</summary>
+    private string RowLabel(IHotkeyAction? a)
     {
         if (a is null) return "";
+        _relabeler.EnsureRelabeled();
         return string.IsNullOrWhiteSpace(a.Description) ? ShortName(a.Id) : a.Description;
     }
 
@@ -252,7 +281,7 @@ internal sealed partial class HotkeysPanel
                     new RowElement(new HudElement[]
                     {
                         new TextElement(() => _collapsed.Contains(Row().GroupKey) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
-                        new TextElement(() => Row().GroupLabel, Emphasis: true),
+                        new TextElement(() => HeaderText(Row()), Emphasis: true),
                         new SpacerElement(),
                         new TextElement(() => $"({Row().Count})", () => _theme.Colors.TextMuted, Align: TextAlign.Right),
                     }),
@@ -335,7 +364,7 @@ internal sealed partial class HotkeysPanel
     private string GetOrBuildBindingLabel(IHotkeyAction action)
     {
         if (_bindingLabelCache.TryGetValue(action.Id, out var cached)) return cached;
-        var inner = action.CurrentBinding is { } b ? b.ToString() : "unbound";
+        var inner = action.CurrentBinding is { } b ? b.ToString() : _loc.T("hotkeys.unbound");
         var label = $"[ {inner} ]";
         _bindingLabelCache[action.Id] = label;
         return label;

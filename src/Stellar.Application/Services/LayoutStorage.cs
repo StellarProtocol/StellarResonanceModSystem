@@ -178,7 +178,31 @@ internal sealed class LayoutStorage
         if (_slots[slot].Windows.Remove(windowId)) PersistSlots();
     }
 
-    public void Save(int slot, string windowId, Resolution resolution, WindowRect rect, bool visible)
+    /// <summary>The anchor offset saved with this window's layout (exact resolution first, else the closest one within
+    /// delta — an offset is resolution-independent), and whether a LEGACY exact-resolution save (no offset: saved before
+    /// 2.22.0, or by a path that does not know the anchor) is all there is.</summary>
+    public bool TryGetAnchorOffset(int slot, string windowId, Resolution resolution, out (float X, float Y) offset, out bool legacyExact)
+    {
+        offset = default;
+        legacyExact = false;
+        if (!InRange(slot) || !_slots[slot].Windows.TryGetValue(windowId, out var perRes)) return false;
+        if (perRes.TryGetValue(resolution.Key, out var exact))
+        {
+            if (exact.Anchor is { } a) { offset = a; return true; }
+            legacyExact = true;
+            return false;
+        }
+        var closest = FindClosestResolution(perRes.Keys, resolution);
+        if (closest is { } k && perRes.TryGetValue(k, out var c) && c.Anchor is { } ca) { offset = ca; return true; }
+        return false;
+    }
+
+    public void Save(int slot, string windowId, Resolution resolution, WindowRect rect, bool visible) =>
+        Save(slot, windowId, resolution, new WindowState(rect, visible, null));
+
+    /// <summary>Saves a window's rect, visibility and (2.22.0) anchor offset (<see cref="AnchoredPlacement.OffsetOf"/>,
+    /// design units).</summary>
+    public void Save(int slot, string windowId, Resolution resolution, WindowState state)
     {
         if (!InRange(slot))
         {
@@ -192,7 +216,7 @@ internal sealed class LayoutStorage
             perRes = new Dictionary<string, WindowState>();
             slotData.Windows[windowId] = perRes;
         }
-        perRes[resolution.Key] = new WindowState(rect, visible);
+        perRes[resolution.Key] = state;
         PersistSlots();
     }
 
@@ -333,13 +357,17 @@ internal sealed class LayoutStorage
             var w = _section.Get($"{baseKey}.w", 0f);
             var h = _section.Get($"{baseKey}.h", 0f);
             var v = _section.Get($"{baseKey}.visible", true);
+            // 2.22.0 sidecar (rollback-safe: older builds read x/y/w/h only and ignore these keys).
+            (float, float)? anchor = _section.Get($"{baseKey}.anc", false)
+                ? (_section.Get($"{baseKey}.ax", 0f), _section.Get($"{baseKey}.ay", 0f))
+                : null;
 
             if (!result.TryGetValue(windowId, out var perRes))
             {
                 perRes = new Dictionary<string, WindowState>();
                 result[windowId] = perRes;
             }
-            perRes[resKey] = new WindowState(new WindowRect(x, y, w, h), v);
+            perRes[resKey] = new WindowState(new WindowRect(x, y, w, h), v, anchor);
         }
         return result;
     }
@@ -367,6 +395,10 @@ internal sealed class LayoutStorage
                     _section.Set($"{baseKey}.w",       state.Rect.Width);
                     _section.Set($"{baseKey}.h",       state.Rect.Height);
                     _section.Set($"{baseKey}.visible", state.Visible);
+                    // Always written, so a later save without an offset clears a stale one (anc=false).
+                    _section.Set($"{baseKey}.anc",     state.Anchor is not null);
+                    _section.Set($"{baseKey}.ax",      state.Anchor?.X ?? 0f);
+                    _section.Set($"{baseKey}.ay",      state.Anchor?.Y ?? 0f);
                 }
             }
         }
@@ -381,5 +413,6 @@ internal sealed class LayoutStorage
         public Dictionary<string, Dictionary<string, WindowState>> Windows { get; set; } = new();
     }
 
-    private readonly record struct WindowState(WindowRect Rect, bool Visible);
+    /// <summary><paramref name="Anchor"/> = the anchor offset in design units (2.22.0); null = a legacy / anchor-less save.</summary>
+    internal readonly record struct WindowState(WindowRect Rect, bool Visible, (float X, float Y)? Anchor);
 }

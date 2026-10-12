@@ -57,7 +57,9 @@ public sealed partial class BootstrapPlugin
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap
         // pushes decoded GetSocialDataReply records into.
-        _socialDataCache = new SocialDataCache();
+        // Location stamps read the interpolated server clock off CombatService, which is built just below
+        // (and needs this cache) — the lambda defers the read, so the construction order is unchanged.
+        _socialDataCache = new SocialDataCache(() => _combatService?.ServerNowMs ?? 0L);
         // Generic profile-card action registry: plugins register buttons (write side); the native-card
         // injector reads the registered set (IProfileCardActionSource) and injects one per action per open.
         _profileCardActions = new ProfileCardActionRegistry();

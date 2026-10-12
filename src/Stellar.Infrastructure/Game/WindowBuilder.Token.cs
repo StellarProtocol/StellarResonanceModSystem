@@ -146,12 +146,20 @@ internal sealed partial class WindowBuilder
         /// A shared OS dynamic font (WindowThemeAssets.MenuFont) repacks its atlas when a text-heavy panel
         /// requests many new glyphs; Text built earlier (incl. hidden tabs) keeps stale UVs → garbled glyphs
         /// until refreshed. uGUI auto-refreshes ENABLED tracked text, but hidden-tab text isn't — so we force
-        /// ALL of them (GetComponentsInChildren(true) catches title/buttons/labels not in the binding lists).</summary>
-        public void RefreshFontTexture()
+        /// ALL of them (GetComponentsInChildren(true) catches title/buttons/labels not in the binding lists).
+        /// Only Text on the rebuilt font <paramref name="f"/> is touched — windows hold Text on more than one
+        /// dynamic font (MenuFont, and ConfigureText's builtin for HudOverlay text), each with its OWN atlas.
+        /// Returns how many Text were refreshed (diagnostic log).</summary>
+        public int RefreshFontTexture(Font f)
         {
-            if (Root == null) return;
+            if (Root == null) return 0;
             var texts = Root.GetComponentsInChildren<Text>(true);
-            for (var i = 0; i < texts.Length; i++) { try { texts[i].FontTextureChanged(); } catch { } }
+            var n = 0;
+            for (var i = 0; i < texts.Length; i++)
+            {
+                try { if (texts[i].font == f) { texts[i].FontTextureChanged(); n++; } } catch { }
+            }
+            return n;
         }
 
         /// <summary>Destroy native textures the GameObject teardown won't reclaim (the ColorPicker SV/hue

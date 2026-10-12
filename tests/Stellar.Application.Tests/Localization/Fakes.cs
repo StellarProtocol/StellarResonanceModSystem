@@ -7,6 +7,16 @@ namespace Stellar.Application.Tests.Localization;
 internal sealed class FakeProbe : IClientLanguageProbe
 {
     public string SupportedLanguage { get; set; } = "en";
+    public event System.Action? Changed;
+    public void RaiseChanged() => Changed?.Invoke();
+}
+
+/// <summary>Scripted raw game read: <see cref="Index"/> is what the game's static currently holds.</summary>
+internal sealed class FakeLanguageReader : IClientLanguageReader
+{
+    public int Index { get; set; } = -1;
+    public int Reads { get; private set; }
+    public int ReadLanguageIndex() { Reads++; return Index; }
 }
 
 internal sealed class FakeLog : IPluginLog

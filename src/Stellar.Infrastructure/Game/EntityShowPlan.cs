@@ -19,7 +19,8 @@ namespace Stellar.Infrastructure.Game;
 /// show). The game can reset the counters under us; given the live count (<c>ZEntityMgr.getHideCount</c> for the photo
 /// source, see <see cref="HideTypeFor"/>), a held type whose count reads 0 is re-hidden exactly once and gets no show
 /// at release (a show there could cancel a hold someone took after the reset). An unreadable count (null) changes
-/// nothing. Pure — no Unity/game types — so it is unit-tested.
+/// nothing. Pure — no Unity/game types — so it is unit-tested. Since 2.20.0 one plan carries every world layer's types
+/// (<see cref="EntityShowTargets"/>), so two layers sharing a type (Self and SelfCharacter both use Oneself) hold it once.
 /// </summary>
 internal sealed class EntityShowPlan
 {
@@ -46,6 +47,17 @@ internal sealed class EntityShowPlan
     /// so this is exactly "a restore is still owed" for this plan even once its layer is no longer requested.</summary>
     public bool HoldsAny => _held.Count > 0;
 
+    /// <summary>True while <paramref name="type"/> is one WE hid and haven't shown back.</summary>
+    public bool Holds(int type) => _held.Contains(type);
+
+    /// <summary>True while we hold a type <paramref name="target"/> no longer wants — a failed show-back still owed.</summary>
+    public bool HoldsAnyOutside(IReadOnlyList<int> target) => _held.Any(t => !target.Contains(t));
+
+    /// <summary>True while a player-group type (Stranger 6 / Chum 2 / Team 3 / Union 4) is held without the master
+    /// switch 11: who is shown then depends on live relations (party, friends, guild), so a change needs a refresh.</summary>
+    public bool HoldsRelationHide =>
+        !_held.Contains(OtherPlayer) && _held.Any(t => t is Stranger or Chum or Union or EntityShowTargets.Team);
+
     /// <summary><c>EntityRenderLayerHideType</c> behind a camera type, or null when not measured (the hold-count check
     /// is then skipped for it — bookkeeping only).</summary>
     public static int? TryHideTypeFor(int cameraType) => cameraType switch
@@ -55,9 +67,35 @@ internal sealed class EntityShowPlan
         Union => 3,         // Union
         OtherPlayer => 7,   // OtherPlayer
         SelfPet => 12,      // SelfPet — measured 2026-10-03 (owner client: "holds after Self … SelfPet(12)=1")
-        // Oneself (1) keeps no ETakePhotos counter (same measurement), so it stays unmapped: bookkeeping only.
+        // Measured on the owner's MAIN client 2026-10-07 ("[PhotoVis] holds after entity write …", one switch at a time)
+        // AND read from the native SetEntityShow switch table (0x184255334): the counter each type moves.
+        EntityShowTargets.FriendlyNpcs => 1,   // Npc
+        EntityShowTargets.Enemy => 2,          // Monster
+        EntityShowTargets.Team => 4,           // Team
+        EntityShowTargets.Collection => 9,     // Collection
+        EntityShowTargets.OtherPet => 13,      // OtherPet
+        // Oneself (1) and WeaponsAppearance (10) keep no ETakePhotos counter: per-entity flags (see IsFlagType).
         _ => null,
     };
+
+    /// <summary>True for the camera types that are an on/off BIT on the local player, not a counter: Oneself (1) =
+    /// <c>ZEntityHelper.setVisible</c>'s per-source bit, WeaponsAppearance (10) = <c>WeaponComp.ChangeWeaponVisible</c>'s
+    /// EPhoto alpha (native SetEntityShow cases 0x184254E61 / 0x1842550FB). A second hide does not stack and any show —
+    /// the game's own camera-exit reset included — clears ours, so they are re-written on every re-assert
+    /// (<see cref="RewriteHeldFlags"/>); re-writing a set bit is idempotent.</summary>
+    public static bool IsFlagType(int cameraType) => cameraType is Oneself or EntityShowTargets.WeaponsAppearance;
+
+    /// <summary>Re-issues the hide of every flag type (<see cref="IsFlagType"/>) that <paramref name="target"/> wants and
+    /// this plan holds — the game's photo-screen exit, a scene change or a re-created local player can clear the bit
+    /// without touching any counter. Counter types are never re-written here (that would stack a second hold). Returns
+    /// how many writes succeeded; bookkeeping is unchanged.</summary>
+    public int RewriteHeldFlags(IReadOnlyList<int> target, Func<int, bool, bool> write)
+    {
+        var written = 0;
+        foreach (var type in target)
+            if (IsFlagType(type) && _held.Contains(type) && write(type, false)) written++;
+        return written;
+    }
 
     /// <summary>
     /// <c>Panda.ZGame.EntityRenderLayerHideType</c> that <c>CameraFrameCtrl.SetEntityShow(cameraType, …)</c> drives

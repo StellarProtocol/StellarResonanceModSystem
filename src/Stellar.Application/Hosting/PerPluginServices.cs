@@ -45,6 +45,9 @@ internal sealed class PerPluginServices : IPluginServices
     private readonly IPluginDownloads? _downloads;
     // Per-plugin ReShade uniform overrides (removed on unload). Null in a bare test host — falls back to the shared.
     private readonly IReShadeUniforms? _reShadeUniforms;
+    // Owner-tagged launcher (records which plugin registered which tile). Null in a bare test host — falls back
+    // to the shared, untagged launcher.
+    private readonly ILauncher? _launcher;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -63,6 +66,7 @@ internal sealed class PerPluginServices : IPluginServices
         _freeCam = scope.FreeCamera;
         _downloads = scope.Downloads;
         _reShadeUniforms = scope.ReShadeUniforms;
+        _launcher = scope.Launcher;
     }
 
     public IPluginConfig Config { get; }
@@ -95,7 +99,7 @@ internal sealed class PerPluginServices : IPluginServices
     public INamedTheme NamedTheme => _shared.NamedTheme;
     public INativeUiHost NativeUi => _shared.NativeUi;
     public IWindowHost Windows => _shared.Windows;
-    public ILauncher Launcher => _shared.Launcher;
+    public ILauncher Launcher => _launcher ?? _shared.Launcher;
     public IGameAssets GameAssets => _shared.GameAssets;
     public IResonanceState Resonance => _shared.Resonance;
     public IGameDataResonance ResonanceData => _shared.ResonanceData;
@@ -153,4 +157,5 @@ internal readonly record struct PerPluginScope(
     ITimeOfDay? TimeOfDay = null,
     FreeCameraScope? FreeCamera = null,
     IPluginDownloads? Downloads = null,
-    IReShadeUniforms? ReShadeUniforms = null);
+    IReShadeUniforms? ReShadeUniforms = null,
+    ILauncher? Launcher = null);

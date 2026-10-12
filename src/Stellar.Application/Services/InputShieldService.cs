@@ -33,6 +33,8 @@ internal sealed class InputShieldService : IInputShield
 
     public bool IsShielded { get; private set; }
 
+    public bool IsPointerOverGameUi => _reader.PointerOverGameUi;
+
     /// <summary>True while the pause block layer is requested (the world is paused).</summary>
     internal bool PauseBlocked => _pauseBlock;
 

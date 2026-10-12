@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
+using Stellar.Infrastructure.Game.Protobuf;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -12,9 +13,12 @@ namespace Stellar.Infrastructure.Game;
 /// </summary>
 internal sealed partial class PandaCombatStubProbe
 {
-    private void DiagBuffEvents(long entityUuid, IReadOnlyList<ActiveBuff> upserts, IReadOnlyList<int> removes)
+    private void DiagBuffEvents(long entityUuid, BuffEventBatch batch)
     {
         if (!StellarDiagnostics.IsEnabled) return;
+        DiagBuffTrace(entityUuid, batch.Trace);
+        IReadOnlyList<ActiveBuff> upserts = batch.Upserts;
+        IReadOnlyList<int> removes = batch.Removes;
         if (upserts.Count == 0 && removes.Count == 0) return;
         _log.Info($"[CooldownBar][diag] buff events entity={entityUuid} local={_localEntityIdValue} +{upserts.Count} -{removes.Count}");
         for (int i = 0; i < upserts.Count; i++)
@@ -24,5 +28,18 @@ internal sealed partial class PandaCombatStubProbe
         }
         for (int i = 0; i < removes.Count; i++)
             _log.Info($"[CooldownBar][diag]   -uuid={removes[i]}");
+    }
+
+    // Raw per-BuffEffect view (type 2 = Remove, 6 = RemoveLayer; payload 18 = AddBuff, 19 = BuffChange) — what the
+    // server actually sent, before the reader decided upsert vs remove.
+    private void DiagBuffTrace(long entityUuid, IReadOnlyList<BuffEffectTrace>? trace)
+    {
+        if (trace is null) return;
+        for (int i = 0; i < trace.Count; i++)
+        {
+            var t = trace[i];
+            _log.Info($"[CooldownBar][diag]   raw entity={entityUuid} type={t.Type} uuid={t.BuffUuid} payload={t.PayloadKind} " +
+                      $"payloadUuid={t.PayloadUuid} layer={t.Layer} dur={t.DurationMs} create={t.CreateTimeMs}");
+        }
     }
 }

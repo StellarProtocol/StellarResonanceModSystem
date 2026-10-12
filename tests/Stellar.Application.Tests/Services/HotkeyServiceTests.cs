@@ -240,6 +240,45 @@ public sealed class HotkeyServiceTests
         Assert.Single(((IHotkeyDirectory)svc).Actions);
     }
 
+    // 2.20.0 (Photo Studio FOV hotkeys, player request "FOV Slider"): plugins get the level query the framework's own
+    // hold-to-hide-HUD already used, through their per-plugin IHotkeys view.
+    [Fact]
+    public void PerPluginHotkeys_IsActionHeld_ForwardsTheLevelStateWithExactModifiers()
+    {
+        var input = new FakeInputGateway();
+        var svc = new HotkeyService(input, new NullLog());
+        IHotkeys scoped = new PerPluginHotkeys("photostudio", svc);
+        scoped.DeclareAction(new HotkeyAction("photostudio.fovin", "FOV in", new KeyBinding(StellarKeyCode.RightBracket)), () => { });
+
+        Assert.False(scoped.IsActionHeld("photostudio.fovin"));
+        input.Hold(StellarKeyCode.RightBracket);
+        Assert.True(scoped.IsActionHeld("photostudio.fovin"));
+        input.SetModifiers(ModifierKeys.Shift);
+        Assert.False(scoped.IsActionHeld("photostudio.fovin"));   // Shift+] is a different chord
+        input.SetModifiers(ModifierKeys.None);
+        input.Release(StellarKeyCode.RightBracket);
+        Assert.False(scoped.IsActionHeld("photostudio.fovin"));
+        Assert.False(scoped.IsActionHeld("photostudio.undeclared"));
+    }
+
+    [Fact]
+    public void Bracket_and_backslash_keys_carry_unity_keycode_values() =>
+        Assert.Equal((91, 92, 93), ((int)StellarKeyCode.LeftBracket, (int)StellarKeyCode.Backslash, (int)StellarKeyCode.RightBracket));
+
+    [Fact]
+    public void A_bracket_binding_fires_on_press_and_round_trips_through_config_by_name()
+    {
+        var input = new FakeInputGateway();
+        var svc = new HotkeyService(input, new NullLog());
+        var hits = 0;
+        svc.DeclareAction(new HotkeyAction("fov.out", "FOV out", new KeyBinding(StellarKeyCode.LeftBracket)), () => hits++);
+        input.Press(StellarKeyCode.LeftBracket);
+        svc.Tick();
+        Assert.Equal(1, hits);
+        Assert.Equal("LeftBracket", new KeyBinding(StellarKeyCode.LeftBracket).ToString());
+        Assert.Equal(StellarKeyCode.Backslash, System.Enum.Parse<StellarKeyCode>("Backslash"));
+    }
+
     // Test doubles
     private sealed class FakeInputGateway : IInputGateway
     {

@@ -105,6 +105,7 @@ public sealed partial class BootstrapPlugin
         _pluginDownloadProgress?.Drain();      // download progress — drained BEFORE the resume below (fix round 2, N2)
         _frameGrabber?.DrainQueuedResumes();  // photo capture: a late resume completes here, on the main thread
         TickReShade();                         // IReShade poll/diff/publish — guarded (Wiring.ReShade)
+        _clientLanguage?.DrainPendingChange(); // client language latched by a game signal → LanguageChanged here (flag check)
     }
 
     // Extracted so RunFrameworkTick stays under the 50-LoC analyzer limit (STELLAR0002).
@@ -245,7 +246,7 @@ public sealed partial class BootstrapPlugin
         // release restores the pre-hold state (HUD stays hidden if it was toggle-hidden, shows again if it wasn't).
         if (_hotkeyService is { } hk)
         {
-            var held = hk.IsActionHeld("framework.hud-hold");
+            var held = hk.IsActionHeld(Stellar.Application.Services.FrameworkHotkeyIds.HudHold);
             if (held != _hudHoldActive)
             {
                 if (held) { _hudHoldSavedKill = Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill; Stellar.Abstractions.Diagnostics.PerfControls.MasterHudKill = true; }

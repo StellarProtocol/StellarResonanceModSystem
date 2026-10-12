@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
@@ -102,8 +103,8 @@ internal sealed partial class ThemeEditorBody
                 new TextElement(() => LabelAt(idx)),
                 new SpacerElement(),
                 new TextElement(() => HexAt(idx), () => _theme.Colors.TextMuted),
-                new ButtonElement(() => _expandedSlotKey == KeyAt(idx) && KeyAt(idx).Length > 0 ? "▾" : "Edit", () => ToggleExpandAt(idx)),
-                new ButtonElement(() => IsSystemAt(idx) ? "Reset" : "Remove", () => RemoveAt(idx), Enabled: () => HasOverrideAt(idx)),
+                new ButtonElement(() => _expandedSlotKey == KeyAt(idx) && KeyAt(idx).Length > 0 ? "▾" : _text.T("common.edit"), () => ToggleExpandAt(idx)),
+                new ButtonElement(() => IsSystemAt(idx) ? _text.T("common.reset") : _text.T("common.remove"), () => RemoveAt(idx), Enabled: () => HasOverrideAt(idx)),
             });
             slots[i] = new ConditionalElement(() => ShowInMainList(idx), row);
         }
@@ -170,18 +171,30 @@ internal sealed partial class ThemeEditorBody
     private int SlotRowCount() => System.Math.Min(_overrides.SlotCount, MaxSlots);
 
     // Cache the slot list — IThemeOverrides.Slots allocates a fresh List + a record per slot on every call,
-    // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh only when the registered
-    // count changes (late plugin registration), so the steady-state poll allocates nothing here.
+    // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh when the registered count
+    // changes (late plugin registration) OR Revision changes (a Relabel — e.g. a language switch — never
+    // changes the count, so SlotCount alone would miss it), so the steady-state poll allocates nothing here.
     private System.Collections.Generic.IReadOnlyList<ColorSlotInfo>? _slotCache;
     private int _slotCacheCount = -1;
+    private int _slotCacheRevision = -1;
     private ColorSlotInfo? SlotAt(int i)
     {
-        if (_overrides.SlotCount != _slotCacheCount) { _slotCache = _overrides.Slots; _slotCacheCount = _overrides.SlotCount; }
+        // Lazy, RENDER-driven initial relabel (see ColorReg's doc, ThemeEditorBody.cs): SlotAt is reachable
+        // only when this editor's own Funcs are pulled by WindowService, which never happens while the
+        // Settings window is hidden — so this relabel's first client-language read runs only AFTER the
+        // player has actually opened Settings, not merely after some tick count since boot.
+        if (!_colorLabelsRelabeled) { RelabelFrameworkColors(); _colorLabelsRelabeled = true; }
+        if (SlotCacheRefresh.ShouldRefresh(_overrides.SlotCount, _overrides.Revision, _slotCacheCount, _slotCacheRevision))
+        {
+            _slotCache = _overrides.Slots;
+            _slotCacheCount = _overrides.SlotCount;
+            _slotCacheRevision = _overrides.Revision;
+        }
         var list = _slotCache;
         return list != null && i >= 0 && i < list.Count ? list[i] : null;
     }
     private string KeyAt(int i) => SlotAt(i)?.Key ?? "";
-    private string LabelAt(int i) => SlotAt(i) is { } s ? $"{s.Owner} · {s.Label}" : "";
+    private string LabelAt(int i) => SlotAt(i) is { } s ? $"{OwnerDisplay(s.Owner)} · {s.Label}" : "";
     private string HexAt(int i) => KeyAt(i) is { Length: > 0 } k ? ToHex(_overrides.Resolve(k)) : "";
     private ColorRgba ColorAt(int i) => KeyAt(i) is { Length: > 0 } k ? _overrides.Resolve(k) : new ColorRgba(0f, 0f, 0f, 0f);
     private bool IsSystemAt(int i) => SlotAt(i)?.Owner == SystemOwner;

@@ -17,8 +17,9 @@ internal sealed partial class LayoutEditorOverlay
             if (!e.IsResolved) continue;   // incl. hidden (don't skip !Visible) — keep a dimmed re-enable outline
             var color = _editor.SelectedWindowId == e.Descriptor.Id ? OutlineSelected : OutlineUnselected;
             // Live rect (not the resolve-time snapshot) so the outline tracks the element's current size/position.
+            var name = _text?.T(e.Descriptor.DisplayNameKey) ?? e.Descriptor.DisplayNameKey;
             items.Add(new Stellar.Infrastructure.Game.EditChromeItem(
-                _nativeUi.GetLiveRect(e), color, $"[Game UI] {e.Descriptor.DisplayName}",
+                _nativeUi.GetLiveRect(e), color, $"[Game UI] {name}",
                 e.Descriptor.Id, e.Visible, e.Descriptor.SafeToHide, Resizable: false));
         }
     }
