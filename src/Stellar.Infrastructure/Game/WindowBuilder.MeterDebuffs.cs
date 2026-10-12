@@ -145,7 +145,8 @@ internal sealed partial class WindowBuilder
         var btn = cell.Root.AddComponent<Button>();
         btn.targetGraphic = cell.Frame;
         btn.transition = Selectable.Transition.None;
-        System.Action onClick = () => el.Data().OnDebuffClick?.Invoke(el.Data().Id, index);
+        DisableKeyboardNav(btn);
+        System.Action onClick = () => { el.Data().OnDebuffClick?.Invoke(el.Data().Id, index); ClearSelectionAfterClick(); };
         btn.onClick.AddListener((UnityEngine.Events.UnityAction)onClick);
     }
 

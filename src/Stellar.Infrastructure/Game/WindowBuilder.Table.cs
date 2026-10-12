@@ -42,7 +42,10 @@ internal sealed partial class WindowBuilder
         if (_assets.SwatchBg != null) { bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; }
         bg.raycastTarget = true;
         var btn = go.AddComponent<Button>(); btn.targetGraphic = bg; btn.transition = Selectable.Transition.None;
-        var onClick = sel.OnClick; btn.onClick.AddListener((UnityAction)(() => onClick()));
+        DisableKeyboardNav(btn);
+        // Release the EventSystem selection after the click so a clicked row doesn't linger as
+        // currentSelectedGameObject (which makes the game route WASD into chat instead of movement).
+        var onClick = sel.OnClick; btn.onClick.AddListener((UnityAction)(() => { onClick(); ClearSelectionAfterClick(); }));
 
         // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h); CSF sizes the row
         // height to content (same combo as BuildTile).

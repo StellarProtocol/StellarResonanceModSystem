@@ -74,7 +74,8 @@ internal sealed partial class WindowBuilder
         img.color = new Color(0f, 0f, 0f, 0f);   // invisible but raycastable
         img.raycastTarget = true;
         var btn = go.AddComponent<Button>(); btn.targetGraphic = img; btn.transition = Selectable.Transition.None;
-        btn.onClick.AddListener((UnityAction)CloseDropdown);
+        DisableKeyboardNav(btn);
+        btn.onClick.AddListener((UnityAction)(() => { CloseDropdown(); ClearSelectionAfterClick(); }));
         go.transform.SetAsLastSibling();
         return go;
     }
@@ -146,9 +147,10 @@ internal sealed partial class WindowBuilder
         if (_assets.SwatchBg != null) { bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; }
         bg.raycastTarget = true;
         var btn = go.AddComponent<Button>(); btn.targetGraphic = bg; btn.transition = Selectable.Transition.None;
+        DisableKeyboardNav(btn);   // list hover/selection is ticker-driven (_registerHover), NOT EventSystem focus — safe to kill nav
         var rest = active ? SelOn() : SelRest();
         bg.color = rest;   // override the white that Button.OnEnable snapped to before we set Transition.None
-        btn.onClick.AddListener((UnityAction)(() => onPick()));
+        btn.onClick.AddListener((UnityAction)(() => onPick()));   // onPick already calls ClearSelectionAfterClick (see BuildDropdownPanel)
         _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { if (bg != null) bg.color = on ? SelHover() : rest; });
         var vlg = go.AddComponent<VerticalLayoutGroup>();
         vlg.padding = new RectOffset(6, 6, 4, 4); vlg.spacing = 0f;

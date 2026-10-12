@@ -94,7 +94,9 @@ internal sealed partial class WindowBuilder
         cle.preferredWidth = tile.Width; cle.minWidth = tile.Width; cle.flexibleWidth = 0f;
         var hit = cell.AddComponent<Image>(); hit.color = new Color(0f, 0f, 0f, 0f); hit.raycastTarget = true;
         var btn = cell.AddComponent<Button>(); btn.targetGraphic = hit; btn.transition = Selectable.Transition.None;
-        var onClick = tile.OnClick; btn.onClick.AddListener((UnityAction)(() => onClick()));
+        DisableKeyboardNav(btn);
+        // Clear the EventSystem selection after the click so a clicked tile doesn't keep keyboard focus (WASD → chat).
+        var onClick = tile.OnClick; btn.onClick.AddListener((UnityAction)(() => { onClick(); ClearSelectionAfterClick(); }));
         // Centring layout for icon (+ label). childControlWidth=false so the icon keeps its square size.
         var vlg = cell.AddComponent<VerticalLayoutGroup>();
         vlg.childAlignment = TextAnchor.MiddleCenter; vlg.spacing = 3f;
@@ -221,7 +223,8 @@ internal sealed partial class WindowBuilder
             last = p; init = true;
         } });
         var btn = go.AddComponent<Button>(); btn.targetGraphic = raw; btn.transition = Selectable.Transition.None;
+        DisableKeyboardNav(btn);
         var toggle = tile.OnTogglePin;
-        if (toggle != null) btn.onClick.AddListener((UnityAction)(() => toggle()));
+        if (toggle != null) btn.onClick.AddListener((UnityAction)(() => { toggle(); ClearSelectionAfterClick(); }));
     }
 }
