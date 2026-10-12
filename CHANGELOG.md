@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.22.1] - 2026-10-12
+_**2.22.1** (patch) — clicking a mod window's buttons no longer steals your keyboard; no API change, no plugin rebuild._
+### Fixed
+- After clicking a button or row in a mod window, WASD moves your character again instead of typing into the chat box.
+### Developer notes
+- Every window click path now calls `ClearSelectionAfterClick()` (already used by the base Button/Toggle): `BuildSelectable`, `BuildTile` + pin-star toggle, the dropdown blocker, both chrome close buttons, the cooldown-tile clicker, and the meter voice/debuff cells. A clicked uGUI `Button` used to stay `EventSystem.current.currentSelectedGameObject`, and the game routes keyboard input to UI/chat while a uGUI object is selected (the launcher rail already handled this via `ClearRailSelection`).
+- Window Buttons also get `Navigation.Mode.None` (`DisableKeyboardNav`) against arrow/d-pad focus; that alone does not stop pointer-click selection. `UGuiTextInput` is untouched — text fields legitimately hold focus. PR #124.
+
 ## [2.22.0] - 2026-10-10
 _**2.22.0** (minor) — fixes window text that could occasionally turn into garbled letters, keeps centred / edge-anchored windows in place across resolutions and width changes, and lets a free camera leave clicks on the game's own windows to the game (`IInputShield.IsPointerOverGameUi`, Abstractions 2.22.0; additive, no plugin rebuild)._
 ### Added
