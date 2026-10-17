@@ -216,6 +216,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         ConstructResonanceData(log, typeRegistry);
         WireRenderQuality(log); // render quality + time of day; before WirePhotoStudio (capture takes the scale guard)
         WireReShade(log);       // IReShade + bridge; before WirePhotoStudio (capture draws through the bridge)
+        WireVoiceInjection(log);// IVoiceInjection shared mixer; before WireGameEventsAndPluginHost (feeds the aggregator)
         WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
         WireFreeCamera(log);    // free-camera services; needs _photoMode (release on the game's camera mode / cutscene)
         WireGameEventsAndPluginHost(log, configFactory);
@@ -291,6 +292,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallPhotoModeHooks(hooker);
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
+        InstallVoiceCaptureHook(log);                   // native DirectSound capture hook (before login's GCloudVoice_Init)
     }
 
     // Always-on band tone relay (2-repo feature; sender half is the Maestro plugin). Listener-side prefix on

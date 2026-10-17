@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.23.0] - 2026-10-18
+_**2.23.0** (minor) — mods can now play sound into team voice, mixed with your mic. Adds API for plugins (`IVoiceInjection`, Abstractions 2.23.0); additive, no plugin rebuild._
+### Added
+- Mods can now play audio — a sound file or generated speech — into your outgoing team voice, mixed in with your microphone so teammates hear both. Several mods (and several sounds at once) can play together.
+- A mod playing music into team voice can keep it clear by turning off voice noise-reduction while it plays; your normal voice settings come back automatically when it stops.
+### Developer notes
+- New API (additive): `IPluginServices.Voice` → `IVoiceInjection` (`Available`, `Status`, `LoadFileAsync(path)` WAV natively / MP3/WMA/M4A via Media Foundation, `LoadPcm(ReadOnlySpan<short>, rate, channels)` for TTS/generated audio, `CreateSource()` → `IVoiceSource?`, `SetUplinkPolicy(disableNoiseSuppression?, disableAgc?, disableVad?, bitRateBps?)`); `IVoiceSource` (`Clip`/`Volume`/`Loop`/`Playing`/`Position`, `Play`/`Stop`/`PlayOnce`); `IVoiceClip` (`Duration`); the `VoiceInjectionStatus` record. XML-documented (CS1591).
+- Backed by a process-wide native DirectSound capture hook on `GCloudVoice.dll` (IAT slot `+0x6190D8` = DSOUND ordinal 6 `DirectSoundCaptureCreate` → `CreateCaptureBuffer` +0x18 → capture-buffer `Lock` +0x40), promoted into `Stellar.Infrastructure.Game` from the in-game-validated StellarExperimentPlugin single-clip prototype and generalised to a fixed 16-source allocation-free mixer. The `Lock` hook runs on GVoice's native capture thread (no alloc/lock/log/IL2CPP, whole-body try/catch, always returns the original HRESULT). Installed at boot from `BootstrapPlugin.ApplyLifecyclePatches` (title screen, before login's `GCloudVoice_Init`), mirroring `InstallInstrumentToneRelay`; a `ProbeInstall` fallback (opens the mic briefly) covers hot-reload late attach and is surfaced via `Status`, not the public API. Clips keep their source PCM and are re-resampled to the live capture format off-thread; the uplink DSP (`GCloudVoice_invoke` NS/AGC/VAD + `GCloudVoice_SetBitRate`) is applied while any source plays and restored when all stop, driven from a main-thread maintainer on the framework Update tick. Sources a plugin creates are auto-disposed on plugin teardown (`PluginVoiceInjection`, mirroring `IHarmonyHost`). DLL offsets are pinned to `GCloudVoice.dll 4.3.0.253999397`; guards fail safe (no patch, logged) on a version change. See `docs/design/framework-2.23-voice-injection.md` and KB `Voice-Chat-GVoice.md`.
+
 ## [2.22.1] - 2026-10-12
 _**2.22.1** (patch) — clicking a mod window's buttons no longer steals your keyboard; no API change, no plugin rebuild._
 ### Fixed

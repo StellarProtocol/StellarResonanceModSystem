@@ -37,7 +37,7 @@ The framework uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (s
 
 | Change | Version part | Examples |
 |---|---|---|
-| New public API in Abstractions | minor | 2.10.0 (`ILoadoutSave`), 2.11.0 (`EntityBuffsSeeded`, `SpecChanged`, `TryGetTalentSpec`) |
+| New public API in Abstractions | minor | 2.10.0 (`ILoadoutSave`), 2.11.0 (`EntityBuffsSeeded`, `SpecChanged`, `TryGetTalentSpec`), 2.23.0 (`IVoiceInjection`, `IVoiceSource`, `IVoiceClip`, `VoiceInjectionStatus`) |
 | Fixes and internal changes, no API change | patch | 2.8.5 (hotkey list ordering) |
 | Breaking change | major | Avoid; see above |
 

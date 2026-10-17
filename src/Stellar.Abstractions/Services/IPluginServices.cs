@@ -162,4 +162,7 @@ public interface IPluginServices
     /// <summary>ReShade uniform overrides — hold an effect setting at a value in every ReShade runtime (bridge 1.1.0+).
     /// See <see cref="IReShadeUniforms"/>.</summary>
     IReShadeUniforms ReShadeUniforms { get; }
+    /// <summary>Play audio into the game's OUTGOING team-voice stream (mixed with the live mic) via a shared
+    /// multi-source mixer; sources this plugin creates are auto-disposed on unload. See <see cref="IVoiceInjection"/>.</summary>
+    IVoiceInjection Voice { get; }
 }
