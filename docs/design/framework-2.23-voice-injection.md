@@ -276,9 +276,21 @@ slot only if it still holds our pointer, so a chained hook is left intact). Rest
 
 ## 7. Migration map (Experiment Voice Inject → API consumer, Phase 2)
 
-Experiment keeps its **Voice Inject window** (a control/diagnostics UI) but the engine moves to the framework:
-- **Delete** from the plugin: `VoiceCaptureHook.cs`, `VoiceCaptureHook.Mix.cs`, `VoiceNative.cs`, `VoiceDsp.cs`,
-  `AudioDecoder.cs`, `AudioDecoder.MediaFoundation.cs`.
+Experiment keeps its **Voice Inject window** (a control/diagnostics UI) but the engine moves to the framework.
+
+> ⚠️ **What's actually deletable depends on the branch — the shared files are the trap.** The migration was done
+> on `enhance/mechanic-alerts`, where **Mechanic Callouts' local speaker playback (`MechAudioPlayer.cs`,
+> `Plugin.MechanicAlerts.cs`) still decodes files via `AudioDecoder`**, and `AudioDecoder.MediaFoundation.cs` in
+> turn depends on the **MF/COM helpers in `VoiceNative.cs`**. So on that branch only three files are injection-only
+> and safe to delete; `AudioDecoder*.cs` and `VoiceNative.cs` must stay. (On a hypothetical main-based migration
+> with no Mechanic Callouts, all six could go — but verify consumers each time, don't trust this list.)
+
+- **Delete** (injection-only): `VoiceCaptureHook.cs`, `VoiceCaptureHook.Mix.cs`, `VoiceDsp.cs`.
+- **Keep** `AudioDecoder.cs` + `AudioDecoder.MediaFoundation.cs` (used by Mechanic Callouts local playback) and
+  `VoiceNative.cs` (its MF/COM helpers back the retained MP3 decoder; its DirectSound-only helpers become dead but
+  compile standalone). **Also remove the now-dead `AudioDecoder.Convert(...)`/`Sample(...)`** — it returned the
+  deleted `VoiceClip` and had no caller once the plugin stopped doing its own capture-format conversion (the
+  framework owns that). Leaving it in is the compile break this migration actually hit.
 - **Rewrite** `Plugin.VoiceInject.cs` / `Plugin.VoiceInject.Dsp.cs` to consume `_services.Voice`: one
   `IVoiceSource` for the loaded file; Load → `LoadFileAsync`; Play/Stop/Loop/Volume → source members; the DSP
   toggles + bitrate dropdown → one `SetUplinkPolicy(...)` call; status rows → `Status`. The deferred
