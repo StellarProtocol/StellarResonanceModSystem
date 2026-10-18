@@ -170,28 +170,6 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
-    /// Lazily cache the chat <c>ZTcpClient</c> instance from the first inbound
-    /// envelope that carries one. <see cref="_chatTcpClient"/> is the outbound
-    /// send target for <see cref="IChat.Send"/>. Single-set semantics under
-    /// <see cref="_chatTcpClientLock"/>; subsequent calls are no-ops.
-    /// </summary>
-    /// <param name="label">Optional suffix appended to the boot log (e.g.
-    /// <c>" (via method=3 path)"</c> distinguishes which notify path captured
-    /// the client). Null = no suffix.</param>
-    private void CacheChatTcpClient(WireEnvelope env, string? label)
-    {
-        if (_chatTcpClient is not null || env.Connection is null) return;
-        lock (_chatTcpClientLock)
-        {
-            if (_chatTcpClient is null)
-            {
-                _chatTcpClient = env.Connection;
-                _log.Info($"[ChatProbe] cached chat ZTcpClient instance ({env.Connection.GetType().FullName}) for outbound send{label ?? string.Empty}");
-            }
-        }
-    }
-
-    /// <summary>
     /// Record (<paramref name="chatMsg"/>.SenderId → <paramref name="chatMsg"/>.Channel)
     /// in <see cref="_senderLastChannel"/> so the history-batch refinement
     /// heuristic on <c>.History.cs</c> can attribute the correct channel to

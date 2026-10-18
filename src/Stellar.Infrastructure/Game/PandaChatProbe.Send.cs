@@ -14,6 +14,7 @@ namespace Stellar.Infrastructure.Game;
 /// <item><c>Send.Builders.cs</c> — packet/envelope construction + byte writers.</item>
 /// <item><c>Send.Il2Cpp.cs</c> — managed-byte[] to IL2CPP ReadOnlySpan&lt;byte&gt; coercion.</item>
 /// <item><c>Send.Hooks.cs</c> — ProxyCall + ZTcpClient.Send PREFIX installation and handlers.</item>
+/// <item><c>Send.Connection.cs</c> — cached chat ZTcpClient lifetime: re-cache on reconnect, close PREFIXes, handle liveness check.</item>
 /// </list>
 /// </summary>
 internal sealed partial class PandaChatProbe
@@ -41,10 +42,10 @@ internal sealed partial class PandaChatProbe
     private bool _firstProxyCallObservedLogged;
 
     // Cached chat-server ZTcpClient instance, captured from env.Connection on
-    // the FIRST chat packet observed (in OnChatNotifyEnvelope / OnChatMethod3-
-    // Envelope). Lives as an opaque object because the ZTcpClient type is only
-    // available via reflection at runtime. Written-once, read on any thread
-    // invoking IChat.Send — synchronized via _chatTcpClientLock.
+    // chat packets (in OnChatNotifyEnvelope / OnChatMethod3Envelope). Lives as
+    // an opaque object because the ZTcpClient type is only available via
+    // reflection at runtime. Re-cached when the game reconnects and nulled when
+    // the game closes it — see Send.Connection.cs. Synchronized via _chatTcpClientLock.
     private object? _chatTcpClient;
     private readonly object _chatTcpClientLock = new();
 
@@ -99,13 +100,21 @@ internal sealed partial class PandaChatProbe
             return false;
         }
 
+        // Local snapshot taken under the lock + native-handle liveness check.
+        // Sending through a closed/disposed ZTcpClient passes a freed native
+        // handle → access violation that kills the game (uncatchable here).
+        if (!TryTakeLiveChatClient(out var client, out failureReason))
+        {
+            return false;
+        }
+
         try
         {
             // Convert managed byte[] -> Il2CppSystem.ReadOnlySpan<byte> for the
             // reflection Invoke. Resolved lazily on first call.
             object spanArg = WrapBytesAsIl2CppSpan(frame.Packet);
 
-            _tcpClientSend!.Invoke(_chatTcpClient, new object[] { spanArg });
+            _tcpClientSend!.Invoke(client, new object[] { spanArg });
 
             if (!_firstSendLogged)
             {
