@@ -146,7 +146,13 @@ internal sealed partial class WindowService
         rect = Reanchor(e.Reg.Spec, rect);   // 2.22.0: anchored windows re-placed from their anchor offset
         _renderer.SetRect(e.Token, rect);
         e.LastRect = e.LastSavedRect = rect;
-        if (applyVisibility && !visible) e.SetVisible(false);   // honour a persisted hide (TickEntry destroys next tick)
+        // Bidirectional on an applyVisibility apply (mount / reset / slot switch): restore BOTH directions, not
+        // just hide. A slot switch carries its own persisted show/hide, so switching from a slot that hid this
+        // window back to one where it's visible must SHOW it again — Get() returns visible=true for a slot with no
+        // saved entry (or one marked shown), and SetVisible(true) is a no-op when already shown, so this never
+        // force-renders (ShouldRender still gates the actual mount in TickEntry). The applyVisibility==false path
+        // (resolution-change reapply) never reaches here — it repositions only and leaves current visibility.
+        if (applyVisibility) e.SetVisible(visible);   // TickEntry mounts/destroys next tick to match
     }
 
     // Persist once after a drag settles: the rect is unchanged since last tick (drag stopped) AND differs
