@@ -83,7 +83,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // starts Visible=false, never mounts, and never enters the fragile one-shot restore race in ApplySavedRect.
         var start = reg.Spec.StartVisible;
         if (start && _storage != null && _resolution != null
-            && _storage.IsPersistedHidden(_storage.ActiveSlot, reg.Spec.Id, _resolution()))
+            && StorageIsPersistedHidden(reg.Spec, _resolution()))
             start = false;
         var e = new Entry(reg) { Owner = this, OwnerPluginId = ownerId }.Init(start); _windows[reg.Spec.Id] = e; return e;
     }

@@ -34,7 +34,48 @@ internal sealed partial class WindowService
     // ReapplyLayout only READS _storage.Get downstream (never mutates the slot list), so it can't re-fire
     // SlotsChanged — no feedback loop. Rename / add / remove on the SAME active slot re-read the same slot = no
     // visible change; a remove that shifts the active slot correctly follows to the new one.
-    private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true);
+    // skipSlotIndependent:true — a slot-independent window's layout does NOT belong to any slot, so a slot switch
+    // must neither reposition nor re-assert its visibility (that is owned by the edit-mode ShowToolbar/HideToolbar;
+    // re-applying a persisted "visible" here would fight those). The resolution-change reapply (ServiceTick) leaves
+    // this false so those windows still reposition from their global bucket on a res/scale change.
+    private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true, skipSlotIndependent: true);
+
+    // Route a window's layout read/write to the slot-INDEPENDENT global bucket when its spec opts in (framework
+    // chrome like the layout-edit toolbar), else to the active slot. One dispatch point per storage op so no
+    // read/write path can silently drift back to slot-keyed (the coverage trap). Every caller has already
+    // null-checked _storage / _resolution, so the `!` suppressions are sound.
+    private (WindowRect Rect, bool Visible) StorageGet(WindowSpec spec, Resolution res, WindowRect fallback, float scale)
+        => spec.SlotIndependentLayout
+            ? _storage!.GetGlobal(spec.Id, res, fallback, scale)
+            : _storage!.Get(_storage.ActiveSlot, spec.Id, res, fallback, scale);
+
+    private void StorageSave(WindowSpec spec, Resolution res, LayoutStorage.WindowState state)
+    {
+        if (spec.SlotIndependentLayout) _storage!.SaveGlobal(spec.Id, res, state);
+        else _storage!.Save(_storage!.ActiveSlot, spec.Id, res, state);
+    }
+
+    private void StorageSave(WindowSpec spec, Resolution res, WindowRect rect, bool visible)
+    {
+        if (spec.SlotIndependentLayout) _storage!.SaveGlobal(spec.Id, res, rect, visible);
+        else _storage!.Save(_storage!.ActiveSlot, spec.Id, res, rect, visible);
+    }
+
+    private void StorageRemove(WindowSpec spec)
+    {
+        if (spec.SlotIndependentLayout) _storage!.RemoveGlobal(spec.Id);
+        else _storage!.Remove(_storage!.ActiveSlot, spec.Id);
+    }
+
+    private bool StorageIsPersistedHidden(WindowSpec spec, Resolution res)
+        => spec.SlotIndependentLayout
+            ? _storage!.IsPersistedHiddenGlobal(spec.Id, res)
+            : _storage!.IsPersistedHidden(_storage.ActiveSlot, spec.Id, res);
+
+    private bool StorageTryGetAnchorOffset(WindowSpec spec, Resolution res, out (float X, float Y) offset, out bool legacyExact)
+        => spec.SlotIndependentLayout
+            ? _storage!.TryGetAnchorOffsetGlobal(spec.Id, res, out offset, out legacyExact)
+            : _storage!.TryGetAnchorOffset(_storage.ActiveSlot, spec.Id, res, out offset, out legacyExact);
 
     /// <summary>Layout-editor "Reset" for a mod window: drop its saved override and re-place it at the
     /// (on-screen-clamped) DefaultRect. No-ops if the id isn't a registered/mounted window, so the editor can
@@ -43,7 +84,7 @@ internal sealed partial class WindowService
     {
         if (!_windows.TryGetValue(id, out var e)) return;
         e.SetVisible(true);                          // reset restores default visibility (shown)
-        if (_storage != null) _storage.Remove(_storage.ActiveSlot, id);
+        if (_storage != null) StorageRemove(e.Reg.Spec);
         if (e.Token != null) ApplySavedRect(e);      // re-place if mounted; a hidden one mounts+places next tick
     }
 
@@ -68,12 +109,15 @@ internal sealed partial class WindowService
     //     show/hide (the game owns show/hide during a transition, and a res change isn't a user layout action).
     //   • slot switch (ReapplyForSlotChange) → applyVisibility:true: a slot carries its own saved show/hide, and
     //     switching slots is an explicit user action, so honour the new slot's persisted visibility.
-    internal void ReapplyLayout(bool applyVisibility = false)
+    internal void ReapplyLayout(bool applyVisibility = false, bool skipSlotIndependent = false)
     {
         foreach (var kv in _windows)
         {
             var e = kv.Value;
             if (e.Removed || e.Token == null) continue;
+            // Slot-switch path passes skipSlotIndependent:true — a slot-independent window's layout isn't part of
+            // any slot, so a slot change leaves it exactly where it is. The res-change path leaves this false.
+            if (skipSlotIndependent && e.Reg.Spec.SlotIndependentLayout) continue;
             ApplySavedRect(e, applyVisibility);
         }
     }
@@ -142,7 +186,7 @@ internal sealed partial class WindowService
             e.LastRect = e.LastSavedRect = fallback;
             return;
         }
-        var (rect, visible) = _storage.Get(_storage.ActiveSlot, e.Reg.Spec.Id, _resolution(), fallback, CanvasScale);
+        var (rect, visible) = StorageGet(e.Reg.Spec, _resolution(), fallback, CanvasScale);
         rect = Reanchor(e.Reg.Spec, rect);   // 2.22.0: anchored windows re-placed from their anchor offset
         _renderer.SetRect(e.Token, rect);
         e.LastRect = e.LastSavedRect = rect;

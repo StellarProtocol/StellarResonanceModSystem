@@ -137,6 +137,14 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// The override child simply opts ITSELF out of sibling-order z; every other window's z-order is untouched.</summary>
     public int? OverrideSortingOrder { get; init; }
 
+    /// <summary>When true this window's position and visibility persist in a single resolution-keyed bucket
+    /// INDEPENDENT of the active layout slot: switching layout slots never moves or re-hides it, and its dragged
+    /// position is remembered per-resolution across the whole session rather than per slot. Used by framework chrome
+    /// like the layout-edit toolbar, whose own placement must be global (one position across all slots) because it is
+    /// not part of any saved player arrangement. Null/false (default) = normal per-slot layout. Init-only →
+    /// binary-safe (no plugin rebuild).</summary>
+    public bool SlotIndependentLayout { get; init; }
+
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
     /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window
     /// is being drawn.</summary>

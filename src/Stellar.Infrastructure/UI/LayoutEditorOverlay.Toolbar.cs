@@ -66,6 +66,11 @@ internal sealed partial class LayoutEditorOverlay
                 Draggable = true,
                 Anchor = WindowAnchor.Top,
                 OverrideSortingOrder = ToolbarOverrideSortingOrder,
+                // The toolbar's own position is GLOBAL, not part of any layout slot: switching slots in the toolbar's
+                // own dropdown must never move or re-hide the toolbar. SlotIndependentLayout persists its drag in a
+                // single resolution-keyed bucket and excludes it from the slot-switch reapply (it still repositions
+                // from that bucket on a resolution change). Its visibility is owned by ShowToolbar/HideToolbar.
+                SlotIndependentLayout = true,
             };
             _toolbarWindow = _windows.Register(new WindowRegistration(spec, BuildToolbarRoot()));
         }
