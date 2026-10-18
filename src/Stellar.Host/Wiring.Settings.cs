@@ -91,8 +91,25 @@ public sealed partial class BootstrapPlugin
     private void AttachOverlayLayout()
     {
         System.Func<Resolution> res = () => _inputGateway?.CurrentResolution ?? new Resolution(1920, 1080);
+        // WindowService subscribes LayoutStorage.SlotsChanged itself inside AttachLayout (it holds the storage),
+        // so mod windows reapply on a slot switch from either entry point.
         _windowService?.AttachLayout(_layoutStorage!, res);
+        // The native game HUD has no resolution provider of its own, so subscribe it HERE (composition root) with
+        // a closure that supplies the current resolution — keeps NativeUiService free of a resolution dependency.
+        // applyVisibility:true: a slot switch is an explicit user action (matches the old toolbar
+        // ReapplyForActiveSlot call that omitted the flag → defaulted true). ReapplyForActiveSlot only reads the
+        // active slot + config and pushes to the adapter (through the SetRect idempotent guard), so it never
+        // re-fires SlotsChanged — no feedback loop. The -= before += keeps re-wiring idempotent.
+        if (_layoutStorage is not null)
+        {
+            _layoutStorage.SlotsChanged -= ReapplyNativeUiForSlotChange;
+            _layoutStorage.SlotsChanged += ReapplyNativeUiForSlotChange;
+        }
     }
+
+    private void ReapplyNativeUiForSlotChange()
+        => _nativeUi?.ReapplyForActiveSlot(_inputGateway?.CurrentResolution ?? new Resolution(1920, 1080),
+                                           applyVisibility: true);
 
     // The native-uGUI multi-tab Settings hub: a GlassMenu window with an icon+label tab strip + a Conditional
     // body showing each panel's Describe() tree, wired to the SAME services as the (now-retired) IMGUI panels.

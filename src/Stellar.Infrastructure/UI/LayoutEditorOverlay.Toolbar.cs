@@ -119,10 +119,10 @@ internal sealed partial class LayoutEditorOverlay
     private void SwitchToSlot(int slotIndex)
     {
         if (slotIndex == _storage.ActiveSlot) return;
+        // SetActiveSlot fires LayoutStorage.SlotsChanged; the composition root subscribes BOTH the native game HUD
+        // (NativeUiService.ReapplyForActiveSlot) and the mod windows (WindowService.ReapplyLayout) to it, so a slot
+        // switch reapplies the whole screen arrangement from one place — no explicit per-call-site reapply here.
         _storage.SetActiveSlot(slotIndex);
-        // A layout slot captures the whole screen arrangement, so move the game HUD to this slot's saved
-        // native positions too (Phase 9a editor). uGUI windows/HUDs reapply via their own services.
-        _nativeUi?.ReapplyForActiveSlot(_input.CurrentResolution);
         _log.Info($"[LayoutEditor] switched to slot {slotIndex} ({_storage.GetSlotName(slotIndex)})");
     }
 

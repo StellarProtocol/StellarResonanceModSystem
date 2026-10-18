@@ -17,9 +17,24 @@ internal sealed partial class WindowService
 
     public void AttachLayout(LayoutStorage storage, Func<Resolution> resolution)
     {
+        // Re-attach safety: drop a prior storage's subscription first so the handler neither leaks nor
+        // double-applies on a slot change if AttachLayout is ever called more than once.
+        if (_storage is not null) _storage.SlotsChanged -= ReapplyForSlotChange;
         _storage = storage;
         _resolution = resolution;
+        // A layout slot captures the whole screen arrangement, so a slot switch must re-place the mod windows
+        // from the now-active slot (SlotsChanged fires on SetActiveSlot, and on an add/remove that shifts the
+        // active slot). This is the single source of truth — every entry point (toolbar + Settings→Layout panel)
+        // routes through SetActiveSlot, so neither call site needs its own reapply.
+        _storage.SlotsChanged += ReapplyForSlotChange;
     }
+
+    // SlotsChanged handler: re-place every mounted window from the active slot AND apply its saved visibility
+    // (applyVisibility:true) — a slot switch is an explicit user action, like the old toolbar native-reapply call.
+    // ReapplyLayout only READS _storage.Get downstream (never mutates the slot list), so it can't re-fire
+    // SlotsChanged — no feedback loop. Rename / add / remove on the SAME active slot re-read the same slot = no
+    // visible change; a remove that shifts the active slot correctly follows to the new one.
+    private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true);
 
     /// <summary>Layout-editor "Reset" for a mod window: drop its saved override and re-place it at the
     /// (on-screen-clamped) DefaultRect. No-ops if the id isn't a registered/mounted window, so the editor can
@@ -46,16 +61,20 @@ internal sealed partial class WindowService
         }
     }
 
-    // Reload the saved layout for the CURRENT resolution for every mounted window (called on a resolution change).
-    // ApplySavedRect reads _resolution() + _storage.Get, so it picks up the new resolution's bucket (or the
-    // anchor-resolved DefaultRect fallback) and SetRect clamps it on-screen.
-    internal void ReapplyLayout()
+    // Reload the saved layout for the CURRENT resolution for every mounted window. ApplySavedRect reads
+    // _resolution() + _storage.Get, so it picks up the current resolution's bucket (or the anchor-resolved
+    // DefaultRect fallback) and SetRect clamps it on-screen. Two callers:
+    //   • resolution change (ServiceTick) → applyVisibility:false (the DEFAULT): reposition only, never toggle
+    //     show/hide (the game owns show/hide during a transition, and a res change isn't a user layout action).
+    //   • slot switch (ReapplyForSlotChange) → applyVisibility:true: a slot carries its own saved show/hide, and
+    //     switching slots is an explicit user action, so honour the new slot's persisted visibility.
+    internal void ReapplyLayout(bool applyVisibility = false)
     {
         foreach (var kv in _windows)
         {
             var e = kv.Value;
             if (e.Removed || e.Token == null) continue;
-            ApplySavedRect(e, applyVisibility: false);   // res change repositions but never toggles show/hide
+            ApplySavedRect(e, applyVisibility);
         }
     }
 
