@@ -176,7 +176,8 @@ internal sealed partial class LayoutEditorOverlay
         var es = UnityEngine.EventSystems.EventSystem.current;
         if (es == null) return false;
         var (px, py) = _input.PointerPosition;
-        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, py) };
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
         _uiRaycastScratch.Clear();
         es.RaycastAll(ped, _uiRaycastScratch);
         for (var i = 0; i < _uiRaycastScratch.Count; i++)
@@ -205,7 +206,8 @@ internal sealed partial class LayoutEditorOverlay
         var es = UnityEngine.EventSystems.EventSystem.current;
         if (es == null) return false;
         var (px, py) = _input.PointerPosition;
-        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, py) };
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
         _uiRaycastScratch.Clear();
         es.RaycastAll(ped, _uiRaycastScratch);
         for (var i = 0; i < _uiRaycastScratch.Count; i++)
