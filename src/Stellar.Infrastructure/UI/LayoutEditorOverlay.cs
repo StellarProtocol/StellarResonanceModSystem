@@ -184,11 +184,22 @@ internal sealed partial class LayoutEditorOverlay
         return false;
     }
 
-    // True when the pointer is over the layout toolbar specifically — a hit on its override-sorting canvas
-    // (ToolbarOverrideSortingOrder). Narrower than IsPointerOverUgui on purpose: that one is true over ANY
-    // interactive mod window (>= 32755), which would wrongly block selecting those windows in edit mode; this
-    // one fires only for the toolbar, so a press on the bar's buttons / empty drag area is fully consumed by it
-    // (no eye-toggle, no window-select, no native-grab underneath). Reuses the per-press raycast scratch buffer.
+    // True when the pointer is over the layout toolbar specifically. Narrower than IsPointerOverUgui on purpose:
+    // that one is true over ANY interactive mod window (>= 32755), which would wrongly block selecting those
+    // windows in edit mode; this one fires only for the toolbar, so a press on the bar's buttons / empty drag
+    // area is fully consumed by it (no eye-toggle, no window-select, no native-grab underneath). Reuses the
+    // per-press raycast scratch buffer.
+    //
+    // Identifies the toolbar by HIERARCHY, not by sorting-order number, on purpose — do NOT "optimize" this
+    // back to a `sortingOrder >= ToolbarOverrideSortingOrder` filter. The toolbar draws on a NESTED
+    // overrideSorting Canvas (WindowSpec.OverrideSortingOrder = 32759, applied in WindowRenderer.Mount), but
+    // RaycastResult.sortingOrder for a graphic on a nested overrideSorting canvas does NOT reliably report that
+    // nested order — it reports the shared parent window canvas's order (32755). So a sorting-order threshold
+    // never matched the toolbar's own hit, IsPointerOverToolbar returned false, and a plain click on the bar
+    // still fell through to TrySelectWindow and selected the element underneath. Walking up the hit's parents
+    // for the toolbar window's GameObject name is robust regardless of what order the nested canvas reports.
+    // The toolbar root is created via UGuiPrimitives.NewRect(spec.Id, ...), so its GameObject name equals
+    // WindowBuilder.LayoutToolbarWindowId.
     private bool IsPointerOverToolbar()
     {
         var es = UnityEngine.EventSystems.EventSystem.current;
@@ -198,7 +209,12 @@ internal sealed partial class LayoutEditorOverlay
         _uiRaycastScratch.Clear();
         es.RaycastAll(ped, _uiRaycastScratch);
         for (var i = 0; i < _uiRaycastScratch.Count; i++)
-            if (_uiRaycastScratch[i].sortingOrder >= ToolbarOverrideSortingOrder) return true;
+        {
+            var go = _uiRaycastScratch[i].gameObject;
+            if (go == null) continue;
+            for (var t = go.transform; t != null; t = t.parent)
+                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId) return true;
+        }
         return false;
     }
 
