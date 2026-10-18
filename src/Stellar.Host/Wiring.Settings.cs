@@ -76,6 +76,8 @@ public sealed partial class BootstrapPlugin
         // Display-only plugin names = each plugin's own (localized) launcher tile title, else its internal name.
         var names = new PluginDisplayNames(_launcher!, log);
         if (_localizationEngine != null) _localizationEngine.LanguageChanged += names.ForgetRemembered;
+        // The layout editor's per-plugin filter captions each plugin by this same (localized) name.
+        _windowService?.SetDisplayNames(names);
         return new SettingsPanelSet
         {
             Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },

@@ -51,6 +51,10 @@ internal sealed class PerPluginServices : IPluginServices
     // Per-plugin voice-injection façade (tracks sources this plugin created, disposes them on unload). Null in a
     // bare test host — falls back to the shared mixer service.
     private readonly IVoiceInjection? _voice;
+    // Owner-tagged window host (records which plugin registered which window → the layout editor's per-plugin
+    // filter). Null in a bare test host whose shared Windows doesn't expose the sink — falls back to the shared,
+    // untagged host.
+    private readonly IWindowHost? _windows;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -71,6 +75,7 @@ internal sealed class PerPluginServices : IPluginServices
         _reShadeUniforms = scope.ReShadeUniforms;
         _launcher = scope.Launcher;
         _voice = scope.Voice;
+        _windows = scope.Windows;
     }
 
     public IPluginConfig Config { get; }
@@ -102,7 +107,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IHotkeys Hotkeys => _hotkeys ?? _shared.Hotkeys;
     public INamedTheme NamedTheme => _shared.NamedTheme;
     public INativeUiHost NativeUi => _shared.NativeUi;
-    public IWindowHost Windows => _shared.Windows;
+    public IWindowHost Windows => _windows ?? _shared.Windows;
     public ILauncher Launcher => _launcher ?? _shared.Launcher;
     public IGameAssets GameAssets => _shared.GameAssets;
     public IResonanceState Resonance => _shared.Resonance;
@@ -164,4 +169,5 @@ internal readonly record struct PerPluginScope(
     IPluginDownloads? Downloads = null,
     IReShadeUniforms? ReShadeUniforms = null,
     ILauncher? Launcher = null,
-    IVoiceInjection? Voice = null);
+    IVoiceInjection? Voice = null,
+    IWindowHost? Windows = null);

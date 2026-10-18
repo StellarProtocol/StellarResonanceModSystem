@@ -151,7 +151,16 @@ public sealed record TextAreaElement(Func<string> Get, Action<string> OnChange, 
 /// <param name="OnSelect">Invoked with the picked option's index.</param>
 /// <param name="Width">Fixed trigger width in px; 0 → sized to the current caption like a normal button.</param>
 public sealed record DropdownElement(
-    Func<int> Selected, Func<IReadOnlyList<string>> Options, Action<int> OnSelect, float Width = 0f) : HudElement;
+    Func<int> Selected, Func<IReadOnlyList<string>> Options, Action<int> OnSelect, float Width = 0f) : HudElement
+{
+    /// <summary>Maximum option rows shown before the floating list becomes vertically scrollable: when the live
+    /// option count exceeds this, the popup height is capped at about this many rows and a themed thin scrollbar
+    /// (the same one <see cref="ScrollElement"/> uses) appears. <c>0</c> (default) = unlimited — the list grows to
+    /// fit every option exactly as before, so existing dropdowns are unchanged. An <c>init</c> property (NOT a
+    /// primary-ctor parameter) so the record stays source AND binary compatible with already-compiled plugins —
+    /// see WindowBuilder-Patterns.md "Binary compatibility rules for HudElement records".</summary>
+    public int MaxVisibleRows { get; init; }
+}
 
 /// <summary>Vertical scroll viewport (fixed <paramref name="Height"/>) wrapping a child subtree + a themed
 /// thin scrollbar.</summary>

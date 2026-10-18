@@ -149,6 +149,7 @@ internal sealed partial class LayoutEditorOverlay
     {
         foreach (var el in _windows!.EditableElements())   // incl. hidden (dimmed re-enable outline)
         {
+            if (!WindowOwnerMatchesFilter(el.Id)) continue;   // per-plugin filter: only the selected plugin's windows
             var colour = _editor.SelectedWindowId == el.Id ? OutlineSelected : OutlineUnselected;
             items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide, el.Resizable));
         }
@@ -270,6 +271,7 @@ internal sealed partial class LayoutEditorOverlay
         if (_windows is null) return false;
         foreach (var (id, rect) in _windows.EditableRects())
         {
+            if (!WindowOwnerMatchesFilter(id)) continue;   // per-plugin filter: don't select another plugin's window
             if (!rect.Contains(px, py)) continue;
             _editor.SelectWindow(id);
             return true;

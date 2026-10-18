@@ -19,12 +19,23 @@ internal sealed partial class LayoutEditorOverlay
     private WindowService? _windows;        // bound late via SetWindows (concrete: editor enumerates its overlay windows)
     private IWindowControl? _toolbarWindow; // the uGUI toolbar window; registered lazily on first edit-enter
 
-    // Edit-mode element-type filter (Phase 9a). All = Stellar windows + game UI; Stellar-only / GameUi-only
-    // suppress the other category's outlines + click hit-tests. Read by ShouldOutlineStellar / ShouldOutlineGameUi.
-    private enum EditFilter { All = 0, StellarOnly = 1, GameUiOnly = 2 }
+    // Edit-mode element filter (Phase 9a + per-plugin). All = Stellar windows + game UI; StellarOnly / GameUiOnly
+    // suppress the other category; Plugin restricts the Stellar side to ONE plugin's windows (no game UI). Read by
+    // ShouldOutlineStellar / ShouldOutlineGameUi for the category gate, and WindowOwnerMatchesFilter for the
+    // per-plugin narrowing applied in both outlines (AddWindowServiceItems) and click-select (TrySelectWindow).
+    private enum EditFilter { All = 0, StellarOnly = 1, GameUiOnly = 2, Plugin = 3 }
     private EditFilter _editFilter = EditFilter.All;
+    private string? _filterPluginGuid;   // the selected plugin's guid while _editFilter == Plugin
+    // Plugin mode still outlines Stellar windows (narrowed to the one plugin), so the Stellar side stays on unless
+    // GameUiOnly; the game-UI side shows only in All / GameUiOnly (never while a specific plugin is selected).
     private bool ShouldOutlineStellar => _editFilter != EditFilter.GameUiOnly;
-    private bool ShouldOutlineGameUi  => _editFilter != EditFilter.StellarOnly;
+    private bool ShouldOutlineGameUi  => _editFilter is EditFilter.All or EditFilter.GameUiOnly;
+
+    /// <summary>Per-plugin narrowing for the Stellar side: true unless a specific plugin is selected AND this
+    /// window isn't owned by it. Applied on top of <see cref="ShouldOutlineStellar"/> in both the outline build
+    /// and the click-select so only that plugin's windows highlight/select/drag.</summary>
+    private bool WindowOwnerMatchesFilter(string windowId)
+        => _editFilter != EditFilter.Plugin || (_windows != null && _windows.OwnerOf(windowId) == _filterPluginGuid);
 
     /// <summary>Bind the framework window service so the toolbar can register itself + the editor can outline
     /// the overlay/status windows (composition root passes the concrete WindowService).</summary>
@@ -80,9 +91,9 @@ internal sealed partial class LayoutEditorOverlay
             new SpacerElement(),
             new TextElement(() => _text!.T("layout.toolbar.heading"), () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
             new SpacerElement(10f),
-            FilterChip(() => _text!.T("hotkeys.filter.all"), EditFilter.All),
-            FilterChip(() => "Stellar", EditFilter.StellarOnly),   // brand name — kept English in every language
-            FilterChip(() => _text!.T("tab.gameui"), EditFilter.GameUiOnly),
+            // One dropdown replaces the 3 filter chips: << All >>, << Stellar >>, << Game UI >>, then one row per
+            // plugin that owns an editable window (friendly localized name). MaxVisibleRows caps + scrolls the list.
+            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 10 },
             new SpacerElement(10f),
             new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
         };
@@ -113,8 +124,57 @@ internal sealed partial class LayoutEditorOverlay
         return _text!.TFormat("layout.toolbar.selected", id);
     }
 
-    private HudElement FilterChip(System.Func<string> label, EditFilter filter)
-        => new ButtonElement(label, () => _editFilter = filter, Active: () => _editFilter == filter);
+    // The plugins that own an editable window, sorted by display name (WindowService sorts); indices here map to
+    // dropdown rows 3.. . Re-read live each poll so a plugin that registers/unloads mid-session appears/vanishes.
+    private System.Collections.Generic.IReadOnlyList<(string Guid, string Name)> FilterPlugins()
+        => _windows?.EditableWindowPlugins() ?? System.Array.Empty<(string, string)>();
+
+    // Dropdown options built live: 0 = << All >>, 1 = << Stellar >>, 2 = << Game UI >>, then one row per plugin.
+    // Only the 3 specials get the << … >> decoration; plugin captions are the plain (already-localized) name.
+    private System.Collections.Generic.IReadOnlyList<string> FilterOptions()
+    {
+        var opts = new List<string>
+        {
+            "<< " + _text!.T("hotkeys.filter.all") + " >>",
+            "<< Stellar >>",                               // brand name — kept English in every language
+            "<< " + _text!.T("tab.gameui") + " >>",
+        };
+        foreach (var (_, name) in FilterPlugins()) opts.Add(name);
+        return opts;
+    }
+
+    // Current filter → selected dropdown index. A selected plugin that has since unloaded (not in the live list)
+    // falls back to index 1 (<< Stellar >> = all mod windows), the nearest still-valid meaning.
+    private int FilterSelectedIndex()
+    {
+        switch (_editFilter)
+        {
+            case EditFilter.All: return 0;
+            case EditFilter.StellarOnly: return 1;
+            case EditFilter.GameUiOnly: return 2;
+            default:
+                var plugins = FilterPlugins();
+                for (int i = 0; i < plugins.Count; i++)
+                    if (plugins[i].Guid == _filterPluginGuid) return 3 + i;
+                return 1;
+        }
+    }
+
+    // Dropdown pick → filter state. 0/1/2 = the specials (clear the plugin guid); 3.. selects that plugin.
+    private void OnFilterSelected(int index)
+    {
+        switch (index)
+        {
+            case 0: _editFilter = EditFilter.All; _filterPluginGuid = null; break;
+            case 1: _editFilter = EditFilter.StellarOnly; _filterPluginGuid = null; break;
+            case 2: _editFilter = EditFilter.GameUiOnly; _filterPluginGuid = null; break;
+            default:
+                var plugins = FilterPlugins();
+                var pi = index - 3;
+                if (pi >= 0 && pi < plugins.Count) { _editFilter = EditFilter.Plugin; _filterPluginGuid = plugins[pi].Guid; }
+                break;
+        }
+    }
 
     private void SwitchToSlot(int slotIndex)
     {
@@ -145,7 +205,7 @@ internal sealed partial class LayoutEditorOverlay
             foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
         if (ShouldOutlineStellar)
         {
-            if (_windows is not null) foreach (var (id, _) in _windows.EditableRects()) ids.Add(id);
+            if (_windows is not null) foreach (var (id, _) in _windows.EditableRects()) if (WindowOwnerMatchesFilter(id)) ids.Add(id);
         }
         foreach (var id in ids) ResetWindow(id);
         _log.Info($"[LayoutEditor] reset {ids.Count} elements to defaults");

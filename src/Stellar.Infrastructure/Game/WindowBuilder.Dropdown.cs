@@ -57,7 +57,7 @@ internal sealed partial class WindowBuilder
         if (canvasRoot == null) return;
 
         _openDropdownBlocker = BuildDropdownBlocker(canvasRoot);
-        _openDropdownPanel = BuildDropdownPanel(canvasRoot, anchor, opts, dd);
+        _openDropdownPanel = BuildDropdownPanel(canvasRoot, anchor, opts, dd, token);
 
         var blockerRt = _openDropdownBlocker.GetComponent<RectTransform>();
         RegisterDismissable?.Invoke(blockerRt, CloseDropdown);   // full-screen root → ticker fires on Escape only
@@ -81,8 +81,11 @@ internal sealed partial class WindowBuilder
     }
 
     // Themed option list (border + opaque lifted bg, mirroring BuildPanel) sized to its items, positioned under
-    // the trigger. Drawn after the blocker so it sits on top and its item buttons win the raycast.
-    private GameObject BuildDropdownPanel(Transform canvasRoot, WindowRect anchor, IReadOnlyList<string> opts, DropdownElement dd)
+    // the trigger. Drawn after the blocker so it sits on top and its item buttons win the raycast. When the live
+    // option count exceeds dd.MaxVisibleRows the item list is capped to that many rows and wrapped in a scrollable
+    // viewport (BuildScrollViewport + the SAME themed thin scrollbar BuildScroll uses); otherwise it keeps the
+    // grow-to-fit ContentSizeFitter behaviour exactly.
+    private GameObject BuildDropdownPanel(Transform canvasRoot, WindowRect anchor, IReadOnlyList<string> opts, DropdownElement dd, WindowToken token)
     {
         var panel = UGuiPrimitives.NewChild("DropdownPopup", canvasRoot);
         var prt = panel.GetComponent<RectTransform>();
@@ -101,10 +104,17 @@ internal sealed partial class WindowBuilder
         AddDropdownPanelChrome(panel.transform);
         var minW = Mathf.Max(anchor.Width, 80f);
         var selected = dd.Selected();
+
+        // Where the items live: directly on the panel (grow-to-fit), or inside a fixed-height scroll viewport when
+        // the list is capped. Both give each item a minW-wide SelectableElement row via BuildDropdownItem, unchanged.
+        var itemParent = dd.MaxVisibleRows > 0 && opts.Count > dd.MaxVisibleRows
+            ? BuildDropdownScroll(panel, minW, dd.MaxVisibleRows, token)
+            : panel.transform;
+
         for (var i = 0; i < opts.Count; i++)
         {
             var idx = i;   // capture per item for the pick closure
-            BuildDropdownItem(panel.transform, opts[i], i == selected, minW, () =>
+            BuildDropdownItem(itemParent, opts[i], i == selected, minW, () =>
             {
                 CloseDropdown();
                 try { dd.OnSelect(idx); }
@@ -116,6 +126,30 @@ internal sealed partial class WindowBuilder
         panel.transform.SetAsLastSibling();
         PositionDropdown(prt, anchor);
         return panel;
+    }
+
+    // Wrap the capped option list in a fixed-height scrollable viewport (BuildScrollViewport + the SAME themed thin
+    // scrollbar BuildScroll uses) and return the content transform the items parent into. The panel's own
+    // ContentSizeFitter still sizes it to minW (+ a 9px bar lane) × the capped height, so PositionDropdown's
+    // overflow-flip/clamp works against the real (capped) rect.
+    private Transform BuildDropdownScroll(GameObject panel, float minW, int cap, WindowToken token)
+    {
+        var itemH = Scaled(11) + 8f;                    // label + item VLG top/bottom padding (4+4, BuildDropdownItem)
+        var viewportH = cap * itemH + (cap - 1) * 1f;   // cap rows + the 1px inter-row spacing between them
+        var (_, content, _) = BuildScrollViewport(panel.transform, viewportH, token);
+        // BuildScrollViewport's Scroll host grows elastically; pin it so the panel's ContentSizeFitter resolves a
+        // definite width (minW + 9px bar lane) and the capped height instead of collapsing / absorbing slack.
+        var scrollLe = content.parent.parent.GetComponent<LayoutElement>();   // content → Viewport → Scroll
+        scrollLe.preferredWidth = minW + 9f; scrollLe.flexibleWidth = 0f; scrollLe.flexibleHeight = 0f;
+        // Content stacks the items + sizes to their total height so the ScrollRect can scroll (mirrors BuildScroll).
+        var clg = content.gameObject.AddComponent<VerticalLayoutGroup>();
+        clg.spacing = 1f; clg.padding = new RectOffset(0, 0, 0, 0);
+        clg.childControlWidth = true; clg.childControlHeight = true;
+        clg.childForceExpandWidth = true; clg.childForceExpandHeight = false; clg.childAlignment = TextAnchor.UpperLeft;
+        var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;   // width stays anchor-locked to the viewport
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        return content;
     }
 
     // Border + inset background, copied from BuildPanel (ignoreLayout stretched Images, transient → no reskin).
