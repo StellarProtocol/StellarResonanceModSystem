@@ -63,6 +63,10 @@ internal sealed partial class LayoutEditorOverlay
     // Layering: game UI (<32750) < blocker (32749) < HUD (32750) < Window/toolbar (32755) < chrome (32758).
     private const int EditBlockerSortingOrder = 32749;
     private const int InteractiveLayerMinOrder = 32755;
+    // The toolbar window renders on its own override-sorting canvas (WindowSpec.OverrideSortingOrder) at this
+    // absolute order — ABOVE the edit chrome (32758) so its buttons draw over the outlines, BELOW the top input
+    // blocker (32760). Shared by ShowToolbar (sets the spec) and IsPointerOverToolbar (the precise press guard).
+    private const int ToolbarOverrideSortingOrder = 32759;
     private readonly UGuiInputBlocker _editInputBlocker = new(EditBlockerSortingOrder);
 
     public LayoutEditorOverlay(LayoutEditorService editor, IInputGateway input,
@@ -128,7 +132,10 @@ internal sealed partial class LayoutEditorOverlay
     // and push it to the uGUI overlay. Runs each tick AFTER ProcessInput so outlines track an in-progress drag.
     private void SyncChrome()
     {
-        CenterToolbar();   // re-centre before pushing chrome, so a res / UI-scale change since registration re-lands centred
+        // No per-tick re-centre here anymore: the toolbar is a Draggable, Top-anchored window, so WindowService
+        // owns its placement — it restores a user-dragged position (persisted per-resolution) or falls back to a
+        // live top-centre via WindowAnchor.Top, and re-applies on a resolution / UI-scale change
+        // (ReclampLayoutOnResolutionChange → ReapplyLayout). Re-centring every tick would clobber a user drag.
         _chromeItems.Clear();
         if (ShouldOutlineStellar && _windows != null) AddWindowServiceItems(_chromeItems);
         if (ShouldOutlineGameUi) AddNativeUiItems(_chromeItems);
@@ -177,9 +184,33 @@ internal sealed partial class LayoutEditorOverlay
         return false;
     }
 
+    // True when the pointer is over the layout toolbar specifically — a hit on its override-sorting canvas
+    // (ToolbarOverrideSortingOrder). Narrower than IsPointerOverUgui on purpose: that one is true over ANY
+    // interactive mod window (>= 32755), which would wrongly block selecting those windows in edit mode; this
+    // one fires only for the toolbar, so a press on the bar's buttons / empty drag area is fully consumed by it
+    // (no eye-toggle, no window-select, no native-grab underneath). Reuses the per-press raycast scratch buffer.
+    private bool IsPointerOverToolbar()
+    {
+        var es = UnityEngine.EventSystems.EventSystem.current;
+        if (es == null) return false;
+        var (px, py) = _input.PointerPosition;
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, py) };
+        _uiRaycastScratch.Clear();
+        es.RaycastAll(ped, _uiRaycastScratch);
+        for (var i = 0; i < _uiRaycastScratch.Count; i++)
+            if (_uiRaycastScratch[i].sortingOrder >= ToolbarOverrideSortingOrder) return true;
+        return false;
+    }
+
     private void HandlePressed()
     {
         var (px, py) = _input.PointerPosition;
+        // Toolbar first: it now renders (and hit-tests) ABOVE the edit chrome via its override-sorting canvas and
+        // can be dragged over any element. A press on it belongs to the toolbar's own buttons / whole-frame drag —
+        // never toggle an element's eye, select a window, or grab a native HUD element underneath it. Uses the
+        // toolbar's EXACT override order (not the broad IsPointerOverUgui, which is also true over other mod windows
+        // and would wrongly block selecting THEM).
+        if (IsPointerOverToolbar()) return;
         // Eye icon first: clicking a component's eye toggles its visibility (and consumes the press — no
         // select/drag). The chrome owns the eye geometry (raycaster-less canvas → manual rect hit-test).
         if (_chrome.TryGetEyeHit(px, py, out var eyeId)) { ToggleVisibility(eyeId); return; }

@@ -120,6 +120,20 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         {
             var token = _builder.Build(reg, _canvasRoot);
             _tokens.Add(token);   // track for in-place re-skin on theme change
+            // Per-window override sorting (WindowSpec.OverrideSortingOrder): lift this window onto its OWN nested
+            // Canvas at an absolute sortingOrder, independent of the shared-canvas sibling z — so it can draw ABOVE
+            // sibling-ordered overlays on higher canvases (the layout-edit chrome at 32758) while staying below the
+            // top input blocker (32760). overrideSorting opts THIS child out of sibling-order z only; every other
+            // window still sorts by ReorderWindows' sibling index, so their z-order is untouched. The nested Canvas
+            // needs its own GraphicRaycaster or its widgets become un-hittable (the parent raycaster skips a child
+            // canvas) — the toolbar's buttons + whole-frame drag rely on it, and IsPointerOver* read its order.
+            if (reg.Spec.OverrideSortingOrder is { } so && token.Root != null)
+            {
+                var oc = token.Root.AddComponent<Canvas>();
+                oc.overrideSorting = true;
+                oc.sortingOrder = so;
+                token.Root.AddComponent<GraphicRaycaster>();
+            }
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
             // The dismiss runs OnClose — the same path the ✕ uses — so IsShown stays in sync.
             if (reg.Spec.DismissOnOutsideClick && reg.OnClose is { } onClose && _ticker != null && token.Rect != null)

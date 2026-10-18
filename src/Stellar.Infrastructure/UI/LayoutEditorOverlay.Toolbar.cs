@@ -35,35 +35,32 @@ internal sealed partial class LayoutEditorOverlay
     {
         if (_toolbarWindow == null && _windows != null)
         {
-            // GlassMenu chrome (ShowTitleBar=false) = frosted rounded panel, no title bar (Borderless is
-            // self-framed → no bg). Fixed width, top-centred on the current resolution (scale-aware, see
-            // ToolbarRect); flexible spacers centre the content within the panel.
+            // GlassMenu chrome (ShowTitleBar=false) = frosted rounded panel, no title bar; with ShowTitleBar=false
+            // + Draggable the WHOLE frame becomes the drag handle (BuildGlassChrome), so the user can reposition the
+            // bar by grabbing its empty/heading/spacer area while the slot/reset/exit BUTTONS still click normally
+            // (a zero-movement press never translates the window; a press+drag moves it — same model as the
+            // Borderless launcher). Width fixed at w; WindowAnchor.Top auto-places it top-CENTRED live for the
+            // current resolution + UI scale, and WindowService persists any drag PER-RESOLUTION (PersistIfSettled)
+            // and restores it on show (ApplySavedRect) — so no per-tick re-centre is needed or wanted (that would
+            // clobber a user drag). OverrideSortingOrder lifts the bar above the edit chrome (see the const).
             const float w = 1180f;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
-                ToolbarRect(w),
+                new WindowRect(0f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            // Framework chrome — hide over the loading screen; otherwise available in every phase. Not draggable:
-            // it's auto-centred chrome, so leaving it draggable would fight the per-tick re-center (CenterToolbar).
-            { ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0, StartVisible = false, ShowTitleBar = false, Draggable = false };
+            {
+                // Framework chrome — hide over the loading screen; otherwise available in every phase. EditModeDragOnly
+                // stays false (the bar only exists in edit mode → free drag is correct, and it stays out of the editor's
+                // own outlined/selectable set — EditableElements yields only EditModeDragOnly windows).
+                ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0,
+                StartVisible = false,
+                ShowTitleBar = false,
+                Draggable = true,
+                Anchor = WindowAnchor.Top,
+                OverrideSortingOrder = ToolbarOverrideSortingOrder,
+            };
             _toolbarWindow = _windows.Register(new WindowRegistration(spec, BuildToolbarRoot()));
         }
         _toolbarWindow?.SetVisible(true);
-    }
-
-    // Top-centre the toolbar in CANVAS UNITS: the window canvas is (res.Width / sf) units wide (sf = the
-    // CanvasScaler factor), and the bar is w canvas units. At sf==1 this is (res.Width - w)/2, unchanged.
-    private WindowRect ToolbarRect(float w)
-    {
-        var res = _input.CurrentResolution;
-        var sf = _windows?.CanvasScale ?? 1f;
-        return new WindowRect((res.Width / sf - w) / 2f, 12f, w, 0f);
-    }
-
-    // Re-centre each edit tick so a resolution or UI-scale change after registration still lands centred
-    // (windows are destroyed-on-hide + re-placed from the registration-time DefaultRect, which can go stale).
-    private void CenterToolbar()
-    {
-        if (_toolbarWindow is { IsShown: true } tw) tw.SetRect(ToolbarRect(1180f));
     }
 
     private void HideToolbar() => _toolbarWindow?.SetVisible(false);

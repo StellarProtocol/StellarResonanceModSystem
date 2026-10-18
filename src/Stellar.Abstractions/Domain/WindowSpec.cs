@@ -128,6 +128,15 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// Identity is <see cref="Id"/>, never the title.</summary>
     public Func<string>? TitleProvider { get; init; }
 
+    /// <summary>When set, the window renders on its OWN nested Canvas with <c>overrideSorting=true</c> at this
+    /// absolute <c>sortingOrder</c>, instead of taking its z from sibling order within the shared Stellar window
+    /// canvas. Use it to lift one window above overlays drawn on a HIGHER canvas than the window layer — e.g. the
+    /// layout editor's edit chrome (32758) — while keeping it below the top input blocker (32760). A
+    /// GraphicRaycaster is added on the nested canvas alongside, so the window stays hit-testable at the correct
+    /// order (a nested canvas is otherwise skipped by the parent raycaster). Null (default) = normal sibling-z.
+    /// The override child simply opts ITSELF out of sibling-order z; every other window's z-order is untouched.</summary>
+    public int? OverrideSortingOrder { get; init; }
+
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
     /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window
     /// is being drawn.</summary>
