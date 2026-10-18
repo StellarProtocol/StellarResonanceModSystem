@@ -221,6 +221,32 @@ internal sealed partial class LayoutEditorOverlay
         return false;
     }
 
+    // True when the pointer is over an OPEN dropdown popup or its full-screen blocker. Same hierarchy-walk raycast
+    // as IsPointerOverToolbar (and for the same reason — the popup's nested override-sorting canvas's order is NOT
+    // reported by RaycastResult, so match by GameObject NAME, never by a sorting-order threshold). The popup +
+    // blocker are canvas-root children named by WindowBuilder; while one is open the full-screen blocker is hit by
+    // every press, so this returns true for ANY press during an open dropdown — exactly the intent (every such
+    // press is a pick or a dismiss, never an editor select/drag). Reuses the per-press raycast scratch buffer.
+    private bool IsPointerOverDropdownPopup()
+    {
+        var es = UnityEngine.EventSystems.EventSystem.current;
+        if (es == null) return false;
+        var (px, py) = _input.PointerPosition;
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
+        _uiRaycastScratch.Clear();
+        es.RaycastAll(ped, _uiRaycastScratch);
+        for (var i = 0; i < _uiRaycastScratch.Count; i++)
+        {
+            var go = _uiRaycastScratch[i].gameObject;
+            if (go == null) continue;
+            for (var t = go.transform; t != null; t = t.parent)
+                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.DropdownPanelName ||
+                    t.name == Stellar.Infrastructure.Game.WindowBuilder.DropdownBlockerName) return true;
+        }
+        return false;
+    }
+
     private void HandlePressed()
     {
         var (px, py) = _input.PointerPosition;
@@ -230,6 +256,12 @@ internal sealed partial class LayoutEditorOverlay
         // toolbar's EXACT override order (not the broad IsPointerOverUgui, which is also true over other mod windows
         // and would wrongly block selecting THEM).
         if (IsPointerOverToolbar()) return;
+        // An OPEN dropdown popup (the toolbar's filter list) + its full-screen blocker are parented to the CANVAS
+        // ROOT, not under the toolbar GameObject, so IsPointerOverToolbar() above does NOT catch them. A press to
+        // pick an option (over the list) or to dismiss (over the blocker) must likewise be fully consumed here —
+        // otherwise the SAME press also falls through to TrySelectWindow / the native-grab and selects/drags the
+        // element underneath the open list.
+        if (IsPointerOverDropdownPopup()) return;
         // Eye icon first: clicking a component's eye toggles its visibility (and consumes the press — no
         // select/drag). The chrome owns the eye geometry (raycaster-less canvas → manual rect hit-test).
         if (_chrome.TryGetEyeHit(px, py, out var eyeId)) { ToggleVisibility(eyeId); return; }
