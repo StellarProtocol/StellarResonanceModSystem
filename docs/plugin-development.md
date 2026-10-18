@@ -619,6 +619,44 @@ reShade.SetTechnique("Clarity.fx", "Clarity", enabled: true);   // identity = ef
   bad input or a bridge older than 1.1.0; before the bridge is loaded the override is held and sent when it is.
   `ClearUniformOverrides()` removes only your plugin's overrides, and they are all removed when your plugin unloads.
 
+## Voice injection (`IVoiceInjection`)
+
+`services.Voice` plays audio into the game's **outgoing team-voice** stream, mixed with your live microphone (both are
+heard). It is backed by a process-wide native capture hook the framework installs at boot, so you never touch the
+native layer. Sources from every plugin mix into the one shared uplink, and the sources *your* plugin creates are
+auto-disposed when your plugin unloads (like `IHarmonyHost` patches).
+
+```csharp
+var voice = services.Voice;
+
+// 1. Load a clip (decode happens off-thread; WAV always, MP3/WMA/M4A via Media Foundation).
+IVoiceClip clip = await voice.LoadFileAsync(path);          // throws on a missing/undecodable file
+// …or build one from your own 16-bit interleaved PCM (TTS, generated tones):
+IVoiceClip tts = voice.LoadPcm(pcm, sampleRate: 24000, channels: 1);
+
+// 2. A source is one independent voice in the mixer. Keep one for looped/background audio.
+IVoiceSource? src = voice.CreateSource();                   // null only if the mixer is at capacity (16)
+if (src is null) return;
+src.Clip = clip; src.Volume = 1f; src.Loop = false;
+src.Play();                                                 // or src.PlayOnce(clip) for a fire-and-forget one-shot
+
+// 3. Optional: tune the uplink encoder while audio plays (auto-restored when all sources stop).
+voice.SetUplinkPolicy(disableNoiseSuppression: true, disableAgc: true, bitRateBps: 64000);
+```
+
+- **Gate on `Available` for immediacy.** The capture format is only known once the mic is live (post-login). Audio you
+  assign before then is retained and becomes audible when the mic opens — it simply isn't mixed yet. `Available`
+  (and the richer `Status`) tell you; poll if you need the sound heard *now*.
+- **`SetUplinkPolicy` is one global policy, last-writer-wins.** The uplink encoder is process-global, so you cannot
+  read the live 3A state back or reconcile across plugins. GVoice's noise-suppression/AGC attenuate injected (non-voice)
+  audio, so disabling them preserves music fidelity; a higher Opus bitrate improves quality. `null` leaves a knob
+  unchanged. It auto-applies while *any* source plays and reverts to the game defaults when all stop.
+- **Threading:** `CreateSource`/`SetUplinkPolicy` and the source members are main-thread. `LoadFileAsync` may be called
+  from any thread and completes on a background thread — marshal the result back with `services.Framework.Post` before
+  touching plugin/UI state. (`async void` fire-and-forget with an internal try/catch is the idiomatic load pattern.)
+- **Don't hand-roll the hook.** This exists so plugins stop copying the native DirectSound capture hook. Reverse-
+  engineering details and history live in the KB `Voice-Chat-GVoice.md`; this service is the supported surface.
+
 ## The no-cheating boundary
 
 Stellar holds the same line Dalamud does — QoL, not exploitation:

@@ -96,7 +96,7 @@ public sealed partial class BootstrapPlugin
             // Shared-bag fallback only: every plugin gets its own IPluginDownloads from the per-plugin factory
             // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
-            _reShadeService!);
+            _reShadeService!, _voiceService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);

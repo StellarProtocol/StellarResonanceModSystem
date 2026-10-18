@@ -168,12 +168,14 @@ internal sealed class PluginHost : IDisposable
         lifetime.Time = sharedServices.TimeOfDay is { } tod ? new PluginTimeOfDay(tod) : null;
         lifetime.FreeCam = FreeCameraScope.Mint(sharedServices);   // camera/shield/freeze/handlers released on unload
         lifetime.Uniforms = new PluginReShadeUniforms(sharedServices.ReShadeUniforms);   // overrides removed on unload
+        lifetime.Voice = new PluginVoiceInjection(sharedServices.Voice);   // voice sources disposed on unload
         var perPluginServices = new PerPluginServices(sharedServices,
             new PerPluginScope(bind.PerPluginConfig, bind.PerPluginData, lifetime.Framework,
                                bind.PerPluginHotkeys, lifetime.Harmony, bind.PerPluginLocalization, lifetime.Visibility,
                                lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
                                FreeCamera: lifetime.FreeCam, Downloads: bind.PerPluginDownloads,
-                               ReShadeUniforms: lifetime.Uniforms, Launcher: ScopedLauncher(bind.PluginGuid, sharedServices)));
+                               ReShadeUniforms: lifetime.Uniforms, Launcher: ScopedLauncher(bind.PluginGuid, sharedServices),
+                               Voice: lifetime.Voice));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });
@@ -197,6 +199,7 @@ internal sealed class PluginHost : IDisposable
         public PluginTimeOfDay? Time;
         public FreeCameraScope? FreeCam;
         public PluginReShadeUniforms? Uniforms;
+        public PluginVoiceInjection? Voice;
 
         public void Release()
         {
@@ -208,6 +211,7 @@ internal sealed class PluginHost : IDisposable
             Time?.ReleaseAll();
             FreeCam?.ReleaseAll();
             Uniforms?.ReleaseAll();
+            Voice?.ReleaseAll();
             (Harmony as IDisposable)?.Dispose();
         }
     }

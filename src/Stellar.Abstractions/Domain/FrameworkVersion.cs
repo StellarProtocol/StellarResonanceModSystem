@@ -19,6 +19,14 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.23.0 adds <c>IPluginServices.Voice</c> (<c>IVoiceInjection</c>) — play audio into the game's OUTGOING
+    /// team-voice stream (mixed with the live mic) through a process-wide native DirectSound capture hook and a
+    /// shared 16-source mixer: <c>IVoiceInjection</c> (<c>LoadFileAsync</c> WAV/MP3/WMA/M4A, <c>LoadPcm</c> for
+    /// TTS/generated audio, <c>CreateSource</c>, <c>SetUplinkPolicy</c>, <c>Available</c>/<c>Status</c>),
+    /// <c>IVoiceSource</c> (clip/volume/loop/play/stop/position, <c>PlayOnce</c>), <c>IVoiceClip</c> and
+    /// <c>VoiceInjectionStatus</c>. Sources a plugin creates are auto-disposed on plugin teardown (mirrors
+    /// <c>IHarmonyHost</c>); the uplink DSP policy is process-global, last-writer-wins, auto-restored when nothing
+    /// plays. New services + records only — additive, binary-compatible with plugins built against ≤2.22.1.
     /// 2.22.1 is a fix: clicking a Stellar window button no longer leaves it selected in the EventSystem (which
     /// routed WASD into chat instead of moving the character). No API change.
     /// 2.22.0 adds <c>IInputShield.IsPointerOverGameUi</c> (is the pointer over the game's own interface, not a Stellar
@@ -282,5 +290,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.22.1";
+    public const string Value = "2.23.0";
 }

@@ -48,6 +48,9 @@ internal sealed class PerPluginServices : IPluginServices
     // Owner-tagged launcher (records which plugin registered which tile). Null in a bare test host — falls back
     // to the shared, untagged launcher.
     private readonly ILauncher? _launcher;
+    // Per-plugin voice-injection façade (tracks sources this plugin created, disposes them on unload). Null in a
+    // bare test host — falls back to the shared mixer service.
+    private readonly IVoiceInjection? _voice;
 
     public PerPluginServices(IPluginServices shared, PerPluginScope scope)
     {
@@ -67,6 +70,7 @@ internal sealed class PerPluginServices : IPluginServices
         _downloads = scope.Downloads;
         _reShadeUniforms = scope.ReShadeUniforms;
         _launcher = scope.Launcher;
+        _voice = scope.Voice;
     }
 
     public IPluginConfig Config { get; }
@@ -137,6 +141,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IPluginDownloads Downloads => _downloads ?? _shared.Downloads;
     public IReShade ReShade => _shared.ReShade;
     public IReShadeUniforms ReShadeUniforms => _reShadeUniforms ?? _shared.ReShadeUniforms;
+    public IVoiceInjection Voice => _voice ?? _shared.Voice;
 }
 
 /// <summary>
@@ -158,4 +163,5 @@ internal readonly record struct PerPluginScope(
     FreeCameraScope? FreeCamera = null,
     IPluginDownloads? Downloads = null,
     IReShadeUniforms? ReShadeUniforms = null,
-    ILauncher? Launcher = null);
+    ILauncher? Launcher = null,
+    IVoiceInjection? Voice = null);
