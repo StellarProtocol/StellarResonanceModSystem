@@ -58,7 +58,7 @@ public interface IVoiceInjection
     /// <summary>
     /// Configure the GVoice uplink DSP, auto-applied while ANY source is playing and restored to the game's
     /// defaults when all sources stop. GVoice's noise-suppression / AGC attenuate injected (non-voice) audio,
-    /// so disabling them preserves music fidelity; a higher Opus bitrate improves quality. The uplink encoder
+    /// so disabling them preserves music fidelity; a higher Opus bitrate improves quality (up to the 64 kbps ceiling). The uplink encoder
     /// is process-global, so this is a single global policy — the last writer wins across plugins. A null
     /// argument leaves that setting unchanged. A disposed plugin's policy becomes inert once its sources stop.
     /// Main-thread only (never called from the native mix hook).
@@ -66,7 +66,7 @@ public interface IVoiceInjection
     /// <param name="disableNoiseSuppression">Disable GVoice noise suppression while playing; null leaves it unchanged.</param>
     /// <param name="disableAgc">Disable GVoice automatic gain control while playing; null leaves it unchanged.</param>
     /// <param name="disableVad">Disable GVoice voice-activity detection while playing; null leaves it unchanged.</param>
-    /// <param name="bitRateBps">Opus uplink bitrate in bits/sec while playing (e.g. 64000); null leaves it unchanged.</param>
+    /// <param name="bitRateBps">Opus uplink bitrate in bits/sec while playing. Usable range 8000–64000 — 64 kbps is the GVoice uplink ceiling, so higher values do not take effect and are clamped; null leaves it unchanged.</param>
     void SetUplinkPolicy(bool? disableNoiseSuppression = null, bool? disableAgc = null,
                          bool? disableVad = null, int? bitRateBps = null);
 }

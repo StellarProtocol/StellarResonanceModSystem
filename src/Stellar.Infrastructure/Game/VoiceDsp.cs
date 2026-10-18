@@ -20,6 +20,7 @@ internal static unsafe class VoiceDsp
     public const int CmdEnableVad = 0x21AD;   // p1 != 0 → voice activity detection on
     public const int CmdEnableAgc = 0x21AE;   // p1 != 0 → auto gain control on
     public const int DefaultBitRate = 32000;  // AutoEnc type 4 (Opus 0x1006) default
+    public const int MaxBitRate = 64000;      // usable ceiling for the GVoice Opus uplink — 96k/128k don't take (confirmed in-game 2026-10-18)
 
     // Plugin-side sentinels (GVoice errnos are >= 0).
     public const int RcNotCalled = int.MinValue;

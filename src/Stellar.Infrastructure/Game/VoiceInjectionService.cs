@@ -71,7 +71,7 @@ internal sealed class VoiceInjectionService : IVoiceInjection
         if (disableNoiseSuppression.HasValue) _disableNs  = disableNoiseSuppression;
         if (disableAgc.HasValue)              _disableAgc = disableAgc;
         if (disableVad.HasValue)              _disableVad = disableVad;
-        if (bitRateBps.HasValue)              _bitRateBps = bitRateBps;
+        if (bitRateBps.HasValue)              _bitRateBps = Math.Clamp(bitRateBps.Value, 8000, VoiceDsp.MaxBitRate);
         // Take effect immediately if audio is already playing; otherwise the next apply transition picks it up.
         if (_dspActive) ApplyPolicy();
     }
