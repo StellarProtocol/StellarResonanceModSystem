@@ -14,8 +14,6 @@ namespace Stellar.Infrastructure.UI;
 /// </summary>
 internal sealed partial class LayoutEditorOverlay
 {
-    private const int MaxSlots = 8;   // slot buttons built into the toolbar; extra collapse via Conditional
-
     private WindowService? _windows;        // bound late via SetWindows (concrete: editor enumerates its overlay windows)
     private IWindowControl? _toolbarWindow; // the uGUI toolbar window; registered lazily on first edit-enter
 
@@ -96,14 +94,13 @@ internal sealed partial class LayoutEditorOverlay
             new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 10 },
             new SpacerElement(10f),
             new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
+            // One dropdown replaces the per-slot buttons (switch-only — add/remove stays in Settings -> Layout).
+            // SlotNames is a live snapshot rebuilt on any add/remove/rename, so renames and count changes reflect.
+            // SwitchToSlot routes through SetActiveSlot, whose SlotsChanged reapply now moves BOTH native + mod
+            // windows. MaxVisibleRows == MaxSlotCount (8), so the list never actually scrolls — kept for parity
+            // with the filter dropdown. The popup self-elevates above the override-sorting toolbar (fw 1626025).
+            new DropdownElement(() => _storage.ActiveSlot, () => _storage.SlotNames, SwitchToSlot, Width: 140f) { MaxVisibleRows = 8 },
         };
-        for (int i = 0; i < MaxSlots; i++)
-        {
-            var idx = i;
-            items.Add(new ConditionalElement(() => idx < _storage.SlotCount,
-                new ButtonElement(() => _storage.GetSlotName(idx), () => SwitchToSlot(idx),
-                    Active: () => idx == _storage.ActiveSlot)));
-        }
         items.Add(new SpacerElement(10f));
         items.Add(new TextElement(SelectedLabel, Width: 210f));
         items.Add(new SpacerElement(10f));
