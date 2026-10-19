@@ -88,10 +88,13 @@ internal sealed partial class PandaChatProbe
 
     /// <summary>
     /// Build a Call packet for ChitChat.SendChitChatMsg and dispatch it through
-    /// the cached chat-server <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c>.
-    /// The chat client is captured passively on the first observed chat receive
-    /// (in <see cref="OnChatNotifyEnvelope"/>) — until then this returns false
-    /// with a descriptive <paramref name="failureReason"/>.
+    /// the live chat-server <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c>.
+    /// The client is resolved on demand from <c>ZRpcCtrl</c> (primary — see
+    /// <c>Send.LiveClient.cs</c>), which closes the post-reconnect dead window;
+    /// if that can't resolve (UDP channel, null step, reflection failure) we fall
+    /// back to the passively-captured client (see <c>Send.Connection.cs</c>).
+    /// Returns false with a descriptive <paramref name="failureReason"/> only when
+    /// BOTH sources are unavailable.
     /// </summary>
     public bool TrySend(ChatTarget target, string text, out string? failureReason)
     {
@@ -100,14 +103,37 @@ internal sealed partial class PandaChatProbe
             return false;
         }
 
-        // Local snapshot taken under the lock + native-handle liveness check.
-        // Sending through a closed/disposed ZTcpClient passes a freed native
-        // handle → access violation that kills the game (uncatchable here).
-        if (!TryTakeLiveChatClient(out var client, out failureReason))
+        // PRIMARY: resolve the live chat ZTcpClient on demand. Returns a
+        // handle-verified client, or null on any failure → passive fallback.
+        object? client = TryResolveLiveChatClient();
+
+        // FALLBACK: the passively-captured client, re-cached on inbound chat
+        // packets and dropped by the close hooks. Snapshotted under the lock +
+        // native-handle liveness check (sending through a freed handle → native
+        // access violation that kills the game, uncatchable here). If this also
+        // yields nothing, both sources failed → report the passive reason.
+        if (client is null)
         {
-            return false;
+            if (!TryTakeLiveChatClient(out var passive, out failureReason))
+            {
+                return false;
+            }
+            client = passive;
         }
 
+        return SendThroughClient(client, frame, text, out failureReason);
+    }
+
+    /// <summary>
+    /// Dispatch an already-built frame through a resolved (live or passive) chat
+    /// <c>ZTcpClient</c>: coerce the managed <c>byte[]</c> to an IL2CPP
+    /// <c>ReadOnlySpan&lt;byte&gt;</c> and reflection-invoke <c>Send</c>. Shared by
+    /// the active and passive paths. Returns false with
+    /// <paramref name="failureReason"/> on any invoke failure.
+    /// </summary>
+    private bool SendThroughClient(object client, OutboundFrameResult frame, string text, out string? failureReason)
+    {
+        failureReason = null;
         try
         {
             // Convert managed byte[] -> Il2CppSystem.ReadOnlySpan<byte> for the
@@ -137,9 +163,10 @@ internal sealed partial class PandaChatProbe
     /// Validate preconditions and build the wire-encoded outbound Call frame for
     /// a ChitChat.SendChitChatMsg request. Returns false (with
     /// <paramref name="failureReason"/> populated) when any precondition fails —
-    /// empty text, chat connection not yet observed, Send method unresolved, or
-    /// the target has no send-side mapping. On success returns the fully built
-    /// frame so the caller can log/dispatch.
+    /// empty text, Send method unresolved, or the target has no send-side mapping.
+    /// Client availability is NOT a precondition here — it is decided at dispatch
+    /// (active resolution first, passive cache second). On success returns the
+    /// fully built frame so the caller can log/dispatch.
     /// </summary>
     private bool BuildOutboundFrame(
         ChatTarget target,
@@ -176,8 +203,8 @@ internal sealed partial class PandaChatProbe
     /// <summary>
     /// Validate the send preconditions and resolve the wire channel_type +
     /// whisper target for a <see cref="ChatTarget"/>. Returns false (with
-    /// <paramref name="failureReason"/>) for empty text, unobserved chat
-    /// connection, unresolved <c>ZTcpClient.Send</c>, or unsupported target.
+    /// <paramref name="failureReason"/>) for empty text, unresolved
+    /// <c>ZTcpClient.Send</c>, or unsupported target.
     /// </summary>
     private bool TryResolveSendChannel(
         ChatTarget target,
@@ -195,11 +222,10 @@ internal sealed partial class PandaChatProbe
             failureReason = "empty text";
             return false;
         }
-        if (_chatTcpClient is null)
-        {
-            failureReason = "chat connection not yet observed (send before first inbound chat packet)";
-            return false;
-        }
+        // NB: no "_chatTcpClient is null" gate here — client availability is
+        // decided later by resolution (active ZRpcCtrl path first, passive cache
+        // second). Gating on the passive cache would re-block the exact
+        // post-reconnect dead window this fix exists to close.
         if (_tcpClientSend is null)
         {
             failureReason = "ZTcpClient.Send(ReadOnlySpan<byte>) not resolved";
