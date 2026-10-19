@@ -115,6 +115,9 @@ internal sealed partial class LayoutEditorOverlay
         // Also narrow edit-only drag/resize to the currently-filtered plugin's windows — the SAME rule the
         // outline/select use (ShouldOutlineStellar && WindowOwnerMatchesFilter). Tracks live filter state each tick.
         Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter = IsWindowEditableNow;
+        // One-shot pre-warm: mount the toolbar invisibly once during load (runs whether or not editing) so the first
+        // real edit-enter un-parks an already-built window instead of building its whole tree in that frame.
+        PrewarmToolbar();
         if (_editor.IsEditing)
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)

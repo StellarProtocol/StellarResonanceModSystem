@@ -17,6 +17,20 @@ internal sealed partial class LayoutEditorOverlay
     private WindowService? _windows;        // bound late via SetWindows (concrete: editor enumerates its overlay windows)
     private IWindowControl? _toolbarWindow; // the uGUI toolbar window; registered lazily on first edit-enter
 
+    // One-shot toolbar PRE-WARM. The toolbar's whole uGUI tree (glass panel, two dropdowns, buttons, the first
+    // font-atlas + asset bake) is built on its first MOUNT — which, left lazy, happens inside the frame the user
+    // first enters edit mode, so that first enter visibly hitches. (Later enters are smooth because a hidden window
+    // is PARKED, not destroyed — WindowService.ParkOrDestroy keeps the tree and reuses it.) We pay that build cost
+    // once during load instead: mount the toolbar while forcing it invisible, then park it. See PrewarmToolbar.
+    //   _prewarming — transient; while true the toolbar's ShouldRender returns false so the mounted root stays
+    //                 DEACTIVATED (never flashes on screen, in ANY game phase). Mount still builds the tree —
+    //                 ShouldRender only gates post-mount ACTIVATION (SafeApply), not the mount/build.
+    //   _prewarmPhase — 0 = pending (not started), 1 = mounting (waiting a few ticks for WindowService.Tick to
+    //                   mount + apply regardless of tick ordering), 2 = done (never runs again).
+    private bool _prewarming;
+    private int _prewarmPhase;   // 0 = pending, 1 = mounting, 2 = done
+    private int _prewarmTicks;
+
     // Edit-mode element filter (Phase 9a + per-plugin). All = Stellar windows + game UI; StellarOnly / GameUiOnly
     // suppress the other category; Plugin restricts the Stellar side to ONE plugin's windows (no game UI). Read by
     // ShouldOutlineStellar / ShouldOutlineGameUi for the category gate, and WindowOwnerMatchesFilter for the
@@ -46,8 +60,21 @@ internal sealed partial class LayoutEditorOverlay
     /// the overlay/status windows (composition root passes the concrete WindowService).</summary>
     public void SetWindows(WindowService windows) => _windows = windows;
 
-    // Show the toolbar on edit-enter (registering it the first time); hide on exit.
+    // Show the toolbar on edit-enter; hide on exit. Entering edit mode mid-pre-warm cleanly takes over: clear the
+    // warm-up flag + mark it done BEFORE SetVisible(true) so the suppressing ShouldRender releases and no stuck
+    // state or double logic survives. EnsureToolbarRegistered is idempotent, so this is safe whether the warm-up
+    // already registered the window or not.
     private void ShowToolbar()
+    {
+        EnsureToolbarRegistered();
+        _prewarming = false;
+        _prewarmPhase = 2;
+        _toolbarWindow?.SetVisible(true);
+    }
+
+    // Register the toolbar window the first time (idempotent). Separated from ShowToolbar so the pre-warm path can
+    // mount it without showing it — construction (the expensive spec/tree build at first mount) is the same either way.
+    private void EnsureToolbarRegistered()
     {
         if (_toolbarWindow == null && _windows != null)
         {
@@ -67,7 +94,10 @@ internal sealed partial class LayoutEditorOverlay
                 // Framework chrome — hide over the loading screen; otherwise available in every phase. EditModeDragOnly
                 // stays false (the bar only exists in edit mode → free drag is correct, and it stays out of the editor's
                 // own outlined/selectable set — EditableElements yields only EditModeDragOnly windows).
-                ShouldRender = () => (_clientState.UiState & GameUIState.Loading) == 0,
+                // While pre-warming, force this false so the mounted toolbar NEVER activates (never flashes) — the
+                // mount still builds the tree; ShouldRender only gates post-mount activation. Cleared once the
+                // warm-up parks the window (and immediately on a real edit-enter via ShowToolbar).
+                ShouldRender = () => !_prewarming && (_clientState.UiState & GameUIState.Loading) == 0,
                 StartVisible = false,
                 ShowTitleBar = false,
                 Draggable = true,
@@ -81,7 +111,37 @@ internal sealed partial class LayoutEditorOverlay
             };
             _toolbarWindow = _windows.Register(new WindowRegistration(spec, BuildToolbarRoot()));
         }
-        _toolbarWindow?.SetVisible(true);
+    }
+
+    // One-shot warm-up state machine, pumped once per tick from TickInput (BEFORE the IsEditing branch, so it runs
+    // whether or not editing). Mounts the toolbar invisibly during load so the FIRST real edit-enter just un-parks an
+    // already-built window instead of building the whole tree in that frame.
+    private void PrewarmToolbar()
+    {
+        if (_prewarmPhase == 2) return;
+        if (_windows == null) return;   // not wired yet — retry next tick
+        // Gate the START on the window canvas being ready so the mount actually succeeds and the anchored position
+        // applies correctly (a mount before the CanvasScaler settles would defer its layout). Reuse CanvasScaleReady
+        // — the same ready-gate the Host's layout apply uses; no new WindowService surface needed.
+        if (!_windows.CanvasScaleReady) return;   // canvas not up yet — retry next tick
+        switch (_prewarmPhase)
+        {
+            case 0:   // pending → begin mounting, suppressed
+                EnsureToolbarRegistered();
+                _prewarming = true;                 // ShouldRender stays false → mounts but never activates (no flash)
+                _toolbarWindow?.SetVisible(true);    // Visible=true → WindowService.TickEntry mounts (builds the tree)
+                _prewarmTicks = 0;
+                _prewarmPhase = 1;
+                break;
+            case 1:   // mounting → give WindowService.Tick a few ticks to mount + apply regardless of tick ordering
+                if (++_prewarmTicks >= 3)
+                {
+                    _toolbarWindow?.SetVisible(false);   // Visible=false → parked (tree kept, reused on the real show)
+                    _prewarming = false;
+                    _prewarmPhase = 2;                   // done — never runs again
+                }
+                break;
+        }
     }
 
     // Also close any open toolbar dropdown: its popup is a scene-root canvas, not a child of the toolbar window,
