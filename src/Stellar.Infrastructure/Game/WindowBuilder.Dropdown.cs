@@ -11,11 +11,13 @@ namespace Stellar.Infrastructure.Game;
 // DropdownElement: a trigger button (caption + ▾) that opens a themed floating option list. The popup lives on
 // its OWN dedicated TOP-LEVEL (root) ScreenSpaceOverlay canvas (DropdownPopupLayer, parented to nothing) so it
 // is never clipped by any window's scroll RectMask2D and sits above every window — including a window lifted
-// onto its own override-sorting canvas (the layout toolbar at 32759). WHY a root canvas and not a nested
-// override canvas: in this IL2CPP build two override-sorting canvases that share one parent canvas do NOT sort
-// reliably by sortingOrder relative to each other, so the old nested-under-StellarWindowCanvas attempt
-// (1626025, blocker/panel at 32780/32781) stayed BEHIND the toolbar's own nested override canvas (32759); see
-// the layer-canvas comment on BuildDropdownPopupLayer. A full-screen invisible blocker absorbs outside clicks;
+// onto its own override-sorting canvas (the layout toolbar at 32759). WHY a root canvas: root-vs-nested
+// sortingOrder IS honored in this build, so a root canvas at a VALID order cleanly beats the toolbar's nested
+// override canvas (32759). The old nested-under-StellarWindowCanvas attempt (1626025) and the first root-canvas
+// attempt (32780/32781) both rendered BEHIND the toolbar — but the CONFIRMED cause is a short.MaxValue overflow
+// (canvas sortingOrder is capped at 32767; those values wrapped negative), NOT nested-vs-nested unreliability
+// (that earlier suspicion is unconfirmed — it was likely a misread of the same overflow). See the sortingOrder
+// comment on DropdownPopupSortingOrder. A full-screen invisible blocker absorbs outside clicks;
 // it is also registered as the dismissable "root" so the ticker's geometric outside-test never fires (the
 // full-screen blocker contains every point) — leaving Escape as the only ticker-driven dismiss, while
 // outside-click rides the blocker's own button. This sidesteps the classic same-click-dismisses-on-open bug:
@@ -43,13 +45,18 @@ internal sealed partial class WindowBuilder
     internal const string DropdownPanelName = "DropdownPopup";
     internal const string DropdownBlockerName = "DropdownBlocker";
 
-    // sortingOrder of the dropdown's dedicated ROOT canvas (DropdownPopupLayer). As a ROOT canvas it is compared
-    // against other canvases by sortingOrder RELIABLY (cross-root/root-vs-nested sorting is honored in this build,
-    // unlike nested-vs-nested-same-parent — see BuildDropdownPopupLayer), so 32781 cleanly beats the toolbar's
-    // override canvas (32759) and the top modal input blocker (UGuiInputBlocker.TopSortingOrder = 32760), while
-    // staying under the click-away popup band (1_000_000). Blocker-below-panel is now just sibling order WITHIN
-    // this one canvas (reliable), not two canvas orders. (Sorting-layer map in WindowBuilder-Patterns.md.)
-    private const int DropdownPopupSortingOrder = 32781;
+    // sortingOrder of the dropdown's dedicated ROOT canvas (DropdownPopupLayer). CONFIRMED CEILING: Unity canvas
+    // sortingOrder is clamped to the 16-bit SHORT range in this build — short.MaxValue = 32767 is the hard ceiling;
+    // any value above it wraps NEGATIVE (e.g. 32781 → 32781−65536 = −32755) and the canvas sinks below everything.
+    // In-codebase precedent: UGuiInputBlocker.TopSortingOrder = 32760 is commented "just under short.MaxValue". So
+    // 32766 is chosen to sit ABOVE the toolbar's override canvas (32759) and the top modal input blocker
+    // (UGuiInputBlocker.TopSortingOrder = 32760), yet AT/BELOW the 32767 cap so it cannot overflow/wrap. The old
+    // 32780/32781 values (and the earlier nested 1626025) all exceeded 32767 and wrapped negative — that, not any
+    // nested-vs-nested unreliability, is why they rendered behind the toolbar. Root-vs-nested order IS honored
+    // here (the toolbar's nested 32759 correctly beats the edit chrome's root 32758), which is why a root canvas
+    // remains the structure. Blocker-below-panel is just sibling order WITHIN this one canvas. (Sorting-layer map
+    // in WindowBuilder-Patterns.md.)
+    private const int DropdownPopupSortingOrder = 32766;
 
     // Trigger: a normal themed button whose caption tracks the selected option; the click delivers the
     // trigger's screen rect (OnClickWithRect) so the popup anchors to the button's live position.
