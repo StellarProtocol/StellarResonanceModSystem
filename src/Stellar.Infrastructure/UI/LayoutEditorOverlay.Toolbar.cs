@@ -86,7 +86,10 @@ internal sealed partial class LayoutEditorOverlay
             // current resolution + UI scale, and WindowService persists any drag PER-RESOLUTION (PersistIfSettled)
             // and restores it on show (ApplySavedRect) — so no per-tick re-centre is needed or wanted (that would
             // clobber a user drag). OverrideSortingOrder lifts the bar above the edit chrome (see the const).
-            const float w = 1180f;
+            // Widened from 1180 → 1340 to seat the extra "Reset filtered" button (≈ the "Reset selected" button's
+            // width + a 6px gap) without the flex-centred content block clipping against the glass panel edges —
+            // sized for the longest locale labels (id/th reset captions run longer than English).
+            const float w = 1340f;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect(0f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
@@ -181,6 +184,9 @@ internal sealed partial class LayoutEditorOverlay
         items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetSelected"),
             () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
             Enabled: () => _editor.SelectedWindowId != null));
+        // Logical order narrowest → filter-scoped → broadest: selected, then the active-filter set, then everything.
+        // Always enabled — when the filter is All it harmlessly equals Reset all (same resulting set), as expected.
+        items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetFiltered"), ResetFilteredWindows));
         items.Add(new ButtonElement(() => _text!.T("common.resetAll"), ResetAllWindows));
         items.Add(new SpacerElement(10f));
         items.Add(new ButtonElement(() => _text!.T("common.exit"), () => _editor.ToggleEditMode()));
@@ -266,10 +272,26 @@ internal sealed partial class LayoutEditorOverlay
         _windows?.ResetRect(windowId);
     }
 
-    // "Reset all" = every element currently OUTLINED in edit mode (respecting the active filter), restored to
-    // its default pose: native game UI + mod HUDs + mod windows. Ids are snapshotted before resetting so a
-    // reset never mutates a collection mid-enumeration.
+    // "Reset all" = EVERY editable element restored to its default pose, REGARDLESS of the active filter: every
+    // resolved native game-UI entry + every editable mod window (no ShouldOutline* gate, no per-plugin filter).
+    // Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration. (Contrast
+    // ResetFilteredWindows, which honours the filter — the two buttons are deliberately separated.)
     private void ResetAllWindows()
+    {
+        var ids = new List<string>();
+        if (_nativeUi is not null)
+            foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
+        if (_windows is not null)
+            foreach (var (id, _) in _windows.EditableRects()) ids.Add(id);
+        foreach (var id in ids) ResetWindow(id);
+        _log.Info($"[LayoutEditor] reset all {ids.Count} elements to defaults");
+    }
+
+    // "Reset filtered" = every element currently OUTLINED in edit mode (respecting the active filter), restored to
+    // its default pose: native game UI only when ShouldOutlineGameUi, mod windows only when ShouldOutlineStellar AND
+    // the per-plugin filter matches. When the filter is All this equals Reset all; narrower filters scope it down.
+    // Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration.
+    private void ResetFilteredWindows()
     {
         var ids = new List<string>();
         if (ShouldOutlineGameUi && _nativeUi is not null)
@@ -279,6 +301,6 @@ internal sealed partial class LayoutEditorOverlay
             if (_windows is not null) foreach (var (id, _) in _windows.EditableRects()) if (WindowOwnerMatchesFilter(id)) ids.Add(id);
         }
         foreach (var id in ids) ResetWindow(id);
-        _log.Info($"[LayoutEditor] reset {ids.Count} elements to defaults");
+        _log.Info($"[LayoutEditor] reset filtered {ids.Count} elements to defaults");
     }
 }

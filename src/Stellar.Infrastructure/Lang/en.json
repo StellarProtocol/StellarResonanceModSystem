@@ -56,6 +56,7 @@
   "layout.snap": "Snap",
   "layout.threshold": "Threshold",
   "layout.toolbar.heading": "Layout edit mode",
+  "layout.toolbar.resetFiltered": "Reset filtered",
   "layout.toolbar.resetSelected": "Reset selected",
   "layout.toolbar.selected": "Selected: {0}",
   "layout.toolbar.slot": "Slot:",

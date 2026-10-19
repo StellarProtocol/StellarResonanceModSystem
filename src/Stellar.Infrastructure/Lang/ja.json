@@ -56,6 +56,7 @@
   "layout.snap": "スナップ",
   "layout.threshold": "しきい値",
   "layout.toolbar.heading": "レイアウト編集モード",
+  "layout.toolbar.resetFiltered": "フィルタ対象をリセット",
   "layout.toolbar.resetSelected": "選択項目をリセット",
   "layout.toolbar.selected": "選択中: {0}",
   "layout.toolbar.slot": "スロット:",

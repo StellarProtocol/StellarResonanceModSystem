@@ -56,6 +56,7 @@
   "layout.snap": "스냅",
   "layout.threshold": "임계값",
   "layout.toolbar.heading": "레이아웃 편집 모드",
+  "layout.toolbar.resetFiltered": "필터 항목 초기화",
   "layout.toolbar.resetSelected": "선택 항목 초기화",
   "layout.toolbar.selected": "선택: {0}",
   "layout.toolbar.slot": "슬롯:",

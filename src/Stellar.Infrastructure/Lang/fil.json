@@ -56,6 +56,7 @@
   "layout.snap": "Snap",
   "layout.threshold": "Threshold",
   "layout.toolbar.heading": "Edit Mode ng Layout",
+  "layout.toolbar.resetFiltered": "I-reset ang na-filter",
   "layout.toolbar.resetSelected": "I-reset ang napili",
   "layout.toolbar.selected": "Napili: {0}",
   "layout.toolbar.slot": "Slot:",
