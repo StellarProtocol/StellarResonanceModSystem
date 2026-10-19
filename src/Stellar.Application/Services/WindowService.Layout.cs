@@ -29,16 +29,19 @@ internal sealed partial class WindowService
         _storage.SlotsChanged += ReapplyForSlotChange;
     }
 
-    // SlotsChanged handler: re-place every mounted window from the active slot AND apply its saved visibility
+    // SlotsChanged handler: re-place the arrangeable HUDs from the active slot AND apply their saved visibility
     // (applyVisibility:true) — a slot switch is an explicit user action, like the old toolbar native-reapply call.
     // ReapplyLayout only READS _storage.Get downstream (never mutates the slot list), so it can't re-fire
     // SlotsChanged — no feedback loop. Rename / add / remove on the SAME active slot re-read the same slot = no
     // visible change; a remove that shifts the active slot correctly follows to the new one.
-    // skipSlotIndependent:true — a slot-independent window's layout does NOT belong to any slot, so a slot switch
-    // must neither reposition nor re-assert its visibility (that is owned by the edit-mode ShowToolbar/HideToolbar;
-    // re-applying a persisted "visible" here would fight those). The resolution-change reapply (ServiceTick) leaves
-    // this false so those windows still reposition from their global bucket on a res/scale change.
-    private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true, skipSlotIndependent: true);
+    // editableHudsOnly:true — slots ARRANGE ONLY the arrangeable HUD set (the EditModeDragOnly windows the layout
+    // editor manages). Non-HUD free-drag windows (Settings / DataInspector / launcher / CombatMeter History) are
+    // NOT part of any slot's arrangement, so a slot switch must leave BOTH their position AND their visibility
+    // untouched — this gate skips them. The resolution-change reapply (ServiceTick) leaves this false so ALL
+    // windows still re-clamp from their bucket on a res/scale change (a dialog must not land off-screen).
+    // skipSlotIndependent:true — kept for clarity/safety: a slot-independent window's layout does NOT belong to any
+    // slot either (the toolbar is also non-EditModeDragOnly, so the HUD gate already covers it; both conditions stay).
+    private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true, skipSlotIndependent: true, editableHudsOnly: true);
 
     // Route a window's layout read/write to the slot-INDEPENDENT global bucket when its spec opts in (framework
     // chrome like the layout-edit toolbar), else to the active slot. One dispatch point per storage op so no
@@ -105,11 +108,13 @@ internal sealed partial class WindowService
     // Reload the saved layout for the CURRENT resolution for every mounted window. ApplySavedRect reads
     // _resolution() + _storage.Get, so it picks up the current resolution's bucket (or the anchor-resolved
     // DefaultRect fallback) and SetRect clamps it on-screen. Two callers:
-    //   • resolution change (ServiceTick) → applyVisibility:false (the DEFAULT): reposition only, never toggle
-    //     show/hide (the game owns show/hide during a transition, and a res change isn't a user layout action).
-    //   • slot switch (ReapplyForSlotChange) → applyVisibility:true: a slot carries its own saved show/hide, and
-    //     switching slots is an explicit user action, so honour the new slot's persisted visibility.
-    internal void ReapplyLayout(bool applyVisibility = false, bool skipSlotIndependent = false)
+    //   • resolution change (ServiceTick) → applyVisibility:false, editableHudsOnly:false (the DEFAULTS): reposition
+    //     ALL windows (dialogs included, so none lands off-screen), never toggle show/hide (the game owns show/hide
+    //     during a transition, and a res change isn't a user layout action).
+    //   • slot switch (ReapplyForSlotChange) → applyVisibility:true, editableHudsOnly:true: a slot ARRANGES ONLY the
+    //     arrangeable HUDs (EditModeDragOnly), carrying their own saved show/hide, so honour the new slot's position
+    //     + persisted visibility for THOSE — and leave non-HUD free-drag windows entirely alone.
+    internal void ReapplyLayout(bool applyVisibility = false, bool skipSlotIndependent = false, bool editableHudsOnly = false)
     {
         foreach (var kv in _windows)
         {
@@ -118,6 +123,10 @@ internal sealed partial class WindowService
             // Slot-switch path passes skipSlotIndependent:true — a slot-independent window's layout isn't part of
             // any slot, so a slot change leaves it exactly where it is. The res-change path leaves this false.
             if (skipSlotIndependent && e.Reg.Spec.SlotIndependentLayout) continue;
+            // Slot-switch path also passes editableHudsOnly:true — slots arrange ONLY the EditModeDragOnly HUD set,
+            // so a non-HUD free-drag window (Settings/DataInspector/launcher/CombatMeter History) is skipped for BOTH
+            // position and visibility. The res-change path leaves this false so every window still re-clamps.
+            if (editableHudsOnly && !e.Reg.Spec.EditModeDragOnly) continue;
             ApplySavedRect(e, applyVisibility);
         }
     }
