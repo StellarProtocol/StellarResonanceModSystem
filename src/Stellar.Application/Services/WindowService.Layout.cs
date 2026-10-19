@@ -91,6 +91,37 @@ internal sealed partial class WindowService
         if (e.Token != null) ApplySavedRect(e);      // re-place if mounted; a hidden one mounts+places next tick
     }
 
+    /// <summary>Layout-editor arrow-key nudge for a mod window: shift its position by a screen-px delta. No-op if
+    /// the id isn't a mounted window. The delta is converted screen-px → CANVAS UNITS (the renderer's GetRect/SetRect
+    /// domain, = screen ÷ <see cref="CanvasScale"/>) and the result is clamped so ≥ ~24 screen-px of the window stays
+    /// on-screen.
+    /// <para>Persistence mirrors a mouse drag EXACTLY: it moves the live rect through the renderer's NON-persisting
+    /// <see cref="IWindowRenderer.SetRect"/> and deliberately does NOT touch <see cref="Entry.LastRect"/>. PersistIfSettled
+    /// compares the live rect to the PREVIOUS ~10 Hz tick's LastRect to detect a settle and saves once when movement
+    /// stops — so a held arrow writes to disk only on release, never per tick. (Writing LastRect here each tick would
+    /// make every apply look "settled" and disk-write on every held-arrow tick.) Every nudgeable window is
+    /// EditModeDragOnly ⇒ Draggable, so the PersistIfSettled gate (<c>Draggable || Resizable</c>) always fires.</para></summary>
+    internal void NudgeRect(string id, float dxPx, float dyPx)
+    {
+        if (!_windows.TryGetValue(id, out var e) || e.Token == null) return;
+        var sf = CanvasScale <= 0f ? 1f : CanvasScale;
+        var cur = _renderer.GetRect(e.Token);
+        float nx = cur.X + dxPx / sf;   // screen-px delta → canvas units
+        float ny = cur.Y + dyPx / sf;
+        // Keep ≥ 24 screen-px (→ canvas units) of the window on-screen; canvas-unit screen bound = resolution ÷ scale
+        // (same domain as ApplySavedRect's clamp). Manual min/max (never throws when the min bound exceeds the max,
+        // unlike Math.Clamp) — a window wider than the screen keeps a definite placement.
+        var res = _resolution?.Invoke() ?? default;
+        if (res.Width > 0 && res.Height > 0)
+        {
+            float m = 24f / sf;
+            float cw = res.Width / sf, ch = res.Height / sf;
+            nx = Math.Max(m - cur.Width, Math.Min(cw - m, nx));
+            ny = Math.Max(m - cur.Height, Math.Min(ch - m, ny));
+        }
+        _renderer.SetRect(e.Token, new WindowRect(nx, ny, cur.Width, cur.Height));
+    }
+
     /// <summary>Editor-driven visibility toggle for a mod window: flip Visible (TickEntry mounts/destroys to
     /// match) and persist per slot. Uses the live rect when shown, else the last-saved/default rect.</summary>
     public void SetVisiblePersist(string id, bool visible)

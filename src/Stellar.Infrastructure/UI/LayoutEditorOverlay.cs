@@ -122,6 +122,7 @@ internal sealed partial class LayoutEditorOverlay
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
             ProcessInput();
+            TickNudge();    // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
         else if (_wasEditing)
