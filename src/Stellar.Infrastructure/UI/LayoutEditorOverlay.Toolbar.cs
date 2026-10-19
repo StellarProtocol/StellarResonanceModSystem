@@ -86,10 +86,11 @@ internal sealed partial class LayoutEditorOverlay
             // current resolution + UI scale, and WindowService persists any drag PER-RESOLUTION (PersistIfSettled)
             // and restores it on show (ApplySavedRect) — so no per-tick re-centre is needed or wanted (that would
             // clobber a user drag). OverrideSortingOrder lifts the bar above the edit chrome (see the const).
-            // Widened from 1180 → 1340 to seat the extra "Reset filtered" button (≈ the "Reset selected" button's
-            // width + a 6px gap) without the flex-centred content block clipping against the glass panel edges —
-            // sized for the longest locale labels (id/th reset captions run longer than English).
-            const float w = 1340f;
+            // Widened to seat the selection DROPDOWN (60px label + 280px dropdown + the 6px gap) that replaced the old
+            // 210px "Selected: <id>" text, as well as the extra "Reset filtered" button — without the flex-centred
+            // content block clipping against the glass panel edges (the content CLIPS at the panel edges if it
+            // overflows). Sized for the longest-locale labels (id/th reset captions run longer than English).
+            const float w = 1480f;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect(0f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
@@ -168,7 +169,7 @@ internal sealed partial class LayoutEditorOverlay
             new SpacerElement(10f),
             // One dropdown replaces the 3 filter chips: << All >>, << Stellar >>, << Game UI >>, then one row per
             // plugin that owns an editable window (friendly localized name). MaxVisibleRows caps + scrolls the list.
-            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 10 },
+            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 3 },
             new SpacerElement(10f),
             new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
             // One dropdown replaces the per-slot buttons (switch-only — add/remove stays in Settings -> Layout).
@@ -179,7 +180,8 @@ internal sealed partial class LayoutEditorOverlay
             new DropdownElement(() => _storage.ActiveSlot, () => _storage.SlotNames, SwitchToSlot, Width: 140f) { MaxVisibleRows = 8 },
         };
         items.Add(new SpacerElement(10f));
-        items.Add(new TextElement(SelectedLabel, Width: 210f));
+        items.Add(new TextElement(() => _text!.T("layout.toolbar.selectedLabel"), () => _theme.Colors.MenuMuted, Width: 60f));
+        items.Add(new DropdownElement(SelectionSelectedIndex, SelectionOptions, OnSelectionPicked, Width: 280f) { MaxVisibleRows = 12 });
         items.Add(new SpacerElement(10f));
         items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetSelected"),
             () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
@@ -195,10 +197,56 @@ internal sealed partial class LayoutEditorOverlay
         return new ColumnElement(new HudElement[] { new RowElement(items.ToArray(), Gap: 6f) });
     }
 
-    private string SelectedLabel()
+    // The currently-selectable layout objects, in a STABLE deterministic order (each group sorted by label, so the
+    // dropdown's Options() and SelectionSelectedIndex() always agree frame-to-frame regardless of dictionary order).
+    // Mirrors exactly what click-select can target under the active filter: native game-UI entries (ShouldOutlineGameUi,
+    // resolved+visible) then mod windows (ShouldOutlineStellar, visible via EditableRects, per-plugin filter).
+    private System.Collections.Generic.IReadOnlyList<(string Id, string Label)> SelectableObjects()
     {
-        var id = _editor.SelectedWindowId ?? _text!.T("common.none");
-        return _text!.TFormat("layout.toolbar.selected", id);
+        var list = new List<(string Id, string Label)>();
+        if (ShouldOutlineGameUi && _nativeUi is not null)
+        {
+            var g = new List<(string Id, string Label)>();
+            foreach (var e in _nativeUi.Entries)
+                if (e.IsResolved && e.Visible) g.Add((e.Descriptor.Id, _text!.T(e.Descriptor.DisplayNameKey)));
+            g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
+            list.AddRange(g);
+        }
+        if (ShouldOutlineStellar && _windows is not null)
+        {
+            var g = new List<(string Id, string Label)>();
+            foreach (var (id, _) in _windows.EditableRects())
+                if (WindowOwnerMatchesFilter(id)) g.Add((id, id));
+            g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
+            list.AddRange(g);
+        }
+        return list;
+    }
+
+    // Dropdown rows: 0 = "(none)" (clears selection), then one row per selectable object.
+    private System.Collections.Generic.IReadOnlyList<string> SelectionOptions()
+    {
+        var opts = new List<string> { _text!.T("common.none") };
+        foreach (var (_, label) in SelectableObjects()) opts.Add(label);
+        return opts;
+    }
+
+    // Current selection → row index. null (or a selection not in the current filtered/visible set) → 0 = "(none)".
+    private int SelectionSelectedIndex()
+    {
+        if (_editor.SelectedWindowId is not { } sel) return 0;
+        var objs = SelectableObjects();
+        for (int i = 0; i < objs.Count; i++) if (objs[i].Id == sel) return 1 + i;
+        return 0;
+    }
+
+    // Pick: row 0 clears selection; rows 1.. select that object (same effect as clicking it in the scene).
+    private void OnSelectionPicked(int index)
+    {
+        if (index <= 0) { _editor.SetSelectedWindow(null); return; }
+        var objs = SelectableObjects();
+        var i = index - 1;
+        if (i >= 0 && i < objs.Count) _editor.SelectWindow(objs[i].Id);
     }
 
     // The plugins that own an editable window, sorted by display name (WindowService sorts); indices here map to
