@@ -169,7 +169,7 @@ internal sealed partial class LayoutEditorOverlay
             new SpacerElement(10f),
             // One dropdown replaces the 3 filter chips: << All >>, << Stellar >>, << Game UI >>, then one row per
             // plugin that owns an editable window (friendly localized name). MaxVisibleRows caps + scrolls the list.
-            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 3 },
+            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 10 },
             new SpacerElement(10f),
             new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
             // One dropdown replaces the per-slot buttons (switch-only — add/remove stays in Settings -> Layout).
