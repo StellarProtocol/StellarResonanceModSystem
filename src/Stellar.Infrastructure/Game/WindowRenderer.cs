@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -291,6 +291,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     // after willRenderCanvases runs (end of frame). So "settled" iff at least one frame boundary has passed since
     // the (re)create — a frame-elapsed test, NOT a value test (a genuine 1.0 is indistinguishable from the default).
     public bool CanvasScaleReady => _canvasComp != null && Time.frameCount > _canvasCreatedFrame;
+
+    // IWindowPopups — close any open dropdown popup (it lives on its own scene-root canvas, so hiding the owning
+    // window never tears it down). Null-safe: the builder is null before the first canvas build / after teardown.
+    public void CloseOpenPopups() => _builder?.CloseDropdown();
 
     // Monotonic canvas (re)create counter. The Host watches this to fire ONE corrective layout reapply after a
     // scene-change canvas rebuild, once CanvasScaleReady (belt to WindowService.Layout's per-window defer).

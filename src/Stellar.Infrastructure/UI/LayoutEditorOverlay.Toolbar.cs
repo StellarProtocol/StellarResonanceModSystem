@@ -77,7 +77,9 @@ internal sealed partial class LayoutEditorOverlay
         _toolbarWindow?.SetVisible(true);
     }
 
-    private void HideToolbar() => _toolbarWindow?.SetVisible(false);
+    // Also close any open toolbar dropdown: its popup is a scene-root canvas, not a child of the toolbar window,
+    // so SetVisible(false) alone would leave a stray option list on screen (belt-and-suspenders, idempotent).
+    private void HideToolbar() { _windows?.CloseOpenPopups(); _toolbarWindow?.SetVisible(false); }
 
     // The toolbar as a single Row of framework elements. Funcs re-pull live state (selection, active slot,
     // filter) on the window's refresh; Buttons' OnClick call the unchanged behaviour below.

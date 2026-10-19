@@ -301,7 +301,7 @@ internal sealed partial class WindowBuilder
     // Destroy the open popup (idempotent). Called on pick, blocker click, Escape, or before opening another.
     // Destroying the layer GO tears down the blocker + panel it parents in one shot; null every ref so repeated
     // open/close (and edit-exit) never leaks a popup layer at the scene root.
-    private void CloseDropdown()
+    internal void CloseDropdown()
     {
         if (_openDropdownLayer != null) { UnityEngine.Object.Destroy(_openDropdownLayer); _openDropdownLayer = null; }
         _openDropdownPanel = null;

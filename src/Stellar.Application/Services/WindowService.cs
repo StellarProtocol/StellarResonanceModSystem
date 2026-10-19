@@ -47,6 +47,10 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     /// <summary>Canvas (re)create counter — the Host fires one settled reapply when it changes. 0 when unavailable.</summary>
     internal int CanvasGeneration => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasGeneration ?? 0;
 
+    /// <summary>Close any open transient popup (the dropdown lives on its own scene-root canvas, so hiding a
+    /// window doesn't tear it down — the layout editor calls this on edit-exit). No-op when none is open.</summary>
+    internal void CloseOpenPopups() => (_renderer as Stellar.Application.Abstractions.IWindowPopups)?.CloseOpenPopups();
+
     public IWindowControl Register(WindowRegistration reg) => RegisterCore(reg, ownerId: null);
 
     public IWindowControl Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys)

@@ -121,6 +121,10 @@ internal sealed partial class LayoutEditorOverlay
         else if (_wasEditing)
         {
             _chrome.Teardown();   // destroy the overlay canvas on edit-mode exit
+            // A toolbar dropdown (filter/slot) left open when edit mode exits lives on its OWN scene-root popup
+            // canvas, so hiding the toolbar below does NOT tear it down — close it explicitly or the option list
+            // stays on screen after exit (Alt+E / Exit-button-while-open bug).
+            _windows?.CloseOpenPopups();
             HideToolbar();
             _editInputBlocker.SetActive(false);   // stop absorbing game-UI clicks once out of edit mode
             Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = false;
