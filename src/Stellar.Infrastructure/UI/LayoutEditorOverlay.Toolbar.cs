@@ -87,10 +87,11 @@ internal sealed partial class LayoutEditorOverlay
             // and restores it on show (ApplySavedRect) — so no per-tick re-centre is needed or wanted (that would
             // clobber a user drag). OverrideSortingOrder lifts the bar above the edit chrome (see the const).
             // Widened to seat the selection DROPDOWN (60px label + 280px dropdown + the 6px gap) that replaced the old
-            // 210px "Selected: <id>" text, as well as the extra "Reset filtered" button — without the flex-centred
-            // content block clipping against the glass panel edges (the content CLIPS at the panel edges if it
-            // overflows). Sized for the longest-locale labels (id/th reset captions run longer than English).
-            const float w = 1480f;
+            // 210px "Selected: <id>" text, the Show/Hide toggle button (acts on the selected element), and the extra
+            // "Reset filtered" button — without the flex-centred content block clipping against the glass panel edges
+            // (the content CLIPS at the panel edges if it overflows). Sized for the longest-locale labels (id/th reset
+            // captions run longer than English).
+            const float w = 1580f;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect(0f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
@@ -183,6 +184,14 @@ internal sealed partial class LayoutEditorOverlay
         items.Add(new TextElement(() => _text!.T("layout.toolbar.selectedLabel"), () => _theme.Colors.MenuMuted, Width: 60f));
         items.Add(new DropdownElement(SelectionSelectedIndex, SelectionOptions, OnSelectionPicked, Width: 280f) { MaxVisibleRows = 12 });
         items.Add(new SpacerElement(10f));
+        // Show/Hide toggle for the CURRENTLY-SELECTED element (reuses ToggleVisibility's native→HUD→window routing +
+        // persistence). Label reflects the live state — "Hide" when the selection is visible, "Show" when hidden.
+        // Disabled when nothing is selected or the selected element isn't hideable (SelectedVisibility().CanHide).
+        items.Add(new ButtonElement(
+            () => SelectedVisibility().Visible ? _text!.T("layout.toolbar.hide") : _text!.T("layout.toolbar.show"),
+            () => { if (_editor.SelectedWindowId is { } s) ToggleVisibility(s); },
+            Enabled: () => { var v = SelectedVisibility(); return v.Found && v.CanHide; }));
+        items.Add(new SpacerElement(10f));
         items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetSelected"),
             () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
             Enabled: () => _editor.SelectedWindowId != null));
@@ -200,35 +209,56 @@ internal sealed partial class LayoutEditorOverlay
     // The currently-selectable layout objects, in a STABLE deterministic order (each group sorted by label, so the
     // dropdown's Options() and SelectionSelectedIndex() always agree frame-to-frame regardless of dictionary order).
     // Mirrors exactly what click-select can target under the active filter: native game-UI entries (ShouldOutlineGameUi,
-    // resolved+visible) then mod windows (ShouldOutlineStellar, visible via EditableRects, per-plugin filter).
-    private System.Collections.Generic.IReadOnlyList<(string Id, string Label)> SelectableObjects()
+    // resolved) then mod windows (ShouldOutlineStellar via EditableElements, per-plugin filter). HIDDEN elements are
+    // INCLUDED (each row carries its Visible flag) so a hidden element stays selectable and can be re-shown from the
+    // toolbar — SelectionOptions marks the hidden rows with a localized "(hidden)" suffix.
+    private System.Collections.Generic.IReadOnlyList<(string Id, string Label, bool Visible)> SelectableObjects()
     {
-        var list = new List<(string Id, string Label)>();
+        var list = new List<(string Id, string Label, bool Visible)>();
         if (ShouldOutlineGameUi && _nativeUi is not null)
         {
-            var g = new List<(string Id, string Label)>();
+            var g = new List<(string Id, string Label, bool Visible)>();
             foreach (var e in _nativeUi.Entries)
-                if (e.IsResolved && e.Visible) g.Add((e.Descriptor.Id, _text!.T(e.Descriptor.DisplayNameKey)));
+                if (e.IsResolved) g.Add((e.Descriptor.Id, _text!.T(e.Descriptor.DisplayNameKey), e.Visible));
             g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
             list.AddRange(g);
         }
         if (ShouldOutlineStellar && _windows is not null)
         {
-            var g = new List<(string Id, string Label)>();
-            foreach (var (id, _) in _windows.EditableRects())
-                if (WindowOwnerMatchesFilter(id)) g.Add((id, id));
+            var g = new List<(string Id, string Label, bool Visible)>();
+            // EditableElements (NOT EditableRects): EditableRects yields only VISIBLE windows, so a hidden window
+            // would drop out of the dropdown and could never be re-shown from here. EditableElements is hidden-inclusive.
+            foreach (var el in _windows.EditableElements())
+                if (WindowOwnerMatchesFilter(el.Id)) g.Add((el.Id, el.Id, el.Visible));
             g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
             list.AddRange(g);
         }
         return list;
     }
 
-    // Dropdown rows: 0 = "(none)" (clears selection), then one row per selectable object.
+    // Dropdown rows: 0 = "(none)" (clears selection), then one row per selectable object. Hidden rows get a localized
+    // "(hidden)" suffix so a hidden-but-still-listed element is visually distinct and can be picked + re-shown.
     private System.Collections.Generic.IReadOnlyList<string> SelectionOptions()
     {
         var opts = new List<string> { _text!.T("common.none") };
-        foreach (var (_, label) in SelectableObjects()) opts.Add(label);
+        foreach (var (_, label, visible) in SelectableObjects())
+            opts.Add(visible ? label : label + " " + _text!.T("layout.toolbar.hiddenSuffix"));
         return opts;
+    }
+
+    // (found, visible, canHide) for the selected element, across both element services. found=false → nothing selected
+    // or the id isn't an editable element (the Show/Hide button then stays disabled). Mirrors ToggleVisibility's
+    // native→window search order so the reported state matches what the toggle acts on.
+    private (bool Found, bool Visible, bool CanHide) SelectedVisibility()
+    {
+        if (_editor.SelectedWindowId is not { } sel) return (false, true, false);
+        if (_nativeUi is not null)
+            foreach (var e in _nativeUi.Entries)
+                if (e.IsResolved && e.Descriptor.Id == sel) return (true, e.Visible, e.Descriptor.SafeToHide);
+        if (_windows is not null)
+            foreach (var el in _windows.EditableElements())
+                if (el.Id == sel) return (true, el.Visible, el.CanHide);
+        return (false, true, false);
     }
 
     // Current selection → row index. null (or a selection not in the current filtered/visible set) → 0 = "(none)".
