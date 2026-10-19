@@ -63,6 +63,10 @@ internal sealed partial class LayoutEditorOverlay
     // Layering: game UI (<32750) < blocker (32749) < HUD (32750) < Window/toolbar (32755) < chrome (32758).
     private const int EditBlockerSortingOrder = 32749;
     private const int InteractiveLayerMinOrder = 32755;
+    // The toolbar window renders on its own override-sorting canvas (WindowSpec.OverrideSortingOrder) at this
+    // absolute order — ABOVE the edit chrome (32758) so its buttons draw over the outlines, BELOW the top input
+    // blocker (32760). Shared by ShowToolbar (sets the spec) and IsPointerOverToolbar (the precise press guard).
+    private const int ToolbarOverrideSortingOrder = 32759;
     private readonly UGuiInputBlocker _editInputBlocker = new(EditBlockerSortingOrder);
 
     public LayoutEditorOverlay(LayoutEditorService editor, IInputGateway input,
@@ -108,18 +112,30 @@ internal sealed partial class LayoutEditorOverlay
     {
         // Gate edit-only window drag (overlay/status windows move only in edit mode; popup dialogs drag freely).
         Stellar.Infrastructure.Unity.LayoutEditGate.IsEditing = _editor.IsEditing;
+        // Also narrow edit-only drag/resize to the currently-filtered plugin's windows — the SAME rule the
+        // outline/select use (ShouldOutlineStellar && WindowOwnerMatchesFilter). Tracks live filter state each tick.
+        Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter = IsWindowEditableNow;
+        // One-shot pre-warm: mount the toolbar invisibly once during load (runs whether or not editing) so the first
+        // real edit-enter un-parks an already-built window instead of building its whole tree in that frame.
+        PrewarmToolbar();
         if (_editor.IsEditing)
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
             ProcessInput();
+            TickNudge();    // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
         else if (_wasEditing)
         {
             _chrome.Teardown();   // destroy the overlay canvas on edit-mode exit
+            // A toolbar dropdown (filter/slot) left open when edit mode exits lives on its OWN scene-root popup
+            // canvas, so hiding the toolbar below does NOT tear it down — close it explicitly or the option list
+            // stays on screen after exit (Alt+E / Exit-button-while-open bug).
+            _windows?.CloseOpenPopups();
             HideToolbar();
             _editInputBlocker.SetActive(false);   // stop absorbing game-UI clicks once out of edit mode
             Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = false;
+            Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter = null;   // no filter outside edit mode
         }
         _wasEditing = _editor.IsEditing;
     }
@@ -128,7 +144,10 @@ internal sealed partial class LayoutEditorOverlay
     // and push it to the uGUI overlay. Runs each tick AFTER ProcessInput so outlines track an in-progress drag.
     private void SyncChrome()
     {
-        CenterToolbar();   // re-centre before pushing chrome, so a res / UI-scale change since registration re-lands centred
+        // No per-tick re-centre here anymore: the toolbar is a Draggable, Top-anchored window, so WindowService
+        // owns its placement — it restores a user-dragged position (persisted per-resolution) or falls back to a
+        // live top-centre via WindowAnchor.Top, and re-applies on a resolution / UI-scale change
+        // (ReclampLayoutOnResolutionChange → ReapplyLayout). Re-centring every tick would clobber a user drag.
         _chromeItems.Clear();
         if (ShouldOutlineStellar && _windows != null) AddWindowServiceItems(_chromeItems);
         if (ShouldOutlineGameUi) AddNativeUiItems(_chromeItems);
@@ -142,6 +161,7 @@ internal sealed partial class LayoutEditorOverlay
     {
         foreach (var el in _windows!.EditableElements())   // incl. hidden (dimmed re-enable outline)
         {
+            if (!WindowOwnerMatchesFilter(el.Id)) continue;   // per-plugin filter: only the selected plugin's windows
             var colour = _editor.SelectedWindowId == el.Id ? OutlineSelected : OutlineUnselected;
             items.Add(new Stellar.Infrastructure.Game.EditChromeItem(el.Rect, colour, el.Id, el.Id, el.Visible, el.CanHide, el.Resizable));
         }
@@ -169,7 +189,8 @@ internal sealed partial class LayoutEditorOverlay
         var es = UnityEngine.EventSystems.EventSystem.current;
         if (es == null) return false;
         var (px, py) = _input.PointerPosition;
-        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, py) };
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
         _uiRaycastScratch.Clear();
         es.RaycastAll(ped, _uiRaycastScratch);
         for (var i = 0; i < _uiRaycastScratch.Count; i++)
@@ -177,9 +198,82 @@ internal sealed partial class LayoutEditorOverlay
         return false;
     }
 
+    // True when the pointer is over the layout toolbar specifically. Narrower than IsPointerOverUgui on purpose:
+    // that one is true over ANY interactive mod window (>= 32755), which would wrongly block selecting those
+    // windows in edit mode; this one fires only for the toolbar, so a press on the bar's buttons / empty drag
+    // area is fully consumed by it (no eye-toggle, no window-select, no native-grab underneath). Reuses the
+    // per-press raycast scratch buffer.
+    //
+    // Identifies the toolbar by HIERARCHY, not by sorting-order number, on purpose — do NOT "optimize" this
+    // back to a `sortingOrder >= ToolbarOverrideSortingOrder` filter. The toolbar draws on a NESTED
+    // overrideSorting Canvas (WindowSpec.OverrideSortingOrder = 32759, applied in WindowRenderer.Mount), but
+    // RaycastResult.sortingOrder for a graphic on a nested overrideSorting canvas does NOT reliably report that
+    // nested order — it reports the shared parent window canvas's order (32755). So a sorting-order threshold
+    // never matched the toolbar's own hit, IsPointerOverToolbar returned false, and a plain click on the bar
+    // still fell through to TrySelectWindow and selected the element underneath. Walking up the hit's parents
+    // for the toolbar window's GameObject name is robust regardless of what order the nested canvas reports.
+    // The toolbar root is created via UGuiPrimitives.NewRect(spec.Id, ...), so its GameObject name equals
+    // WindowBuilder.LayoutToolbarWindowId.
+    private bool IsPointerOverToolbar()
+    {
+        var es = UnityEngine.EventSystems.EventSystem.current;
+        if (es == null) return false;
+        var (px, py) = _input.PointerPosition;
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
+        _uiRaycastScratch.Clear();
+        es.RaycastAll(ped, _uiRaycastScratch);
+        for (var i = 0; i < _uiRaycastScratch.Count; i++)
+        {
+            var go = _uiRaycastScratch[i].gameObject;
+            if (go == null) continue;
+            for (var t = go.transform; t != null; t = t.parent)
+                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId) return true;
+        }
+        return false;
+    }
+
+    // True when the pointer is over an OPEN dropdown popup or its full-screen blocker. Same hierarchy-walk raycast
+    // as IsPointerOverToolbar (and for the same reason — the popup's nested override-sorting canvas's order is NOT
+    // reported by RaycastResult, so match by GameObject NAME, never by a sorting-order threshold). The popup +
+    // blocker are canvas-root children named by WindowBuilder; while one is open the full-screen blocker is hit by
+    // every press, so this returns true for ANY press during an open dropdown — exactly the intent (every such
+    // press is a pick or a dismiss, never an editor select/drag). Reuses the per-press raycast scratch buffer.
+    private bool IsPointerOverDropdownPopup()
+    {
+        var es = UnityEngine.EventSystems.EventSystem.current;
+        if (es == null) return false;
+        var (px, py) = _input.PointerPosition;
+        // PointerPosition is top-left/y-down; RaycastAll wants y-up → flip Y (X is unchanged).
+        var ped = new UnityEngine.EventSystems.PointerEventData(es) { position = new Vector2(px, UnityEngine.Screen.height - py) };
+        _uiRaycastScratch.Clear();
+        es.RaycastAll(ped, _uiRaycastScratch);
+        for (var i = 0; i < _uiRaycastScratch.Count; i++)
+        {
+            var go = _uiRaycastScratch[i].gameObject;
+            if (go == null) continue;
+            for (var t = go.transform; t != null; t = t.parent)
+                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.DropdownPanelName ||
+                    t.name == Stellar.Infrastructure.Game.WindowBuilder.DropdownBlockerName) return true;
+        }
+        return false;
+    }
+
     private void HandlePressed()
     {
         var (px, py) = _input.PointerPosition;
+        // Toolbar first: it now renders (and hit-tests) ABOVE the edit chrome via its override-sorting canvas and
+        // can be dragged over any element. A press on it belongs to the toolbar's own buttons / whole-frame drag —
+        // never toggle an element's eye, select a window, or grab a native HUD element underneath it. Uses the
+        // toolbar's EXACT override order (not the broad IsPointerOverUgui, which is also true over other mod windows
+        // and would wrongly block selecting THEM).
+        if (IsPointerOverToolbar()) return;
+        // An OPEN dropdown popup (the toolbar's filter list) + its full-screen blocker are parented to the CANVAS
+        // ROOT, not under the toolbar GameObject, so IsPointerOverToolbar() above does NOT catch them. A press to
+        // pick an option (over the list) or to dismiss (over the blocker) must likewise be fully consumed here —
+        // otherwise the SAME press also falls through to TrySelectWindow / the native-grab and selects/drags the
+        // element underneath the open list.
+        if (IsPointerOverDropdownPopup()) return;
         // Eye icon first: clicking a component's eye toggles its visibility (and consumes the press — no
         // select/drag). The chrome owns the eye geometry (raycaster-less canvas → manual rect hit-test).
         if (_chrome.TryGetEyeHit(px, py, out var eyeId)) { ToggleVisibility(eyeId); return; }
@@ -221,6 +315,7 @@ internal sealed partial class LayoutEditorOverlay
         if (_windows is null) return false;
         foreach (var (id, rect) in _windows.EditableRects())
         {
+            if (!WindowOwnerMatchesFilter(id)) continue;   // per-plugin filter: don't select another plugin's window
             if (!rect.Contains(px, py)) continue;
             _editor.SelectWindow(id);
             return true;

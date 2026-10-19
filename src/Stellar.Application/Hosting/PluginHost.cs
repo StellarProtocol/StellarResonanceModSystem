@@ -144,6 +144,13 @@ internal sealed class PluginHost : IDisposable
     private static ILauncher? ScopedLauncher(string pluginGuid, IPluginServices shared)
         => shared.Launcher is ILauncherOwnedRegistrations sink ? new PerPluginLauncher(pluginGuid, sink, shared.Launcher) : null;
 
+    /// <summary>The plugin's own <see cref="IWindowHost"/>: every window it registers is tagged with its guid, so
+    /// the layout editor can attribute windows to plugins (and filter edit-mode to one plugin's windows). Null when
+    /// the shared window host doesn't expose the owner-tagged sink (a bare test host) → PerPluginServices falls
+    /// back to the untagged shared host.</summary>
+    private static IWindowHost? ScopedWindowHost(string pluginGuid, IPluginServices shared)
+        => shared.Windows is IWindowOwnedRegistrations sink ? new PerPluginWindowHost(pluginGuid, sink, shared.Windows) : null;
+
     // Creates the PerPluginFramework + PerPluginServices and invokes the plugin constructor.
     // Extracted to keep RegisterOne under 50 LoC (STELLAR0002).
     // On plugin-ctor failure every per-plugin resource is released before rethrowing,
@@ -175,7 +182,7 @@ internal sealed class PluginHost : IDisposable
                                lifetime.Look, lifetime.PhotoMode, lifetime.Quality, lifetime.Time,
                                FreeCamera: lifetime.FreeCam, Downloads: bind.PerPluginDownloads,
                                ReShadeUniforms: lifetime.Uniforms, Launcher: ScopedLauncher(bind.PluginGuid, sharedServices),
-                               Voice: lifetime.Voice));
+                               Voice: lifetime.Voice, Windows: ScopedWindowHost(bind.PluginGuid, sharedServices)));
         try
         {
             return (IStellarPlugin)ctor.Invoke(new object[] { perPluginServices });

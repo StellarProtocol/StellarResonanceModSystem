@@ -6,7 +6,7 @@ using Stellar.Abstractions.Services;
 
 namespace Stellar.Application.Services;
 
-internal sealed class LayoutStorage
+internal sealed partial class LayoutStorage
 {
     private const string SectionName = "ui.layout";
     private const string ActiveSlotKey = "active_slot";
@@ -24,6 +24,11 @@ internal sealed class LayoutStorage
     private readonly IConfigSection _section;
     private readonly IPluginLog _log;
     private readonly List<SlotData> _slots;
+    // Slot-INDEPENDENT window layouts: one bucket keyed by (windowId → resKey), with NO slot dimension, persisted
+    // under the "global.*" key prefix. Windows whose spec sets SlotIndependentLayout (e.g. the layout-edit toolbar)
+    // store their position/visibility here, so a slot switch never moves them. A separate map (not a reserved slot
+    // index) because slots are a user-editable list with add/remove — a reserved index would shift under them.
+    private readonly Dictionary<string, Dictionary<string, WindowState>> _global;
     private int _activeSlot;
     private float _snapThresholdPx;
     private bool _snapEnabled;
@@ -34,6 +39,7 @@ internal sealed class LayoutStorage
         _log = log;
         var persistedCount = Math.Clamp(_section.Get(SlotCountKey, DefaultSlotCount), MinSlotCount, MaxSlotCount);
         _slots = LoadSlots(persistedCount);
+        _global = LoadGlobalWindows();
         _activeSlot = Math.Clamp(_section.Get(ActiveSlotKey, 0), 0, _slots.Count - 1);
         _snapThresholdPx = Math.Clamp(_section.Get(SnapThresholdKey, DefaultSnapThreshold), MinSnapThreshold, MaxSnapThreshold);
         _snapEnabled     = _section.Get(SnapEnabledKey, true);
@@ -93,15 +99,21 @@ internal sealed class LayoutStorage
     public string GetSlotName(int slot) => InRange(slot) ? _slots[slot].Name : "?";
 
     public (WindowRect Rect, bool Visible) Get(int slot, string windowId, Resolution resolution, WindowRect defaultRect, float scaleFactor = 1f)
+        => GetFrom(InRange(slot) ? _slots[slot].Windows : null, windowId, resolution, defaultRect, scaleFactor);
+
+    /// <summary>Slot-INDEPENDENT read: the window's layout from the single global bucket (no slot dimension).
+    /// Mirrors <see cref="Get(int,string,Resolution,WindowRect,float)"/> for windows whose spec opts in.</summary>
+    public (WindowRect Rect, bool Visible) GetGlobal(string windowId, Resolution resolution, WindowRect defaultRect, float scaleFactor = 1f)
+        => GetFrom(_global, windowId, resolution, defaultRect, scaleFactor);
+
+    private (WindowRect Rect, bool Visible) GetFrom(Dictionary<string, Dictionary<string, WindowState>>? windows, string windowId, Resolution resolution, WindowRect defaultRect, float scaleFactor)
     {
         // Saved rects are CANVAS units (screen ÷ scaleFactor on a CanvasScaler'd canvas); the clamp bound must be
         // canvas units too, else a non-1.0 scaleFactor shifts the window on every load. The KEY lookup stays raw.
         var clampRes = scaleFactor > 0f && System.Math.Abs(scaleFactor - 1f) > 0.001f
             ? new Resolution((int)System.Math.Round(resolution.Width / scaleFactor), (int)System.Math.Round(resolution.Height / scaleFactor))
             : resolution;
-        if (!InRange(slot)) return (ClampToScreen(defaultRect, clampRes), true);
-        var slotData = _slots[slot];
-        if (!slotData.Windows.TryGetValue(windowId, out var perRes)) return (ClampToScreen(defaultRect, clampRes), true);
+        if (windows is null || !windows.TryGetValue(windowId, out var perRes)) return (ClampToScreen(defaultRect, clampRes), true);
 
         // A layout saved for THIS exact resolution is the user's deliberate placement — honour edge-tucking, but
         // a rect dragged FULLY off-screen (0 px visible) is never intentional and was unrecoverable: it persists
@@ -127,9 +139,15 @@ internal sealed class LayoutStorage
     /// records it HIDDEN. Lets Register seed Visible=false for a user-hidden window without force-showing untouched
     /// ones (whose Get() default is visible=true).</summary>
     public bool IsPersistedHidden(int slot, string windowId, Resolution resolution)
+        => InRange(slot) && IsPersistedHiddenIn(_slots[slot].Windows, windowId, resolution);
+
+    /// <summary>Slot-INDEPENDENT variant of <see cref="IsPersistedHidden"/> (reads the global bucket).</summary>
+    public bool IsPersistedHiddenGlobal(string windowId, Resolution resolution)
+        => IsPersistedHiddenIn(_global, windowId, resolution);
+
+    private bool IsPersistedHiddenIn(Dictionary<string, Dictionary<string, WindowState>> windows, string windowId, Resolution resolution)
     {
-        if (!InRange(slot)) return false;
-        if (!_slots[slot].Windows.TryGetValue(windowId, out var perRes)) return false;
+        if (!windows.TryGetValue(windowId, out var perRes)) return false;
         if (perRes.TryGetValue(resolution.Key, out var exact)) return !exact.Visible;
         var closest = FindClosestResolution(perRes.Keys, resolution);
         return closest is { } k && perRes.TryGetValue(k, out var c) && !c.Visible;
@@ -178,6 +196,12 @@ internal sealed class LayoutStorage
         if (_slots[slot].Windows.Remove(windowId)) PersistSlots();
     }
 
+    /// <summary>Slot-INDEPENDENT variant of <see cref="Remove"/> (drops the global override).</summary>
+    public void RemoveGlobal(string windowId)
+    {
+        if (_global.Remove(windowId)) PersistGlobal();
+    }
+
     /// <summary>The anchor offset saved with this window's layout (exact resolution first, else the closest one within
     /// delta — an offset is resolution-independent), and whether a LEGACY exact-resolution save (no offset: saved before
     /// 2.22.0, or by a path that does not know the anchor) is all there is.</summary>
@@ -185,7 +209,22 @@ internal sealed class LayoutStorage
     {
         offset = default;
         legacyExact = false;
-        if (!InRange(slot) || !_slots[slot].Windows.TryGetValue(windowId, out var perRes)) return false;
+        return InRange(slot) && TryGetAnchorOffsetIn(_slots[slot].Windows, windowId, resolution, out offset, out legacyExact);
+    }
+
+    /// <summary>Slot-INDEPENDENT variant of <see cref="TryGetAnchorOffset"/> (reads the global bucket).</summary>
+    public bool TryGetAnchorOffsetGlobal(string windowId, Resolution resolution, out (float X, float Y) offset, out bool legacyExact)
+    {
+        offset = default;
+        legacyExact = false;
+        return TryGetAnchorOffsetIn(_global, windowId, resolution, out offset, out legacyExact);
+    }
+
+    private bool TryGetAnchorOffsetIn(Dictionary<string, Dictionary<string, WindowState>> windows, string windowId, Resolution resolution, out (float X, float Y) offset, out bool legacyExact)
+    {
+        offset = default;
+        legacyExact = false;
+        if (!windows.TryGetValue(windowId, out var perRes)) return false;
         if (perRes.TryGetValue(resolution.Key, out var exact))
         {
             if (exact.Anchor is { } a) { offset = a; return true; }
@@ -209,15 +248,29 @@ internal sealed class LayoutStorage
             _log.Warning($"[Layout] save ignored: slot {slot} out of range [0,{_slots.Count - 1}]");
             return;
         }
+        SaveInto(_slots[slot].Windows, windowId, resolution, state);
+        PersistSlots();
+    }
 
-        var slotData = _slots[slot];
-        if (!slotData.Windows.TryGetValue(windowId, out var perRes))
+    /// <summary>Slot-INDEPENDENT variant of <see cref="Save(int,string,Resolution,WindowRect,bool)"/>.</summary>
+    public void SaveGlobal(string windowId, Resolution resolution, WindowRect rect, bool visible) =>
+        SaveGlobal(windowId, resolution, new WindowState(rect, visible, null));
+
+    /// <summary>Slot-INDEPENDENT variant of <see cref="Save(int,string,Resolution,WindowState)"/> (writes the global bucket).</summary>
+    public void SaveGlobal(string windowId, Resolution resolution, WindowState state)
+    {
+        SaveInto(_global, windowId, resolution, state);
+        PersistGlobal();
+    }
+
+    private static void SaveInto(Dictionary<string, Dictionary<string, WindowState>> windows, string windowId, Resolution resolution, WindowState state)
+    {
+        if (!windows.TryGetValue(windowId, out var perRes))
         {
             perRes = new Dictionary<string, WindowState>();
-            slotData.Windows[windowId] = perRes;
+            windows[windowId] = perRes;
         }
         perRes[resolution.Key] = state;
-        PersistSlots();
     }
 
     public void SetActiveSlot(int slot)
@@ -313,106 +366,4 @@ internal sealed class LayoutStorage
         return true;
     }
 
-    // Persistence layer — uses IConfigSection's Get<T>/Set<T> with strings since the
-    // current config layer doesn't ship structured JSON support. We serialize the
-    // slot data as a single flat-key prefix scheme: "slots.<slotIdx>.name" +
-    // "slots.<slotIdx>.windows.<windowId>.<resKey>.{x,y,w,h,visible}".
-    //
-    // Trade-off: hand-rolled flat-key format works against the existing IConfigSection
-    // contract without changes to it. If IConfigSection later gains JSON support, we
-    // collapse this to a single JSON blob.
-
-    private List<SlotData> LoadSlots(int count)
-    {
-        var slots = new List<SlotData>(count);
-        for (var i = 0; i < count; i++)
-        {
-            slots.Add(new SlotData
-            {
-                Name = _section.Get($"slots.{i}.name", DefaultSlotName(i)) ?? DefaultSlotName(i),
-                Windows = LoadWindowsForSlot(i),
-            });
-        }
-        return slots;
-    }
-
-    private Dictionary<string, Dictionary<string, WindowState>> LoadWindowsForSlot(int slot)
-    {
-        // The config layer doesn't enumerate; we read by-key. Window IDs and
-        // resolution keys are tracked via an index list.
-        var index = _section.Get($"slots.{slot}.index", string.Empty) ?? string.Empty;
-        var result = new Dictionary<string, Dictionary<string, WindowState>>();
-        if (string.IsNullOrEmpty(index)) return result;
-
-        foreach (var pair in index.Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var bits = pair.Split('@');
-            if (bits.Length != 2) continue;
-            var windowId = bits[0];
-            var resKey = bits[1];
-
-            var baseKey = $"slots.{slot}.windows.{windowId}.{resKey}";
-            var x = _section.Get($"{baseKey}.x", 0f);
-            var y = _section.Get($"{baseKey}.y", 0f);
-            var w = _section.Get($"{baseKey}.w", 0f);
-            var h = _section.Get($"{baseKey}.h", 0f);
-            var v = _section.Get($"{baseKey}.visible", true);
-            // 2.22.0 sidecar (rollback-safe: older builds read x/y/w/h only and ignore these keys).
-            (float, float)? anchor = _section.Get($"{baseKey}.anc", false)
-                ? (_section.Get($"{baseKey}.ax", 0f), _section.Get($"{baseKey}.ay", 0f))
-                : null;
-
-            if (!result.TryGetValue(windowId, out var perRes))
-            {
-                perRes = new Dictionary<string, WindowState>();
-                result[windowId] = perRes;
-            }
-            perRes[resKey] = new WindowState(new WindowRect(x, y, w, h), v, anchor);
-        }
-        return result;
-    }
-
-    private void PersistSlots()
-    {
-        _section.Set(SlotCountKey, _slots.Count);
-        for (var i = 0; i < _slots.Count; i++)
-        {
-            var slotData = _slots[i];
-            _section.Set($"slots.{i}.name", slotData.Name);
-
-            var indexEntries = slotData.Windows
-                .SelectMany(kvp => kvp.Value.Keys.Select(rk => $"{kvp.Key}@{rk}"))
-                .ToList();
-            _section.Set($"slots.{i}.index", string.Join(";", indexEntries));
-
-            foreach (var (windowId, perRes) in slotData.Windows)
-            {
-                foreach (var (resKey, state) in perRes)
-                {
-                    var baseKey = $"slots.{i}.windows.{windowId}.{resKey}";
-                    _section.Set($"{baseKey}.x",       state.Rect.X);
-                    _section.Set($"{baseKey}.y",       state.Rect.Y);
-                    _section.Set($"{baseKey}.w",       state.Rect.Width);
-                    _section.Set($"{baseKey}.h",       state.Rect.Height);
-                    _section.Set($"{baseKey}.visible", state.Visible);
-                    // Always written, so a later save without an offset clears a stale one (anc=false).
-                    _section.Set($"{baseKey}.anc",     state.Anchor is not null);
-                    _section.Set($"{baseKey}.ax",      state.Anchor?.X ?? 0f);
-                    _section.Set($"{baseKey}.ay",      state.Anchor?.Y ?? 0f);
-                }
-            }
-        }
-        _section.Save();
-    }
-
-    private static string DefaultSlotName(int i) => i == 0 ? "Default" : $"Slot {i + 1}";
-
-    private sealed class SlotData
-    {
-        public string Name { get; set; } = "";
-        public Dictionary<string, Dictionary<string, WindowState>> Windows { get; set; } = new();
-    }
-
-    /// <summary><paramref name="Anchor"/> = the anchor offset in design units (2.22.0); null = a legacy / anchor-less save.</summary>
-    internal readonly record struct WindowState(WindowRect Rect, bool Visible, (float X, float Y)? Anchor);
 }

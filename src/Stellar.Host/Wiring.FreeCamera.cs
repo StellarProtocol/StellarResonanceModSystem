@@ -111,7 +111,7 @@ public sealed partial class BootstrapPlugin
         _inputShield!.KeyboardBlockChanged += () =>
         {
             var blocked = _inputShield.KeyboardBlocked;
-            _keyboardGate?.SetSuppressed(blocked || (_windowService?.AnyFieldFocused ?? false));
+            _keyboardGate?.SetSuppressed(blocked || (_windowService?.AnyFieldFocused ?? false) || (_layoutEditor?.IsEditing ?? false));
             log.Info("[FreeCam] keyboard gate " + (blocked ? "on (free camera)" : "off"));
         };
     }

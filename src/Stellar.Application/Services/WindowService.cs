@@ -10,7 +10,7 @@ namespace Stellar.Application.Services;
 /// <summary>Runtime for the uGUI interactive window toolkit. Mounts windows when the canvas is present,
 /// re-applies display values at a capped ~10 Hz (or immediately on MarkDirty), self-heals on scene-change
 /// destroys. Gating + persistence + focus→keyboard-gate signal land in sibling partials (Plans 3–4).</summary>
-internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
+internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrations, ITextFieldFocus
 {
     private const float ApplyInterval = 0.1f;
     private readonly IWindowRenderer _renderer;
@@ -19,10 +19,17 @@ internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
     private readonly IPluginLog _log;
     private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
+    // Display-only plugin names for the layout editor's per-plugin filter — bound late (SetDisplayNames) because
+    // PluginDisplayNames is built after this service (it needs the launcher). Null → fall back to the raw guid.
+    private IPluginDisplayNames? _displayNames;
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
     { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _log = log; _layoutEditor = layoutEditor; }
+
+    /// <summary>Late-bind the plugin display-name resolver (composition root, after the launcher exists) so the
+    /// layout editor's plugin filter can caption each plugin by its own localized tile title.</summary>
+    internal void SetDisplayNames(IPluginDisplayNames names) => _displayNames = names;
 
     /// <inheritdoc/>
     public bool IsLayoutEditing => _layoutEditor?.IsEditing ?? false;
@@ -40,7 +47,32 @@ internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
     /// <summary>Canvas (re)create counter — the Host fires one settled reapply when it changes. 0 when unavailable.</summary>
     internal int CanvasGeneration => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasGeneration ?? 0;
 
-    public IWindowControl Register(WindowRegistration reg)
+    /// <summary>Close any open transient popup (the dropdown lives on its own scene-root canvas, so hiding a
+    /// window doesn't tear it down — the layout editor calls this on edit-exit). No-op when none is open.</summary>
+    internal void CloseOpenPopups() => (_renderer as Stellar.Application.Abstractions.IWindowPopups)?.CloseOpenPopups();
+
+    public IWindowControl Register(WindowRegistration reg) => RegisterCore(reg, ownerId: null);
+
+    public IWindowControl Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys)
+        => RegisterWithHotkey(registration, toggleAction, hotkeys, ownerId: null);
+
+    // Owner-tagged registrations from PerPluginWindowHost (the per-plugin IWindowHost view). Plugins never pass
+    // their own guid — PerPluginWindowHost supplies it — so the public overloads above keep the framework's own
+    // windows untagged (null owner, which the editor filter treats as "no owning plugin").
+    IWindowControl IWindowOwnedRegistrations.Register(WindowRegistration registration, string ownerId)
+        => RegisterCore(registration, ownerId);
+
+    IWindowControl IWindowOwnedRegistrations.Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys, string ownerId)
+        => RegisterWithHotkey(registration, toggleAction, hotkeys, ownerId);
+
+    private IWindowControl RegisterWithHotkey(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys, string? ownerId)
+    {
+        var control = RegisterCore(registration, ownerId);
+        hotkeys.DeclareAction(toggleAction, () => control.SetVisible(!control.IsShown));
+        return control;
+    }
+
+    private IWindowControl RegisterCore(WindowRegistration reg, string? ownerId)
     {
         if (_windows.TryGetValue(reg.Spec.Id, out var existing))
         {
@@ -55,16 +87,34 @@ internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
         // starts Visible=false, never mounts, and never enters the fragile one-shot restore race in ApplySavedRect.
         var start = reg.Spec.StartVisible;
         if (start && _storage != null && _resolution != null
-            && _storage.IsPersistedHidden(_storage.ActiveSlot, reg.Spec.Id, _resolution()))
+            && StorageIsPersistedHidden(reg.Spec, _resolution()))
             start = false;
-        var e = new Entry(reg) { Owner = this }.Init(start); _windows[reg.Spec.Id] = e; return e;
+        var e = new Entry(reg) { Owner = this, OwnerPluginId = ownerId }.Init(start); _windows[reg.Spec.Id] = e; return e;
     }
 
-    public IWindowControl Register(WindowRegistration registration, HotkeyAction toggleAction, IHotkeys hotkeys)
+    /// <summary>Editor-facing: the guid of the plugin that registered window <paramref name="id"/>, or null when
+    /// it is framework-owned or unknown. Used by the layout editor's per-plugin filter to restrict outlines +
+    /// click-select to one plugin's windows.</summary>
+    internal string? OwnerOf(string id) => _windows.TryGetValue(id, out var e) && !e.Removed ? e.OwnerPluginId : null;
+
+    /// <summary>Editor-facing: the distinct plugins that own at least one EDITABLE (EditModeDragOnly) window — the
+    /// same set <see cref="EditableElements"/> surfaces — as (guid, displayName), sorted by display name for a
+    /// stable dropdown order. Names resolve through <c>PluginDisplayNames</c> (the plugin's own localized tile
+    /// title), falling back to the guid. Framework-owned windows (null owner) are excluded.</summary>
+    internal IReadOnlyList<(string Guid, string DisplayName)> EditableWindowPlugins()
     {
-        var control = Register(registration);
-        hotkeys.DeclareAction(toggleAction, () => control.SetVisible(!control.IsShown));
-        return control;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<(string Guid, string DisplayName)>();
+        foreach (var kv in _windows)
+        {
+            var e = kv.Value;
+            if (e.Removed || !e.Reg.Spec.EditModeDragOnly) continue;
+            var guid = e.OwnerPluginId;
+            if (guid is null || !seen.Add(guid)) continue;
+            list.Add((guid, _displayNames?.Resolve(guid, guid) ?? guid));
+        }
+        list.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+        return list;
     }
 
     public IWindowControl? Find(string id) => _windows.TryGetValue(id, out var e) ? e : null;
@@ -205,6 +255,7 @@ internal sealed partial class WindowService : IWindowHost, ITextFieldFocus
         public WindowRegistration Reg { get; }
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
+        public string? OwnerPluginId;   // guid of the plugin that registered this window; null = framework-owned
         public bool Parked;   // mounted but deactivated by a SetVisible(false) (IWindowParking)
         public bool BringToFrontPending;
         // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);

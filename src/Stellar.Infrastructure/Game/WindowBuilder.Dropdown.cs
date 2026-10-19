@@ -8,11 +8,18 @@ using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
 
-// DropdownElement: a trigger button (caption + ▾) that opens a themed floating option list. The popup is
-// parented to the CANVAS ROOT (an ancestor of every window's scroll RectMask2D, same canvas) so it is never
-// clipped, and drawn last so it sits above all windows. A full-screen invisible blocker absorbs outside
-// clicks; it is also registered as the dismissable "root" so the ticker's geometric outside-test never fires
-// (the full-screen blocker contains every point) — leaving Escape as the only ticker-driven dismiss, while
+// DropdownElement: a trigger button (caption + ▾) that opens a themed floating option list. The popup lives on
+// its OWN dedicated TOP-LEVEL (root) ScreenSpaceOverlay canvas (DropdownPopupLayer, parented to nothing) so it
+// is never clipped by any window's scroll RectMask2D and sits above every window — including a window lifted
+// onto its own override-sorting canvas (the layout toolbar at 32759). WHY a root canvas: root-vs-nested
+// sortingOrder IS honored in this build, so a root canvas at a VALID order cleanly beats the toolbar's nested
+// override canvas (32759). The old nested-under-StellarWindowCanvas attempt (1626025) and the first root-canvas
+// attempt (32780/32781) both rendered BEHIND the toolbar — but the CONFIRMED cause is a short.MaxValue overflow
+// (canvas sortingOrder is capped at 32767; those values wrapped negative), NOT nested-vs-nested unreliability
+// (that earlier suspicion is unconfirmed — it was likely a misread of the same overflow). See the sortingOrder
+// comment on DropdownPopupSortingOrder. A full-screen invisible blocker absorbs outside clicks;
+// it is also registered as the dismissable "root" so the ticker's geometric outside-test never fires (the
+// full-screen blocker contains every point) — leaving Escape as the only ticker-driven dismiss, while
 // outside-click rides the blocker's own button. This sidesteps the classic same-click-dismisses-on-open bug:
 // the opening press targeted the trigger, so the just-created blocker can't receive it. Split out of
 // WindowBuilder.cs for the file-size gate. Popup interaction can't be sandbox-verified (Mono ≠ IL2CPP).
@@ -24,9 +31,32 @@ internal sealed partial class WindowBuilder
     internal Action<RectTransform, Action>? RegisterDismissable { get; set; }
 
     // The single open dropdown popup (one at a time per canvas; this builder is shared across the canvas's
-    // windows). Closed before another opens and on pick / outside-click / Escape.
+    // windows). Closed before another opens and on pick / outside-click / Escape. The layer GO is the dedicated
+    // root canvas that parents BOTH the blocker and the panel; destroying it tears down both (see CloseDropdown).
+    private GameObject? _openDropdownLayer;
     private GameObject? _openDropdownBlocker;
     private GameObject? _openDropdownPanel;
+
+    // GameObject names for the popup parts. Exposed so the layout editor's press guard can detect a press over an
+    // OPEN dropdown by hierarchy name (walking the hit's parents) rather than by sortingOrder — the popup now
+    // lives on its own root canvas (DropdownPopupLayer) which parents these two, so the ancestor-name walk in
+    // LayoutEditorOverlay.IsPointerOverDropdownPopup still finds them. (Same name-match approach as the toolbar
+    // guard, LayoutEditorOverlay.IsPointerOverToolbar.)
+    internal const string DropdownPanelName = "DropdownPopup";
+    internal const string DropdownBlockerName = "DropdownBlocker";
+
+    // sortingOrder of the dropdown's dedicated ROOT canvas (DropdownPopupLayer). CONFIRMED CEILING: Unity canvas
+    // sortingOrder is clamped to the 16-bit SHORT range in this build — short.MaxValue = 32767 is the hard ceiling;
+    // any value above it wraps NEGATIVE (e.g. 32781 → 32781−65536 = −32755) and the canvas sinks below everything.
+    // In-codebase precedent: UGuiInputBlocker.TopSortingOrder = 32760 is commented "just under short.MaxValue". So
+    // 32766 is chosen to sit ABOVE the toolbar's override canvas (32759) and the top modal input blocker
+    // (UGuiInputBlocker.TopSortingOrder = 32760), yet AT/BELOW the 32767 cap so it cannot overflow/wrap. The old
+    // 32780/32781 values (and the earlier nested 1626025) all exceeded 32767 and wrapped negative — that, not any
+    // nested-vs-nested unreliability, is why they rendered behind the toolbar. Root-vs-nested order IS honored
+    // here (the toolbar's nested 32759 correctly beats the edit chrome's root 32758), which is why a root canvas
+    // remains the structure. Blocker-below-panel is just sibling order WITHIN this one canvas. (Sorting-layer map
+    // in WindowBuilder-Patterns.md.)
+    private const int DropdownPopupSortingOrder = 32766;
 
     // Trigger: a normal themed button whose caption tracks the selected option; the click delivers the
     // trigger's screen rect (OnClickWithRect) so the popup anchors to the button's live position.
@@ -53,22 +83,73 @@ internal sealed partial class WindowBuilder
         CloseDropdown();
         var opts = dd.Options();
         if (opts == null || opts.Count == 0) return;
-        var canvasRoot = token.Rect.transform.parent;   // windows are direct children of the canvas root
+        var canvasRoot = token.Rect.transform.parent;   // the shared StellarWindowCanvas (windows are its direct children)
         if (canvasRoot == null) return;
 
-        _openDropdownBlocker = BuildDropdownBlocker(canvasRoot);
-        _openDropdownPanel = BuildDropdownPanel(canvasRoot, anchor, opts, dd);
+        // Dedicated root canvas for the popup, scaled to match the shared canvas. Parent BOTH parts under it:
+        // blocker FIRST (sibling 0), panel SECOND (last sibling) → within this one canvas sibling order is
+        // reliable, so the panel draws above the blocker and its item buttons win the raycast over it.
+        _openDropdownLayer = BuildDropdownPopupLayer(canvasRoot);
+        var layer = _openDropdownLayer.transform;
+        _openDropdownBlocker = BuildDropdownBlocker(layer);
+        _openDropdownPanel = BuildDropdownPanel(layer, anchor, opts, dd, token);
 
         var blockerRt = _openDropdownBlocker.GetComponent<RectTransform>();
         RegisterDismissable?.Invoke(blockerRt, CloseDropdown);   // full-screen root → ticker fires on Escape only
         DropdownOpenedDiag(anchor, opts.Count, _openDropdownPanel);   // .Dropdown.Diagnostics.cs (gated)
     }
 
+    // The popup's dedicated TOP-LEVEL (root) ScreenSpaceOverlay canvas — parented to NOTHING (scene root,
+    // DontDestroyOnLoad), NOT nested under the shared StellarWindowCanvas. WHY a root canvas: in this IL2CPP
+    // build two override-sorting canvases that share one parent canvas do NOT sort reliably by sortingOrder
+    // relative to each other (the same quirk that makes RaycastResult.sortingOrder report the PARENT's order,
+    // not a nested child's) — so the old nested blocker/panel at 32780/32781 (1626025) still rendered BEHIND the
+    // toolbar's own nested override canvas (32759). What IS reliable here is ROOT-vs-nested sorting by
+    // sortingOrder: the toolbar's nested 32759 correctly beats the edit chrome's ROOT canvas at 32758 (7f11e79,
+    // user-confirmed). So a dedicated root canvas above the toolbar wins deterministically.
+    // - CanvasScaler is CLONED from the live shared canvas so the popup scales IDENTICALLY — otherwise a bare
+    //   ScreenSpaceOverlay canvas sits at scaleFactor 1 and PositionDropdown's canvas-unit→screen-px math breaks.
+    //   We also seed the Canvas.scaleFactor from the shared Canvas's CURRENT value, because a CanvasScaler only
+    //   computes its scaleFactor on the next Canvas.willRenderCanvases pass (end of frame) — PositionDropdown
+    //   reads it THIS frame, so the pre-seed gives the correct value before the cloned scaler's first Handle.
+    // - GraphicRaycaster is MANDATORY — without it the blocker/items are un-hittable (same lesson as
+    //   WindowSpec.OverrideSortingOrder). Canvas must precede the raycaster ([RequireComponent(Canvas)]).
+    private static GameObject BuildDropdownPopupLayer(Transform canvasRoot)
+    {
+        var go = new GameObject("DropdownPopupLayer");
+        go.AddComponent<RectTransform>();
+        UnityEngine.Object.DontDestroyOnLoad(go);
+        var c = go.AddComponent<Canvas>();
+        c.renderMode = RenderMode.ScreenSpaceOverlay;
+        c.pixelPerfect = true;
+        c.sortingOrder = DropdownPopupSortingOrder;   // overrideSorting is irrelevant for a root canvas
+
+        // Clone the shared canvas's scaler (ref WindowRenderer.EnsureCanvas: ScaleWithScreenSize, MatchWidthOrHeight,
+        // matchWidthOrHeight 0.5) so the popup computes the SAME scaleFactor across resolutions.
+        var srcCanvas = canvasRoot.GetComponent<Canvas>() ?? canvasRoot.GetComponentInParent<Canvas>();
+        var srcScaler = canvasRoot.GetComponent<CanvasScaler>() ?? canvasRoot.GetComponentInParent<CanvasScaler>();
+        var scaler = go.AddComponent<CanvasScaler>();
+        if (srcScaler != null)
+        {
+            scaler.uiScaleMode = srcScaler.uiScaleMode;
+            scaler.referenceResolution = srcScaler.referenceResolution;
+            scaler.screenMatchMode = srcScaler.screenMatchMode;
+            scaler.matchWidthOrHeight = srcScaler.matchWidthOrHeight;
+            scaler.scaleFactor = srcScaler.scaleFactor;   // only used by ConstantPixelSize; copied for completeness
+        }
+        if (srcCanvas != null) c.scaleFactor = srcCanvas.scaleFactor;   // same-frame value for PositionDropdown (see above)
+
+        go.AddComponent<GraphicRaycaster>();
+        return go;
+    }
+
     // Full-screen transparent click-catcher: absorbs every press outside the panel and closes on it. It can't
     // receive the press that opened the popup (that press already targeted the trigger), so no self-dismiss.
-    private GameObject BuildDropdownBlocker(Transform canvasRoot)
+    private GameObject BuildDropdownBlocker(Transform layer)
     {
-        var go = UGuiPrimitives.NewChild("DropdownBlocker", canvasRoot);
+        // First child of the popup layer (sibling 0) → draws under the panel, which is added next. One canvas,
+        // so sibling order alone decides blocker-below-panel; no per-part canvas needed.
+        var go = UGuiPrimitives.NewChild(DropdownBlockerName, layer);
         UGuiPrimitives.Stretch(go);
         var img = go.AddComponent<Image>();
         img.color = new Color(0f, 0f, 0f, 0f);   // invisible but raycastable
@@ -76,15 +157,20 @@ internal sealed partial class WindowBuilder
         var btn = go.AddComponent<Button>(); btn.targetGraphic = img; btn.transition = Selectable.Transition.None;
         DisableKeyboardNav(btn);
         btn.onClick.AddListener((UnityAction)(() => { CloseDropdown(); ClearSelectionAfterClick(); }));
-        go.transform.SetAsLastSibling();
         return go;
     }
 
     // Themed option list (border + opaque lifted bg, mirroring BuildPanel) sized to its items, positioned under
-    // the trigger. Drawn after the blocker so it sits on top and its item buttons win the raycast.
-    private GameObject BuildDropdownPanel(Transform canvasRoot, WindowRect anchor, IReadOnlyList<string> opts, DropdownElement dd)
+    // the trigger. Drawn after the blocker so it sits on top and its item buttons win the raycast. When the live
+    // option count exceeds dd.MaxVisibleRows the item list is capped to that many rows and wrapped in a scrollable
+    // viewport (BuildScrollViewport + the SAME themed thin scrollbar BuildScroll uses); otherwise it keeps the
+    // grow-to-fit ContentSizeFitter behaviour exactly.
+    private GameObject BuildDropdownPanel(Transform layer, WindowRect anchor, IReadOnlyList<string> opts, DropdownElement dd, WindowToken token)
     {
-        var panel = UGuiPrimitives.NewChild("DropdownPopup", canvasRoot);
+        // Last child of the popup layer → draws above the blocker and its item buttons win the raycast over it.
+        // Sorting + scaling + raycasting all come from the single layer canvas (BuildDropdownPopupLayer), so the
+        // panel needs no canvas of its own; PositionDropdown reads the layer canvas's (cloned) scaleFactor.
+        var panel = UGuiPrimitives.NewChild(DropdownPanelName, layer);
         var prt = panel.GetComponent<RectTransform>();
         prt.anchorMin = prt.anchorMax = new Vector2(0f, 1f);
         prt.pivot = new Vector2(0f, 1f);
@@ -101,10 +187,17 @@ internal sealed partial class WindowBuilder
         AddDropdownPanelChrome(panel.transform);
         var minW = Mathf.Max(anchor.Width, 80f);
         var selected = dd.Selected();
+
+        // Where the items live: directly on the panel (grow-to-fit), or inside a fixed-height scroll viewport when
+        // the list is capped. Both give each item a minW-wide SelectableElement row via BuildDropdownItem, unchanged.
+        var itemParent = dd.MaxVisibleRows > 0 && opts.Count > dd.MaxVisibleRows
+            ? BuildDropdownScroll(panel, minW, dd.MaxVisibleRows, token)
+            : panel.transform;
+
         for (var i = 0; i < opts.Count; i++)
         {
             var idx = i;   // capture per item for the pick closure
-            BuildDropdownItem(panel.transform, opts[i], i == selected, minW, () =>
+            BuildDropdownItem(itemParent, opts[i], i == selected, minW, () =>
             {
                 CloseDropdown();
                 try { dd.OnSelect(idx); }
@@ -116,6 +209,30 @@ internal sealed partial class WindowBuilder
         panel.transform.SetAsLastSibling();
         PositionDropdown(prt, anchor);
         return panel;
+    }
+
+    // Wrap the capped option list in a fixed-height scrollable viewport (BuildScrollViewport + the SAME themed thin
+    // scrollbar BuildScroll uses) and return the content transform the items parent into. The panel's own
+    // ContentSizeFitter still sizes it to minW (+ a 9px bar lane) × the capped height, so PositionDropdown's
+    // overflow-flip/clamp works against the real (capped) rect.
+    private Transform BuildDropdownScroll(GameObject panel, float minW, int cap, WindowToken token)
+    {
+        var itemH = Scaled(11) + 8f;                    // label + item VLG top/bottom padding (4+4, BuildDropdownItem)
+        var viewportH = cap * itemH + (cap - 1) * 1f;   // cap rows + the 1px inter-row spacing between them
+        var (_, content, _) = BuildScrollViewport(panel.transform, viewportH, token);
+        // BuildScrollViewport's Scroll host grows elastically; pin it so the panel's ContentSizeFitter resolves a
+        // definite width (minW + 9px bar lane) and the capped height instead of collapsing / absorbing slack.
+        var scrollLe = content.parent.parent.GetComponent<LayoutElement>();   // content → Viewport → Scroll
+        scrollLe.preferredWidth = minW + 9f; scrollLe.flexibleWidth = 0f; scrollLe.flexibleHeight = 0f;
+        // Content stacks the items + sizes to their total height so the ScrollRect can scroll (mirrors BuildScroll).
+        var clg = content.gameObject.AddComponent<VerticalLayoutGroup>();
+        clg.spacing = 1f; clg.padding = new RectOffset(0, 0, 0, 0);
+        clg.childControlWidth = true; clg.childControlHeight = true;
+        clg.childForceExpandWidth = true; clg.childForceExpandHeight = false; clg.childAlignment = TextAnchor.UpperLeft;
+        var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;   // width stays anchor-locked to the viewport
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        return content;
     }
 
     // Border + inset background, copied from BuildPanel (ignoreLayout stretched Images, transient → no reskin).
@@ -182,9 +299,12 @@ internal sealed partial class WindowBuilder
     }
 
     // Destroy the open popup (idempotent). Called on pick, blocker click, Escape, or before opening another.
-    private void CloseDropdown()
+    // Destroying the layer GO tears down the blocker + panel it parents in one shot; null every ref so repeated
+    // open/close (and edit-exit) never leaks a popup layer at the scene root.
+    internal void CloseDropdown()
     {
-        if (_openDropdownPanel != null) { UnityEngine.Object.Destroy(_openDropdownPanel); _openDropdownPanel = null; }
-        if (_openDropdownBlocker != null) { UnityEngine.Object.Destroy(_openDropdownBlocker); _openDropdownBlocker = null; }
+        if (_openDropdownLayer != null) { UnityEngine.Object.Destroy(_openDropdownLayer); _openDropdownLayer = null; }
+        _openDropdownPanel = null;
+        _openDropdownBlocker = null;
     }
 }

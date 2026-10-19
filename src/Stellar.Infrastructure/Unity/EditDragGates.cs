@@ -3,7 +3,17 @@ namespace Stellar.Infrastructure.Unity;
 /// <summary>Shared flag: true while layout edit-mode (Shift+`) is active. Set by LayoutEditorOverlay,
 /// read by WindowInteractionTicker to gate edit-only window drag (overlay/status windows move only in
 /// edit mode; popup dialogs drag freely).</summary>
-internal static class LayoutEditGate { public static volatile bool IsEditing; }
+internal static class LayoutEditGate
+{
+    public static volatile bool IsEditing;
+
+    /// <summary>Optional per-window editability predicate, mirroring the layout editor's own outline/select
+    /// filter (<c>ShouldOutlineStellar &amp;&amp; WindowOwnerMatchesFilter(id)</c>). Set live each tick by
+    /// LayoutEditorOverlay; read by WindowInteractionTicker to narrow edit-only window DRAG and RESIZE to the
+    /// currently-filtered plugin's windows, so they can't be moved/resized when the outline/select don't target
+    /// them. <c>null</c> = no filter → every edit-only window stays editable (e.g. the test host never sets it).</summary>
+    public static System.Func<string, bool>? EditableWindowFilter;
+}
 
 /// <summary>
 /// Mutual-exclusion between the TWO independent pointer-drag pollers active in edit mode — the layout editor

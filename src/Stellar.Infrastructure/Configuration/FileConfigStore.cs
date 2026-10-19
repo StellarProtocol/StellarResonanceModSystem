@@ -121,26 +121,20 @@ internal sealed partial class FileConfigStore : IConfigStore, IDisposable
         finally { Stellar.Abstractions.Diagnostics.HitchProbe.End("cfg-save", hitchT); }
     }
 
+    // Game-thread work ONLY: serialize + hash + enqueue (the ~1.4ms part). The actual
+    // File.WriteAllText runs on a dedicated background thread (FileConfigStore.AsyncWrite.cs) so a
+    // first-touch disk/AV scan can never freeze the game frame — the first save after launch stalled
+    // the game thread 3.4s (Config-Store-Async-Writes.md). Only this light work is charged to the
+    // cfg-save HitchProbe; the worker's write time is off the game frame by design.
     private void SaveCore(string pluginGuid, string path, JsonNode root)
     {
+        // The JsonNode root is read ONLY here, on the game thread — the worker sees the immutable
+        // serialized string, never the node.
         var serialized = root.ToJsonString(SaveJsonOptions);
-        // Hash BEFORE the write so a watcher event that races File.WriteAllText is still recognised.
+        // Hash recorded BEFORE handoff so a watcher event that races the real write (which happens on
+        // the worker) is still recognised as our own via the hash-echo fallback in HandleFileTouch.
         _selfWrites.RecordPending(pluginGuid, ComputeHash(serialized), DateTime.UtcNow);
-
-        try
-        {
-            File.WriteAllText(path, serialized);
-            RecordWrittenStat(pluginGuid, path);
-            LogSaved(pluginGuid, serialized.Length);
-        }
-        catch (IOException ex)
-        {
-            _log.Warning($"[Stellar][PluginConfig] save failed: {pluginGuid}: {ex.Message}");
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _log.Warning($"[Stellar][PluginConfig] save denied: {pluginGuid}: {ex.Message}");
-        }
+        EnqueueWrite(pluginGuid, path, serialized);
     }
 
     /// <summary>
@@ -165,6 +159,10 @@ internal sealed partial class FileConfigStore : IConfigStore, IDisposable
 
     public void Dispose()
     {
+        // Stop + flush the background writer FIRST (durability: nothing queued may be lost), then
+        // tear the watcher down — see FileConfigStore.AsyncWrite.cs.
+        ShutdownWriter();
+
         try
         {
             if (_watcher is not null)

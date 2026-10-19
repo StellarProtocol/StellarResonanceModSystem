@@ -23,11 +23,13 @@ internal sealed partial class WindowService
     {
         if (_storage is null || _resolution is null) return;
         var res = _resolution();
+        // StorageSave routes to the slot-independent global bucket for a slot-independent OR non-HUD window
+        // (UsesGlobalLayout); otherwise to the active slot.
         if (spec.Anchor != WindowAnchor.TopLeft && TryCanvas(out var canvas))
-            _storage.Save(_storage.ActiveSlot, spec.Id, res,
+            StorageSave(spec, res,
                 new LayoutStorage.WindowState(rect, visible, AnchoredPlacement.OffsetOf(spec.Anchor, rect, canvas)));
         else
-            _storage.Save(_storage.ActiveSlot, spec.Id, res, rect, visible);
+            StorageSave(spec, res, rect, visible);
     }
 
     /// <summary>The restored rect for an anchored window: from its saved offset (any resolution), or — for a legacy
@@ -38,7 +40,7 @@ internal sealed partial class WindowService
     {
         if (spec.Anchor == WindowAnchor.TopLeft || _storage is null || _resolution is null || !TryCanvas(out var canvas)) return saved;
         var size = CurrentSize(spec, saved);
-        if (_storage.TryGetAnchorOffset(_storage.ActiveSlot, spec.Id, _resolution(), out var offset, out var legacyExact))
+        if (StorageTryGetAnchorOffset(spec, _resolution(), out var offset, out var legacyExact))
             return Clamp(AnchoredPlacement.Place(spec.Anchor, offset, size, canvas), canvas);
         if (!legacyExact) return saved;
         return Clamp(AnchoredPlacement.Place(spec.Anchor, AnchoredPlacement.OffsetOf(spec.Anchor, saved, canvas), size, canvas), canvas);

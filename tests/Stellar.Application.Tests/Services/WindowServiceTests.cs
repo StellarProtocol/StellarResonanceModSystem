@@ -167,7 +167,9 @@ public class WindowServiceTests
         var r = new FakeRenderer();
         var storage = new LayoutStorage(new InMemoryConfig(), new NullLog());
         var res = new Resolution(1920, 1080);
-        storage.Save(storage.ActiveSlot, "w", res, new WindowRect(0, 0, 300, 200), visible: false);
+        // Reg("w") is a default window (!EditModeDragOnly) → it now persists GLOBALLY, so the mount-gate reads the
+        // global bucket. Seed the persisted-hidden state there (not the active slot) for the gate to see it.
+        storage.SaveGlobal("w", res, new WindowRect(0, 0, 300, 200), visible: false);
         var svc = new WindowService(r, new NullLog());
         svc.AttachLayout(storage, () => res);
 
@@ -183,7 +185,9 @@ public class WindowServiceTests
         var r = new FakeRenderer();
         var storage = new LayoutStorage(new InMemoryConfig(), new NullLog());
         var res = new Resolution(1920, 1080);
-        storage.Save(storage.ActiveSlot, "w", res, new WindowRect(10, 20, 300, 200), visible: true);
+        // Default window → persists globally; seed the persisted-VISIBLE state in the bucket the gate reads (global),
+        // so this exercises the real "persisted-visible is not force-hidden" path rather than passing on an empty bucket.
+        storage.SaveGlobal("w", res, new WindowRect(10, 20, 300, 200), visible: true);
         var svc = new WindowService(r, new NullLog());
         svc.AttachLayout(storage, () => res);
 

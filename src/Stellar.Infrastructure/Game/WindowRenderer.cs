@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -120,6 +120,20 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         {
             var token = _builder.Build(reg, _canvasRoot);
             _tokens.Add(token);   // track for in-place re-skin on theme change
+            // Per-window override sorting (WindowSpec.OverrideSortingOrder): lift this window onto its OWN nested
+            // Canvas at an absolute sortingOrder, independent of the shared-canvas sibling z — so it can draw ABOVE
+            // sibling-ordered overlays on higher canvases (the layout-edit chrome at 32758) while staying below the
+            // top input blocker (32760). overrideSorting opts THIS child out of sibling-order z only; every other
+            // window still sorts by ReorderWindows' sibling index, so their z-order is untouched. The nested Canvas
+            // needs its own GraphicRaycaster or its widgets become un-hittable (the parent raycaster skips a child
+            // canvas) — the toolbar's buttons + whole-frame drag rely on it, and IsPointerOver* read its order.
+            if (reg.Spec.OverrideSortingOrder is { } so && token.Root != null)
+            {
+                var oc = token.Root.AddComponent<Canvas>();
+                oc.overrideSorting = true;
+                oc.sortingOrder = so;
+                token.Root.AddComponent<GraphicRaycaster>();
+            }
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
             // The dismiss runs OnClose — the same path the ✕ uses — so IsShown stays in sync.
             if (reg.Spec.DismissOnOutsideClick && reg.OnClose is { } onClose && _ticker != null && token.Rect != null)
@@ -278,6 +292,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     // the (re)create — a frame-elapsed test, NOT a value test (a genuine 1.0 is indistinguishable from the default).
     public bool CanvasScaleReady => _canvasComp != null && Time.frameCount > _canvasCreatedFrame;
 
+    // IWindowPopups — close any open dropdown popup (it lives on its own scene-root canvas, so hiding the owning
+    // window never tears it down). Null-safe: the builder is null before the first canvas build / after teardown.
+    public void CloseOpenPopups() => _builder?.CloseDropdown();
+
     // Monotonic canvas (re)create counter. The Host watches this to fire ONE corrective layout reapply after a
     // scene-change canvas rebuild, once CanvasScaleReady (belt to WindowService.Layout's per-window defer).
     public int CanvasGeneration => _canvasGeneration;
@@ -375,7 +393,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             _builder = new WindowBuilder(_assets,
                 registerField: f => _ticker!.Fields.Add(f),
                 registerDrag: (area, pick) => _ticker!.DragAreas.Add((area, pick)),
-                registerWindowDrag: (handle, target, editOnly) => _ticker!.DragWindows.Add((handle, target, editOnly)),
+                registerWindowDrag: (handle, target, windowId, editOnly) => _ticker!.DragWindows.Add((handle, target, windowId, editOnly)),
                 registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
                 registerPulse: p => _ticker!.Pulses.Add(p));
             WireBuilderHooks();
@@ -395,7 +413,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
-        _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
+        _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));

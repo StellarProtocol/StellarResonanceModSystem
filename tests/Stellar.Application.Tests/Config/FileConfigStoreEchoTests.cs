@@ -75,6 +75,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
 
         Touch(store);
 
@@ -89,6 +90,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
 
         for (var i = 0; i < 4; i++) Touch(store);
 
@@ -102,6 +104,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
         ExternalWrite("""{"wardrobe":{"outfits":2}}""");
 
         Touch(store);
@@ -116,6 +119,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
         var ours = File.ReadAllText(Path_);
         ExternalWrite(ours.Replace("1", "2"));   // same char count, different content + later mtime
         Assert.Equal(ours.Length, File.ReadAllText(Path_).Length);
@@ -132,6 +136,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
         ExternalWrite(File.ReadAllText(Path_));
 
         Touch(store);
@@ -158,6 +163,7 @@ public sealed class FileConfigStoreEchoTests : IDisposable
     {
         var store = NewSilentStore();
         store.Save(Guid, Root(1));
+        store.FlushPendingWritesForTest();   // write now runs on a background thread — drain it synchronously
 
         var text = File.ReadAllText(Path_);
         Assert.DoesNotContain("\n", text);
