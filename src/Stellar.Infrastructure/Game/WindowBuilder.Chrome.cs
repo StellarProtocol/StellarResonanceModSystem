@@ -43,7 +43,7 @@ internal sealed partial class WindowBuilder
             // Drag mode is explicit per window (EditModeDragOnly), NOT inferred from chrome style — so a
             // Party-chromed popup dialog (CombatMeter History) free-drags while a PillStatus HUD overlay
             // (AutoNav) is edit-only. Overlay HUDs opt into edit-only by setting the flag.
-            _registerWindowDrag?.Invoke(result.root, result.root, reg.Spec.EditModeDragOnly);
+            _registerWindowDrag?.Invoke(result.root, result.root, reg.Spec.Id, reg.Spec.EditModeDragOnly);
         }
         // Overlay chromes (Tracker/Party/PillStatus) get a top-right ✕ when Closable (GlassMenu draws its own
         // in the title bar). So a Party-chromed dialog like CombatMeter History can be closed.
@@ -93,7 +93,7 @@ internal sealed partial class WindowBuilder
             drt.anchoredPosition = new Vector2(-(c * 4f), r * 4f);
             var di = dot.AddComponent<Image>(); di.color = new Color(1f, 1f, 1f, 0.34f); di.raycastTarget = false;
         }
-        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight), spec.EditModeDragOnly);
+        RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight), spec.Id, spec.EditModeDragOnly);
     }
     // Overlay chromes (Tracker/Party/PillStatus) implemented in WindowBuilder.Chrome.Overlay.cs.
 
@@ -132,12 +132,12 @@ internal sealed partial class WindowBuilder
         if (spec.ShowTitleBar)
         {
             var titleBar = BuildTitleBar(reg, root.transform, token);
-            if (spec.Draggable) _registerWindowDrag?.Invoke(titleBar.GetComponent<RectTransform>(), root, spec.EditModeDragOnly);
+            if (spec.Draggable) _registerWindowDrag?.Invoke(titleBar.GetComponent<RectTransform>(), root, spec.Id, spec.EditModeDragOnly);
         }
         else if (spec.Draggable)
         {
             // No title bar → the whole frame is the drag handle (the launcher self-draws its header in the body).
-            _registerWindowDrag?.Invoke(root, root, spec.EditModeDragOnly);
+            _registerWindowDrag?.Invoke(root, root, spec.Id, spec.EditModeDragOnly);
         }
 
         var content = UGuiPrimitives.NewChild("Content", root.transform);

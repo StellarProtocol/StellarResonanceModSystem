@@ -393,7 +393,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             _builder = new WindowBuilder(_assets,
                 registerField: f => _ticker!.Fields.Add(f),
                 registerDrag: (area, pick) => _ticker!.DragAreas.Add((area, pick)),
-                registerWindowDrag: (handle, target, editOnly) => _ticker!.DragWindows.Add((handle, target, editOnly)),
+                registerWindowDrag: (handle, target, windowId, editOnly) => _ticker!.DragWindows.Add((handle, target, windowId, editOnly)),
                 registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
                 registerPulse: p => _ticker!.Pulses.Add(p));
             WireBuilderHooks();
@@ -413,7 +413,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
-        _builder.RegisterResize = (grip, target, min, max, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, editOnly));
+        _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));

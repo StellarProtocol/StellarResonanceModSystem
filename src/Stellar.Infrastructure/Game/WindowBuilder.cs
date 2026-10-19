@@ -39,9 +39,10 @@ internal sealed partial class WindowBuilder
     // ColorPicker SV/hue drag hook: (area rect, pick(nx,ny)) → the renderer's interaction ticker polls it.
     // Null in the sandbox (static render).
     private readonly Action<RectTransform, Action<float, float>>? _registerDrag;
-    // Window drag-to-move hook: (handle, window root, editOnly) → ticker moves the root on drag. editOnly=true
-    // (overlay/status chromes) restricts the drag to layout edit-mode so they don't move during play.
-    private readonly Action<RectTransform, RectTransform, bool>? _registerWindowDrag;
+    // Window drag-to-move hook: (handle, window root, windowId, editOnly) → ticker moves the root on drag.
+    // editOnly=true (overlay/status chromes) restricts the drag to layout edit-mode so they don't move during
+    // play; windowId lets the ticker apply the layout editor's per-plugin edit filter to edit-only windows.
+    private readonly Action<RectTransform, RectTransform, string, bool>? _registerWindowDrag;
     // Tile hover hook: (cell rect, setHover(bool)) → ticker polls the pointer against the cell + toggles the
     // hover visual (icon grow + icon/label brighten). Null in the sandbox → tiles render in their rest state.
     private readonly Action<RectTransform, Action<bool>>? _registerHover;
@@ -49,12 +50,13 @@ internal sealed partial class WindowBuilder
     // Null in the sandbox → the logo renders static at the rest pulse.
     private readonly Action<Action<float>>? _registerPulse;
 
-    // Window resize hook: (grip, window root, min size, max size, editOnly) → the ticker resizes the root on
-    // grip drag. editOnly = the window's EditModeDragOnly flag: a pinned overlay resizes only in layout edit-mode
-    // (mirrors the move gate); free-drag dialogs resize any time.
+    // Window resize hook: (grip, window root, min size, max size, windowId, editOnly) → the ticker resizes the
+    // root on grip drag. editOnly = the window's EditModeDragOnly flag: a pinned overlay resizes only in layout
+    // edit-mode (mirrors the move gate); free-drag dialogs resize any time. windowId lets the ticker apply the
+    // layout editor's per-plugin edit filter to edit-only grips.
     // A settable property (not a ctor param) to stay under the ctor-dependency cap; set by WindowRenderer.
     // Null in the sandbox → the grip renders but doesn't resize.
-    internal Action<RectTransform, RectTransform, Vector2, Vector2, bool>? RegisterResize { get; set; }
+    internal Action<RectTransform, RectTransform, Vector2, Vector2, string, bool>? RegisterResize { get; set; }
 
     // Drag-to-rearrange hooks (CombatMeter raid grid). RegisterDragSlot: (cell rect, key, canDrag, setHover) →
     // the ticker drives the drag (ghost + hover highlight + drop). SetDragSlotDrop: (fromKey,toKey)→ wired once
@@ -121,7 +123,7 @@ internal sealed partial class WindowBuilder
     public WindowBuilder(WindowThemeAssets assets,
         Action<UGuiTextInput>? registerField = null,
         Action<RectTransform, Action<float, float>>? registerDrag = null,
-        Action<RectTransform, RectTransform, bool>? registerWindowDrag = null,
+        Action<RectTransform, RectTransform, string, bool>? registerWindowDrag = null,
         Action<RectTransform, Action<bool>>? registerHover = null,
         Action<Action<float>>? registerPulse = null)
     {

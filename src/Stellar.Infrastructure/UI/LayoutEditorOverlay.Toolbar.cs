@@ -35,6 +35,13 @@ internal sealed partial class LayoutEditorOverlay
     private bool WindowOwnerMatchesFilter(string windowId)
         => _editFilter != EditFilter.Plugin || (_windows != null && _windows.OwnerOf(windowId) == _filterPluginGuid);
 
+    /// <summary>Live editability predicate for a mod window — the SAME rule the outline/select use: a window is
+    /// draggable/resizable in edit mode only when its category is outlined (<see cref="ShouldOutlineStellar"/>,
+    /// false in GameUiOnly) AND it passes the per-plugin filter (<see cref="WindowOwnerMatchesFilter"/>). Bound to
+    /// <see cref="Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter"/> so the WindowInteractionTicker's
+    /// edit-only drag/resize narrows to exactly the windows the outline/select target.</summary>
+    private bool IsWindowEditableNow(string id) => ShouldOutlineStellar && WindowOwnerMatchesFilter(id);
+
     /// <summary>Bind the framework window service so the toolbar can register itself + the editor can outline
     /// the overlay/status windows (composition root passes the concrete WindowService).</summary>
     public void SetWindows(WindowService windows) => _windows = windows;

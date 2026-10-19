@@ -112,6 +112,9 @@ internal sealed partial class LayoutEditorOverlay
     {
         // Gate edit-only window drag (overlay/status windows move only in edit mode; popup dialogs drag freely).
         Stellar.Infrastructure.Unity.LayoutEditGate.IsEditing = _editor.IsEditing;
+        // Also narrow edit-only drag/resize to the currently-filtered plugin's windows — the SAME rule the
+        // outline/select use (ShouldOutlineStellar && WindowOwnerMatchesFilter). Tracks live filter state each tick.
+        Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter = IsWindowEditableNow;
         if (_editor.IsEditing)
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
@@ -128,6 +131,7 @@ internal sealed partial class LayoutEditorOverlay
             HideToolbar();
             _editInputBlocker.SetActive(false);   // stop absorbing game-UI clicks once out of edit mode
             Stellar.Infrastructure.Unity.EditDragArbiter.EditorDragActive = false;
+            Stellar.Infrastructure.Unity.LayoutEditGate.EditableWindowFilter = null;   // no filter outside edit mode
         }
         _wasEditing = _editor.IsEditing;
     }
