@@ -274,15 +274,18 @@ internal sealed partial class LayoutEditorOverlay
 
     // "Reset all" = EVERY editable element restored to its default pose, REGARDLESS of the active filter: every
     // resolved native game-UI entry + every editable mod window (no ShouldOutline* gate, no per-plugin filter).
-    // Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration. (Contrast
-    // ResetFilteredWindows, which honours the filter — the two buttons are deliberately separated.)
+    // Enumerate EditableElements (NOT EditableRects): EditableRects yields only VISIBLE windows, so a window the
+    // user HID via the eye toggle would never make the reset list and would stay hidden — iterating the full
+    // (hidden-inclusive) set means ResetWindow also clears a hidden window's persisted-hidden state (ResetRect
+    // force-shows it). Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration.
+    // (Contrast ResetFilteredWindows, which honours the filter — the two buttons are deliberately separated.)
     private void ResetAllWindows()
     {
         var ids = new List<string>();
         if (_nativeUi is not null)
             foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
         if (_windows is not null)
-            foreach (var (id, _) in _windows.EditableRects()) ids.Add(id);
+            foreach (var el in _windows.EditableElements()) ids.Add(el.Id);
         foreach (var id in ids) ResetWindow(id);
         _log.Info($"[LayoutEditor] reset all {ids.Count} elements to defaults");
     }
@@ -290,6 +293,9 @@ internal sealed partial class LayoutEditorOverlay
     // "Reset filtered" = every element currently OUTLINED in edit mode (respecting the active filter), restored to
     // its default pose: native game UI only when ShouldOutlineGameUi, mod windows only when ShouldOutlineStellar AND
     // the per-plugin filter matches. When the filter is All this equals Reset all; narrower filters scope it down.
+    // Enumerate EditableElements (NOT EditableRects): EditableRects yields only VISIBLE windows, so a window the
+    // user HID via the eye toggle would never make the reset list and would stay hidden — iterating the full
+    // (hidden-inclusive) set means a hidden window's visibility is also reset (ResetRect force-shows it).
     // Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration.
     private void ResetFilteredWindows()
     {
@@ -298,7 +304,7 @@ internal sealed partial class LayoutEditorOverlay
             foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
         if (ShouldOutlineStellar)
         {
-            if (_windows is not null) foreach (var (id, _) in _windows.EditableRects()) if (WindowOwnerMatchesFilter(id)) ids.Add(id);
+            if (_windows is not null) foreach (var el in _windows.EditableElements()) if (WindowOwnerMatchesFilter(el.Id)) ids.Add(el.Id);
         }
         foreach (var id in ids) ResetWindow(id);
         _log.Info($"[LayoutEditor] reset filtered {ids.Count} elements to defaults");
