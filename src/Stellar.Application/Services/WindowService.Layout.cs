@@ -43,40 +43,46 @@ internal sealed partial class WindowService
     // slot either (the toolbar is also non-EditModeDragOnly, so the HUD gate already covers it; both conditions stay).
     private void ReapplyForSlotChange() => ReapplyLayout(applyVisibility: true, skipSlotIndependent: true, editableHudsOnly: true);
 
-    // Route a window's layout read/write to the slot-INDEPENDENT global bucket when its spec opts in (framework
-    // chrome like the layout-edit toolbar), else to the active slot. One dispatch point per storage op so no
-    // read/write path can silently drift back to slot-keyed (the coverage trap). Every caller has already
-    // null-checked _storage / _resolution, so the `!` suppressions are sound.
+    // A window uses the GLOBAL (slot-independent) layout bucket when it opts in explicitly (framework chrome via
+    // SlotIndependentLayout) OR when it is a non-HUD free-drag window (!EditModeDragOnly). Slots arrange ONLY the
+    // EditModeDragOnly HUD set, so everything else — Settings / DataInspector / launcher / CombatMeter History —
+    // keeps ONE position/visibility across all slots instead of a per-slot copy.
+    private static bool UsesGlobalLayout(WindowSpec spec) => spec.SlotIndependentLayout || !spec.EditModeDragOnly;
+
+    // Route a window's layout read/write to the slot-INDEPENDENT global bucket for a slot-independent OR non-HUD
+    // window (see UsesGlobalLayout), else to the active slot. One dispatch point per storage op so no read/write
+    // path can silently drift back to slot-keyed (the coverage trap). Every caller has already null-checked
+    // _storage / _resolution, so the `!` suppressions are sound.
     private (WindowRect Rect, bool Visible) StorageGet(WindowSpec spec, Resolution res, WindowRect fallback, float scale)
-        => spec.SlotIndependentLayout
+        => UsesGlobalLayout(spec)
             ? _storage!.GetGlobal(spec.Id, res, fallback, scale)
             : _storage!.Get(_storage.ActiveSlot, spec.Id, res, fallback, scale);
 
     private void StorageSave(WindowSpec spec, Resolution res, LayoutStorage.WindowState state)
     {
-        if (spec.SlotIndependentLayout) _storage!.SaveGlobal(spec.Id, res, state);
+        if (UsesGlobalLayout(spec)) _storage!.SaveGlobal(spec.Id, res, state);
         else _storage!.Save(_storage!.ActiveSlot, spec.Id, res, state);
     }
 
     private void StorageSave(WindowSpec spec, Resolution res, WindowRect rect, bool visible)
     {
-        if (spec.SlotIndependentLayout) _storage!.SaveGlobal(spec.Id, res, rect, visible);
+        if (UsesGlobalLayout(spec)) _storage!.SaveGlobal(spec.Id, res, rect, visible);
         else _storage!.Save(_storage!.ActiveSlot, spec.Id, res, rect, visible);
     }
 
     private void StorageRemove(WindowSpec spec)
     {
-        if (spec.SlotIndependentLayout) _storage!.RemoveGlobal(spec.Id);
+        if (UsesGlobalLayout(spec)) _storage!.RemoveGlobal(spec.Id);
         else _storage!.Remove(_storage!.ActiveSlot, spec.Id);
     }
 
     private bool StorageIsPersistedHidden(WindowSpec spec, Resolution res)
-        => spec.SlotIndependentLayout
+        => UsesGlobalLayout(spec)
             ? _storage!.IsPersistedHiddenGlobal(spec.Id, res)
             : _storage!.IsPersistedHidden(_storage.ActiveSlot, spec.Id, res);
 
     private bool StorageTryGetAnchorOffset(WindowSpec spec, Resolution res, out (float X, float Y) offset, out bool legacyExact)
-        => spec.SlotIndependentLayout
+        => UsesGlobalLayout(spec)
             ? _storage!.TryGetAnchorOffsetGlobal(spec.Id, res, out offset, out legacyExact)
             : _storage!.TryGetAnchorOffset(_storage.ActiveSlot, spec.Id, res, out offset, out legacyExact);
 

@@ -23,7 +23,8 @@ internal sealed partial class WindowService
     {
         if (_storage is null || _resolution is null) return;
         var res = _resolution();
-        // StorageSave routes to the slot-independent global bucket when spec.SlotIndependentLayout is set.
+        // StorageSave routes to the slot-independent global bucket for a slot-independent OR non-HUD window
+        // (UsesGlobalLayout); otherwise to the active slot.
         if (spec.Anchor != WindowAnchor.TopLeft && TryCanvas(out var canvas))
             StorageSave(spec, res,
                 new LayoutStorage.WindowState(rect, visible, AnchoredPlacement.OffsetOf(spec.Anchor, rect, canvas)));
