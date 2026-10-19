@@ -14,14 +14,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.23.0] - 2026-10-18
-_**2.23.0** (minor) — mods can now play sound into team voice, mixed with your mic. Adds API for plugins (`IVoiceInjection`, Abstractions 2.23.0); additive, no plugin rebuild._
+## [2.23.0] - 2026-10-19
+_**2.23.0** (minor) — mods can mix sound into your party voice chat with your mic; chat no longer crashes or drops a message after a reconnect; and the layout editor gains a draggable toolbar with per-plugin filtering, arrow-key nudging and show/hide. Adds API for plugins (`IVoiceInjection`, Abstractions 2.23.0); additive, no plugin rebuild._
 ### Added
-- Mods can now play audio — a sound file or generated speech — into your outgoing team voice, mixed in with your microphone so teammates hear both. Several mods (and several sounds at once) can play together.
-- A mod playing music into team voice can keep it clear by turning off voice noise-reduction while it plays; your normal voice settings come back automatically when it stops.
+- Mods can now mix their own sound — a file or generated speech — into your party voice chat alongside your microphone, so teammates hear both. Several can play at once.
+- The layout editor has a new toolbar you can drag anywhere, with drop-down menus, filtering to one plugin's windows, and arrow-key nudging to place things exactly.
+- You can now show or hide individual overlay elements right from the layout editor.
+### Changed
+- "Reset" in the layout editor now also brings back anything you had hidden, and is split into "Reset filtered" and "Reset all".
+- Windows like Settings, the data inspector and the combat-meter history now keep one position across all your layout slots instead of moving per slot.
+### Fixed
+- Sending a chat message right after the game reconnects (switching lines, changing scenes, or recovering from a dropped connection) no longer crashes the game.
+- Chat messages sent immediately after a reconnect now go through instead of silently failing until the next message you received.
+- Fixed a multi-second freeze the first time settings were saved or you entered layout edit mode.
 ### Developer notes
 - New API (additive): `IPluginServices.Voice` → `IVoiceInjection` (`Available`, `Status`, `LoadFileAsync(path)` WAV natively / MP3/WMA/M4A via Media Foundation, `LoadPcm(ReadOnlySpan<short>, rate, channels)` for TTS/generated audio, `CreateSource()` → `IVoiceSource?`, `SetUplinkPolicy(disableNoiseSuppression?, disableAgc?, disableVad?, bitRateBps?)`); `IVoiceSource` (`Clip`/`Volume`/`Loop`/`Playing`/`Position`, `Play`/`Stop`/`PlayOnce`); `IVoiceClip` (`Duration`); the `VoiceInjectionStatus` record. XML-documented (CS1591).
 - Backed by a process-wide native DirectSound capture hook on `GCloudVoice.dll` (IAT slot `+0x6190D8` = DSOUND ordinal 6 `DirectSoundCaptureCreate` → `CreateCaptureBuffer` +0x18 → capture-buffer `Lock` +0x40), promoted into `Stellar.Infrastructure.Game` from the in-game-validated StellarExperimentPlugin single-clip prototype and generalised to a fixed 16-source allocation-free mixer. The `Lock` hook runs on GVoice's native capture thread (no alloc/lock/log/IL2CPP, whole-body try/catch, always returns the original HRESULT). Installed at boot from `BootstrapPlugin.ApplyLifecyclePatches` (title screen, before login's `GCloudVoice_Init`), mirroring `InstallInstrumentToneRelay`; a `ProbeInstall` fallback (opens the mic briefly) covers hot-reload late attach and is surfaced via `Status`, not the public API. Clips keep their source PCM and are re-resampled to the live capture format off-thread; the uplink DSP (`GCloudVoice_invoke` NS/AGC/VAD + `GCloudVoice_SetBitRate`) is applied while any source plays and restored when all stop, driven from a main-thread maintainer on the framework Update tick. Sources a plugin creates are auto-disposed on plugin teardown (`PluginVoiceInjection`, mirroring `IHarmonyHost`). DLL offsets are pinned to `GCloudVoice.dll 4.3.0.253999397`; guards fail safe (no patch, logged) on a version change. See `docs/design/framework-2.23-voice-injection.md` and KB `Voice-Chat-GVoice.md`.
+- Chat: `IChat.Send` resolves the live chat `ZTcpClient` on demand at send time via `ZSingleton<ZRpcCtrl>` (Gateway/World RPC transport); the passive packet cache + `Close`/`CloseAndDelayDispose` hooks are kept as a fail-soft fallback. A stale freed client can no longer be used (was a DEBUG-only `CheckValid` → access violation) and the post-reconnect send window is closed. No API change, no plugin rebuild. PRs #126, #128; KB `Chat-Send-Connection-Lifetime.md`.
+- Layout editor: toolbar migrated to a draggable uGUI window on a dedicated root canvas (capped at 32766); the per-plugin filter gates outline/select/drag/resize; dropdown controls (slot, selection readout, filter); arrow-key nudge with the game keyboard gated via `KeyboardInputGate`; per-element show/hide; Reset split into filtered/all and now restores visibility; non-HUD free-drag windows (Settings/DataInspector/launcher/CombatMeter history) persist in a global slot-independent bucket; config disk writes moved off the game thread (`cfg-save` 3378ms → <2ms) and the toolbar is pre-warmed to remove the first-edit-enter freeze; strings localized en/fil/id/ja/ko/th; binary-compatible (init props / internal interfaces / optional params). PR #127.
 
 ## [2.22.1] - 2026-10-12
 _**2.22.1** (patch) — clicking a mod window's buttons no longer steals your keyboard; no API change, no plugin rebuild._
