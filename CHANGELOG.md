@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.26.0] - 2026-10-21
+_**2.26.0** (minor) — lets mods show players' profile avatar pictures (e.g. next to chat messages). Adds API for plugins (`IPlayerProfile`, Abstractions 2.26.0); additive, no plugin rebuild._
+### Added
+- Plugins can now look up a player's profile avatar image — the picture they set on their in-game ID card — so a chat mod can show each person's avatar beside their messages, a nameplate mod can put a face on the overhead tag, and so on.
+### Developer notes
+- New service `IPluginServices.PlayerProfile` (`IPlayerProfile`, Abstractions 2.26.0) with one member: `void RequestAvatarUrl(long charId, Action<string?> onResult)`. Fire-and-forget; `onResult` fires exactly once on the main (Unity) thread with the full `https://…png` URL, or `null` when the player has no custom photo / the request failed. It returns the URL only — the consumer owns download, disk cache and `Texture2D` creation. May be called from any thread (it only enqueues); every game interaction and the callback run on the framework tick. `charId` is the same id a received `ChatMessage` carries as its sender id, so a chat consumer passes it straight through.
+- Sourcing (`PlayerProfileService` + `.Reflection.cs`, Infrastructure, all by reflection — this layer has no compile-time game refs): the request is `GetSocialDataRequest{ CharId = charId, Mask = 2 }` (Mask bit 2 = `SocialDataTypeAvatar`), issued on `Zproxy.SocialProxy.GetSocialData(request, 0u)` → `Cysharp.Threading.Tasks.UniTask<GetSocialDataReply>` (Social service uuid 901134105, methodId 1). The proxy is acquired through the game's OWN accessor `Zservice.ServiceRegister.GetSocialProxy(IRpcCtrl ctrl, true)` fed `ZRpcCtrl.Instance` (a `ZSingleton`, via `StellarInterop.GetSingleton`) — fetch-or-create of the registered proxy, resolved fresh each request so a reconnect can't leave a stale transport (mirrors the chat probe's resolve-live-on-demand doctrine). The URL is read off `reply.Data.AvatarInfo.Profile.Url`; `null` on a faulted/canceled task, `ErrCode != 0`, or any null link / empty URL.
+- The framework has no compile-time `UniTask` reference, so the returned task is POLLED on the framework Update tick via reflected `Status`/`GetAwaiter()`/`GetResult()` (UniTaskStatus 0=Pending 1=Succeeded 2=Faulted 3=Canceled) — the exact pattern `GameAssetsService` already proved for the Addressables `UniTask`, not an `await`. The callback is marshalled with `IFramework.Post`. Additive (new interface + new sub-service property on the `IPluginServices`/`PluginServices`/`PerPluginServices` aggregator) — binary-compatible, no plugin rebuild.
+
 ## [2.25.5] - 2026-10-21
 _**2.25.5** (patch) — fixes chat messages briefly overlapping each other when you switch channels/tabs before they settle into place. Infrastructure-only; no API change, no plugin rebuild._
 ### Fixed

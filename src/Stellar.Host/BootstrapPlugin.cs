@@ -74,6 +74,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private ChatService? _chatService;
     private CombatService? _combatService;
     private SocialDataCache? _socialDataCache;
+    // IPlayerProfile: resolves a player's avatar URL via the game's Social.GetSocialData RPC. Built +
+    // ticked in BuildInfraServices (Wiring.PluginHost.cs); fed to the PluginServices aggregator.
+    private PlayerProfileService? _playerProfileService;
     // Generic profile-card action registry: write side → IPluginServices.ProfileCardActions (plugins
     // register buttons); read side (IProfileCardActionSource) → the native-card injector.
     private ProfileCardActionRegistry? _profileCardActions;

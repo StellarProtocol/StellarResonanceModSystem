@@ -96,7 +96,8 @@ public sealed partial class BootstrapPlugin
             // Shared-bag fallback only: every plugin gets its own IPluginDownloads from the per-plugin factory
             // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
-            _reShadeService!, _voiceService!);
+            _reShadeService!, _voiceService!,
+            _playerProfileService!);
         _capturedServices = services;
         WireProfileCardActionInjector(log);
         BuildRegistryAndHost(log, configFactory, services);
@@ -177,6 +178,10 @@ public sealed partial class BootstrapPlugin
         // half of the no-polling doctrine (decision 2). Mirrors the other lightweight per-tick
         // subscribers wired here (e.g. WireProfileCardActionInjector's _profileCardActionInjector.Tick()).
         _framework!.Update += _ => entityVitals.Tick();
+        // Player-profile avatar lookups (IPlayerProfile): originates Social.GetSocialData on demand and polls the
+        // returned UniTask on the main thread. Ticked here beside the other lightweight per-tick subscribers.
+        _playerProfileService = new PlayerProfileService(log, _framework!);
+        _framework!.Update += _ => _playerProfileService.Tick();
         _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);

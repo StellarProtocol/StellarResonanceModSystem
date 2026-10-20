@@ -19,6 +19,19 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.26.0 adds <c>IPluginServices.PlayerProfile</c> (<c>IPlayerProfile</c>) — resolve a player's profile
+    /// AVATAR IMAGE URL by char/role id. <c>RequestAvatarUrl(long charId, Action&lt;string?&gt; onResult)</c>
+    /// issues the game's own <c>Social.GetSocialData</c> RPC (service uuid 901134105, methodId 1, with the
+    /// request Mask bit 2 = <c>SocialDataTypeAvatar</c>) and invokes <c>onResult</c> exactly once on the main
+    /// (Unity) thread with the full server-supplied <c>https://…png</c> URL read from
+    /// <c>GetSocialDataReply.Data.AvatarInfo.Profile.Url</c>, or <c>null</c> when the player has no custom photo
+    /// or the request failed. Fire-and-forget and defensive (never throws across the IL2CPP boundary); the proxy
+    /// is acquired through the game's own <c>Zservice.ServiceRegister.GetSocialProxy(ZRpcCtrl.Instance, true)</c>
+    /// accessor and the returned <c>UniTask&lt;GetSocialDataReply&gt;</c> is polled on the framework tick (the
+    /// framework has no compile-time <c>UniTask</c> reference, so it mirrors <c>GameAssetsService</c>'s reflected
+    /// <c>Status</c>/<c>GetAwaiter</c>/<c>GetResult</c> poll rather than awaiting). The service returns only the
+    /// URL — the consumer owns downloading, caching and texture creation. Intended for chat / nameplate avatars.
+    /// New service only — additive, binary-compatible with plugins built against ≤2.25.5.
     /// 2.25.5 is a fix: switching chat tabs/channels (any <c>ResetScroll</c> on a variable-height
     /// <c>VirtualListElement</c>) — and, more briefly, a burst of new messages — no longer FLASHES the rows
     /// overlapping each other for a couple of frames before they settle into place. On a <c>ResetScroll</c> every
@@ -386,5 +399,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.5";
+    public const string Value = "2.26.0";
 }
