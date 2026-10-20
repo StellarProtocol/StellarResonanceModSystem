@@ -32,21 +32,13 @@ internal sealed partial class PandaChatProbe
 
         InstallReceivePostfixes(rpcImplType, rpcCtrlType);
 
+        // Installs the ZTcpClient.Send PREFIX. That one hook now captures BOTH
+        // the outbound ChitChat call_ids (for Return correlation) AND the
+        // per-call history channel_type keyed by call_id — so we no longer patch
+        // ZRpcImpl.ProxyCall for channel capture. Dropping that patch also
+        // retires a hook on a game-critical RPC method (an earlier broad
+        // ProxyCall patch had black-screened the game).
         ResolveTcpSendHook();
-
-        // Outbound channel capture via ZRpcImpl.ProxyCall. The previous broad
-        // attempt (patching ALL ProxyCall overloads) black-screened the game.
-        // This retry narrows the patch to a single overload — the byte[] body
-        // variant used by the Lua chat path — and wraps install in try/catch
-        // so a failure here can't disable the rest of the framework.
-        try
-        {
-            TryHookProxyCallForChannelCapture(rpcImplType);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"[ChatProbe] ProxyCall hook install threw: {ex.GetType().Name}: {ex.Message}");
-        }
     }
 
     // Collect, de-dupe, and patch receive-shaped methods on ZRpcImpl and

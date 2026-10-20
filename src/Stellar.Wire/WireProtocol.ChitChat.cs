@@ -457,8 +457,16 @@ public static partial class WireProtocol
     /// (field 2, varint enum). Returns -1 on shape mismatch.
     /// </summary>
     public static int ParseChannelTypeFromGetChipChatRecordsRequest(byte[] body)
+        => ParseChannelTypeFromGetChipChatRecordsRequest(new ReadOnlySpan<byte>(body));
+
+    /// <summary>
+    /// Span overload of <see cref="ParseChannelTypeFromGetChipChatRecordsRequest(byte[])"/>.
+    /// Lets the outbound send hook read <c>channel_type</c> straight out of the
+    /// framed wire packet (slicing past the 26-byte Call header) with no
+    /// sub-array allocation. Identical logic; returns -1 on shape mismatch.
+    /// </summary>
+    public static int ParseChannelTypeFromGetChipChatRecordsRequest(ReadOnlySpan<byte> span)
     {
-        var span = new ReadOnlySpan<byte>(body);
         int pos = 0;
 
         // Outer envelope: field 1 (v_request, length-delimited).

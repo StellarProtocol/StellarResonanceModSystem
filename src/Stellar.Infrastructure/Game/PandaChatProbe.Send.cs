@@ -13,7 +13,7 @@ namespace Stellar.Infrastructure.Game;
 /// <list type="bullet">
 /// <item><c>Send.Builders.cs</c> — packet/envelope construction + byte writers.</item>
 /// <item><c>Send.Il2Cpp.cs</c> — managed-byte[] to IL2CPP ReadOnlySpan&lt;byte&gt; coercion.</item>
-/// <item><c>Send.Hooks.cs</c> — ProxyCall + ZTcpClient.Send PREFIX installation and handlers.</item>
+/// <item><c>Send.Hooks.Tcp.cs</c> — ZTcpClient.Send PREFIX installation + handler; captures outbound ChitChat call_ids (and the per-call history channel_type) for Return correlation.</item>
 /// <item><c>Send.Connection.cs</c> — cached chat ZTcpClient lifetime: re-cache on reconnect, close PREFIXes, handle liveness check.</item>
 /// </list>
 /// </summary>
@@ -34,12 +34,24 @@ internal sealed partial class PandaChatProbe
     private readonly ConcurrentDictionary<uint, byte> _pendingChitChatCallIds = new();
     private const int MaxPendingChatCalls = 64;
 
-    // FIFO of channel_type values from outbound GetChipChatRecords requests.
-    // Populated by the ZRpcImpl.ProxyCall PREFIX (OnProxyCall) when it observes
-    // a GetChipChatRecords call; consumed by ProcessChitChatReturnPayload on
-    // the matching Return so history batches can be attributed to a channel.
-    private readonly ConcurrentQueue<int> _pendingHistoryChannels = new();
-    private bool _firstProxyCallObservedLogged;
+    // Map of outbound GetChipChatRecords call_id -> requested channel_type, so a
+    // history Return can be attributed to the channel that ASKED for it, keyed by
+    // the RPC call_id (NOT a positional FIFO). Keying by call_id is correct even
+    // when a channel's login history is EMPTY (that Return removes its own entry
+    // and poisons no other), when Returns complete out of order, and when a send
+    // is dropped/unrecorded (its Return just misses -> resolves Unknown -> the
+    // per-sender hint). Populated by the ZTcpClient.Send prefix
+    // (TryCaptureHistoryChannel on Send.Hooks.Tcp.cs — it already has both the
+    // call_id and the framed request payload); consumed (TryRemove) by
+    // ProcessChitChatReturnPayload on the matching Return.
+    //
+    // Bounded by MaxPendingChatCalls via a companion insertion-order queue:
+    // whenever the order queue exceeds the cap we drain its head, evicting the
+    // oldest still-live entry (a never-returned call) and draining stale ids
+    // that a Return already removed. Both structures therefore stay <= the cap.
+    private readonly ConcurrentDictionary<uint, int> _historyChannelByCallId = new();
+    private readonly ConcurrentQueue<uint> _historyChannelCallIdOrder = new();
+    private bool _firstHistoryChannelCapturedLogged;
 
     // Cached chat-server ZTcpClient instance, captured from env.Connection on
     // chat packets (in OnChatNotifyEnvelope / OnChatMethod3Envelope). Lives as

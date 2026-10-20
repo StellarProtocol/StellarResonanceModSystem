@@ -19,6 +19,18 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.1 is a fix: login chat HISTORY is no longer mislabeled with the wrong channel (e.g. Party/Guild
+    /// history showing under World). The framework back-fills a history batch's channel by correlating its
+    /// <c>GetChipChatRecords</c> reply to the channel that was requested; that correlation was a positional FIFO
+    /// (<c>_pendingHistoryChannels</c>) whose dequeue sat AFTER the empty/invalid early-returns, so the FIRST
+    /// requested channel with EMPTY login history never dequeued and left its stale channel at the queue head for
+    /// the next non-empty batch to mis-claim (and it also broke under out-of-order RPC replies). Now the channel is
+    /// keyed by the RPC <c>call_id</c>: the <c>ZTcpClient.Send</c> prefix records <c>call_id -&gt; channel_type</c>
+    /// for each outbound GetChipChatRecords, and the Return resolves it with an UNCONDITIONAL <c>TryRemove(call_id)</c>
+    /// (so an empty batch removes its own entry and poisons no other, and the map never leaks); a Return with no
+    /// recorded id stays Unknown and falls through to the existing per-sender channel hint. The map is bounded
+    /// (evict-oldest). The redundant <c>ZRpcImpl.ProxyCall</c> channel-capture patch was retired. Infrastructure-only
+    /// — no API change, binary-compatible with all existing plugins (chat consumers like ChatTools need no rebuild).
     /// 2.25.0 adds VARIABLE-HEIGHT virtualization to <c>VirtualListElement</c> via two init props:
     /// <c>VariableHeight</c> (opt into measured rows — each pooled slot's uGUI preferred height is measured after
     /// it binds to a data index, with un-measured rows using <c>RowHeight</c> as a running-average estimate; a
@@ -314,5 +326,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.0";
+    public const string Value = "2.25.1";
 }

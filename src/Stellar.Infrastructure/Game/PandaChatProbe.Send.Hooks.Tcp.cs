@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -236,6 +237,11 @@ internal sealed partial class PandaChatProbe
             ((uint)bytes[18] << 24) | ((uint)bytes[19] << 16)
             | ((uint)bytes[20] << 8) | bytes[21];
 
+        // For a GetChipChatRecords Call, capture the requested channel keyed by
+        // THIS call_id so the matching history Return (same call_id) is labeled
+        // correctly. The helper gates on method_id itself (offset 22..25).
+        probe.TryCaptureHistoryChannel(callId, flags, bytes);
+
         // Bounded insert — if the game (or a misbehaving plugin) is issuing
         // chat Calls faster than Returns arrive, drop excess to prevent
         // unbounded dict growth. Worst case: we miss a few history batches.
@@ -254,6 +260,63 @@ internal sealed partial class PandaChatProbe
             probe._log.Info($"[ChatProbe] first ChitChat outbound Call observed: callId={callId} packetBytes={bytes.Length}");
         }
         return true;
+    }
+
+    /// <summary>
+    /// Record the requested channel for an outbound <c>GetChipChatRecords</c>
+    /// Call, keyed by its <paramref name="callId"/>, so <see cref="ProcessChitChatReturnPayload"/>
+    /// can attribute the matching history Return to the right channel. Replaces
+    /// the old positional FIFO (<c>_pendingHistoryChannels</c>): keying by
+    /// call_id removes the mis-attribution the FIFO suffered — an EMPTY-history
+    /// channel's Return now removes its OWN entry instead of leaving a stale head
+    /// for the next channel to dequeue, out-of-order Returns each claim their own
+    /// entry, and a dropped/unrecorded send only costs ITS batch the channel hint
+    /// (it falls through to the per-sender heuristic), never another channel's.
+    ///
+    /// Parses <c>channel_type</c> straight out of the framed packet's request
+    /// payload (offset 26). Skips a zstd-compressed payload (high bit of
+    /// <paramref name="flags"/>) because we read the proto raw — a tiny
+    /// GetChipChatRecords request is never compressed in practice, so this is a
+    /// guard, not a normal path. Bounds the map + order queue at
+    /// <see cref="MaxPendingChatCalls"/> by draining the oldest ids when the
+    /// order queue overflows (stale ids a Return already removed drain as harmless
+    /// no-op TryRemoves).
+    /// </summary>
+    private void TryCaptureHistoryChannel(uint callId, ushort flags, byte[] bytes)
+    {
+        // A well-formed Call header is 26 bytes: method_id at offset 22..25, the
+        // request payload at 26. Only GetChipChatRecords carries a history channel.
+        if (bytes.Length <= 26) return; // header only (or short) — nothing to parse
+        uint methodId =
+            ((uint)bytes[22] << 24) | ((uint)bytes[23] << 16)
+            | ((uint)bytes[24] << 8) | bytes[25];
+        if (methodId != GetChipChatRecordsMethodId) return;
+
+        // flags high bit (0x8000) = zstd-compressed payload (see BuildCallPacket);
+        // the low 15 bits are the msg_type. We parse the request proto directly.
+        if ((flags & 0x8000) != 0) return;
+
+        int channelType = WireProtocol.ParseChannelTypeFromGetChipChatRecordsRequest(
+            new ReadOnlySpan<byte>(bytes, 26, bytes.Length - 26));
+        if (channelType <= 0) return;
+
+        _historyChannelByCallId[callId] = channelType;
+        _historyChannelCallIdOrder.Enqueue(callId);
+
+        // Keep the order queue (and thus the map) bounded. Evicts oldest-first:
+        // a stale id (already removed by its Return) is a no-op TryRemove; a live
+        // id past the cap is a never-returned call we drop so it can't grow us.
+        while (_historyChannelCallIdOrder.Count > MaxPendingChatCalls
+               && _historyChannelCallIdOrder.TryDequeue(out var oldest))
+        {
+            _historyChannelByCallId.TryRemove(oldest, out _);
+        }
+
+        if (!_firstHistoryChannelCapturedLogged)
+        {
+            _firstHistoryChannelCapturedLogged = true;
+            _log.Info($"[ChatProbe] first GetChipChatRecords channel captured: callId={callId} channelType={channelType} (wire={WireProtocol.MapWireChannel(channelType)})");
+        }
     }
 
     /// <summary>

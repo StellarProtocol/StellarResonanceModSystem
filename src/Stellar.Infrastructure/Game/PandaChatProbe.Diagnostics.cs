@@ -14,7 +14,6 @@ namespace Stellar.Infrastructure.Game;
 /// Entry points called from the main partial file:
 /// <list type="bullet">
 /// <item><see cref="DiagPatchAllStart"/> — fired once at PatchAll. No-op today; reserved as the hook point for future bring-up diagnostics.</item>
-/// <item><see cref="DiagProxyCallObserved"/> — per-batch history ProxyCall observation.</item>
 /// <item><see cref="DiagChatReceived"/> — per-message method=1 receive.</item>
 /// <item><see cref="DiagChatMethod3Received"/> — per-message method=3 receive.</item>
 /// <item><see cref="DiagStubCallReceived"/> — per-stub-call receive.</item>
@@ -48,17 +47,6 @@ internal sealed partial class PandaChatProbe
     // Each method is the "subsequent" log branch of a first-seen+verbose pair
     // in the production file. Skip body when STELLAR_DIAGNOSTICS is off so
     // calling them is a single static-field read on the hot path.
-
-    /// <summary>
-    /// Diagnostics mode: log every subsequent GetChipChatRecords ProxyCall
-    /// observation so each history batch's outbound channel_type can be
-    /// correlated with the channel the user perceives in the UI.
-    /// </summary>
-    private void DiagProxyCallObserved(int channelType)
-    {
-        if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[ChatProbe] GetChipChatRecords ProxyCall observed: channelType={channelType} (wire={WireProtocol.MapWireChannel(channelType)})");
-    }
 
     /// <summary>
     /// Diagnostics mode: log every subsequent parsed ChitChatNtf method=1

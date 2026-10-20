@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.25.1] - 2026-10-20
+_**2.25.1** (patch) — fixes login chat history being filed under the wrong channel tab in chat mods. Infrastructure-only; no API change, no plugin rebuild._
+### Fixed
+- In chat mods, the older messages that load when you log in now appear under the correct channel tab. Before, if one channel (say World) had no recent history, another channel's messages (Party, Guild, …) could show up under it.
+### Developer notes
+- Login chat history carries no wire channel; the framework back-fills it by correlating each `GetChipChatRecords` reply to the channel that was requested. That correlation was a positional FIFO (`_pendingHistoryChannels`, a `ConcurrentQueue<int>`) whose dequeue ran only AFTER the empty-batch / invalid-shape early-returns in `ProcessChitChatReturnPayload`. So the first requested channel whose login history was EMPTY returned early WITHOUT dequeuing, leaving its channel stuck at the queue head; the next non-empty batch dequeued that stale head and was mislabeled (e.g. empty World left "World" for the following Party batch). It also broke under out-of-order RPC replies and enqueue/dequeue count drift.
+- Fix: correlate by RPC `call_id` instead of position. The `ZTcpClient.Send` prefix (`TryCaptureHistoryChannel`, `PandaChatProbe.Send.Hooks.Tcp.cs`) now records `call_id -> channel_type` in a bounded `ConcurrentDictionary<uint,int>` (`_historyChannelByCallId`, evict-oldest via a companion order queue, both capped at `MaxPendingChatCalls`) — it already had the `call_id` and the framed request payload, so it parses `channel_type` there via a new zero-alloc `ReadOnlySpan<byte>` overload of `WireProtocol.ParseChannelTypeFromGetChipChatRecordsRequest` (compressed payloads skipped — a tiny GetChipChatRecords request is never compressed). The Return resolves the channel with an UNCONDITIONAL `_historyChannelByCallId.TryRemove(callId)` at the TOP of `ProcessChitChatReturnPayload`, before the early-returns, so an empty batch removes its own entry (poisoning no other) and the map never leaks; a Return with no recorded id stays `Unknown` and falls through to the existing `_senderLastChannel` per-sender hint. The now-redundant `ZRpcImpl.ProxyCall` channel-capture hook (`PandaChatProbe.Send.Hooks.cs`) and the `_pendingHistoryChannels` queue were retired, removing a Harmony patch from a game-critical RPC method. The live Notify path was already correct and is unchanged. See KB `Chat-System-Architecture.md` §7.
+
 ## [2.25.0] - 2026-10-20
 _**2.25.0** (minor) — long chat histories of wrapping bubbles now scroll smoothly without building every row. Adds API for plugins (`VirtualListElement` variable-height mode, Abstractions 2.25.0); additive, no plugin rebuild._
 ### Added
