@@ -46,6 +46,13 @@ namespace Stellar.Infrastructure.Game;
 // buffer that front-drops WITHOUT changing Count remaps indices undetected — cached heights are then one-row stale
 // until the next width/shrink/reset invalidation (bounded, self-heals; no per-frame jitter in exchange).
 //
+// Resize: a StickToBottom view that is pinned to the bottom stays pinned as the window grows OR shrinks. The
+// "was I at the bottom?" test is judged against the PREVIOUS apply's viewport height (the size scrollY was set
+// under), not this apply's — because on a resize viewportH changes while scrollY is still the value set under
+// the old height. Judging a SHRINK against the new (smaller) height would raise MaxScroll above the old scrollY,
+// read "not at bottom", and strand the view above the new bottom (it appears to scroll up); the previous-height
+// comparison keeps wasAtBottom true so it re-pins to the new (smaller) maxScroll. See _lastViewportH.
+//
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
 internal sealed partial class WindowBuilder
@@ -114,6 +121,7 @@ internal sealed partial class WindowBuilder
         private int[] _slotLogical = Array.Empty<int>();   // data index each pool slot currently shows (-1 = hidden)
         private float _sum; private int _n;                // running sum/count of measured heights → average estimate
         private float _lastViewportW = -1f;                // last positive viewport width; a change re-wraps rows → drop the height cache
+        private float _lastViewportH = -1f;   // viewport height at the PREVIOUS apply; the at-bottom test uses the size scrollY was set under, so a resize keeps a bottom-pinned view pinned (see header "Resize")
         private int _lastFirst = -1, _lastCount = -1;
         private bool _firstApply = true, _offDirty = true;
         private const float BottomEps = 2f;   // within this many px of the bottom counts as "at the bottom"
@@ -144,7 +152,7 @@ internal sealed partial class WindowBuilder
             var anchorTopOld = (_lastCount >= 0 && anchorIdx < _off.Length) ? _off[anchorIdx] : 0f;
             var oldTotal = (_lastCount >= 0 && _lastCount < _off.Length) ? _off[_lastCount] : 0f;
             var wasAtBottom = StickToBottom && (_firstApply || _lastCount < 0
-                || scrollY >= VariableListMath.MaxScroll(oldTotal, viewportH) - BottomEps);
+                || scrollY >= VariableListMath.MaxScroll(oldTotal, _lastViewportH > 0f ? _lastViewportH : viewportH) - BottomEps);
 
             EnsureCapacity(count);
             // Heights are a per-data-index CACHE (see file header). Drop + re-measure only when a stored height is
@@ -175,7 +183,7 @@ internal sealed partial class WindowBuilder
             var first = VariableListMath.FirstIndex(scrollY, _off, count, pool);
             if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool);
 
-            _lastFirst = first; _lastCount = count; _firstApply = false;
+            _lastFirst = first; _lastCount = count; _firstApply = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
         }
 
@@ -300,7 +308,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
-            _sum = 0f; _n = 0; _offDirty = true; _lastViewportW = -1f;
+            _sum = 0f; _n = 0; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
             _lastFirst = -1; _lastCount = -1; _firstApply = true;
         }
     }
