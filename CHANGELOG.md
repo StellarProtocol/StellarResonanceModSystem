@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.25.5] - 2026-10-21
+_**2.25.5** (patch) — fixes chat messages briefly overlapping each other when you switch channels/tabs before they settle into place. Infrastructure-only; no API change, no plugin rebuild._
+### Fixed
+- Switching chat channels/tabs no longer briefly shows messages overlapping each other before they settle. The list stays blank for a moment while it measures the messages, then shows them correctly spaced.
+### Developer notes
+- A `ResetScroll` (tab/channel switch) on the variable-height `VirtualListElement` clears every row's latched height (`ResetState`), so for the 2-3 applies it takes `MeasureActiveSlots` to re-latch them each row falls back to the seed/running-average ESTIMATE (the chat consumer seeds `RowHeight: 28f`, shorter than a real wrapping bubble). `VariableListMath.BuildOffsets` then packed the rows at that too-short estimate while `Reposition` sized each slot to its real content height — so adjacent rows visibly OVERLAPPED inside the clipped viewport until the real heights latched and the offsets rebuilt ("brief overlap before it shows correctly"). A burst of new messages hit the same path more briefly.
+- Fix (`WindowBuilder.VariableList.cs`, `VariableListBinding.Reposition`): a row whose height is not yet latched (`!_measured[logical]`) is PARKED off-screen (new `OffscreenY = 1_000_000f`, a large positive y — content/slots are top-anchored pivot y=1, so a big positive y sits above the viewport top, where the ScrollRect viewport's `RectMask2D` clips it) instead of being drawn at its wrong estimate offset. The slot stays ACTIVE and is still sized to the estimate rowH so the VLG lays it out and `MeasureActiveSlots` can read its preferred height (measurement requires `activeSelf`, so we hide by position, NOT `SetActive(false)`). As each row latches, `measuredChanged` becomes true that apply → `Reposition` re-runs and snaps the just-latched rows on-screen at their true offsets; `StickToBottom` re-pins to the true bottom as offsets grow. Net: the viewport briefly blanks (~2 frames, ~33ms) on a tab switch instead of flashing overlapped rows; a measured row always takes the on-screen branch, so steady state and scrolling are byte-identical. `VariableListMath` and the `VirtualListElement` API are unchanged — binary-compatible, no plugin rebuild. See KB `WindowBuilder-Patterns.md` (VARIABLE-HEIGHT section).
+
 ## [2.25.4] - 2026-10-20
 _**2.25.4** (patch) — fixes new chat messages showing with a tall empty gap below them (a regression from 2.25.3). Infrastructure-only; no API change, no plugin rebuild._
 ### Fixed

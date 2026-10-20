@@ -19,6 +19,23 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.5 is a fix: switching chat tabs/channels (any <c>ResetScroll</c> on a variable-height
+    /// <c>VirtualListElement</c>) — and, more briefly, a burst of new messages — no longer FLASHES the rows
+    /// overlapping each other for a couple of frames before they settle into place. On a <c>ResetScroll</c> every
+    /// row's latched height is cleared (<c>ResetState</c>), so for the 2-3 applies it takes <c>MeasureActiveSlots</c>
+    /// to re-latch them each row falls back to the seed/running-average ESTIMATE (the chat consumer seeds
+    /// <c>RowHeight</c> 28px, shorter than a real wrapping bubble); <c>BuildOffsets</c> packed the rows at that
+    /// too-short estimate while <c>Reposition</c> sized each slot to its real content, so adjacent rows visibly
+    /// OVERLAPPED inside the clipped viewport until the real heights latched and the offsets rebuilt. Now
+    /// <c>Reposition</c> PARKS any row whose height is not yet latched off-screen (a large positive y, above the
+    /// viewport top where the ScrollRect viewport's <c>RectMask2D</c> clips it) instead of drawing it at its estimate
+    /// offset — the slot stays ACTIVE and sized so <c>MeasureActiveSlots</c> can still measure it, and the apply it
+    /// latches, <c>Reposition</c> re-runs and snaps it on-screen at its true offset. The viewport briefly blanks
+    /// (~2 frames) on a tab switch rather than flashing overlapped rows; steady state and scrolling of
+    /// already-measured rows are unchanged (a measured row always takes the on-screen branch). Infrastructure-only
+    /// (<c>VariableListBinding.Reposition</c> in <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and
+    /// the <c>VirtualListElement</c> API are unchanged — no API change, binary-compatible with all existing plugins
+    /// (chat consumers like ChatTools need no rebuild).
     /// 2.25.4 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping chat log of
     /// <c>BubbleElement</c> rows) no longer leaves a tall empty GAP below a freshly appended message (the text also
     /// briefly wrapped one character per line before snapping to size). This was a regression introduced by 2.25.3's
@@ -369,5 +386,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.4";
+    public const string Value = "2.25.5";
 }

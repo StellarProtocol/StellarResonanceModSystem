@@ -12,7 +12,13 @@ namespace Stellar.Infrastructure.Game;
 // LATCHED into the cache once it has been STABLE across two consecutive measurements (within StableEps); a latched
 // row is final and never re-measured. Un-measured rows use a running-average estimate so the scrollbar is roughly
 // right immediately and sharpens as rows scroll through. Cumulative offsets (prefix sum over Count, bounded to a
-// couple hundred) place the slots and derive the height.
+// couple hundred) place the slots and derive the height. An un-measured row is NOT drawn at that estimate offset,
+// though: the estimate is usually SHORTER than the row's real wrapped height, so packing rows at the estimate would
+// make the real-sized slots OVERLAP until they latch (worst on a ResetScroll/tab switch, where EVERY row goes
+// unmeasured at once and the viewport flashes overlapping bubbles for ~2-3 applies). So Reposition PARKS an
+// unmeasured row off-screen (above the viewport top, clipped by the viewport's RectMask2D) while keeping it
+// active + sized so it can still be measured; the apply it latches, it snaps on-screen at its true offset. Net: the
+// viewport briefly blanks on a tab switch instead of flashing overlapped rows (see OffscreenY + Reposition).
 //
 // Why "measure until stable, then latch" and not either extreme (the two bugs this file has carried): re-reading
 // GetPreferredHeight and committing it EVERY apply (the 2.25.0..2.25.2 design) let sub-pixel uGUI layout jitter —
@@ -111,6 +117,11 @@ internal sealed partial class WindowBuilder
         private int _lastFirst = -1, _lastCount = -1;
         private bool _firstApply = true, _offDirty = true;
         private const float BottomEps = 2f;   // within this many px of the bottom counts as "at the bottom"
+        // Park an unmeasured row here (a large POSITIVE y) instead of at its estimate offset: content and slots are
+        // top-anchored with pivot y=1, so on-screen rows sit at NEGATIVE y going DOWN — a big positive y puts the row
+        // ABOVE the viewport top, where the ScrollRect viewport's RectMask2D clips it away. This hides a not-yet-
+        // latched row until its height is measured, killing the tab-switch/estimate OVERLAP flash (see Reposition).
+        private const float OffscreenY = 1_000_000f;
         // A height latches only after two consecutive measurements agree within this many px. Must exceed sub-pixel
         // uGUI wobble (~0.5px) so a settled row confirms on its 2nd measure, yet stay far below the gap between a
         // pre-width-solve (tall, ~1 char/line) reading and the real height so such a reading never falsely confirms.
@@ -206,6 +217,16 @@ internal sealed partial class WindowBuilder
 
         // Window the pool: tell the consumer the first data index (so slot Funcs resolve first+k this poll), then
         // place each slot at its cumulative offset and size it to its row height; slots past the end hide.
+        // A row whose height is NOT yet latched (!_measured[logical]) is parked OFF-SCREEN (at OffscreenY, where the
+        // viewport's RectMask2D clips it) rather than drawn at its estimate offset: the estimate is a guess (usually
+        // SHORTER than a real wrapping bubble), so the offsets pack such rows too tight and the real-sized slots
+        // would visibly OVERLAP for the 2-3 applies it takes MeasureActiveSlots to latch them — most visible on a
+        // ResetScroll/tab switch, where every row goes unmeasured at once. We keep the slot ACTIVE and still size it
+        // to the estimate so uGUI lays it out and MeasureActiveSlots can read its preferred height (measurement needs
+        // activeSelf — so we hide by POSITION, never SetActive(false)). The apply it latches, measuredChanged re-runs
+        // Reposition and it snaps to its true on-screen offset. Net: the viewport briefly blanks (~2 frames) on a tab
+        // switch instead of flashing overlapped rows; already-measured rows (steady state + scroll) always take the
+        // on-screen branch, so nothing there changes.
         private void Reposition(int first, int count, int pool)
         {
             OnWindow(first);
@@ -218,9 +239,15 @@ internal sealed partial class WindowBuilder
                 if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
                 if (show)
                 {
-                    rt.anchoredPosition = new Vector2(0f, -_off[logical]);
+                    // Size to the row height in BOTH cases (real height for a latched row, estimate for an unmeasured
+                    // one) so the VLG lays the row out and it can be measured next apply.
                     var rowH = _off[logical + 1] - _off[logical];
                     if (rowH > 0f) rt.sizeDelta = new Vector2(0f, rowH);
+                    // Latched → draw at its true offset. Unmeasured → park off-screen (clipped) until it latches, so
+                    // it never paints at the wrong estimate position (the tab-switch overlap flash).
+                    rt.anchoredPosition = _measured[logical]
+                        ? new Vector2(0f, -_off[logical])
+                        : new Vector2(0f, OffscreenY);
                     _slotLogical[k] = logical;
                 }
                 else _slotLogical[k] = -1;
