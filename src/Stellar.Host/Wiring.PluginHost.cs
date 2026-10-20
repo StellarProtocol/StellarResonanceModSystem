@@ -52,9 +52,22 @@ public sealed partial class BootstrapPlugin
     /// </summary>
     private void ConstructPluginServices(BepInExPluginLog log, PluginConfigFactory configFactory)
     {
+        var services = BuildPluginServices(log);
+        _capturedServices = services;
+        WireProfileCardActionInjector(log);
+        BuildRegistryAndHost(log, configFactory, services);
+    }
+
+    /// <summary>
+    /// Selects real vs mock implementations (visual-capture toolkit) + the infra services, then
+    /// constructs the <see cref="PluginServices"/> aggregator. Split out of
+    /// <see cref="ConstructPluginServices"/> so that method stays under the 50-LoC analyzer gate.
+    /// </summary>
+    private PluginServices BuildPluginServices(BepInExPluginLog log)
+    {
         var (combatSnapshot, playerState, inventory) = SelectVisualMocks(log);
         var (gameAssets, entityTransforms, entityVitals, portraitService, wardrobePreview) = BuildInfraServices(log);
-        var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
+        return new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
             _gameEvents!, playerState, _chatService!,
@@ -98,9 +111,6 @@ public sealed partial class BootstrapPlugin
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
             _reShadeService!, _voiceService!,
             _playerProfileService!);
-        _capturedServices = services;
-        WireProfileCardActionInjector(log);
-        BuildRegistryAndHost(log, configFactory, services);
     }
 
     /// <summary>
