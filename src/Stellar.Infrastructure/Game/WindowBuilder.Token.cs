@@ -47,6 +47,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<FrameOpacityBinding> FrameOpacities = new();
         internal readonly List<HoverBinding> Hovers = new();           // per-apply pin-state poll (visual hover is ticker-driven)
         internal readonly List<SelectableBinding> Selectables = new(); // per-apply selected-state re-tint for SelectableElement rows
+        internal readonly List<BubbleBinding> Bubbles = new();          // per-apply width solve (content-hug up to cap) for BubbleElement
         internal readonly List<MeterRowBinding> MeterRows = new();      // per-apply poll for bespoke CombatMeter rows
         internal readonly List<AccentRowBinding> AccentRows = new();    // per-apply poll for role-stripe/share-backdrop rows
         internal readonly List<GameTextureBinding> GameTextures = new();   // per-apply poll for GameTextureElement (sync with VirtualList)
@@ -135,6 +136,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < FrameOpacities.Count; i++) FrameOpacities[i].Apply();
             for (var i = 0; i < Hovers.Count; i++) Hovers[i].Poll?.Invoke();
             for (var i = 0; i < Selectables.Count; i++) Selectables[i].Apply();
+            for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].Apply();
             for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
             for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
             for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();

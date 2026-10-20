@@ -172,6 +172,7 @@ internal sealed partial class WindowBuilder
                 break;
             case ColumnElement c: BuildColumn(c, parent, token); break;
             case PanelElement pn: BuildPanel(pn, parent, token); break;
+            case BubbleElement bub: BuildBubble(bub, parent, token); break;    // .Bubble.cs
             case BackdropElement bd: BuildBackdrop(bd, parent, token); break;
             case TextElement t:   BuildText(t, parent, token); break;
             case SeparatorElement sep: BuildSeparator(parent, token, sep.Vertical); break;

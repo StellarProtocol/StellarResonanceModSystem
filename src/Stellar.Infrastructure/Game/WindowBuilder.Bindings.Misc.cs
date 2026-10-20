@@ -60,6 +60,36 @@ internal sealed partial class WindowBuilder
         }
     }
 
+    // Per-apply width solver for a BubbleElement: content-hug up to a cap, then wrap. Reads the child's NATURAL
+    // (unwrapped) preferred width — which is wrap-INDEPENDENT (uGUI Text.preferredWidth ignores the current rect
+    // width), so pinning the bubble narrower never feeds back and oscillates — caps it at MaxWidth (or the
+    // parent's current width when MaxWidth == 0), and pins the bubble's LayoutElement to that width. A short child
+    // → a narrow bubble; a long child → the bubble fixes at the cap and its wrapping Text flows to >1 line (the
+    // vertical ContentSizeFitter then grows the height). Diffs on the resolved width so an unchanged bubble writes
+    // nothing. Setting preferredWidth marks the layout dirty, so Unity rebuilds it on the next render frame.
+    internal sealed class BubbleBinding
+    {
+        public LayoutElement Le = null!;       // on the bubble GO (the width driver)
+        public RectTransform Child = null!;    // the single content child (measured)
+        public RectTransform? Parent;          // bubble's parent (its width = the cap when MaxWidth == 0)
+        public float MaxWidth;                  // 0 = clamp to Parent's current width
+        public float PadX;                      // total horizontal padding (left + right)
+        private float _last = -1f;
+        public void Apply()
+        {
+            if (Le == null || Child == null) return;
+            var natural = LayoutUtility.GetPreferredWidth(Child) + PadX;
+            // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
+            // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out.
+            var cap = MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : natural);
+            if (cap <= 0f) cap = natural;
+            var w = Mathf.Max(0f, Mathf.Min(natural, cap));
+            if (Mathf.Approximately(w, _last)) return;
+            Le.minWidth = Le.preferredWidth = w; Le.flexibleWidth = 0f;
+            _last = w;
+        }
+    }
+
     // Per-apply re-tint for a SelectableElement row. Diffs on a 0/1/2 state (rest/hover/selected) like the
     // other bindings, so a no-change poll writes nothing — avoids marking the bg Image vertex-dirty (a
     // redundant canvas rebatch) every Apply for every idle row. HoverState is pushed by the ticker hover hook;

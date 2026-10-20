@@ -57,6 +57,28 @@ internal sealed class WindowThemeAssets
     public Sprite? PanelBg { get; private set; }        // translucent dark rounded body (Tracker/Party overlay chromes)
     public Sprite? SwatchBg { get; private set; }       // 3-radius rounded square — theme-editor colour chip (tinted at use-site)
     public Sprite? CdOutline { get; private set; }      // white rounded ring (radius 8, matches PanelBg) — CooldownTile border, tinted a darkened accent at use-site
+
+    // Rounded white bubble/card sprites keyed by corner radius (px). Theme-INDEPENDENT (white, tinted to the
+    // bubble's fill at the use-site, exactly like SwatchBg), baked on demand and KEPT across re-bakes — a
+    // BubbleElement's Image holds a direct reference, so destroying these on a theme change would strand it.
+    private readonly System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> _bubbleSprites = new();
+
+    /// <summary>A rounded white 9-slice chip for a <c>BubbleElement</c> background, tinted to the bubble's fill at
+    /// the use-site. <paramref name="radius"/> &lt;= 0 returns the shared 3-radius <see cref="SwatchBg"/> chip; a
+    /// positive radius bakes (once, cached) a rounder sprite at that corner radius. Main-thread only (bakes a
+    /// Texture2D). Null only before the neutral sprites are baked (a pre-bake sandbox) — the caller falls back to a
+    /// plain tinted rect.</summary>
+    public Sprite? BubbleBg(int radius)
+    {
+        if (radius <= 0) return SwatchBg;   // 0 → the shared editor chip (matches SelectableElement's rounding)
+        if (_bubbleSprites.TryGetValue(radius, out var e)) return e.sprite;
+        // size = 2*radius + a small centre strip so the 9-slice corners fit; slice border = radius + 1 (as SwatchBg).
+        var size = radius * 2 + 4;
+        var tex = RoundedTextureBaker.Rounded(size, radius, new ColorRgba(1f, 1f, 1f, 1f));
+        var sprite = Sliced(tex, radius + 1);
+        _bubbleSprites[radius] = (tex, sprite);
+        return sprite;
+    }
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;
@@ -203,6 +225,12 @@ internal sealed class WindowThemeAssets
         DestroyThemed();
         Drop(ref _capsuleTex, () => Capsule, s => Capsule = s);
         Drop(ref _swatchTex, () => SwatchBg, s => SwatchBg = s);
+        foreach (var e in _bubbleSprites.Values)
+        {
+            if (e.sprite != null) Object.Destroy(e.sprite);
+            if (e.tex != null) Object.Destroy(e.tex);
+        }
+        _bubbleSprites.Clear();
     }
 
     // White sprite with the TOP two corners rounded (radius r), bottom square. 4× supersampled AA.
