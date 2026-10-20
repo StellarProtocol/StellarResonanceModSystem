@@ -39,6 +39,48 @@ public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap
 /// <param name="Padding">Uniform inner padding in pixels.</param>
 public sealed record PanelElement(HudElement Child, float Padding = 8f) : HudElement;
 
+/// <summary>A content-hugging rounded "chat bubble" / card: a <see cref="FillColor"/>-tinted rounded sliced
+/// background (the same rounded chip sprite <see cref="SelectableElement"/> draws) hosting a single
+/// <paramref name="Child"/> with inner padding. Unlike <see cref="SelectableElement"/> — which is forced to
+/// stretch the full column width — a bubble's width HUGS its child's preferred width, so a short label makes a
+/// narrow bubble and a long sentence makes a wide one, capped at <see cref="MaxWidth"/> (or the available width)
+/// past which a wrapping <see cref="TextElement"/> child flows to multiple lines and the bubble grows in height.
+/// Built for a game-style chat UI (translucent fills + right-aligned self rows). It is a PURELY VISUAL container:
+/// it does not intercept clicks (its background is not a raycast target), so to make a bubble clickable, wrap it
+/// in a <see cref="SelectableElement"/> (or place a <see cref="ButtonElement"/> beside it) — the bubble renders on
+/// top of the selectable's own tint.
+/// <para>⚠️ Content-hug needs a layout parent that does NOT force-expand child width. A <see cref="RowElement"/>'s
+/// layout respects the child's intrinsic width, so place a bubble inside a Row (right-align a self bubble with
+/// <see cref="RowJustify.Right"/> + a weighted gutter). Dropped DIRECTLY into a <see cref="ColumnElement"/> (which
+/// force-expands width) the bubble fills the column width instead of hugging — same gotcha as a fixed-size icon
+/// (see WindowBuilder-Patterns.md).</para></summary>
+/// <param name="Child">The content laid out inside the bubble (e.g. a wrapping <see cref="TextElement"/>).</param>
+public sealed record BubbleElement(HudElement Child) : HudElement
+{
+    /// <summary>Bubble fill colour; the ALPHA is honoured so translucent tints work (the typical chat-bubble
+    /// look). Null (default) = a sensible themed default (the menu accent at a soft alpha, re-tinted on a theme
+    /// change so the four presets track).</summary>
+    public ColorRgba? FillColor { get; init; }
+
+    /// <summary>Hard width cap in px (canvas units). <c>0</c> (default) = clamp to the parent/available width
+    /// instead of a fixed cap. When the child's natural (unwrapped) width exceeds the cap the bubble fixes at the
+    /// cap and the child's wrapping text flows to multiple lines; below the cap the bubble hugs the child's width.
+    /// For a right-aligned self row set an explicit cap (e.g. ~70% of the chat window) — a content-sized Row has
+    /// no definite "available width" to clamp to.</summary>
+    public float MaxWidth { get; init; }
+
+    /// <summary>Corner radius in px. <c>0</c> (default) reuses the shared 3-radius rounded chip sprite (the
+    /// <see cref="SelectableElement"/> chip); a positive value bakes a rounder sliced sprite at that radius (cached
+    /// per radius, theme-independent). Use ~8–12 for a softer game-style bubble.</summary>
+    public float CornerRadius { get; init; }
+
+    /// <summary>Inner horizontal padding (each side) in px between the bubble edge and its child. Default 10.</summary>
+    public float PaddingX { get; init; } = 10f;
+
+    /// <summary>Inner vertical padding (top and bottom) in px between the bubble edge and its child. Default 6.</summary>
+    public float PaddingY { get; init; } = 6f;
+}
+
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>
 public enum RowJustify
 {

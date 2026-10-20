@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.24.0] - 2026-10-20
+_**2.24.0** (minor) — new rounded "chat bubble" building block for mod windows. Adds API for plugins (`BubbleElement`, Abstractions 2.24.0); additive, no plugin rebuild._
+### Added
+- Mods can show rounded, coloured speech-bubble cards that fit snugly around their text — short messages make a small bubble, long ones make a wide bubble and wrap neatly onto more lines. See-through bubble colours are supported, for a chat that looks like the game's own.
+### Developer notes
+- New element (additive): `BubbleElement(HudElement Child)` with init props `FillColor` (`ColorRgba?`, alpha honoured; null = themed menu-accent default, re-tinted on theme change), `MaxWidth` (0 = clamp to parent/available width), `CornerRadius` (0 = reuse the `SelectableElement`/`SwatchBg` chip; > 0 bakes a cached rounder sliced sprite), `PaddingX` (10), `PaddingY` (6). Background is the rounded sliced `SwatchBg` sprite tinted to `FillColor`; `raycastTarget = false` (click-through-neutral — wrap in a `SelectableElement` for clicks).
+- Content-hug: `LayoutElement.flexibleWidth = 0` + a per-apply `BubbleBinding` that pins the bubble width to `min(child natural preferred width, cap)`. The child's natural width is wrap-independent (uGUI `Text.preferredWidth`), so pinning narrower never feeds back/oscillates; a vertical `ContentSizeFitter` grows the height when the child wraps. Needs a width-respecting parent (a `RowElement`); dropped directly into a `ColumnElement` it fills the column (same force-expand gotcha as a fixed-size icon). XML-documented (CS1591). See KB `WindowBuilder-Patterns.md` / `Chat-System-Architecture.md` §6.
+
 ## [2.23.1] - 2026-10-21
 _**2.23.1** (patch) — restores the Module Optimizer after the latest game update; no API change, no plugin rebuild._
 ### Fixed

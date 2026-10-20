@@ -19,6 +19,14 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.24.0 adds <c>BubbleElement</c> — a content-hugging rounded "chat bubble" / card for window UIs: a
+    /// <c>FillColor</c>-tinted rounded sliced background (alpha honoured, so translucent bubbles work; null = a
+    /// themed default) hosting one child with <c>PaddingX</c>/<c>PaddingY</c>. Its width HUGS the child's preferred
+    /// width (short label → narrow bubble; long sentence → wide), capped at <c>MaxWidth</c> (0 = the available/parent
+    /// width) past which a wrapping child flows to multiple lines and the bubble grows in height — the content-size
+    /// measurement a plugin cannot do itself. <c>CornerRadius</c> 0 reuses the <c>SelectableElement</c> chip, &gt; 0
+    /// bakes a rounder sprite. Purely visual (click-through-neutral — wrap it in a <c>SelectableElement</c> to make
+    /// it clickable). New record only — additive, binary-compatible with plugins built against ≤2.23.0.
     /// 2.23.1 is a fix: the Module Optimizer produces results again after the <c>release_3.7_2</c> game
     /// patch moved each module part's magnitude into <c>Item.ModPartLevel.Levels</c> (per-attribute module
     /// leveling); the old positional read returned 0 for every part, so Optimize scored every combo at ~0.
@@ -296,5 +304,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.23.1";
+    public const string Value = "2.24.0";
 }
