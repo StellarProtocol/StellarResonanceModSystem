@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.25.4] - 2026-10-20
+_**2.25.4** (patch) — fixes new chat messages showing with a tall empty gap below them (a regression from 2.25.3). Infrastructure-only; no API change, no plugin rebuild._
+### Fixed
+- New chat messages no longer appear with a tall empty gap below them, or briefly wrap one character per line before snapping to their proper size. Each message now takes exactly the space its text needs as soon as it lands.
+### Developer notes
+- 2.25.3 made the variable-height `VirtualListElement` height model a measure-ONCE cache to stop scroll jitter, but it latched a row's height from the FIRST reading the slot was active for. `BubbleElement`'s width-solve (`BubbleBinding`) settles a tick AFTER that first measurement, so the first `LayoutUtility.GetPreferredHeight` was read while the bubble was still ~0 wide — the text wrapped to ~1 char per line → a far-too-tall preferred height that `_measured[]` then locked in permanently. The text corrected visually when the width solved, but the row's reserved height stayed stuck tall → a large empty gap below every message. (The pre-2.25.3 re-measure-every-apply code self-corrected, which is exactly what caused the jitter 2.25.3 removed.)
+- Fix (`WindowBuilder.VariableList.cs`, `VariableListBinding.MeasureActiveSlots`): latch a height only after it is STABLE across two consecutive measurements. New per-index `_provH[]`/`_prov[]` hold the last apply's provisional (unconfirmed) reading; a reading commits to `_h[]`/`_measured[]` only when it matches the stored provisional within `StableEps` (1.5px — above sub-pixel uGUI wobble, far below the pre-width-solve tall-vs-real gap). A pre-width-solve tall reading never matches the next (settled) reading, so it stays provisional and never locks in; a genuinely settled row matches its own next reading and latches on the 2nd measure, after which it is never re-measured — so 2.25.3's no-jitter property is preserved (a settled row still never churns the offsets or scroll). While a row is only provisional it keeps using the running estimate in the offsets (no `measuredChanged`), so the settle window adds no offset churn. `_prov` is cleared alongside `_measured` on a viewport-WIDTH change / Count DECREASE (`InvalidateHeights`) and `ResetScroll` (`ResetState`), and grown with the cache in `EnsureCapacity`. `VariableListMath` and the `VirtualListElement` API are unchanged — binary-compatible, no plugin rebuild. See KB `WindowBuilder-Patterns.md` (VARIABLE-HEIGHT section).
+
 ## [2.25.3] - 2026-10-20
 _**2.25.3** (patch) — fixes chat logs (and other wrapping scroll lists) jittering while you scroll. Infrastructure-only; no API change, no plugin rebuild._
 ### Fixed

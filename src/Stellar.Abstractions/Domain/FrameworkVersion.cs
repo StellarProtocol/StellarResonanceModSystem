@@ -19,6 +19,20 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.4 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping chat log of
+    /// <c>BubbleElement</c> rows) no longer leaves a tall empty GAP below a freshly appended message (the text also
+    /// briefly wrapped one character per line before snapping to size). This was a regression introduced by 2.25.3's
+    /// own measure-once cache: a row's height latched from the FIRST reading taken while the slot was active, but
+    /// <c>BubbleElement</c> solves the row's WIDTH a tick LATER (<c>BubbleBinding</c>), so that first reading was taken
+    /// at ~0 width — the text wrapped to ~1 char per line → a hugely tall preferred height that got locked in
+    /// permanently even after the text visually corrected. The latch policy is now "measure until stable, then latch":
+    /// a height is committed only after two CONSECUTIVE measurements agree within a small epsilon (<c>StableEps</c>),
+    /// which waits out the width-solve lag without depending on its exact timing (a pre-width-solve tall reading never
+    /// matches the next settled one, so it stays provisional and never latches). A settled on-screen row is still
+    /// latched and never re-measured, so 2.25.3's no-jitter property is fully preserved. Infrastructure-only
+    /// (<c>VariableListBinding</c> in <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and the
+    /// <c>VirtualListElement</c> API are unchanged — no API change, binary-compatible with all existing plugins
+    /// (chat consumers like ChatTools need no rebuild).
     /// 2.25.3 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping list — a chat
     /// log of <c>BubbleElement</c> rows) no longer JITTERS while you scroll. The rows would "shift back and forth"
     /// vertically mid-scroll because the renderer re-read every visible slot's uGUI preferred height EVERY apply:
@@ -355,5 +369,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.3";
+    public const string Value = "2.25.4";
 }
