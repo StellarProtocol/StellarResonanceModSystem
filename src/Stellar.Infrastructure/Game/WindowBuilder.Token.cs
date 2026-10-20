@@ -38,7 +38,9 @@ internal sealed partial class WindowBuilder
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
         internal readonly List<ListBinding> Lists = new();
-        internal readonly List<VirtualListBinding> VirtualLists = new();
+        // Holds both the uniform VirtualListBinding and the measured VariableListBinding (WindowBuilder.VariableList.cs)
+        // behind IVirtualListBinding — Apply() runs them FIRST (see Apply below) so slot Funcs resolve the fresh window.
+        internal readonly List<IVirtualListBinding> VirtualLists = new();
         internal readonly List<SpriteBinding> Sprites = new();   // dynamic atlas sub-rect (SpriteElement.UvFunc)
         internal readonly List<IconBinding> Icons = new();       // live tile icon: re-pull bytes, swap texture on change
         internal readonly List<SwatchBinding> Swatches = new();
