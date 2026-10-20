@@ -19,6 +19,19 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.2 is a fix: login chat HISTORY is correctly filed by channel again — the 2.25.1 fix did not work
+    /// in-game. 2.25.1 moved the per-request channel capture to a Harmony prefix on
+    /// <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c>, but the game's own RPC never calls that overload (it is a
+    /// plugin/helper entry — the prefix fired ZERO times for game traffic), and chat can route over UDP/KCP
+    /// entirely, so nothing was ever stored and every login history batch resolved <c>Unknown</c> (messages appeared
+    /// under NO channel tab). The capture now sits on the transport-agnostic
+    /// <c>ZRpcImpl.SendBytes(uuid, stubId, callId, methodId, pbData, pbSize, framePack)</c> — above the TCP/UDP
+    /// split, cold, public (<c>PosingSendTap</c> already patches it and proved it fires) — which carries BOTH the
+    /// <c>call_id</c> and the raw request body as plain params: the channel is parsed off the body argument (the
+    /// proven pre-2.25.1 source) and keyed by <c>call_id</c> in one invocation, with no cross-site/thread
+    /// correlation. The call_id-keyed Return resolve (unconditional <c>TryRemove(callId)</c>), the map bounding, and
+    /// the per-sender fallback are unchanged. Infrastructure-only — no API change, binary-compatible with all
+    /// existing plugins (chat consumers like ChatTools need no rebuild).
     /// 2.25.1 is a fix: login chat HISTORY is no longer mislabeled with the wrong channel (e.g. Party/Guild
     /// history showing under World). The framework back-fills a history batch's channel by correlating its
     /// <c>GetChipChatRecords</c> reply to the channel that was requested; that correlation was a positional FIFO
@@ -326,5 +339,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.1";
+    public const string Value = "2.25.2";
 }

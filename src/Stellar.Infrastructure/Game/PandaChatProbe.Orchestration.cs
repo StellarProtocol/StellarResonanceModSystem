@@ -32,13 +32,19 @@ internal sealed partial class PandaChatProbe
 
         InstallReceivePostfixes(rpcImplType, rpcCtrlType);
 
-        // Installs the ZTcpClient.Send PREFIX. That one hook now captures BOTH
-        // the outbound ChitChat call_ids (for Return correlation) AND the
-        // per-call history channel_type keyed by call_id — so we no longer patch
-        // ZRpcImpl.ProxyCall for channel capture. Dropping that patch also
-        // retires a hook on a game-critical RPC method (an earlier broad
-        // ProxyCall patch had black-screened the game).
+        // Resolve ZTcpClient.Send(ReadOnlySpan<byte>) as the plugin's own
+        // chat-send dispatch target (for TrySend) + install the connection-close
+        // hooks. This does NOT capture outbound traffic — the game's RPC never
+        // uses that overload (confirmed: the 2.25.1 prefix on it fired 0 times).
         ResolveTcpSendHook();
+
+        // Install the outbound-capture PREFIX on the transport-agnostic
+        // ZRpcImpl.SendBytes: records ChitChat call_ids for Return correlation and
+        // the per-call GetChipChatRecords history channel_type keyed by call_id.
+        // (2.25.2: the 2.25.1 ZTcpClient.Send capture never fired because the game
+        // never calls that overload; SendBytes sits above the TCP/UDP split and
+        // carries both the call_id and the raw request body as plain params.)
+        ResolveRpcSendHook(rpcImplType);
     }
 
     // Collect, de-dupe, and patch receive-shaped methods on ZRpcImpl and

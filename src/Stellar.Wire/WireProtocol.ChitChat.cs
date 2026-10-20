@@ -86,7 +86,7 @@ public static partial class WireProtocol
             return false;
 
         var msg = new ChatMessage(
-            Channel:    ChatChannel.Unknown, // channel implied by original request — overridden by ProcessChitChatReturn via ProxyCall correlation
+            Channel:    ChatChannel.Unknown, // channel implied by original request — overridden by ProcessChitChatReturnPayload via SendBytes call_id correlation
             SenderName: parsed.SenderName,
             SenderId:   parsed.SenderId,
             Text:       parsed.Text,

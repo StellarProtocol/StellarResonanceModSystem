@@ -13,7 +13,8 @@ namespace Stellar.Infrastructure.Game;
 /// <list type="bullet">
 /// <item><c>Send.Builders.cs</c> — packet/envelope construction + byte writers.</item>
 /// <item><c>Send.Il2Cpp.cs</c> — managed-byte[] to IL2CPP ReadOnlySpan&lt;byte&gt; coercion.</item>
-/// <item><c>Send.Hooks.Tcp.cs</c> — ZTcpClient.Send PREFIX installation + handler; captures outbound ChitChat call_ids (and the per-call history channel_type) for Return correlation.</item>
+/// <item><c>Send.Hooks.Tcp.cs</c> — resolves <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c> as the plugin send target for <see cref="TrySend"/> + installs the connection-close hooks (no capture — the game does not use this overload).</item>
+/// <item><c>Send.Hooks.Rpc.cs</c> — <c>ZRpcImpl.SendBytes</c> PREFIX; captures outbound ChitChat call_ids (and the per-call history channel_type) for Return correlation at the transport-agnostic RPC framing layer.</item>
 /// <item><c>Send.Connection.cs</c> — cached chat ZTcpClient lifetime: re-cache on reconnect, close PREFIXes, handle liveness check.</item>
 /// </list>
 /// </summary>
@@ -26,9 +27,10 @@ internal sealed partial class PandaChatProbe
     // way to identify a Return as chat-related is to remember which call_ids we
     // sent ChitChat Calls with and match Returns against that set.
     //
-    // Populated by the ZTcpClient.Send prefix when an outbound packet has
-    // msgType=Call and serviceUuid==ChitChatServiceUuid. Consumed (TryRemove) by
-    // the recv-path drain loop when a Return arrives with a matching call_id.
+    // Populated by the ZRpcImpl.SendBytes prefix (Send.Hooks.Rpc.cs) for every
+    // outbound ChitChat Call (serviceUuid==ChitChatServiceUuid). Consumed
+    // (TryRemove) by the recv-path drain loop when a Return arrives with a
+    // matching call_id.
     // Bounded to MaxPendingChatCalls to prevent unbounded growth if Returns are
     // dropped or never arrive (e.g., server-side timeout).
     private readonly ConcurrentDictionary<uint, byte> _pendingChitChatCallIds = new();
@@ -40,10 +42,11 @@ internal sealed partial class PandaChatProbe
     // when a channel's login history is EMPTY (that Return removes its own entry
     // and poisons no other), when Returns complete out of order, and when a send
     // is dropped/unrecorded (its Return just misses -> resolves Unknown -> the
-    // per-sender hint). Populated by the ZTcpClient.Send prefix
-    // (TryCaptureHistoryChannel on Send.Hooks.Tcp.cs — it already has both the
-    // call_id and the framed request payload); consumed (TryRemove) by
-    // ProcessChitChatReturnPayload on the matching Return.
+    // per-sender hint). Populated by the ZRpcImpl.SendBytes prefix
+    // (TryCaptureHistoryChannel on Send.Hooks.Rpc.cs — that transport-agnostic
+    // framing method has both the call_id and the raw request body as plain
+    // params); consumed (TryRemove) by ProcessChitChatReturnPayload on the
+    // matching Return.
     //
     // Bounded by MaxPendingChatCalls via a companion insertion-order queue:
     // whenever the order queue exceeds the cap we drain its head, evicting the
@@ -84,13 +87,14 @@ internal sealed partial class PandaChatProbe
     private long _callIdCounter;
 
     // One-shot diagnostic — first observed outbound ChitChat Call (by the
-    // ZTcpClient.Send PREFIX). Confirms the send-side hook is firing.
+    // ZRpcImpl.SendBytes PREFIX). Confirms the send-side capture hook is firing.
     private bool _firstSendObservedLogged;
 
-    // One-shot diagnostic — first invocation of the ZTcpClient.Send PREFIX
-    // regardless of payload contents. Confirms HarmonyX is wired correctly
-    // (IL2CPP direct dispatch can bypass managed prefix patches).
-    private static int _firstSendPrefixFiredLogged;
+    // One-shot diagnostic — first invocation of the ZRpcImpl.SendBytes PREFIX
+    // regardless of service/payload. Confirms HarmonyX is wired correctly onto
+    // the transport-agnostic outbound RPC framing method (the capture site as of
+    // 2.25.2; the 2.25.1 ZTcpClient.Send site never fired for game traffic).
+    private static int _firstRpcSendBytesFiredLogged;
 
     /// <summary>
     /// Successful result from <see cref="BuildOutboundFrame"/>: the encoded packet,

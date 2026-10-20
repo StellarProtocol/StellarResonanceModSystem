@@ -23,7 +23,7 @@ namespace Stellar.Infrastructure.Game;
 /// <item><c>PandaChatProbe.cs</c> — composition root: ctor, shared fields, <see cref="RegisterOnWireTap"/>, dedup state.</item>
 /// <item><c>PandaChatProbe.Orchestration.cs</c> — <see cref="PatchAll"/>, <see cref="InstallReceivePostfixes"/>, <see cref="TryInstallReceivePostfix"/>.</item>
 /// <item><c>PandaChatProbe.Reflection.cs</c> — RPC type / RetMsg helper resolution and assembly-enumeration utilities.</item>
-/// <item><c>PandaChatProbe.Send.cs</c> — send-side: TrySend, ZTcpClient.Send PREFIX (captures call_ids + per-call history channel), packet builders.</item>
+/// <item><c>PandaChatProbe.Send.cs</c> — send-side: TrySend, ZRpcImpl.SendBytes PREFIX (captures call_ids + per-call history channel), packet builders.</item>
 /// <item><c>PandaChatProbe.Receive.cs</c> — receive-side: HarmonyX postfix dispatch, ChitChatNtf method=1/3 envelope consumers, all-Returns consumer.</item>
 /// <item><c>PandaChatProbe.History.cs</c> — GetChipChatRecords reply parsing + channel attribution.</item>
 /// <item><c>PandaChatProbe.Diagnostics.cs</c> — STELLAR_DIAGNOSTICS=1-gated per-event logging.</item>
@@ -132,7 +132,7 @@ internal sealed partial class PandaChatProbe : IChatProbe
     /// traffic with the user's own alts). History Returns (which carry no
     /// service_uuid on the wire) arrive via <see cref="OnAnyReturnEnvelope"/>
     /// and are filtered against the pending call_id table populated by
-    /// <see cref="OnTcpClientSend"/>.
+    /// <see cref="OnRpcSendBytes"/>.
     /// </summary>
     public void RegisterOnWireTap()
     {
