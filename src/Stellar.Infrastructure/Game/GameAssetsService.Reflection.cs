@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Stellar.Abstractions.Services;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.Game;
@@ -224,5 +225,50 @@ internal sealed partial class GameAssetsService
             $"[GameAssets][icon] reflection ready (loader={resLoaderType.FullName}, unitask={unitaskType.FullName}, " +
             $"cancelSource=rented)");
         return true;
+    }
+
+    // --- Chat sticker (picture-emoji) table reflection --------------------------------------------
+    // Bokura.ChatStickersTableBase.GetTable(true) → Bokura.Table.ZTable<int, ChatStickersTableBase>;
+    // TryGetValue(configId, out row, errorWhenNotFound) → row.Res (sprite/texture name).
+    // ⚠ TryGetValue's errorWhenNotFound defaults to TRUE in-game (logs on a miss) — we pass false so an
+    // unknown sticker id fails silently. Each metadata handle is resolved once and cached.
+    private Type? _stickerTableType;          // Bokura.ChatStickersTableBase
+    private MethodInfo? _stickerGetTable;     // static GetTable(bool)
+    private MethodInfo? _stickerTryGetValue;  // ZTable<int,T>.TryGetValue(int, out T, bool)
+    private MethodInfo? _stickerResGetter;    // row get_Res()
+    private bool _stickerResolveFailedLogged;
+
+    // Resolve a sticker config_id → ZResLoader address. Returns null (never throws) when the config type
+    // isn't loaded yet, the id is unknown, or Res is empty — the caller treats null as "not resolved" and
+    // does NOT cache it, so a later frame retries (game config tables load lazily at boot).
+    private string? TryResolveStickerPath(int configId)
+    {
+        _stickerTableType ??= StellarInterop.FindType("Bokura.ChatStickersTableBase");
+        if (_stickerTableType is null) return null;
+        _stickerGetTable ??= StellarInterop.FindMethod(_stickerTableType, "GetTable", 1);
+        if (_stickerGetTable is null) return null;
+        try
+        {
+            var table = _stickerGetTable.Invoke(null, new object[] { true });
+            if (table is null) return null;                            // table not populated yet
+            // TryGetValue lives on the closed ZTable<int,T> returned by GetTable — probe it off the instance.
+            _stickerTryGetValue ??= StellarInterop.FindMethod(table.GetType(), "TryGetValue", 3);
+            _stickerResGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "Res")?.GetGetMethod(nonPublic: true);
+            if (_stickerTryGetValue is null || _stickerResGetter is null) return null;
+
+            var args = new object?[] { configId, null, false };        // (key, out row, errorWhenNotFound: false)
+            if (_stickerTryGetValue.Invoke(table, args) is not true || args[1] is null) return null;  // unknown id
+            var res = _stickerResGetter.Invoke(args[1], null) as string;
+            return string.IsNullOrEmpty(res) ? null : "ui/textures/chat_emoji/" + res;
+        }
+        catch (Exception ex)
+        {
+            if (!_stickerResolveFailedLogged)
+            {
+                _stickerResolveFailedLogged = true;
+                _log.Warning($"[GameAssets][sticker] resolve threw for configId={configId}: {ex.GetType().Name}: {ex.Message}");
+            }
+            return null;
+        }
     }
 }

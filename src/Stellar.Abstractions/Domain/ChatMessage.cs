@@ -19,4 +19,10 @@ public sealed record ChatMessage(
     ReadOnlyMemory<byte> RawPayload,
     SenderMeta?          Sender,
     long                 MsgId,
-    bool                 IsHistory = false);
+    bool                 IsHistory = false)
+{
+    /// <summary>For a picture-emoji/sticker message (<see cref="ChatMessageType.Emote"/>), the sticker's
+    /// ChatStickersTable config id (= ChatPictureEmoji.config_id); 0 when the message is not a sticker.
+    /// Resolve to an image with <see cref="Services.IGameAssets.LoadStickerIcon(int, out Domain.UvRect)"/>.</summary>
+    public int StickerId { get; init; }
+}

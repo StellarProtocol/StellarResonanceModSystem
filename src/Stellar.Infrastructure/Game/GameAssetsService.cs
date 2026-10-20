@@ -70,6 +70,11 @@ internal sealed partial class GameAssetsService : IGameAssets
     private readonly Dictionary<int, Slot> _pathSlots = new();
     private readonly Dictionary<string, int> _pathKeys = new();
 
+    // Chat sticker config_id → resolved ZResLoader address ("ui/textures/chat_emoji/<Res>"). Only POSITIVE
+    // resolutions are cached, so we re-reflect only until the ChatStickersTable is loaded (it loads lazily at
+    // boot); once cached, LoadStickerIcon delegates straight to the shared LoadByPath pipeline (no re-reflect).
+    private readonly Dictionary<int, string> _stickerPaths = new();
+
     // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
     // failures retry (bounded + backoff-gated) so a boot race self-heals instead
     // of latching Failed forever.
@@ -198,6 +203,23 @@ internal sealed partial class GameAssetsService : IGameAssets
         if (_pathSlots.ContainsKey(key))                         // existing slot: don't re-pass the address
             return LoadIcon(_pathSlots, key, address: null, IconKind.Path, out uv);
         return LoadIcon(_pathSlots, key, assetPath, IconKind.Path, out uv);
+    }
+
+    /// <inheritdoc/>
+    public object? LoadStickerIcon(int stickerConfigId, out UvRect uv)
+    {
+        uv = new UvRect(0f, 0f, 1f, 1f);
+        if (stickerConfigId <= 0) return null;
+        if (!_stickerPaths.TryGetValue(stickerConfigId, out var path))
+        {
+            // Table not loaded yet / unknown id / empty Res → null WITHOUT caching, so a later frame retries
+            // (mirrors the id-based loaders skipping slot creation until their table is ready).
+            path = TryResolveStickerPath(stickerConfigId);
+            if (string.IsNullOrEmpty(path)) return null;
+            _stickerPaths[stickerConfigId] = path!;
+        }
+        // Chat sticker textures live under ui/textures/chat_emoji/ — same Texture2D-first family as the path loader.
+        return LoadByPath(path!, out uv);
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller
