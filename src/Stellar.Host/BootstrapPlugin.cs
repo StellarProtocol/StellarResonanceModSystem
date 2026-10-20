@@ -74,6 +74,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private ChatService? _chatService;
     private CombatService? _combatService;
     private SocialDataCache? _socialDataCache;
+    // Outbound port that originates the game's own social-data request via Lua. Promoted from a local in
+    // BuildCombatSocialServices so BuildInfraServices can hand it to PlayerProfileService (avatar lookups
+    // now ride the same SocialDataCache-fed pipeline, not a direct Social proxy call).
+    private Stellar.Application.Abstractions.ISocialRefreshRequester? _socialRefresh;
     // IPlayerProfile: resolves a player's avatar URL via the game's Social.GetSocialData RPC. Built +
     // ticked in BuildInfraServices (Wiring.PluginHost.cs); fed to the PluginServices aggregator.
     private PlayerProfileService? _playerProfileService;

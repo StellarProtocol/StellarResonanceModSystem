@@ -2,59 +2,58 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// <see cref="IPlayerProfile"/> implementation: resolves a player's avatar image URL by char/role id
-/// through the game's own <c>Social.GetSocialData</c> RPC (service uuid 901134105, methodId 1).
+/// <see cref="IPlayerProfile"/> implementation: resolves a player's avatar image URL by char id through the
+/// framework's already-proven social pipeline — NOT a direct Social proxy call.
 ///
-/// <para><b>How the game call is made (all by reflection — this layer has no compile-time game refs):</b>
+/// <para><b>Why this shape.</b> The earlier version reflected
+/// <c>Zservice.ServiceRegister.GetSocialProxy(IRpcCtrl, bool)</c> with the <c>ZRpcCtrl</c> singleton. That
+/// threw every call — the Il2CppInterop <c>ZRpcCtrl</c> wrapper does not declare the <c>IRpcCtrl</c> interface
+/// and a C# interface can't be <c>.Cast&lt;&gt;</c>'d onto — so no request ever issued and every avatar came
+/// back null. This version reuses the pipeline that already works for arbitrary players:</para>
+///
 /// <list type="number">
-/// <item>Acquire the proxy through the game's own accessor
-///   <c>Zservice.ServiceRegister.GetSocialProxy(IRpcCtrl ctrl, bool attached)</c> fed
-///   <c>ZRpcCtrl.Instance</c> (a <c>ZSingleton</c>, resolved via <see cref="StellarInterop.GetSingleton(Type?)"/>).
-///   This is the routine the game itself calls, so it fetches-or-creates the registered proxy and
-///   attaches its stub — more robust than reaching into <c>proxyDict_</c> (which can be null pre-registration).</item>
-/// <item>Build a <c>GetSocialDataRequest{ CharId = charId, Mask = 2 }</c> (Mask bit 2 = the avatar block)
-///   and invoke <c>SocialProxy.GetSocialData(request, 0u)</c>, which returns a
-///   <c>Cysharp.Threading.Tasks.UniTask&lt;GetSocialDataReply&gt;</c>.</item>
-/// <item>The framework cannot <c>await</c> a game <c>UniTask</c> (no compile-time reference), so the task is
-///   POLLED each main tick via reflected <c>Status</c>/<c>GetAwaiter()</c>/<c>GetResult()</c> — the exact
-///   pattern <c>GameAssetsService</c> proved for the Addressables <c>UniTask</c>.</item>
-/// <item>On success the avatar URL is read off
-///   <c>reply.Data.AvatarInfo.Profile.Url</c> (a full server-supplied <c>https://…png</c>), or null when
-///   the reply faulted, <c>ErrCode != 0</c>, or any link in that chain / the URL is null/empty.</item>
-/// </list></para>
+/// <item><see cref="ISocialRefreshRequester.RequestSelfSocialData(long)"/> originates the game's own
+///   <c>socialVM.AsyncGetSocialData(0, charId, …)</c> via Lua (the "Self" in the name is a misnomer — it takes
+///   any charId, as <c>CombatService</c> does for inspected players). <b>Main-thread only</b> (Lua VM).</item>
+/// <item>The reply is wire-tapped by <c>PandaSocialDataProbe</c> and pushed into <see cref="SocialDataCache"/>
+///   as a <c>SocialSnapshot</c> keyed by charId. We then read <c>SocialSnapshot.ProfileUrl</c> (the full
+///   server-supplied <c>https://…png</c>; <c>""</c> when the player has no custom photo).</item>
+/// </list>
 ///
-/// <para><b>Threading:</b> <see cref="RequestAvatarUrl"/> may be called from any thread — it only enqueues.
-/// Every game interaction (proxy resolve, request build, <c>GetSocialData</c> invoke, UniTask poll) happens
-/// on the main thread in <see cref="Tick"/>, and each callback is marshalled through
-/// <see cref="IFrameworkTiming.Post(Action)"/> so plugin UI code always runs on the main thread. Defensive
-/// everywhere: a reflection miss or throw fails the one request with a <c>null</c> result and never crosses
-/// back into game code.</para>
-///
-/// <para>Deliberately near-stateless beyond cached reflection metadata and the pending list: concurrent
-/// lookups of the same id are NOT coalesced (the plugin caches results). See the sibling
-/// <c>PlayerProfileService.Reflection.cs</c> for the reflection/UniTask plumbing.</para>
+/// <para><b>Threading.</b> <see cref="RequestAvatarUrl"/> may be called from any thread — it only enqueues.
+/// Everything else (the Lua originate + the cache read + the callback) runs on the main thread in
+/// <see cref="Tick"/>, which the framework wires to Update, so the <see cref="IPlayerProfile"/> main-thread
+/// callback contract holds without any extra marshalling. Every callback is exception-isolated; a throw never
+/// crosses back into the caller.</para>
 /// </summary>
-internal sealed partial class PlayerProfileService : IPlayerProfile
+internal sealed class PlayerProfileService : IPlayerProfile
 {
-    // Mask bit for the avatar block of SocialData (SocialDataTypeAvatar). GetSocialDataRequest.Mask is int64.
-    private const long AvatarMask = 2L;
+    // A reply usually lands within a tick or two. If it hasn't after this long, re-originate once (the first
+    // request can race login / an un-synced social VM); give up entirely after the timeout.
+    private const double ReRequestAfterSeconds = 4.0;
+    private const double TimeoutSeconds = 10.0;
 
     private readonly IPluginLog _log;
-    private readonly IFramework _framework;
+    private readonly ISocialRefreshRequester _socialRefresh;
+    private readonly SocialDataCache _social;
 
-    // Requests land here from any thread; drained + started on the main thread in Tick (no game touch off-thread).
+    // Requests land here from any thread; drained + originated on the main thread in Tick (no Lua touch off-thread).
     private readonly ConcurrentQueue<Request> _incoming = new();
-    // In-flight UniTask<GetSocialDataReply> values being polled on the main thread. Main-thread-only, no lock.
-    private readonly List<InFlight> _inFlight = new();
+    // Requests awaiting a SocialDataCache snapshot. Main-thread-only, no lock.
+    private readonly List<Pending> _pending = new();
+    private bool _firstResolveLogged;
 
-    public PlayerProfileService(IPluginLog log, IFramework framework)
+    public PlayerProfileService(IPluginLog log, ISocialRefreshRequester socialRefresh, SocialDataCache social)
     {
         _log = log ?? throw new ArgumentNullException(nameof(log));
-        _framework = framework ?? throw new ArgumentNullException(nameof(framework));
+        _socialRefresh = socialRefresh ?? throw new ArgumentNullException(nameof(socialRefresh));
+        _social = social ?? throw new ArgumentNullException(nameof(social));
     }
 
     /// <inheritdoc/>
@@ -65,17 +64,18 @@ internal sealed partial class PlayerProfileService : IPlayerProfile
     }
 
     /// <summary>
-    /// Main-thread pump (wired to the framework Update): start any newly-queued requests, then poll the
-    /// in-flight UniTasks and fire callbacks for the ones that completed. Never throws.
+    /// Main-thread pump (wired to the framework Update): originate any newly-queued requests, then poll the
+    /// pending list against the social cache and fire callbacks for the ones that have a snapshot (or timed out).
+    /// Never throws.
     /// </summary>
     public void Tick()
     {
         DrainIncoming();
-        PollInFlight();
+        PollPending();
     }
 
-    // Start each queued request on the main thread. A non-positive id or any resolve/build/invoke failure
-    // completes that request with null immediately; a successful GetSocialData invoke parks the UniTask.
+    // Start each queued request on the main thread. A non-positive id completes with null immediately; an id
+    // already in the cache completes immediately; otherwise originate the social-data request and park it.
     private void DrainIncoming()
     {
         while (_incoming.TryDequeue(out var req))
@@ -86,54 +86,84 @@ internal sealed partial class PlayerProfileService : IPlayerProfile
                 continue;
             }
 
-            object? uniTask = TryStartRequest(req.CharId);
-            if (uniTask is null)
+            var snapshot = _social.GetByCharId(req.CharId);
+            if (snapshot is not null)
             {
-                Complete(req.OnResult, null);
+                Complete(req.OnResult, NormalizeUrl(snapshot.ProfileUrl));   // already cached from an earlier fetch
                 continue;
             }
 
-            _inFlight.Add(new InFlight(uniTask, req.OnResult));
+            // Not cached yet — originate the game's own request (we're on the main thread) and wait for the tap.
+            _socialRefresh.RequestSelfSocialData(req.CharId);
+            _pending.Add(new Pending(req.CharId, req.OnResult, DateTime.UtcNow));
         }
     }
 
-    // Poll every in-flight UniTask once. Pending → leave it; completed (success/fault/cancel) or a poll
-    // failure → remove it and complete the callback with the URL (or null). Iterate backwards for in-place removal.
-    private void PollInFlight()
+    // Poll every pending request against the cache. A snapshot → complete with its URL and remove (every pending
+    // entry for the same charId resolves on this same pass → coalesced). Past the timeout → complete with null.
+    // Past the re-request mark with no reply yet → re-originate once. Iterate backwards for in-place removal.
+    private void PollPending()
     {
-        for (int i = _inFlight.Count - 1; i >= 0; i--)
+        var now = DateTime.UtcNow;
+        for (int i = _pending.Count - 1; i >= 0; i--)
         {
-            var f = _inFlight[i];
-            bool done = TryPoll(f.UniTask, out string? url);   // on a poll throw: done=true, url=null (fail-safe)
-            if (!done) continue;
+            var p = _pending[i];
 
-            _inFlight.RemoveAt(i);
-            Complete(f.OnResult, url);
+            var snapshot = _social.GetByCharId(p.CharId);
+            if (snapshot is not null)
+            {
+                _pending.RemoveAt(i);
+                Complete(p.OnResult, NormalizeUrl(snapshot.ProfileUrl));
+                continue;
+            }
+
+            double elapsed = (now - p.StartUtc).TotalSeconds;
+            if (elapsed > TimeoutSeconds)
+            {
+                _pending.RemoveAt(i);
+                Complete(p.OnResult, null);   // the reply never arrived
+                continue;
+            }
+
+            if (elapsed > ReRequestAfterSeconds && !p.ReRequested)
+            {
+                p.ReRequested = true;
+                _socialRefresh.RequestSelfSocialData(p.CharId);
+            }
         }
     }
 
-    // Marshal the callback onto the next main tick (exception-isolated) so plugin UI code is always main-thread-safe.
+    // Invoke the callback directly: Tick() runs on the main (Unity) thread, which is the IPlayerProfile
+    // contract. Exception-isolated so a throwing plugin callback can't break the pump or cross back out.
     private void Complete(Action<string?> onResult, string? url)
     {
-        _framework.Post(() =>
+        if (!_firstResolveLogged && url is not null)
         {
-            try { onResult(url); }
-            catch (Exception ex) { _log.Warning($"[PlayerProfile] avatar-url callback threw: {ex.GetType().Name}: {ex.Message}"); }
-        });
+            _firstResolveLogged = true;
+            _log.Info("[PlayerProfile] first avatar URL resolved via SocialDataCache");
+        }
+
+        try { onResult(url); }
+        catch (Exception ex) { _log.Warning($"[PlayerProfile] avatar-url callback threw: {ex.GetType().Name}: {ex.Message}"); }
     }
+
+    // "" (player has no custom photo) or null → null; otherwise the full server-supplied https URL.
+    private static string? NormalizeUrl(string? url) => string.IsNullOrEmpty(url) ? null : url;
 
     private readonly record struct Request(long CharId, Action<string?> OnResult);
 
-    private sealed class InFlight
+    private sealed class Pending
     {
-        public InFlight(object uniTask, Action<string?> onResult)
+        public Pending(long charId, Action<string?> onResult, DateTime startUtc)
         {
-            UniTask = uniTask;
+            CharId = charId;
             OnResult = onResult;
+            StartUtc = startUtc;
         }
 
-        // Boxed Cysharp UniTask<GetSocialDataReply>; polled via reflection (see Reflection partial).
-        public object UniTask { get; }
+        public long CharId { get; }
         public Action<string?> OnResult { get; }
+        public DateTime StartUtc { get; }
+        public bool ReRequested { get; set; }
     }
 }

@@ -188,9 +188,10 @@ public sealed partial class BootstrapPlugin
         // half of the no-polling doctrine (decision 2). Mirrors the other lightweight per-tick
         // subscribers wired here (e.g. WireProfileCardActionInjector's _profileCardActionInjector.Tick()).
         _framework!.Update += _ => entityVitals.Tick();
-        // Player-profile avatar lookups (IPlayerProfile): originates Social.GetSocialData on demand and polls the
-        // returned UniTask on the main thread. Ticked here beside the other lightweight per-tick subscribers.
-        _playerProfileService = new PlayerProfileService(log, _framework!);
+        // Player-profile avatar lookups (IPlayerProfile): originates the game's own social-data request (Lua) via
+        // _socialRefresh on demand, then polls SocialDataCache for the wire-tapped reply's avatar URL on the main
+        // thread. Ticked here beside the other lightweight per-tick subscribers.
+        _playerProfileService = new PlayerProfileService(log, _socialRefresh!, _socialDataCache!);
         _framework!.Update += _ => _playerProfileService.Tick();
         _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
