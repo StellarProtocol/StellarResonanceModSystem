@@ -19,6 +19,22 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.3 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping list — a chat
+    /// log of <c>BubbleElement</c> rows) no longer JITTERS while you scroll. The rows would "shift back and forth"
+    /// vertically mid-scroll because the renderer re-read every visible slot's uGUI preferred height EVERY apply:
+    /// sub-pixel layout jitter — compounded by the <c>BubbleElement</c> width-solve settling one tick behind — let
+    /// a SETTLED on-screen row's measured height cross the 0.5 px change threshold frame-to-frame, and each crossing
+    /// rebuilt the cumulative offsets and re-drove the scroll position, fighting the ScrollRect's own inertia. The
+    /// height model is now a per-DATA-INDEX cache: each row is measured ONCE (the apply after it binds and lays out)
+    /// and never re-measured, so a settled visible row is pinned and cannot wobble. A stored height is dropped and
+    /// re-measured only on a viewport-WIDTH change (rows re-wrap), <c>ResetScroll</c> (tab switch), or a Count
+    /// DECREASE (rows dropped/filtered/front-dropped → indices remap); an append (Count INCREASE) keeps the cache
+    /// and measures only the new tail rows. The topmost-visible anchor compensation (unchanged) now fires only on a
+    /// row's one-time estimate→measured correction as it scrolls into view, not every tick, so append +
+    /// stick-to-bottom + tab-switch behaviour is preserved. Infrastructure-only (<c>VariableListBinding</c> in
+    /// <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and the <c>VirtualListElement</c> API are
+    /// unchanged — no API change, binary-compatible with all existing plugins (chat consumers like ChatTools need
+    /// no rebuild).
     /// 2.25.2 is a fix: login chat HISTORY is correctly filed by channel again — the 2.25.1 fix did not work
     /// in-game. 2.25.1 moved the per-request channel capture to a Harmony prefix on
     /// <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c>, but the game's own RPC never calls that overload (it is a
@@ -339,5 +355,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.25.2";
+    public const string Value = "2.25.3";
 }

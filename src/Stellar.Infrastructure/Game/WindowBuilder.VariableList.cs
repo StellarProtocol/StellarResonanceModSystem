@@ -8,18 +8,29 @@ namespace Stellar.Infrastructure.Game;
 // Variable-height sibling of WindowBuilder.VirtualList.cs (2.25.0). The uniform list multiplies one RowHeight;
 // this one renders rows that WRAP to different heights (chat bubbles) while still materializing only a fixed
 // pool of ~viewport+buffer GameObjects. It keeps a per-data-index height model: a row is MEASURED (uGUI
-// preferred height, the same mechanic BubbleElement/ContentSizeFitter use) the apply AFTER it is bound to a
-// slot and had a layout pass; un-measured rows use a running-average estimate so the scrollbar is roughly right
-// immediately and sharpens as rows scroll through. Cumulative offsets (prefix sum over Count, which is bounded
-// to a couple hundred) place the slots and derive the content height.
+// preferred height, the same mechanic BubbleElement/ContentSizeFitter use) ONCE — the apply AFTER it is bound to
+// a slot and had a layout pass — then CACHED by data index and never re-measured. Un-measured rows use a
+// running-average estimate so the scrollbar is roughly right immediately and sharpens as rows scroll through.
+// Cumulative offsets (prefix sum over Count, bounded to a couple hundred) place the slots and derive the height.
 //
-// Scroll stability: when a measurement replaces an estimate, the content below that row shifts. To avoid a
-// visible jump we anchor to the current topmost visible row — recompute the offsets, then set the scroll so that
-// row's TOP stays under the viewport top (the rows BELOW it reflow, which is the unavoidable minimum). Honest
-// limits: (1) if the just-measured row IS the anchor, its own content below the top edge still reflows; (2) a
-// re-measure of a row ABOVE the viewport during an active flick can nudge the position a few px (we never zero
-// the user's scroll velocity mid-flick); (3) the model keys on DATA INDEX, so a rolling buffer that drops its
-// oldest row shifts every association — heights self-heal because active slots are re-measured every apply.
+// Why cache-once instead of re-measuring every apply (the 2.25.0..2.25.2 design, fixed 2.25.3): re-reading
+// GetPreferredHeight each apply let sub-pixel uGUI layout jitter — and the BubbleElement width-solve settling a
+// tick behind — wobble a SETTLED on-screen row's height across the change threshold frame-to-frame. Every wobble
+// rebuilt the offsets and re-drove the scroll position, so rows "shifted back and forth" while the user scrolled.
+// A cached height can't wobble, so a settled visible row now stays pinned. A stored height is dropped + re-measured
+// ONLY on: a viewport-WIDTH change (rows re-wrap → every height changes), ResetScroll (tab switch), or a Count
+// DECREASE (rows dropped/filtered/front-dropped → data indices remap). An append (Count INCREASE) keeps the cache
+// and measures only the new tail indices (they are simply unmeasured).
+//
+// Scroll stability: the only height that now changes under a steady view is a row's one-time estimate→measured
+// correction as it scrolls into view. To absorb it without a jump we anchor to the topmost visible row — recompute
+// the offsets, then set the scroll so that row's TOP stays under the viewport top (rows BELOW it reflow, the
+// unavoidable minimum). Because the anchor row is itself cached-stable, every row from the anchor DOWN (the whole
+// visible set bar the partial row entering at the very top) holds still. Honest limits: (1) the entering row pops
+// from estimate to real height at the top/bottom edge; (2) a first-measure of a row ABOVE the viewport during an
+// active flick can nudge the position a few px (we never zero the user's scroll velocity mid-flick); (3) a rolling
+// buffer that front-drops WITHOUT changing Count remaps indices undetected — cached heights are then one-row stale
+// until the next width/shrink/reset invalidation (bounded, self-heals; no per-frame jitter in exchange).
 //
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
@@ -86,6 +97,7 @@ internal sealed partial class WindowBuilder
         private float[] _off = Array.Empty<float>();       // cumulative top offsets, length ≥ count+1
         private int[] _slotLogical = Array.Empty<int>();   // data index each pool slot currently shows (-1 = hidden)
         private float _sum; private int _n;                // running sum/count of measured heights → average estimate
+        private float _lastViewportW = -1f;                // last positive viewport width; a change re-wraps rows → drop the height cache
         private int _lastFirst = -1, _lastCount = -1;
         private bool _firstApply = true, _offDirty = true;
         private const float BottomEps = 2f;   // within this many px of the bottom counts as "at the bottom"
@@ -110,6 +122,16 @@ internal sealed partial class WindowBuilder
                 || scrollY >= VariableListMath.MaxScroll(oldTotal, viewportH) - BottomEps);
 
             EnsureCapacity(count);
+            // Heights are a per-data-index CACHE (see file header). Drop + re-measure only when a stored height is
+            // stale: the viewport WIDTH changed (wrap widths change → every height changes), or Count DECREASED
+            // (rows dropped/filtered/front-dropped → indices remap). ResetScroll handled its own clear above; an
+            // append (Count INCREASE) keeps the cache and leaves the new tail indices unmeasured. Invalidate BEFORE
+            // measuring so the now-unmeasured active slots re-measure THIS apply and only off-screen rows fall back
+            // to the estimate — the anchor compensation below then keeps the view from jumping.
+            var viewportW = Viewport != null ? Viewport.rect.width : 0f;
+            if (viewportW > 0f && _lastViewportW > 0f && !Mathf.Approximately(viewportW, _lastViewportW)) InvalidateHeights();
+            if (viewportW > 0f) _lastViewportW = viewportW;
+            if (count < _lastCount) InvalidateHeights();
             var measuredChanged = MeasureActiveSlots(count);
             var countChanged = count != _lastCount;
             if (_offDirty || countChanged || measuredChanged || reset)
@@ -136,23 +158,27 @@ internal sealed partial class WindowBuilder
         // not-yet-shown row, so the total/scrollbar is approximate immediately and tightens as rows are measured.
         private float Estimate() => _n > 0 ? _sum / _n : Baseline;
 
-        // Measure every active slot against the index it currently shows. Unmeasured rows get a one-off immediate
-        // layout rebuild (BubbleBinding already pinned their width LAST apply); measured rows just re-read the
-        // cached preferred height, so a changed bubble (recycled index, reskin, font-scale) self-corrects cheaply.
+        // Measure each active slot's row the FIRST time it is shown, and ONLY then: force one immediate layout
+        // rebuild (BubbleBinding already pinned the row's width LAST apply, so the wrap — and the height — is now
+        // settled), read the uGUI preferred height, and cache it keyed by DATA INDEX. A row already in the cache is
+        // skipped — re-reading GetPreferredHeight every apply was what let sub-pixel layout jitter nudge a settled
+        // on-screen row across a threshold each frame and shove the rows below it around mid-scroll (the "shift back
+        // and forth"). Cache invalidation (width change / Count decrease / reset) is now the only way a measured
+        // height changes. Returns true if a NEW row was measured this apply (an estimate became real → the offsets
+        // and scroll need the one-time anchor compensation).
         private bool MeasureActiveSlots(int count)
         {
             var changed = false;
             for (var k = 0; k < Slots.Length; k++)
             {
                 var l = _slotLogical[k];
-                if (l < 0 || l >= count) continue;
+                if (l < 0 || l >= count || _measured[l]) continue;   // cached — never re-measure a settled row
                 var rt = Slots[k];
                 if (rt == null || !rt.gameObject.activeSelf) continue;
-                if (!_measured[l]) { try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { } }
+                try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave unmeasured, retry next apply
-                if (!_measured[l]) { _h[l] = h; _measured[l] = true; _sum += h; _n++; changed = true; }
-                else if (Mathf.Abs(h - _h[l]) > 0.5f) { _sum += h - _h[l]; _h[l] = h; changed = true; }
+                _h[l] = h; _measured[l] = true; _sum += h; _n++; changed = true;
             }
             if (changed) _offDirty = true;
             return changed;
@@ -205,13 +231,25 @@ internal sealed partial class WindowBuilder
             _offDirty = true;
         }
 
+        // Drop every cached height but KEEP the scroll position and slot mapping. Used when a change makes stored
+        // heights stale yet the view should stay put: a viewport-WIDTH change (rows re-wrap) or a Count DECREASE
+        // (shrink / filter / rolling-buffer front-drop → data indices now point at different rows). Active slots
+        // re-measure the SAME apply (they are unmeasured again); off-screen rows fall back to the estimate until
+        // shown; the topmost-visible anchor compensation keeps the view from jumping. Softer than ResetState,
+        // which also re-pins the scroll and forgets the window.
+        private void InvalidateHeights()
+        {
+            Array.Clear(_measured, 0, _measured.Length);
+            _sum = 0f; _n = 0; _offDirty = true;
+        }
+
         // A reset (filter/tab switch via ResetScroll) forgets the model: data indices now map to different rows,
         // so stored heights are stale. Clearing re-measures from the next shown frame; the scroll re-pins.
         private void ResetState()
         {
             Array.Clear(_measured, 0, _measured.Length);
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
-            _sum = 0f; _n = 0; _offDirty = true;
+            _sum = 0f; _n = 0; _offDirty = true; _lastViewportW = -1f;
             _lastFirst = -1; _lastCount = -1; _firstApply = true;
         }
     }
