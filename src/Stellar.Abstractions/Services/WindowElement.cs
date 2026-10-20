@@ -326,9 +326,10 @@ public sealed record SpriteElement(Func<byte[]?> Atlas, UvRect Uv, int Width, in
 /// be FAR larger than K. The framework sizes a scroll content spacer to Count()*RowHeight, tracks the scroll
 /// offset, computes the first visible logical index, calls <paramref name="OnWindow"/>(first) BEFORE pulling
 /// any slot values (so the plugin's row Funcs resolve item first+slotIndex), positions the pool rows at their
-/// logical offset, and SetActive-shows only rows whose logical index &lt; Count(). Rows MUST be uniform
-/// fixed-height (<paramref name="RowHeight"/>). Use for large pickers; the small <see cref="ListElement"/>
-/// (eager full pool) stays for short lists. <paramref name="Height"/> is the viewport height.</summary>
+/// logical offset, and SetActive-shows only rows whose logical index &lt; Count(). Rows are uniform
+/// fixed-height (<paramref name="RowHeight"/>) UNLESS <see cref="VariableHeight"/> is set — see below. Use for
+/// large pickers; the small <see cref="ListElement"/> (eager full pool) stays for short lists.
+/// <paramref name="Height"/> is the viewport height.</summary>
 public sealed record VirtualListElement(
     Func<int>  Count,
     float      RowHeight,
@@ -336,8 +337,30 @@ public sealed record VirtualListElement(
     Action<int> OnWindow,
     float      Height = 200f) : HudElement
 {
-    /// <summary>When non-null, polled each refresh — returning true resets the scroll offset to the top.</summary>
+    /// <summary>When non-null, polled each refresh — returning true resets the scroll offset (to the top, or to
+    /// the bottom when <see cref="StickToBottom"/> is set) and, in <see cref="VariableHeight"/> mode, forgets the
+    /// measured-height model (row ↔ data-index associations have changed, e.g. a filter switch), so heights
+    /// re-measure from the next shown frame.</summary>
     public Func<bool>? ResetScroll { get; init; }
+
+    /// <summary>Opt into VARIABLE-height rows: each pooled slot is MEASURED (uGUI preferred height, exactly as a
+    /// <c>BubbleElement</c>/<c>ContentSizeFitter</c> fits itself) after it is bound to a data index, and the list
+    /// keeps a per-index height model + cumulative offsets instead of assuming uniform rows. Un-measured rows use
+    /// <see cref="RowHeight"/> as a baseline estimate (a running average of the measured rows once any exist), so
+    /// the scrollbar is approximately right immediately and refines as rows scroll into view. Positioning uses the
+    /// cumulative offsets; the content height is derived from the model. Default <c>false</c> = the original
+    /// uniform path, byte-identical for existing consumers. The pool must still be sized to cover the viewport
+    /// (≈ viewport ÷ the SHORTEST row + a buffer) — a pool smaller than the on-screen row count leaves a gap, same
+    /// as the uniform list. An <c>init</c> property (not a ctor param) so the record stays binary-compatible.</summary>
+    public bool VariableHeight { get; init; }
+
+    /// <summary>Newest-at-bottom behaviour (chat log): the list starts scrolled to the BOTTOM, and when the user is
+    /// already at the bottom a grown <see cref="Count"/> (a new row appended) keeps them pinned there; if they have
+    /// scrolled up, an append does NOT yank them down — their position is preserved. Only governs the SCROLL
+    /// position (when the content exceeds the viewport); short content sits top-aligned like any scroll. Default
+    /// <c>false</c> = start at the top. An <c>init</c> property (binary-compatible). Independent of
+    /// <see cref="VariableHeight"/>, though the two are used together for a wrapping chat history.</summary>
+    public bool StickToBottom { get; init; }
 }
 
 /// <summary>One cooldown/debuff tile for the CooldownBar: a fixed icon square (game-asset art via

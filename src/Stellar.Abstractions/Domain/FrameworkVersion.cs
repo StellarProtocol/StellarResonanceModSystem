@@ -19,6 +19,16 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.25.0 adds VARIABLE-HEIGHT virtualization to <c>VirtualListElement</c> via two init props:
+    /// <c>VariableHeight</c> (opt into measured rows — each pooled slot's uGUI preferred height is measured after
+    /// it binds to a data index, with un-measured rows using <c>RowHeight</c> as a running-average estimate; a
+    /// per-index height model + cumulative offsets position the slots and derive the content height, so a long
+    /// history of WRAPPING rows — e.g. chat bubbles — renders with only ~viewport+buffer GameObjects) and
+    /// <c>StickToBottom</c> (newest-at-bottom: start scrolled to the bottom, keep pinned on append while at the
+    /// bottom, preserve position when scrolled up). A measurement that replaces an estimate anchors to the topmost
+    /// visible row so the view does not jump. New pure math helper <c>VariableListMath</c> (BCL, unit-tested).
+    /// Both props default off → the uniform fixed-<c>RowHeight</c> path is byte-identical; init-props only, so
+    /// additive and binary-compatible with plugins built against ≤2.24.0.
     /// 2.24.0 adds <c>BubbleElement</c> — a content-hugging rounded "chat bubble" / card for window UIs: a
     /// <c>FillColor</c>-tinted rounded sliced background (alpha honoured, so translucent bubbles work; null = a
     /// themed default) hosting one child with <c>PaddingX</c>/<c>PaddingY</c>. Its width HUGS the child's preferred
@@ -304,5 +314,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.24.0";
+    public const string Value = "2.25.0";
 }

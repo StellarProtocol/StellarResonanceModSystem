@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.25.0] - 2026-10-20
+_**2.25.0** (minor) — long chat histories of wrapping bubbles now scroll smoothly without building every row. Adds API for plugins (`VirtualListElement` variable-height mode, Abstractions 2.25.0); additive, no plugin rebuild._
+### Added
+- Mods with long, scrolling lists of differently-sized rows — like a chat log where each message wraps to its own height — now stay smooth no matter how much history there is: only the rows on screen are built, and the rest are recycled as you scroll. New chat-style lists start at the newest message and stay pinned to the bottom as messages arrive, unless you've scrolled up to read back.
+### Developer notes
+- `VirtualListElement` gains two `init` props (additive, binary-compatible with ≤2.24.0): `VariableHeight` (measured rows) and `StickToBottom` (newest-at-bottom scroll). In `VariableHeight` mode the renderer measures each pooled slot's uGUI preferred height (`LayoutUtility.GetPreferredHeight` after a layout pass — the same fit a `BubbleElement`/`ContentSizeFitter` performs) once it binds to a data index, keeping a per-data-index height model + cumulative-offset array; un-measured rows use `RowHeight` as a running-average estimate, so the scrollbar is approximate immediately and refines as rows scroll into view. The consumer drives it exactly like the uniform list (`Func<int> Count`, a recycled `Pool`, `Action<int> OnWindow(first)`, viewport `Height`) — the only extra requirement is sizing the pool to cover the viewport at the shortest row.
+- Scroll stability: a measurement that replaces an estimate anchors to the current topmost visible row (its top edge is held under the viewport top) so the view does not jump; rows below reflow. `StickToBottom` pins to the bottom on append while at the bottom and preserves position when scrolled up. New pure helper `VariableListMath` (`BuildOffsets`/`FirstIndex`/`MaxScroll`, BCL-only, unit-tested) mirrors `VirtualListMath`. Renderer: `WindowBuilder.VariableList.cs` (`VariableListBinding`, behind the new `IVirtualListBinding` alongside the uniform `VirtualListBinding`). XML-documented (CS1591). See KB `WindowBuilder-Patterns.md`.
+
 ## [2.24.0] - 2026-10-20
 _**2.24.0** (minor) — new rounded "chat bubble" building block for mod windows. Adds API for plugins (`BubbleElement`, Abstractions 2.24.0); additive, no plugin rebuild._
 ### Added
