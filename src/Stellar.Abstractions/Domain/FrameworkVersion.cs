@@ -19,6 +19,12 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.23.1 is a fix: the Module Optimizer produces results again after the <c>release_3.7_2</c> game
+    /// patch moved each module part's magnitude into <c>Item.ModPartLevel.Levels</c> (per-attribute module
+    /// leveling); the old positional read returned 0 for every part, so Optimize scored every combo at ~0.
+    /// <c>PandaInventoryPullReader</c> now reads the value from <c>Item.ModPartLevel.Levels[attrId]</c> with a
+    /// positional fallback for pre-<c>3.7_2</c> builds. Infrastructure-only — no API change, binary-compatible
+    /// with all existing plugins. PR #129.
     /// 2.23.0 adds <c>IPluginServices.Voice</c> (<c>IVoiceInjection</c>) — play audio into the game's OUTGOING
     /// team-voice stream (mixed with the live mic) through a process-wide native DirectSound capture hook and a
     /// shared 16-source mixer: <c>IVoiceInjection</c> (<c>LoadFileAsync</c> WAV/MP3/WMA/M4A, <c>LoadPcm</c> for
@@ -290,5 +296,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.23.0";
+    public const string Value = "2.23.1";
 }
