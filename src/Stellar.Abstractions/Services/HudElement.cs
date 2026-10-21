@@ -245,4 +245,16 @@ public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudEle
 /// default cell size — use to widen columns past the framework default (e.g. the StatInspector mini-HUD, whose
 /// icon+label+value row needs more than the default cell width).</summary>
 public sealed record ListElement(Func<int> VisibleCount, IReadOnlyList<HudElement> Slots, int Columns = 1,
-    float CellWidth = 0f, float CellHeight = 0f) : HudElement;
+    float CellWidth = 0f, float CellHeight = 0f) : HudElement
+{
+    /// <summary>Multi-column grid only: when true, the grid FLOWS to fill the container width instead of using the
+    /// fixed <see cref="Columns"/> count — it packs as many <see cref="CellWidth"/>×<see cref="CellHeight"/> cells
+    /// per row as the current width allows and wraps to new rows, re-flowing automatically when the window resizes
+    /// (so the grid fills a wide/resized popover instead of leaving dead space on the right). <see cref="Columns"/>
+    /// becomes advisory under this mode, and <see cref="CellWidth"/> MUST be &gt; 0 (it drives the flowed cell size).
+    /// Default false = the fixed-column grid, byte-identical for every existing caller. Added as an init property
+    /// (NOT a positional ctor param) so the record stays source + binary compatible with already-compiled plugins —
+    /// a new ctor param would be a MissingMethodException at runtime (see WindowBuilder-Patterns.md "Binary
+    /// compatibility rules").</summary>
+    public bool FillWidth { get; init; }
+}

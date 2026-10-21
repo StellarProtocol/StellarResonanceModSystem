@@ -86,7 +86,20 @@ internal sealed partial class WindowBuilder
         // Multi-column cell-size override (else the GridLayoutGroup uses the framework default 120×34, too narrow
         // for an icon+label+value row — StatInspector mini-HUD).
         if (list.Columns > 1 && list.CellWidth > 0f && go.GetComponent<UnityEngine.UI.GridLayoutGroup>() is { } grid)
+        {
             grid.cellSize = new Vector2(list.CellWidth, list.CellHeight > 0f ? list.CellHeight : grid.cellSize.y);
+            // FillWidth: flow to fill the container width instead of a fixed column count. Flexible packs as many
+            // fixed-cellSize cells per row as the current width allows and wraps to new rows, re-flowing when the
+            // window resizes (the fixed-column path above is untouched when FillWidth is false). Keep the fixed
+            // cellSize + spacing; UpperLeft so cells pack from the left edge (no centred dead space). Content height
+            // still grows with the flowed row count (Flexible reports preferredHeight), so the surrounding Scroll's
+            // vertical ContentSizeFitter drives the viewport scroll exactly as before.
+            if (list.FillWidth)
+            {
+                grid.constraint = UnityEngine.UI.GridLayoutGroup.Constraint.Flexible;
+                grid.childAlignment = TextAnchor.UpperLeft;
+            }
+        }
         var slots = new GameObject[list.Slots.Count];
         for (var i = 0; i < list.Slots.Count; i++)
         {
