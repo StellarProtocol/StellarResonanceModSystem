@@ -117,6 +117,26 @@ internal sealed partial class ChatService : IChat
         }
     }
 
+    public void SendSticker(ChatTarget target, int stickerConfigId)
+    {
+        if (_probe is null)
+        {
+            _log.Info("[Chat] sticker send failed: probe not attached");
+            return;
+        }
+        try
+        {
+            if (!_probe.TrySendSticker(target, stickerConfigId, out var reason))
+            {
+                _log.Info($"[Chat] sticker send failed: {reason ?? "(no reason given)"}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Chat] sticker send threw: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
     // Cadence: called once per Game.Update postfix on the main thread. Drains wire queue, updates ring, fires MessageReceived.
     public void Drain()
     {

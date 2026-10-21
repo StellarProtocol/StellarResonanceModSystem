@@ -16,4 +16,8 @@ public interface IChat
     event Action<ChatMessage>  MessageReceived;
     /// <summary>Sends <paramref name="text"/> to the specified <paramref name="target"/> channel. Fire-and-forget; failures are logged, never thrown.</summary>
     void Send(ChatTarget target, string text);
+    /// <summary>Sends the picture-emoji / sticker identified by <paramref name="stickerConfigId"/> (a
+    /// <c>ChatStickersTable</c> config_id — see <see cref="IGameAssets.GetSendableStickers"/>) to
+    /// <paramref name="target"/>. Fire-and-forget; failures are logged, never thrown.</summary>
+    void SendSticker(ChatTarget target, int stickerConfigId);
 }

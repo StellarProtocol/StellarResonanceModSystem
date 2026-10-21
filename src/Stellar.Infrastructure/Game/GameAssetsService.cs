@@ -75,6 +75,11 @@ internal sealed partial class GameAssetsService : IGameAssets
     // boot); once cached, LoadStickerIcon delegates straight to the shared LoadByPath pipeline (no re-reflect).
     private readonly Dictionary<int, string> _stickerPaths = new();
 
+    // Whole-catalog sticker list for the send picker (IGameAssets.GetSendableStickers). Built once via reflection
+    // (BuildSendableStickers, GameAssetsService.Reflection.cs) and cached; null means "not built yet / was empty
+    // last time" so we retry until the ChatStickersTable populates (lazy at boot).
+    private IReadOnlyList<StickerInfo>? _sendableStickers;
+
     // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
     // failures retry (bounded + backoff-gated) so a boot race self-heals instead
     // of latching Failed forever.
@@ -220,6 +225,17 @@ internal sealed partial class GameAssetsService : IGameAssets
         }
         // Chat sticker textures live under ui/textures/chat_emoji/ — same Texture2D-first family as the path loader.
         return LoadByPath(path!, out uv);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<StickerInfo> GetSendableStickers()
+    {
+        if (_sendableStickers is { Count: > 0 }) return _sendableStickers;
+        // Build (reflection, GameAssetsService.Reflection.cs). The table loads lazily at boot, so an early call
+        // returns empty — do NOT cache an empty result, so a later call rebuilds until the table populates.
+        var built = BuildSendableStickers();
+        if (built.Count > 0) _sendableStickers = built;
+        return built;
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller

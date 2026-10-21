@@ -7,5 +7,6 @@ namespace Stellar.Application.Abstractions;
 internal interface IChatProbe
 {
     bool TrySend(ChatTarget target, string text, out string? failureReason);
+    bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason);
     Action<ChatMessage>? OnMessageReceived { get; set; }
 }

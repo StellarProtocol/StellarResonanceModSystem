@@ -16,6 +16,8 @@ internal sealed class StubProbe : IChatProbe
 
     public List<(ChatTarget Target, string Text)> SendCalls { get; } = new();
 
+    public List<(ChatTarget Target, int StickerConfigId)> StickerSendCalls { get; } = new();
+
     /// <summary>Value <see cref="TrySend"/> returns. Default true.</summary>
     public bool NextTrySendResult { get; set; } = true;
 
@@ -29,6 +31,14 @@ internal sealed class StubProbe : IChatProbe
     {
         if (TrySendShouldThrow) throw new InvalidOperationException("stub: TrySend forced throw");
         SendCalls.Add((target, text));
+        failureReason = NextTrySendResult ? null : NextFailureReason;
+        return NextTrySendResult;
+    }
+
+    public bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason)
+    {
+        if (TrySendShouldThrow) throw new InvalidOperationException("stub: TrySendSticker forced throw");
+        StickerSendCalls.Add((target, stickerConfigId));
         failureReason = NextTrySendResult ? null : NextFailureReason;
         return NextTrySendResult;
     }

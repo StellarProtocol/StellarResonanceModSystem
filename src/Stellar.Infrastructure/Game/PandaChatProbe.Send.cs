@@ -141,6 +141,78 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
+    /// Sticker counterpart of <see cref="TrySend"/>: build + dispatch a ChitChat.SendChitChatMsg Call carrying a
+    /// <c>ChatPictureEmoji{ config_id }</c> (msg_type = PictureEmoji) instead of text. The SAME RPC and the SAME
+    /// live/passive client resolution + dispatch as text — only the payload builder differs. Returns false with a
+    /// descriptive <paramref name="failureReason"/> on a precondition miss or when both client sources are gone.
+    /// </summary>
+    public bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason)
+    {
+        if (!BuildOutboundStickerFrame(target, stickerConfigId, out failureReason, out var frame))
+        {
+            return false;
+        }
+
+        // Identical resolution to TrySend: live ZRpcCtrl client first, passive captured client as fallback.
+        object? client = TryResolveLiveChatClient();
+        if (client is null)
+        {
+            if (!TryTakeLiveChatClient(out var passive, out failureReason))
+            {
+                return false;
+            }
+            client = passive;
+        }
+
+        // The text arg is only used for the one-shot diagnostic log line — pass a descriptive label.
+        return SendThroughClient(client, frame, $"<sticker {stickerConfigId}>", out failureReason);
+    }
+
+    /// <summary>
+    /// Sticker analogue of <see cref="BuildOutboundFrame"/>: validate preconditions (<c>ZTcpClient.Send</c>
+    /// resolved, a positive config id, a mappable target — but NO empty-text guard, a sticker carries no text)
+    /// and encode the outbound Call frame via <see cref="BuildSendStickerEnvelope"/>.
+    /// </summary>
+    private bool BuildOutboundStickerFrame(
+        ChatTarget target,
+        int stickerConfigId,
+        out string? failureReason,
+        out OutboundFrameResult frame)
+    {
+        failureReason = null;
+        frame = default;
+
+        if (_tcpClientSend is null)
+        {
+            failureReason = "ZTcpClient.Send(ReadOnlySpan<byte>) not resolved";
+            return false;
+        }
+        if (stickerConfigId <= 0)
+        {
+            failureReason = "invalid sticker config id";
+            return false;
+        }
+
+        (int channelType, long whisperTargetId) = MapSendTarget(target);
+        if (channelType < 0)
+        {
+            failureReason = $"unsupported chat target: {target.GetType().Name}";
+            return false;
+        }
+
+        var payload = BuildSendStickerEnvelope(channelType, stickerConfigId, whisperTargetId);
+        uint callId = (uint)System.Threading.Interlocked.Increment(ref _callIdCounter);
+        var packet = BuildCallPacket(
+            serviceUuid: ChitChatServiceUuid,
+            stubId: 0u,
+            callId: callId,
+            methodId: SendChitChatMsgMethodId,
+            payload: payload);
+        frame = new OutboundFrameResult(packet, callId, channelType);
+        return true;
+    }
+
+    /// <summary>
     /// Dispatch an already-built frame through a resolved (live or passive) chat
     /// <c>ZTcpClient</c>: coerce the managed <c>byte[]</c> to an IL2CPP
     /// <c>ReadOnlySpan&lt;byte&gt;</c> and reflection-invoke <c>Send</c>. Shared by

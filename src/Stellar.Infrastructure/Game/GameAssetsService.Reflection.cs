@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 
@@ -237,6 +238,89 @@ internal sealed partial class GameAssetsService
     private MethodInfo? _stickerTryGetValue;  // ZTable<int,T>.TryGetValue(int, out T, bool)
     private MethodInfo? _stickerResGetter;    // row get_Res()
     private bool _stickerResolveFailedLogged;
+
+    // Catalog-enumeration getters (GetSendableStickers). Res reuses _stickerResGetter above; the rest are
+    // resolved once in ResolveStickerRowGetters(). _stickerDatasGetter is the ZTable<int,T>.get_Datas() iterator.
+    private MethodInfo? _stickerDatasGetter;
+    private MethodInfo? _stickerIdGetter;
+    private MethodInfo? _stickerTypeGetter;
+    private MethodInfo? _stickerGroupGetter;
+    private MethodInfo? _stickerIsDefUnlockGetter;
+    private MethodInfo? _stickerUnlockItemGetter;
+    private bool _stickerEnumFailedLogged;
+
+    // Build the whole sticker catalog for the send picker. Enumerates every ChatStickersTable row (free + gated),
+    // each tagged with DefaultUnlocked. Returns an EMPTY list (never throws) when the table isn't loaded yet — the
+    // caller does NOT cache an empty result, so a later frame retries (game config tables load lazily at boot).
+    //   Bokura.ChatStickersTableBase.GetTable(true)  → ZTable<int, ChatStickersTableBase> (AutoLoad=true REQUIRED,
+    //   else the backing dict is empty) → get_Datas() → IDictionary<int, row>; walk its values (typed enumerator,
+    //   via the proven PandaInventoryPullReader map-walker) and read each row's scalar getters.
+    internal IReadOnlyList<StickerInfo> BuildSendableStickers()
+    {
+        var result = new List<StickerInfo>();
+        _stickerTableType ??= StellarInterop.FindType("Bokura.ChatStickersTableBase");
+        if (_stickerTableType is null) return result;
+        _stickerGetTable ??= StellarInterop.FindMethod(_stickerTableType, "GetTable", 1);
+        if (_stickerGetTable is null) return result;
+        try
+        {
+            var table = _stickerGetTable.Invoke(null, new object[] { true });  // AutoLoad=true REQUIRED (else Datas empty)
+            if (table is null) return result;
+            _stickerDatasGetter ??= StellarInterop.FindMethod(table.GetType(), "get_Datas", 0);
+            var datas = _stickerDatasGetter?.Invoke(table, null);
+            if (datas is null || !ResolveStickerRowGetters()) return result;
+
+            foreach (var rowObj in PandaInventoryPullReader.EnumerateMapValues(datas))
+                if (rowObj is not null && TryReadStickerRow(rowObj, out var info)) result.Add(info);
+        }
+        catch (Exception ex)
+        {
+            result.Clear();   // partial list is misleading — an exception mid-walk means "not ready", retry clean
+            if (!_stickerEnumFailedLogged)
+            {
+                _stickerEnumFailedLogged = true;
+                _log.Warning($"[GameAssets][sticker] catalog enumerate threw: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+        return result;
+    }
+
+    // Read one ChatStickersTableBase row into a StickerInfo. Returns false for a junk/empty row (id <= 0).
+    private bool TryReadStickerRow(object rowObj, out StickerInfo info)
+    {
+        info = default!;
+        int id = ReadStickerInt(_stickerIdGetter, rowObj);
+        if (id <= 0) return false;
+        var res = _stickerResGetter!.Invoke(rowObj, null) as string ?? string.Empty;
+        int isDefUnlock = ReadStickerInt(_stickerIsDefUnlockGetter, rowObj);
+        int unlockItem = ReadStickerInt(_stickerUnlockItemGetter, rowObj);
+        // Gated only when BOTH IsDefUnlock>0 AND UnlockItem>0 (the client blocks a send via GetChatEmojiUnlock);
+        // everything else is default-unlocked / freely sendable. Resolve the quirk here so plugins never see it.
+        bool defaultUnlocked = !(isDefUnlock > 0 && unlockItem > 0);
+        info = new StickerInfo(id, ReadStickerInt(_stickerTypeGetter, rowObj), ReadStickerInt(_stickerGroupGetter, rowObj), defaultUnlocked, res);
+        return true;
+    }
+
+    // Resolve + cache the row scalar getters (Res reuses _stickerResGetter). Returns false if any getter is still
+    // missing (table type not fully resolved yet) so BuildSendableStickers retries on a later frame.
+    private bool ResolveStickerRowGetters()
+    {
+        _stickerResGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "Res")?.GetGetMethod(nonPublic: true);
+        _stickerIdGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "Id")?.GetGetMethod(nonPublic: true);
+        _stickerTypeGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "Type")?.GetGetMethod(nonPublic: true);
+        _stickerGroupGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "GroupId")?.GetGetMethod(nonPublic: true);
+        _stickerIsDefUnlockGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "IsDefUnlock")?.GetGetMethod(nonPublic: true);
+        _stickerUnlockItemGetter ??= StellarInterop.FindPropertyUp(_stickerTableType, "UnlockItem")?.GetGetMethod(nonPublic: true);
+        return _stickerResGetter is not null && _stickerIdGetter is not null && _stickerTypeGetter is not null
+            && _stickerGroupGetter is not null && _stickerIsDefUnlockGetter is not null && _stickerUnlockItemGetter is not null;
+    }
+
+    private static int ReadStickerInt(MethodInfo? getter, object row)
+    {
+        if (getter is null) return 0;
+        try { return PandaInventoryPullReader.AsInt32(getter.Invoke(row, null)); }
+        catch { return 0; }
+    }
 
     // Resolve a sticker config_id → ZResLoader address. Returns null (never throws) when the config type
     // isn't loaded yet, the id is unknown, or Res is empty — the caller treats null as "not resolved" and
