@@ -23,7 +23,9 @@ internal sealed partial class PandaInventoryPullReader
     {
         // Walk: CharSerialize.ItemPackage.Packages → find entry with key == ModPackageKey
         //       package.Items → enumerate, filter where ModNewAttr.ModParts.Count > 0
-        //       build ModuleInfo per item, pairing ModParts[i] with ModInfos[uuid].InitLinkNums[i]
+        //       build ModuleInfo per item, pairing ModParts[i] with its magnitude from
+        //       Item.ModPartLevel.Levels[attrId] (release_3.7_2+), falling back to the
+        //       positional ModInfos[uuid].InitLinkNums[i] for older builds.
         if (_itemPackageProperty is null || _packagesProperty is null) return Array.Empty<ModuleInfo>();
         if (_itemUuidProperty is null || _itemConfigIdProperty is null) return Array.Empty<ModuleInfo>();
 
@@ -142,8 +144,7 @@ internal sealed partial class PandaInventoryPullReader
         int configId = TryReadInt32(entry, _itemConfigIdProperty);
         int quality = _itemQualityProperty is null ? 0 : TryReadInt32(entry, _itemQualityProperty);
 
-        var initLinkNums = ReadInitLinkNums(uuid, modInfosByUuid);
-        var parts = BuildModuleParts(modParts, initLinkNums);
+        var parts = BuildModulePartsForEntry(entry, modParts, uuid, modInfosByUuid);
 
         var category = LookupCategoryByConfigId(configId);
         // Item display name is not directly available from inventory;
@@ -192,6 +193,71 @@ internal sealed partial class PandaInventoryPullReader
         catch { return Array.Empty<int>(); }
     }
 
+    // Produces the per-attribute magnitude list for a module item.
+    //
+    // release_3.7_2 moved where the magnitudes live. Pre-3.7_2 they sat
+    // positionally in Mod.ModInfos[uuid].InitLinkNums, paired by index with
+    // ModParts. On 3.7_2 Mod.ModInfos is empty at runtime (so InitLinkNums reads
+    // nothing → every value 0) and the magnitudes live on the item itself as
+    // Item.ModPartLevel.Levels, a MapField<int,int> keyed by the SAME attrId
+    // that appears in ModParts.
+    //
+    // PRIMARY: read ModPartLevel.Levels and look up each attrId (0 if absent).
+    // FALLBACK: when the item carries no readable/non-empty Levels (a pre-3.7_2
+    // build where ModPartLevel is absent but InitLinkNums is populated), use the
+    // original positional InitLinkNums[i] pairing.
+    private List<ModulePart> BuildModulePartsForEntry(
+        object entry, IList<int> modParts, long uuid, Dictionary<long, object>? modInfosByUuid)
+    {
+        var levels = ReadModPartLevels(entry);
+        if (levels is not null && levels.Count > 0)
+        {
+            return BuildModulePartsFromLevels(modParts, levels);
+        }
+
+        // Back-compat path for pre-3.7_2 builds.
+        var initLinkNums = ReadInitLinkNums(uuid, modInfosByUuid);
+        return BuildModuleParts(modParts, initLinkNums);
+    }
+
+    // Reads the item's ModPartLevel.Levels map (attrId → magnitude) into a
+    // Dictionary, or null when the item carries no readable ModPartLevel (the
+    // caller then falls back to InitLinkNums). The Levels map property is resolved
+    // lazily off the first concrete ModPartLevel instance when Bootstrap couldn't
+    // pin it from the static property type (mirrors ResolveModParts). A reflection
+    // miss degrades to null — never throws into the walk loop.
+    private Dictionary<int, int>? ReadModPartLevels(object entry)
+    {
+        if (_itemModPartLevelProperty is null) return null;
+
+        object? modPartLevel;
+        try { modPartLevel = _itemModPartLevelProperty.GetValue(entry); }
+        catch { return null; }
+        if (modPartLevel is null) return null;
+
+        if (_modPartLevelsProperty is null)
+        {
+            _modPartLevelsProperty = FindMapLikeProperty(modPartLevel.GetType(), "Levels");
+            if (_modPartLevelsProperty is null) return null;
+        }
+
+        object? levelsMap;
+        try { levelsMap = _modPartLevelsProperty.GetValue(modPartLevel); }
+        catch { return null; }
+        if (levelsMap is null) return null;
+
+        try
+        {
+            var result = new Dictionary<int, int>(capacity: 4);
+            foreach (var (k, v) in EnumerateMapEntries(levelsMap))
+            {
+                result[AsInt32(k)] = AsInt32(v);
+            }
+            return result;
+        }
+        catch { return null; }
+    }
+
     // Pairs modParts[i] with initLinkNums[i] to produce the ModulePart list.
     private static List<ModulePart> BuildModuleParts(IList<int> modParts, IList<int> initLinkNums)
     {
@@ -200,6 +266,21 @@ internal sealed partial class PandaInventoryPullReader
         {
             int attrId = modParts[i];
             int value = i < initLinkNums.Count ? initLinkNums[i] : 0;
+            parts.Add(new ModulePart(attrId, string.Empty, value));
+        }
+        return parts;
+    }
+
+    // Pairs each attrId in modParts with its magnitude from the ModPartLevel.Levels
+    // map (0 when the key is absent). ModulePart's shape is unchanged — only the
+    // source of `value` differs from the positional InitLinkNums path.
+    private static List<ModulePart> BuildModulePartsFromLevels(IList<int> modParts, Dictionary<int, int> levels)
+    {
+        var parts = new List<ModulePart>(modParts.Count);
+        for (var i = 0; i < modParts.Count; i++)
+        {
+            int attrId = modParts[i];
+            int value = levels.TryGetValue(attrId, out var v) ? v : 0;
             parts.Add(new ModulePart(attrId, string.Empty, value));
         }
         return parts;

@@ -133,20 +133,37 @@ internal sealed partial class PandaInventoryPullReader
         return true;
     }
 
+    // Resolves the Zproto.Item sub-property handles. All optional — a missing
+    // handle degrades its individual read path gracefully.
+    private void ResolveItemProperties()
+    {
+        var itemType = _typeRegistry.FindType("Zproto.Item") ?? FindTypeByShortName("Item");
+        if (itemType is null) return;
+
+        _itemUuidProperty = itemType.GetProperty("Uuid", AnyInstance);
+        _itemConfigIdProperty = itemType.GetProperty("ConfigId", AnyInstance);
+        _itemQualityProperty = itemType.GetProperty("Quality", AnyInstance);
+        _itemModNewAttrProperty = itemType.GetProperty("ModNewAttr", AnyInstance);
+        _itemEquipAttrProperty = itemType.GetProperty("EquipAttr", AnyInstance);   // per-class gear rolls (PerClassLoadout partial)
+
+        // release_3.7_2: per-module attr magnitudes relocated to Item.ModPartLevel.Levels
+        // (attrId → magnitude). Resolve the Levels map eagerly off the property type when
+        // it's concrete; ReadModPartLevels re-resolves it lazily from the first live
+        // ModPartLevel instance otherwise (mirrors _modNewAttrPartsProperty in ResolveModParts).
+        _itemModPartLevelProperty = itemType.GetProperty("ModPartLevel", AnyInstance);
+        if (_itemModPartLevelProperty is not null)
+        {
+            _modPartLevelsProperty = FindMapLikeProperty(_itemModPartLevelProperty.PropertyType, "Levels");
+        }
+    }
+
     // Resolves item/mod sub-type property handles (Item, ModNewAttr, ModInfo,
     // ModTableBase) using the type registry. All are optional — missing handles
     // degrade individual read paths gracefully.
     private void ResolveSubProperties()
     {
-        var itemType = _typeRegistry.FindType("Zproto.Item") ?? FindTypeByShortName("Item");
-        if (itemType is not null)
-        {
-            _itemUuidProperty = itemType.GetProperty("Uuid", AnyInstance);
-            _itemConfigIdProperty = itemType.GetProperty("ConfigId", AnyInstance);
-            _itemQualityProperty = itemType.GetProperty("Quality", AnyInstance);
-            _itemModNewAttrProperty = itemType.GetProperty("ModNewAttr", AnyInstance);
-            _itemEquipAttrProperty = itemType.GetProperty("EquipAttr", AnyInstance);   // per-class gear rolls (PerClassLoadout partial)
-        }
+        // Zproto.Item sub-handles (Uuid/ConfigId/Quality/ModNewAttr/EquipAttr/ModPartLevel).
+        ResolveItemProperties();
 
         // Per-class gear roll decode (PerClassLoadout partial) — EquipAttr/EquipAttrSet sub-handles.
         ResolveEquipAttrProperties();

@@ -122,6 +122,13 @@ internal sealed partial class PandaInventoryPullReader
     private PropertyInfo? _modNewAttrPartsProperty; // ModNewAttrContainerArchive.ModParts → RepeatedField<int>
     private PropertyInfo? _modInfoInitLinkNumsProperty; // ModInfoContainerArchive.InitLinkNums → RepeatedField<int>
 
+    // release_3.7_2 relocation: per-module attribute magnitudes moved OFF
+    // Mod.ModInfos[uuid].InitLinkNums (now empty at runtime) ONTO the item as
+    // Item.ModPartLevel.Levels — a MapField<int, int> keyed by the same attrId
+    // that appears in ModNewAttr.ModParts. See Read.cs BuildModulePartsForEntry.
+    private PropertyInfo? _itemModPartLevelProperty; // Item.ModPartLevel → ModPartLevel
+    private PropertyInfo? _modPartLevelsProperty;    // ModPartLevel.Levels → MapField<int, int> (attrId → magnitude)
+
     // Resonance (Battle Imagine) — CharSerialize.Resonance (proto field 28) →
     // zproto.Resonance.Installed (repeated uint32, equipped ids in slot order).
     private PropertyInfo? _resonanceProperty;          // CharSerialize.Resonance → Resonance
