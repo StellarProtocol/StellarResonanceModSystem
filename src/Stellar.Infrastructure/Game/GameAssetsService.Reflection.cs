@@ -240,21 +240,23 @@ internal sealed partial class GameAssetsService
     private bool _stickerResolveFailedLogged;
 
     // Catalog-enumeration getters (GetSendableStickers). Res reuses _stickerResGetter above; the rest are
-    // resolved once in ResolveStickerRowGetters(). _stickerDatasGetter is the ZTable<int,T>.get_Datas() iterator.
-    private MethodInfo? _stickerDatasGetter;
+    // resolved once in ResolveStickerRowGetters().
     private MethodInfo? _stickerIdGetter;
     private MethodInfo? _stickerTypeGetter;
     private MethodInfo? _stickerGroupGetter;
     private MethodInfo? _stickerIsDefUnlockGetter;
     private MethodInfo? _stickerUnlockItemGetter;
     private bool _stickerEnumFailedLogged;
+    private bool _stickerCatalogDiagLogged;   // one-shot gate for the catalog-build diagnostic line
 
     // Build the whole sticker catalog for the send picker. Enumerates every ChatStickersTable row (free + gated),
     // each tagged with DefaultUnlocked. Returns an EMPTY list (never throws) when the table isn't loaded yet — the
     // caller does NOT cache an empty result, so a later frame retries (game config tables load lazily at boot).
-    //   Bokura.ChatStickersTableBase.GetTable(true)  → ZTable<int, ChatStickersTableBase> (AutoLoad=true REQUIRED,
-    //   else the backing dict is empty) → get_Datas() → IDictionary<int, row>; walk its values (typed enumerator,
-    //   via the proven PandaInventoryPullReader map-walker) and read each row's scalar getters.
+    //   Bokura.ChatStickersTableBase.GetTable(true) → ZTable<int, ChatStickersTableBase> (AutoLoad=true REQUIRED,
+    //   else the backing dict is empty). We do NOT use get_Datas(): it returns the IDictionary INTERFACE, whose
+    //   Il2CppInterop wrapper exposes no usable parameterless GetEnumerator, so the map-walker yields ZERO rows
+    //   with no exception. Instead we enumerate the CONCRETE base backing field (protected Dictionary<long,object>
+    //   _datas on ITable) for its KEYS, then re-fetch each row via the proven TryGetValue (the inbound path).
     internal IReadOnlyList<StickerInfo> BuildSendableStickers()
     {
         var result = new List<StickerInfo>();
@@ -264,14 +266,16 @@ internal sealed partial class GameAssetsService
         if (_stickerGetTable is null) return result;
         try
         {
-            var table = _stickerGetTable.Invoke(null, new object[] { true });  // AutoLoad=true REQUIRED (else Datas empty)
+            var table = _stickerGetTable.Invoke(null, new object[] { true });  // AutoLoad=true REQUIRED (else _datas empty)
             if (table is null) return result;
-            _stickerDatasGetter ??= StellarInterop.FindMethod(table.GetType(), "get_Datas", 0);
-            var datas = _stickerDatasGetter?.Invoke(table, null);
-            if (datas is null || !ResolveStickerRowGetters()) return result;
+            // Enumerate the concrete base backing dictionary (not the get_Datas() interface) — see method header.
+            var datasField = StellarInterop.FindFieldUp(table.GetType(), "_datas");
+            _stickerTryGetValue ??= StellarInterop.FindMethod(table.GetType(), "TryGetValue", 3);
+            var datas = datasField?.GetValue(table);
+            bool ready = datas is not null && _stickerTryGetValue is not null && ResolveStickerRowGetters();
 
-            foreach (var rowObj in PandaInventoryPullReader.EnumerateMapValues(datas))
-                if (rowObj is not null && TryReadStickerRow(rowObj, out var info)) result.Add(info);
+            int keyCount = ready ? EnumerateStickerRows(table, datas!, result) : 0;
+            LogCatalogDiagOnce(table.GetType().FullName, datasField is not null, _stickerTryGetValue is not null, keyCount, result.Count);
         }
         catch (Exception ex)
         {
@@ -283,6 +287,35 @@ internal sealed partial class GameAssetsService
             }
         }
         return result;
+    }
+
+    // Walk the _datas backing dict for its KEYS only, then re-fetch each row through the PROVEN TryGetValue(id, out
+    // row, false) so the getters run on a correctly-typed row wrapper. The raw _datas value is boxed as
+    // Il2CppSystem.Object — invoking a getter on it would throw, so we never read getters off it directly. Returns
+    // the count of keys the walker yielded (for the diagnostic); appends each readable, non-gated-out row to result.
+    private int EnumerateStickerRows(object table, object datas, List<StickerInfo> result)
+    {
+        int keyCount = 0;
+        foreach (var (k, _) in PandaInventoryPullReader.EnumerateMapEntries(datas))
+        {
+            keyCount++;
+            int id = PandaInventoryPullReader.AsInt32(k);
+            if (id <= 0) continue;
+            var args = new object?[] { id, null, false };   // (key, out row, errorWhenNotFound: false) — mirrors inbound path
+            if (_stickerTryGetValue!.Invoke(table, args) is not true || args[1] is null) continue;
+            if (TryReadStickerRow(args[1]!, out var info)) result.Add(info);
+        }
+        return keyCount;
+    }
+
+    // One-shot catalog diagnostic (fires on the first call that got past the table-null gate). If the picker is
+    // STILL empty after this fix, this single line shows exactly what the enumeration saw: the resolved table type,
+    // whether _datas + TryGetValue bound, how many keys the walker yielded, and how many StickerInfos we built.
+    private void LogCatalogDiagOnce(string? tableType, bool datasField, bool tryGet, int keys, int built)
+    {
+        if (_stickerCatalogDiagLogged) return;
+        _stickerCatalogDiagLogged = true;
+        _log.Info($"[GameAssets][sticker] catalog: type={tableType} datasField={datasField} tryGet={tryGet} keys={keys} built={built}");
     }
 
     // Read one ChatStickersTableBase row into a StickerInfo. Returns false for a junk/empty row (id <= 0).
