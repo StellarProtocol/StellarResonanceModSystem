@@ -255,8 +255,9 @@ internal sealed partial class GameAssetsService
     //   Bokura.ChatStickersTableBase.GetTable(true) → ZTable<int, ChatStickersTableBase> (AutoLoad=true REQUIRED,
     //   else the backing dict is empty). We do NOT use get_Datas(): it returns the IDictionary INTERFACE, whose
     //   Il2CppInterop wrapper exposes no usable parameterless GetEnumerator, so the map-walker yields ZERO rows
-    //   with no exception. Instead we enumerate the CONCRETE base backing field (protected Dictionary<long,object>
-    //   _datas on ITable) for its KEYS, then re-fetch each row via the proven TryGetValue (the inbound path).
+    //   with no exception. Instead we read the CONCRETE base backing dict (the protected Dictionary<long,object>
+    //   _datas on ITable) and walk it for its KEYS, then re-fetch each row via the proven TryGetValue (the inbound
+    //   path). ⚠ Il2CppInterop surfaces that IL2CPP field as a PROPERTY, not a field — see ResolveDatas.
     internal IReadOnlyList<StickerInfo> BuildSendableStickers()
     {
         var result = new List<StickerInfo>();
@@ -268,14 +269,13 @@ internal sealed partial class GameAssetsService
         {
             var table = _stickerGetTable.Invoke(null, new object[] { true });  // AutoLoad=true REQUIRED (else _datas empty)
             if (table is null) return result;
-            // Enumerate the concrete base backing dictionary (not the get_Datas() interface) — see method header.
-            var datasField = StellarInterop.FindFieldUp(table.GetType(), "_datas");
+            // Resolve the concrete base backing dict as a PROPERTY (IL2CPP field → interop property) — see ResolveDatas.
+            var datas = ResolveDatas(table, out var via);
             _stickerTryGetValue ??= StellarInterop.FindMethod(table.GetType(), "TryGetValue", 3);
-            var datas = datasField?.GetValue(table);
             bool ready = datas is not null && _stickerTryGetValue is not null && ResolveStickerRowGetters();
 
             int keyCount = ready ? EnumerateStickerRows(table, datas!, result) : 0;
-            LogCatalogDiagOnce(table.GetType().FullName, datasField is not null, _stickerTryGetValue is not null, keyCount, result.Count);
+            LogCatalogDiagOnce(table, via, datas, keyCount, result.Count);
         }
         catch (Exception ex)
         {
@@ -308,15 +308,77 @@ internal sealed partial class GameAssetsService
         return keyCount;
     }
 
-    // One-shot catalog diagnostic (fires on the first call that got past the table-null gate). If the picker is
-    // STILL empty after this fix, this single line shows exactly what the enumeration saw: the resolved table type,
-    // whether _datas + TryGetValue bound, how many keys the walker yielded, and how many StickerInfos we built.
-    private void LogCatalogDiagOnce(string? tableType, bool datasField, bool tryGet, int keys, int built)
+    // Resolve the concrete ZTable row store (base ITable `_datas`, a Dictionary<long,object>) off the table.
+    // ⚠ Il2CppInterop surfaces IL2CPP INSTANCE FIELDS as managed PROPERTIES — the dump lists `_datas` as a field
+    // on base ITable, but in the generated interop assembly it's a PROPERTY (that's why every row getter in this
+    // file uses FindPropertyUp, never FindFieldUp). FindFieldUp("_datas") was the original bug (always null →
+    // enumeration never ran). So resolve the property getter first; keep the field lookup only as a harmless
+    // secondary fallback. Reports how the value was obtained via `via` (prop / field / none) for the diagnostic.
+    private object? ResolveDatas(object table, out string via)
+    {
+        via = "none";
+        var getter = StellarInterop.FindPropertyUp(table.GetType(), "_datas")?.GetGetMethod(nonPublic: true);
+        if (getter is not null)
+        {
+            try { if (getter.Invoke(table, null) is { } d) { via = "prop"; return d; } }
+            catch { /* fall through to the field fallback */ }
+        }
+        var field = StellarInterop.FindFieldUp(table.GetType(), "_datas");
+        if (field is not null)
+        {
+            try { if (field.GetValue(table) is { } d) { via = "field"; return d; } }
+            catch { /* give up — reported as via=none */ }
+        }
+        return null;
+    }
+
+    // One-shot catalog diagnostic (fires on the first call that got past the table-null gate). We're iterating
+    // blind on interop reflection, so a SECOND miss must be self-explanatory: this single line reports how `_datas`
+    // was obtained (prop/field/none), its runtime type, whether that type has the parameterless GetEnumerator the
+    // map-walker needs, and keys-walked vs StickerInfos-built. If `_datas` is STILL null it also dumps the candidate
+    // member names so we learn the real accessor.
+    private void LogCatalogDiagOnce(object table, string via, object? datas, int keys, int built)
     {
         if (_stickerCatalogDiagLogged) return;
         _stickerCatalogDiagLogged = true;
-        _log.Info($"[GameAssets][sticker] catalog: type={tableType} datasField={datasField} tryGet={tryGet} keys={keys} built={built}");
+        string datasType = datas?.GetType().FullName ?? "null";
+        bool getEnum = datas is not null && HasParameterlessGetEnumerator(datas.GetType());
+        string tail = datas is null ? $" members=[{DumpDataMemberNames(table.GetType())}]" : string.Empty;
+        _log.Info($"[GameAssets][sticker] catalog: via={via} datasType={datasType} getEnum={getEnum} keys={keys} built={built}{tail}");
     }
+
+    // True if the type exposes a parameterless GetEnumerator (public or non-public) — the probe the map-walker
+    // itself uses to decide whether it can walk the dict. The concrete Dictionary<long,object> has one; the
+    // get_Datas() interface wrapper does not (which is why we read the backing field, not the interface).
+    private static bool HasParameterlessGetEnumerator(Type t)
+    {
+        foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            if (m.Name == "GetEnumerator" && m.GetParameters().Length == 0) return true;
+        return false;
+    }
+
+    // Dump every PROPERTY/FIELD name (and prop/field tag) on the type and each base up to object whose name (case-
+    // insensitive) contains "data"/"dict"/"map" or equals "Keys"/"Values". Only invoked when `_datas` resolved to
+    // null — the output names the real backing-store accessor so a second miss isn't another blind guess.
+    private static string DumpDataMemberNames(Type type)
+    {
+        const BindingFlags f = BindingFlags.Instance | BindingFlags.Static
+            | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        var names = new List<string>();
+        for (var cur = type; cur is not null && cur != typeof(object); cur = cur.BaseType)
+        {
+            foreach (var p in cur.GetProperties(f)) if (IsDataMemberName(p.Name)) names.Add($"{p.Name}(prop)");
+            foreach (var fi in cur.GetFields(f)) if (IsDataMemberName(fi.Name)) names.Add($"{fi.Name}(field)");
+        }
+        return string.Join(",", names);
+    }
+
+    private static bool IsDataMemberName(string name) =>
+        name.Equals("Keys", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Values", StringComparison.OrdinalIgnoreCase)
+        || name.IndexOf("data", StringComparison.OrdinalIgnoreCase) >= 0
+        || name.IndexOf("dict", StringComparison.OrdinalIgnoreCase) >= 0
+        || name.IndexOf("map", StringComparison.OrdinalIgnoreCase) >= 0;
 
     // Read one ChatStickersTableBase row into a StickerInfo. Returns false for a junk/empty row (id <= 0).
     private bool TryReadStickerRow(object rowObj, out StickerInfo info)
