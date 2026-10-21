@@ -52,6 +52,11 @@ namespace Stellar.Infrastructure.Game;
 // the old height. Judging a SHRINK against the new (smaller) height would raise MaxScroll above the old scrollY,
 // read "not at bottom", and strand the view above the new bottom (it appears to scroll up); the previous-height
 // comparison keeps wasAtBottom true so it re-pins to the new (smaller) maxScroll. See _lastViewportH.
+// A CORNER resize also changes the WIDTH, which calls InvalidateHeights (rows re-wrap → every cached height
+// dropped). That path CARRIES the running average into _estSeed before zeroing the accumulators, so Estimate()
+// stays ≈ the real per-row height (~80px) instead of collapsing to the ~28px Baseline seed — keeping total/maxScroll
+// ≈ right so the at-bottom re-pin lands on the TRUE bottom, not in the MIDDLE of the content. See _estSeed /
+// InvalidateHeights (without it a corner-resize from the bottom jumped the view up to old messages).
 //
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
@@ -120,6 +125,7 @@ internal sealed partial class WindowBuilder
         private float[] _off = Array.Empty<float>();       // cumulative top offsets, length ≥ count+1
         private int[] _slotLogical = Array.Empty<int>();   // data index each pool slot currently shows (-1 = hidden)
         private float _sum; private int _n;                // running sum/count of measured heights → average estimate
+        private float _estSeed;                            // last good average, CARRIED across a width/count InvalidateHeights (same content re-wraps) so Estimate() stays ≈ real while heights re-measure → total/maxScroll stay ≈ right → a bottom-pinned view re-pins to the TRUE bottom after a resize, not the collapsed Baseline. 0 = none (ResetState clears it: new tab = unknown heights)
         private float _lastViewportW = -1f;                // last positive viewport width; a change re-wraps rows → drop the height cache
         private float _lastViewportH = -1f;   // viewport height at the PREVIOUS apply; the at-bottom test uses the size scrollY was set under, so a resize keeps a bottom-pinned view pinned (see header "Resize")
         private int _lastFirst = -1, _lastCount = -1;
@@ -187,9 +193,10 @@ internal sealed partial class WindowBuilder
             return countChanged;
         }
 
-        // The running estimate = average of measured rows (Baseline until any row is measured). Used for every
-        // not-yet-shown row, so the total/scrollbar is approximate immediately and tightens as rows are measured.
-        private float Estimate() => _n > 0 ? _sum / _n : Baseline;
+        // The running estimate = average of currently-measured rows. When nothing is measured right now, fall back to
+        // the carried seed (_estSeed, the average from just before a width/count invalidation) if present, else Baseline.
+        // Used for every not-yet-shown row, so the total/scrollbar is approximate immediately and tightens as rows measure.
+        private float Estimate() => _n > 0 ? _sum / _n : (_estSeed > 0f ? _estSeed : Baseline);
 
         // Measure each active, not-yet-latched slot and LATCH its height only once two consecutive readings agree.
         // Each apply, for a row still awaiting its final height: force one immediate layout rebuild, read the uGUI
@@ -294,21 +301,28 @@ internal sealed partial class WindowBuilder
         // re-measure the SAME apply (they are unmeasured again); off-screen rows fall back to the estimate until
         // shown; the topmost-visible anchor compensation keeps the view from jumping. Softer than ResetState,
         // which also re-pins the scroll and forgets the window.
+        // The running average is CAPTURED into _estSeed BEFORE zeroing the accumulators: the SAME content merely
+        // re-wraps, so the old average is a good seed and Estimate() stays ≈ real while heights re-measure. Without
+        // it Estimate() collapsed to the ~28px Baseline, total/maxScroll under-estimated, and a bottom-pinned
+        // StickToBottom view re-pinned into the MIDDLE of the content (the corner-resize "jumped up" bug).
         private void InvalidateHeights()
         {
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);   // rows re-run the stable-confirm from scratch at the new width
+            _estSeed = Estimate();   // carry the real average across the clear (see comment above) — MUST precede the zeroing
             _sum = 0f; _n = 0; _offDirty = true;
         }
 
         // A reset (filter/tab switch via ResetScroll) forgets the model: data indices now map to different rows,
-        // so stored heights are stale. Clearing re-measures from the next shown frame; the scroll re-pins.
+        // so stored heights are stale. Clearing re-measures from the next shown frame; the scroll re-pins. Unlike
+        // InvalidateHeights this is genuinely NEW content, so _estSeed is zeroed too (fall back to Baseline — do NOT
+        // carry an old tab's average into a new tab whose rows may wrap to entirely different heights).
         private void ResetState()
         {
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
-            _sum = 0f; _n = 0; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
+            _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
             _lastFirst = -1; _lastCount = -1; _firstApply = true;
         }
     }
