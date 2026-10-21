@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.23.1] - 2026-10-21
+_**2.23.1** (patch) — restores the Module Optimizer after the latest game update; no API change, no plugin rebuild._
+### Fixed
+- Module Optimizer: clicking Optimize returns ranked module combos again. After the latest game update it had stopped showing any results.
+### Developer notes
+- `release_3.7_2` added per-attribute module leveling and relocated each part's magnitude: `Mod.ModInfos` is now empty at runtime; the values live in `Item.ModPartLevel.Levels` (`MapField<int,int>`, keyed by attrId — proto `stru_mod_part_level.proto` → `message ModPartLevel { map<int32,int32> levels = 1; }`). No type/field was renamed (static dump-diff identical); a pure runtime data relocation, so the old positional read (`Mod.ModInfos[uuid].InitLinkNums[i]` paired with `ModNewAttr.ModParts[i]`) returned 0 for every part and the optimizer scored every combo at ~0.
+- `PandaInventoryPullReader` now sources each part's value from `Item.ModPartLevel.Levels[attrId]` (for each attrId in `ModNewAttr.ModParts`), falling back to the positional `InitLinkNums[i]` path for pre-`3.7_2` builds. `ModulePart` shape unchanged — only the value source moved. Unchanged: `Mod.ModSlots` (equipped), the pool walk, the is-a-module filter, category lookup, all public API / domain types.
+- Framework-only; `StellarModuleOptimizerPlugin` needs no change (already `SlotCount = 5`, consumes only `IInventory`). Validated in-game on live `release_3.7_2`. PR #129.
+
 ## [2.23.0] - 2026-10-19
 _**2.23.0** (minor) — mods can mix sound into your party voice chat with your mic; chat no longer crashes or drops a message after a reconnect; and the layout editor gains a draggable toolbar with per-plugin filtering, arrow-key nudging and show/hide. Adds API for plugins (`IVoiceInjection`, Abstractions 2.23.0); additive, no plugin rebuild._
 ### Added
