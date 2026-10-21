@@ -155,27 +155,31 @@ internal sealed partial class GameAssetsService
 
     private bool ResolveLoadAssetMethod(Type resLoaderType)
     {
-        // Find: UniTask<TObject> LoadAssetAsync<TObject>(string, uint, int, bool)
-        MethodInfo? openMethod = null;
-        foreach (var m in resLoaderType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-        {
-            if (m.Name != "LoadAssetAsync") continue;
-            if (!m.IsGenericMethodDefinition) continue;
-            var ps = m.GetParameters();
-            if (ps.Length != 4) continue;
-            if (ps[0].ParameterType != typeof(string)) continue;
-            openMethod = m;
-            break;
-        }
-        if (openMethod is null)
+        // SPRITE path: always the string overload (profession/buff/item icons + sprite retries, shared by many
+        // plugins) — byte-identical to before. TEXTURE2D path (stickers) prefers the ZResAddress overload because
+        // only it funnels through loadAssetAsyncInternal's per-language remap. GRACEFUL FALLBACK — if the ZResAddress
+        // overload or its string→ZResAddress converter can't be resolved, the Texture2D generic is built from the
+        // string overload too (warned once), leaving _zresAddrType null so BuildTextureLoadAddress passes raw string.
+        var stringOverload = ResolveStringOverload(resLoaderType);
+        if (stringOverload is null)
         {
             _log.Warning("[GameAssets][icon] LoadAssetAsync<T>(string,uint,int,bool) not found on ZResLoader");
             return false;
         }
+        var textureOverload = ResolveZResAddressOverload(resLoaderType);
+        if (textureOverload is null)
+        {
+            if (!_loadAssetFallbackLogged)
+            {
+                _loadAssetFallbackLogged = true;
+                _log.Warning("[GameAssets][icon] ZResAddress overload/converter unavailable — Texture2D loads stay on the string overload (stickers won't localize)");
+            }
+            textureOverload = stringOverload;
+        }
         try
         {
-            _loadAssetAsyncString = openMethod.MakeGenericMethod(typeof(Sprite));
-            _loadAssetAsyncTexture = openMethod.MakeGenericMethod(typeof(Texture2D));
+            _loadAssetAsyncString = stringOverload.MakeGenericMethod(typeof(Sprite));
+            _loadAssetAsyncTexture = textureOverload.MakeGenericMethod(typeof(Texture2D));
         }
         catch (Exception ex)
         {
