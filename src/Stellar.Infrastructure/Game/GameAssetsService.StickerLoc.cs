@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Stellar.Abstractions.Services;
 using UnityEngine;
@@ -43,11 +44,7 @@ internal sealed partial class GameAssetsService
     private PropertyInfo? _providerProperty;          // static Provider (il2cpp field → interop property)
     private FieldInfo? _providerField;                // static Provider as a raw field (fallback if not a property)
     private MethodInfo? _localizationMethod;          // Provider.Localization(uint, int) — resolved off the live object
-    private bool _stickerLocDiagLogged;               // one-shot gate for the stickerloc: diagnostic line
-
-    // Stickers proven (by asset extraction) to ship DISTINCT per-language textures — the diagnostic fires on the
-    // first of these so its single line reports a real localized case, not a base-only asset (e.g. sticker_17_6).
-    private static readonly string[] KnownMultiLangStickers = { "sticker_17_11", "sticker_17_22", "sticker_1078", "sticker_1079" };
+    private bool _stickerLocDiagLogged;               // one-shot gate for the stickerloc2: diagnostic line
 
     // Shape the NEUTRAL string address for the TEXTURE2D invocation (and the diagnostic hash). ZResAddress path:
     // convert via op_Implicit(string)→ZResAddress (or the ctor fallback) so the loader applies the catalog's
@@ -139,40 +136,71 @@ internal sealed partial class GameAssetsService
         return _getAddressRealHash is not null && (_providerProperty is not null || _providerField is not null);
     }
 
-    // One-shot diagnostic (log ONLY — never alters the load). Fires the first time we load a sticker PROVEN to ship
-    // per-language variants, reporting at OUR real call site whether the resource Provider is initialised and whether
-    // the catalog actually remaps the neutral hash. Skips WITHOUT burning the one-shot until the loader + diag handles
-    // resolve, so a boot-race early call doesn't waste the shot. Everything is wrapped — it must never throw into a load.
+    // One-shot RICH localization probe (log ONLY — never alters the load). We show the BASE sticker texture and need
+    // to know WHY: is the realHash wrong, or the language index? So instead of probing whichever sticker happens to be
+    // loading, this CONSTRUCTS a FIXED test address (sticker_17_11 — a proven multi-lang id) and resolves it fully, so
+    // it reports the same localized case regardless of which picker category the user opens first. The incoming
+    // (neutralPath, langIdx) only TRIGGER the probe; it ignores neutralPath and reads the language index live below.
+    // Skips WITHOUT burning the one-shot until the loader + diag handles resolve, so a boot-race early call doesn't
+    // waste the shot. Everything is wrapped — it must never throw into a load.
+    //   - realHash_false / realHash_true: GetAddressRealHash(addr, forInit) for BOTH forInit values — `true` may force
+    //     the records-map entry to resolve the real catalog hash instead of the DJB2 fallback, so the two can differ.
+    //   - remap[false] / remap[true]: for EACH hash, sweep candidate langIdx 1..14 through Provider.Localization and
+    //     report every idx that actually remaps (result != input). If a hash never remaps it is not a
+    //     ContentCatalogData.localizationOffset_ key ⟹ per-language sticker selection is config/UI-driven, not native.
     private void MaybeLogStickerLoc(string neutralPath, int langIdx)
     {
         if (_stickerLocDiagLogged) return;
-        var res = neutralPath.Substring(neutralPath.LastIndexOf('/') + 1);
-        if (Array.IndexOf(KnownMultiLangStickers, res) < 0) return;    // only a proven multi-lang sticker
+        const string addr = "ui/textures/chat_emoji/sticker_17_11";   // fixed test address; neutralPath/langIdx only trigger
         try
         {
             if (!ResolveOnce() || !TryResolveStickerLocDiag()) return; // not ready yet → retry on a later load (no gate)
+
+            int langIdxLive = CurrentLanguageIndexOrZero();
             var provider = _providerProperty is not null
                 ? _providerProperty.GetGetMethod(nonPublic: true)?.Invoke(null, null)
                 : _providerField!.GetValue(null);
-            uint baseHash = Convert.ToUInt32(
-                _getAddressRealHash!.Invoke(null, new object[] { BuildTextureLoadAddress(neutralPath), false }));
-            uint locId = 0;
-            // Mirror the loader's own `langIdx != 0` guard: ContentCatalogData.Localization indexes
-            // localizationIndices_[off + langIdx - 1], which would underflow at langIdx 0.
-            if (provider is not null && langIdx != 0)
-            {
+
+            // One boxed ZResAddress reused for both GetAddressRealHash calls — the first param is `in` (readonly ref),
+            // so the invoke never mutates the box; only the `forInit` bool differs between the two calls.
+            object zresAddr = BuildTextureLoadAddress(addr);
+            uint realHashFalse = Convert.ToUInt32(_getAddressRealHash!.Invoke(null, new object[] { zresAddr, false }));
+            uint realHashTrue = Convert.ToUInt32(_getAddressRealHash!.Invoke(null, new object[] { zresAddr, true }));
+
+            if (provider is not null)
                 _localizationMethod ??= StellarInterop.FindMethod(provider.GetType(), "Localization", 2);
-                if (_localizationMethod is not null)
-                    locId = Convert.ToUInt32(_localizationMethod.Invoke(provider, new object[] { baseHash, langIdx }));
-            }
+
             _stickerLocDiagLogged = true;
-            _log.Info($"[GameAssets][icon] stickerloc: res='{res}' langIdx={langIdx} providerNull={provider is null} " +
-                $"baseHash={baseHash} locId={locId} remapped={provider is not null && locId != 0 && locId != baseHash}");
+            _log.Info(
+                "[GameAssets][icon] stickerloc2: addr='" + addr + "'" +
+                "\n  langIdxLive=" + langIdxLive + " providerNull=" + (provider is null) +
+                "\n  realHash_false=" + realHashFalse + " realHash_true=" + realHashTrue +
+                "\n  " + ProbeRemap("false", provider, realHashFalse) +
+                "\n  " + ProbeRemap("true", provider, realHashTrue));
         }
         catch (Exception ex)
         {
             _stickerLocDiagLogged = true;   // a single failure note is enough — don't retry-spam the diagnostic
-            _log.Warning($"[GameAssets][icon] stickerloc diag threw: {ex.GetType().Name}: {ex.Message}");
+            _log.Warning($"[GameAssets][icon] stickerloc2 diag threw: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    // Sweep candidate language index 1..14 through Provider.Localization(hash, idx) and format every idx that remaps
+    // (result != input hash) as "remap[<label>]: idx=<idx>-><result>, ..." or "remap[<label>]: NONE" if none do.
+    // Each Localization call is individually try/caught so a bad index can't abort the sweep or throw into the probe.
+    private string ProbeRemap(string label, object? provider, uint hash)
+    {
+        if (provider is null || _localizationMethod is null) return $"remap[{label}]: (provider/method unavailable)";
+        var hits = new List<string>();
+        for (int idx = 1; idx <= 14; idx++)
+        {
+            try
+            {
+                uint result = Convert.ToUInt32(_localizationMethod.Invoke(provider, new object[] { hash, idx }));
+                if (result != hash) hits.Add($"idx={idx}->{result}");
+            }
+            catch { /* a bad index must not abort the loop */ }
+        }
+        return hits.Count == 0 ? $"remap[{label}]: NONE" : $"remap[{label}]: {string.Join(", ", hits)}";
     }
 }
