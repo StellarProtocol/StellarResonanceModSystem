@@ -303,9 +303,10 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallStickerAddressCapture(log);              // ⚠️ THROWAWAY diagnostic — remove after reading [StickerCap] log
     }
 
-    // ⚠️ THROWAWAY DIAGNOSTIC (remove with StickerAddressCapturePatch.cs). PREFIX on ZRawImage.SetImageWithCallback
-    // that logs the EXACT address strings ('chat_emoji'/'sticker') the GAME's own chat UI hands the resource pipeline,
-    // so we can compare them against our mod's neutral ui/textures/chat_emoji/sticker_17_11 request. Pure logging.
+    // ⚠️ THROWAWAY DIAGNOSTIC (remove with StickerAddressCapturePatch.cs). PREFIXES on BOTH ZRawImage image setters
+    // (SetImage = emoji panel, SetImageWithCallback = chat bubble) that log EVERY distinct address string (unfiltered,
+    // dedup, capped) the GAME's own chat UI hands the resource pipeline, so we can compare them against our mod's
+    // neutral ui/textures/chat_emoji/sticker_17_11 request. Pure logging.
     private void InstallStickerAddressCapture(BepInExPluginLog log)
     {
         _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");

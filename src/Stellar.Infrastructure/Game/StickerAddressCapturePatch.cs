@@ -11,21 +11,28 @@ namespace Stellar.Infrastructure.Game;
 /// after reading the log. Pure logging; it NEVER alters a load.
 ///
 /// <para>Question it answers: when the GAME's own chat UI renders a multi-language sticker (chat bubble picture
-/// / native emoji panel — <c>chat_bubble_picture.lua</c> / <c>chat_emoji_item.lua</c> → <c>rimg:SetImageWithCallback</c>),
-/// what EXACT address string does it hand the resource pipeline? Our mod requests the neutral
-/// <c>ui/textures/chat_emoji/sticker_17_11</c> and gets the base (Chinese) art; this captures the game's own request
-/// string to compare. Our mod renders stickers via a Unity <c>RawImage</c> through <c>GameAssetsService</c> /
-/// <c>ZResLoader.LoadAssetAsync</c>, NOT via <c>ZRawImage.SetImageWithCallback</c>, so this hook sees ONLY the game's
-/// native sticker loads.</para>
+/// / native emoji panel — <c>chat_bubble_picture.lua</c> / <c>chat_emoji_item.lua</c>), what EXACT address string
+/// does it hand the resource pipeline? Our mod requests the neutral <c>ui/textures/chat_emoji/sticker_17_11</c> and
+/// gets the base (Chinese) art; this captures the game's own request string to compare. Our mod renders stickers via
+/// a Unity <c>RawImage</c> through <c>GameAssetsService</c> / <c>ZResLoader.LoadAssetAsync</c>, NOT via
+/// <c>ZRawImage</c>, so this hook sees ONLY the game's native sticker loads.</para>
 ///
-/// <para>A HarmonyX PREFIX on <c>Panda.ZUi.ZRawImage.SetImageWithCallback(ZResAddress, Action)</c> (dump.cs:140925).
-/// <c>ZResAddress</c> is passed BY VALUE (a struct param, NOT <c>in</c>), so this is safe to patch — no in-struct-ref
-/// trampoline crash. Falls back to <c>AsyncSetImage(ZResAddress, Action)</c> (dump.cs:140919, same by-value struct)
-/// if the primary target is missing. Uses the framework's own <see cref="IHarmonyHost"/> so the id is namespaced and
-/// auto-unpatches on framework teardown (no hand-rolled UnpatchSelf).</para>
+/// <para>HarmonyX PREFIXES on BOTH of <c>Panda.ZUi.ZRawImage</c>'s image setters:
+/// <c>SetImage(ZResAddress)</c> (dump.cs:140925, RVA 0x4CE3710 — the emoji PANEL grid) and
+/// <c>SetImageWithCallback(ZResAddress, Action)</c> (dump.cs:140925+, RVA 0x4CE3760 — the chat BUBBLE).
+/// <c>ZResAddress</c> is passed BY VALUE on each (a struct param, NOT <c>in</c>), so both are safe to patch — no
+/// in-struct-ref trampoline crash. <c>AsyncSetImage(ZResAddress, Action)</c> remains the documented fallback for the
+/// 2-arg target. Uses the framework's own <see cref="IHarmonyHost"/> so the id is namespaced and auto-unpatches on
+/// framework teardown (no hand-rolled UnpatchSelf).</para>
+///
+/// <para>UNFILTERED on purpose: whatever the native sticker address string turns out to be, we must see it, so there
+/// is NO 'chat_emoji'/'sticker' substring filter. Dedup keeps the log readable (one line per distinct address) and a
+/// hard cap of 120 distinct entries stops a pathological scene from spamming the log.</para>
 /// </summary>
 internal static class StickerAddressCapturePatch
 {
+    private const int MaxDistinct = 120; // hard cap on logged distinct addresses so a busy scene can't run away
+
     private static Action<string>? _log;
     private static readonly HashSet<string> _seen = new(StringComparer.Ordinal); // one log line per distinct address
 
@@ -36,9 +43,10 @@ internal static class StickerAddressCapturePatch
     private static MethodInfo? _opExplicit;       // static op_Explicit(ZResAddress) → string (materializes the text)
     private static bool _extractFailLogged;       // one-shot note so a dead read doesn't leave the user guessing
 
-    /// <summary>Mints a namespaced <see cref="Harmony"/> from the framework host, resolves the target reflectively
-    /// (first param typed <c>ZResAddress</c>, identified by type NAME not namespace) and installs the prefix.
-    /// Non-throwing: any miss is logged and skipped so a renamed game type never takes down framework boot.</summary>
+    /// <summary>Mints a namespaced <see cref="Harmony"/> from the framework host, resolves BOTH ZResAddress setters
+    /// reflectively (first param typed <c>ZResAddress</c>, identified by type NAME not namespace) and installs a
+    /// prefix on each. Non-throwing: any miss is logged and skipped so a renamed game type never takes down
+    /// framework boot.</summary>
     public static void Install(IHarmonyHost host, Action<string> log)
     {
         _log = log;
@@ -47,61 +55,109 @@ internal static class StickerAddressCapturePatch
         var type = StellarInterop.FindType("Panda.ZUi.ZRawImage");
         if (type is null) { log("[StickerCap] Panda.ZUi.ZRawImage not found; capture not installed"); return; }
 
-        // Primary: SetImageWithCallback(ZResAddress, Action). Documented fallback: AsyncSetImage(ZResAddress, Action).
-        var target = FindZResAddressMethod(type, "SetImageWithCallback")
-                     ?? FindZResAddressMethod(type, "AsyncSetImage");
-        if (target is null) { log("[StickerCap] no (ZResAddress, Action) method on ZRawImage; capture not installed"); return; }
+        // SetImage(ZResAddress) = emoji panel grid (1 arg); SetImageWithCallback(ZResAddress, Action) = chat bubble
+        // (2 args), with AsyncSetImage(ZResAddress, Action) as the documented fallback. Both pass ZResAddress by value.
+        var setImage = FindZResAddressMethod(type, "SetImage", 1);
+        var withCallback = FindZResAddressMethod(type, "SetImageWithCallback", 2)
+                           ?? FindZResAddressMethod(type, "AsyncSetImage", 2);
 
-        var prefix = typeof(StickerAddressCapturePatch).GetMethod(
-            nameof(Prefix), BindingFlags.Static | BindingFlags.NonPublic);
-        if (prefix is null) { log("[StickerCap] Prefix missing (build error); capture not installed"); return; }
+        var siPrefix = GetPrefix(nameof(PrefixSetImage));
+        var cbPrefix = GetPrefix(nameof(PrefixSetImageWithCallback));
 
+        var patched = new List<string>(2);
+        TryPatch(harmony, setImage, siPrefix, "SetImage(ZResAddress)", patched);
+        TryPatch(harmony, withCallback, cbPrefix,
+            $"{withCallback?.Name}(ZResAddress, Action)", patched);
+
+        if (patched.Count == 0)
+        {
+            log("[StickerCap] no patchable ZRawImage image setter found; capture not installed");
+            return;
+        }
+        log($"[StickerCap] patched ZRawImage {string.Join(" + ", patched)} — logging EVERY distinct address " +
+            $"(unfiltered, dedup, cap {MaxDistinct}) the game hands each setter");
+    }
+
+    private static MethodInfo? GetPrefix(string name)
+        => typeof(StickerAddressCapturePatch).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic);
+
+    // Patch one target with its prefix; record a label for the confirmation line. A miss (null target/prefix) is
+    // skipped silently — the "nothing patched" case is reported once by the caller — and a patch throw is logged.
+    private static void TryPatch(Harmony harmony, MethodInfo? target, MethodInfo? prefix,
+        string label, List<string> patched)
+    {
+        if (target is null || prefix is null) return;
         try
         {
             harmony.Patch(target, prefix: new HarmonyMethod(prefix));
-            log($"[StickerCap] patched ZRawImage.{target.Name}(ZResAddress, Action) — logging distinct 'chat_emoji'/'sticker' addresses the game loads");
+            patched.Add(label);
         }
         catch (Exception ex)
         {
-            log($"[StickerCap] failed to patch ZRawImage.{target.Name}: {ex.GetType().Name}: {ex.Message}");
+            _log?.Invoke($"[StickerCap] failed to patch ZRawImage.{target.Name}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
-    // Unique (name, 2-arg) method whose FIRST param is ZResAddress. Matched by type NAME (not FindMethod, which is
-    // count-only) so we also verify the by-value struct shape and pick the right fallback target.
-    private static MethodInfo? FindZResAddressMethod(Type type, string name)
+    // Unique method of the given name whose FIRST param is ZResAddress and which has exactly `argCount` params.
+    // Matched by type NAME (not FindMethod, which is count-only) so we verify the by-value struct shape and pick the
+    // right overload. `argCount` is always >= 1 for our targets, so ps[0] is safe.
+    private static MethodInfo? FindZResAddressMethod(Type type, string name, int argCount)
     {
         foreach (var m in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
         {
             if (m.Name != name || m.IsGenericMethodDefinition) continue;
             var ps = m.GetParameters();
-            if (ps.Length != 2) continue;
+            if (ps.Length != argCount || ps.Length == 0) continue;
             var p0 = ps[0].ParameterType;
             if (p0.Name == "ZResAddress" || p0.FullName?.Contains("ZResAddress") == true) return m;
         }
         return null;
     }
 
-    // __args[0] = the by-value ZResAddress (boxed by HarmonyX). Log ONCE per distinct address containing
-    // "chat_emoji" or "sticker"; ignore everything else (no spam). Never throws into the game's render.
-    private static void Prefix(object?[] __args)
+    // __args[0] = the by-value ZResAddress (boxed by HarmonyX) on BOTH overloads. Each prefix extracts the address and
+    // funnels into Capture with its own method tag. Return void (don't block the original). Never throws into render.
+    private static void PrefixSetImage(object?[] __args)
     {
         try
         {
             if (__args is null || __args.Length < 1 || __args[0] is null) return;
-            var addr = ExtractAddressString(__args[0]!);
-            if (string.IsNullOrEmpty(addr)) return;
-            if (addr!.IndexOf("chat_emoji", StringComparison.OrdinalIgnoreCase) < 0 &&
-                addr.IndexOf("sticker", StringComparison.OrdinalIgnoreCase) < 0) return;
-            if (!_seen.Add(addr)) return;
-            _log?.Invoke($"[StickerCap] game loads addr='{addr}'");
+            Capture(ExtractAddressString(__args[0]!), "SetImage");
         }
         catch { /* swallow — a diagnostic must never break the game's sticker render */ }
+    }
+
+    private static void PrefixSetImageWithCallback(object?[] __args)
+    {
+        try
+        {
+            if (__args is null || __args.Length < 1 || __args[0] is null) return;
+            Capture(ExtractAddressString(__args[0]!), "SetImageWithCallback");
+        }
+        catch { /* swallow — a diagnostic must never break the game's sticker render */ }
+    }
+
+    // Shared capture: no substring filter (see class remarks). Dedup + hard cap keep the log readable. A null/empty
+    // extraction is noted ONCE (with the first caller's tag) so a dead read doesn't look like silence.
+    private static void Capture(string? addr, string tag)
+    {
+        if (string.IsNullOrEmpty(addr))
+        {
+            if (!_extractFailLogged)
+            {
+                _extractFailLogged = true;
+                _log?.Invoke($"[StickerCap] {tag}: could not read address string");
+            }
+            return;
+        }
+        if (_seen.Count >= MaxDistinct) return;   // cap reached — stop before adding, so the set never exceeds 120
+        if (!_seen.Add(addr!)) return;            // already logged this exact address — one line per distinct address
+        _log?.Invoke($"[StickerCap] {tag} addr='{addr}'");
     }
 
     // Read the raw _addressString (interop property or field). If it is null/empty — e.g. the ZResAddress was built
     // from a ReadOnlySpan<char>/Utf16ValueStringBuilder so only _nativeString carries the text — fall back to
     // op_Explicit(ZResAddress)→string, then ToString(). First non-empty wins; all paths yield the same address text.
+    // Returns null/empty on total failure; the one-shot "could not read" note is owned by Capture (it has the tag).
     private static string? ExtractAddressString(object addr)
     {
         if (!_memberResolved) ResolveMembers(addr.GetType());
@@ -115,11 +171,6 @@ internal static class StickerAddressCapturePatch
         if (string.IsNullOrEmpty(s))
             try { s = addr.ToString(); } catch { }
 
-        if (string.IsNullOrEmpty(s) && !_extractFailLogged)
-        {
-            _extractFailLogged = true;
-            _log?.Invoke($"[StickerCap] could not read address string from {addr.GetType().FullName} (field/prop/op_Explicit/ToString all empty)");
-        }
         return s;
     }
 
