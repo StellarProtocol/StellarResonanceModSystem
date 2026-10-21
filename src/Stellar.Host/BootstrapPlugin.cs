@@ -300,6 +300,16 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
         InstallVoiceCaptureHook(log);                   // native DirectSound capture hook (before login's GCloudVoice_Init)
+        InstallStickerAddressCapture(log);              // ⚠️ THROWAWAY diagnostic — remove after reading [StickerCap] log
+    }
+
+    // ⚠️ THROWAWAY DIAGNOSTIC (remove with StickerAddressCapturePatch.cs). PREFIX on ZRawImage.SetImageWithCallback
+    // that logs the EXACT address strings ('chat_emoji'/'sticker') the GAME's own chat UI hands the resource pipeline,
+    // so we can compare them against our mod's neutral ui/textures/chat_emoji/sticker_17_11 request. Pure logging.
+    private void InstallStickerAddressCapture(BepInExPluginLog log)
+    {
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        Stellar.Infrastructure.Game.StickerAddressCapturePatch.Install(_frameworkHarmonyHost, log.Info);
     }
 
     // Always-on band tone relay (2-repo feature; sender half is the Maestro plugin). Listener-side prefix on
