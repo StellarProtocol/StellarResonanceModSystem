@@ -70,14 +70,13 @@ internal sealed partial class GameAssetsService : IGameAssets
     private readonly Dictionary<int, Slot> _pathSlots = new();
     private readonly Dictionary<string, int> _pathKeys = new();
 
-    // (chat sticker config_id, CurrentLanguageIndex) → resolved ZResLoader address ("ui/textures/chat_emoji/<Res>").
-    // Keyed by LANGUAGE as well as id: the game localizes a sticker's NEUTRAL address inside the loader per client
-    // language, so caching by id alone could let a base-language entry shadow a later language (defence-in-depth —
-    // the Res string itself is language-neutral, but both this cache and the texture slot cache stay symmetric so a
-    // base-language load can never pin another language's load). Only POSITIVE resolutions are cached, so we
-    // re-reflect only until the ChatStickersTable is loaded (it loads lazily at boot); once cached, LoadStickerIcon
-    // delegates to the shared LoadByPathKeyed pipeline with a per-language slot key (no re-reflect).
-    private readonly Dictionary<(int ConfigId, int LangIdx), string> _stickerPaths = new();
+    // chat sticker config_id → its (localized, base) load addresses for the CURRENT client language. The game picks
+    // a text-bearing sticker's language variant by REWRITING THE PATH (localized directory), not by a catalog remap
+    // (StickerLoc.cs). Cached by id alone (language is fixed per session and folded into the addresses); only cached
+    // once the language word is known, so an early call before LocalizationMgr is up re-resolves and upgrades. We
+    // re-reflect only until the ChatStickersTable loads (lazy at boot); once cached, LoadStickerIcon drives the
+    // localized→base attempt through LoadByPathKeyed with per-attempt slot keys (no re-reflect).
+    private readonly Dictionary<int, StickerAddrs> _stickerAddrs = new();
 
     // Whole-catalog sticker list for the send picker (IGameAssets.GetSendableStickers). Built once via reflection
     // (BuildSendableStickers, GameAssetsService.Reflection.cs) and cached; null means "not built yet / was empty
@@ -200,24 +199,29 @@ internal sealed partial class GameAssetsService : IGameAssets
     }
 
     /// <inheritdoc/>
-    public object? LoadByPath(string assetPath, out UvRect uv) => LoadByPathKeyed(assetPath, assetPath, out uv);
+    public object? LoadByPath(string assetPath, out UvRect uv) => LoadByPathKeyed(assetPath, assetPath, IconKind.Path, out uv, out _);
 
-    // Shared path-load core. cacheKey distinguishes slots; loadAddress is what reaches the loader. For every normal
-    // caller (and the public LoadByPath) the two are identical — byte-identical to before. Stickers pass a per-client-
-    // language cacheKey while loadAddress stays the NEUTRAL address (which the loader localizes), so a base-language
-    // texture can never pin another language's slot even though the neutral address string is shared.
-    private object? LoadByPathKeyed(string cacheKey, string loadAddress, out UvRect uv)
+    // Shared path-load core. cacheKey distinguishes slots; loadAddress is what reaches the loader; kind selects the
+    // loader/retry behaviour; state reports the slot's state AFTER this call (so a caller can tell "still loading"
+    // from "failed"). For every normal caller (and the public LoadByPath) cacheKey == loadAddress and kind == Path —
+    // byte-identical to before. Stickers pass per-attempt cacheKeys with already-localized/base addresses (and
+    // IconKind.Sticker for the localized attempt) so each language variant gets its own slot and a localized miss
+    // surfaces as Failed for the base fallback (LoadStickerIcon).
+    private object? LoadByPathKeyed(string cacheKey, string loadAddress, IconKind kind, out UvRect uv, out LoadState state)
     {
         uv = new UvRect(0f, 0f, 1f, 1f);
+        state = LoadState.Failed;
         if (string.IsNullOrEmpty(loadAddress)) return null;
         if (!_pathKeys.TryGetValue(cacheKey, out var key))
         {
             key = _pathKeys.Count + 1;                           // stable per-cacheKey int (no hash collisions)
             _pathKeys[cacheKey] = key;
         }
-        if (_pathSlots.ContainsKey(key))                         // existing slot: don't re-pass the address
-            return LoadIcon(_pathSlots, key, address: null, IconKind.Path, out uv);
-        return LoadIcon(_pathSlots, key, loadAddress, IconKind.Path, out uv);
+        var tex = _pathSlots.ContainsKey(key)                    // existing slot: don't re-pass the address
+            ? LoadIcon(_pathSlots, key, address: null, kind, out uv)
+            : LoadIcon(_pathSlots, key, loadAddress, kind, out uv);
+        if (_pathSlots.TryGetValue(key, out var slot)) state = slot.State;
+        return tex;
     }
 
     /// <inheritdoc/>
@@ -226,25 +230,31 @@ internal sealed partial class GameAssetsService : IGameAssets
         uv = new UvRect(0f, 0f, 1f, 1f);
         if (stickerConfigId <= 0) return null;
 
-        // Fold the client language into both cache keys (see _stickerPaths). 0 = base/zh (or langIdx unreadable).
-        int langIdx = CurrentLanguageIndexOrZero();
-        var pathKey = (stickerConfigId, langIdx);
-        if (!_stickerPaths.TryGetValue(pathKey, out var path))
+        // Resolve + cache the (localized, base) addresses for the current client language. Cache ONLY once the
+        // language word is known (wordReady) — an early call before LocalizationMgr is up resolves a base-only shape
+        // without caching, so a later frame upgrades to the localized address (StickerLoc.cs).
+        if (!_stickerAddrs.TryGetValue(stickerConfigId, out var addrs))
         {
-            // Table not loaded yet / unknown id / empty Res → null WITHOUT caching, so a later frame retries
-            // (mirrors the id-based loaders skipping slot creation until their table is ready).
-            path = TryResolveStickerPath(stickerConfigId);
-            if (string.IsNullOrEmpty(path)) return null;
-            _stickerPaths[pathKey] = path!;
+            var res = TryResolveStickerRes(stickerConfigId);     // table not ready / unknown id / empty Res → retry
+            if (string.IsNullOrEmpty(res)) return null;          // null WITHOUT caching, like the id-based loaders
+            addrs = BuildStickerAddresses(res!, out var wordReady);
+            if (wordReady) _stickerAddrs[stickerConfigId] = addrs;
         }
 
-        // One-shot diagnostic for a proven multi-lang sticker (log-only — never changes the load). StickerLoc.cs.
-        MaybeLogStickerLoc(path!, langIdx);
+        // Simplified-Chinese / base client (or language not up yet): load the unprefixed base bundle, exactly as
+        // before (Path kind keeps the Texture2D-first + Sprite fallback for any atlased sticker).
+        if (!addrs.HasLocalized)
+            return LoadByPathKeyed($"sticker:{stickerConfigId}", addrs.Base, IconKind.Path, out uv, out _);
 
-        // Chat sticker textures live under ui/textures/chat_emoji/ — same Texture2D-first family as the path loader.
-        // Load the NEUTRAL address (the ZResAddress overload localizes it once inside loadAssetAsyncInternal); the
-        // per-(id,langIdx) slot key keeps each client-language variant in its own slot so they never cross-pin.
-        return LoadByPathKeyed($"sticker:{stickerConfigId}:{langIdx}", path!, out uv);
+        // Non-Chinese client: try the per-language localized bundle first. IconKind.Sticker fails fast (no Sprite
+        // retry, no bounded reload) so a non-text sticker that ships base-only surfaces as Failed immediately...
+        var tex = LoadByPathKeyed($"sticker:{stickerConfigId}:L", addrs.Localized, IconKind.Sticker, out uv, out var state);
+        if (tex is not null) { LogStickerOutcomeOnce(stickerConfigId, addrs.Word, hit: true); return tex; }
+        if (state != LoadState.Failed) return null;              // still loading the localized bundle
+
+        // ...then fall back to the base bundle (same path the Chinese/base client takes).
+        LogStickerOutcomeOnce(stickerConfigId, addrs.Word, hit: false);
+        return LoadByPathKeyed($"sticker:{stickerConfigId}:B", addrs.Base, IconKind.Path, out uv, out _);
     }
 
     /// <inheritdoc/>
@@ -338,9 +348,9 @@ internal sealed partial class GameAssetsService : IGameAssets
         try
         {
             // loader.LoadAssetAsync<Sprite|Texture2D>(addr, token, 0, false) -> UniTask<T>. Texture2D loads go through
-            // the localizing ZResAddress overload → convert the NEUTRAL address via BuildTextureLoadAddress
-            // (StickerLoc.cs) so loadAssetAsyncInternal applies the catalog's per-language remap ONCE. Sprite loads
-            // stay on the string overload with the raw address — byte-identical for every other plugin.
+            // the ZResAddress overload → convert the address via BuildTextureLoadAddress (StickerLoc.cs). The address
+            // is passed as-is; for stickers the per-language choice is already baked into the address STRING (the
+            // loader does NOT remap it). Sprite loads stay on the string overload — byte-identical for every plugin.
             var isTexture = IsTexture(kind);
             var method = isTexture ? _loadAssetAsyncTexture! : _loadAssetAsyncString!;
             var loadAddr = isTexture ? BuildTextureLoadAddress(address) : address;
@@ -382,9 +392,11 @@ internal sealed partial class GameAssetsService : IGameAssets
         Skill,      // standalone Texture2D — skill icons live under ui/textures/ like Imagine
         Buff,       // atlas Sprite — buff icon paths are under ui/atlas/ (Sprite atlas, same family as Profession)
         Path,       // LoadByPath: arbitrary address, type unknown → Texture2D first, Sprite fallback (like Item)
+        Sticker,    // chat sticker LOCALIZED attempt: Texture2D only, NO Sprite retry + NO bounded reload so a
+                    // base-only sticker's localized miss surfaces as Failed at once → base fallback (LoadStickerIcon)
     }
 
-    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Path;
+    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Path or IconKind.Sticker;
     private static string LabelOf(IconKind kind) => kind switch
     {
         IconKind.Profession => "profession",
@@ -393,6 +405,7 @@ internal sealed partial class GameAssetsService : IGameAssets
         IconKind.Skill      => "skill",
         IconKind.Buff       => "buff",
         IconKind.Path       => "path",
+        IconKind.Sticker    => "sticker",
         _                   => "icon",
     };
 

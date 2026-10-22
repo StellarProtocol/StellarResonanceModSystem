@@ -421,10 +421,12 @@ internal sealed partial class GameAssetsService
         catch { return 0; }
     }
 
-    // Resolve a sticker config_id → ZResLoader address. Returns null (never throws) when the config type
-    // isn't loaded yet, the id is unknown, or Res is empty — the caller treats null as "not resolved" and
-    // does NOT cache it, so a later frame retries (game config tables load lazily at boot).
-    private string? TryResolveStickerPath(int configId)
+    // Resolve a sticker config_id → its raw resource name (ChatStickersTableBase.Res, e.g. "sticker_17_11").
+    // Returns null (never throws) when the config type isn't loaded yet, the id is unknown, or Res is empty —
+    // the caller treats null as "not resolved" and does NOT cache it, so a later frame retries (game config
+    // tables load lazily at boot). The load ADDRESS (base vs per-language localized directory) is built from
+    // this Res by BuildStickerAddresses (StickerLoc.cs) — the Res itself is language-neutral.
+    private string? TryResolveStickerRes(int configId)
     {
         _stickerTableType ??= StellarInterop.FindType("Bokura.ChatStickersTableBase");
         if (_stickerTableType is null) return null;
@@ -442,7 +444,7 @@ internal sealed partial class GameAssetsService
             var args = new object?[] { configId, null, false };        // (key, out row, errorWhenNotFound: false)
             if (_stickerTryGetValue.Invoke(table, args) is not true || args[1] is null) return null;  // unknown id
             var res = _stickerResGetter.Invoke(args[1], null) as string;
-            return string.IsNullOrEmpty(res) ? null : "ui/textures/chat_emoji/" + res;
+            return string.IsNullOrEmpty(res) ? null : res;
         }
         catch (Exception ex)
         {

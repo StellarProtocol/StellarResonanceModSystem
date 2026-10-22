@@ -18,6 +18,7 @@ internal sealed partial class GameAssetsService
     private void TryRetryFailedIcon(Dictionary<int, Slot> slots, int key, Slot slot, IconKind kind)
     {
         if (slot.Path is null) return;                       // no-address gap → permanent, never retry
+        if (kind == IconKind.Sticker) return;                // localized miss is permanent → base fallback (LoadStickerIcon)
         if (slot.Attempts >= MaxIconRetries)
         {
             if (!slot.RetryExhaustedLogged)
@@ -70,11 +71,18 @@ internal sealed partial class GameAssetsService
                 return slot.Texture;
             }
 
-            // Faulted / Canceled.
-            string exDetail = status == 2 ? FaultDetail(slot.UniTask, getAwaiter, getResult) : "";
+            // Faulted / Canceled. A Sticker-kind (localized) miss is EXPECTED for base-only stickers and falls back
+            // to the base bundle, so log it at Info (and skip FaultDetail) — a non-zh client's face-emoji otherwise
+            // spam a warning each. FaultDetail must run BEFORE nulling UniTask (it awaits it to surface the cause).
+            if (kind == IconKind.Sticker)
+                _log.Info($"[GameAssets][icon] sticker localized miss key={key} status={status} — base fallback");
+            else
+            {
+                string exDetail = status == 2 ? FaultDetail(slot.UniTask, getAwaiter, getResult) : "";
+                _log.Warning($"[GameAssets][icon] load failed {label}={key} status={status}{exDetail}");
+            }
             slot.State = LoadState.Failed;
             slot.UniTask = null;
-            _log.Warning($"[GameAssets][icon] load failed {label}={key} status={status}{exDetail}");
             RetryItemAlternate(slots, slot, key, kind, $"Texture2D load failed status={status}");
             return null;
         }
