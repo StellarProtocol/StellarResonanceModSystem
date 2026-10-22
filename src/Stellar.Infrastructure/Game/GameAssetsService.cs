@@ -84,6 +84,11 @@ internal sealed partial class GameAssetsService : IGameAssets
     // last time" so we retry until the ChatStickersTable populates (lazy at boot).
     private IReadOnlyList<StickerInfo>? _sendableStickers;
 
+    // One-shot-per-id diagnostic gate for IsStickerOwned (first ~12 distinct GATED ids evaluated). Lets us confirm
+    // from one redeploy whether the ownership probe resolves (e.g. the dot-vs-colon call, or the VM/unlock_map
+    // being ready at catalog-build time). Caps at 12 so a big gated set can't spam the log.
+    private readonly HashSet<int> _stickerOwnedLogged = new();
+
     // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
     // failures retry (bounded + backoff-gated) so a boot race self-heals instead
     // of latching Failed forever.
@@ -273,22 +278,37 @@ internal sealed partial class GameAssetsService : IGameAssets
     /// <inheritdoc/>
     public bool IsStickerOwned(int configId)
     {
-        // FAIL-CLOSED: an unknown id or a Lua bridge that isn't up yet (pre-login) → not owned (hide it). Gating
-        // on Ready FIRST also guarantees the sentinel-clear below actually runs, so we never read a stale `true`
-        // left by a previous sticker when DoString would have no-op'd.
-        if (configId <= 0 || !_lua.Ready) return false;
+        if (configId <= 0) return false;
+        // FAIL-CLOSED: a Lua bridge that isn't up yet (pre-login) → not owned (hide it). Gating on Ready FIRST also
+        // guarantees the sentinel-clear below actually runs, so we never read a stale `true` left by a previous
+        // sticker when DoString would have no-op'd.
+        if (!_lua.Ready) { LogOwnedOnce(configId, ready: false, result: false); return false; }
 
         // ILua has no "call a function and return its value" primitive, so park-and-read (Framework-Interop §2):
         //   • clear the sentinel FIRST, OUTSIDE the pcall — so a failed/errored/absent call leaves it nil (false),
         //     never a stale value from the previous sticker;
-        //   • GetChatEmojiUnlock returns a Lua boolean; `<result> and true or nil` collapses false/nil → nil (the
-        //     global is removed) and true → true, so the type-STRICT TryReadGlobalBool only ever sees true-or-absent
-        //     (a Lua number/false can never surface and be misread).
+        //   • GetChatEmojiUnlock is a DOT function (chat_main_vm.lua:2434 — first arg is emojiId, NO implicit self),
+        //     and the game's own callers invoke it with a dot (chat_emoji_item.lua:58 vm.GetChatEmojiUnlock(id)).
+        //     A COLON would pass the VM table as self→emojiId and shift the real id to an ignored arg #2 → false for
+        //     every id (hides all gated stickers). So call it with a DOT. (GetVM stays a dot too.)
+        //   • it returns a Lua boolean; `<result> and true or nil` collapses false/nil → nil (the global is removed)
+        //     and true → true, so the type-STRICT TryReadGlobalBool only ever sees true-or-absent (a Lua number/false
+        //     can never surface and be misread).
         _lua.DoString(
             "rawset(_G,'__stellar_sticker_owned',nil)\n" +
-            "pcall(function() rawset(_G,'__stellar_sticker_owned', (Z.VMMgr.GetVM('chat_main'):GetChatEmojiUnlock("
+            "pcall(function() rawset(_G,'__stellar_sticker_owned', (Z.VMMgr.GetVM('chat_main').GetChatEmojiUnlock("
             + configId + ")) and true or nil) end)");
-        return _lua.TryReadGlobalBool("__stellar_sticker_owned", out var owned) && owned;
+        bool owned = _lua.TryReadGlobalBool("__stellar_sticker_owned", out var v) && v;
+        LogOwnedOnce(configId, ready: true, result: owned);
+        return owned;
+    }
+
+    // One-shot-per-id (capped at 12) developer diagnostic for the ownership probe — English, Info level. Dedups by
+    // configId and stops after 12 distinct ids so a large gated set can't spam the log.
+    private void LogOwnedOnce(int configId, bool ready, bool result)
+    {
+        if (_stickerOwnedLogged.Count >= 12 || !_stickerOwnedLogged.Add(configId)) return;
+        _log.Info($"[GameAssets][sticker] owned? id={configId} ready={ready} result={result}");
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller
