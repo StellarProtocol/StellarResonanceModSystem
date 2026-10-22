@@ -27,7 +27,7 @@ internal sealed partial class WindowBuilder
         var le = go.AddComponent<LayoutElement>();
         le.flexibleWidth = 0f;
 
-        AddBubbleBackground(go, bubble, token);
+        var bg = AddBubbleBackground(go, bubble, token);
 
         // Padded child host. childForceExpandWidth so the (pinned-width) bubble stretches a wrapping Text child to
         // its inner width → the Text wraps; CSF grows the height. Mirrors BuildSelectable's host, sans the Button.
@@ -51,15 +51,20 @@ internal sealed partial class WindowBuilder
             Le = le, Child = child!, Parent = parent as RectTransform,
             MaxWidth = bubble.MaxWidth, PadX = padX * 2f,   // total horizontal padding (both sides)
         };
+        // Per-refresh fill colour (BubbleElement.FillColorFn, mirroring BarElement.FillColorFn): attach the override
+        // ONLY when set, so a bubble that leaves it null keeps the static fill painted above with no machinery.
+        if (bubble.FillColorFn != null) { binding.FillGraphic = bg; binding.FillColorFn = bubble.FillColorFn; }
         token.Bubbles.Add(binding);
-        binding.Apply();        // seed the width before the window's first layout rebuild (first-paint, simple child)
+        binding.Apply();        // seed the width (and the first fill-colour poll) before the window's first layout rebuild
     }
 
     // The rounded SLICED background (the same SwatchBg chip BuildSelectable uses, or a baked rounder sprite when
     // CornerRadius > 0), tinted to FillColor with its ALPHA kept so translucent bubbles work. raycastTarget=false
     // → the bubble is click-through-neutral (never eats clicks meant for a Selectable wrapping it, or behind it).
     // Null FillColor = a themed menu-accent default, re-tinted on a theme change so the four presets track.
-    private void AddBubbleBackground(GameObject go, BubbleElement bubble, WindowToken token)
+    // Returns the background Image (the bubble's fill Graphic) so BuildBubble can hand it to the BubbleBinding
+    // for a per-refresh FillColorFn re-tint (mirrors how BuildBarTrack returns the bar's fill Graphic).
+    private Image AddBubbleBackground(GameObject go, BubbleElement bubble, WindowToken token)
     {
         var bg = go.AddComponent<Image>();
         var sprite = _assets.BubbleBg(Mathf.RoundToInt(bubble.CornerRadius));  // null in a pre-bake sandbox
@@ -71,5 +76,6 @@ internal sealed partial class WindowBuilder
             : new Color(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 0.28f);
         bg.color = Tint();
         if (fill == null) token.ReskinActions.Add(() => { if (bg != null) bg.color = Tint(); });
+        return bg;
     }
 }

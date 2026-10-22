@@ -79,6 +79,15 @@ public sealed record BubbleElement(HudElement Child) : HudElement
 
     /// <summary>Inner vertical padding (top and bottom) in px between the bubble edge and its child. Default 6.</summary>
     public float PaddingY { get; init; } = 6f;
+
+    /// <summary>Per-refresh fill colour, mirroring <see cref="BarElement.FillColorFn"/>: evaluated every HUD
+    /// refresh so the bubble can re-tint live (e.g. a chat channel tab lighting up when it becomes active)
+    /// without rebuilding the element tree. Non-null wins over the static <see cref="FillColor"/>; returning
+    /// null falls back to <see cref="FillColor"/> (then the themed default). Default null = unchanged: a bubble
+    /// that leaves it null renders with the static fill exactly as before, no override machinery attached.
+    /// Added as an init property (NOT a ctor param) so the record stays source + binary compatible with
+    /// already-compiled plugins.</summary>
+    public Func<ColorRgba?>? FillColorFn { get; init; }
 }
 
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>

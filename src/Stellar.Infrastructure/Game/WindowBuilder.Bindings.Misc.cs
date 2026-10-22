@@ -74,10 +74,21 @@ internal sealed partial class WindowBuilder
         public RectTransform? Parent;          // bubble's parent (its width = the cap when MaxWidth == 0)
         public float MaxWidth;                  // 0 = clamp to Parent's current width
         public float PadX;                      // total horizontal padding (left + right)
+        // Per-refresh fill colour (BubbleElement.FillColorFn). FillGraphic/FillColorFn left null → the bubble keeps
+        // its build-time colour (the static FillColor / themed default painted once in AddBubbleBackground) with no
+        // override machinery — a bubble that doesn't set FillColorFn is byte-for-byte unchanged. Mirrors
+        // BarBinding.ApplyFillColor: Override every poll a colour is returned (so a theme reskin never wins),
+        // RestoreDefault once it goes back to null. The restore-default is the fill's build-time colour captured on
+        // the first poll (= the static fill AddBubbleBackground painted).
+        public Graphic? FillGraphic; public Func<ColorRgba?>? FillColorFn;
+        private ColorOverrideTracker _fillColor; private Color? _fillBuildColor;
         private float _last = -1f;
         public void Apply()
         {
             if (Le == null || Child == null) return;
+            // Fill colour is polled BEFORE the width-diff early-return below, so a live re-tint lands even on a
+            // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
+            if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
             var natural = LayoutUtility.GetPreferredWidth(Child) + PadX;
             // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
             // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out.
@@ -87,6 +98,16 @@ internal sealed partial class WindowBuilder
             if (Mathf.Approximately(w, _last)) return;
             Le.minWidth = Le.preferredWidth = w; Le.flexibleWidth = 0f;
             _last = w;
+        }
+
+        private void ApplyFillColor(ColorRgba? v)
+        {
+            _fillBuildColor ??= FillGraphic!.color;   // the static fill painted at build = the restore-default
+            switch (_fillColor.Next(v.HasValue))
+            {
+                case ColorStep.Override: FillGraphic!.color = new Color(v!.Value.R, v.Value.G, v.Value.B, v.Value.A); break;
+                case ColorStep.RestoreDefault: FillGraphic!.color = _fillBuildColor.Value; break;
+            }
         }
     }
 
