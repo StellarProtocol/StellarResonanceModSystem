@@ -89,18 +89,17 @@ internal sealed partial class WindowBuilder
             // Fill colour is polled BEFORE the width-diff early-return below, so a live re-tint lands even on a
             // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
-            var measured = LayoutUtility.GetPreferredWidth(Child);
-            if (measured <= 0f)
-            {
-                // Recycled scroll rebind: the child's text layout isn't rebuilt for the new content yet, so a stale 0 read
-                // would pin the bubble to ~PadX and the wrapping Text would break to one char per line for a frame (the
-                // "one char per line" flicker, previously masked by the removed ContentSizeFitter). Force a one-shot rebuild
-                // of JUST this child so the measurement is correct THIS apply. Only fires when the read is unready (rebind
-                // frames) — a settled bubble reports a real width and never enters here, so no per-frame cost is added.
+            // A recycled VirtualList slot rebinds to new content within the same 10 Hz apply that measures it, but the uGUI
+            // layout cache GetPreferredWidth reads is only refreshed by the CanvasUpdate that runs BETWEEN applies — so a plain
+            // read returns the PREVIOUS row's width and the bubble renders at the wrong (usually too-narrow) width while
+            // scrolling (text wraps ~1 word/char per line), snapping right only when scrolling stops. Force a one-shot rebuild
+            // of JUST this bubble's content child so the preferred width reflects the CURRENT content THIS apply. This is a
+            // 10 Hz cost over only the visible (active) bubbles — NOT the per-render-frame CanvasUpdate rebuild the removed
+            // ContentSizeFitter caused — so it does not reintroduce the FPS cliff.
+            if (Child.gameObject.activeInHierarchy)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(Child);
-                measured = LayoutUtility.GetPreferredWidth(Child);
-                if (measured <= 0f) return;   // still unmeasurable (e.g. child inactive this frame) → keep the last pinned width, don't collapse
-            }
+            var measured = LayoutUtility.GetPreferredWidth(Child);
+            if (measured <= 0f) return;   // inactive/unmeasurable this frame → keep the last pinned width, never collapse
             var natural = measured + PadX;
             // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
             // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out.
