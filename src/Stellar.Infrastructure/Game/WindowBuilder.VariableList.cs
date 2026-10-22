@@ -128,6 +128,7 @@ internal sealed partial class WindowBuilder
         private float _estSeed;                            // last good average, CARRIED across a width/count InvalidateHeights (same content re-wraps) so Estimate() stays ≈ real while heights re-measure → total/maxScroll stay ≈ right → a bottom-pinned view re-pins to the TRUE bottom after a resize, not the collapsed Baseline. 0 = none (ResetState clears it: new tab = unknown heights)
         private float _lastViewportW = -1f;                // last positive viewport width; a change re-wraps rows → drop the height cache
         private float _lastViewportH = -1f;   // viewport height at the PREVIOUS apply; the at-bottom test uses the size scrollY was set under, so a resize keeps a bottom-pinned view pinned (see header "Resize")
+        private bool _pinnedAtBottom = true;   // sticky "glued to bottom" latch: refreshed ONLY while the viewport is stable, TRUSTED across a viewport-height change so a multi-frame layout jolt (a popover/drawer opening below the log, shrinking it, then growing it back) can't strand a bottom-pinned view above the new bottom. Respects a scrolled-up reader (false → no yank). See StickyAtBottom.
         private int _lastFirst = -1, _lastCount = -1;
         private bool _firstApply = true, _offDirty = true;
         private const float BottomEps = 2f;   // within this many px of the bottom counts as "at the bottom"
@@ -157,8 +158,7 @@ internal sealed partial class WindowBuilder
             var anchorIdx = _lastFirst > 0 ? _lastFirst : 0;
             var anchorTopOld = (_lastCount >= 0 && anchorIdx < _off.Length) ? _off[anchorIdx] : 0f;
             var oldTotal = (_lastCount >= 0 && _lastCount < _off.Length) ? _off[_lastCount] : 0f;
-            var wasAtBottom = StickToBottom && (_firstApply || _lastCount < 0
-                || scrollY >= VariableListMath.MaxScroll(oldTotal, _lastViewportH > 0f ? _lastViewportH : viewportH) - BottomEps);
+            var wasAtBottom = StickyAtBottom(scrollY, oldTotal, viewportH);
 
             EnsureCapacity(count);
             // Heights are a per-data-index CACHE (see file header). Drop + re-measure only when a stored height is
@@ -191,6 +191,32 @@ internal sealed partial class WindowBuilder
 
             _lastFirst = first; _lastCount = count; _firstApply = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
+        }
+
+        // "Is the view glued to the bottom?" — the StickToBottom follow decision, with a sticky latch that survives
+        // a VIEWPORT-HEIGHT change. The base test is the historical one: at/near the bottom judged against the
+        // PREVIOUS apply's height (so a window resize stays pinned — see header "Resize"). On a STABLE-viewport apply
+        // that value equals the live at-bottom status, so returning it is byte-identical to the old inline test.
+        //
+        // Why the latch: a popover/drawer that opens BELOW the log (the ChatTools sticker picker is a
+        // ConditionalElement whose grid builds LAZILY on first open — WindowBuilder.Layout.cs) shrinks the flex log
+        // viewport over SEVERAL frames, then grows it back on close, and the ScrollRect re-clamps during those
+        // rebuilds. Across that multi-frame jolt one intermediate apply can read the live scroll as "not at bottom"
+        // and strand the view above the new bottom → the just-sent sticker lands off-screen below (first-open was the
+        // worst case: the lazy build is the biggest jolt, and it coincides with the self-send append). So refresh the
+        // latch ONLY while the viewport is stable (the sole moment the live scroll is trustworthy) and TRUST the
+        // latched value on any apply where the height changed. A scrolled-up reader latches false → an open/close
+        // never yanks them down. This fixes any resize-the-log popover/drawer, not just the sticker picker.
+        private bool StickyAtBottom(float scrollY, float oldTotal, float viewportH)
+        {
+            if (!StickToBottom) return false;
+            var atBottom = _firstApply || _lastCount < 0
+                || scrollY >= VariableListMath.MaxScroll(oldTotal, _lastViewportH > 0f ? _lastViewportH : viewportH) - BottomEps;
+            // Viewport height changed since the last apply → in the middle of a jolt; the live scroll is unreliable,
+            // so hold the last stable decision instead of re-deriving (and possibly flipping) it.
+            if (_lastViewportH > 0f && viewportH > 0f && !Mathf.Approximately(viewportH, _lastViewportH)) return _pinnedAtBottom;
+            _pinnedAtBottom = atBottom;
+            return atBottom;
         }
 
         // The running estimate = average of currently-measured rows. When nothing is measured right now, fall back to
@@ -323,7 +349,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_prov, 0, _prov.Length);
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
-            _lastFirst = -1; _lastCount = -1; _firstApply = true;
+            _lastFirst = -1; _lastCount = -1; _firstApply = true; _pinnedAtBottom = true;   // a reset re-pins to bottom (StickToBottom) → latch starts glued
         }
     }
 }
