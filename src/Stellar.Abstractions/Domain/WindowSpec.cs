@@ -137,6 +137,16 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// The override child simply opts ITSELF out of sibling-order z; every other window's z-order is untouched.</summary>
     public int? OverrideSortingOrder { get; init; }
 
+    /// <summary>Opt-in: render this window on its OWN nested uGUI Canvas (a batching boundary) instead of sharing
+    /// the single overlay canvas with every other window. Changes inside this window (notably a ScrollRect moving
+    /// its content every frame) then rebuild only THIS window's batch, never dirtying or rebatching the overlay or
+    /// sibling windows — the fix for a scroll/animation FPS drop that scales with how many other windows are open.
+    /// Unlike <see cref="OverrideSortingOrder"/> this does NOT pin an absolute sortingOrder and does NOT opt out of
+    /// sibling-order z: the nested Canvas uses overrideSorting=false, so BringToFront / ReorderWindows still work.
+    /// Default false = unchanged (shared canvas). Added as an init property (NOT a ctor param) so WindowSpec stays
+    /// source + binary compatible with already-compiled plugins.</summary>
+    public bool IsolateCanvas { get; init; }
+
     /// <summary>When true this window's position and visibility persist in a single resolution-keyed bucket
     /// INDEPENDENT of the active layout slot: switching layout slots never moves or re-hides it, and its dragged
     /// position is remembered per-resolution across the whole session rather than per slot. Used by framework chrome

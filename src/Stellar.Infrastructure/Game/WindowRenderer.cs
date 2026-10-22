@@ -120,20 +120,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         {
             var token = _builder.Build(reg, _canvasRoot);
             _tokens.Add(token);   // track for in-place re-skin on theme change
-            // Per-window override sorting (WindowSpec.OverrideSortingOrder): lift this window onto its OWN nested
-            // Canvas at an absolute sortingOrder, independent of the shared-canvas sibling z — so it can draw ABOVE
-            // sibling-ordered overlays on higher canvases (the layout-edit chrome at 32758) while staying below the
-            // top input blocker (32760). overrideSorting opts THIS child out of sibling-order z only; every other
-            // window still sorts by ReorderWindows' sibling index, so their z-order is untouched. The nested Canvas
-            // needs its own GraphicRaycaster or its widgets become un-hittable (the parent raycaster skips a child
-            // canvas) — the toolbar's buttons + whole-frame drag rely on it, and IsPointerOver* read its order.
-            if (reg.Spec.OverrideSortingOrder is { } so && token.Root != null)
-            {
-                var oc = token.Root.AddComponent<Canvas>();
-                oc.overrideSorting = true;
-                oc.sortingOrder = so;
-                token.Root.AddComponent<GraphicRaycaster>();
-            }
+            AttachNestedCanvas(token, reg.Spec);   // OverrideSortingOrder / IsolateCanvas → own Canvas (+ raycaster)
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
             // The dismiss runs OnClose — the same path the ✕ uses — so IsShown stays in sync.
             if (reg.Spec.DismissOnOutsideClick && reg.OnClose is { } onClose && _ticker != null && token.Rect != null)
@@ -154,6 +141,33 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             return token;
         }
         catch (Exception ex) { _log.Warning($"[Window] mount '{reg.Spec.Id}' threw: {ex.Message}"); return null; }
+    }
+
+    // Per-window nested Canvas — two independent reasons to give ONE window its own Canvas:
+    //   • OverrideSortingOrder: lift it onto an ABSOLUTE sortingOrder (overrideSorting=true), independent of the
+    //     shared-canvas sibling z — so it can draw ABOVE sibling-ordered overlays on higher canvases (the layout-edit
+    //     chrome at 32758) while staying below the top input blocker (32760). overrideSorting opts THIS child out of
+    //     sibling-order z only; IsPointerOver* read its order.
+    //   • IsolateCanvas: make it a BATCHING BOUNDARY only (overrideSorting LEFT false). A Canvas is where uGUI rebuilds
+    //     its vertex batch, so a per-frame change inside this window (a ScrollRect moving its content) rebuilds ONLY
+    //     this window's batch instead of dirtying + rebatching the whole shared overlay (and every graphic on it) each
+    //     render frame. With overrideSorting=false it inherits the parent canvas's sorting and still orders by sibling
+    //     index — so ReorderWindows / BringToFront / FrontWindowBlocks (all sibling-index based) keep working
+    //     unchanged, and no other window's z is perturbed.
+    // Either way the nested Canvas needs its OWN GraphicRaycaster or its widgets become un-hittable (the parent
+    // raycaster skips a child canvas) — the override toolbar's buttons/drag AND chat's buttons/scroll rely on it.
+    private static void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
+    {
+        if (token.Root == null || (spec.OverrideSortingOrder is null && !spec.IsolateCanvas)) return;
+        var oc = token.Root.AddComponent<Canvas>();
+        if (spec.OverrideSortingOrder is { } so)
+        {
+            oc.overrideSorting = true;   // absolute order; opts out of sibling-order z (override path only)
+            oc.sortingOrder = so;
+        }
+        // IsolateCanvas-only path: overrideSorting stays at its default (false) → batching boundary that still
+        // sorts by sibling index within the shared parent canvas (z unchanged).
+        token.Root.AddComponent<GraphicRaycaster>();
     }
 
     private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
