@@ -16,6 +16,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IWindowParking? _parking;   // hide = deactivate the built tree, not destroy it (see IWindowParking)
+    private readonly IWindowAutoFocus? _autofocus;   // optional: focus a window's AutoFocus field on a user-show (see IWindowAutoFocus)
     private readonly IPluginLog _log;
     private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
@@ -25,7 +26,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _log = log; _layoutEditor = layoutEditor; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _log = log; _layoutEditor = layoutEditor; }
 
     /// <summary>Late-bind the plugin display-name resolver (composition root, after the launcher exists) so the
     /// layout editor's plugin filter can caption each plugin by its own localized tile title.</summary>
@@ -175,7 +176,9 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     private void TickEntry(Entry e, bool applyNow)
     {
-        if (!e.Visible) { ParkOrDestroy(e); return; }
+        // Hidden: park and drop any pending auto-focus (a user-show armed it, then hid before it ever activated —
+        // don't let it fire on some later unrelated activation). It's re-armed on the next SetVisible rising edge.
+        if (!e.Visible) { e.AutoFocusPending = false; ParkOrDestroy(e); return; }
         if (e.Token is null || !_renderer.IsAlive(e.Token))
         {
             e.Parked = false;
@@ -185,6 +188,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
             ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
             SafeApply(e);
+            TryAutoFocus(e);     // fresh mount after a user-show: SafeApply activated the tree, so focus now
             e.Dirty = false; return;
         }
         if (e.Parked) { _parking!.Unpark(e.Token); e.Parked = false; e.Dirty = true; }   // re-show: paint this tick
@@ -193,7 +197,21 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // that scale is live so the saved rect clamps against the correct canvas-unit bound.
         if (e.ApplyPending && CanvasScaleReady) ApplySavedRect(e, e.PendingApplyVisibility);
         if (applyNow || e.Dirty) { SafeApply(e); e.Dirty = false; }
+        if (e.AutoFocusPending) TryAutoFocus(e);   // re-show (unpark) or a retry after the GO wasn't active yet
         if (applyNow) PersistIfSettled(e);   // save the rect once a titlebar drag settles
+    }
+
+    // Consume a pending user-show auto-focus (armed on the rising edge of Visible in Entry.SetVisible, for a window
+    // whose InputElement opted in via AutoFocus). The renderer focuses the field once its GameObject is active in
+    // the hierarchy and returns false until then, so we keep the flag and retry next tick (a still-draw-suppressed
+    // mount, or a one-frame activation gap). When the renderer can't auto-focus at all (no IWindowAutoFocus — a test
+    // fake), treat it as done so we never spin. Skipped while layout-editing — overlays are force-shown for
+    // arranging, not for typing; the flag survives, so it fires once editing exits if the window is still shown.
+    private void TryAutoFocus(Entry e)
+    {
+        if (!e.AutoFocusPending || e.Token is null) return;
+        if (IsLayoutEditing) return;
+        if (_autofocus?.TryFocusAutoField(e.Token) ?? true) e.AutoFocusPending = false;
     }
 
     private object? SafeMount(Entry e)
@@ -258,6 +276,10 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         public string? OwnerPluginId;   // guid of the plugin that registered this window; null = framework-owned
         public bool Parked;   // mounted but deactivated by a SetVisible(false) (IWindowParking)
         public bool BringToFrontPending;
+        // Armed on the rising edge of Visible (a user-initiated show) when the window has an InputElement.AutoFocus;
+        // TickEntry focuses that field once the window mounts/activates, then clears it. NOT set by Init (start-
+        // visible) or by a ShouldRender re-mount — only a real false→true user show (see Entry.SetVisible).
+        public bool AutoFocusPending;
         // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);
         // TickEntry re-applies once CanvasScaleReady. PendingApplyVisibility carries the deferred call's flag.
         public bool ApplyPending; public bool PendingApplyVisibility = true;
@@ -269,7 +291,15 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id })[kind];
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
-        public void SetVisible(bool visible) => Visible = visible;
+        public void SetVisible(bool visible)
+        {
+            // Rising edge of the USER-visible flag = a user-initiated show (hotkey toggle, plugin SetVisible(true),
+            // SetVisiblePersist→here, close-button reopen). Arm the window's AutoFocus field (if any) to take
+            // keyboard focus once it mounts/activates. A ShouldRender re-mount never touches Visible, so it is never
+            // armed that way — chat won't grab the keyboard on a world load. See InputElement.AutoFocus.
+            if (visible && !Visible) AutoFocusPending = true;
+            Visible = visible;
+        }
         // Persist via the owner's slot-aware path (same one the layout-editor eye-toggle uses), so a plugin
         // hotkey / close button records to the active layout slot and the choice survives relaunch.
         public void SetVisiblePersist(bool visible) => Owner.SetVisiblePersist(Reg.Spec.Id, visible);

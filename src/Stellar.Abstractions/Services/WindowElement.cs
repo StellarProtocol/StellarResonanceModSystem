@@ -111,6 +111,16 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// param) so the record constructor stays source AND binary compatible with already-compiled plugins
     /// — see PerPluginServices-Decoration.md §3 / WindowBuilder-Patterns.md "Binary compatibility rules".</summary>
     public bool SingleLine { get; init; }
+
+    /// <summary>Opt-in: when the window hosting this field is OPENED/toggled visible by the user, the framework
+    /// gives this field keyboard focus (uGUI ActivateInputField) so the user can type immediately without
+    /// clicking it first. Focus fires on the user-initiated show transition (hotkey toggle, SetVisible(true),
+    /// close-button reopen) — NOT on a ShouldRender re-mount (e.g. zoning back into the world with the window
+    /// already toggled on), so chat never steals movement keys on a world load. Only fires when the field's
+    /// GameObject is active in the hierarchy (a field inside a collapsed ConditionalElement is skipped). If more
+    /// than one field in a window sets it, the first one built wins. Default false = unchanged. Added as an init
+    /// property (NOT a ctor param) so the record stays source + binary compatible with already-compiled plugins.</summary>
+    public bool AutoFocus { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline

@@ -35,6 +35,10 @@ internal sealed partial class WindowBuilder
         internal readonly List<SliderBinding> Sliders = new();
         internal readonly List<XYPadBinding> XYPads = new();   // .XYPad.cs: dot follows Get, enabled dim, square fill
         internal readonly List<UGuiTextInput> Fields = new();
+        // First InputElement built with AutoFocus=true (BuildInput records it, "first built wins"). The framework
+        // focuses it on the window's USER-initiated show (WindowService arms it on the rising edge of Visible;
+        // IWindowAutoFocus.TryFocusAutoField focuses it once its GameObject is active). Null = no AutoFocus field.
+        internal UGuiTextInput? AutoFocusField;
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
         internal readonly List<ListBinding> Lists = new();

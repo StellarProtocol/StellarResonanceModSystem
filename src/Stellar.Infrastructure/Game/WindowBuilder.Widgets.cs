@@ -299,6 +299,9 @@ internal sealed partial class WindowBuilder
         field.ApplyStyle(_assets.Capsule, new Color(0.05f, 0.07f, 0.10f, 0.95f), new Color(0.92f, 0.94f, 0.97f, 1f), 8f);
         _registerField?.Invoke(field);
         token.Fields.Add(field);
+        // AutoFocus opt-in: remember the FIRST such field so the framework can focus it on a user-initiated show
+        // (WindowService → IWindowAutoFocus.TryFocusAutoField). ??= → first one built wins per window.
+        if (inp.AutoFocus) token.AutoFocusField ??= field;
         token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get() });
     }
 

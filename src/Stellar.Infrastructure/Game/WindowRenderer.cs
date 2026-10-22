@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups, IWindowAutoFocus
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -313,6 +313,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     }
 
     public bool HasFocusedField(object? token) => token is WindowToken t && t.AnyFieldFocused;
+
+    // IWindowAutoFocus — focus the window's AutoFocus field (InputElement.AutoFocus) on a user-initiated show.
+    // true = done (focused, or no AutoFocus field declared); false = a field exists but its GameObject isn't
+    // active yet (window still draw-suppressed / one-frame activation gap) → WindowService retries next tick.
+    public bool TryFocusAutoField(object? token)
+    {
+        if (token is not WindowToken t) return true;      // dead/foreign token — nothing to retry
+        if (t.AutoFocusField is not { } f) return true;   // window declared no AutoFocus field — done
+        return f.TryActivateFocus();                      // false → not active in hierarchy yet, retry
+    }
 
     public void Destroy(object? token)
     {

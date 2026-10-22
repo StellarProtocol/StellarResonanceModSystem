@@ -216,6 +216,19 @@ internal sealed partial class UGuiTextInput
         _field.customCaretColor = true; _field.caretColor = textColor;
     }
 
+    /// <summary>Give this field keyboard focus (InputElement.AutoFocus on a user-initiated window show). Returns
+    /// false — so the caller retries next tick — when the field isn't built or its GameObject isn't active in the
+    /// hierarchy yet (uGUI can't begin editing an inactive field). Focus goes through the SAME path a user click
+    /// would (EventSystem Select + ActivateInputField), so IsFocused flips true and the keyboard gate engages —
+    /// desired here (the user is about to type into chat); Esc/click-away release it as for any focused field.</summary>
+    public bool TryActivateFocus()
+    {
+        if (_field == null || !_field.gameObject.activeInHierarchy) return false;
+        _field.Select();               // EventSystem selection (currentSelectedGameObject = the field)
+        _field.ActivateInputField();   // begin editing (uGUI defers the actual focus to its next LateUpdate — fine)
+        return true;
+    }
+
     /// <summary>Per-frame: while focused, force a free/visible cursor (escape hatch) and honour Esc to
     /// defocus; restore the prior cursor state on blur. Safe to call every frame; no-op if not built.</summary>
     public void Tick()
