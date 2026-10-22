@@ -8,17 +8,26 @@ namespace Stellar.Infrastructure.Game;
 /// Active, on-demand resolution of the <b>live</b> chat <c>ZTcpClient</c> for
 /// <see cref="TrySend"/>. The passively-captured client (see
 /// <c>Send.Connection.cs</c>) is only populated from inbound chat packets, so
-/// after a reconnect sends fail-closed in the dead window until the next inbound
-/// packet re-caches it. This partial closes that window by walking the game's RPC
+/// after a reconnect — and, critically, at fresh login before any inbound chat
+/// packet or native send — sends fail-closed until the next inbound packet
+/// re-caches it. This partial closes that window by walking the game's RPC
 /// controller to the socket on every send — there is no cache to go stale.
 ///
 /// Chat is NOT a dedicated socket: the whole game multiplexes RPC over two
-/// transports owned by <c>ZCode.ZRpc.ZRpcCtrl</c>. The ChitChat Lua proxy
-/// (id 1321197368) picks its channel (Gateway vs World) at runtime, so we resolve
-/// it via <c>ZRpcCtrl.GetChannelTypeByProxyId</c> rather than hard-coding it.
+/// transports owned by <c>ZCode.ZRpc.ZRpcCtrl</c>. ChitChat is a PURE Lua RPC
+/// proxy (id 1321197368, no C# factory), so we resolve its live socket via the
+/// game's own by-proxy resolver <c>ZRpcCtrl.GetRpcByProxyId(ulong)</c>. That
+/// resolves by proxy-manager membership (populated at login by <c>AddLuaProxy</c>),
+/// NOT by the lazy <c>uuid2ChannelType_</c> cache that <c>GetChannelTypeByProxyId</c>
+/// reads — the latter is only seeded for the send proxy as a side effect of the
+/// FIRST native <c>SendChitChatMsg</c>, so it is empty at fresh login (history
+/// arrives on a different stub uuid) and the old two-step lookup failed exactly
+/// when a native send had not happened yet. <c>GetRpcByProxyId</c> works at fresh
+/// login precisely when the native send does.
+///
 /// Live chain (all by reflection; verified against release_3.7 dump.cs):
 /// <code>
-/// ZRpcCtrl.Instance.GetRpc((ChannelType)ch)   // ZSingleton&lt;ZRpcCtrl&gt;.Instance, FlattenHierarchy
+/// ZRpcCtrl.Instance.GetRpcByProxyId(ChitChatProxyId)  // ZSingleton&lt;ZRpcCtrl&gt;.Instance, FlattenHierarchy
 ///   .GetTransfer()                            // IRpc -> ZRpcImpl.GetTransfer()
 ///   .GetTransport()                           // ITransfer -> ZRpcTransfer.GetTransport()
 ///   .conn_                                    // ZTransport.conn_ (IL2CPP field -> property), @0x10
@@ -30,15 +39,22 @@ namespace Stellar.Infrastructure.Game;
 /// runs the net echo/Update loop — reflecting into it on a timer stalled the
 /// ZServerTime singleton in a past bug); resolution only happens inside a
 /// user-paced send.
+///
+/// ⚠️ We bind and invoke <c>GetRpcByProxyId</c> on the CONCRETE <c>ZRpcCtrl</c>
+/// type, never through the <c>IRpcCtrl</c> interface — the
+/// <c>ZRpcCtrl</c>→<c>IRpcCtrl</c> Il2CppInterop cast fails (the same trap that
+/// broke the avatar SocialProxy). The returned <c>IRpc</c> is a concrete
+/// <c>ZRpcImpl</c>; we keep resolving <c>GetTransfer()</c>/<c>GetTransport()</c>
+/// off its runtime type via <see cref="InvokeNoArgCached"/>.
 /// </summary>
 internal sealed partial class PandaChatProbe
 {
-    // ChitChat Lua RPC proxy id (name "ChitChat"). GetChannelTypeByProxyId maps
-    // this to a ChannelType (Gateway/World) once the runtime uuid2ChannelType_
-    // map is built — so it is resolved live, never hard-coded.
+    // ChitChat Lua RPC proxy id (name "ChitChat"). GetRpcByProxyId resolves this
+    // to the live IRpc by proxy-manager membership (seeded at login), so it
+    // works at fresh login — no dependence on the lazy send-side channel cache.
     private const ulong ChitChatProxyId = 1321197368uL;
 
-    // ---- one-shot metadata (types / static members) ----
+    // ---- one-shot metadata (types / members) ----
     // Resolved once on the first send; _activeMetaResolved gates re-resolution and
     // _activeMetaOk records whether the chain is structurally present. A structural
     // miss warns once and then never retries (the passive path still works).
@@ -49,9 +65,7 @@ internal sealed partial class PandaChatProbe
 
     private Type? _zRpcCtrlType;
     private Type? _zTcpConnectionType;
-    private Type? _channelTypeEnum;
-    private MethodInfo? _miGetRpc;                 // ZRpcCtrl.GetRpc(ChannelType)
-    private MethodInfo? _miGetChannelTypeByProxyId; // ZRpcCtrl.GetChannelTypeByProxyId(ulong) static
+    private MethodInfo? _miGetRpcByProxyId;        // ZRpcCtrl.GetRpcByProxyId(ulong) instance
 
     // ---- lazily cached accessors bound off the live concrete types ----
     // GetTransfer/GetTransport are declared on the concrete impls (ZRpcImpl /
@@ -61,12 +75,6 @@ internal sealed partial class PandaChatProbe
     private MethodInfo? _miGetTransport;
     private PropertyInfo? _piConn;
     private PropertyInfo? _piClient;
-
-    // ---- cached resolved channel ----
-    // GetChannelTypeByProxyId needs the runtime proxy map, so we only cache the
-    // result once it yields a valid ChannelType (Gateway=0 / World=1); an early
-    // send (pre-connect) that returns anything else leaves it unresolved to retry.
-    private int _chatChannel = -1;
 
     /// <summary>
     /// Resolve the live chat <c>ZTcpClient</c> from <c>ZRpcCtrl</c> on demand.
@@ -86,9 +94,10 @@ internal sealed partial class PandaChatProbe
             var rpcCtrl = StellarInterop.GetSingleton(_zRpcCtrlType);
             if (rpcCtrl is null) return null;
 
-            if (!TryResolveChatChannel(rpcCtrl, out int channel)) return null;
-
-            var rpc = _miGetRpc!.Invoke(rpcCtrl, new[] { Enum.ToObject(_channelTypeEnum!, channel) });
+            // Game's own by-proxy resolver: resolves by proxy-manager membership
+            // (populated at login), so it works at fresh login — unlike the old
+            // GetChannelTypeByProxyId path that depended on the lazy send cache.
+            var rpc = _miGetRpcByProxyId!.Invoke(rpcCtrl, new object[] { ChitChatProxyId });
             if (rpc is null) return null;
 
             object? transfer = InvokeNoArgCached(rpc, "GetTransfer", ref _miGetTransfer);
@@ -113,7 +122,7 @@ internal sealed partial class PandaChatProbe
             if (!_activeResolveSucceededLogged)
             {
                 _activeResolveSucceededLogged = true;
-                _log.Info($"[ChatProbe] resolving live chat client on demand via ZRpcCtrl (channel={SafeChannelName(channel)})");
+                _log.Info("[ChatProbe] resolved live chat client via GetRpcByProxyId");
             }
             return client;
         }
@@ -126,10 +135,9 @@ internal sealed partial class PandaChatProbe
 
     /// <summary>
     /// One-shot resolution of the static metadata the live chain needs: the
-    /// <c>ZRpcCtrl</c> / <c>ZTcpConnection</c> / <c>ChannelType</c> types plus the
-    /// <c>GetRpc(ChannelType)</c> and static <c>GetChannelTypeByProxyId(ulong)</c>
-    /// methods. On a structural miss it warns once and caches the failure so we
-    /// never retry (the passive path remains the fallback).
+    /// <c>ZRpcCtrl</c> / <c>ZTcpConnection</c> types plus the instance
+    /// <c>GetRpcByProxyId(ulong)</c> method. On a structural miss it warns once and
+    /// caches the failure so we never retry (the passive path remains the fallback).
     /// </summary>
     private bool EnsureActiveMetadata()
     {
@@ -140,35 +148,26 @@ internal sealed partial class PandaChatProbe
         {
             _zRpcCtrlType = StellarInterop.FindType("ZCode.ZRpc.ZRpcCtrl");
             _zTcpConnectionType = StellarInterop.FindType("ZCode.ZNet.ZTcpConnection");
-            _channelTypeEnum = StellarInterop.FindType("ZCode.ZRpc.ChannelType");
 
             if (_zRpcCtrlType is not null)
             {
-                // GetRpc(ChannelType) is unique by (name, arity) on ZRpcCtrl —
-                // GetRpcByProxyId has a different name, and the 0-arg GetRpc()
-                // overloads live on the transfer/transport interfaces.
-                _miGetRpc = StellarInterop.FindMethod(_zRpcCtrlType, "GetRpc", 1);
-
-                // Bind the (ulong) overload explicitly: the IntPtr thunk of the
-                // same name lives on the Lua-wrapper type ZCode_ZRpc_ZRpcCtrlWrap,
-                // not here, but be precise regardless.
-                _miGetChannelTypeByProxyId = _zRpcCtrlType.GetMethod(
-                    "GetChannelTypeByProxyId",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                // Bind the (ulong) overload explicitly on the concrete ZRpcCtrl —
+                // never via IRpcCtrl (the Il2CppInterop interface cast fails).
+                _miGetRpcByProxyId = _zRpcCtrlType.GetMethod(
+                    "GetRpcByProxyId",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
                     binder: null, types: new[] { typeof(ulong) }, modifiers: null);
             }
 
             _activeMetaOk = _zRpcCtrlType is not null
                             && _zTcpConnectionType is not null
-                            && _channelTypeEnum is not null
-                            && _miGetRpc is not null
-                            && _miGetChannelTypeByProxyId is not null;
+                            && _miGetRpcByProxyId is not null;
 
             if (!_activeMetaOk)
             {
                 WarnActiveUnavailableOnce(
                     $"metadata incomplete (ctrl={_zRpcCtrlType is not null}, conn={_zTcpConnectionType is not null}, " +
-                    $"enum={_channelTypeEnum is not null}, getRpc={_miGetRpc is not null}, getChannel={_miGetChannelTypeByProxyId is not null})");
+                    $"getRpcByProxyId={_miGetRpcByProxyId is not null})");
             }
 
             return _activeMetaOk;
@@ -179,28 +178,6 @@ internal sealed partial class PandaChatProbe
             WarnActiveUnavailableOnce($"{ex.GetType().Name}: {ex.Message}");
             return false;
         }
-    }
-
-    /// <summary>
-    /// Resolve (and cache) the ChitChat channel via
-    /// <c>ZRpcCtrl.GetChannelTypeByProxyId(ChitChatProxyId)</c>. Only caches a
-    /// valid <c>ChannelType</c> (Gateway=0 / World=1); anything else (e.g. the
-    /// proxy map not built yet pre-connect) leaves it unresolved so a later send
-    /// retries. Returns false on failure.
-    /// </summary>
-    private bool TryResolveChatChannel(object rpcCtrl, out int channel)
-    {
-        channel = _chatChannel;
-        if (channel == 0 || channel == 1) return true;
-
-        var raw = _miGetChannelTypeByProxyId!.Invoke(rpcCtrl, new object[] { ChitChatProxyId });
-        if (raw is null) return false;
-        int resolved = Convert.ToInt32(raw);
-        if (resolved != 0 && resolved != 1) return false; // map not ready / unknown
-
-        _chatChannel = resolved;
-        channel = resolved;
-        return true;
     }
 
     /// <summary>
@@ -237,21 +214,6 @@ internal sealed partial class PandaChatProbe
             cache = pi;
         }
         return pi.GetValue(target);
-    }
-
-    /// <summary>Map a resolved channel int to its <c>ChannelType</c> name for the log line.</summary>
-    private string SafeChannelName(int channel)
-    {
-        try
-        {
-            if (_channelTypeEnum is not null)
-            {
-                var name = Enum.GetName(_channelTypeEnum, Enum.ToObject(_channelTypeEnum, channel));
-                if (!string.IsNullOrEmpty(name)) return name!;
-            }
-        }
-        catch { /* fall through to the numeric form */ }
-        return channel == 0 ? "Gateway" : channel == 1 ? "World" : channel.ToString();
     }
 
     /// <summary>
