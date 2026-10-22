@@ -162,9 +162,18 @@ public sealed record DropdownElement(
     public int MaxVisibleRows { get; init; }
 }
 
-/// <summary>Vertical scroll viewport (fixed <paramref name="Height"/>) wrapping a child subtree + a themed
-/// thin scrollbar.</summary>
-public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudElement;
+/// <summary>Vertical scroll viewport wrapping a child subtree + a themed thin scrollbar. By default the viewport
+/// uses <paramref name="Height"/> only as a PREFERRED baseline and still GROWS to absorb slack height in a
+/// resizable window (<c>flexibleHeight 1</c>); set <see cref="FixedHeight"/> to pin it instead.</summary>
+public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudElement
+{
+    /// <summary>When true, the viewport is pinned to <see cref="Height"/> (min==preferred, flexibleHeight 0) so it
+    /// does NOT absorb slack height in a resizable window. Default false preserves the existing behaviour
+    /// (flexibleHeight 1 → the scroll grows to fill leftover vertical space). An <c>init</c> property (NOT a
+    /// primary-ctor parameter) so the record stays source AND binary compatible with already-compiled plugins —
+    /// see WindowBuilder-Patterns.md "Binary compatibility rules for HudElement records".</summary>
+    public bool FixedHeight { get; init; }
+}
 
 /// <summary>HSV colour picker (SV square + hue bar + hex field). <paramref name="Get"/> reflects the slot's
 /// colour; a pick calls <paramref name="Set"/>. The one hand-drawn custom widget.</summary>

@@ -334,9 +334,16 @@ internal sealed partial class WindowBuilder
     private void BuildScroll(ScrollElement sc, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("Scroll", parent);
-        // flexibleHeight=1 so the scroll absorbs slack height in a fixed-size (Resizable) window; in a
-        // content-height-fit window there's no slack, so it stays at preferredHeight (no behaviour change).
-        var le = go.AddComponent<LayoutElement>(); le.preferredHeight = sc.Height; le.flexibleWidth = 1f; le.flexibleHeight = 1f;
+        var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = 1f;
+        if (sc.FixedHeight)
+            // Pin to Height (min==preferred, flexibleHeight 0) so this scroll does NOT absorb slack in a resizable
+            // window — all leftover vertical space stays with its siblings (e.g. the sticker grid keeps its fixed
+            // size while the chat log soaks up the rest). Same pin pattern as WindowBuilder.cs's fixed-height box.
+            le.minHeight = le.preferredHeight = sc.Height; // flexibleHeight defaults to 0
+        else
+            // flexibleHeight=1 so the scroll absorbs slack height in a fixed-size (Resizable) window; in a
+            // content-height-fit window there's no slack, so it stays at preferredHeight (no behaviour change).
+            { le.preferredHeight = sc.Height; le.flexibleHeight = 1f; }
         var sr = go.AddComponent<ScrollRect>(); sr.horizontal = false; sr.vertical = true; sr.movementType = ScrollRect.MovementType.Clamped;
 
         var viewport = UGuiPrimitives.NewChild("Viewport", go.transform); UGuiPrimitives.Stretch(viewport);
