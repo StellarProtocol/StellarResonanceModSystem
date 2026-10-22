@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Stellar.Abstractions.Services;
 
@@ -62,17 +61,11 @@ internal sealed partial class PandaChatProbe
     private bool _activeMetaResolved;
     private bool _activeMetaOk;
     private bool _activeUnavailableWarned;
-    private bool _activeResolveSucceededLogged;
 
     private Type? _zRpcCtrlType;
     private Type? _zTcpConnectionType;
     private bool _zTcpConnTypeResolved;            // gates EnsureZTcpConnectionType re-resolution
     private MethodInfo? _miGetRpcByProxyId;        // ZRpcCtrl.GetRpcByProxyId(ulong) instance
-
-    // Fire-once diagnostic set: each distinct silent null step of the active walk
-    // (TryResolveLiveChatClient) is logged at most once so a retried send can't
-    // spam the net loop. See <see cref="LiveResolveNull"/>.
-    private readonly HashSet<string> _liveResolveNullStepsLogged = new();
 
     // ---- lazily cached accessors bound off the live concrete types ----
     // GetTransfer/GetTransport are declared on the concrete impls (ZRpcImpl /
@@ -92,7 +85,8 @@ internal sealed partial class PandaChatProbe
     /// </summary>
     private object? TryResolveLiveChatClient()
     {
-        if (!EnsureActiveMetadata()) return null;
+        // Metadata-incomplete is an outcome too (EnsureActiveMetadata logs WHY once).
+        if (!EnsureActiveMetadata()) return LiveResolveNull("metadata");
 
         try
         {
@@ -127,17 +121,15 @@ internal sealed partial class PandaChatProbe
             // Belt-and-suspenders: never hand a freed native handle to Send.
             if (ReadNativeHandle(client) == IntPtr.Zero) return LiveResolveNull("zero-handle");
 
-            if (!_activeResolveSucceededLogged)
-            {
-                _activeResolveSucceededLogged = true;
-                _log.Info("[ChatProbe] resolved live chat client via GetRpcByProxyId");
-            }
+            // Success is also an outcome — one line per attempt (this walk runs
+            // only inside a user-paced TrySend, so one line per send is bounded).
+            _log.Info("[ChatProbe] resolved live chat client via GetRpcByProxyId");
             return client;
         }
         catch (Exception ex)
         {
-            WarnActiveUnavailableOnce($"{ex.GetType().Name}: {ex.Message}");
-            return null;
+            // One line on the throw path too so no send attempt is ever blank.
+            return LiveResolveNull($"exception ({ex.GetType().Name}: {ex.Message})");
         }
     }
 
@@ -272,20 +264,16 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
-    /// Fire-once (per distinct <paramref name="step"/>) Info diagnostic marking
-    /// WHERE <see cref="TryResolveLiveChatClient"/> bailed to null, so a session
-    /// whose active walk silently returns null tells us exactly which step failed.
-    /// Deduped by a set (not a counter) so a retried send can never spam the net
-    /// loop. Returns null so a bail reads as <c>return LiveResolveNull("step")</c>.
+    /// Info diagnostic marking WHERE <see cref="TryResolveLiveChatClient"/> bailed
+    /// to null (the <paramref name="step"/>), and returning null so a bail reads as
+    /// <c>return LiveResolveNull("step")</c>. One line PER send attempt (not
+    /// fire-once): the active walk runs only inside a user-paced <see cref="TrySend"/>,
+    /// so a line per send is bounded and we need every attempt's outcome visible —
+    /// no attempt is ever silently blank.
     /// </summary>
     private object? LiveResolveNull(string step)
     {
-        bool fire;
-        lock (_liveResolveNullStepsLogged)
-        {
-            fire = _liveResolveNullStepsLogged.Add(step);
-        }
-        if (fire) _log.Info($"[ChatProbe] live-resolve null at: {step}");
+        _log.Info($"[ChatProbe] live-resolve null at: {step}");
         return null;
     }
 
