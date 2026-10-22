@@ -92,15 +92,19 @@ internal sealed partial class PandaChatProbe
     /// issued the outbound RPC (the Unity main thread for Lua-issued chat/history).
     /// For ChitChat Calls: record the call_id for Return correlation; for a
     /// GetChipChatRecords Call additionally capture the requested channel_type
-    /// keyed by that call_id. Hot-path safe: a single service-uuid compare rejects
-    /// all non-chat RPC before any further work; never throws across the IL2CPP
-    /// boundary.
+    /// keyed by that call_id; and — the fresh-login send fix — resolve the live
+    /// chat <c>ZTcpClient</c> off <c>__instance</c> (the <c>ZRpcImpl</c> doing the
+    /// send) and feed the shared send cache. Hot-path safe: a single service-uuid
+    /// compare rejects all non-chat RPC before any further work; never throws
+    /// across the IL2CPP boundary.
     ///
-    /// <c>__args</c> layout (params only; no <c>this</c>) — verified by
+    /// <c>__instance</c> is injected by HarmonyX as the receiver (the live
+    /// <c>ZRpcImpl</c>); for an instance method it is non-null. <c>__args</c>
+    /// layout (params only; no <c>this</c>) — verified by
     /// <c>PosingSendTap</c> (UuidArg=0, MethodArg=3) and the dump:
     /// [0]=uuid(ulong) [1]=stubId [2]=callId [3]=methodId [4]=pbData(byte[]) [5]=pbSize [6]=framePack.
     /// </summary>
-    private static void OnRpcSendBytes(object?[] __args)
+    private static void OnRpcSendBytes(object? __instance, object?[] __args)
     {
         var probe = Instance;
         if (probe is null) return;
@@ -118,23 +122,52 @@ internal sealed partial class PandaChatProbe
 
             // One service-uuid compare (low 32 bits — chat ids fit in uint, high
             // half is 0) rejects all non-chat RPC before any allocation/parse.
-            uint svcLow = unchecked((uint)Convert.ToUInt64(uuidObj));
-            if (svcLow != ChitChatServiceUuid) return;
+            ulong fullUuid = Convert.ToUInt64(uuidObj);
+            if (unchecked((uint)fullUuid) != ChitChatServiceUuid) return;
 
-            uint callId = Convert.ToUInt32(callIdObj);
-            uint methodId = Convert.ToUInt32(methodIdObj);
-
-            probe.RecordChitChatOutboundCall(callId, methodId);
-
-            // Only GetChipChatRecords carries a per-request history channel_type.
-            if (methodId == GetChipChatRecordsMethodId)
-            {
-                probe.CaptureHistoryChannelFromSendArgs(callId, __args[4], __args[5]);
-            }
+            probe.ProcessOutboundChitChatSend(
+                __instance, fullUuid,
+                Convert.ToUInt32(callIdObj), Convert.ToUInt32(methodIdObj), __args);
         }
         catch (Exception ex)
         {
             Instance?._log.Warning($"[ChatProbe] SendBytes prefix threw: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Handle a confirmed outbound ChitChat Call (the low-32 service-uuid gate
+    /// already passed): record the <paramref name="callId"/> for Return
+    /// correlation; on the chat proxy uuid capture the live <c>ZTcpClient</c> off
+    /// <paramref name="rpcImpl"/> (the fresh-login send fix); and for
+    /// <c>GetChipChatRecords</c> capture the per-request history channel_type.
+    /// Split out of <see cref="OnRpcSendBytes"/> to keep that prefix within the
+    /// method-LoC budget. Runs on the sending thread; never throws (the caller's
+    /// try/catch is the boundary guard).
+    /// </summary>
+    private void ProcessOutboundChitChatSend(
+        object? rpcImpl, ulong fullUuid, uint callId, uint methodId, object?[] args)
+    {
+        RecordChitChatOutboundCall(callId, methodId);
+
+        // PRIMARY fresh-login fix: this rpcImpl (ZRpcImpl) is mid-send on the chat
+        // proxy, so it IS the live chat connection's RPC — resolve its ZTcpClient
+        // off the sender and feed the SAME cache slot the passive inbound capture
+        // writes (Send.Connection.cs). The hook fires at login during the
+        // GetChipChatRecords history fetch, BEFORE any inbound chat packet, so it
+        // populates the live client and closes the fresh-login send window that
+        // passive-only capture left open. Strict full-uuid gate (not just the
+        // low-32 compare that guards the call_id/history capture) so we only ever
+        // cache the chat proxy's client, never another service's.
+        if (fullUuid == ChitChatProxyId)
+        {
+            CaptureLiveChatClientFromOutbound(rpcImpl, callId);
+        }
+
+        // Only GetChipChatRecords carries a per-request history channel_type.
+        if (methodId == GetChipChatRecordsMethodId)
+        {
+            CaptureHistoryChannelFromSendArgs(callId, args[4], args[5]);
         }
     }
 

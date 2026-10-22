@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Stellar.Abstractions.Services;
 
@@ -65,7 +66,13 @@ internal sealed partial class PandaChatProbe
 
     private Type? _zRpcCtrlType;
     private Type? _zTcpConnectionType;
+    private bool _zTcpConnTypeResolved;            // gates EnsureZTcpConnectionType re-resolution
     private MethodInfo? _miGetRpcByProxyId;        // ZRpcCtrl.GetRpcByProxyId(ulong) instance
+
+    // Fire-once diagnostic set: each distinct silent null step of the active walk
+    // (TryResolveLiveChatClient) is logged at most once so a retried send can't
+    // spam the net loop. See <see cref="LiveResolveNull"/>.
+    private readonly HashSet<string> _liveResolveNullStepsLogged = new();
 
     // ---- lazily cached accessors bound off the live concrete types ----
     // GetTransfer/GetTransport are declared on the concrete impls (ZRpcImpl /
@@ -92,32 +99,33 @@ internal sealed partial class PandaChatProbe
             // ZSingleton<ZRpcCtrl>.Instance (base-chain / FlattenHierarchy walk).
             // Not yet created pre-login -> null -> passive fallback.
             var rpcCtrl = StellarInterop.GetSingleton(_zRpcCtrlType);
-            if (rpcCtrl is null) return null;
+            if (rpcCtrl is null) return LiveResolveNull("rpcCtrl");
 
             // Game's own by-proxy resolver: resolves by proxy-manager membership
             // (populated at login), so it works at fresh login — unlike the old
             // GetChannelTypeByProxyId path that depended on the lazy send cache.
             var rpc = _miGetRpcByProxyId!.Invoke(rpcCtrl, new object[] { ChitChatProxyId });
-            if (rpc is null) return null;
+            if (rpc is null) return LiveResolveNull("GetRpcByProxyId");
 
             object? transfer = InvokeNoArgCached(rpc, "GetTransfer", ref _miGetTransfer);
-            if (transfer is null) return null;
+            if (transfer is null) return LiveResolveNull("transfer");
 
             object? transport = InvokeNoArgCached(transfer, "GetTransport", ref _miGetTransport);
-            if (transport is null) return null;
+            if (transport is null) return LiveResolveNull("transport");
 
             object? conn = ReadMemberCached(transport, "conn_", ref _piConn);
-            if (conn is null) return null;
+            if (conn is null) return LiveResolveNull("conn");
 
             // A UDP channel's conn_ is a ZUdpConnection (no client_) — only the
             // TCP connection carries the ZTcpClient we can Send through.
-            if (!_zTcpConnectionType!.IsInstanceOfType(conn)) return null;
+            if (!_zTcpConnectionType!.IsInstanceOfType(conn))
+                return LiveResolveNull($"conn-not-ZTcpConnection type={conn.GetType().FullName}");
 
             object? client = ReadMemberCached(conn, "client_", ref _piClient);
-            if (client is null) return null;
+            if (client is null) return LiveResolveNull("client");
 
             // Belt-and-suspenders: never hand a freed native handle to Send.
-            if (ReadNativeHandle(client) == IntPtr.Zero) return null;
+            if (ReadNativeHandle(client) == IntPtr.Zero) return LiveResolveNull("zero-handle");
 
             if (!_activeResolveSucceededLogged)
             {
@@ -147,7 +155,10 @@ internal sealed partial class PandaChatProbe
         try
         {
             _zRpcCtrlType = StellarInterop.FindType("ZCode.ZRpc.ZRpcCtrl");
-            _zTcpConnectionType = StellarInterop.FindType("ZCode.ZNet.ZTcpConnection");
+            // Resolve ZTcpConnection via the shared lazy resolver so the outbound
+            // SendBytes capture (which needs the same type-check but not the
+            // GetRpcByProxyId resolver) can reach it independently of this walk.
+            _zTcpConnectionType = EnsureZTcpConnectionType();
 
             if (_zRpcCtrlType is not null)
             {
@@ -162,6 +173,13 @@ internal sealed partial class PandaChatProbe
             _activeMetaOk = _zRpcCtrlType is not null
                             && _zTcpConnectionType is not null
                             && _miGetRpcByProxyId is not null;
+
+            // One-shot metadata-resolution outcome (fires once — this body runs
+            // once under _activeMetaResolved). Tells the next session which bound
+            // members resolved so a silent active-walk null can be attributed.
+            _log.Info(
+                $"[ChatProbe] live-resolve metadata (ctrl={_zRpcCtrlType is not null}, conn={_zTcpConnectionType is not null}, " +
+                $"getRpcByProxyId={_miGetRpcByProxyId is not null}) -> ok={_activeMetaOk}");
 
             if (!_activeMetaOk)
             {
@@ -225,5 +243,108 @@ internal sealed partial class PandaChatProbe
         if (_activeUnavailableWarned) return;
         _activeUnavailableWarned = true;
         _log.Warning($"[ChatProbe] active chat client resolution unavailable — falling back to passive capture: {why}");
+    }
+
+    /// <summary>
+    /// Lazily resolve the <c>ZCode.ZNet.ZTcpConnection</c> type, shared by the
+    /// active <c>ZRpcCtrl</c> walk and the outbound <c>SendBytes</c> capture — both
+    /// must type-check <c>conn_</c> before reading <c>client_</c> (a UDP channel's
+    /// conn_ has no client_). Resolved INDEPENDENTLY of the active-walk metadata
+    /// (<see cref="EnsureActiveMetadata"/>) so the outbound capture works even
+    /// when <c>GetRpcByProxyId</c> can't be bound. Resolves at most once.
+    /// </summary>
+    private Type? EnsureZTcpConnectionType()
+    {
+        if (!_zTcpConnTypeResolved)
+        {
+            _zTcpConnTypeResolved = true;
+            try
+            {
+                _zTcpConnectionType ??= StellarInterop.FindType("ZCode.ZNet.ZTcpConnection");
+            }
+            catch
+            {
+                // Leave null — both resolution paths then fall through to the
+                // passive cache, which is the designed backstop.
+            }
+        }
+        return _zTcpConnectionType;
+    }
+
+    /// <summary>
+    /// Fire-once (per distinct <paramref name="step"/>) Info diagnostic marking
+    /// WHERE <see cref="TryResolveLiveChatClient"/> bailed to null, so a session
+    /// whose active walk silently returns null tells us exactly which step failed.
+    /// Deduped by a set (not a counter) so a retried send can never spam the net
+    /// loop. Returns null so a bail reads as <c>return LiveResolveNull("step")</c>.
+    /// </summary>
+    private object? LiveResolveNull(string step)
+    {
+        bool fire;
+        lock (_liveResolveNullStepsLogged)
+        {
+            fire = _liveResolveNullStepsLogged.Add(step);
+        }
+        if (fire) _log.Info($"[ChatProbe] live-resolve null at: {step}");
+        return null;
+    }
+
+    /// <summary>
+    /// PRIMARY fresh-login capture entry (called from the <c>ZRpcImpl.SendBytes</c>
+    /// PREFIX in <c>Send.Hooks.Rpc.cs</c>, strictly gated on the ChitChat proxy
+    /// uuid): resolve the live <c>ZTcpClient</c> from the sending
+    /// <paramref name="rpcImpl"/> and feed it into the SHARED passive-cache slot.
+    /// The hook fires at login during the history fetch — before any inbound chat
+    /// packet — so this is what actually closes the fresh-login send window.
+    /// Never throws (the resolve + cache are both guarded).
+    /// </summary>
+    private void CaptureLiveChatClientFromOutbound(object? rpcImpl, uint callId)
+    {
+        if (rpcImpl is null) return;
+        var client = TryResolveClientFromOutboundRpc(rpcImpl);
+        if (client is null) return;
+        CacheChatTcpClientFromOutbound(client, callId);
+    }
+
+    /// <summary>
+    /// Resolve the live chat <c>ZTcpClient</c> from a <c>ZRpcImpl</c> that is
+    /// CURRENTLY performing an outbound ChitChat send (the <c>SendBytes</c>
+    /// <c>__instance</c>). Same transport chain as the tail of
+    /// <see cref="TryResolveLiveChatClient"/> — <c>GetTransfer()</c> →
+    /// <c>GetTransport()</c> → <c>conn_</c> → (type-checked <c>ZTcpConnection</c>)
+    /// <c>client_</c> → <c>handle_ != 0</c> — but sourced from an RPC impl that is
+    /// DEFINITELY live (it is mid-send), so there is no singleton lookup and no
+    /// dependence on the <c>GetRpcByProxyId</c> resolver. Reuses the shared chain
+    /// accessor caches (<see cref="_miGetTransfer"/> etc.). Returns null on any
+    /// null step, a UDP channel, a zero handle, or a throw; never throws.
+    /// </summary>
+    private object? TryResolveClientFromOutboundRpc(object rpcImpl)
+    {
+        try
+        {
+            object? transfer = InvokeNoArgCached(rpcImpl, "GetTransfer", ref _miGetTransfer);
+            if (transfer is null) return null;
+
+            object? transport = InvokeNoArgCached(transfer, "GetTransport", ref _miGetTransport);
+            if (transport is null) return null;
+
+            object? conn = ReadMemberCached(transport, "conn_", ref _piConn);
+            if (conn is null) return null;
+
+            var tcpConnType = EnsureZTcpConnectionType();
+            if (tcpConnType is null || !tcpConnType.IsInstanceOfType(conn)) return null;
+
+            object? client = ReadMemberCached(conn, "client_", ref _piClient);
+            if (client is null) return null;
+
+            if (ReadNativeHandle(client) == IntPtr.Zero) return null;
+
+            return client;
+        }
+        catch
+        {
+            // Never propagate across the IL2CPP boundary / the net send path.
+            return null;
+        }
     }
 }
