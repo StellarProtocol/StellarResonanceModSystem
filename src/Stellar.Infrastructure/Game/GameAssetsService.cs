@@ -44,6 +44,7 @@ internal sealed partial class GameAssetsService : IGameAssets
     private readonly IGameDataCombat _combatData;
     private readonly IGameDataResonance _resonanceData;
     private readonly IGameDataInventory _inventoryData;
+    private readonly ILua _lua;   // chat-sticker ownership probe (IsStickerOwned) runs the game's own Lua predicate
 
     // Per-profession state. Resolved lazily on first LoadProfessionIcon(id) call.
     private readonly Dictionary<int, Slot> _slots = new();
@@ -102,12 +103,13 @@ internal sealed partial class GameAssetsService : IGameAssets
     private object? _cancelSourceInstance;           // ZCancelSource (rented)
     private MethodInfo? _createTokenMethod;          // ZCancelSource.CreateToken()
 
-    public GameAssetsService(IPluginLog log, IGameDataCombat combatData, IGameDataResonance resonanceData, IGameDataInventory inventoryData)
+    public GameAssetsService(IPluginLog log, IGameDataCombat combatData, IGameDataResonance resonanceData, IGameDataInventory inventoryData, ILua lua)
     {
         _log = log;
         _combatData = combatData;
         _resonanceData = resonanceData;
         _inventoryData = inventoryData;
+        _lua = lua;
     }
 
     /// <inheritdoc/>
@@ -266,6 +268,27 @@ internal sealed partial class GameAssetsService : IGameAssets
         var built = BuildSendableStickers();
         if (built.Count > 0) _sendableStickers = built;
         return built;
+    }
+
+    /// <inheritdoc/>
+    public bool IsStickerOwned(int configId)
+    {
+        // FAIL-CLOSED: an unknown id or a Lua bridge that isn't up yet (pre-login) → not owned (hide it). Gating
+        // on Ready FIRST also guarantees the sentinel-clear below actually runs, so we never read a stale `true`
+        // left by a previous sticker when DoString would have no-op'd.
+        if (configId <= 0 || !_lua.Ready) return false;
+
+        // ILua has no "call a function and return its value" primitive, so park-and-read (Framework-Interop §2):
+        //   • clear the sentinel FIRST, OUTSIDE the pcall — so a failed/errored/absent call leaves it nil (false),
+        //     never a stale value from the previous sticker;
+        //   • GetChatEmojiUnlock returns a Lua boolean; `<result> and true or nil` collapses false/nil → nil (the
+        //     global is removed) and true → true, so the type-STRICT TryReadGlobalBool only ever sees true-or-absent
+        //     (a Lua number/false can never surface and be misread).
+        _lua.DoString(
+            "rawset(_G,'__stellar_sticker_owned',nil)\n" +
+            "pcall(function() rawset(_G,'__stellar_sticker_owned', (Z.VMMgr.GetVM('chat_main'):GetChatEmojiUnlock("
+            + configId + ")) and true or nil) end)");
+        return _lua.TryReadGlobalBool("__stellar_sticker_owned", out var owned) && owned;
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller

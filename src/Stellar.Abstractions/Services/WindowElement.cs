@@ -234,6 +234,15 @@ public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bo
     /// (ticker-driven; never fires in the static sandbox). Use for hover-preview panes. Added as an init property,
     /// NOT a ctor param, so the record's primary constructor stays binary-compatible with existing plugins.</summary>
     public Action<bool>? OnHover { get; init; }
+
+    /// <summary>Opt in to a thin accent underline bar drawn across the row's BOTTOM edge while
+    /// <see cref="Selected"/>() is true — on TOP of the selected-fill tint — to mark an "active tab" in a tab
+    /// strip (a soft accent pill + an underline indicator). The bar is ~3 px tall, full-width, in the theme menu
+    /// accent, and is OVERLAID (ignores layout) so it never changes the row's measured size. Default <c>false</c>:
+    /// every other <see cref="SelectableElement"/> (ordinary list rows, grid cells with no <see cref="Selected"/>
+    /// state) is drawn exactly as before. Added as an init property, NOT a ctor param, so the record's primary
+    /// constructor stays binary-compatible with existing plugins.</summary>
+    public bool SelectedBar { get; init; }
 }
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint

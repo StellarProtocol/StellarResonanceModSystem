@@ -98,6 +98,7 @@ internal sealed partial class WindowBuilder
     internal sealed class SelectableBinding
     {
         public Image Bg = null!;
+        public Image? Bar;            // optional "active tab" accent underline (SelectableElement.SelectedBar); null = none
         public Func<bool>? SelectedFn;
         public Color Rest, Hover, On;
         public bool HoverState;
@@ -108,6 +109,9 @@ internal sealed partial class WindowBuilder
             var state = (SelectedFn?.Invoke() ?? false) ? 2 : HoverState ? 1 : 0;
             if (state == _last) return;
             Bg.color = state == 2 ? On : state == 1 ? Hover : Rest;
+            // The underline shows only in the selected state (2). Set inside the state-changed branch — the bar's
+            // visibility is a pure function of state, so an unchanged state already has it right (same diff as Bg).
+            if (Bar != null) Bar.enabled = state == 2;
             _last = state;
         }
         public void ForceRepaint() { _last = -1; Apply(); }

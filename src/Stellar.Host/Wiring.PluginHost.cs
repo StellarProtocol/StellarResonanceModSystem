@@ -175,7 +175,7 @@ public sealed partial class BootstrapPlugin
              Stellar.Infrastructure.Game.WardrobePreviewService wardrobePreview)
         BuildInfraServices(BepInExPluginLog log)
     {
-        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
+        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory, _luaService!);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
         _entityTransforms = entityTransforms;   // photo look focus-on-player (Wiring.PhotoStudio.cs)
         // Native boss-HP tap (2026-08-26 raid-bosshp-capture-design § decision 2) — reads the SAME

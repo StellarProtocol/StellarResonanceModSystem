@@ -57,14 +57,36 @@ internal sealed partial class WindowBuilder
         var csf = go.AddComponent<ContentSizeFitter>(); csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         BuildElement(sel.Child, go.transform, token);
 
+        // Optional "active tab" underline bar (SelectedBar) — null when not opted in; shown only while selected,
+        // driven by the binding below.
+        var bar = sel.SelectedBar ? AddSelectedBar(go, token) : null;
+
         // 3-state re-tint via a diffing binding (no-change poll writes nothing). Hover is ticker-driven (null
         // in sandbox → rest/selected only); selected is polled; reskin recomputes the accent-derived tints.
-        var binding = new SelectableBinding { Bg = bg, SelectedFn = sel.Selected, Rest = SelRest(), Hover = SelHover(), On = SelOn() };
+        var binding = new SelectableBinding { Bg = bg, Bar = bar, SelectedFn = sel.Selected, Rest = SelRest(), Hover = SelHover(), On = SelOn() };
         var onHover = sel.OnHover;
         _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { binding.HoverState = on; binding.ForceRepaint(); onHover?.Invoke(on); });
         token.Selectables.Add(binding);
         token.ReskinActions.Add(() => { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
+    }
+
+    // A ~3 px full-width accent underline overlaid on the row's BOTTOM edge for SelectableElement.SelectedBar (an
+    // "active tab" indicator). ignoreLayout so the VLG/CSF never measure it → it never changes the row height;
+    // raycastTarget=false so it never eats the row click. Full-alpha menu accent (the selected-FILL tint is a faint
+    // accent wash; this crisp bar sits on top), re-tinted on a theme change. The binding toggles its enabled state.
+    private Image AddSelectedBar(GameObject go, WindowToken token)
+    {
+        var barGo = UGuiPrimitives.NewChild("SelectedBar", go.transform);
+        var brt = barGo.GetComponent<RectTransform>();
+        brt.anchorMin = new Vector2(0f, 0f); brt.anchorMax = new Vector2(1f, 0f);   // bottom-stretch
+        brt.pivot = new Vector2(0.5f, 0f); brt.sizeDelta = new Vector2(0f, 3f); brt.anchoredPosition = Vector2.zero;
+        barGo.AddComponent<LayoutElement>().ignoreLayout = true;
+        var bar = barGo.AddComponent<Image>();
+        bar.color = new Color(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 1f);
+        bar.raycastTarget = false;
+        token.ReskinActions.Add(() => { if (bar != null) bar.color = new Color(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 1f); });
+        return bar;
     }
 
     // 3-state row tints from the menu accent (so Default/Dark/Light/Crimson all track). Rest fully transparent
