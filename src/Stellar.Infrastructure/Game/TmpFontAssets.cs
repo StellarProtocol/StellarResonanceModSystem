@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// keep referencing them). Game-only file: the Mono UI-sandbox has no TextMeshPro package, so this must
 /// never be symlinked into it.
 /// </summary>
-internal static class TmpFontAssets
+internal static partial class TmpFontAssets
 {
     private static TMP_FontAsset? _uiRegular;
     private static TMP_FontAsset? _uiBold;
@@ -55,6 +55,13 @@ internal static class TmpFontAssets
     {
         if (_tried) return;
         _tried = true;
+        var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: system-font lookup + face creation cost
+        try { EnsureCore(); }
+        finally { Stellar.Abstractions.Diagnostics.HitchProbe.End("tmp:fontEnsure", hT); }
+    }
+
+    private static void EnsureCore()
+    {
         try { _uiRegular = CreateShipped("Stellar.Infrastructure.Resources.StellarUIThai-Regular.ttf", "StellarUIThai-Regular.ttf"); }
         catch { _uiRegular = null; }
         try { _uiBold = CreateShipped("Stellar.Infrastructure.Resources.StellarUIThaiBold.ttf", "StellarUIThaiBold.ttf"); }

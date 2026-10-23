@@ -46,6 +46,13 @@ internal static class TmpEmojiSprites
         var now = Time.realtimeSinceStartup;
         if (now < _nextProbe) return;
         _nextProbe = now + ProbeIntervalSec;
+        var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: [Hitch] one (throttled) resolve attempt
+        try { TryResolveCore(); }
+        finally { Stellar.Abstractions.Diagnostics.HitchProbe.End("emoji:resolve", hT); }
+    }
+
+    private static void TryResolveCore()
+    {
         try
         {
             var src = "default";

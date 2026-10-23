@@ -88,8 +88,10 @@ internal sealed class TmpStyledText : IStyledTextHandle
     {
         // One forced regeneration shortly after first paint irons out TMP first-generation quirks,
         // then re-fit the owned decoration lines to the settled text width.
+        var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: forced mesh regen = full TMP layout
         try { if (_t != null) { _t.ForceMeshUpdate(); FitDecorations(); } }
         catch { /* mid-destroy — next poll skips via Go */ }
+        Stellar.Abstractions.Diagnostics.HitchProbe.End(_rich ? "tmp:refreshRich" : "tmp:refresh", hT);
     }
 
     // Owned decoration lines: width tracks the text's preferred width; offsets/thickness scale with the
@@ -122,10 +124,20 @@ internal sealed class TmpStyledText : IStyledTextHandle
     /// <summary>Install as the shared styled-text factory. Idempotent.</summary>
     public static void Register(System.Action<string>? log = null)
     {
-        StyledTextFactory.CreateBold ??= TryCreate;
+        StyledTextFactory.CreateBold ??= TryCreateTimed;
+        if (Stellar.Abstractions.Diagnostics.HitchProbe.IsEnabled) StyledTextFactory.GlyphCount ??= TmpFontAssets.GlyphTotal;   // diag
         TmpEmojiSprites.Log ??= log;   // RichEmoji sprite-asset resolution outcome (one line per outcome)
         StyledTextFactory.Log ??= log;
         TmpRichInputField.Register();  // InputElement.RichEmoji field (same TMP faces + sprite asset)
+    }
+
+    // diag ([Hitch]): GameObject + TextMeshProUGUI creation + first SetText (incl. a first-use TmpFontAssets.Ensure,
+    // which reports separately as tmp:fontEnsure and is nested inside this bucket). Count = TMP texts created.
+    private static IStyledTextHandle? TryCreateTimed(Transform parent, StyledTextSpec spec)
+    {
+        var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
+        try { return TryCreate(parent, spec); }
+        finally { Stellar.Abstractions.Diagnostics.HitchProbe.End(spec.RichEmoji ? "tmp:createRich" : "tmp:create", hT); }
     }
 
     private static IStyledTextHandle? TryCreate(Transform parent, StyledTextSpec spec)

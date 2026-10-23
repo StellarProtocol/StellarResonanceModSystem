@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using Stellar.Abstractions.Diagnostics;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -92,8 +94,10 @@ internal sealed partial class WindowBuilder
             // VirtualLists FIRST: each sets its plugin's window-offset via OnWindow(first) and repositions/
             // activates its pooled rows. Must precede Conds + Texts so slot Funcs (which index snapshot[first+i])
             // and the polymorphic header/picker Conditionals inside each slot read the fresh offset this poll.
+            var hT = HitchProbe.Begin(); if (hT != 0L) CountGlyphs("g:preApply");   // diag: [Hitch] apply-phase laps
             var structuralChange = false;
             for (var i = 0; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
+            hT = PhaseLap("ap:vlist", "g:vlist", hT);
             // Visibility (Conds/Lists) next so SetActive is settled before value pulls — matches HudElementBuilder.
             // A SetActive that changes which branch/rows are shown also changes the content's preferred size, but
             // uGUI does NOT auto-rebuild a ContentSizeFitter-sized window on a descendant SetActive — so a
@@ -102,7 +106,9 @@ internal sealed partial class WindowBuilder
             var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
             for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
             for (var i = vlBuilt; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
+            hT = PhaseLap("ap:cond", "g:cond", hT);
             for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
+            hT = PhaseLap("ap:list", "g:list", hT);
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
             // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
@@ -122,16 +128,20 @@ internal sealed partial class WindowBuilder
                 }
                 catch { }
             }
-            ApplyValues();
+            ApplyValues(PhaseLap("ap:layout", "g:layout", hT));
         }
 
-        private void ApplyValues()
+        private void ApplyValues(long hT)
         {
             for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
+            hT = PhaseLap("ap:texts", "g:texts", hT);
             for (var i = 0; i < StyledTexts.Count; i++) StyledTexts[i].Apply();
+            hT = PhaseLap("ap:styled", "g:styled", hT);
             for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
             for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
+            hT = PhaseLap("ap:icons", "g:icons", hT);
             for (var i = 0; i < GameTextures.Count; i++) GameTextures[i].Apply();
+            hT = PhaseLap("ap:gameTex", "g:gameTex", hT);
             for (var i = 0; i < Buttons.Count; i++) Buttons[i].Apply();
             for (var i = 0; i < Toggles.Count; i++) Toggles[i].Apply();
             for (var i = 0; i < Sliders.Count; i++) Sliders[i].Apply();
@@ -142,12 +152,37 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < FrameOpacities.Count; i++) FrameOpacities[i].Apply();
             for (var i = 0; i < Hovers.Count; i++) Hovers[i].Poll?.Invoke();
             for (var i = 0; i < Selectables.Count; i++) Selectables[i].Apply();
+            hT = PhaseLap("ap:controls", "g:controls", hT);
             for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].Apply();
+            hT = PhaseLap("ap:bubbles", "g:bubbles", hT);
             for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
             for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
             for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();
             for (var i = 0; i < Charts.Count; i++) Charts[i].Apply();
             for (var i = 0; i < FieldSyncs.Count; i++) FieldSyncs[i].Apply();
+            PhaseLap("ap:rest", "g:rest", hT);
+        }
+
+        // diag ([Hitch] attribution, revert with the "diag:" commit): close one apply phase into its time bucket and
+        // count the TMP glyphs that phase added to our dynamic atlases (StyledTextFactory.GlyphCount, game-only, null
+        // in the sandbox / when diagnostics are off). Buckets are shared by every window's apply — in a chattools
+        // hitch the chattools share dominates. Disabled = one compare per phase.
+        private static int _glyphs = -1;
+        private static long PhaseLap(string bucket, string glyphKey, long t)
+        {
+            if (t == 0L) return 0L;
+            HitchProbe.End(bucket, t);
+            CountGlyphs(glyphKey);
+            return Stopwatch.GetTimestamp();
+        }
+
+        internal static void CountGlyphs(string key)
+        {
+            var f = StyledTextFactory.GlyphCount;
+            if (f == null) return;
+            var g = f();
+            if (_glyphs >= 0 && g > _glyphs) HitchProbe.Count(key, g - _glyphs);
+            _glyphs = g;
         }
 
         /// <summary>Re-issue glyph UVs for every Text in the window after the dynamic font's atlas rebuilt.
