@@ -98,7 +98,7 @@ public static partial class WireProtocol
             Sender:     new SenderMeta(parsed.SenderLevel, Job: null, Guild: null, Gender: parsed.SenderGender, IsNewbie: parsed.SenderIsNewbie),
             MsgId:      parsed.MsgId,
             IsHistory:  true)
-        { StickerId = parsed.StickerId };
+        { StickerId = parsed.StickerId, TargetId = parsed.TargetId };
         record = (msg, parsed.MsgId);
         return true;
     }
@@ -137,7 +137,7 @@ public static partial class WireProtocol
             RawPayload: ReadOnlyMemory<byte>.Empty,
             Sender:     new SenderMeta(fields.SenderLevel, Job: null, Guild: null, Gender: fields.SenderGender, IsNewbie: fields.SenderIsNewbie),
             MsgId:      fields.MsgId)
-        { StickerId = fields.StickerId };
+        { StickerId = fields.StickerId, TargetId = fields.TargetId };
         return true;
     }
 
@@ -176,6 +176,7 @@ public static partial class WireProtocol
             state.Text = parsedMsg.Text;
             state.MsgTypeWire = parsedMsg.MsgType;
             state.StickerId = parsedMsg.StickerId;
+            state.TargetId = parsedMsg.TargetId;
             return true;
         }
         return SkipField(payload, ref pos, wireType);
@@ -198,6 +199,7 @@ public static partial class WireProtocol
         public string Text;
         public int MsgTypeWire;
         public int StickerId;
+        public long TargetId;
     }
 
     // ---------------------------------------------------------------------
@@ -207,6 +209,7 @@ public static partial class WireProtocol
     /// <summary>
     /// Parsed result from <see cref="TryParseChitChatMsg"/>.
     /// Public because <see cref="TryParseChitChatMsg"/> is a public plugin-facing API.
+    /// <c>TargetId</c> = <c>ChatMsgInfo.target_id</c> (the whisper RECIPIENT's charId; 0 when absent).
     /// </summary>
     public readonly record struct ChitChatMsgResult(
         long MsgId,
@@ -218,7 +221,8 @@ public static partial class WireProtocol
         long Timestamp,
         string Text,
         int MsgType,
-        int StickerId);
+        int StickerId,
+        long TargetId);
 
     /// <summary>
     /// Parse a <c>ChitChatMsg</c> sub-message. Returns true even on partial
@@ -255,7 +259,8 @@ public static partial class WireProtocol
             Timestamp: fields.Timestamp,
             Text: fields.Text,
             MsgType: fields.MsgType,
-            StickerId: fields.StickerId);
+            StickerId: fields.StickerId,
+            TargetId: fields.TargetId);
         return true;
     }
 
@@ -301,7 +306,7 @@ public static partial class WireProtocol
         {
             // msg_info (nested ChatMsgInfo)
             if (!TryReadLengthDelimited(data, ref pos, out var info)) return false;
-            TryParseChatMsgInfo(info, out state.Text, out state.MsgType, out state.StickerId);
+            TryParseChatMsgInfo(info, out state.Text, out state.MsgType, out state.StickerId, out state.TargetId);
             return true;
         }
         return SkipField(data, ref pos, wireType);
@@ -323,6 +328,7 @@ public static partial class WireProtocol
         public string Text;
         public int MsgType;
         public int StickerId;
+        public long TargetId;
     }
 
     // ---------------------------------------------------------------------
@@ -331,15 +337,27 @@ public static partial class WireProtocol
 
     /// <summary>
     /// Parse the <c>msg_type</c>, <c>msg_text</c>, and <c>picture_emoji.config_id</c>
-    /// (whole-message sticker) fields out of a <c>ChatMsgInfo</c>. The remaining
-    /// fields (multi_lang_notice, voice, chat_hypertext) are skipped — projecting
-    /// them belongs to a later iteration if/when plugins need them.
+    /// (whole-message sticker) fields out of a <c>ChatMsgInfo</c>. Overload kept for
+    /// callers that don't need the whisper recipient — see the 5-arg overload.
     /// </summary>
     public static void TryParseChatMsgInfo(ReadOnlySpan<byte> data, out string text, out int msgType, out int pictureEmojiId)
+        => TryParseChatMsgInfo(data, out text, out msgType, out pictureEmojiId, out _);
+
+    /// <summary>
+    /// Parse <c>msg_type</c> (1), <c>target_id</c> (2), <c>msg_text</c> (3) and
+    /// <c>picture_emoji.config_id</c> (5) out of a <c>ChatMsgInfo</c>. <paramref name="targetId"/> is the
+    /// whisper RECIPIENT's charId (the game's peer rule, <c>chat_main_vm.lua:796-807</c>: the peer is the
+    /// sender, or <c>msgInfo.targetId</c> when the sender is self) — without it our own whisper echoes
+    /// can't be attributed to a conversation. 0 when absent. The remaining fields (multi_lang_notice,
+    /// voice, chat_hypertext) are skipped.
+    /// </summary>
+    public static void TryParseChatMsgInfo(
+        ReadOnlySpan<byte> data, out string text, out int msgType, out int pictureEmojiId, out long targetId)
     {
         text = string.Empty;
         msgType = 0;
         pictureEmojiId = 0;
+        targetId = 0;
         int pos = 0;
         while (pos < data.Length)
         {
@@ -348,6 +366,12 @@ public static partial class WireProtocol
             {
                 if (!TryReadVarint(data, ref pos, out var v)) return;
                 msgType = (int)v;
+            }
+            else if (field == 2 && wireType == 0)
+            {
+                // target_id (int64 varint) — a charId, not an entity uuid.
+                if (!TryReadVarint(data, ref pos, out var t)) return;
+                targetId = unchecked((long)t);
             }
             else if (field == 3 && wireType == 2)
             {

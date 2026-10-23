@@ -53,6 +53,10 @@ internal sealed partial class PandaChatProbe
     // oldest still-live entry (a never-returned call) and draining stale ids
     // that a Return already removed. Both structures therefore stay <= the cap.
     private readonly ConcurrentDictionary<uint, int> _historyChannelByCallId = new();
+    // Companion of _historyChannelByCallId for PRIVATE history fetches: call_id -> the request's target_id
+    // (the whisper peer's charId). Same lifetime: written by TryCaptureHistoryChannel, consumed by
+    // ResolveHistoryChannel, evicted through the shared order queue.
+    private readonly ConcurrentDictionary<uint, long> _historyPeerByCallId = new();
     private readonly ConcurrentQueue<uint> _historyChannelCallIdOrder = new();
     private bool _firstHistoryChannelCapturedLogged;
 

@@ -140,8 +140,9 @@ internal sealed partial class ChatService : IChat
     // Cadence: called once per Game.Update postfix on the main thread. Drains wire queue, updates ring, fires MessageReceived.
     public void Drain()
     {
-        while (_wireQueue.TryDequeue(out var msg))
+        while (_wireQueue.TryDequeue(out var queued))
         {
+            var msg = ResolveWhisperPeer(queued);
             lock (_ringLock)
             {
                 if (_ring.Count >= RingCapacity) _ring.Dequeue();
@@ -169,4 +170,23 @@ internal sealed partial class ChatService : IChat
 
     // Called by the probe on the wire thread.
     private void OnWireMessage(ChatMessage msg) => _wireQueue.Enqueue(msg);
+
+    /// <summary>Local player's charId source (<c>IPlayerIdentity.CharId</c>, 0 = unknown). Set by Host wiring;
+    /// read on the main thread in <see cref="Drain"/> only.</summary>
+    internal Func<long>? SelfCharId { get; set; }
+
+    // Whisper peer rule (the game's own, chat_main_vm.lua:796-807): the other party is the sender, or the
+    // msg_info target when the sender is self. Done here on the main thread (not in the wire-thread probe) because
+    // "self" comes from player state. A record with NO target can't be our own echo (an outgoing whisper always
+    // names its recipient), so its sender is the peer even before self is known. Already-tagged rows (private
+    // history batches carry the request's peer) and non-whispers pass through untouched — zero allocation.
+    private ChatMessage ResolveWhisperPeer(ChatMessage msg)
+    {
+        if (msg.Channel != ChatChannel.Whisper || msg.PeerId != 0) return msg;
+        if (msg.TargetId == 0) return msg.SenderId != 0 ? msg with { PeerId = msg.SenderId } : msg;
+        var self = SelfCharId?.Invoke() ?? 0L;
+        if (self == 0) return msg;   // undecidable — plugin compares SenderId/TargetId itself (documented on PeerId)
+        var peer = msg.SenderId == self ? msg.TargetId : msg.SenderId;
+        return peer != 0 ? msg with { PeerId = peer } : msg;
+    }
 }

@@ -254,20 +254,24 @@ internal sealed partial class PandaChatProbe
         // length-delimited field already bounds the inner read, so this is a guard.
         int len = bodySize > 0 && bodySize <= (uint)body.Length ? (int)bodySize : body.Length;
 
-        int channelType = WireProtocol.ParseChannelTypeFromGetChipChatRecordsRequest(
-            new ReadOnlySpan<byte>(body, 0, len));
+        // Also reads target_id (field 5): a private (channel 5) history fetch names its peer ONLY in the
+        // request — the reply has no peer — so we key it by call_id beside the channel.
+        if (!WireProtocol.TryParseGetChipChatRecordsRequest(
+                new ReadOnlySpan<byte>(body, 0, len), out int channelType, out long peerId)) return;
         if (channelType <= 0) return;
 
         _historyChannelByCallId[callId] = channelType;
+        if (peerId != 0) _historyPeerByCallId[callId] = peerId;
         _historyChannelCallIdOrder.Enqueue(callId);
 
-        // Keep the order queue (and thus the map) bounded. Evicts oldest-first:
+        // Keep the order queue (and thus the maps) bounded. Evicts oldest-first:
         // a stale id (already removed by its Return) is a no-op TryRemove; a live
         // id past the cap is a never-returned call we drop so it can't grow us.
         while (_historyChannelCallIdOrder.Count > MaxPendingChatCalls
                && _historyChannelCallIdOrder.TryDequeue(out var oldest))
         {
             _historyChannelByCallId.TryRemove(oldest, out _);
+            _historyPeerByCallId.TryRemove(oldest, out _);
         }
 
         if (!_firstHistoryChannelCapturedLogged)

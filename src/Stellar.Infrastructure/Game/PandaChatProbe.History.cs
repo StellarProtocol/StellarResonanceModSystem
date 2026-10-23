@@ -53,7 +53,7 @@ internal sealed partial class PandaChatProbe
         // Resolve THIS Return's history channel by call_id BEFORE any early
         // return (see ResolveHistoryChannel) — so an EMPTY-history batch consumes
         // its OWN map entry and can never poison a later channel's batch.
-        ChatChannel batchChannel = ResolveHistoryChannel(callId);
+        ChatChannel batchChannel = ResolveHistoryChannel(callId, out long batchPeerId);
 
         // First-correlated-Return diagnostic — fires only when call_id matched
         // the pending set (Send hook actually worked), so spam-free.
@@ -91,8 +91,11 @@ internal sealed partial class PandaChatProbe
         // hint (a sender seen on a live Notify on a known channel).
         System.Threading.Interlocked.Increment(ref _historyBatchCount);
 
-        DispatchHistoryRecords(messages, batchChannel, callId, historyCount, validCount);
+        DispatchHistoryRecords(messages, new HistoryBatch(batchChannel, batchPeerId, callId), historyCount, validCount);
     }
+
+    /// <summary>Per-Return attribution resolved from the request's call_id: channel + (private only) peer charId.</summary>
+    private readonly record struct HistoryBatch(ChatChannel Channel, long PeerId, uint CallId);
 
     /// <summary>
     /// Resolve (and consume) the history channel recorded for a Return's
@@ -104,12 +107,16 @@ internal sealed partial class PandaChatProbe
     /// we never recorded (non-chat Return, dropped/compressed/overflowed send)
     /// resolves <see cref="ChatChannel.Unknown"/>, and the caller's
     /// <see cref="DispatchHistoryRecords"/> falls through to the per-sender hint.
-    /// <see cref="WireProtocol.MapWireChannel"/> runs only on a hit.
+    /// <see cref="WireProtocol.MapWireChannel"/> runs only on a hit. <paramref name="peerId"/> is the private
+    /// fetch's <c>target_id</c> (0 for non-private batches), consumed from its companion map the same way.
     /// </summary>
-    private ChatChannel ResolveHistoryChannel(uint callId)
-        => _historyChannelByCallId.TryRemove(callId, out var wireChannel)
+    private ChatChannel ResolveHistoryChannel(uint callId, out long peerId)
+    {
+        if (!_historyPeerByCallId.TryRemove(callId, out peerId)) peerId = 0;
+        return _historyChannelByCallId.TryRemove(callId, out var wireChannel)
             ? WireProtocol.MapWireChannel(wireChannel)
             : ChatChannel.Unknown;
+    }
 
     /// <summary>
     /// Emit the first-time correlated-Return diagnostic line. Hot-path-cheap:
@@ -154,11 +161,12 @@ internal sealed partial class PandaChatProbe
     /// </summary>
     private void DispatchHistoryRecords(
         List<(ChatMessage Msg, long MsgId)> messages,
-        ChatChannel batchChannel,
-        uint callId,
+        HistoryBatch batch,
         int historyCount,
         int validCount)
     {
+        ChatChannel batchChannel = batch.Channel;
+        uint callId = batch.CallId;
         int dispatched = 0;
         ChatMessage? firstDispatched = null;
         foreach (var (origMsg, msgId) in messages)
@@ -177,6 +185,9 @@ internal sealed partial class PandaChatProbe
             var msg = effective != ChatChannel.Unknown
                 ? origMsg with { Channel = effective }
                 : origMsg;
+            // A private fetch names its peer in the REQUEST (the reply rows don't) — authoritative, so it
+            // wins over ChatService's sender/target inference for the whole batch.
+            if (batch.PeerId != 0 && effective == ChatChannel.Whisper) msg = msg with { PeerId = batch.PeerId };
 
             OnMessageReceived?.Invoke(msg);
             firstDispatched ??= msg;
@@ -189,7 +200,7 @@ internal sealed partial class PandaChatProbe
         if (dispatched > 0)
         {
             var f = firstDispatched!;
-            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel}; first: channel={f.Channel} sender='{f.SenderName}' text='{f.Text}')");
+            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel} batchPeer={batch.PeerId}; first: channel={f.Channel} sender='{f.SenderName}' text='{f.Text}')");
         }
         else if (validCount > 0)
         {
