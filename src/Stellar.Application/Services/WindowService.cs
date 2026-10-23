@@ -35,6 +35,9 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     /// <inheritdoc/>
     public bool IsLayoutEditing => _layoutEditor?.IsEditing ?? false;
 
+    /// <inheritdoc/>
+    public void PrewarmText(string text) => (_renderer as IWindowTextPrewarm)?.PrewarmText(text);
+
     /// <summary>Editor-facing: the window overlay canvas's CanvasScaler factor (1 when unscaled). The editor
     /// layer (LayoutEditorOverlay) uses it to convert its screen-px geometry into canvas units.</summary>
     internal float CanvasScale => (_renderer as Stellar.Application.Abstractions.IWindowCanvasMetrics)?.CanvasScale ?? 1f;

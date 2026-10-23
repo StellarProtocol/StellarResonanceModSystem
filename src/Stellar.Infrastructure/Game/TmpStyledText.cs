@@ -48,10 +48,9 @@ internal sealed class TmpStyledText : IStyledTextHandle
     {
         // Re-pick the face per string so a live language switch (EN↔JA↔TH) lands on the right script's
         // face at the right weight. Latin + Thai → shipped merged faces; CJK/kana/Hangul → system family.
+        // (TmpFontAssets.FaceFor is the shared pick — TmpGlyphPrewarm warms the same face this lands on.)
         _cjk = TextFacePick.For(s) == FaceScript.Cjk;
-        var face = _cjk && TmpFontAssets.CjkBold != null
-            ? (_bold ? TmpFontAssets.CjkBold : TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold)
-            : _bold ? TmpFontAssets.UiBold : TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
+        var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
         if (_rich) ApplySpriteAsset(s);
         _t.text = s;

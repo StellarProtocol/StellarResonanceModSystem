@@ -137,6 +137,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void Update()
     {
         TickHitch();   // .Diagnostics.cs — reports the frame that just ended if it was a hitch
+        TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         SyncUiScale();
         TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
         SyncPixelPerfect();

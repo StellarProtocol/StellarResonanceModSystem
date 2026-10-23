@@ -401,6 +401,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
             _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
             _ticker.HitchLog = _log.Info;   // per-render-frame [Hitch] attribution sink (diagnostics only)
+            _ticker.PerFrame = TmpGlyphPrewarm.Tick;   // IWindowHost.PrewarmText: a few queued glyphs per rendered frame
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
             _canvasComp = canvas;

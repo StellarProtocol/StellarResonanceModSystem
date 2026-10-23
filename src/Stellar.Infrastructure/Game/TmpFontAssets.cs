@@ -77,7 +77,7 @@ internal static partial class TmpFontAssets
         // new Font(path) alone renders nothing on legacy Text, but TMP's CreateFontAsset(Font) resolves
         // the path through FontEngine.LoadFontFace(filePath) — measured working in-game (probe row T2/U1).
         var font = new Font(path);
-        return font == null ? null : SeedDecorationGlyph(TMP_FontAsset.CreateFontAsset(font));
+        return font == null ? null : SeedDecorationGlyph(CreateSized(font));
     }
 
     private static TMP_FontAsset? CreateCjk(string style)
@@ -86,7 +86,7 @@ internal static partial class TmpFontAssets
         {
             try
             {
-                var asset = TMP_FontAsset.CreateFontAsset(family, style, 90);
+                var asset = TMP_FontAsset.CreateFontAsset(family, style, SamplingPointSize);
                 if (asset == null) continue;
                 if (!CoversHangul(family)) AttachHangulFallback(asset, style);
                 return SeedDecorationGlyph(asset);
@@ -106,7 +106,7 @@ internal static partial class TmpFontAssets
     {
         try
         {
-            var hangul = TMP_FontAsset.CreateFontAsset(HangulFamily, style, 90);
+            var hangul = TMP_FontAsset.CreateFontAsset(HangulFamily, style, SamplingPointSize);
             if (hangul == null) return;
             var table = primary.fallbackFontAssetTable;
             if (table == null)
