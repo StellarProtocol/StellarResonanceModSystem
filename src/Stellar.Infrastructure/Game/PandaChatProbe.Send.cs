@@ -232,6 +232,8 @@ internal sealed partial class PandaChatProbe
             // reflection Invoke. Resolved lazily on first call.
             object spanArg = WrapBytesAsIl2CppSpan(frame.Packet);
 
+            // Track the call BEFORE dispatch so even an instant reply finds its channel (cooldown/err).
+            RecordSendCall(frame.CallId, frame.ChannelType, viaFramework: true);
             _tcpClientSend!.Invoke(client, new object[] { spanArg });
 
             if (!_firstSendLogged)
@@ -243,6 +245,7 @@ internal sealed partial class PandaChatProbe
         }
         catch (Exception ex)
         {
+            _sendByCallId.TryRemove(frame.CallId, out _);   // never went out — no reply will come
             var inner = ex.InnerException;
             failureReason = inner is not null
                 ? $"{ex.GetType().Name}: {ex.Message} (inner {inner.GetType().Name}: {inner.Message})"

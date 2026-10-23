@@ -54,7 +54,12 @@ public sealed partial class BootstrapPlugin
     private void BuildCombatSocialServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
         // SelfCharId lets the chat service decide a whisper's conversation peer (own echo → recipient).
-        _chatService = new ChatService(log) { SelfCharId = () => _playerState?.CharId ?? 0L };
+        // ServerNowMs drives the server-driven send cooldown (lambda defers: _combatService is built just below).
+        _chatService = new ChatService(log)
+        {
+            SelfCharId = () => _playerState?.CharId ?? 0L,
+            ServerNowMs = () => _combatService?.ServerNowMs ?? 0L,
+        };
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap
         // pushes decoded GetSocialDataReply records into.

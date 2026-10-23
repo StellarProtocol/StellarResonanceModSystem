@@ -161,6 +161,8 @@ internal sealed partial class PandaChatProbe
         {
             uint callId = env.CallId;
             bool correlated = _pendingChitChatCallIds.TryRemove(callId, out _);
+            // A tracked SendChitChatMsg reply (cooldown/err) is consumed here — it is never a history batch.
+            if (TryProcessSendReply(callId, env.Payload.Span)) return;
             ProcessChitChatReturnPayload(env.Payload.Span, callId, correlated);
         }
         catch (Exception ex)

@@ -176,10 +176,15 @@ internal sealed partial class PandaChatProbe
         // every ChitChat outbound call.
         CaptureLiveChatClientFromOutbound(rpcImpl, callId);
 
-        // Only GetChipChatRecords carries a per-request history channel_type.
+        // Only GetChipChatRecords carries a per-request history channel_type; a game chat-box send
+        // (SendChitChatMsg) carries the channel its cooldown reply belongs to.
         if (methodId == GetChipChatRecordsMethodId)
         {
             CaptureHistoryChannelFromSendArgs(callId, args[4], args[5]);
+        }
+        else if (methodId == SendChitChatMsgMethodId)
+        {
+            CaptureSendChannelFromSendArgs(callId, args[4], args[5]);
         }
     }
 

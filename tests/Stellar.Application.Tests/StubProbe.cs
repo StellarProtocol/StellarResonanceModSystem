@@ -14,6 +14,8 @@ internal sealed class StubProbe : IChatProbe
 {
     public Action<ChatMessage>? OnMessageReceived { get; set; }
 
+    public Action<ChatSendResult>? OnSendResult { get; set; }
+
     public List<(ChatTarget Target, string Text)> SendCalls { get; } = new();
 
     public List<(ChatTarget Target, int StickerConfigId)> StickerSendCalls { get; } = new();

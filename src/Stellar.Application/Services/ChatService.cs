@@ -38,6 +38,7 @@ internal sealed partial class ChatService : IChat
         if (probe is null) throw new ArgumentNullException(nameof(probe));
         _probe = probe;
         probe.OnMessageReceived = OnWireMessage;
+        probe.OnSendResult = OnWireSendResult;
     }
 
     public IReadOnlyList<ChatMessage> RecentMessages
@@ -151,6 +152,7 @@ internal sealed partial class ChatService : IChat
             }
             FireReceived(msg);
         }
+        DrainSendResults();
     }
 
     private void FireReceived(ChatMessage msg)

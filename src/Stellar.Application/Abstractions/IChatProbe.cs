@@ -9,4 +9,6 @@ internal interface IChatProbe
     bool TrySend(ChatTarget target, string text, out string? failureReason);
     bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason);
     Action<ChatMessage>? OnMessageReceived { get; set; }
+    // Server reply to a SendChitChatMsg (ours or the game's), correlated to its channel by call_id. Wire thread.
+    Action<ChatSendResult>? OnSendResult { get; set; }
 }
