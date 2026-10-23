@@ -83,7 +83,6 @@ internal sealed partial class WindowBuilder
         // keeps the original behaviour byte-for-byte).
         private bool MeasureActiveSlots(int count)
         {
-            var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: [Hitch] vl:measure (incl. VerifyLatchedRow)
             var changed = false;
             for (var k = 0; k < Slots.Length; k++)
             {
@@ -96,7 +95,6 @@ internal sealed partial class WindowBuilder
                 // drop the latch (→ changed, so the offsets/scroll recompute). RowId==null keeps it byte-identical.
                 if (_measured[l]) { if (VerifyLatchedRow(l, rt)) changed = true; continue; }
 
-                Stellar.Abstractions.Diagnostics.HitchProbe.Count("vl:measuredSlots", 1);
                 try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave for next apply
@@ -105,7 +103,6 @@ internal sealed partial class WindowBuilder
                 else { _provH[l] = h; _prov[l] = true; }   // first/unstable reading — provisional only, no offset churn
             }
             if (changed) _offDirty = true;
-            Stellar.Abstractions.Diagnostics.HitchProbe.End("vl:measure", hT);
             return changed;
         }
 

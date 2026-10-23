@@ -16,7 +16,7 @@ namespace Stellar.Infrastructure.Game;
 // still DOWN-scaled when drawn (2× vs ~4×), where SDF stays sharp. The 1024² multi-atlas pages are kept (smaller
 // cells also fit ~3.5× more glyphs per page).
 // The SYSTEM CJK faces (+ Malgun Hangul fallback) go through CreateFontAsset(family, style, pointSize), which
-// exposes only the point size — TMP chooses their padding itself (the [Window][tmp-diag] font line logs it).
+// exposes only the point size — TMP chooses their padding itself.
 internal static partial class TmpFontAssets
 {
     internal const int SamplingPointSize = 48;

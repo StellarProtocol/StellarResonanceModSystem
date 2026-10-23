@@ -61,7 +61,7 @@ public static class HitchProbe
         return Stopwatch.GetTimestamp();
     }
 
-    // diag: per-frame event COUNTERS (no time) — e.g. TMP glyphs added to a dynamic atlas inside a phase. Kept
+    // Per-frame event COUNTERS (no time) — e.g. how many glyphs or rows some work handled this frame. Kept
     // apart from the time buckets so a zero-ms counter is never folded into "rest". Main thread only.
     private static readonly Dictionary<string, Bucket> _counts = new();
 

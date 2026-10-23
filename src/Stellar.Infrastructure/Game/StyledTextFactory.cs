@@ -24,10 +24,6 @@ internal static class StyledTextFactory
 
     /// <summary>One-line diagnostics sink for the shared builders (wired with the factories).</summary>
     public static Action<string>? Log;
-
-    /// <summary>diag: total glyphs in the framework's TMP dynamic atlases (game-only; wired only while [Hitch]
-    /// attribution is on). Null → the apply-phase glyph counters are skipped.</summary>
-    public static Func<int>? GlyphCount;
 }
 
 /// <summary>Creation inputs for a rich-emoji text field. <see cref="Target"/> is the root's bg Image (the

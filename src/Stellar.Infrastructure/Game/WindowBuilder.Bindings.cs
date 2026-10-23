@@ -132,14 +132,7 @@ internal sealed partial class WindowBuilder
             var s = TextFn();
             // Stale: a RichEmoji row whose sprite asset resolved after its string was set — re-apply so the
             // already-shown <sprite=N> tags pick the asset up without waiting for the row to rebind.
-            var changed = s != _last;
-            if (changed || H.Stale)
-            {
-                var hT = HitchProbe.Begin();   // diag: [Hitch] per-rebind TMP text set (face swap + sprite asset + text)
-                if (!changed) HitchProbe.Count("tmp:staleReapply", 1);
-                _last = s; H.SetText(s);
-                HitchProbe.End("tmp:setText", hT);
-            }
+            if (s != _last || H.Stale) { _last = s; H.SetText(s); }
             if (ColorFn != null)
             {
                 var v = ColorFn();
@@ -312,12 +305,7 @@ internal sealed partial class WindowBuilder
             // Build the branch about to show, once (cleared BEFORE invoking so a throwing build can't retry forever).
             var build = b ? BuildThen : BuildElse;
             if (b) BuildThen = null; else BuildElse = null;
-            if (build != null)
-            {
-                var hT = HitchProbe.Begin();   // diag: [Hitch] lazy branch build (count = branches built this frame)
-                build();
-                HitchProbe.End("cond:build", hT);
-            }
+            build?.Invoke();
             if (Then != null) Then.SetActive(b);
             if (Else != null) Else.SetActive(!b);
             _last = b; _init = true;

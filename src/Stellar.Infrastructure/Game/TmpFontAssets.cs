@@ -55,13 +55,6 @@ internal static partial class TmpFontAssets
     {
         if (_tried) return;
         _tried = true;
-        var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: system-font lookup + face creation cost
-        try { EnsureCore(); }
-        finally { Stellar.Abstractions.Diagnostics.HitchProbe.End("tmp:fontEnsure", hT); }
-    }
-
-    private static void EnsureCore()
-    {
         try { _uiRegular = CreateShipped("Stellar.Infrastructure.Resources.StellarUIThai-Regular.ttf", "StellarUIThai-Regular.ttf"); }
         catch { _uiRegular = null; }
         try { _uiBold = CreateShipped("Stellar.Infrastructure.Resources.StellarUIThaiBold.ttf", "StellarUIThaiBold.ttf"); }

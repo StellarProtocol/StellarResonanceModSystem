@@ -65,7 +65,7 @@ internal static class TmpGlyphPrewarm
         if (StyledTextFactory.CreateBold == null) return;   // TMP styled text not registered → nothing renders through it
         var start = Stopwatch.GetTimestamp();
         var budget = (long)(MaxMsPerFrame * Stopwatch.Frequency / 1000.0);
-        var hT = HitchProbe.Begin();   // diag: [Hitch] tmp:prewarm (should absorb what ap:bubbles/ap:styled used to pay)
+        var hT = HitchProbe.Begin();   // [Hitch] tmp:prewarm — the deferred raster cost; should stay near the 3 ms budget
 
         while (Stopwatch.GetTimestamp() - start < budget && _texts.TryDequeue(out var s))
         {
@@ -86,7 +86,6 @@ internal static class TmpGlyphPrewarm
         }
         UploadTouched();
         HitchProbe.End("tmp:prewarm", hT);
-        HitchProbe.Count("tmp:prewarmGlyphs", added);
     }
 
     // Distinct, drawable, not-yet-present characters of one string → its face's pending queue. Rich-text tags are

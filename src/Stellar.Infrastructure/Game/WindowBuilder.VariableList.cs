@@ -307,7 +307,6 @@ internal sealed partial class WindowBuilder
         // off-screen anyway — and is admitted by a later Reposition, which every latch triggers (measuredChanged).
         private void Reposition(int first, int count, int pool, bool bottomFirst)
         {
-            var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: [Hitch] vl:reposition (incl. plugin OnWindow)
             OnWindow(first);
             PlanAdmission(first, count, pool, bottomFirst);
             for (var k = 0; k < pool; k++)
@@ -343,7 +342,6 @@ internal sealed partial class WindowBuilder
                 }
                 else _slotLogical[k] = -1;
             }
-            Stellar.Abstractions.Diagnostics.HitchProbe.End("vl:reposition", hT);
         }
 
         private void SetScroll(float y, bool zeroVelocity)
