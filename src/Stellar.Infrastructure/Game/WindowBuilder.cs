@@ -249,7 +249,12 @@ internal sealed partial class WindowBuilder
         var styled = t.Emphasis || t.Bold || t.Italic || t.Underline || t.Strikethrough;
         if (styled && !t.Shadow && TryBuildEmphasisText(t, parent, token)) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
-        var txt = go.AddComponent<Text>();
+        // RichEmoji hosts the body in the game's own ZText (a UnityEngine.UI.Text subclass that draws inline
+        // <sprite=N> emoji natively via EmojiMgr), so everything below — font, size, alignment, wrap, colour,
+        // the TextBinding that sets .text — applies unchanged (ZText IS a Text). Null (RichEmoji off, or the
+        // game type unresolvable / AddComponent throws / sandbox) → a plain Text exactly as before; see
+        // WindowBuilder.RichText.cs. The non-RichEmoji path is byte-for-byte unchanged.
+        var txt = (t.RichEmoji ? TryBuildRichEmojiText(go) : null) ?? go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
         if (styled) ApplyLegacyStyledFallback(txt, t);   // sandbox / no TMP face — see StyledText partial

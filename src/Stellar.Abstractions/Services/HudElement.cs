@@ -152,6 +152,15 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
 
     /// <summary>Draw a line through the text (works in every script). Window surfaces only.</summary>
     public bool Strikethrough { get; init; }
+
+    /// <summary>Render <c>&lt;sprite=N&gt;</c> inline emoji in the text as actual emoji images, by hosting the
+    /// body in the game's own rich-text renderer (<c>Panda.ZUi.ZText</c>, a <c>UnityEngine.UI.Text</c>
+    /// subclass that draws emoji from the game's EmojiMgr). Opt-in and additive: off (the default) the text is a
+    /// plain uGUI <c>Text</c>, byte-for-byte as before. Falls back to plain text off-game (Mono sandbox) or if
+    /// the ZText type can't be resolved/added — worst case the literal <c>&lt;sprite=N&gt;</c> shows, as today,
+    /// so text rendering can never break. Honoured only on the plain (non-emphasis/non-styled) window text path;
+    /// ignored on HUD-overlay and on the TMP styled-text (Bold/Italic/Underline/Strikethrough/Emphasis) path.</summary>
+    public bool RichEmoji { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
