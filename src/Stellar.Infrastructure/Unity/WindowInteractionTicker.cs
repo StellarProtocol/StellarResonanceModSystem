@@ -92,6 +92,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
+        // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
+        for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
         PruneChartPans(); PruneChartNavs();
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
@@ -136,6 +138,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         TickHitch();   // .Diagnostics.cs — reports the frame that just ended if it was a hitch
         SyncUiScale();
+        TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
         SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {

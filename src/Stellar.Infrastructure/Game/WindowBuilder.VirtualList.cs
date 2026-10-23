@@ -41,6 +41,7 @@ internal sealed partial class WindowBuilder
         var viewport = viewportGo.GetComponent<RectTransform>();
         sr.viewport = viewport; sr.content = crt;
         BuildScrollbar(sr, go, token);   // thin themed scrollbar (registers a reskin closure on token)
+        RegisterScrollView?.Invoke(crt);   // crt moves during scroll → ticker drops pixelPerfect while it's moving
         return (viewport, crt, sr);
     }
 

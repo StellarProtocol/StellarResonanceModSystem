@@ -446,6 +446,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
             new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
         _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
+        _builder.RegisterScrollView = rt => _ticker!.ScrollContents.Add(rt);
         _builder.SetVoiceClickExcluded = (rt, on) =>
         {
             if (_ticker == null || rt == null) return;

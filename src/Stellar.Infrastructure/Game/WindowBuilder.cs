@@ -84,6 +84,11 @@ internal sealed partial class WindowBuilder
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
 
+    // Scroll-view content-rect hook: the interaction ticker watches these content rects for per-frame motion so
+    // SyncPixelPerfect can drop pixelPerfect while a list is being scrolled (same per-frame re-snap/rebatch cost
+    // as a window drag — this is the chat-log scroll FPS fix). Null in the sandbox → a no-op.
+    internal Action<RectTransform>? RegisterScrollView { get; set; }
+
     // Slot-drag exclusion hook for a clickable meter-row voice icon: (cell rect, excluded) → the ticker
     // adds/removes it from VoiceClickRects so a press on the icon reaches its EventSystem Button (cycle voice)
     // instead of starting a raid-slot rearrange drag. The row binding calls it as the cell's clickability flips.
