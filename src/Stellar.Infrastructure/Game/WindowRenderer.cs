@@ -433,7 +433,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     {
         // Real-bold titles/headers in every script: install the TMP factory before any window builds
         // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
-        TmpStyledText.Register();
+        TmpStyledText.Register(_log.Info);
         _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)

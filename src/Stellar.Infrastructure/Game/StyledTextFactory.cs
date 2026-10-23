@@ -42,10 +42,15 @@ internal readonly struct StyledTextSpec
     /// <summary>Horizontal alignment (TextAlign.Left default).</summary>
     public TextAlign Align { get; init; }
 
+    /// <summary>Parse TMP rich text and draw inline <c>&lt;sprite=N&gt;</c> tags from the GAME's chat sprite
+    /// asset (TextElement.RichEmoji — see <c>TmpEmojiSprites</c>). Off = the styled path is unchanged.</summary>
+    public bool RichEmoji { get; init; }
+
     public StyledTextSpec(string text, int fontSize, Color color, bool wrap)
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
         Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
+        RichEmoji = false;
     }
 }
 
@@ -69,4 +74,9 @@ internal interface IStyledTextHandle
     /// later regeneration; strikethrough is unaffected) — the binding calls this once shortly after the
     /// first paint so decorations are deterministic.</summary>
     void Refresh();
+
+    /// <summary>True when the current string must be re-applied even though it did not change — a RichEmoji
+    /// text whose sprite asset resolved (lazily, in World) AFTER its string was set, so its literal
+    /// <c>&lt;sprite=N&gt;</c> tags can now draw as images. Always false for a non-RichEmoji handle.</summary>
+    bool Stale { get; }
 }

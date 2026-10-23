@@ -247,14 +247,11 @@ internal sealed partial class WindowBuilder
         // must work in EVERY language; the accent-colour and synthetic-bold iterations are retired).
         // Shadow elements (HUD-halo look) and the sandbox/no-face cases keep the legacy path below.
         var styled = t.Emphasis || t.Bold || t.Italic || t.Underline || t.Strikethrough;
-        if (styled && !t.Shadow && TryBuildEmphasisText(t, parent, token)) return;
+        // RichEmoji: the same TMP path, with the game's chat sprite asset so inline <sprite=N> draws as images
+        // (WindowBuilder.RichText.cs). False (sandbox / no face / throw) → the plain Text below, literal tags.
+        if (!t.Shadow && (t.RichEmoji ? TryBuildRichEmojiText(t, parent, token) : styled && TryBuildEmphasisText(t, parent, token))) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
-        // RichEmoji hosts the body in the game's own ZText (a UnityEngine.UI.Text subclass that draws inline
-        // <sprite=N> emoji natively via EmojiMgr), so everything below — font, size, alignment, wrap, colour,
-        // the TextBinding that sets .text — applies unchanged (ZText IS a Text). Null (RichEmoji off, or the
-        // game type unresolvable / AddComponent throws / sandbox) → a plain Text exactly as before; see
-        // WindowBuilder.RichText.cs. The non-RichEmoji path is byte-for-byte unchanged.
-        var txt = (t.RichEmoji ? TryBuildRichEmojiText(go) : null) ?? go.AddComponent<Text>();
+        var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
         if (styled) ApplyLegacyStyledFallback(txt, t);   // sandbox / no TMP face — see StyledText partial

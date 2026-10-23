@@ -28,11 +28,16 @@ internal sealed class TmpStyledText : IStyledTextHandle
     private readonly RectTransform? _st;
     private readonly Image? _stImg;
     private bool _cjk;
+    // RichEmoji: draw <sprite=N> from the game's chat sprite asset (TmpEmojiSprites). _hasTag gates the lazy
+    // resolve probe to strings that need it; _spriteGen is the asset generation this string was applied under.
+    private readonly bool _rich;
+    private bool _hasTag;
+    private int _spriteGen;
 
-    private TmpStyledText(TextMeshProUGUI t, bool bold,
+    private TmpStyledText(TextMeshProUGUI t, bool bold, bool rich,
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
-        _t = t; _bold = bold;
+        _t = t; _bold = bold; _rich = rich;
         _ul = underline.Rt; _ulImg = underline.Img;
         _st = strike.Rt; _stImg = strike.Img;
     }
@@ -48,9 +53,23 @@ internal sealed class TmpStyledText : IStyledTextHandle
             ? (_bold ? TmpFontAssets.CjkBold : TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold)
             : _bold ? TmpFontAssets.UiBold : TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
         if (face != null && _t.font != face) _t.font = face;
+        if (_rich) ApplySpriteAsset(s);
         _t.text = s;
         FitDecorations();
     }
+
+    // Tag passed through UNCHANGED — the game writes the 1-based index into TMP against this same asset.
+    private void ApplySpriteAsset(string s)
+    {
+        _hasTag = s != null && s.IndexOf("<sprite", System.StringComparison.Ordinal) >= 0;
+        var asset = TmpEmojiSprites.Get(_hasTag);
+        _spriteGen = TmpEmojiSprites.Generation;
+        if (asset != null && _t.spriteAsset != asset) _t.spriteAsset = asset;
+    }
+
+    // Polled per apply by StyledTextBinding. Only a tagged RichEmoji string probes (throttled inside), and it
+    // flips true exactly once — the apply after the asset resolves — so its literal tags re-render as images.
+    public bool Stale => _rich && _hasTag && TmpEmojiSprites.Get(probe: true) != null && _spriteGen != TmpEmojiSprites.Generation;
 
     public void SetFontSize(int px)
     {
@@ -80,6 +99,9 @@ internal sealed class TmpStyledText : IStyledTextHandle
     // space); the strike line rides at the glyph-box middle ("higher" than TMP's own — owner correction).
     private void FitDecorations()
     {
+        // No owned lines → skip the preferredWidth read: it is a full TMP layout pass, and RichEmoji chat rows
+        // re-set their string on every pool rebind while scrolling.
+        if (_ul == null && _st == null) return;
         var size = _t.fontSize;
         var w = Mathf.Max(1f, _t.preferredWidth);
         var h = Mathf.Max(1.6f, size / 9f);
@@ -98,7 +120,11 @@ internal sealed class TmpStyledText : IStyledTextHandle
     }
 
     /// <summary>Install as the shared styled-text factory. Idempotent.</summary>
-    public static void Register() => StyledTextFactory.CreateBold ??= TryCreate;
+    public static void Register(System.Action<string>? log = null)
+    {
+        StyledTextFactory.CreateBold ??= TryCreate;
+        TmpEmojiSprites.Log ??= log;   // RichEmoji sprite-asset resolution outcome (one line per outcome)
+    }
 
     private static IStyledTextHandle? TryCreate(Transform parent, StyledTextSpec spec)
     {
@@ -122,9 +148,10 @@ internal sealed class TmpStyledText : IStyledTextHandle
             _ => TextAlignmentOptions.Left,
         };
         if (spec.Italic) t.fontStyle = FontStyles.Italic;
+        if (spec.RichEmoji) t.richText = true;   // TMP's default, made explicit: <sprite=N> parsing depends on it
         var ul = spec.Underline ? BuildLine(go.transform, "Underline", spec.Color) : (null, null);
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
-        var handle = new TmpStyledText(t, spec.Bold, ul, st);
+        var handle = new TmpStyledText(t, spec.Bold, spec.RichEmoji, ul, st);
         handle.SetText(spec.Text);
         return handle;
     }

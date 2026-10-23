@@ -130,7 +130,9 @@ internal sealed partial class WindowBuilder
             var go = H.Go;
             if (go == null || !go.activeInHierarchy) return;
             var s = TextFn();
-            if (s != _last) { _last = s; H.SetText(s); }
+            // Stale: a RichEmoji row whose sprite asset resolved after its string was set — re-apply so the
+            // already-shown <sprite=N> tags pick the asset up without waiting for the row to rebind.
+            if (s != _last || H.Stale) { _last = s; H.SetText(s); }
             if (ColorFn != null)
             {
                 var v = ColorFn();

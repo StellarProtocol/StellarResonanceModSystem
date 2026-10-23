@@ -153,13 +153,14 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// <summary>Draw a line through the text (works in every script). Window surfaces only.</summary>
     public bool Strikethrough { get; init; }
 
-    /// <summary>Render <c>&lt;sprite=N&gt;</c> inline emoji in the text as actual emoji images, by hosting the
-    /// body in the game's own rich-text renderer (<c>Panda.ZUi.ZText</c>, a <c>UnityEngine.UI.Text</c>
-    /// subclass that draws emoji from the game's EmojiMgr). Opt-in and additive: off (the default) the text is a
-    /// plain uGUI <c>Text</c>, byte-for-byte as before. Falls back to plain text off-game (Mono sandbox) or if
-    /// the ZText type can't be resolved/added — worst case the literal <c>&lt;sprite=N&gt;</c> shows, as today,
-    /// so text rendering can never break. Honoured only on the plain (non-emphasis/non-styled) window text path;
-    /// ignored on HUD-overlay and on the TMP styled-text (Bold/Italic/Underline/Strikethrough/Emphasis) path.</summary>
+    /// <summary>Render <c>&lt;sprite=N&gt;</c> inline emoji (the game chat's 1-based N, passed through
+    /// unchanged) as actual emoji images, by hosting the text in TextMeshPro with rich text on and the GAME's own
+    /// chat sprite asset — the same way the game draws chat emoji. Opt-in and additive: off (the default) nothing
+    /// changes. The text then uses the framework's TMP faces (as the Bold/Italic/... styles do), and those style
+    /// flags still apply. Falls back to a plain uGUI <c>Text</c> off-game (Mono sandbox) or if TMP is unavailable —
+    /// worst case the literal <c>&lt;sprite=N&gt;</c> shows, so text rendering can never break; the literal tag
+    /// also shows until the game's sprite asset has been found (resolved lazily once in-world). Window surfaces
+    /// only; ignored on HUD-overlay and on Shadow text.</summary>
     public bool RichEmoji { get; init; }
 }
 
