@@ -58,6 +58,10 @@ namespace Stellar.Infrastructure.Game;
 // ≈ right so the at-bottom re-pin lands on the TRUE bottom, not in the MIDDLE of the content. See _estSeed /
 // InvalidateHeights (without it a corner-resize from the bottom jumped the view up to old messages).
 //
+// Consumer hooks (2.26.0): OnAtBottomChanged reports the SAME pin decision StickyAtBottom makes (one definition, so
+// a "new messages" bar can never disagree with the auto-follow), and ScrollToBottomRequest forces that decision to
+// true for one apply — the existing pinned branch then follows unmeasured bottom rows as they latch. See StickyAtBottom.
+//
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
 internal sealed partial class WindowBuilder
@@ -99,6 +103,9 @@ internal sealed partial class WindowBuilder
             Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
             Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId,
+            // ScrollToBottomRequest: the build-time value is the BASELINE, not a request (mirrors InputElement.FocusRequest).
+            OnAtBottomChanged = v.OnAtBottomChanged, ScrollToBottomRequest = v.ScrollToBottomRequest,
+            LastScrollRequest = v.ScrollToBottomRequest?.Invoke() ?? 0,
         });
     }
 
@@ -118,6 +125,11 @@ internal sealed partial class WindowBuilder
         public float Baseline = 28f;
         public bool StickToBottom;
         public Func<int, long>? RowId;   // VirtualListElement.RowId: data index → stable per-message id (null = never re-verify a latch)
+        public Action<bool>? OnAtBottomChanged;   // VirtualListElement.OnAtBottomChanged: told whenever the StickToBottom pin decision flips
+        public Func<int>? ScrollToBottomRequest;  // VirtualListElement.ScrollToBottomRequest: a CHANGE of this token = jump to bottom + re-pin
+        public int LastScrollRequest;             // last-seen token (seeded at build, so a (re)mount never jumps by itself)
+        private int _reportedAtBottom = -1;       // last value handed to OnAtBottomChanged (-1 = never reported → the first report always fires)
+        private bool _jumpReq;                    // a ScrollToBottomRequest is being executed THIS apply (zero the fling velocity with the jump)
 
         private float[] _h = Array.Empty<float>();        // measured heights, keyed by data index
         private bool[] _measured = Array.Empty<bool>();    // has index i been LATCHED (final — never re-measured)?
@@ -192,12 +204,12 @@ internal sealed partial class WindowBuilder
             else if (wasAtBottom) scrollY = maxScroll;   // glued to the TRUE bottom: covers append AND estimate-refine
             else if (measuredChanged && anchorIdx <= count) scrollY = Mathf.Clamp(_off[anchorIdx] + (scrollY - anchorTopOld), 0f, maxScroll);
             else scrollY = Mathf.Min(scrollY, maxScroll);
-            if (!Mathf.Approximately(scrollY, Content.anchoredPosition.y)) SetScroll(scrollY, reset || _firstApply);
+            if (!Mathf.Approximately(scrollY, Content.anchoredPosition.y)) SetScroll(scrollY, reset || _firstApply || _jumpReq);
 
             var first = VariableListMath.FirstIndex(scrollY, _off, count, pool);
             if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool);
 
-            _lastFirst = first; _lastCount = count; _firstApply = false; if (viewportH > 0f) _lastViewportH = viewportH;
+            _lastFirst = first; _lastCount = count; _firstApply = false; _jumpReq = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
         }
 
@@ -215,15 +227,46 @@ internal sealed partial class WindowBuilder
         // latch ONLY while the viewport is stable (the sole moment the live scroll is trustworthy) and TRUST the
         // latched value on any apply where the height changed. A scrolled-up reader latches false → an open/close
         // never yanks them down. This fixes any resize-the-log popover/drawer, not just the sticker picker.
+        //
+        // This is also the ONE place "at the bottom" is decided for the consumer: OnAtBottomChanged is fed the value
+        // returned here (so the plugin's "new messages" bar and the pin can never disagree — content that fits makes
+        // MaxScroll 0, which always passes), and a ScrollToBottomRequest simply FORCES the decision to true. Forcing
+        // the pin (rather than a one-off SetScroll) is what makes the jump land on the TRUE bottom: the rows near the
+        // bottom are usually unmeasured (estimate-sized) when we jump, and as each latches its real height the content
+        // grows — the pinned branch then re-pins to the new maxScroll every apply, exactly as for an append while
+        // already at the bottom. Next apply the live scroll sits at the maxScroll we set, so the re-derived test agrees.
         private bool StickyAtBottom(float scrollY, float oldTotal, float viewportH)
         {
-            if (!StickToBottom) return false;
+            var jump = TakeScrollRequest();
+            if (!StickToBottom) return jump;   // non-stick list: a one-shot jump to the current (estimated) bottom
+            if (jump) { _pinnedAtBottom = true; return ReportAtBottom(true); }
             var atBottom = _firstApply || _lastCount < 0
                 || scrollY >= VariableListMath.MaxScroll(oldTotal, _lastViewportH > 0f ? _lastViewportH : viewportH) - BottomEps;
             // Viewport height changed since the last apply → in the middle of a jolt; the live scroll is unreliable,
             // so hold the last stable decision instead of re-deriving (and possibly flipping) it.
-            if (_lastViewportH > 0f && viewportH > 0f && !Mathf.Approximately(viewportH, _lastViewportH)) return _pinnedAtBottom;
+            if (_lastViewportH > 0f && viewportH > 0f && !Mathf.Approximately(viewportH, _lastViewportH)) return ReportAtBottom(_pinnedAtBottom);
             _pinnedAtBottom = atBottom;
+            return ReportAtBottom(atBottom);
+        }
+
+        // ScrollToBottomRequest edge: true once per CHANGE of the consumer's counter token (vs the build-time seed).
+        private bool TakeScrollRequest()
+        {
+            if (ScrollToBottomRequest == null) return false;
+            var v = ScrollToBottomRequest();
+            if (v == LastScrollRequest) return false;
+            LastScrollRequest = v; _jumpReq = true;   // _jumpReq → Apply zeroes the fling velocity with the jump
+            return true;
+        }
+
+        // Hand the at-bottom decision to OnAtBottomChanged on a FLIP only (the first report always fires = the initial
+        // state). Recorded BEFORE invoking so a throwing consumer callback is not re-invoked every apply.
+        private bool ReportAtBottom(bool atBottom)
+        {
+            var v = atBottom ? 1 : 0;
+            if (OnAtBottomChanged == null || v == _reportedAtBottom) return atBottom;
+            _reportedAtBottom = v;
+            OnAtBottomChanged(atBottom);
             return atBottom;
         }
 

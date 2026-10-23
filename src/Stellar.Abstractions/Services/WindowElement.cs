@@ -427,6 +427,25 @@ public sealed record VirtualListElement(
     /// never re-measured). Fed the SAME data index the pool slots resolve (window-independent), NOT a pool-slot
     /// offset. An <c>init</c> property (binary-compatible).</summary>
     public Func<int, long>? RowId { get; init; }
+
+    /// <summary>Optional — invoked on the main thread whenever the list's "at the bottom" state FLIPS, and once with
+    /// the initial state after the list first lays out (and again after a window rebuild). "At the bottom" is exactly
+    /// the decision <see cref="StickToBottom"/> uses to keep the view pinned on an append, so the two never disagree:
+    /// within a couple of px of the bottom, and content that fits inside the viewport counts as at the bottom. Typical
+    /// use: a chat "↓ N new messages" bar shown while the reader is scrolled up. Reported only for a
+    /// <see cref="VariableHeight"/> + <see cref="StickToBottom"/> list (never invoked otherwise). The state is read
+    /// once per window refresh, so a flip reaches the callback up to one refresh late. Default null = unchanged. An
+    /// <c>init</c> property (binary-compatible).</summary>
+    public Action<bool>? OnAtBottomChanged { get; init; }
+
+    /// <summary>Optional counter token: when the returned value CHANGES (vs the value seen when the list was built — a
+    /// fresh/rebuilt list never jumps on its own), the list scrolls to the newest row and, with
+    /// <see cref="StickToBottom"/>, re-engages the bottom pin, so rows below that were not yet measured (and grow the
+    /// content as they latch their real heights) are followed until the view settles on the true bottom. Keep an int,
+    /// increment it in the click/send handler, and bind <c>ScrollToBottomRequest = () =&gt; _seq</c>. Without
+    /// <see cref="StickToBottom"/> it is a one-shot jump to the current (estimated) bottom. Honoured in
+    /// <see cref="VariableHeight"/> mode only. Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Func<int>? ScrollToBottomRequest { get; init; }
 }
 
 /// <summary>One cooldown/debuff tile for the CooldownBar: a fixed icon square (game-asset art via
