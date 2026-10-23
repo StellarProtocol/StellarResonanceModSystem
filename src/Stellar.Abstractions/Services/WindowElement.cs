@@ -389,6 +389,20 @@ public sealed record VirtualListElement(
     /// <c>false</c> = start at the top. An <c>init</c> property (binary-compatible). Independent of
     /// <see cref="VariableHeight"/>, though the two are used together for a wrapping chat history.</summary>
     public bool StickToBottom { get; init; }
+
+    /// <summary>Optional stable per-ROW identity (data index → a reasonably-collision-free id for the MESSAGE/item
+    /// currently at that index), used ONLY in <see cref="VariableHeight"/> mode to keep the measured-height cache
+    /// honest when the data source re-maps indices WITHOUT changing <see cref="Count"/>. A latched height is keyed
+    /// by data index; if the consumer's backing store is a rolling buffer that front-drops at capacity (e.g. a
+    /// capped chat ring), every new item shifts every index by one while Count stays constant, so a cached height
+    /// silently belongs to a different item than the index now points at — a tall row's slot inherits a short row's
+    /// latch and overflows. When supplied, the list re-verifies a latched row's height the moment the identity under
+    /// it changes and drops the latch only if the height is grossly wrong (an item whose replacement happens to be
+    /// the same height keeps its latch, so no needless re-flow); a row whose identity is unchanged is still skipped
+    /// with no re-measure, so scrolling stays cheap. Null (default) = today's behaviour exactly (a latched row is
+    /// never re-measured). Fed the SAME data index the pool slots resolve (window-independent), NOT a pool-slot
+    /// offset. An <c>init</c> property (binary-compatible).</summary>
+    public Func<int, long>? RowId { get; init; }
 }
 
 /// <summary>One cooldown/debuff tile for the CooldownBar: a fixed icon square (game-asset art via

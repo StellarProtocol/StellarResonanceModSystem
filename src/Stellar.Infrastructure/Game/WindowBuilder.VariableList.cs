@@ -98,7 +98,7 @@ internal sealed partial class WindowBuilder
         {
             Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
-            Baseline = baseline, StickToBottom = v.StickToBottom,
+            Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId,
         });
     }
 
@@ -117,11 +117,14 @@ internal sealed partial class WindowBuilder
         public Func<bool>? ResetScroll;
         public float Baseline = 28f;
         public bool StickToBottom;
+        public Func<int, long>? RowId;   // VirtualListElement.RowId: data index → stable per-message id (null = never re-verify a latch)
 
         private float[] _h = Array.Empty<float>();        // measured heights, keyed by data index
         private bool[] _measured = Array.Empty<bool>();    // has index i been LATCHED (final — never re-measured)?
         private float[] _provH = Array.Empty<float>();     // last apply's provisional (unconfirmed) measured height, by index
         private bool[] _prov = Array.Empty<bool>();        // a provisional measurement exists for index i, awaiting a 2nd-reading confirm
+        private long[] _hId = Array.Empty<long>();         // RowId the cached _h[i] was measured FOR (only read/written when RowId != null; stamped on latch)
+        private bool[] _verify = Array.Empty<bool>();      // index i's identity changed → re-measure it ONE apply later (after its slot's content caught up) before trusting the latch
         private float[] _off = Array.Empty<float>();       // cumulative top offsets, length ≥ count+1
         private int[] _slotLogical = Array.Empty<int>();   // data index each pool slot currently shows (-1 = hidden)
         private float _sum; private int _n;                // running sum/count of measured heights → average estimate
@@ -141,6 +144,11 @@ internal sealed partial class WindowBuilder
         // uGUI wobble (~0.5px) so a settled row confirms on its 2nd measure, yet stay far below the gap between a
         // pre-width-solve (tall, ~1 char/line) reading and the real height so such a reading never falsely confirms.
         private const float StableEps = 1.5f;
+        // Identity re-verify tolerance (RowId mode): when the message under a latched row changes, the latch is
+        // dropped only if the new message's measured height differs by MORE than this. Far above StableEps/sub-pixel
+        // so a row whose replacement is the same height keeps its latch (no re-flow/blank on an ordinary ring shift),
+        // yet well below a line-height so a text↔sticker or 1↔2-line swap trips it. Only used when RowId != null.
+        private const float VerifyEps = 10f;
 
         public bool Apply()
         {
@@ -236,20 +244,67 @@ internal sealed partial class WindowBuilder
         // the offsets (we do NOT set changed), so the settle window adds no offset churn. Latch invalidation (width
         // change / Count decrease / reset) is the only other way a latched height changes. Returns true iff a NEW
         // row LATCHED this apply (an estimate became real → the offsets and scroll need the one-time anchor comp).
+        //
+        // RowId mode (optional): a latched height is keyed by DATA INDEX, but a front-dropping ring (header limit #3)
+        // re-maps an index to a DIFFERENT message at constant Count, so the latch silently goes stale and a rigid
+        // tall row (a sticker) inherits a short row's height → permanent overflow. When RowId is supplied we stamp,
+        // on latch, the id the height was measured FOR (_hId[l]); each apply we compare it to the CURRENT id and, when
+        // it changed, re-verify the height ONCE and drop the latch only if grossly wrong (> VerifyEps). The verify is
+        // DEFERRED one apply: MeasureActiveSlots runs before this apply's Conds/ApplyValues, so on the apply the id
+        // flips the slot still shows the OLD message — measuring then would read stale content and false-negative. We
+        // record the new id + arm _verify[l], and measure on the NEXT apply once the displayed content is current. A
+        // row whose id is unchanged is still skipped with zero re-measure, so steady scroll stays cheap (RowId==null
+        // keeps the original behaviour byte-for-byte).
         private bool MeasureActiveSlots(int count)
         {
             var changed = false;
             for (var k = 0; k < Slots.Length; k++)
             {
                 var l = _slotLogical[k];
-                if (l < 0 || l >= count || _measured[l]) continue;   // latched — never re-measure a settled row
+                if (l < 0 || l >= count) continue;
                 var rt = Slots[k];
                 if (rt == null || !rt.gameObject.activeSelf) continue;
+
+                if (_measured[l])
+                {
+                    // Latched. Without a RowId feed this is the original path: never re-measure a settled row (the
+                    // 2.25.0..2.25.2 jitter was re-reading settled rows every apply) — byte-identical to before.
+                    if (RowId == null) continue;
+                    // Identity-aware verification. _h[l] is only trustworthy while data index l still maps to the SAME
+                    // message; a front-dropping ring remaps l to a different message at constant Count (header limit
+                    // #3), silently leaving a tall row sized by a short row's latch → overflow. So compare the current
+                    // identity to the one _h[l] was measured for.
+                    var cur = RowId(l);
+                    if (!_verify[l])
+                    {
+                        if (cur == _hId[l]) continue;   // same message as cached → latch valid, no re-measure (scroll stays cheap)
+                        // The message under l changed. We CANNOT measure it now: MeasureActiveSlots runs before this
+                        // apply's Conds/ApplyValues, so the slot still SHOWS the previous message (its content catches
+                        // up later this apply). Record the new id (stop re-detecting) and arm a one-apply-deferred
+                        // verify; keep the latch for now (≤1 apply at the old height — the stale latch it replaces was
+                        // PERMANENT). The measure below then runs next apply, once the displayed content is current.
+                        _hId[l] = cur; _verify[l] = true; continue;
+                    }
+                    // Deferred verify: the slot's content has now caught up to _hId[l]'s message.
+                    _verify[l] = false;
+                    if (cur != _hId[l]) { _hId[l] = cur; _verify[l] = true; continue; }   // shifted AGAIN mid-verify → re-arm, stay latched
+                    try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
+                    var hv = LayoutUtility.GetPreferredHeight(rt);
+                    if (hv < 1f) { _verify[l] = true; continue; }   // not laid out yet → re-try next apply
+                    // Drop the latch ONLY if grossly wrong for the new message (VerifyEps ≫ StableEps → a same-height
+                    // replacement keeps its latch, no re-flow). Do NOT re-commit hv directly — a measure right after a
+                    // content swap can read a pre-width-solve too-tall value — so un-latch and let the 2-read confirm
+                    // below re-latch the truth over the next applies (which run AFTER content updates → correct).
+                    if (Mathf.Abs(hv - _h[l]) > VerifyEps)
+                    { _sum -= _h[l]; _n = Mathf.Max(0, _n - 1); _measured[l] = false; _prov[l] = false; _provH[l] = 0f; changed = true; }
+                    continue;
+                }
+
                 try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave for next apply
                 if (_prov[l] && Mathf.Abs(h - _provH[l]) <= StableEps)   // stable across two reads → commit
-                { _h[l] = h; _measured[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; }
+                { _h[l] = h; _measured[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l); }
                 else { _provH[l] = h; _prov[l] = true; }   // first/unstable reading — provisional only, no offset churn
             }
             if (changed) _offDirty = true;
@@ -326,9 +381,11 @@ internal sealed partial class WindowBuilder
             var cap = Mathf.Max(count, _h.Length == 0 ? 8 : _h.Length * 2);
             var h = new float[cap]; var m = new bool[cap];
             var ph = new float[cap]; var p = new bool[cap];
+            var hid = new long[cap]; var vf = new bool[cap];
             Array.Copy(_h, h, _h.Length); Array.Copy(_measured, m, _measured.Length);
             Array.Copy(_provH, ph, _provH.Length); Array.Copy(_prov, p, _prov.Length);
-            _h = h; _measured = m; _provH = ph; _prov = p; _off = new float[cap + 1];
+            Array.Copy(_hId, hid, _hId.Length); Array.Copy(_verify, vf, _verify.Length);
+            _h = h; _measured = m; _provH = ph; _prov = p; _hId = hid; _verify = vf; _off = new float[cap + 1];
             _offDirty = true;
         }
 
@@ -346,6 +403,7 @@ internal sealed partial class WindowBuilder
         {
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);   // rows re-run the stable-confirm from scratch at the new width
+            Array.Clear(_verify, 0, _verify.Length);   // no latch survives → any pending identity re-verify is moot (_hId re-stamped on re-latch)
             _estSeed = Estimate();   // carry the real average across the clear (see comment above) — MUST precede the zeroing
             _sum = 0f; _n = 0; _offDirty = true;
         }
@@ -358,6 +416,7 @@ internal sealed partial class WindowBuilder
         {
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);
+            Array.Clear(_hId, 0, _hId.Length); Array.Clear(_verify, 0, _verify.Length);   // genuinely new content → forget identities + pending re-verifies
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
             _lastFirst = -1; _lastCount = -1; _firstApply = true; _pinnedAtBottom = true;   // a reset re-pins to bottom (StickToBottom) → latch starts glued
