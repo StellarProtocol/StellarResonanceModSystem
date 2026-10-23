@@ -277,6 +277,12 @@ public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bo
     /// state) is drawn exactly as before. Added as an init property, NOT a ctor param, so the record's primary
     /// constructor stays binary-compatible with existing plugins.</summary>
     public bool SelectedBar { get; init; }
+
+    /// <summary>Optional — fires on RIGHT-button-down over the row (ticker-driven, the same hook as
+    /// <see cref="MeterRowElement.OnRightClick"/>; skipped when a window in front covers the pointer). Use to open a
+    /// context menu. A right-click never fires <see cref="OnClick"/>, and the left-click path is unchanged. Init
+    /// property, NOT a ctor param, so the record's primary constructor stays binary-compatible.</summary>
+    public Action? OnRightClick { get; init; }
 }
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint

@@ -66,6 +66,9 @@ internal sealed partial class WindowBuilder
         var binding = new SelectableBinding { Bg = bg, Bar = bar, SelectedFn = sel.Selected, Rest = SelRest(), Hover = SelHover(), On = SelOn() };
         var onHover = sel.OnHover;
         _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { binding.HoverState = on; binding.ForceRepaint(); onHover?.Invoke(on); });
+        // Right-click: the ticker's RightClicks hook (right-button-down, FrontWindowBlocks-gated, the CombatMeter row
+        // menu path). uGUI's Button only reacts to the LEFT button, so a right-click can never also fire OnClick.
+        if (sel.OnRightClick is { } rc) RegisterRightClick?.Invoke(go.GetComponent<RectTransform>(), rc);
         token.Selectables.Add(binding);
         token.ReskinActions.Add(() => { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
