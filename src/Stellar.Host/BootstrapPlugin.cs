@@ -224,6 +224,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         WireRenderQuality(log); // render quality + time of day; before WirePhotoStudio (capture takes the scale guard)
         WireReShade(log);       // IReShade + bridge; before WirePhotoStudio (capture draws through the bridge)
         WireVoiceInjection(log);// IVoiceInjection shared mixer; before WireGameEventsAndPluginHost (feeds the aggregator)
+        WireChatLuaServices(log); // Lua-polled chat sources (system notices, friends); before the aggregator
         WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
         WireFreeCamera(log);    // free-camera services; needs _photoMode (release on the game's camera mode / cutscene)
         WireGameEventsAndPluginHost(log, configFactory);

@@ -171,6 +171,11 @@ internal sealed partial class ChatService : IChat
     // Called by the probe on the wire thread.
     private void OnWireMessage(ChatMessage msg) => _wireQueue.Enqueue(msg);
 
+    /// <summary>Injects a framework-sourced message (client-generated system notices — they never reach the wire)
+    /// into the same queue the probe feeds, so it rides the ring + <see cref="MessageReceived"/> on the next
+    /// <see cref="Drain"/>. Any thread.</summary>
+    internal void PublishLocal(ChatMessage msg) => _wireQueue.Enqueue(msg);
+
     /// <summary>Local player's charId source (<c>IPlayerIdentity.CharId</c>, 0 = unknown). Set by Host wiring;
     /// read on the main thread in <see cref="Drain"/> only.</summary>
     internal Func<long>? SelfCharId { get; set; }

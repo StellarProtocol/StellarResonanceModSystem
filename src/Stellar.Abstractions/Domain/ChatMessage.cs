@@ -37,4 +37,20 @@ public sealed record ChatMessage(
     /// a target) — then compare <see cref="SenderId"/>/<see cref="TargetId"/> against
     /// <see cref="Services.IPlayerIdentity.CharId"/> yourself.</summary>
     public long PeerId { get; init; }
+
+    /// <summary>For a client-generated SYSTEM notice (<see cref="ChatChannel.System"/>, e.g. "Obtained Guild Fund×40"),
+    /// the notice's source label as the game shows it (e.g. "Obtained"; empty for plain message notices). Null on
+    /// every server chat message. These notices never touch the network: the framework captures them from the
+    /// game's own chat VM, so they arrive with <see cref="IsHistory"/> = false, no sender, and a framework-made
+    /// NEGATIVE <see cref="MsgId"/> (unique per session, not a server id). <see cref="Text"/> keeps the game's
+    /// rich-text tags (item-quality <c>&lt;color&gt;</c>) — render it as TMP rich text or strip them.</summary>
+    public string? SystemLabel { get; init; }
+
+    /// <summary>System notice kind (the game's <c>E.ESystemTipInfoType</c>: 1 = item gained, 2 = message,
+    /// 3 = dungeon roll); 0 on server chat messages. See <see cref="SystemLabel"/>.</summary>
+    public int SystemType { get; init; }
+
+    /// <summary>System notice reference id — the item config id for an item-gained notice (<see cref="SystemType"/>
+    /// = 1), else the message/config id the game attached (0 when none). See <see cref="SystemLabel"/>.</summary>
+    public long SystemRefId { get; init; }
 }
