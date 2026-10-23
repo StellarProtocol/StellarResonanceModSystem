@@ -35,6 +35,9 @@ internal sealed partial class WindowBuilder
     // The variable-list SLOT whose pool element is being built (null outside one). Every Conditional built under it
     // captures it as CondBinding.Gate, so the first-build cap can keep an over-budget slot fully idle (.VariableList.cs).
     private GameObject? _condGate;
+    // >0 while building INSIDE a RowElement.ConstrainsWindowMinWidth row: a BubbleElement built there hugs its natural
+    // width instead of capping at its parent's width (BubbleBinding.NoCap) — see BuildRow (.Layout.cs) for why.
+    private int _widthRowDepth;
     // Per-frame field-tick hook (cursor/Esc/debounce). Injected by the renderer (which owns a
     // MonoBehaviour ticker); null in the sandbox (static render needs no tick). Mirrors HudElementBuilder's
     // registerBar animator hook.
@@ -155,6 +158,8 @@ internal sealed partial class WindowBuilder
         var token = new WindowToken();
         _surface = reg.Spec.Surface;   // per-window; read by BuildText/BuildBar/BuildPill for the HudOverlay branch
         token.Resizable = reg.Spec.Resizable;
+        token.WindowId = reg.Spec.Id;
+        token.SpecMinWidth = token.EffectiveMinWidth = reg.Spec.MinWidth; token.SpecMaxWidth = reg.Spec.MaxWidth;
         // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
         // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
         token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
@@ -179,11 +184,7 @@ internal sealed partial class WindowBuilder
     {
         switch (el)
         {
-            case RowElement r:
-                BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode);
-                if (r.Justify != RowJustify.Left && parent.GetChild(parent.childCount - 1).GetComponent<HorizontalLayoutGroup>() is { } hlg)
-                    hlg.childAlignment = r.Justify == RowJustify.Center ? TextAnchor.MiddleCenter : TextAnchor.MiddleRight;
-                break;
+            case RowElement r: BuildRow(r, parent, token); break;              // .Layout.cs
             case ColumnElement c: BuildColumn(c, parent, token); break;
             case PanelElement pn: BuildPanel(pn, parent, token); break;
             case BubbleElement bub: BuildBubble(bub, parent, token); break;    // .Bubble.cs

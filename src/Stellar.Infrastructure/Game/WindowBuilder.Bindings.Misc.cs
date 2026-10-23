@@ -87,6 +87,11 @@ internal sealed partial class WindowBuilder
         public RectTransform? Parent;          // bubble's parent (its width = the cap when MaxWidth == 0)
         public float MaxWidth;                  // 0 = clamp to Parent's current width
         public float PadX;                      // total horizontal padding (left + right)
+        // Built inside a RowElement.ConstrainsWindowMinWidth row: hug the NATURAL width, never cap at the parent.
+        // The row's measured natural width drives the window minimum, so a parent-capped bubble would shrink the
+        // very number meant to make room for it (see WindowBuilder.BuildRow). Transiently overflows its parent
+        // until the window is widened (same apply cycle at mount; within one ~0.5 s poll for a later growth).
+        public bool NoCap;
         // Per-refresh fill colour (BubbleElement.FillColorFn). FillGraphic/FillColorFn left null → the bubble keeps
         // its build-time colour (the static FillColor / themed default painted once in AddBubbleBackground) with no
         // override machinery — a bubble that doesn't set FillColorFn is byte-for-byte unchanged. Mirrors
@@ -116,7 +121,7 @@ internal sealed partial class WindowBuilder
             var natural = measured + PadX;
             // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
             // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out.
-            var cap = MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : natural);
+            var cap = NoCap ? natural : MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : natural);
             if (cap <= 0f) cap = natural;
             var w = Mathf.Max(0f, Mathf.Min(natural, cap));
             if (Mathf.Approximately(w, _last)) return;

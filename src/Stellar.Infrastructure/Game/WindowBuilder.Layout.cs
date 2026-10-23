@@ -46,10 +46,10 @@ internal sealed partial class WindowBuilder
         // mount. A never-shown branch costs nothing: the CombatMeter main window eagerly built its list view AND
         // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
         // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
-        var surface = _surface;
         var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
+        var scope = CaptureScope();
         var then = cond.Then;
-        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, surface, gate);
+        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, scope);
         Action? buildElse = null;
         GameObject? elseGo = null;
         if (cond.Else != null)
@@ -58,7 +58,7 @@ internal sealed partial class WindowBuilder
             UGuiPrimitives.AddLayout(elseGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(elseGo);
             if (cond.Fill && elseGo.GetComponent<VerticalLayoutGroup>() is { } ev) ev.childForceExpandHeight = true;
             var elseEl = cond.Else; var elseT = elseGo.transform;
-            buildElse = () => BuildDeferred(elseEl, elseT, token, surface, gate);
+            buildElse = () => BuildDeferred(elseEl, elseT, token, scope);
         }
         // With NO else-branch, toggle the WHOLE Cond container (not just its inner Then). Otherwise the
         // container stays an active 0-height child and the parent column still adds section-spacing around it —
@@ -70,14 +70,42 @@ internal sealed partial class WindowBuilder
     }
 
     // A deferred branch build runs later, from the window's Apply — restore the per-window surface the shared
-    // builder had when this window was built, and the enclosing variable-list slot gate (so a Conditional nested in
-    // the lazily-built branch is gated on the same slot).
-    private void BuildDeferred(HudElement el, Transform parent, WindowToken token, SurfaceStyle surface, GameObject? gate)
+    // builder had when this window was built, the enclosing variable-list slot gate (so a Conditional nested in
+    // the lazily-built branch is gated on the same slot), and the min-width-row depth (uncapped bubbles).
+    private void BuildDeferred(HudElement el, Transform parent, WindowToken token, BuildScope scope)
     {
-        var prev = _surface; var prevGate = _condGate;
-        _surface = surface; _condGate = gate;
+        var prev = CaptureScope();
+        RestoreScope(scope);
         try { BuildElement(el, parent, token); }
-        finally { _surface = prev; _condGate = prevGate; }
+        finally { RestoreScope(prev); }
+    }
+
+    // The builder state a lazily-built branch must see exactly as it was when its window was built.
+    private readonly struct BuildScope
+    {
+        public readonly SurfaceStyle Surface; public readonly GameObject? Gate; public readonly int WidthRowDepth;
+        public BuildScope(SurfaceStyle surface, GameObject? gate, int widthRowDepth)
+        { Surface = surface; Gate = gate; WidthRowDepth = widthRowDepth; }
+    }
+    private BuildScope CaptureScope() => new(_surface, _condGate, _widthRowDepth);
+    private void RestoreScope(BuildScope s) { _surface = s.Surface; _condGate = s.Gate; _widthRowDepth = s.WidthRowDepth; }
+
+    // RowElement: an HLG row (Gap 0 = the default RowGap), optionally justified. A ConstrainsWindowMinWidth row is
+    // also recorded on the token so the renderer can derive the window's minimum width from its natural width
+    // (WindowToken.MeasureMinWidth / WindowRenderer.ContentMinWidth.cs). Its natural width is the HLG's preferred
+    // width — but a BubbleElement inside caps itself at its PARENT's laid-out width, so in a squeezed row each bubble
+    // would pin itself narrower, lowering the row's preferred width to ≈ the squeezed width: the measurement would
+    // ratchet down with the window and never ask for more room. So bubbles built under a marked row (depth > 0,
+    // carried into lazy Conditional branches by BuildDeferred) hug their natural width uncapped (BubbleBinding.NoCap).
+    private void BuildRow(RowElement r, Transform parent, WindowToken token)
+    {
+        if (r.ConstrainsWindowMinWidth) _widthRowDepth++;
+        try { BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode); }
+        finally { if (r.ConstrainsWindowMinWidth) _widthRowDepth--; }
+        var row = parent.GetChild(parent.childCount - 1);   // BuildLayout appends the row as the last child
+        if (r.ConstrainsWindowMinWidth && row is RectTransform rowRt) token.WidthRows.Add(rowRt);
+        if (r.Justify != RowJustify.Left && row.GetComponent<HorizontalLayoutGroup>() is { } hlg)
+            hlg.childAlignment = r.Justify == RowJustify.Center ? TextAnchor.MiddleCenter : TextAnchor.MiddleRight;
     }
 
     // Variable-length list bounded by Slots.Count; first VisibleCount() slots shown via SetActive.

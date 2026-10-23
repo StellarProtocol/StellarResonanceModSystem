@@ -137,6 +137,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             token.ZPopup = reg.Spec.DismissOnOutsideClick;
             token.ZSeq = _zseq++;
             ReorderWindows();
+            ApplyContentMinWidth(token, force: true);   // before ApplySavedRect, so the restore clamps to it (.ContentMinWidth.cs)
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
             return token;
         }
@@ -245,7 +246,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
         // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
         if (!hideAll && wasHidden) t.ResetLayout();
-        if (!hideAll) t.Apply();
+        if (!hideAll) { t.Apply(); ApplyContentMinWidth(t, force: false); }   // gated re-measure (.ContentMinWidth.cs)
     }
 
     public void SetRect(object? token, WindowRect rect)
@@ -254,17 +255,20 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // Clamp programmatic placement on-screen the SAME way drags do (WindowInteractionTicker →
         // LayoutStorage.ClampVisible): without this, a default/saved/plugin-supplied position (e.g. CombatMeter's
         // off-screen party-focus x) could drop a window fully off-canvas and unreachable, since drags clamp but
-        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor.
-        var clamped = ClampToScreen(t, rect);
-        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
+        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor. Size is clamped FIRST so the position
+        // clamp measures the final width (a content min-width widen can grow it — WindowRenderer.ContentMinWidth.cs).
         if (t.Resizable && rect.Width > 0f && rect.Height > 0f)
         {
             var min = Vector2.zero; var max = new Vector2(float.MaxValue, float.MaxValue);
             if (_ticker != null)
                 for (var i = 0; i < _ticker.DragResizers.Count; i++)
                     if (_ticker.DragResizers[i].Target == t.Rect) { min = _ticker.DragResizers[i].Min; max = _ticker.DragResizers[i].Max; break; }
-            t.Rect.sizeDelta = new Vector2(Mathf.Clamp(rect.Width, min.x, max.x), Mathf.Clamp(rect.Height, min.y, max.y));
+            var size = new Vector2(Mathf.Clamp(rect.Width, min.x, max.x), Mathf.Clamp(rect.Height, min.y, max.y));
+            t.Rect.sizeDelta = size;
+            rect = KeepWidenedOnScreen(new WindowRect(rect.X, rect.Y, size.x, size.y), rect.Width);
         }
+        var clamped = ClampToScreen(t, rect);
+        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero

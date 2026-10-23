@@ -58,6 +58,7 @@ internal sealed partial class WindowBuilder
         {
             Le = le, Child = child!, Parent = parent as RectTransform,
             MaxWidth = bubble.MaxWidth, PadX = padX * 2f,   // total horizontal padding (both sides)
+            NoCap = _widthRowDepth > 0,                      // inside a min-width row: hug natural (see BuildRow)
         };
         // Per-refresh fill colour (BubbleElement.FillColorFn, mirroring BarElement.FillColorFn): attach the override
         // ONLY when set, so a bubble that leaves it null keeps the static fill painted above with no machinery.

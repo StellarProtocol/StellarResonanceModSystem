@@ -20,6 +20,19 @@ public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 
     public RowElement(IReadOnlyList<HudElement> children, float gap)
         : this(children, gap, RowJustify.Left) { }
 #pragma warning restore STELLAR0004
+
+    /// <summary>When true, this row's NATURAL width (the sum of its children's preferred widths + gaps) becomes a
+    /// floor on the window's minimum width: the window can't be grip-resized narrower than the row needs, a saved
+    /// layout narrower than that is widened on load, and the window widens once if the requirement grows later (a
+    /// language / font-scale / theme change). The window never shrinks automatically. The window minimum is the
+    /// largest requirement across every marked row that is currently shown, never below
+    /// <see cref="Stellar.Abstractions.Domain.WindowSpec.MinWidth"/> and capped at
+    /// <see cref="Stellar.Abstractions.Domain.WindowSpec.MaxWidth"/>. Use it on a row that must never overflow in
+    /// any language (a tab strip, an input/action row). Only <see cref="Stellar.Abstractions.Domain.WindowSpec.Resizable"/>
+    /// windows are affected — a content-sized window already sizes to its content. A
+    /// <see cref="BubbleElement"/> nested inside a marked row hugs its natural width (it is not capped to its
+    /// parent's width), so it can't shrink the very measurement that is meant to make room for it.</summary>
+    public bool ConstrainsWindowMinWidth { get; init; }
 }
 
 /// <summary>Vertical layout container: children stacked top-to-bottom with optional spacing.</summary>
