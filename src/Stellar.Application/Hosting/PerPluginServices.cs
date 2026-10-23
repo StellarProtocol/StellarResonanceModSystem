@@ -148,6 +148,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IReShadeUniforms ReShadeUniforms => _reShadeUniforms ?? _shared.ReShadeUniforms;
     public IVoiceInjection Voice => _voice ?? _shared.Voice;
     public IPlayerProfile PlayerProfile => _shared.PlayerProfile;
+    public IFriends Friends => _shared.Friends;
 }
 
 /// <summary>

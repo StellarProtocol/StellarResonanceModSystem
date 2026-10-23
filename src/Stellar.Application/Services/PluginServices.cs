@@ -75,6 +75,7 @@ internal sealed class PluginServices : IPluginServices
     public IReShadeUniforms ReShadeUniforms => ReShade as IReShadeUniforms ?? UnavailableReShadeUniforms.Instance;
     public IVoiceInjection Voice { get; }
     public IPlayerProfile PlayerProfile { get; }
+    public IFriends Friends { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -137,7 +138,8 @@ internal sealed class PluginServices : IPluginServices
         IPluginDownloads downloads,
         IReShade reShade,
         IVoiceInjection voice,
-        IPlayerProfile playerProfile)
+        IPlayerProfile playerProfile,
+        IFriends friends)
     {
         Log = log;
         Framework = framework;
@@ -207,5 +209,6 @@ internal sealed class PluginServices : IPluginServices
         ReShade = reShade;
         Voice = voice;
         PlayerProfile = playerProfile;
+        Friends = friends;
     }
 }

@@ -7,6 +7,7 @@ public sealed partial class BootstrapPlugin
 {
     // ── Lua-polled chat sources (Wiring.ChatLua.cs) — data the wire capture can't see ──
     private SystemNoticeService? _systemNotices;
+    private FriendsService? _friendsService;   // IPluginServices.Friends
 
     /// <summary>
     /// Builds the Lua-polled chat services and subscribes them to the framework <c>Update</c> tick, which only fires
@@ -19,5 +20,9 @@ public sealed partial class BootstrapPlugin
         // the framework's interpolated server clock (same domain as wire chat timestamps), UtcNow before first sync.
         _systemNotices = new SystemNoticeService(_luaService!, _chatService!, () => _combatService?.ServerNowMs ?? 0L, log.Info);
         _framework!.Update += dt => _systemNotices!.Tick(dt);
+        // Friend list + private-chat conversations (IFriends): Lua-polled every 2.5 s in-world, rebuilt only on change;
+        // queued actions run the game's own coroutine VM calls on the next tick.
+        _friendsService = new FriendsService(_luaService!, log.Info);
+        _framework!.Update += dt => _friendsService!.Tick(dt);
     }
 }

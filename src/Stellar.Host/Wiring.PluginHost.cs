@@ -110,7 +110,8 @@ public sealed partial class BootstrapPlugin
             // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
             _reShadeService!, _voiceService!,
-            _playerProfileService!);
+            _playerProfileService!,
+            _friendsService!);
     }
 
     /// <summary>
