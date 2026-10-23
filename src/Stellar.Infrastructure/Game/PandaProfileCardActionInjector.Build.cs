@@ -23,6 +23,7 @@ internal sealed partial class PandaProfileCardActionInjector
         AddRaycastSurface(go);
         AddIcon(go.transform, spec, template.IconStyle, template.LabelStyle);
         AddLabel(go.transform, spec.Label, template);
+        AddDivider(go.transform, template.Divider);   // no-op when the native item had no recognisable divider
         return go;
     }
 

@@ -38,6 +38,19 @@ internal sealed partial class PandaProfileCardActionInjector
             Color = color;
         }
 
+        // Explicit geometry — for a node whose rect was re-expressed in another space (the divider when it
+        // is nested below the native item root; see DividerGeometry).
+        public NodeStyle(Vector2 anchor, Vector2 pivot, Vector2 anchoredPosition, Vector2 sizeDelta, Color color)
+        {
+            Found = true;
+            SizeDelta = sizeDelta;
+            AnchorMin = anchor;
+            AnchorMax = anchor;
+            Pivot = pivot;
+            AnchoredPosition = anchoredPosition;
+            Color = color;
+        }
+
         // Apply the captured geometry onto a freshly-built node's RectTransform.
         public void ApplyTo(RectTransform rt)
         {
@@ -50,18 +63,21 @@ internal sealed partial class PandaProfileCardActionInjector
     }
 
     // The native icon + label styling captured from a sibling button, plus the sibling's TMP label source
-    // (for font/material copy — geometry comes from LabelStyle). Passed to BuildButton's icon/label adders.
+    // (for font/material copy — geometry comes from LabelStyle), and the native item's divider line (absent
+    // when none was recognised). Passed to BuildButton's icon/label/divider adders.
     private readonly struct NativeActionTemplate
     {
         public readonly NodeStyle IconStyle;
         public readonly NodeStyle LabelStyle;
         public readonly TMP_Text? LabelSource;
+        public readonly NativeDivider Divider;
 
-        public NativeActionTemplate(NodeStyle iconStyle, NodeStyle labelStyle, TMP_Text? labelSource)
+        public NativeActionTemplate(NodeStyle iconStyle, NodeStyle labelStyle, TMP_Text? labelSource, NativeDivider divider)
         {
             IconStyle = iconStyle;
             LabelStyle = labelStyle;
             LabelSource = labelSource;
+            Divider = divider;
         }
     }
 
@@ -79,7 +95,8 @@ internal sealed partial class PandaProfileCardActionInjector
 
         var iconStyle = CaptureIconStyle(sibling, label);
         DiagNativeTemplate(iconStyle, labelStyle);
-        return new NativeActionTemplate(iconStyle, labelStyle, label);
+        var divider = CaptureDivider(sibling, label);
+        return new NativeActionTemplate(iconStyle, labelStyle, label, divider);
     }
 
     // Pick the native ICON graphic under the sibling. Heuristic, in priority order:
