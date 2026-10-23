@@ -1,5 +1,6 @@
 using System;
 using Stellar.Abstractions.Domain;
+using Stellar.Abstractions.Services;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.Game;
