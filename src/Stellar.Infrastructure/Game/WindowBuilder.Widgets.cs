@@ -303,7 +303,9 @@ internal sealed partial class WindowBuilder
         // (WindowService → IWindowAutoFocus.TryFocusAutoField). ??= → first one built wins per window.
         if (inp.AutoFocus) token.AutoFocusField ??= field;
         var focusReq = inp.FocusRequest;   // on-demand focus (null = none); first value is the baseline, not a request
-        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0 });
+        var ph = inp.Placeholder?.Invoke() ?? "";   // empty-field hint (null Func = none), re-polled by the binding
+        if (ph.Length > 0) field.SetPlaceholder(ph);
+        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph });
     }
 
     // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where

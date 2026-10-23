@@ -22,7 +22,7 @@ namespace Stellar.Infrastructure.Game;
 /// reporting for the keyboard gate); this class only adapts the field and adds atomic-tag deletion
 /// (<see cref="SpriteTagEdit"/>). Game-only file (TMP types): never symlink it into the Mono UI-sandbox.
 /// </summary>
-internal sealed class TmpRichInputField : IRichInputField
+internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
 {
     private const int FontPx = 13;   // = the legacy field's Text size
 
@@ -116,6 +116,20 @@ internal sealed class TmpRichInputField : IRichInputField
         _viewport.offsetMin = new Vector2(leftPad, _viewport.offsetMin.y);
         _viewport.offsetMax = new Vector2(-leftPad, _viewport.offsetMax.y);
         _f.customCaretColor = true; _f.caretColor = textColor;
+    }
+
+    // TMP_InputField already toggles the Placeholder graphic itself (shown while the text is empty). Its face is picked
+    // per string like the field text (Restyle): the Placeholder was built on the UI face, which has no CJK glyphs, so a
+    // ja/ko hint would draw as boxes.
+    public void SetPlaceholder(string text)
+    {
+        text ??= string.Empty;
+        if (_ph.text == text) return;
+        var cjk = TextFacePick.For(text) == FaceScript.Cjk;
+        var face = cjk ? TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold : null;
+        face ??= TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
+        if (face != null && _ph.font != face) _ph.font = face;
+        _ph.text = text;
     }
 
     public bool TryActivateFocus()

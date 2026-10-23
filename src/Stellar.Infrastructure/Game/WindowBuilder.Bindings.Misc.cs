@@ -54,6 +54,9 @@ internal sealed partial class WindowBuilder
         // (LastFocus = the first value), so a (re)mount never fires one on its own.
         public Func<int>? FocusReq;
         public int LastFocus;
+        // InputElement.Placeholder: diffed so an unchanged hint writes nothing (null Func = no hint).
+        public Func<string>? PlaceholderFn;
+        public string LastPlaceholder = "";
         public void Apply()
         {
             if (Field == null) return;
@@ -62,6 +65,11 @@ internal sealed partial class WindowBuilder
             {
                 Last = v;
                 if (Field.Text != v) Field.SetText(v);
+            }
+            if (PlaceholderFn != null)
+            {
+                var p = PlaceholderFn() ?? "";
+                if (!string.Equals(p, LastPlaceholder, StringComparison.Ordinal)) { LastPlaceholder = p; Field.SetPlaceholder(p); }
             }
             // After the text re-seed, so a picker's append + focus request in one click lands text first, then focus
             // (the caret-to-end runs once the field reports focused — see UGuiTextInput.FocusRequest.cs).

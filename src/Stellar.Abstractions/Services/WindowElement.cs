@@ -145,6 +145,12 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// hidden window) is dropped after a short wait rather than firing later. Default null = unchanged. Init
     /// property (NOT a ctor param) for binary compatibility.</summary>
     public Func<int>? FocusRequest { get; init; }
+
+    /// <summary>Opt-in hint text shown dimmed inside the field while it is EMPTY (e.g. "Message Guild…"), in both the
+    /// plain and the <see cref="RichEmoji"/> field. Polled with the window refresh and diffed, so it can follow live
+    /// state; return a cached string (it is read every refresh). Default null = no hint, unchanged. Init property
+    /// (NOT a ctor param) for binary compatibility.</summary>
+    public Func<string>? Placeholder { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline

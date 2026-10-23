@@ -241,6 +241,7 @@ internal sealed partial class UGuiTextInput
     public void SetFont(Font? font)
     {
         if (_field?.textComponent != null && font != null) _field.textComponent.font = font;
+        if (_placeholder != null && font != null) _placeholder.font = font;   // legacy hint (.Placeholder.cs)
     }
 
     /// <summary>Seed the field text (e.g. from a window InputElement's Get()). No-op if not built. The rich field
@@ -256,6 +257,7 @@ internal sealed partial class UGuiTextInput
     public void ApplyStyle(Sprite? bgSprite, Color bgColor, Color textColor, float leftPad)
     {
         if (_field == null && _rich == null) return;
+        RememberPlaceholderStyle(textColor, leftPad);   // legacy hint follows the text style (.Placeholder.cs)
         if (_bg is { } img)
         {
             img.color = bgColor;
@@ -335,6 +337,7 @@ internal sealed partial class UGuiTextInput
         ResetFocusRequest();
         _field = null;
         _rich = null;
+        _placeholder = null;
         _bg = null; _scroll = null; _fieldRect = null; _textRightReserve = 0f;   // TextArea state (.TextArea.cs)
         _lastFieldSize = new Vector2(-1f, -1f); _lastCaret = -1; _followUntilFrame = -1;
         _caretRenderer = null; _clipMasks.Clear();

@@ -73,6 +73,14 @@ internal interface IRichInputField
     void Tick();
 }
 
+/// <summary>Optional rich-field capability, kept out of <see cref="IRichInputField"/> (8-member interface cap): the
+/// InputElement.Placeholder hint TMP shows while the field is empty. UGuiTextInput queries it with <c>as</c>.</summary>
+internal interface IRichInputPlaceholder
+{
+    /// <summary>Set the empty-field hint; "" hides it.</summary>
+    void SetPlaceholder(string text);
+}
+
 /// <summary>Creation inputs for a styled text element (initial values; live updates go through the
 /// handle). Styles are per-element constants — only the string and colour are live-bound.</summary>
 internal readonly struct StyledTextSpec

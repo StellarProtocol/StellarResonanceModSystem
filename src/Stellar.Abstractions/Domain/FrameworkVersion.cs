@@ -35,7 +35,8 @@ public static class FrameworkVersion
     /// <c>TextElement.RichEmoji</c> / <c>InputElement.RichEmoji</c> (TMP text / TMP_InputField with the game's chat
     /// sprite asset, so <c>&lt;sprite=N&gt;</c> draws as an emoji image — falls back to plain uGUI when TMP or the
     /// rich field is unavailable); <c>InputElement.FocusRequest</c> (counter token: a change focuses the field with
-    /// the caret at the end); <c>VirtualListElement.OnAtBottomChanged</c> (reports the stick-to-bottom pin decision)
+    /// the caret at the end); <c>InputElement.Placeholder</c> (polled hint text shown while the field is empty, both
+    /// field kinds); <c>VirtualListElement.OnAtBottomChanged</c> (reports the stick-to-bottom pin decision)
     /// and <c>ScrollToBottomRequest</c> (counter token: forces the bottom pin until unmeasured rows settle) —
     /// VariableHeight + StickToBottom only; <c>SelectableElement.OnRightClick</c> (right-button-down, ticker hook,
     /// FrontWindowBlocks-aware); <c>ListElement.OnReorder(from, to)</c> (ticker-driven drag reorder,
