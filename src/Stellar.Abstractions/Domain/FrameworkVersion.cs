@@ -31,7 +31,23 @@ public static class FrameworkVersion
     /// framework has no compile-time <c>UniTask</c> reference, so it mirrors <c>GameAssetsService</c>'s reflected
     /// <c>Status</c>/<c>GetAwaiter</c>/<c>GetResult</c> poll rather than awaiting). The service returns only the
     /// URL — the consumer owns downloading, caching and texture creation. Intended for chat / nameplate avatars.
-    /// New service only — additive, binary-compatible with plugins built against ≤2.25.5.
+    /// 2.26.0 also adds window-element API for chat-style UIs (all <c>init</c> props, not ctor params):
+    /// <c>TextElement.RichEmoji</c> / <c>InputElement.RichEmoji</c> (TMP text / TMP_InputField with the game's chat
+    /// sprite asset, so <c>&lt;sprite=N&gt;</c> draws as an emoji image — falls back to plain uGUI when TMP or the
+    /// rich field is unavailable); <c>InputElement.FocusRequest</c> (counter token: a change focuses the field with
+    /// the caret at the end); <c>VirtualListElement.OnAtBottomChanged</c> (reports the stick-to-bottom pin decision)
+    /// and <c>ScrollToBottomRequest</c> (counter token: forces the bottom pin until unmeasured rows settle) —
+    /// VariableHeight + StickToBottom only; <c>SelectableElement.OnRightClick</c> (right-button-down, ticker hook,
+    /// FrontWindowBlocks-aware); <c>ListElement.OnReorder(from, to)</c> (ticker-driven drag reorder,
+    /// remove-then-insert indices, never fires for a no-op). <c>IWindowHost.PrewarmText(string)</c> is a new member
+    /// WITH a default no-op body (implementors keep compiling): the framework rasterizes the text's missing TMP glyphs
+    /// a few per rendered frame (≤8 glyphs / ~3 ms) ahead of layout — a plugin that calls it needs ≥2.26.0.
+    /// <c>HitchProbe.Count(name, n)</c> adds per-frame <c>[Hitch]</c> event counters (<c>name=#N</c>).
+    /// Rendering changes behind the same release (login chat-history freeze fix, 0.9–4.3 s → ~70 ms): TMP dynamic
+    /// faces sample at 48 pt / pad 5 instead of 90 / 9 (~3.5× cheaper per glyph, same SDF spread), and a
+    /// variable-height <c>VirtualListElement</c> keeps at most 8 not-yet-measured rows active at once (the rest
+    /// stay inactive until a latch frees budget; Conditionals inside an inactive slot don't poll or lazy-build).
+    /// Additive throughout — binary-compatible with plugins built against ≤2.25.5.
     /// 2.25.5 is a fix: switching chat tabs/channels (any <c>ResetScroll</c> on a variable-height
     /// <c>VirtualListElement</c>) — and, more briefly, a burst of new messages — no longer FLASHES the rows
     /// overlapping each other for a couple of frames before they settle into place. On a <c>ResetScroll</c> every
