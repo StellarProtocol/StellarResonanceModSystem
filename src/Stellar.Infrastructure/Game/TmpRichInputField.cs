@@ -128,6 +128,14 @@ internal sealed class TmpRichInputField : IRichInputField
 
     public void Deactivate() => _f?.DeactivateInputField(false);
 
+    // Same STRING-index write SetText(caretToEnd) uses (validated): stringPosition sets both ends of the selection,
+    // so it also collapses one. Not MoveTextEnd — with rich text TMP maps it through visible-character indices.
+    public void CaretToEnd()
+    {
+        if (_f == null) return;
+        _f.stringPosition = Text.Length;
+    }
+
     // A tag shown before the sprite asset resolved prints literally; once it resolves (throttled probe inside,
     // only while a tag is present) assign it and re-label so the pictures appear without an edit.
     public void Tick()

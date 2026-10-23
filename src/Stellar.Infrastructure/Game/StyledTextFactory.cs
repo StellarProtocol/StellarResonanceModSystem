@@ -65,6 +65,10 @@ internal interface IRichInputField
     /// <summary>End editing (Esc / programmatic defocus).</summary>
     void Deactivate();
 
+    /// <summary>Collapse the selection and put the caret at the END of the raw text (after a trailing tag) — the
+    /// InputElement.FocusRequest caret placement, run once focus is confirmed.</summary>
+    void CaretToEnd();
+
     /// <summary>Per-frame housekeeping (late sprite-asset resolve). Cheap no-op once settled.</summary>
     void Tick();
 }

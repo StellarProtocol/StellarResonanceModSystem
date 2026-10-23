@@ -295,6 +295,7 @@ internal sealed partial class UGuiTextInput
         // (held Enter / OS key-repeat fires one submit, not one per frame).
         if (!EnterHeld()) _enterLatched = false;
         _rich?.Tick();
+        TickFocusRequest();   // InputElement.FocusRequest (.FocusRequest.cs) — before the focus edge is sampled
         var focused = FieldFocused;
 
         if (focused && !_wasFocused)
@@ -331,6 +332,7 @@ internal sealed partial class UGuiTextInput
         _wasFocused = false;   // always reset so a later Build() on a reused instance is clean
         _enterLatched = false;
         _submitGrace = false;
+        ResetFocusRequest();
         _field = null;
         _rich = null;
         _bg = null; _scroll = null; _fieldRect = null; _textRightReserve = 0f;   // TextArea state (.TextArea.cs)

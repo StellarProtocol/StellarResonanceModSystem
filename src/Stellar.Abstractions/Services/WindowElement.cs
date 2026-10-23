@@ -134,6 +134,17 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// when the rich field can't be built. Default false = unchanged. Init property (NOT a ctor param) for binary
     /// compatibility.</summary>
     public bool RichEmoji { get; init; }
+
+    /// <summary>Opt-in: focus this field ON DEMAND, at any time (not just on window open like <see cref="AutoFocus"/>).
+    /// The framework polls the returned number; whenever it CHANGES (the first value observed when the window is
+    /// built never counts), the field takes keyboard focus the same way a click on it would, with the caret at the
+    /// END of the text and nothing selected — so the user can keep typing. Typical use: an emoji/insert picker
+    /// whose click would otherwise leave the field unfocused — keep an int, increment it in the click handler, and
+    /// bind <c>FocusRequest = () =&gt; _seq</c>. While focused the game's keyboard is suppressed as for any focused
+    /// field; Esc/click-away release it. A request on a field that isn't visible (collapsed ConditionalElement,
+    /// hidden window) is dropped after a short wait rather than firing later. Default null = unchanged. Init
+    /// property (NOT a ctor param) for binary compatibility.</summary>
+    public Func<int>? FocusRequest { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline

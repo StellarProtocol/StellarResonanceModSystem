@@ -50,13 +50,26 @@ internal sealed partial class WindowBuilder
         public UGuiTextInput Field = null!;
         public Func<string> Get = null!;
         public string Last = "";
+        // InputElement.FocusRequest: a CHANGE of the polled value asks the field for focus. Seeded at build time
+        // (LastFocus = the first value), so a (re)mount never fires one on its own.
+        public Func<int>? FocusReq;
+        public int LastFocus;
         public void Apply()
         {
             if (Field == null) return;
             var v = Get();
-            if (v == Last) return;
-            Last = v;
-            if (Field.Text != v) Field.SetText(v);
+            if (v != Last)
+            {
+                Last = v;
+                if (Field.Text != v) Field.SetText(v);
+            }
+            // After the text re-seed, so a picker's append + focus request in one click lands text first, then focus
+            // (the caret-to-end runs once the field reports focused — see UGuiTextInput.FocusRequest.cs).
+            if (FocusReq == null) return;
+            var f = FocusReq();
+            if (f == LastFocus) return;
+            LastFocus = f;
+            Field.RequestFocus();
         }
     }
 
