@@ -95,6 +95,14 @@ internal sealed partial class PandaProfileCardActionInjector
         _log.Info($"[IdCard] action '{actionId}' hit-test click -> charId={charId}");
     }
 
+    // Per-press: a press on an action turned into a drag (pointer travel / action-bar scroll), so its release
+    // won't fire. Confirms the drag-scroll suppression in-game and gives real deltas to tune the thresholds.
+    private void DiagPressCancelled(string actionId, string reason, float delta)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        _log.Info($"[IdCard] action '{actionId}' press cancelled ({reason}, delta={delta:F1})");
+    }
+
     // One-shot per process: the Lua bridge (mainState/DoString/LuaGetGlobal/LuaToInteger/LuaPop) resolved,
     // so click-time charId reads are live. Useful to confirm the bridge bound; not a steady-state event.
     private void DiagLuaResolved()
