@@ -121,6 +121,19 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// than one field in a window sets it, the first one built wins. Default false = unchanged. Added as an init
     /// property (NOT a ctor param) so the record stays source + binary compatible with already-compiled plugins.</summary>
     public bool AutoFocus { get; init; }
+
+    /// <summary>Opt-in: draw inline chat emoji tags (<c>&lt;sprite=N&gt;</c>, N = 1..63) in the field as the game's
+    /// emoji PICTURES — like the game's own chat input box — instead of the literal tag text. The tag stays in the
+    /// text unchanged (Get / OnChange / Submit all see <c>&lt;sprite=N&gt;</c>), the caret steps over a picture as
+    /// one character, and one Backspace/Delete removes the whole tag. When <see cref="Get"/> changes externally
+    /// (e.g. a picker appended a tag) the field shows it and the caret moves to the END. Other behaviour (Enter
+    /// submit without opening chat, Esc, keyboard gate, <see cref="SingleLine"/>, <see cref="AutoFocus"/>) is the
+    /// same; one difference: focusing does NOT select all, so a click places the caret instead of arming a
+    /// replace-everything. Same per-string font limitation as <see cref="TextElement.RichEmoji"/> (one face per
+    /// string: mixed Thai + CJK shows boxes for one script). Window surfaces only; falls back to the plain field
+    /// when the rich field can't be built. Default false = unchanged. Init property (NOT a ctor param) for binary
+    /// compatibility.</summary>
+    public bool RichEmoji { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline

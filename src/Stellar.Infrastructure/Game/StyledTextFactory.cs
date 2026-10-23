@@ -1,6 +1,7 @@
 using System;
 using Stellar.Abstractions.Services;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
 
@@ -16,6 +17,56 @@ internal static class StyledTextFactory
 {
     /// <summary>Game-only factory for a real-bold text element. Null → callers use the legacy Text path.</summary>
     public static Func<Transform, StyledTextSpec, IStyledTextHandle?>? CreateBold;
+
+    /// <summary>Game-only factory for the TMP rich-emoji text field (InputElement.RichEmoji): builds the
+    /// TMP_InputField onto the given (already boxed) root. Null → UGuiTextInput builds the legacy InputField.</summary>
+    public static Func<GameObject, RichInputSpec, IRichInputField?>? CreateRichInput;
+
+    /// <summary>One-line diagnostics sink for the shared builders (wired with the factories).</summary>
+    public static Action<string>? Log;
+}
+
+/// <summary>Creation inputs for a rich-emoji text field. <see cref="Target"/> is the root's bg Image (the
+/// Selectable targetGraphic); the callbacks are UGuiTextInput's own onValueChanged / single-line onSubmit
+/// handlers, so the strip/submit/grace logic stays in one place for both field kinds.</summary>
+internal readonly struct RichInputSpec
+{
+    public readonly bool SingleLine;
+    public readonly Graphic Target;
+    public readonly Action<string> OnValueChanged;
+    public readonly Action<string> OnSubmit;
+
+    public RichInputSpec(bool singleLine, Graphic target, Action<string> onValueChanged, Action<string> onSubmit)
+    {
+        SingleLine = singleLine; Target = target; OnValueChanged = onValueChanged; OnSubmit = onSubmit;
+    }
+}
+
+/// <summary>The few field operations UGuiTextInput needs, so the TMP field (game-only) sits behind the same
+/// class as the legacy InputField without this sandbox-shared code touching TMP types.</summary>
+internal interface IRichInputField
+{
+    /// <summary>Raw field focus (TMP_InputField.isFocused); UGuiTextInput adds the submit grace on top.</summary>
+    bool IsFocused { get; }
+
+    /// <summary>Current text, tags included.</summary>
+    string Text { get; }
+
+    /// <summary>Framework write (external Get() change or newline strip). Fires onValueChanged like the legacy
+    /// text setter; never treated as a user edit. <paramref name="caretToEnd"/> moves the caret to the end.</summary>
+    void SetText(string value, bool caretToEnd);
+
+    /// <summary>Text/placeholder/caret colour + horizontal inner padding (the bg is themed by the owner).</summary>
+    void ApplyStyle(Color textColor, float leftPad);
+
+    /// <summary>Select + ActivateInputField; false while the GameObject is inactive in the hierarchy.</summary>
+    bool TryActivateFocus();
+
+    /// <summary>End editing (Esc / programmatic defocus).</summary>
+    void Deactivate();
+
+    /// <summary>Per-frame housekeeping (late sprite-asset resolve). Cheap no-op once settled.</summary>
+    void Tick();
 }
 
 /// <summary>Creation inputs for a styled text element (initial values; live updates go through the

@@ -124,6 +124,8 @@ internal sealed class TmpStyledText : IStyledTextHandle
     {
         StyledTextFactory.CreateBold ??= TryCreate;
         TmpEmojiSprites.Log ??= log;   // RichEmoji sprite-asset resolution outcome (one line per outcome)
+        StyledTextFactory.Log ??= log;
+        TmpRichInputField.Register();  // InputElement.RichEmoji field (same TMP faces + sprite asset)
     }
 
     private static IStyledTextHandle? TryCreate(Transform parent, StyledTextSpec spec)
