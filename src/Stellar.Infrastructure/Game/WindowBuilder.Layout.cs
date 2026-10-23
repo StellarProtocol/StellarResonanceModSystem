@@ -109,5 +109,27 @@ internal sealed partial class WindowBuilder
             slots[i] = slot;
         }
         token.Lists.Add(new ListBinding { Count = list.VisibleCount, Slots = slots });
+        if (list.OnReorder != null && RegisterReorderList != null)
+        {
+            var cells = new RectTransform[slots.Length];
+            for (var i = 0; i < slots.Length; i++) cells[i] = slots[i].GetComponent<RectTransform>();
+            RegisterReorderList(new ReorderListReg
+            {
+                List = go.GetComponent<RectTransform>(), Cells = cells, Count = list.VisibleCount,
+                Grid = list.Columns > 1, OnReorder = list.OnReorder, Accent = _assets.MenuAccent,
+            });
+        }
+    }
+
+    // ListElement.OnReorder registration payload (the ticker keeps these; see WindowInteractionTicker.Reorder.cs).
+    // Cells are the list's Slot rects in index order — the first Count() of them are the live items.
+    internal sealed class ReorderListReg
+    {
+        public RectTransform List = null!;
+        public RectTransform[] Cells = null!;
+        public Func<int> Count = null!;
+        public bool Grid;   // multi-column → insertion is left/right of a cell; single column → above/below a row
+        public Action<int, int> OnReorder = null!;
+        public Color Accent;   // insertion-bar colour (the menu accent at build time)
     }
 }

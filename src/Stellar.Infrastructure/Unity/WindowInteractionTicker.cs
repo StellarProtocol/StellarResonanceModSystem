@@ -94,7 +94,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
         for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
-        PruneChartPans(); PruneChartNavs();
+        PruneChartPans(); PruneChartNavs(); PruneReorder();
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -185,6 +185,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         // A press over an open popup belongs to the popup (its uGUI buttons) — never grab a window/slot beneath it.
         if (PointerOverPopup(Input.mousePosition)) { _lastMouse = Input.mousePosition; return; }
+        // A press on a reorderable list item (ListElement.OnReorder, .Reorder.cs) claims the pointer before any window drag.
+        if (BeginReorderPress(Input.mousePosition)) { EditDragArbiter.WindowDragActive = true; _lastMouse = Input.mousePosition; return; }
         // Render-host (3D portrait) drag claims the pointer first so dragging the box orbits its camera.
         _activeRenderHost = HitRenderHost(Input.mousePosition);
         if (_activeRenderHost >= 0) { _lastMouse = Input.mousePosition; return; }
@@ -214,6 +216,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     // Mouse-held: drive whichever single interaction was claimed on mouse-down.
     private void TickActivePointer()
     {
+        if (_rl != null) { TickReorder(); return; }
         if (_activeRenderHost >= 0) { TickRenderHostDrag(); return; }
         if (_activeChartPan >= 0) { TickChartPanDrag(); return; }
         if (_activeChartNav >= 0) { TickChartNavDrag(); return; }
@@ -249,6 +252,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void ReleasePointer()
     {
         if (_activeSlotDrag >= 0) EndSlotDrag(commit: true);
+        ReleaseReorder();
         _activeDrag = -1; _activeWinDrag = null; _activeResize = -1; _activeRenderHost = -1; _activeChartPan = -1;
         _activeChartNav = -1; _navGrab = NavGrab.None;
         EditDragArbiter.WindowDragActive = false;

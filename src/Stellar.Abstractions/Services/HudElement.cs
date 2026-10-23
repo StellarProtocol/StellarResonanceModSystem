@@ -276,4 +276,17 @@ public sealed record ListElement(Func<int> VisibleCount, IReadOnlyList<HudElemen
     /// a new ctor param would be a MissingMethodException at runtime (see WindowBuilder-Patterns.md "Binary
     /// compatibility rules").</summary>
     public bool FillWidth { get; init; }
+
+    /// <summary>Optional — turns on drag-and-drop REORDERING of the visible items. A press on an item that moves past
+    /// a small threshold (~6 screen px) starts a drag: the item dims, a ghost follows the cursor and an accent bar
+    /// marks the insertion point (between grid cells, or between rows for a 1-column list). Dropping fires
+    /// <c>OnReorder(from, to)</c> with REMOVE-THEN-INSERT semantics — <c>to</c> is the item's index AFTER the move,
+    /// so the consumer does <c>var x = list[from]; list.RemoveAt(from); list.Insert(to, x);</c>. It never fires for a
+    /// no-op drop (<c>from == to</c>). Esc, or a drop outside the list (outside its scroll viewport when it sits in a
+    /// <see cref="ScrollElement"/>), cancels. A press released before the threshold is an ordinary click (the item's
+    /// own <see cref="SelectableElement.OnClick"/> still fires); after a real drag the click is swallowed. The drag
+    /// never moves the window or scrolls the enclosing scroll view. The grid does not reflow mid-drag — the consumer
+    /// reorders its data and the list re-pulls. Default null = not reorderable. Init property, NOT a ctor param
+    /// (binary compatibility).</summary>
+    public Action<int, int>? OnReorder { get; init; }
 }

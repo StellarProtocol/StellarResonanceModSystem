@@ -441,6 +441,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
+        _builder.RegisterReorderList = reg => _ticker!.ReorderLists.Add(reg);
+        _builder.ClickSuppressed = () => _ticker != null && _ticker.ReorderSuppressesClick;
         _builder.RegisterDismissable = (root, dismiss) => _ticker!.Dismissables.Add((root, dismiss));
         _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
         _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(

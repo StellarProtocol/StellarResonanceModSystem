@@ -69,6 +69,12 @@ internal sealed partial class WindowBuilder
     // cell. Used by the CombatMeter row context menu. Null in the sandbox → right-click is inert.
     internal Action<RectTransform, Action>? RegisterRightClick { get; set; }
 
+    // Drag-reorder hook for ListElement.OnReorder: the ticker drives the press→threshold→drag→drop gesture over the
+    // list's slots (ghost + insertion bar + scroll lock). ClickSuppressed: true while/just after a reorder drag, so
+    // the Selectable click the EventSystem may deliver on the release is swallowed. Null in the sandbox → static.
+    internal Action<ReorderListReg>? RegisterReorderList { get; set; }
+    internal Func<bool>? ClickSuppressed { get; set; }
+
     // Render-texture host hook: (RawImage, boxed-texture supplier, drag cb, scroll cb, pan cb) → the ticker binds
     // the texture each frame and routes drag (orbit), scroll (zoom) and shift+drag (pan) over the box to the
     // callbacks. Used by the inspector 3D portrait. Null in the sandbox → the box stays blank.

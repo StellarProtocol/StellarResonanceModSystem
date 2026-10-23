@@ -45,7 +45,10 @@ internal sealed partial class WindowBuilder
         DisableKeyboardNav(btn);
         // Release the EventSystem selection after the click so a clicked row doesn't linger as
         // currentSelectedGameObject (which makes the game route WASD into chat instead of movement).
-        var onClick = sel.OnClick; btn.onClick.AddListener((UnityAction)(() => { onClick(); ClearSelectionAfterClick(); }));
+        // A release that ends a ListElement drag-reorder may still be delivered as a click (drop back on the same
+        // cell inside the EventSystem's own drag threshold) — ClickSuppressed swallows it so a drag never "clicks".
+        var onClick = sel.OnClick;
+        btn.onClick.AddListener((UnityAction)(() => { if (ClickSuppressed?.Invoke() != true) onClick(); ClearSelectionAfterClick(); }));
 
         // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h); CSF sizes the row
         // height to content (same combo as BuildTile).
