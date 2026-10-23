@@ -40,7 +40,12 @@ namespace Stellar.Infrastructure.Game;
 /// game's own action buttons are <c>Panda.ZUi.ZButton</c>s driven by a different path), so
 /// <see cref="Tick"/> edge-tracks <c>Input.GetMouseButton(0)</c> and hit-tests each injected button's
 /// actual <c>RectTransform</c> (mirroring <c>WindowInteractionTicker</c>), resolving the canvas camera
-/// from the ROOT canvas (see <see cref="ResolveCanvasCamera"/>).</para>
+/// from the ROOT canvas (see <see cref="ResolveCanvasCamera"/>). It follows Unity/ZButton click semantics
+/// (see the <c>.Click.cs</c> partial): the PRESS only arms a pending click on the button under the
+/// pointer; the action fires on RELEASE over that SAME button, and the pending click is cancelled if the
+/// press became a drag — pointer travel past the drag threshold, or the action-bar <c>ZScrollRect</c>
+/// content's <c>anchoredPosition</c> moving (the bar is drag-scrollable, so firing on press used to
+/// trigger an action whenever the user grabbed the bar on one of our buttons to scroll it).</para>
 ///
 /// <para><b>charId</b> is read at click time straight from the open <c>idcard</c> view via the Lua
 /// bridge: <c>Z.UIMgr:GetView("idcard").cardId_</c> (the view stores <c>self.cardId_ = self.viewData.cardId</c>,
@@ -100,7 +105,6 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
     private MethodInfo? _luaGetGlobal;
     private MethodInfo? _luaToInteger;
     private MethodInfo? _luaPop;
-    private bool _wasMouseDown;
 
     // Cached persistent UI root. The naive form called GameObject.Find(CardRootPath) — a full by-name scan
     // of the WHOLE scene hierarchy — EVERY frame, even though the idcard popup is closed ~all the time in
@@ -126,6 +130,8 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
         {
             _injectedThisOpen = false;   // card closed (or never open) — arm for the next open
             _injected.Clear();
+            _content = null;
+            ResetClickState();           // a press held across the close must not fire on the next card
             return;
         }
 
@@ -173,6 +179,9 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
 
         var size = SiblingSize(sibling);
         _injected.Clear();
+        _pressed = null;   // the old entries are gone — a pending press can't refer to them
+        // The scroll content the buttons live in; its anchoredPosition moving = the bar is being scrolled.
+        _content = layout.TryCast<RectTransform>();
         foreach (var spec in actions)
         {
             // Idempotent: a previous tick may already have built this button under the card.
@@ -209,55 +218,6 @@ internal sealed partial class PandaProfileCardActionInjector : IDisposable
         var btnRt = sibling.TryCast<RectTransform>();
         if (btnRt != null && btnRt.sizeDelta.x > 1f && btnRt.sizeDelta.y > 1f) return btnRt.sizeDelta;
         return FallbackSize;
-    }
-
-    // Left-mouse-down hit-test against EACH injected button's ACTUAL rect. The action bar is a game-managed
-    // list whose ORDER varies per open, so hit-testing each button's own rect (rather than a fixed slot) is
-    // correct. We edge-track the HELD state ourselves (GetMouseButton level) rather than GetMouseButtonDown:
-    // this Tick runs on the Panda Game.Update loop, which doesn't align with the Unity frame where the
-    // down-edge is true, so GetMouseButtonDown was missed on most clicks (the "needs 10-15 clicks" symptom).
-    private void DetectManualClick()
-    {
-        if (_injected.Count == 0) { _wasMouseDown = false; return; }
-
-        var down = Input.GetMouseButton(0);
-        var pressed = down && !_wasMouseDown;
-        _wasMouseDown = down;
-        if (!pressed) return;
-
-        for (var i = 0; i < _injected.Count; i++)
-        {
-            var hit = _injected[i];
-            if (hit.Go == null || hit.Rt == null || !hit.Go.activeInHierarchy) continue;
-            var cam = ResolveCanvasCamera(hit.Go);
-            if (!RectTransformUtility.RectangleContainsScreenPoint(hit.Rt, Input.mousePosition, cam)) continue;
-            InvokeAction(hit.Spec);
-            return;   // a single click resolves to one button
-        }
-    }
-
-    // The camera RectangleContainsScreenPoint needs for a Camera/World-space canvas; null for a
-    // ScreenSpaceOverlay canvas. Resolve from the ROOT canvas, not the nearest one: a nested sub-canvas can
-    // report a null/wrong worldCamera while the rootCanvas carries the correct one.
-    private static Camera? ResolveCanvasCamera(GameObject go)
-    {
-        var canvas = go.GetComponentInParent<Canvas>()?.rootCanvas;
-        return canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
-    }
-
-    private void InvokeAction(ProfileCardActionSpec spec)
-    {
-        try
-        {
-            var charId = ReadOpenCardCharId();
-            if (charId <= 0) return;   // unreadable open-card charId — gated DiagCardIdReadFailed already noted it
-            DiagHitTestClick(spec.Id, charId);
-            spec.OnClick(new EntityId((charId << 16) | 640L));
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"[IdCard] action '{spec.Id}' click threw: {ex.GetType().Name}: {ex.Message}");
-        }
     }
 
     /// <summary>Destroys the rasterised action-icon textures (framework reload / teardown).</summary>
