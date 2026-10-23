@@ -299,9 +299,14 @@ internal sealed partial class WindowBuilder
         public GameObject Then = null!;
         public GameObject? Else;
         public Action? BuildThen, BuildElse;   // pending lazy branch builds; cleared once run (WindowBuilder.Layout)
+        // Enclosing variable-list slot (null = not in one). While that slot is inactive — past the end, or held back
+        // by the first-build cap — the Cond is idle: no When() poll, no lazy branch build. The vlist pass runs FIRST in
+        // WindowToken.Apply, so a slot admitted this apply is already active when this runs: same-apply catch-up.
+        public GameObject? Gate;
         private bool _init, _last;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
+            if (Gate != null && !Gate.activeSelf) return false;
             var b = When();
             if (_init && b == _last) return false;
             // Build the branch about to show, once (cleared BEFORE invoking so a throwing build can't retry forever).

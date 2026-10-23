@@ -10,6 +10,54 @@ internal sealed partial class WindowBuilder
 {
     internal sealed partial class VariableListBinding
     {
+        // First-build cap: at most this many NOT-yet-latched rows are active (bound + measured) at once. Binding a row
+        // to content it has never shown is the expensive part of a window apply — the slot's lazy Cond branch build,
+        // TMP glyph rasterization during the forced layout, the avatar poll, the bubble width-solve — and a login
+        // history batch or a tab switch used to do ~40 of them in ONE apply (a 0.9-4.3 s freeze). Each admitted row
+        // latches in ~2 applies (the stable-confirm) and frees its budget, so a full pool fills in over a few applies.
+        // Fixed constant (no adaptive tuning): 8 ≈ one viewport of chat rows, so the VISIBLE window still fills in
+        // the first round.
+        private const int MaxUnlatchedRows = 8;
+        private bool[] _admit = System.Array.Empty<bool>();   // per SLOT: shown this Reposition (PlanAdmission's verdict)
+        // per DATA INDEX: this index has latched at least once since the last ResetState. A width/count
+        // InvalidateHeights drops the latch but the content under the index is the same (re-wrap) or a one-row ring
+        // neighbour that has already been laid out, so its re-measure is cheap — exempt from the cap so a resize or a
+        // ring front-drop re-latches the whole window as fast as before. ResetState (new tab) clears it.
+        private bool[] _seen = System.Array.Empty<bool>();
+
+        // Decide, per pool slot, whether its row is shown this Reposition. Latched rows always are (they are on-screen
+        // at their true offset — hiding one would open a visible hole). Unlatched rows are admitted under the budget:
+        //   1. rows ALREADY in flight (still active in the same slot on the same index) keep their admission, so a row
+        //      mid-confirm is never yanked before it latches (each one only spends budget it already holds);
+        //   2. rows exempt via _seen (cheap re-measure, see above) are admitted free;
+        //   3. the remaining budget goes to the rows nearest the anchor — from the BOTTOM up while pinned (the newest
+        //      rows the user is looking at, and the pin keeps following as each latches and the content grows), else
+        //      from the top (the topmost-visible row is the scroll anchor).
+        // A row held back is simply not shown; every latch sets measuredChanged → Reposition → this re-plans, so the
+        // backlog drains without a timer. A row that NEVER latches (unmeasurable, h < 1) keeps its budget slot, exactly
+        // as it stays parked forever today; only 8 such rows inside one window could starve the rest.
+        private void PlanAdmission(int first, int count, int pool, bool bottomFirst)
+        {
+            if (_admit.Length != pool) _admit = new bool[pool];
+            var budget = MaxUnlatchedRows;
+            for (var k = 0; k < pool; k++)
+            {
+                var l = first + k;
+                _admit[k] = false;
+                if (l < 0 || l >= count) continue;
+                if (_measured[l] || _seen[l]) { _admit[k] = true; continue; }
+                var rt = Slots[k];
+                if (rt != null && rt.gameObject.activeSelf && _slotLogical[k] == l) { _admit[k] = true; budget--; }
+            }
+            for (var i = 0; i < pool && budget > 0; i++)
+            {
+                var k = bottomFirst ? pool - 1 - i : i;
+                var l = first + k;
+                if (l < 0 || l >= count || _admit[k]) continue;
+                _admit[k] = true; budget--;
+            }
+        }
+
         // Measure each active, not-yet-latched slot and LATCH its height only once two consecutive readings agree.
         // Each apply, for a row still awaiting its final height: force one immediate layout rebuild, read the uGUI
         // preferred height h, and compare to last apply's provisional reading. If they agree within StableEps the
@@ -53,7 +101,7 @@ internal sealed partial class WindowBuilder
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave for next apply
                 if (_prov[l] && Mathf.Abs(h - _provH[l]) <= StableEps)   // stable across two reads → commit
-                { _h[l] = h; _measured[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l); }
+                { _h[l] = h; _measured[l] = true; _seen[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l); }
                 else { _provH[l] = h; _prov[l] = true; }   // first/unstable reading — provisional only, no offset churn
             }
             if (changed) _offDirty = true;

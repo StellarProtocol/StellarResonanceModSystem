@@ -47,8 +47,9 @@ internal sealed partial class WindowBuilder
         // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
         // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
         var surface = _surface;
+        var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
         var then = cond.Then;
-        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, surface);
+        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, surface, gate);
         Action? buildElse = null;
         GameObject? elseGo = null;
         if (cond.Else != null)
@@ -57,7 +58,7 @@ internal sealed partial class WindowBuilder
             UGuiPrimitives.AddLayout(elseGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(elseGo);
             if (cond.Fill && elseGo.GetComponent<VerticalLayoutGroup>() is { } ev) ev.childForceExpandHeight = true;
             var elseEl = cond.Else; var elseT = elseGo.transform;
-            buildElse = () => BuildDeferred(elseEl, elseT, token, surface);
+            buildElse = () => BuildDeferred(elseEl, elseT, token, surface, gate);
         }
         // With NO else-branch, toggle the WHOLE Cond container (not just its inner Then). Otherwise the
         // container stays an active 0-height child and the parent column still adds section-spacing around it —
@@ -65,17 +66,18 @@ internal sealed partial class WindowBuilder
         // container removes it from the layout entirely. (With an else-branch the container must stay active to
         // show one of the two arms, so we keep toggling Then/Else.)
         token.Conds.Add(new CondBinding
-            { When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse });
+            { When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse, Gate = gate });
     }
 
     // A deferred branch build runs later, from the window's Apply — restore the per-window surface the shared
-    // builder had when this window was built (it is the only per-build builder state).
-    private void BuildDeferred(HudElement el, Transform parent, WindowToken token, SurfaceStyle surface)
+    // builder had when this window was built, and the enclosing variable-list slot gate (so a Conditional nested in
+    // the lazily-built branch is gated on the same slot).
+    private void BuildDeferred(HudElement el, Transform parent, WindowToken token, SurfaceStyle surface, GameObject? gate)
     {
-        var prev = _surface;
-        _surface = surface;
+        var prev = _surface; var prevGate = _condGate;
+        _surface = surface; _condGate = gate;
         try { BuildElement(el, parent, token); }
-        finally { _surface = prev; }
+        finally { _surface = prev; _condGate = prevGate; }
     }
 
     // Variable-length list bounded by Slots.Count; first VisibleCount() slots shown via SetActive.

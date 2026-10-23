@@ -62,6 +62,14 @@ namespace Stellar.Infrastructure.Game;
 // a "new messages" bar can never disagree with the auto-follow), and ScrollToBottomRequest forces that decision to
 // true for one apply — the existing pinned branch then follows unmeasured bottom rows as they latch. See StickyAtBottom.
 //
+// First-build cap (2.26.0): at most MaxUnlatchedRows not-yet-latched rows are ACTIVE (bound + measured) at once; the
+// rest of the window's unlatched slots are SetActive(false) until a latch frees budget. An unlatched row is parked
+// off-screen anyway, so nothing visible changes except that a big batch (login history, tab switch) fills in over a
+// few applies instead of binding ~40 bubbles in ONE apply — every value binding skips an inactive slot, and the
+// slot's Conds are gated on it too (CondBinding.Gate), so the lazy branch builds, TMP glyph rasterization, avatar
+// polls and bubble width-solves of the deferred rows all move to later applies. Rows nearest the anchor go first
+// (the bottom when pinned). See PlanAdmission (.Measure.cs).
+//
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
 internal sealed partial class WindowBuilder
@@ -94,7 +102,12 @@ internal sealed partial class WindowBuilder
             // VLG (childControlHeight, NOT force-expand) → the row keeps its preferred height = what we measure;
             // ExpandColumnWidth stretches it to the slot width so a wrapping child wraps at the real width.
             UGuiPrimitives.AddLayout(slot, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(slot);
-            BuildElement(v.Pool[i], slot.transform, token);
+            // Conds built inside this slot (now or in a later lazy branch build) defer while the slot is inactive —
+            // the first-build cap keeps over-budget slots inactive and their lazy branches must not build early.
+            var prevGate = _condGate;
+            _condGate = slot;
+            try { BuildElement(v.Pool[i], slot.transform, token); }
+            finally { _condGate = prevGate; }
             slots[i] = srt;
         }
 
@@ -207,7 +220,8 @@ internal sealed partial class WindowBuilder
             if (!Mathf.Approximately(scrollY, Content.anchoredPosition.y)) SetScroll(scrollY, reset || _firstApply || _jumpReq);
 
             var first = VariableListMath.FirstIndex(scrollY, _off, count, pool);
-            if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool);
+            // wasAtBottom = the pin decision → the first-build cap admits rows from the BOTTOM up while pinned.
+            if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool, wasAtBottom);
 
             _lastFirst = first; _lastCount = count; _firstApply = false; _jumpReq = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
@@ -287,16 +301,21 @@ internal sealed partial class WindowBuilder
         // Reposition and it snaps to its true on-screen offset. Net: the viewport briefly blanks (~2 frames) on a tab
         // switch instead of flashing overlapped rows; already-measured rows (steady state + scroll) always take the
         // on-screen branch, so nothing there changes.
-        private void Reposition(int first, int count, int pool)
+        //
+        // First-build cap: PlanAdmission decides which in-range slots are shown at all. A slot it holds back is treated
+        // exactly like a past-the-end slot (inactive, unbound, its provisional dropped) — it was going to be parked
+        // off-screen anyway — and is admitted by a later Reposition, which every latch triggers (measuredChanged).
+        private void Reposition(int first, int count, int pool, bool bottomFirst)
         {
             var hT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();   // diag: [Hitch] vl:reposition (incl. plugin OnWindow)
             OnWindow(first);
+            PlanAdmission(first, count, pool, bottomFirst);
             for (var k = 0; k < pool; k++)
             {
                 var rt = Slots[k];
                 if (rt == null) continue;
                 var logical = first + k;
-                var show = logical < count;
+                var show = logical < count && _admit[k];
                 if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
                 // A slot leaving a data index DROPS that index's provisional (unconfirmed) reading, so the two-read
                 // stable-confirm can only ever fire from readings taken on CONSECUTIVE applies while the row stayed
@@ -351,6 +370,7 @@ internal sealed partial class WindowBuilder
             Array.Copy(_h, h, _h.Length); Array.Copy(_measured, m, _measured.Length);
             Array.Copy(_provH, ph, _provH.Length); Array.Copy(_prov, p, _prov.Length);
             Array.Copy(_hId, hid, _hId.Length); Array.Copy(_verify, vf, _verify.Length);
+            var sn = new bool[cap]; Array.Copy(_seen, sn, _seen.Length); _seen = sn;   // first-build cap exemption (.Measure.cs)
             _h = h; _measured = m; _provH = ph; _prov = p; _hId = hid; _verify = vf; _off = new float[cap + 1];
             _offDirty = true;
         }
@@ -383,6 +403,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);
             Array.Clear(_hId, 0, _hId.Length); Array.Clear(_verify, 0, _verify.Length);   // genuinely new content → forget identities + pending re-verifies
+            Array.Clear(_seen, 0, _seen.Length);   // new content → no row is exempt from the first-build cap
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
             _lastFirst = -1; _lastCount = -1; _firstApply = true; _pinnedAtBottom = true;   // a reset re-pins to bottom (StickToBottom) → latch starts glued

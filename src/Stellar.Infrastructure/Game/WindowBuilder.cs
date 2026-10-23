@@ -32,6 +32,9 @@ internal sealed partial class WindowBuilder
     // the recursive descent, so every nested Text/Bar/Pill leaf sees it. Menu (default) leaves every existing
     // window byte-identical; HudOverlay reroutes those three leaf types to the ported HUD renders (.HudOverlay.cs).
     private SurfaceStyle _surface = SurfaceStyle.Menu;
+    // The variable-list SLOT whose pool element is being built (null outside one). Every Conditional built under it
+    // captures it as CondBinding.Gate, so the first-build cap can keep an over-budget slot fully idle (.VariableList.cs).
+    private GameObject? _condGate;
     // Per-frame field-tick hook (cursor/Esc/debounce). Injected by the renderer (which owns a
     // MonoBehaviour ticker); null in the sandbox (static render needs no tick). Mirrors HudElementBuilder's
     // registerBar animator hook.
