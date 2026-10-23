@@ -278,6 +278,17 @@ internal sealed partial class WindowBuilder
                 var logical = first + k;
                 var show = logical < count;
                 if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
+                // A slot leaving a data index DROPS that index's provisional (unconfirmed) reading, so the two-read
+                // stable-confirm can only ever fire from readings taken on CONSECUTIVE applies while the row stayed
+                // continuously shown in ONE slot — never from two unrelated transient readings bridged across the row
+                // scrolling out and back in (a provisional was keyed by data index and otherwise outlived the recycle).
+                // A CONFIRMED latch (_measured/_h) is intentionally KEPT across recycle so a row that scrolls back in
+                // reuses its height with no estimate→real pop (file header "scroll stability"); only the in-flight
+                // provisional is cleared. NB: this does NOT address a stale latch whose underlying message changed in
+                // place under a stationary slot (the rolling-buffer index remap, header limit #3) — see commit msg.
+                var bound = show ? logical : -1;
+                var leaving = _slotLogical[k];
+                if (leaving >= 0 && leaving != bound && leaving < _prov.Length) { _prov[leaving] = false; _provH[leaving] = 0f; }
                 if (show)
                 {
                     // Size to the row height in BOTH cases (real height for a latched row, estimate for an unmeasured
