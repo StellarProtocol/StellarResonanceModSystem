@@ -49,6 +49,19 @@ public static class FrameworkVersion
     /// variable-height <c>VirtualListElement</c> keeps at most 8 not-yet-measured rows active at once (the rest
     /// stay inactive until a latch frees budget; Conditionals inside an inactive slot don't poll or lazy-build).
     /// Additive throughout — binary-compatible with plugins built against ≤2.25.5.
+    /// 2.26.0 also adds chat/whisper API (all init-only props, new types, or default-implemented members):
+    /// <c>ChatMessage.TargetId</c> (decoded <c>ChatMsgInfo.target_id</c>, a charId) and <c>ChatMessage.PeerId</c> (the
+    /// other party of a whisper — sender, or target when the sender is self; private history batches tagged from the
+    /// request's <c>target_id</c>; <c>ChatTarget.Reply</c> uses it); client-generated SYSTEM notices ("Obtained …")
+    /// captured by a Lua wrap of the chat VM's <c>SetReceiveSystemMsg</c> (polled 4 Hz in-world, no Lua→C# callback)
+    /// and raised on <c>IChat.MessageReceived</c> as <c>ChatChannel.System</c> with <c>ChatMessage.SystemLabel</c>/
+    /// <c>SystemType</c>/<c>SystemRefId</c>; the server-driven send cooldown from <c>SendChitChatMsgReply.cd_end_time</c>
+    /// (Unix seconds) via <c>IChat.TryGetSendCooldown(channel, out remainingSeconds)</c> + <c>IChat.SendResult</c>
+    /// (<c>ChatSendResult</c>, <c>ErrorTooFrequent</c> = 5211) — both default-implemented on <c>IChat</c>; and
+    /// <c>IPluginServices.Friends</c> (<c>IFriends</c>: <c>Friends</c> / <c>PrivateChats</c> / <c>Changed</c> polled from the
+    /// game's Lua data every 2.5 s in-world, plus queued <c>RequestPrivateHistory</c> / <c>MarkPrivateRead</c> /
+    /// <c>CreatePrivateChat</c> / <c>ClosePrivateChat</c> run as the game's own coroutine VM calls). A plugin that CALLS
+    /// any of these needs ≥2.26.0.
     /// 2.25.5 is a fix: switching chat tabs/channels (any <c>ResetScroll</c> on a variable-height
     /// <c>VirtualListElement</c>) — and, more briefly, a burst of new messages — no longer FLASHES the rows
     /// overlapping each other for a couple of frames before they settle into place. On a <c>ResetScroll</c> every
