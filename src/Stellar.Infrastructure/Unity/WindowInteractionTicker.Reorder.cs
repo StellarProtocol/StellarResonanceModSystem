@@ -170,14 +170,22 @@ public sealed partial class WindowInteractionTicker
         g.anchorMin = g.anchorMax = new Vector2(0.5f, 0.5f);   // fixed anchors: size = sizeDelta, never parent-driven
         g.pivot = src.pivot;                                    // so the pivot maps to the same point of the cell
         var parent = g.parent;
-        var corners = new Vector3[4];
-        src.GetWorldCorners(corners);
-        Vector2 bl = parent.InverseTransformPoint(corners[0]), tr = parent.InverseTransformPoint(corners[2]);
+        // Cell corners via TransformPoint of its own rect, NOT GetWorldCorners(new Vector3[4]): under Il2CppInterop a
+        // managed Vector3[] is coerced to a throwaway Il2Cpp copy that the native call fills, so the managed array
+        // stays all-zero → sizeDelta (0,0). The zero-size clone then laid its content out at its MINIMUM width from
+        // its pivot (the cell centre) rightward — the content-wide chip whose left edge sat at the row's centre.
+        var rc = src.rect;
+        Vector2 bl = parent.InverseTransformPoint(src.TransformPoint(new Vector3(rc.xMin, rc.yMin, 0f)));
+        Vector2 tr = parent.InverseTransformPoint(src.TransformPoint(new Vector3(rc.xMax, rc.yMax, 0f)));
         g.sizeDelta = new Vector2(Mathf.Abs(tr.x - bl.x), Mathf.Abs(tr.y - bl.y));
         // Offset from the press point (not the threshold-crossing point) to the cell's pivot. The cell hasn't moved
         // since the press — the scroll is locked and the grid isn't reflowed mid-drag.
         Vector2 pivotLocal = parent.InverseTransformPoint(src.position);
         _rlGrab = pivotLocal - ToGhostParentLocal(_rlPress);
+        // One line per drag start, in screen px, so an in-game test can prove ghost size == source size.
+        var ps = parent.lossyScale; var ss = src.lossyScale;
+        Debug.Log($"[Window][reorder] ghost size={g.sizeDelta.x * ps.x:0}x{g.sizeDelta.y * ps.y:0} " +
+                  $"srcSize={rc.width * ss.x:0}x{rc.height * ss.y:0} grab=({_rlGrab.x:0.#},{_rlGrab.y:0.#})");
     }
 
     // Keep the press-time grab point under the cursor: ghost pivot = pointer + grab offset (parent-local units).
