@@ -59,6 +59,31 @@ public sealed class SystemNoticeServiceTests
         Assert.Empty(lua.Chunks);
     }
 
+    [Fact]
+    public void Lazy_NoChatConsumer_NoLua_ThenIdleAndResumeToggleTheFlag()
+    {
+        var chat = new ChatService(new StubLog());
+        chat.AttachProbe(new StubProbe());
+        var fake = new FakeLua { Out = "1" };
+        var svc = new SystemNoticeService(fake, chat, () => 1_700_000_000_000, _ => { });
+
+        svc.Tick(0.3f);
+        Assert.Empty(fake.Chunks);                         // no subscriber, no RecentMessages read → never installed
+
+        System.Action<ChatMessage> h = _ => { };
+        chat.MessageReceived += h;
+        svc.Tick(0.3f);
+        Assert.Single(fake.Chunks);                        // first consumer: just the poll (install raises the flag)
+
+        chat.MessageReceived -= h;
+        svc.Tick(0.3f);
+        Assert.Contains("__stlr_sys_on',nil", fake.Chunks[^1]);   // idle: Lua stops formatting + drops its queue
+
+        chat.MessageReceived += h;
+        svc.Tick(0.3f);
+        Assert.Contains(fake.Chunks, c => c.Contains("__stlr_sys_on',true"));   // resumed before the poll
+    }
+
     private static System.DateTime DateTimeKindUtc(long ms)
         => System.DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime;
 

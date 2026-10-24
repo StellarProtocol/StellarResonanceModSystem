@@ -87,11 +87,44 @@ public sealed class FriendsServiceTests
     {
         var lua = new FakeLua { Ok = false };
         var svc = new FriendsService(lua, _ => { });
+        svc.Changed += () => { };   // in use (an unused service never touches Lua — see Lazy_* below)
 
         svc.Tick(0f);
 
         Assert.Equal(2, lua.Chunks.Count);
         Assert.Contains("__stlr_fr_poll", lua.Chunks[1]);
+    }
+
+    [Fact]
+    public void Lazy_NoUser_NoLua_FirstReadStartsPolling()
+    {
+        var lua = new FakeLua { Ok = true, Friends = R("1", "A", "", "1", "1", "1", "1", ""), Private = "" };
+        var svc = new FriendsService(lua, _ => { });
+
+        svc.Tick(0f);
+        svc.Tick(5f);
+        Assert.Empty(lua.Chunks);       // nobody subscribed / read / queued → idle
+
+        Assert.Empty(svc.Friends);      // a read marks it in use (data follows on the next tick)
+        svc.Tick(0f);                   // (re)start polls at once, regardless of the interval
+        Assert.Single(lua.Chunks);
+        Assert.Single(svc.Friends);
+    }
+
+    [Fact]
+    public void Lazy_UnsubscribeLastHandler_StopsPolling()
+    {
+        var lua = new FakeLua { Ok = true, Friends = "", Private = "" };
+        var svc = new FriendsService(lua, _ => { });
+        Action h = () => { };
+        svc.Changed += h;
+        svc.Tick(0f);
+        var polled = lua.Chunks.Count;
+
+        svc.Changed -= h;
+        svc.Tick(5f);
+
+        Assert.Equal(polled, lua.Chunks.Count);
     }
 
     [Fact]

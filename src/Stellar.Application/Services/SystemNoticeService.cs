@@ -31,6 +31,8 @@ internal sealed partial class SystemNoticeService
     private float _accum;
     private long _lastGen;
     private long _syntheticId;
+    private bool _capturing;   // a chat consumer exists → the Lua side formats + queues notices and we poll
+    private bool _idled;       // capture was switched off at least once (a later switch-on must re-raise the Lua flag)
 
     public SystemNoticeService(ILua lua, ChatService chat, Func<long> serverNowMs, Action<string> log)
     {
@@ -40,15 +42,34 @@ internal sealed partial class SystemNoticeService
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
-    /// <summary>Framework Update tick (world-gated by the caller). Throttles itself to <see cref="PollInterval"/>.</summary>
+    /// <summary>Framework Update tick (world-gated by the caller). Throttles itself to <see cref="PollInterval"/>.
+    /// LAZY: does nothing until some plugin consumes chat (<see cref="ChatService.HasConsumers"/> — a
+    /// <c>MessageReceived</c> subscriber or a recent <c>RecentMessages</c> read); the wrap is installed on the first
+    /// consumed poll. When the last consumer goes, the Lua side is told to stop formatting/queueing (the wrapper stays
+    /// in place as a plain pass-through — unwrapping a live VM method is riskier than one flag test per notice) and the
+    /// poll stops; it resumes on the next consumer with an empty queue, so stale notices are never published late.</summary>
     public void Tick(float deltaTime)
     {
         _accum += deltaTime;
         if (_accum < PollInterval) return;
         _accum = 0f;
         if (!_lua.Ready) return;
-        try { Poll(); }
+        try
+        {
+            if (!_chat.HasConsumers()) { if (_capturing) SetCapture(false); return; }
+            if (!_capturing) SetCapture(true);
+            Poll();
+        }
         catch (Exception ex) { _log($"[ChatProbe] system-notice poll threw: {ex.GetType().Name}: {ex.Message}"); }
+    }
+
+    // Capture on/off. The first switch-on needs no Lua call (InstallChunk raises the flag itself); every later toggle
+    // flips the flag (off also drops the queue).
+    private void SetCapture(bool on)
+    {
+        _capturing = on;
+        if (!on) { _idled = true; _lua.DoString(IdleChunk); return; }
+        if (_idled) _lua.DoString(ResumeChunk);
     }
 
     private void Poll()

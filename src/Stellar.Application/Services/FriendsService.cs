@@ -14,7 +14,8 @@ namespace Stellar.Application.Services;
 /// reads; each list is rebuilt ONLY when its serialized string differs from the last poll (an unchanged poll costs
 /// the two reads + a string compare, no parsing). Actions are queued (any thread) and run on the next tick as the
 /// game's own coroutine VM calls. No Lua→C# callback anywhere (it crashes the IL2CPP runtime).
-/// <para>Ticked from the IsWorldActive-gated framework <c>Update</c>; main thread only inside.</para>
+/// <para>Ticked from the IsWorldActive-gated framework <c>Update</c>; main thread only inside. Lazy: polls only while
+/// some plugin uses it (see <see cref="InUse"/>).</para>
 /// </summary>
 internal sealed partial class FriendsService : IFriends
 {
@@ -44,8 +45,22 @@ internal sealed partial class FriendsService : IFriends
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
-    public IReadOnlyList<FriendInfo> Friends => _friends;
-    public IReadOnlyList<PrivateChatTarget> PrivateChats => _privateChats;
+    public IReadOnlyList<FriendInfo> Friends { get { NoteRead(); return _friends; } }
+    public IReadOnlyList<PrivateChatTarget> PrivateChats { get { NoteRead(); return _privateChats; } }
+
+    // LAZY polling: the Lua walk runs only while a plugin uses this service — a Changed subscriber, a queued action, or
+    // a list read within IdleAfterMs (so a plugin that only reads the lists keeps them fresh; its FIRST read starts the
+    // poll and the data follows on the next in-world tick). Nobody using it → Tick returns before any Lua call.
+    // Environment.TickCount64 (ms) because the reads come from any thread.
+    private const long IdleAfterMs = 30_000;
+    private long _lastReadMs = long.MinValue / 2;   // "never" (no overflow in InUse's subtraction)
+    private bool _idle = true;                      // last Tick found no user → the next active tick polls at once
+
+    private void NoteRead() => System.Threading.Volatile.Write(ref _lastReadMs, Environment.TickCount64);
+
+    private bool InUse()
+        => _changed != null || !_actions.IsEmpty
+           || Environment.TickCount64 - System.Threading.Volatile.Read(ref _lastReadMs) < IdleAfterMs;
 
     public event Action Changed
     {
@@ -64,10 +79,12 @@ internal sealed partial class FriendsService : IFriends
         _actions.Enqueue((kind, charId));
     }
 
-    /// <summary>Framework Update tick (world-gated by the caller).</summary>
+    /// <summary>Framework Update tick (world-gated by the caller). Idle (no Lua at all) while nobody uses the service.</summary>
     public void Tick(float deltaTime)
     {
         if (!_lua.Ready) return;
+        if (!InUse()) { _idle = true; return; }
+        if (_idle) { _idle = false; _accum = PollInterval; }   // (re)started → poll on this tick, like the first in-world tick
         try
         {
             if (RunQueuedActions()) _accum = Math.Max(_accum, PollInterval - PostActionDelay);

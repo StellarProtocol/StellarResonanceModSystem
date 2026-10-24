@@ -11,7 +11,9 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>
     /// Builds the Lua-polled chat services and subscribes them to the framework <c>Update</c> tick, which only fires
-    /// while <c>IsWorldActive</c> (they touch the game's chat VM). Each self-throttles. Runs in <c>Load()</c> after
+    /// while <c>IsWorldActive</c> (they touch the game's chat VM). Each self-throttles and is LAZY: it does no Lua work
+    /// until a plugin uses it (system notices: a chat consumer; friends: a subscriber / action / list read), so a setup
+    /// with no chat plugin pays one cheap check per tick. Runs in <c>Load()</c> after
     /// <see cref="BuildCoreServices"/> (needs <c>_luaService</c>, <c>_chatService</c>, <c>_combatService</c>).
     /// </summary>
     private void WireChatLuaServices(BepInExPluginLog log)

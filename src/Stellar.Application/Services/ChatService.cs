@@ -39,6 +39,7 @@ internal sealed partial class ChatService : IChat
     {
         get
         {
+            NoteRecentRead();   // .Ring.cs — a reader counts as a chat consumer (lazy notice capture)
             if (Volatile.Read(ref _ringVersion) == _snapshotVersion) return _snapshot;
             lock (_ringLock)
             {

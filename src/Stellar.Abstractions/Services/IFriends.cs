@@ -6,7 +6,9 @@ namespace Stellar.Abstractions.Services;
 
 /// <summary>
 /// The local player's friend list and private-chat (whisper) conversations, read from the game's own data and
-/// refreshed every few seconds while in the world; plus the game's own private-chat actions. Pair with
+/// refreshed every few seconds while in the world and in use (a <see cref="Changed"/> subscriber, a queued action, or a
+/// list read in the last ~30 s — the FIRST read starts the refresh, so its data can lag that read by a tick); plus the
+/// game's own private-chat actions. Pair with
 /// <see cref="IChat"/>: whispers arrive there with <see cref="ChatMessage.PeerId"/> = the conversation's
 /// <see cref="PrivateChatTarget.CharId"/>, and are sent with <c>ChatTarget.Whisper(charId)</c>.
 /// <para>Lists keep their last known contents outside the world (title screen / loading). The actions only

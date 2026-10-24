@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Threading;
 using Stellar.Abstractions.Domain;
 
 namespace Stellar.Application.Services;
@@ -12,7 +14,7 @@ namespace Stellar.Application.Services;
 /// push the other out. Server-sent System lines (TopNotice / Play, SystemLabel null) are wire chat and stay in the main
 /// ring. Every entry carries a global arrival number and the snapshot merges the two rings on it, so a consumer still
 /// sees ONE list in pure arrival order with the notices interleaved exactly where they arrived (no sort, no timestamp
-/// tie-breaks — the contract of the single ring is unchanged). All members run under <c>_ringLock</c>.
+/// tie-breaks — the contract of the single ring is unchanged). The ring members run under <c>_ringLock</c>.
 /// </summary>
 internal sealed partial class ChatService
 {
@@ -28,6 +30,20 @@ internal sealed partial class ChatService
     private long _arrivalSeq;   // global arrival number across both rings (merge key)
 
     private static bool IsClientNotice(ChatMessage msg) => msg.SystemLabel != null;
+
+    // ── Consumers (lazy background work) ──
+    // A plugin "uses chat" while it has a MessageReceived subscriber or has read RecentMessages within this window.
+    // SystemNoticeService only wraps/polls the game's notice VM while that is true (no consumer → nobody would see the
+    // notices). Environment.TickCount64 = ms, any thread, cheap enough for the per-frame RecentMessages fast path.
+    private const long ConsumerIdleMs = 30_000;
+    private long _lastRecentReadMs = long.MinValue / 2;   // "never" (no overflow in the subtraction below)
+
+    private void NoteRecentRead() => Volatile.Write(ref _lastRecentReadMs, Environment.TickCount64);
+
+    /// <summary>True while some plugin consumes chat: a <c>MessageReceived</c> subscriber, or a
+    /// <c>RecentMessages</c> read in the last <see cref="ConsumerIdleMs"/>.</summary>
+    internal bool HasConsumers()
+        => _handlers != null || Environment.TickCount64 - Volatile.Read(ref _lastRecentReadMs) < ConsumerIdleMs;
 
     // Under _ringLock (Drain).
     private void AppendToRing(ChatMessage msg)

@@ -9,6 +9,8 @@ internal sealed partial class SystemNoticeService
     //                     __stlr_sys_out and empties the queue
     //   __stlr_sys_q      the queue (array of preformatted "type\31id\31label\31content" strings, capped at 64)
     //   __stlr_sys_gen    wrap generation — bumps each time the wrap is (re)applied (VM table/function replaced)
+    //   __stlr_sys_on     capture flag (set by InstallChunk / ResumeChunk, cleared by IdleChunk): the push is a no-op
+    //                     while it is nil, so with no chat consumer a notice costs the wrapper one table read
     //   __stlr_sys_busy   re-entrancy flag: if anything ever wraps over our wrapper and we wrap again, only the
     //                     OUTERMOST of our wrappers pushes, so a notice is never queued twice
     // The wrap marker lives ON the VM table (rawset(vm,'__stlr_sys_w',w)), so if our globals are ever lost the
@@ -25,8 +27,9 @@ internal sealed partial class SystemNoticeService
     end
     return (string.gsub(tostring(v), '[\30\31]', ' '))
   end
+  rawset(_G, '__stlr_sys_on', true)
   rawset(_G, '__stlr_sys_push', function(info)
-    if type(info) ~= 'table' then return end
+    if type(info) ~= 'table' or not rawget(_G, '__stlr_sys_on') then return end
     local q = rawget(_G, '__stlr_sys_q')
     if not q then q = {} rawset(_G, '__stlr_sys_q', q) end
     if #q >= 64 then table.remove(q, 1) end
@@ -87,4 +90,9 @@ end)";
         "rawset(_G,'__stlr_sys_out',nil) local f=rawget(_G,'__stlr_sys_drain') if f then pcall(f) end";
 
     private const string OutGlobal = "__stlr_sys_out";
+
+    // Lazy capture (SystemNoticeService.Tick): no chat consumer → the push returns at once (the wrapper stays installed as a
+    // pass-through) and the queue is dropped; a consumer again → the flag comes back up with an empty queue.
+    private const string IdleChunk = "rawset(_G,'__stlr_sys_on',nil) rawset(_G,'__stlr_sys_q',nil)";
+    private const string ResumeChunk = "rawset(_G,'__stlr_sys_q',nil) rawset(_G,'__stlr_sys_on',true)";
 }
