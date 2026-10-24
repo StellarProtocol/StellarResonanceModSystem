@@ -52,4 +52,17 @@ public static class VariableListMath
     /// stick-to-bottom pin and the "is the user currently at the bottom?" test.</summary>
     public static float MaxScroll(float totalHeight, float viewportHeight)
         => totalHeight <= viewportHeight ? 0f : totalHeight - viewportHeight;
+
+    /// <summary><see cref="VirtualListElement.StableSlots"/> mapping: the data index pool slot
+    /// <paramref name="slot"/> shows when the window starts at <paramref name="first"/>. Row <c>l</c> lives in slot
+    /// <c>l % poolSize</c>, so the window <c>[first, first+poolSize)</c> covers every slot exactly once and a row keeps
+    /// its slot while it stays in the window. Use it in the row Funcs instead of <c>first + slot</c>.
+    /// <paramref name="poolSize"/> ≤ 0 ⇒ <paramref name="first"/> + <paramref name="slot"/> (the plain mapping).</summary>
+    public static int StableSlotRow(int first, int slot, int poolSize)
+    {
+        if (poolSize <= 0) return first + slot;
+        var d = (slot - first) % poolSize;
+        if (d < 0) d += poolSize;
+        return first + d;
+    }
 }

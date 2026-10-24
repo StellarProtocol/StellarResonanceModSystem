@@ -89,4 +89,15 @@ public sealed record VirtualListElement(
     /// value (e.g. 0) for rows that never change. Independent of <see cref="RowId"/> (identity) — use both together.
     /// Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public Func<int, long>? RowRevision { get; init; }
+
+    /// <summary>Optional — keep each data row in the SAME pool slot for as long as it stays in the window
+    /// (<see cref="VariableHeight"/> mode only). Normally pool slot <c>k</c> shows row <c>first + k</c>, so whenever
+    /// <c>first</c> moves by one — every append to a bottom-pinned <see cref="StickToBottom"/> list that is longer than
+    /// the pool, and every scroll step — EVERY slot is rebound to a different row (new text, new avatar, a bubble width
+    /// re-solve each). With this set, row <c>l</c> lives in slot <c>l % Pool.Count</c>: a one-row shift recycles only the
+    /// slot whose row left the window, and every other slot keeps its content untouched. <see cref="OnWindow"/> still
+    /// reports <c>first</c>; the row Funcs must then resolve slot <c>k</c> through
+    /// <see cref="VariableListMath.StableSlotRow"/>(first, k, Pool.Count) instead of <c>first + k</c>. Default
+    /// <c>false</c> = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool StableSlots { get; init; }
 }

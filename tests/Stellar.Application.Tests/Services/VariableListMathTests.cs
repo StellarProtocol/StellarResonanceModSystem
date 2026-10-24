@@ -86,4 +86,22 @@ public class VariableListMathTests
     [InlineData(40f, 60f, 0f)]     // content shorter than viewport → no scroll
     public void MaxScroll_is_content_minus_viewport_floored_at_zero(float total, float viewport, float expected)
         => Assert.Equal(expected, VariableListMath.MaxScroll(total, viewport));
+
+    // StableSlots: row l lives in slot l % pool, so the window covers each slot once and a one-row shift moves only
+    // the slot whose row left (here: first 10 → 11 recycles slot 10 % 4 = 2 from row 10 to row 14).
+    [Fact]
+    public void StableSlotRow_keeps_rows_in_their_slot_across_a_shift()
+    {
+        const int pool = 4;
+        int[] Window(int first)
+        {
+            var rows = new int[pool];
+            for (var k = 0; k < pool; k++) rows[k] = VariableListMath.StableSlotRow(first, k, pool);
+            return rows;
+        }
+        Assert.Equal(new[] { 12, 13, 10, 11 }, Window(10));
+        Assert.Equal(new[] { 12, 13, 14, 11 }, Window(11));
+        Assert.Equal(new[] { 0, 1, 2, 3 }, Window(0));
+        Assert.Equal(5, VariableListMath.StableSlotRow(5, 0, 0));   // no pool → plain first + slot
+    }
 }

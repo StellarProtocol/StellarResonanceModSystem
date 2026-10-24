@@ -115,7 +115,7 @@ internal sealed partial class WindowBuilder
         {
             Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
-            Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId, RowRevision = v.RowRevision,
+            Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId, RowRevision = v.RowRevision, StableSlots = v.StableSlots,
             // ScrollToBottomRequest: the build-time value is the BASELINE, not a request (mirrors InputElement.FocusRequest).
             OnAtBottomChanged = v.OnAtBottomChanged, ScrollToBottomRequest = v.ScrollToBottomRequest,
             LastScrollRequest = v.ScrollToBottomRequest?.Invoke() ?? 0,
@@ -137,7 +137,8 @@ internal sealed partial class WindowBuilder
         public Func<bool>? ResetScroll;
         public float Baseline = 28f;
         public bool StickToBottom;
-        public Func<int, long>? RowId;   // VirtualListElement.RowId: data index → stable per-message id (null = never re-verify a latch)
+        public bool StableSlots;   // VirtualListElement.StableSlots: row l lives in slot l % pool (see SlotOf, .Measure.cs)
+        public Func<int, long>? RowId;  // VirtualListElement.RowId: data index → stable per-message id (null = never re-verify a latch)
         public Func<int, long>? RowRevision;   // VirtualListElement.RowRevision: data index → content revision (null = a latch is never re-measured in place)
         public Action<bool>? OnAtBottomChanged;   // VirtualListElement.OnAtBottomChanged: told whenever the StickToBottom pin decision flips
         public Func<int>? ScrollToBottomRequest;  // VirtualListElement.ScrollToBottomRequest: a CHANGE of this token = jump to bottom + re-pin
@@ -312,11 +313,12 @@ internal sealed partial class WindowBuilder
         {
             OnWindow(first);
             PlanAdmission(first, count, pool, bottomFirst);
-            for (var k = 0; k < pool; k++)
+            for (var d = 0; d < pool; d++)   // d = row offset in the window; SlotOf picks the slot that shows it
             {
+                var k = SlotOf(first, d, pool);
                 var rt = Slots[k];
                 if (rt == null) continue;
-                var logical = first + k;
+                var logical = first + d;
                 var show = logical < count && _admit[k];
                 if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
                 // A slot leaving a data index DROPS that index's provisional (unconfirmed) reading, so the two-read

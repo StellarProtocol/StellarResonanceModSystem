@@ -36,13 +36,16 @@ internal sealed partial class WindowBuilder
         // A row held back is simply not shown; every latch sets measuredChanged → Reposition → this re-plans, so the
         // backlog drains without a timer. A row that NEVER latches (unmeasurable, h < 1) keeps its budget slot, exactly
         // as it stays parked forever today; only 8 such rows inside one window could starve the rest.
+        // Both loops walk the WINDOW (d = row offset from first, so "bottom first" stays bottom-first in data order) and
+        // address the slot showing that row through SlotOf — the identity d in the default mode, l % pool in StableSlots
+        // mode (a bijection over the window either way, so every slot's verdict is written exactly once).
         private void PlanAdmission(int first, int count, int pool, bool bottomFirst)
         {
             if (_admit.Length != pool) _admit = new bool[pool];
             var budget = MaxUnlatchedRows;
-            for (var k = 0; k < pool; k++)
+            for (var d = 0; d < pool; d++)
             {
-                var l = first + k;
+                var k = SlotOf(first, d, pool); var l = first + d;
                 _admit[k] = false;
                 if (l < 0 || l >= count) continue;
                 if (_measured[l] || _seen[l]) { _admit[k] = true; continue; }
@@ -51,12 +54,18 @@ internal sealed partial class WindowBuilder
             }
             for (var i = 0; i < pool && budget > 0; i++)
             {
-                var k = bottomFirst ? pool - 1 - i : i;
-                var l = first + k;
+                var d = bottomFirst ? pool - 1 - i : i;
+                var k = SlotOf(first, d, pool); var l = first + d;
                 if (l < 0 || l >= count || _admit[k]) continue;
                 _admit[k] = true; budget--;
             }
         }
+
+        // The pool slot that shows window row d (data index first + d). Default: slot d — so a one-row shift of `first`
+        // rebinds EVERY slot. StableSlots (VirtualListElement): slot (first + d) % pool — a row keeps its slot while it
+        // stays in the window, so an append/scroll step recycles only the slot whose row left; the consumer resolves a
+        // slot with VariableListMath.StableSlotRow, the inverse of this.
+        private int SlotOf(int first, int d, int pool) => StableSlots && pool > 0 ? (first + d) % pool : d;
 
         // Measure each active, not-yet-latched slot and LATCH its height only once two consecutive readings agree.
         // Each apply, for a row still awaiting its final height: force one immediate layout rebuild, read the uGUI
