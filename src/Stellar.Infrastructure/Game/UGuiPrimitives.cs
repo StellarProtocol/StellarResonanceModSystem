@@ -101,6 +101,28 @@ internal static class UGuiPrimitives
         return "...";
     }
 
+    // Ellipsize for a text fitted to its LAID-OUT width (TextElement.Ellipsize): re-run on every width change (a window
+    // resize drag), so a binary search over the cut length (~log2 n preferredWidth reads) instead of Ellipsize's linear
+    // walk. Same "..." suffix (the "…" glyph tofus in-world); never cuts between a surrogate pair.
+    public static string EllipsizeFit(Text t, string s, float maxW)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        t.text = s;
+        if (t.preferredWidth <= maxW) return s;
+        string best = "...";
+        int lo = 1, hi = s.Length - 1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            int len = mid > 0 && char.IsHighSurrogate(s[mid - 1]) ? mid - 1 : mid;
+            var cand = s.Substring(0, len).TrimEnd() + "...";
+            t.text = cand;
+            if (t.preferredWidth <= maxW) { best = cand; lo = mid + 1; }
+            else hi = mid - 1;
+        }
+        return best;
+    }
+
     /// <summary>The string a drop-shadow TWIN (HudOverlay <c>MakeShadowedTextHud</c>, toast <c>MakeShadowedText</c>) shows
     /// for foreground <paramref name="s"/>: identical except every uGUI <c>&lt;color=…&gt;</c>/<c>&lt;/color&gt;</c> tag is
     /// removed. A colour tag OVERRIDES the twin's dark <c>Text.color</c>, so mirroring the string verbatim drew the

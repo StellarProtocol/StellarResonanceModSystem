@@ -275,7 +275,7 @@ internal sealed partial class WindowBuilder
         // window panels have long labels/descriptions that must wrap, not spill past the frame). NoWrap keeps
         // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
         // the cell edge rather than wrapping into a multi-line block.
-        txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
+        txt.horizontalOverflow = t.NoWrap || t.Ellipsize ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;   // Ellipsize = one line too
         txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
@@ -286,7 +286,8 @@ internal sealed partial class WindowBuilder
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }   // fixed column cell
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
         // Clip a fixed-width single line to its column so a long label truncates instead of spilling onto neighbours.
-        if (t.Width > 0f && t.NoWrap) go.AddComponent<RectMask2D>();
+        // Ellipsize clips too: between a resize and the next apply's re-fit the old cut may be a few px too wide.
+        if ((t.Width > 0f && t.NoWrap) || t.Ellipsize) go.AddComponent<RectMask2D>();
         // Readability outline for chrome-less overlays — the shared recipe (also the meter bar values).
         if (t.Shadow) UGuiPrimitives.AddReadabilityOutline(go);
         token.Texts.Add(BuildTextBinding(t, txt));
@@ -303,7 +304,7 @@ internal sealed partial class WindowBuilder
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
-        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis };
+        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize };
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }

@@ -52,6 +52,10 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
+        // TextElement.Ellipsize: single line fitted to the Text's OWN laid-out width, re-fitted when the string or that width
+        // changes (a weighted cell resized with its window). -1 = not fitted yet.
+        public bool EllipsizeToRect;
+        private float _fittedW = -1f;
         // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
         // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
         // GlyphScript) — re-derived per current string so a live language switch tracks. The preferred
@@ -74,10 +78,19 @@ internal sealed partial class WindowBuilder
                 if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; }
             }
             var s = TextFn();
-            if (s != _last)
+            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
+            float rw = EllipsizeToRect ? C.rectTransform.rect.width : 0f;
+            if (s != _last || (EllipsizeToRect && Math.Abs(rw - _fittedW) > 0.5f))
             {
                 _last = s;
-                var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
+                string text;
+                if (EllipsizeToRect)
+                {
+                    _fittedW = rw;
+                    // Not laid out yet (width 0) → the full string; the first real width re-fits it.
+                    text = rw > 1f ? UGuiPrimitives.EllipsizeFit(C, s, rw) : s;
+                }
+                else text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
                 // Twin mirrors the foreground string (HudOverlay) MINUS colour tags — a <color> span would otherwise
                 // override the twin's dark colour and draw an accent copy 1 px off (blurry word). See StripColorTags.

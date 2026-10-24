@@ -190,6 +190,15 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// also shows until the game's sprite asset has been found (resolved lazily once in-world). Window surfaces
     /// only; ignored on HUD-overlay and on Shadow text.</summary>
     public bool RichEmoji { get; init; }
+
+    /// <summary>Keep the text on ONE line and, when it is wider than the space the layout gives it, cut it with a
+    /// trailing "..." so it fits — re-fitted whenever the string or the laid-out width changes (e.g. the window is
+    /// resized). Use it in a width-constrained slot, typically a <see cref="CellElement"/> with a <c>Weight</c> in a
+    /// <see cref="RowElement"/> next to fixed-width controls: the cell's width is what the text is fitted to, and
+    /// nothing spills onto the neighbours (the text is also clipped to its own rect). Plain window text only —
+    /// ignored by the styled (<see cref="Emphasis"/>/<see cref="Bold"/>/...), <see cref="RichEmoji"/>, Shadow and
+    /// HUD-overlay paths. Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool Ellipsize { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
