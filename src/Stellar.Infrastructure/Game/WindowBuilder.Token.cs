@@ -38,6 +38,7 @@ internal sealed partial class WindowBuilder
         // isn't structural (a language switch re-pulls label text → uGUI re-lays-out on the next render). A
         // structural change / reskin pulls the next measure forward (see MarkMinWidthDue).
         private const int MinWidthPollEvery = 5;
+        private const float MinWidthShrinkHysteresis = 6f;   // canvas units; see MeasureMinWidth
         private int _minWidthDue = MinWidthPollEvery;
 
         // Measure on the apply AFTER this one: a structural change only MARKS the layout dirty (deferred to the next
@@ -69,6 +70,11 @@ internal sealed partial class WindowBuilder
             }
             var eff = Mathf.Min(Mathf.Max(SpecMinWidth, Mathf.Ceil(required)), SpecMaxWidth);
             if (Mathf.Abs(eff - EffectiveMinWidth) < 0.5f) return false;
+            // Shrink hysteresis: a GROWTH applies at once (the content needs the room), but a drop of only a few units is
+            // ignored — the requirement can flip between two nearby values (ChatTools logged 621↔625 every few polls), and
+            // a minimum held a few units high only raises the grip floor a little. A real shrink (font scale down, language
+            // switch) clears it easily. Mount (force) always takes the measured value.
+            if (!force && eff < EffectiveMinWidth && EffectiveMinWidth - eff < MinWidthShrinkHysteresis) return false;
             EffectiveMinWidth = eff;
             return true;
         }
