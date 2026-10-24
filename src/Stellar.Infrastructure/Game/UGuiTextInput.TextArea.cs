@@ -39,6 +39,7 @@ internal sealed partial class UGuiTextInput
     private int _followUntilFrame = -1;
     private CanvasRenderer? _caretRenderer;        // InputField's lazily-created caret/selection renderer (ClipCaret)
     private readonly List<RectMask2D> _clipMasks = new();   // every RectMask2D from the Viewport up (ClipCaret)
+    private bool _caretClipOn; private Rect _caretClip;   // last clip applied to the caret renderer (ClipCaret diff)
 
     /// <summary>TextArea mode: the ScrollRect the owner hangs its themed scrollbar on (null in other modes).</summary>
     internal ScrollRect? TextAreaScroll => _scroll;
@@ -184,7 +185,7 @@ internal sealed partial class UGuiTextInput
     // caret, or a selection on a scrolled-out line, drew over the padding and the window. So clip it ourselves exactly
     // as RectMask2D clips its children: intersect the canvasRect (ROOT-canvas space — the space RectMask2D hands its
     // clippables) of every enabled RectMask2D from the Viewport up (an enclosing window scroll mask included) and pass
-    // it to CanvasRenderer.EnableRectClipping. Re-applied every tick once found — the window drags and the canvas
+    // it to CanvasRenderer.EnableRectClipping. Recomputed every tick once found (re-applied only when it changes) — the window drags and the canvas
     // rescales — and canvasRect is a native corner transform returning a struct (no managed allocation).
     private void ClipCaret(bool focused)
     {
@@ -199,6 +200,9 @@ internal sealed partial class UGuiTextInput
             clip = any ? Intersect(clip, r) : r;
             any = true;
         }
+        // Diffed: an unchanged clip (the window at rest) writes nothing — the call marks the renderer for a re-batch.
+        if (any == _caretClipOn && (!any || clip == _caretClip)) return;
+        _caretClipOn = any; _caretClip = clip;
         if (any) _caretRenderer!.EnableRectClipping(clip);
         else _caretRenderer!.DisableRectClipping();
     }
@@ -216,7 +220,7 @@ internal sealed partial class UGuiTextInput
             if (c.GetComponent<Graphic>() != null) continue;
             var cr = c.GetComponent<CanvasRenderer>();
             if (cr == null) continue;
-            _caretRenderer = cr;
+            _caretRenderer = cr; _caretClipOn = false; _caretClip = default;   // a new renderer has no clip yet → re-apply
             _clipMasks.Clear();
             for (var p = t.parent; p != null; p = p.parent)   // t.parent = the Viewport
             {

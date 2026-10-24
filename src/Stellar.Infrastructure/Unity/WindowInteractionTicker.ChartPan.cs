@@ -81,7 +81,7 @@ public sealed partial class WindowInteractionTicker
         {
             var plot = ChartPans[i].Plot;
             if (plot == null || !plot.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(plot, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(plot, mp, null) || OutsideClip(plot, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(plot))) continue;
             return i;
         }

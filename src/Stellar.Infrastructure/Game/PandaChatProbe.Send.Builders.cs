@@ -73,6 +73,63 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
+    /// Construct the protobuf payload for a STICKER (picture-emoji) ChitChat.SendChitChatMsg. Same outer
+    /// envelope / request wrapping as <see cref="BuildSendChitChatMsgEnvelope"/> — only the inner
+    /// <c>ChatMsgInfo</c> differs: <c>msg_type = 3 (PictureEmoji)</c> (not 0) and field 5
+    /// <c>picture_emoji = ChatPictureEmoji{ config_id = 1 }</c> replaces field 3 <c>msg_text</c>.
+    /// <code>
+    ///   ChatMsgInfo {
+    ///     msg_type      = 1 : 3;                 // PictureEmoji (varint)
+    ///     target_id     = 2;                     // int64 (whispers only)
+    ///     picture_emoji = 5 : ChatPictureEmoji { // length-delimited nested
+    ///       config_id   = 1 : &lt;stickerConfigId&gt;;    // varint
+    ///     }
+    ///   }
+    /// </code>
+    /// <c>config_id</c> ALONE is sufficient — the receiver resolves the sticker purely from it; <c>msg_text</c>
+    /// is NOT written (confirmed unnecessary). Field numbers per <c>stru_chat_msg_info.proto</c> /
+    /// <c>stru_chat_picture_emoji.proto</c>.
+    /// </summary>
+    private static byte[] BuildSendStickerEnvelope(int channelType, int stickerConfigId, long whisperTargetId)
+    {
+        // Innermost: ChatPictureEmoji { config_id = 1 (varint) }.
+        var emojiMs = new System.IO.MemoryStream();
+        WriteVarint(emojiMs, ((ulong)1 << 3) | 0); // tag: field=1 wire=0 (varint)
+        WriteVarint(emojiMs, (ulong)stickerConfigId);
+        var emojiBytes = emojiMs.ToArray();
+
+        // ChatMsgInfo { msg_type = 3, [target_id], picture_emoji = 5 }. No msg_text (field 3).
+        var msgInfoMs = new System.IO.MemoryStream();
+        WriteVarint(msgInfoMs, ((ulong)1 << 3) | 0); // tag: field=1 wire=0 (varint)
+        WriteVarint(msgInfoMs, 3UL);                  // msg_type = 3 (ChatMsgPictureEmoji)
+        if (whisperTargetId != 0L)
+        {
+            WriteVarint(msgInfoMs, ((ulong)2 << 3) | 0); // tag: field=2 wire=0
+            WriteVarint(msgInfoMs, unchecked((ulong)whisperTargetId));
+        }
+        WriteVarint(msgInfoMs, ((ulong)5 << 3) | 2); // tag: field=5 wire=2 (length-delimited nested)
+        WriteVarint(msgInfoMs, (ulong)emojiBytes.Length);
+        msgInfoMs.Write(emojiBytes, 0, emojiBytes.Length);
+        var msgInfoBytes = msgInfoMs.ToArray();
+
+        // SendChitChatMsgRequest { channel_type = 2, msg_info = 4 }.
+        var reqMs = new System.IO.MemoryStream();
+        WriteVarint(reqMs, ((ulong)2 << 3) | 0); // tag: field=2 wire=0
+        WriteVarint(reqMs, unchecked((ulong)channelType));
+        WriteVarint(reqMs, ((ulong)4 << 3) | 2); // tag: field=4 wire=2
+        WriteVarint(reqMs, (ulong)msgInfoBytes.Length);
+        reqMs.Write(msgInfoBytes, 0, msgInfoBytes.Length);
+        var reqBytes = reqMs.ToArray();
+
+        // Outer envelope: ChitChat.SendChitChatMsg { v_request = 1 }.
+        var envMs = new System.IO.MemoryStream();
+        WriteVarint(envMs, ((ulong)1 << 3) | 2); // tag: field=1 wire=2
+        WriteVarint(envMs, (ulong)reqBytes.Length);
+        envMs.Write(reqBytes, 0, reqBytes.Length);
+        return envMs.ToArray();
+    }
+
+    /// <summary>
     /// Build the full BPSR wire frame for an outbound Call:
     /// <code>
     ///   [size: u32 BE][flags: u16 BE][service_uuid: u64 BE]

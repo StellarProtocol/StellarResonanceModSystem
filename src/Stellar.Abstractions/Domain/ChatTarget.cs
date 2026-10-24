@@ -15,13 +15,16 @@ public abstract record ChatTarget
     public static ChatTarget Party { get; } = new PartyTarget();
     /// <summary>Send to the guild / clan channel.</summary>
     public static ChatTarget Guild { get; } = new GuildTarget();
-    /// <summary>Send a private whisper to the player identified by <paramref name="targetId"/>.</summary>
+    /// <summary>Send a private whisper to the player whose charId is <paramref name="targetId"/>
+    /// (the id a received <see cref="ChatMessage.SenderId"/> / <see cref="ChatMessage.PeerId"/> carries).</summary>
     public static ChatTarget Whisper(long targetId) => new WhisperTarget(targetId);
 
-    /// <summary>Build a reply target matching the channel that <paramref name="source"/> arrived on.</summary>
+    /// <summary>Build a reply target matching the channel that <paramref name="source"/> arrived on. A whisper
+    /// replies to the conversation PEER when known (so replying to your own echoed whisper reaches the
+    /// recipient, not yourself), else to the sender.</summary>
     public static ChatTarget Reply(ChatMessage source) => source.Channel switch
     {
-        ChatChannel.Whisper => Whisper(source.SenderId),
+        ChatChannel.Whisper => Whisper(source.PeerId != 0 ? source.PeerId : source.SenderId),
         ChatChannel.Say     => Say,
         ChatChannel.Party   => Party,
         ChatChannel.Guild   => Guild,
@@ -38,7 +41,8 @@ public abstract record ChatTarget
     public sealed record PartyTarget  : ChatTarget;
     /// <summary>Guild channel target.</summary>
     public sealed record GuildTarget  : ChatTarget;
-    /// <summary>Private whisper target; <see cref="TargetId"/> is the recipient's entity id.</summary>
-    /// <param name="TargetId">Entity id of the whisper recipient.</param>
+    /// <summary>Private whisper target; <see cref="TargetId"/> is the recipient's charId (NOT an entity uuid —
+    /// a charId is <c>uuid &gt;&gt; 16</c>). Written to the wire as <c>ChatMsgInfo.target_id</c>.</summary>
+    /// <param name="TargetId">CharId of the whisper recipient.</param>
     public sealed record WhisperTarget(long TargetId) : ChatTarget;
 }

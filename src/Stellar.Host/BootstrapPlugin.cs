@@ -74,6 +74,13 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private ChatService? _chatService;
     private CombatService? _combatService;
     private SocialDataCache? _socialDataCache;
+    // Outbound port that originates the game's own social-data request via Lua. Promoted from a local in
+    // BuildCombatSocialServices so BuildInfraServices can hand it to PlayerProfileService (avatar lookups
+    // now ride the same SocialDataCache-fed pipeline, not a direct Social proxy call).
+    private Stellar.Application.Abstractions.ISocialRefreshRequester? _socialRefresh;
+    // IPlayerProfile: resolves a player's avatar URL via the game's Social.GetSocialData RPC. Built +
+    // ticked in BuildInfraServices (Wiring.PluginHost.cs); fed to the PluginServices aggregator.
+    private PlayerProfileService? _playerProfileService;
     // Generic profile-card action registry: write side → IPluginServices.ProfileCardActions (plugins
     // register buttons); read side (IProfileCardActionSource) → the native-card injector.
     private ProfileCardActionRegistry? _profileCardActions;
@@ -217,6 +224,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         WireRenderQuality(log); // render quality + time of day; before WirePhotoStudio (capture takes the scale guard)
         WireReShade(log);       // IReShade + bridge; before WirePhotoStudio (capture draws through the bridge)
         WireVoiceInjection(log);// IVoiceInjection shared mixer; before WireGameEventsAndPluginHost (feeds the aggregator)
+        WireChatLuaServices(log); // Lua-polled chat sources (system notices, friends); before the aggregator
         WirePhotoStudio(log);   // photo services feed the plugin-services aggregator; game types resolve lazily
         WireFreeCamera(log);    // free-camera services; needs _photoMode (release on the game's camera mode / cutscene)
         WireGameEventsAndPluginHost(log, configFactory);
@@ -293,6 +301,17 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
         InstallVoiceCaptureHook(log);                   // native DirectSound capture hook (before login's GCloudVoice_Init)
+        InstallStickerAddressCapture(log);              // ⚠️ THROWAWAY diagnostic — remove after reading [StickerCap] log
+    }
+
+    // ⚠️ THROWAWAY DIAGNOSTIC (remove with StickerAddressCapturePatch.cs). PREFIXES on BOTH ZRawImage image setters
+    // (SetImage = emoji panel, SetImageWithCallback = chat bubble) that log EVERY distinct address string (unfiltered,
+    // dedup, capped) the GAME's own chat UI hands the resource pipeline, so we can compare them against our mod's
+    // neutral ui/textures/chat_emoji/sticker_17_11 request. Pure logging.
+    private void InstallStickerAddressCapture(BepInExPluginLog log)
+    {
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        Stellar.Infrastructure.Game.StickerAddressCapturePatch.Install(_frameworkHarmonyHost, log.Info);
     }
 
     // Always-on band tone relay (2-repo feature; sender half is the Maestro plugin). Listener-side prefix on

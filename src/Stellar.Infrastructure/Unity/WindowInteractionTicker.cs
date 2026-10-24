@@ -92,7 +92,9 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
-        PruneChartPans(); PruneChartNavs();
+        // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
+        for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
+        PruneChartPans(); PruneChartNavs(); PruneReorder(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -109,6 +111,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (cell == null) continue;
             if (!cell.gameObject.activeInHierarchy) { if (_hoverState[i]) { _hoverState[i] = false; try { set(false); } catch { } } continue; }
             var over = RectTransformUtility.RectangleContainsScreenPoint(cell, hp, null)
+                       && !OutsideClip(cell, hp)   // the scrolled-off (clipped) part of a row is not hoverable
                        && !FrontWindowBlocks(hp, FindWindowRoot(cell));
             if (over != _hoverState[i]) { _hoverState[i] = over; try { set(over); } catch { } }
         }
@@ -132,26 +135,21 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         _scaler.referenceResolution = Stellar.Infrastructure.Game.WindowRenderer.UiRefResolution(u);
     }
 
-    // pixelPerfect snaps graphics to the physical pixel grid (crisp text), but it re-snaps every frame — so a
-    // MOVING window's contents step by whole pixels instead of gliding. Turn it off while a window is being
-    // dragged or resized (smooth sub-pixel movement), back on otherwise so static UI stays crisp. Guarded so the
-    // canvas rebuild only happens when the state actually flips.
-    private void SyncPixelPerfect()
-    {
-        if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
-        if (_canvasComp == null) return;
-        // pixelPerfect ON keeps glyphs/graphics on whole pixels (crisp text) but re-snaps every frame, which makes
-        // a MOVING window's contents step by whole pixels — so turn it off at ANY scale while a window is being
-        // dragged or resized (smooth sub-pixel drag), then back on so static UI re-crisps on release.
-        var moving = _activeWinDrag != null || _activeResize >= 0;
-        var want = !moving;
-        if (_canvasComp.pixelPerfect != want) _canvasComp.pixelPerfect = want;
-    }
-
     private void Update()
     {
         TickHitch();   // .Diagnostics.cs — reports the frame that just ended if it was a hitch
+        // Everything AFTER the hitch report is this frame's ticker cost (ui:ticker; 0 = HITCH off). Not try/finally: a
+        // throwing Update leaves one frame untimed, which is fine for a diagnostic.
+        var tickT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
+        UpdateBody();
+        UiPerfStats.AddTicker(tickT);
+    }
+
+    private void UpdateBody()
+    {
+        TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         SyncUiScale();
+        TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
         SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {
@@ -198,6 +196,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         // A press over an open popup belongs to the popup (its uGUI buttons) — never grab a window/slot beneath it.
         if (PointerOverPopup(Input.mousePosition)) { _lastMouse = Input.mousePosition; return; }
+        // A press on a reorderable list item (ListElement.OnReorder, .Reorder.cs) claims the pointer before any window drag.
+        if (BeginReorderPress(Input.mousePosition)) { EditDragArbiter.WindowDragActive = true; _lastMouse = Input.mousePosition; return; }
         // Render-host (3D portrait) drag claims the pointer first so dragging the box orbits its camera.
         _activeRenderHost = HitRenderHost(Input.mousePosition);
         if (_activeRenderHost >= 0) { _lastMouse = Input.mousePosition; return; }
@@ -227,6 +227,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     // Mouse-held: drive whichever single interaction was claimed on mouse-down.
     private void TickActivePointer()
     {
+        if (_rl != null) { TickReorder(); return; }
         if (_activeRenderHost >= 0) { TickRenderHostDrag(); return; }
         if (_activeChartPan >= 0) { TickChartPanDrag(); return; }
         if (_activeChartNav >= 0) { TickChartNavDrag(); return; }
@@ -262,6 +263,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void ReleasePointer()
     {
         if (_activeSlotDrag >= 0) EndSlotDrag(commit: true);
+        ReleaseReorder();
         _activeDrag = -1; _activeWinDrag = null; _activeResize = -1; _activeRenderHost = -1; _activeChartPan = -1;
         _activeChartNav = -1; _navGrab = NavGrab.None;
         EditDragArbiter.WindowDragActive = false;
@@ -295,36 +297,6 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         var r = area.rect;
         try { pick(Mathf.Clamp01((lp.x - r.x) / r.width), Mathf.Clamp01((lp.y - r.y) / r.height)); }
         catch { if (_throwLogged++ == 0) Debug.LogWarning("[Window] picker pick threw (rate-limited)"); }
-    }
-
-    // SOURCE hit-test (mouse-down): the cell must be active AND pass CanDrag — so a drag only STARTS from a
-    // draggable, occupied slot (CanDrag gates leader/Raid20/occupancy).
-    private int HitSlot(Vector3 mp)
-    {
-        for (var i = 0; i < DragSlots.Count; i++)
-        {
-            var (cell, _, canDrag, _) = DragSlots[i];
-            if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
-            try { if (canDrag != null && !canDrag()) continue; } catch { continue; }
-            if (FrontWindowBlocks(mp, FindWindowRoot(cell))) continue;
-            return i;
-        }
-        return -1;
-    }
-
-    // TARGET hit-test (hover + drop): any active registered cell under the cursor — NOT gated on CanDrag, so an
-    // EMPTY slot is a valid drop destination (CanDrag's occupancy check only restricts the source). A drag is
-    // already in progress (started from a CanDrag source), so every active cell in that grid is a legal target.
-    private int HitDropTarget(Vector3 mp)
-    {
-        for (var i = 0; i < DragSlots.Count; i++)
-        {
-            var cell = DragSlots[i].Cell;
-            if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) return i;
-        }
-        return -1;
     }
 
     private void BeginSlotDrag(int idx)
@@ -373,24 +345,6 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             { try { DragSlots[i].Hover(on); } catch { } return; }
     }
 
-    private int HitResizeGrip(Vector3 mp)
-    {
-        for (var i = 0; i < DragResizers.Count; i++)
-        {
-            // Edit-only windows (pinned overlays) resize only while layout edit-mode is active — mirrors the
-            // move gate in HitWindowHandle. Free-drag dialogs (EditOnly=false) resize any time. When gated off
-            // the grip isn't hit-testable, so the press falls through to whatever's behind it.
-            if (DragResizers[i].EditOnly && !LayoutEditGate.IsEditing) continue;
-            // Per-plugin edit filter (same rule as the outline/select): an edit-only grip resizes only while its window passes it.
-            if (DragResizers[i].EditOnly && LayoutEditGate.EditableWindowFilter != null && !LayoutEditGate.EditableWindowFilter(DragResizers[i].WindowId)) continue;
-            if (DragResizers[i].Grip == null || !DragResizers[i].Grip.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(DragResizers[i].Grip, mp, null)) continue;
-            if (FrontWindowBlocks(mp, DragResizers[i].Target)) continue;
-            return i;
-        }
-        return -1;
-    }
-
     // Re-assert a free, visible cursor in LateUpdate (AFTER the game's per-frame cursor-hide in its Update) so
     // a focused Stellar field doesn't lose the cursor — the game hides the cursor in gameplay (Alt frees it),
     // but Alt is suppressed while a field is focused, so the framework must keep the cursor itself. Field.Tick
@@ -401,98 +355,5 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         {
             if (Fields[i].IsFocused) { Cursor.visible = true; Cursor.lockState = CursorLockMode.None; return; }
         }
-    }
-
-    // The bar is only 5px wide — inflate the exclusion zone 6px each side so a slightly-off press still
-    // reaches the Scrollbar instead of starting a window drag.
-    private bool PointerOnScrollbar(Vector3 mp)
-    {
-        for (var i = 0; i < ScrollbarRects.Count; i++)
-        {
-            var rt = ScrollbarRects[i];
-            if (rt == null || !rt.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, mp, null, out var lp)) continue;
-            var r = rt.rect;
-            if (lp.x < r.xMin - 6f || lp.x > r.xMax + 6f || lp.y < r.yMin || lp.y > r.yMax) continue;
-            // Only suppress the drag if the scrollbar's own window is the front window at this point —
-            // a scrollbar in a back window must not block dragging the front window's titlebar.
-            if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
-            return true;
-        }
-        return false;
-    }
-
-    // Slot-drag exclusion (mirrors PointerOnScrollbar for the window-drag path): true when the pointer is over a
-    // registered, active voice cell. Only cells a row registered while clickable are in the list, so a
-    // display-only voice icon never suppresses a slot drag.
-    private bool PointerOverVoiceClick(Vector3 mp)
-    {
-        for (var i = 0; i < VoiceClickRects.Count; i++)
-        {
-            var rt = VoiceClickRects[i];
-            if (rt == null || !rt.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(rt, mp, null)) continue;
-            if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
-            return true;
-        }
-        return false;
-    }
-
-    private RectTransform? HitWindowHandle(Vector3 mp)
-    {
-        for (var i = 0; i < DragWindows.Count; i++)
-        {
-            // Edit-only windows (overlay/status chromes) drag only while layout edit-mode is active — so they
-            // don't move accidentally during play. Popup dialogs (EditOnly=false) drag any time.
-            if (DragWindows[i].EditOnly && !LayoutEditGate.IsEditing) continue;
-            // Per-plugin edit filter (same rule as the outline/select): an edit-only window drags only while it passes it.
-            if (DragWindows[i].EditOnly && LayoutEditGate.EditableWindowFilter != null && !LayoutEditGate.EditableWindowFilter(DragWindows[i].WindowId)) continue;
-            if (DragWindows[i].Handle == null) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(DragWindows[i].Handle, mp, null)) continue;
-            // Don't start a window drag if a higher-Z window covers the pointer — the press belongs to that window.
-            if (FrontWindowBlocks(mp, DragWindows[i].Target)) continue;
-            return DragWindows[i].Target;
-        }
-        return null;
-    }
-
-    private int HitTest(Vector3 mp)
-    {
-        for (var i = 0; i < DragAreas.Count; i++)
-        {
-            var area = DragAreas[i].Area;
-            if (area == null) continue;
-            if (!PointerHitRule.AcceptsPress(alive: true, area.gameObject.activeInHierarchy,
-                    RectTransformUtility.RectangleContainsScreenPoint(area, mp, null),
-                    () => FrontWindowBlocks(mp, FindWindowRoot(area)))) continue;
-            return i;
-        }
-        return -1;
-    }
-
-    // Returns true if any active window with a higher sibling index (= drawn in front) also covers the pointer.
-    // Sibling index is set by ReorderWindows() to match ZOrder, so this is a z-order-aware block check.
-    internal bool FrontWindowBlocks(Vector2 mp, RectTransform? cellWindowRoot)
-    {
-        if (cellWindowRoot == null) return false;
-        int selfSibling = cellWindowRoot.GetSiblingIndex();
-        for (var i = 0; i < WindowRoots.Count; i++)
-        {
-            var root = WindowRoots[i];
-            if (root == null || !root.gameObject.activeInHierarchy) continue;
-            if (root.GetSiblingIndex() <= selfSibling) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(root, mp, null)) return true;
-        }
-        return false;
-    }
-
-    // Walk up a cell's hierarchy to find its direct-canvas-child RectTransform (the window root).
-    // All Stellar windows are direct children of the canvas root, so we stop one level below the canvas root.
-    internal static RectTransform? FindWindowRoot(RectTransform cell)
-    {
-        Transform t = cell;
-        while (t != null && t.parent != null && t.parent.parent != null)
-            t = t.parent;
-        return t as RectTransform;
     }
 }

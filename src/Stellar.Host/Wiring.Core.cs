@@ -53,7 +53,13 @@ public sealed partial class BootstrapPlugin
     // construction order here is preserved exactly as it was inline.
     private void BuildCombatSocialServices(BepInExPluginLog log, ReflectionGameTypeRegistry typeRegistry)
     {
-        _chatService = new ChatService(log);
+        // SelfCharId lets the chat service decide a whisper's conversation peer (own echo → recipient).
+        // ServerNowMs drives the server-driven send cooldown (lambda defers: _combatService is built just below).
+        _chatService = new ChatService(log)
+        {
+            SelfCharId = () => _playerState?.CharId ?? 0L,
+            ServerNowMs = () => _combatService?.ServerNowMs ?? 0L,
+        };
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap
         // pushes decoded GetSocialDataReply records into.
@@ -66,8 +72,10 @@ public sealed partial class BootstrapPlugin
         // Outbound port for CombatService.RefreshSocialSnapshot: originates the game's own
         // AsyncGetSocialData(self) RPC via Lua reflection (same bridge as PandaPortraitModelProbe).
         // typeRegistry is already available here (passed in by Load()), so no wiring-order issue.
-        var socialRefresh = new PandaSocialRefresh(typeRegistry, log);
-        _combatService = new CombatService(log, _entityTracker, _socialDataCache, socialRefresh, BuildSpecRootBuffMap(log));
+        // Promoted to a Host field (was a local) so the PlayerProfileService wiring in BuildInfraServices can
+        // reach it — avatar lookups now originate through this same requester + poll SocialDataCache.
+        _socialRefresh = new PandaSocialRefresh(typeRegistry, log);
+        _combatService = new CombatService(log, _entityTracker, _socialDataCache, _socialRefresh, BuildSpecRootBuffMap(log));
         _partyService = new PartyService(_combatService, _clientState, log);
         // Dungeon run state (WorldNtf SyncDungeonData → IDungeonState). Read+write
         // sides on one service; the Infrastructure probe (Wiring.Wire.cs) pushes via IDungeonStateSink.

@@ -704,10 +704,11 @@ public sealed class WireProtocolTests
             .Tag(3, 2).String("ping")
             .ToArray();
 
-        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType);
+        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType, out var stickerId);
 
         Assert.Equal("ping", text);
         Assert.Equal(0, msgType);
+        Assert.Equal(0, stickerId);
     }
 
     [Fact]
@@ -718,10 +719,11 @@ public sealed class WireProtocolTests
             .Tag(3, 2).String("[item link]")
             .ToArray();
 
-        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType);
+        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType, out var stickerId);
 
         Assert.Equal("[item link]", text);
         Assert.Equal(6, msgType);
+        Assert.Equal(0, stickerId);
     }
 
     [Fact]
@@ -729,9 +731,27 @@ public sealed class WireProtocolTests
     {
         var bytes = new WireBytes().Tag(1, 0).Varint(3).ToArray();
 
-        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType);
+        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType, out var stickerId);
 
         Assert.Equal(string.Empty, text);
         Assert.Equal(3, msgType);
+        Assert.Equal(0, stickerId);
+    }
+
+    [Fact]
+    public void TryParseChatMsgInfo_PictureEmoji_DecodesStickerId()
+    {
+        // msg_type = PictureEmoji(3); picture_emoji (field 5) = ChatPictureEmoji { config_id = 3001 }.
+        var emoji = new WireBytes().Tag(1, 0).Varint(3001).ToArray();
+        var bytes = new WireBytes()
+            .Tag(1, 0).Varint(3)
+            .Tag(5, 2).LengthDelimited(emoji)
+            .ToArray();
+
+        WireProtocol.TryParseChatMsgInfo(bytes, out var text, out var msgType, out var stickerId);
+
+        Assert.Equal(3, msgType);
+        Assert.Equal(3001, stickerId);
+        Assert.Equal(string.Empty, text);
     }
 }

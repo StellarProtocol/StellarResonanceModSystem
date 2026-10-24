@@ -43,7 +43,7 @@ public sealed partial class WindowInteractionTicker
         {
             var (cell, cb) = RightClicks[i];
             if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null) || OutsideClip(cell, mp)) continue;
             // Don't fire if a higher-Z window covers the pointer — that window owns this click.
             if (FrontWindowBlocks(mp, FindWindowRoot(cell))) continue;
             try { cb(); } catch { if (_throwLogged++ == 0) Debug.LogWarning("[Window] right-click cb threw (rate-limited)"); }

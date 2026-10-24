@@ -36,6 +36,14 @@ public interface IWindowHost
     /// return out of context — e.g. <c>() => _services.Windows.IsLayoutEditing ? "1234" : Live()</c>.
     /// Polled each refresh (~10 Hz); flips within ~100 ms of entering/leaving edit-mode.</summary>
     bool IsLayoutEditing { get; }
+
+    /// <summary>Hint that <paramref name="text"/> is about to be shown in a styled / <c>RichEmoji</c>
+    /// <see cref="TextElement"/>: the framework rasterizes the glyphs it does not have yet into the font atlas a
+    /// few per frame, so the window apply that first lays the text out doesn't stall doing it all at once. Call it
+    /// when content ARRIVES, ahead of the render (e.g. a chat log on each incoming message, history included).
+    /// Best-effort and optional: glyphs not warmed in time are still drawn exactly as before. Main thread or any
+    /// thread; null/empty is ignored. No-op where unsupported (the default implementation). Added in 2.26.0.</summary>
+    void PrewarmText(string text) { }
 }
 
 /// <summary>Handle to a registered interactive uGUI window. Auto-removed on plugin/framework dispose.</summary>

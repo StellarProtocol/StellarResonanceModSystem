@@ -49,6 +49,11 @@ internal sealed partial class PandaChatProbe
     private PropertyInfo? _tcpClientHandleAccessor;
     private bool _handleAccessorResolved;
 
+    // One-shot gate for the first live chat client captured from the OUTBOUND
+    // ChitChat SendBytes hook (Send.Hooks.Rpc.cs). Kept distinct from the inbound
+    // capture's first-cache log so the two sources are distinguishable in the log.
+    private bool _outboundClientCapturedLogged;
+
     private static IntPtr NativePtr(object? o) => (o as Il2CppObjectBase)?.Pointer ?? IntPtr.Zero;
 
     /// <summary>
@@ -70,15 +75,67 @@ internal sealed partial class PandaChatProbe
 
         lock (_chatTcpClientLock)
         {
-            if (ptr == _chatTcpClientPtr || ptr == _closedChatTcpClientPtr) return;
-            bool first = _chatTcpClient is null && _closedChatTcpClient is null;
-            _chatTcpClient = conn;
-            _chatTcpClientPtr = ptr;
+            if (!TryStoreChatClientLocked(conn, ptr, out bool first)) return;
             if (first)
                 _log.Info($"[ChatProbe] cached chat ZTcpClient instance ({conn.GetType().FullName}) for outbound send{label ?? string.Empty}");
             else
                 _log.Info("[ChatProbe] chat connection changed — re-cached");
         }
+    }
+
+    /// <summary>
+    /// Feed the shared chat-client cache from the OUTBOUND ChitChat
+    /// <c>SendBytes</c> hook (see <c>Send.Hooks.Rpc.cs</c>): the <c>ZRpcImpl</c>
+    /// doing the send is DEFINITELY the live chat connection, and the hook fires
+    /// at login during the history fetch — BEFORE any inbound chat packet — so
+    /// this populates the SAME <see cref="_chatTcpClient"/> slot the passive
+    /// inbound capture writes, closing the fresh-login send window. An ADDITIONAL
+    /// source for one cache, never a parallel one: same field, same
+    /// <see cref="_chatTcpClientLock"/>, same native-pointer dedupe. May run on a
+    /// net thread (<c>SendBytes</c> is not necessarily the Unity main thread) —
+    /// all mutation is under the lock and only an object reference is stored.
+    /// </summary>
+    private void CacheChatTcpClientFromOutbound(object client, uint callId)
+    {
+        var ptr = NativePtr(client);
+        if (ptr == IntPtr.Zero || ptr == _chatTcpClientPtr) return;
+
+        lock (_chatTcpClientLock)
+        {
+            if (!TryStoreChatClientLocked(client, ptr, out bool first)) return;
+            if (!_outboundClientCapturedLogged)
+            {
+                _outboundClientCapturedLogged = true;
+                _log.Info($"[ChatProbe] captured live chat client from outbound ChitChat SendBytes (callId={callId})");
+            }
+            else if (!first)
+            {
+                _log.Info("[ChatProbe] chat connection changed — re-cached (outbound SendBytes)");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Store <paramref name="client"/> (native pointer <paramref name="ptr"/>)
+    /// into the shared cache slot. The caller holds <see cref="_chatTcpClientLock"/>
+    /// and has already rejected a zero / identical pointer on its lock-free fast
+    /// path. Re-checks the current + just-closed pointer under the lock (another
+    /// thread or source may have moved the slot since the fast-path check) and
+    /// refuses to re-cache the just-closed instance. Returns false when the store
+    /// is a no-op; on a real store returns true and sets <paramref name="firstEver"/>
+    /// to whether this is the first client the probe has ever cached. Shared by the
+    /// passive inbound capture (<see cref="CacheChatTcpClient"/>) and the outbound
+    /// SendBytes capture (<see cref="CacheChatTcpClientFromOutbound"/>) so both
+    /// sources write one slot through one code path.
+    /// </summary>
+    private bool TryStoreChatClientLocked(object client, IntPtr ptr, out bool firstEver)
+    {
+        firstEver = false;
+        if (ptr == _chatTcpClientPtr || ptr == _closedChatTcpClientPtr) return false;
+        firstEver = _chatTcpClient is null && _closedChatTcpClient is null;
+        _chatTcpClient = client;
+        _chatTcpClientPtr = ptr;
+        return true;
     }
 
     /// <summary>

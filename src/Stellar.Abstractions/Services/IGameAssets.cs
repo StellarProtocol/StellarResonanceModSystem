@@ -14,7 +14,7 @@ namespace Stellar.Abstractions.Services;
 /// handle once the load succeeds. A permanently failed load also returns
 /// <c>null</c> — the caller should fall back to text-only rendering.
 /// </remarks>
-public interface IGameAssets
+public interface IGameAssets : IGameStickerCatalog
 {
     /// <summary>
     /// Returns the atlas texture handle for the profession icon identified by
@@ -88,4 +88,12 @@ public interface IGameAssets
     /// <c>(0,0,1,1)</c> for a standalone texture / until the load resolves.
     /// </param>
     object? LoadByPath(string assetPath, out UvRect uv);
+
+    /// <summary>Atlas/texture handle for a chat picture-emoji / sticker, async-loaded via ZResLoader from the
+    /// ChatStickersTable row's Res (path "ui/textures/chat_emoji/&lt;Res&gt;"). Returns null while loading, on failure,
+    /// or when the config id is unknown / the table isn't loaded yet; <paramref name="uv"/> is the sub-rect
+    /// ((0,0,1,1) until resolved). Safe to call every frame (result cached).</summary>
+    /// <param name="stickerConfigId">The ChatPictureEmoji config_id (= ChatMessage.StickerId).</param>
+    /// <param name="uv">The UV sub-rect for the sticker within its atlas, or full-rect ((0,0,1,1)) until resolved.</param>
+    object? LoadStickerIcon(int stickerConfigId, out UvRect uv);
 }

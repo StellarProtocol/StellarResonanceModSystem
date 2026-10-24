@@ -74,6 +74,8 @@ internal sealed class PluginServices : IPluginServices
     /// <summary>The shared ReShade service's uniform overrides, or a null object when it has none.</summary>
     public IReShadeUniforms ReShadeUniforms => ReShade as IReShadeUniforms ?? UnavailableReShadeUniforms.Instance;
     public IVoiceInjection Voice { get; }
+    public IPlayerProfile PlayerProfile { get; }
+    public IFriends Friends { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -135,7 +137,9 @@ internal sealed class PluginServices : IPluginServices
         FreeCameraServiceSet freeCamera,
         IPluginDownloads downloads,
         IReShade reShade,
-        IVoiceInjection voice)
+        IVoiceInjection voice,
+        IPlayerProfile playerProfile,
+        IFriends friends)
     {
         Log = log;
         Framework = framework;
@@ -204,5 +208,7 @@ internal sealed class PluginServices : IPluginServices
         Downloads = downloads;
         ReShade = reShade;
         Voice = voice;
+        PlayerProfile = playerProfile;
+        Friends = friends;
     }
 }

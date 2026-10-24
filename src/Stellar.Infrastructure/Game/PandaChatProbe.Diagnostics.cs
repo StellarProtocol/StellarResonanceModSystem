@@ -14,7 +14,6 @@ namespace Stellar.Infrastructure.Game;
 /// Entry points called from the main partial file:
 /// <list type="bullet">
 /// <item><see cref="DiagPatchAllStart"/> — fired once at PatchAll. No-op today; reserved as the hook point for future bring-up diagnostics.</item>
-/// <item><see cref="DiagProxyCallObserved"/> — per-batch history ProxyCall observation.</item>
 /// <item><see cref="DiagChatReceived"/> — per-message method=1 receive.</item>
 /// <item><see cref="DiagChatMethod3Received"/> — per-message method=3 receive.</item>
 /// <item><see cref="DiagStubCallReceived"/> — per-stub-call receive.</item>
@@ -50,26 +49,14 @@ internal sealed partial class PandaChatProbe
     // calling them is a single static-field read on the hot path.
 
     /// <summary>
-    /// Diagnostics mode: log every subsequent GetChipChatRecords ProxyCall
-    /// observation so each history batch's outbound channel_type can be
-    /// correlated with the channel the user perceives in the UI.
-    /// </summary>
-    private void DiagProxyCallObserved(int channelType)
-    {
-        if (!StellarDiagnostics.IsEnabled) return;
-        _log.Info($"[ChatProbe] GetChipChatRecords ProxyCall observed: channelType={channelType} (wire={WireProtocol.MapWireChannel(channelType)})");
-    }
-
-    /// <summary>
     /// Diagnostics mode: log every subsequent parsed ChitChatNtf method=1
     /// receive. Useful for whisper-drop / dedup investigations.
     /// </summary>
     private void DiagChatReceived(ChatMessage chatMsg)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        var dbgText = chatMsg.Text ?? string.Empty;
-        if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-        _log.Info($"[Chat] received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+        // Ids + lengths only, even in diagnostics mode: never the message text or the sender name.
+        _log.Info($"[Chat] received: channel={chatMsg.Channel} senderId={chatMsg.SenderId} textLen={chatMsg.Text?.Length ?? 0}");
     }
 
     /// <summary>
@@ -79,9 +66,21 @@ internal sealed partial class PandaChatProbe
     private void DiagChatMethod3Received(ChatMessage chatMsg)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        var dbgText = chatMsg.Text ?? string.Empty;
-        if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-        _log.Info($"[Chat method=3] received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+        _log.Info($"[Chat method=3] received: channel={chatMsg.Channel} senderId={chatMsg.SenderId} textLen={chatMsg.Text?.Length ?? 0}");
+    }
+
+    /// <summary>
+    /// Diagnostics mode: hex prefix (≤32 bytes) of the first correlated
+    /// ChitChat Return, for framing checks. Diagnostics-only because those
+    /// bytes are the first history record (sender name, then text).
+    /// </summary>
+    private void DiagFirstReturnBytes(ReadOnlySpan<byte> payload, uint callId)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var dumpLen = payload.Length < 32 ? payload.Length : 32;
+        var sb = new System.Text.StringBuilder(dumpLen * 3);
+        for (int i = 0; i < dumpLen; i++) { sb.Append(payload[i].ToString("X2")); sb.Append(' '); }
+        _log.Info($"[ChatProbe] first correlated ChitChat Return bytes: callId={callId} firstBytes={sb}");
     }
 
     /// <summary>

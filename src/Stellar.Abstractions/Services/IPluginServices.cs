@@ -165,4 +165,10 @@ public interface IPluginServices
     /// <summary>Play audio into the game's OUTGOING team-voice stream (mixed with the live mic) via a shared
     /// multi-source mixer; sources this plugin creates are auto-disposed on unload. See <see cref="IVoiceInjection"/>.</summary>
     IVoiceInjection Voice { get; }
+    /// <summary>Resolve a player's profile avatar image URL by char/role id (via the game's <c>GetSocialData</c>
+    /// RPC) — for chat / nameplate avatars. See <see cref="IPlayerProfile"/>.</summary>
+    IPlayerProfile PlayerProfile { get; }
+    /// <summary>Friend list + private-chat (whisper) conversations from the game's own data, and the game's private-chat
+    /// actions (open history, mark read, create, close). See <see cref="IFriends"/>.</summary>
+    IFriends Friends { get; }
 }

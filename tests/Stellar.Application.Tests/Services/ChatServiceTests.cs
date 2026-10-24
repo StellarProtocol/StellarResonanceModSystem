@@ -217,6 +217,109 @@ public sealed class ChatServiceTests
         Assert.Contains(log.WarningLines, l => l.Contains("send threw"));
     }
 
+    // -------- Client system notices: own ring, merged by arrival --------
+
+    [Fact]
+    public void Notices_DoNotEvictChat_AndInterleaveByArrival()
+    {
+        var (svc, probe) = NewService();
+        probe.OnMessageReceived!(MakeMsg(1));
+        for (var i = 0; i < 600; i++) svc.PublishLocal(MakeNotice(-1 - i));   // far past the notice cap
+        probe.OnMessageReceived!(MakeMsg(2));
+        svc.PublishLocal(MakeNotice(-9999));
+        svc.Drain();
+
+        var all = svc.RecentMessages;
+        Assert.Equal(1, all[0].MsgId);                       // the old chat line survived the notice burst
+        Assert.Equal(new long[] { 1, 2 }, all.Where(m => m.SystemLabel == null).Select(m => m.MsgId).ToArray());
+        var notices = all.Where(m => m.SystemLabel != null).ToArray();
+        Assert.True(notices.Length < 600);                   // notices capped on their own
+        Assert.Equal(-9999, all[^1].MsgId);                  // arrival order kept: newest notice after chat #2
+        Assert.Equal(2, all[^2].MsgId);
+    }
+
+    [Fact]
+    public void ClearSession_EmptiesBothRings_DropsQueued_AndResetsProbe()
+    {
+        var (svc, probe) = NewService();
+        probe.OnMessageReceived!(MakeMsg(1));
+        svc.PublishLocal(MakeNotice(-1));
+        svc.Drain();
+        var before = svc.RecentMessages;
+        probe.OnMessageReceived!(MakeMsg(2));   // queued, not yet drained: the old character's
+
+        svc.ClearSession();
+        svc.Drain();
+
+        Assert.Equal(2, before.Count);
+        Assert.Empty(svc.RecentMessages);
+        Assert.Equal(1, probe.ResetSessionCalls);
+    }
+
+    [Fact]
+    public void WhisperDedup_Reset_LetsTheSameKeyThroughAgain()
+    {
+        var d = new Stellar.Application.Wire.WhisperDedup();
+        Assert.True(d.MarkSeen(63285900, 12, 1000));
+        Assert.False(d.MarkSeen(63285900, 12, 1000));   // same session: duplicate
+        d.Reset();                                        // logout
+        Assert.True(d.MarkSeen(63285900, 12, 1000));     // next character's history copy is delivered
+    }
+
+    private static ChatMessage MakeNotice(long msgId) => MakeMsg(msgId) with
+    {
+        Channel = ChatChannel.System, Type = ChatMessageType.System, SystemLabel = "Obtained",
+    };
+
+    // -------- Local send failure (ErrorNotSent) --------
+
+    [Fact]
+    public void Send_RefusedOnMainThread_RaisesNotSentBeforeReturning()
+    {
+        var (svc, probe) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        svc.Drain();   // learns the main thread (this test thread)
+        probe.NextTrySendResult = false;
+
+        svc.Send(ChatTarget.Whisper(42), "hi");
+
+        var r = Assert.Single(got);
+        Assert.False(r.Ok);
+        Assert.Equal(ChatSendResult.ErrorNotSent, r.ErrorCode);
+        Assert.Equal(ChatChannel.Whisper, r.Channel);
+        Assert.True(r.ViaFramework);
+    }
+
+    [Fact]
+    public void Send_RefusedBeforeFirstDrain_QueuesNotSentForDrain()
+    {
+        var (svc, probe) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        probe.TrySendShouldThrow = true;
+
+        svc.SendSticker(ChatTarget.World, 7);
+        Assert.Empty(got);
+        svc.Drain();
+
+        Assert.Equal(ChatSendResult.ErrorNotSent, Assert.Single(got).ErrorCode);
+    }
+
+    [Fact]
+    public void Send_Dispatched_RaisesNothing()
+    {
+        var (svc, _) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        svc.Drain();
+
+        svc.Send(ChatTarget.Party, "ok");
+        svc.Drain();
+
+        Assert.Empty(got);
+    }
+
     // -------- Helpers --------
 
     private static (ChatService svc, StubProbe probe) NewService()

@@ -14,6 +14,9 @@ namespace Stellar.Infrastructure.Game;
 /// game's Alt-to-free-cursor, which is suppressed during focus) and honours Esc to defocus. Pure
 /// UnityEngine.UI (no Il2CppInterop) so it builds identically in the headless UI sandbox and in-game.
 /// Keyboard SUPPRESSION stays in KeyboardInputGate, driven by <see cref="IsFocused"/>.
+/// The RichEmoji variant swaps the legacy InputField for a TMP one behind <see cref="IRichInputField"/> (built by
+/// the game-only <c>TmpRichInputField</c> through <see cref="StyledTextFactory.CreateRichInput"/>); everything
+/// above runs unchanged on top of it.
 /// NOTE: onValidateInput is intentionally NOT used — its char parameter is truncated to 8 bits across
 /// the IL2CPP delegate bridge, breaking non-ASCII input. Newline detection uses onValueChanged instead.
 /// </summary>
@@ -24,6 +27,10 @@ internal sealed partial class UGuiTextInput
     private readonly Action<string>? _onChange;   // per-keystroke (live filters); null = submit-only field
 
     private InputField? _field;
+    // RichEmoji: the TMP field (game-only, via StyledTextFactory.CreateRichInput) INSTEAD of _field — exactly one
+    // of the two is set once built. Every shared path below branches on it; TextArea mode never uses it.
+    private IRichInputField? _rich;
+    private static bool _loggedRichFallback;
     private bool _wasFocused;
     private bool _savedCursorVisible;
     private CursorLockMode _savedCursorLock;
@@ -47,10 +54,13 @@ internal sealed partial class UGuiTextInput
     /// <summary>True while the field holds keyboard focus — the signal KeyboardInputGate consumes. In single-line
     /// mode it ALSO stays true through the submit grace (Enter held + a short tail after release), see
     /// <see cref="SubmitGraceActive"/>.</summary>
-    public bool IsFocused => _field != null && (_field.isFocused || SubmitGraceActive());
+    public bool IsFocused => (_field != null || _rich != null) && (FieldFocused || SubmitGraceActive());
+
+    // Raw focus of whichever field kind was built (no grace).
+    private bool FieldFocused => _field != null ? _field.isFocused : _rich != null && _rich.IsFocused;
 
     /// <summary>Current field text (empty when not built).</summary>
-    public string Text => _field != null ? _field.text : string.Empty;
+    public string Text => _field != null ? _field.text : _rich != null ? _rich.Text : string.Empty;
 
     /// <summary>Builds the field under <paramref name="parent"/> and returns its root GameObject.
     /// Visuals mirror the prior raw spike InputField (white bg, black 13px MiddleLeft text).
@@ -66,25 +76,68 @@ internal sealed partial class UGuiTextInput
     /// visible rows + inner padding) that NEVER grows the window: text WRAPS within the box width, and the field
     /// itself grows inside a ScrollRect (themed scrollbar, mouse wheel, caret-follow) — see UGuiTextInput.TextArea.cs.
     /// Unlike single-line-submit mode, Enter here inserts a REAL newline and keeps focus (no strip, no submit) —
-    /// the owner submits via its own button reading <see cref="Text"/> / the onChange buffer.</para></summary>
-    public GameObject Build(Transform parent, bool singleLine = false, bool multiLine = false, int lines = 4)
+    /// the owner submits via its own button reading <see cref="Text"/> / the onChange buffer.</para>
+    /// <para><paramref name="richEmoji"/> (opt-in, default/single-line only) builds the TMP field that draws
+    /// <c>&lt;sprite=N&gt;</c> as pictures (InputElement.RichEmoji); unavailable or failing → the legacy field.</para></summary>
+    public GameObject Build(Transform parent, bool singleLine = false, bool multiLine = false, int lines = 4,
+        bool richEmoji = false)
     {
-        if (_field != null)
+        if (_field != null || _rich != null)
             throw new InvalidOperationException("UGuiTextInput.Build called twice; call Destroy first.");
         _multiLine = multiLine;
         _singleLine = singleLine && !multiLine;   // mutually exclusive (no caller passes both); multiLine wins
         if (multiLine) return BuildTextArea(parent, lines);   // ScrollRect-wrapped growing field (TextArea partial)
+        if (richEmoji && TryBuildRich(parent) is { } rich) return rich;
+        var go = BuildBox(parent, out var bg);
+        var txt = CreateText(go.transform);
+        AttachField(go, txt, bg);
+        return go;
+    }
+
+    // The default/single-line box: 28-px min height + themed bg; single line pins it to a fixed, clipped box
+    // (see ConfigureFixedBox). Shared by the legacy and the rich field.
+    private GameObject BuildBox(Transform parent, out Image bg)
+    {
         const float boxHeight = 28f;
         var go = NewChild("UGuiTextInput", parent);
         var le = go.AddComponent<LayoutElement>();
         le.minHeight = boxHeight;
-        var bg = go.AddComponent<Image>();
+        bg = go.AddComponent<Image>();
         bg.color = new Color(0.95f, 0.95f, 0.95f, 1f);
-        // Single line pins the field to a fixed, clipped box (see helper); default mode is unchanged.
         if (_singleLine) ConfigureFixedBox(go, le, boxHeight);
-        var txt = CreateText(go.transform);
-        AttachField(go, txt, bg);
         return go;
+    }
+
+    // RichEmoji: the TMP field onto the same box. Priority 2 in BOTH modes: TMP_InputField's ILayoutElement reports
+    // the UNWRAPPED text width (legacy InputField reports ~the longest word), so on the priority-1 tie a long draft
+    // would widen the field and the window past InputElement.Width; unset values (preferredHeight in the default
+    // mode) still fall through to TMP, so the default mode still grows downward like the legacy one. Any failure
+    // tears the half-built box down (inactive at once, so this frame's layout skips it) and returns null → legacy.
+    private GameObject? TryBuildRich(Transform parent)
+    {
+        var create = StyledTextFactory.CreateRichInput;
+        if (create == null) { LogRichFallback("TMP rich-field factory not registered"); return null; }
+        GameObject? go = null;
+        try
+        {
+            go = BuildBox(parent, out var bg);
+            go.GetComponent<LayoutElement>().layoutPriority = 2;
+            _bg = bg;
+            _rich = create(go, new RichInputSpec(_singleLine, bg, OnFieldValueChanged, OnFieldSubmit));
+            if (_rich != null) return go;
+            LogRichFallback("TMP faces unavailable");
+        }
+        catch (Exception ex) { _rich = null; LogRichFallback($"TMP build threw: {ex.Message}"); }
+        _bg = null;
+        if (go != null) { go.SetActive(false); UnityEngine.Object.Destroy(go); }
+        return null;
+    }
+
+    private static void LogRichFallback(string why)
+    {
+        if (_loggedRichFallback) return;
+        _loggedRichFallback = true;
+        StyledTextFactory.Log?.Invoke($"[Window][emoji] RichEmoji input fell back to the plain field: {why}");
     }
 
     // The field's Text child: stretched over its parent, 13-px MiddleLeft, wrap/overflow per mode.
@@ -188,24 +241,30 @@ internal sealed partial class UGuiTextInput
     public void SetFont(Font? font)
     {
         if (_field?.textComponent != null && font != null) _field.textComponent.font = font;
+        if (_placeholder != null && font != null) _placeholder.font = font;   // legacy hint (.Placeholder.cs)
     }
 
-    /// <summary>Seed the field text (e.g. from a window InputElement's Get()). No-op if not built.</summary>
+    /// <summary>Seed the field text (e.g. from a window InputElement's Get()). No-op if not built. The rich field
+    /// also moves its caret to the END (an external change is usually an append, e.g. a picked emoji).</summary>
     public void SetText(string value)
     {
+        ForgetSelection();   // .Insert.cs — remembered indices pointed into the old text
         if (_field != null) _field.text = value ?? string.Empty;
+        else _rich?.SetText(value ?? string.Empty, caretToEnd: true);
     }
 
     /// <summary>Re-theme the field after Build (the default is the spike's white box). Window fields call
     /// this with a dark rounded sprite + light text + left padding so the field matches the chrome.</summary>
     public void ApplyStyle(Sprite? bgSprite, Color bgColor, Color textColor, float leftPad)
     {
-        if (_field == null) return;
+        if (_field == null && _rich == null) return;
+        RememberPlaceholderStyle(textColor, leftPad);   // legacy hint follows the text style (.Placeholder.cs)
         if (_bg is { } img)
         {
             img.color = bgColor;
             if (bgSprite != null) { img.sprite = bgSprite; img.type = Image.Type.Sliced; }
         }
+        if (_field == null) { _rich!.ApplyStyle(textColor, leftPad); return; }
         if (_field.textComponent != null)
         {
             _field.textComponent.color = textColor;
@@ -216,15 +275,31 @@ internal sealed partial class UGuiTextInput
         _field.customCaretColor = true; _field.caretColor = textColor;
     }
 
+    /// <summary>Give this field keyboard focus (InputElement.AutoFocus on a user-initiated window show). Returns
+    /// false — so the caller retries next tick — when the field isn't built or its GameObject isn't active in the
+    /// hierarchy yet (uGUI can't begin editing an inactive field). Focus goes through the SAME path a user click
+    /// would (EventSystem Select + ActivateInputField), so IsFocused flips true and the keyboard gate engages —
+    /// desired here (the user is about to type into chat); Esc/click-away release it as for any focused field.</summary>
+    public bool TryActivateFocus()
+    {
+        if (_rich != null) return _rich.TryActivateFocus();   // same Select + ActivateInputField path
+        if (_field == null || !_field.gameObject.activeInHierarchy) return false;
+        _field.Select();               // EventSystem selection (currentSelectedGameObject = the field)
+        _field.ActivateInputField();   // begin editing (uGUI defers the actual focus to its next LateUpdate — fine)
+        return true;
+    }
+
     /// <summary>Per-frame: while focused, force a free/visible cursor (escape hatch) and honour Esc to
     /// defocus; restore the prior cursor state on blur. Safe to call every frame; no-op if not built.</summary>
     public void Tick()
     {
-        if (_field == null) return;
+        if (_field == null && _rich == null) return;
         // Release the submit latch once Enter is no longer held, so the NEXT press submits again
         // (held Enter / OS key-repeat fires one submit, not one per frame).
         if (!EnterHeld()) _enterLatched = false;
-        var focused = _field.isFocused;
+        _rich?.Tick();
+        TickFocusRequest();   // InputElement.FocusRequest (.FocusRequest.cs) — before the focus edge is sampled
+        var focused = FieldFocused;
 
         if (focused && !_wasFocused)
         {
@@ -239,6 +314,7 @@ internal sealed partial class UGuiTextInput
             _onFocusChanged?.Invoke(false);
         }
         _wasFocused = focused;
+        if (focused) TrackSelection();   // InputElement.InsertRequest (.Insert.cs) — remember the caret for a later pick
         if (_multiLine) TickTextArea(focused);
 
         if (!focused) return;
@@ -260,10 +336,15 @@ internal sealed partial class UGuiTextInput
         _wasFocused = false;   // always reset so a later Build() on a reused instance is clean
         _enterLatched = false;
         _submitGrace = false;
+        ResetFocusRequest();
+        ForgetSelection(); _pendingCaret = -1;   // .Insert.cs
+        _locked = false;   // InputElement.Locked (.Locked.cs)
         _field = null;
+        _rich = null;
+        _placeholder = null;
         _bg = null; _scroll = null; _fieldRect = null; _textRightReserve = 0f;   // TextArea state (.TextArea.cs)
         _lastFieldSize = new Vector2(-1f, -1f); _lastCaret = -1; _followUntilFrame = -1;
-        _caretRenderer = null; _clipMasks.Clear();
+        _caretRenderer = null; _clipMasks.Clear(); _caretClipOn = false;
     }
 
     // onValueChanged fires AFTER a char is committed to the field (full UTF-16 string — no IL2CPP char
@@ -283,7 +364,7 @@ internal sealed partial class UGuiTextInput
         {
             var clean = value.Replace("\r", "").Replace("\n", "");
             _strippingNewline = true;
-            try { if (_field != null) _field.text = clean; }
+            try { if (_field != null) _field.text = clean; else _rich?.SetText(clean, caretToEnd: false); }
             finally { _strippingNewline = false; }
             if (_singleLine) _onChange?.Invoke(clean);
             else if (!_enterLatched) { _enterLatched = true; _onSubmit?.Invoke(clean); }
@@ -297,8 +378,12 @@ internal sealed partial class UGuiTextInput
     // releases it once Enter is up). uGUI deactivates the field right after this returns, so arm the submit grace:
     // IsFocused keeps reporting focus while Enter is held, so KeyboardInputGate (sampled on the THROTTLED framework
     // tick, which can land in the unfocused gap) never un-suppresses the game keyboard with Enter still down.
+    // RICH field only: TMP_InputField's ISubmitHandler (EventSystem Submit while the field is SELECTED but not
+    // editing, e.g. a later Enter after a single-line submit) also calls SendOnSubmit — legacy InputField only
+    // re-activates there — and a TMP build may submit on the Esc Finish. Accept a submit only from an editing field.
     private void OnFieldSubmit(string value)
     {
+        if (_rich != null && ((!_rich.IsFocused && !_wasFocused) || Input.GetKey(KeyCode.Escape))) return;
         _submitGrace = true; _graceReleaseAt = -1f;
         if (_enterLatched) return;
         _enterLatched = true;
@@ -327,6 +412,7 @@ internal sealed partial class UGuiTextInput
     private void Defocus()
     {
         _field?.DeactivateInputField();
+        _rich?.Deactivate();
         if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
     }
 

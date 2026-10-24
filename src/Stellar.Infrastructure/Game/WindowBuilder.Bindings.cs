@@ -52,6 +52,10 @@ internal sealed partial class WindowBuilder
         // and applied to BOTH the foreground and the shadow twin. Null on the Menu path → the size stays fixed.
         public Func<int>? DynamicFontSizeFn;
         public float EllipsizeWidth;   // >0: single-line, truncated with "..." to fit this width (no spill/wrap)
+        // TextElement.Ellipsize: single line fitted to the Text's OWN laid-out width, re-fitted when the string or that width
+        // changes (a weighted cell resized with its window). -1 = not fitted yet.
+        public bool EllipsizeToRect;
+        private float _fittedW = -1f;
         // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
         // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
         // GlyphScript) — re-derived per current string so a live language switch tracks. The preferred
@@ -62,6 +66,9 @@ internal sealed partial class WindowBuilder
         public int EmphSize;         // scaled emphasis size (15; weight — not size — carries the emphasis)
         private string? _last;
         private int _lastFontSize;
+        // Innermost BubbleElement this text was built inside (null = none): a content change asks it to re-measure its
+        // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
+        public BubbleBinding? Owner;
         public void Apply()
         {
             // Skip hidden rows (Conditional/List SetActive=false) — avoids evaluating TextFn (which formats
@@ -71,14 +78,24 @@ internal sealed partial class WindowBuilder
             if (DynamicFontSizeFn != null)
             {
                 var fs = Math.Max(1, DynamicFontSizeFn());
-                if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; }
+                if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; Owner?.MarkDirty(); }
             }
             var s = TextFn();
-            if (s != _last)
+            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
+            float rw = EllipsizeToRect ? C.rectTransform.rect.width : 0f;
+            if (s != _last || (EllipsizeToRect && Math.Abs(rw - _fittedW) > 0.5f))
             {
                 _last = s;
-                var text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
+                string text;
+                if (EllipsizeToRect)
+                {
+                    _fittedW = rw;
+                    // Not laid out yet (width 0) → the full string; the first real width re-fits it.
+                    text = rw > 1f ? UGuiPrimitives.EllipsizeFit(C, s, rw) : s;
+                }
+                else text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
                 C.text = text;
+                Owner?.MarkDirty();
                 // Twin mirrors the foreground string (HudOverlay) MINUS colour tags — a <color> span would otherwise
                 // override the twin's dark colour and draw an accent copy 1 px off (blurry word). See StripColorTags.
                 if (Shadow != null) Shadow.text = UGuiPrimitives.StripColorTags(text);
@@ -124,13 +141,17 @@ internal sealed partial class WindowBuilder
         private ColorOverrideTracker _color;
         private string? _last;
         private int _applies;
+        public BubbleBinding? Owner;   // enclosing bubble to re-measure on a text change (see TextBinding.Owner)
 
         public void Apply()
         {
             var go = H.Go;
             if (go == null || !go.activeInHierarchy) return;
             var s = TextFn();
-            if (s != _last) { _last = s; H.SetText(s); }
+            // Stale: a RichEmoji row whose sprite asset resolved after its string was set — re-apply so the
+            // already-shown <sprite=N> tags pick the asset up without waiting for the row to rebind.
+            if (s != _last || H.Stale) { _last = s; H.SetText(s); Owner?.MarkDirty(); }
+            H.FitToRect();   // Ellipsize: re-cut on a laid-out width change (reads rect.width only; no-op otherwise)
             if (ColorFn != null)
             {
                 var v = ColorFn();
@@ -153,6 +174,7 @@ internal sealed partial class WindowBuilder
         public Image? Img; public Sprite? Normal; public Sprite? Accent; public Func<bool>? ActiveFn;
         private string? _last;
         private bool _activeInit, _lastActive;
+        public BubbleBinding? Owner;   // enclosing bubble to re-measure on a label change (see TextBinding.Owner)
         // Re-skin: re-assign the (style/theme-updated) sprite directly; reset the active-diff so Apply re-runs.
         public void Resprite()
         {
@@ -164,7 +186,7 @@ internal sealed partial class WindowBuilder
         {
             if (B == null || !B.gameObject.activeInHierarchy) return;
             var s = LabelFn();
-            if (s != _last) { Label.text = s; _last = s; }
+            if (s != _last) { Label.text = s; _last = s; Owner?.MarkDirty(); }
             if (EnabledFn != null) B.interactable = EnabledFn();
             if (ActiveFn != null && Img != null)
             {
@@ -290,9 +312,15 @@ internal sealed partial class WindowBuilder
         public GameObject Then = null!;
         public GameObject? Else;
         public Action? BuildThen, BuildElse;   // pending lazy branch builds; cleared once run (WindowBuilder.Layout)
+        // Enclosing variable-list slot (null = not in one). While that slot is inactive — past the end, or held back
+        // by the first-build cap — the Cond is idle: no When() poll, no lazy branch build. The vlist pass runs FIRST in
+        // WindowToken.Apply, so a slot admitted this apply is already active when this runs: same-apply catch-up.
+        public GameObject? Gate;
+        public BubbleBinding? Owner;   // enclosing bubble: a branch flip changes its content → re-measure it
         private bool _init, _last;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
+            if (Gate != null && !Gate.activeSelf) return false;
             var b = When();
             if (_init && b == _last) return false;
             // Build the branch about to show, once (cleared BEFORE invoking so a throwing build can't retry forever).
@@ -302,6 +330,7 @@ internal sealed partial class WindowBuilder
             if (Then != null) Then.SetActive(b);
             if (Else != null) Else.SetActive(!b);
             _last = b; _init = true;
+            Owner?.MarkDirty();
             return true;
         }
     }
@@ -329,12 +358,14 @@ internal sealed partial class WindowBuilder
         public Func<int> Count = null!;
         public GameObject[] Slots = System.Array.Empty<GameObject>();
         private int _last = -1;
+        public BubbleBinding? Owner;   // enclosing bubble: a visible-count change resizes its content → re-measure it
         public bool Apply()   // returns true when the visible count changed (→ caller forces a layout rebuild)
         {
             var n = Count();
             if (n == _last) return false;
             for (var i = 0; i < Slots.Length; i++) if (Slots[i] != null) Slots[i].SetActive(i < n);
             _last = n;
+            Owner?.MarkDirty();
             return true;
         }
     }

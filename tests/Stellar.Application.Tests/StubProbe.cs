@@ -14,7 +14,11 @@ internal sealed class StubProbe : IChatProbe
 {
     public Action<ChatMessage>? OnMessageReceived { get; set; }
 
+    public Action<ChatSendResult>? OnSendResult { get; set; }
+
     public List<(ChatTarget Target, string Text)> SendCalls { get; } = new();
+
+    public List<(ChatTarget Target, int StickerConfigId)> StickerSendCalls { get; } = new();
 
     /// <summary>Value <see cref="TrySend"/> returns. Default true.</summary>
     public bool NextTrySendResult { get; set; } = true;
@@ -32,4 +36,17 @@ internal sealed class StubProbe : IChatProbe
         failureReason = NextTrySendResult ? null : NextFailureReason;
         return NextTrySendResult;
     }
+
+    public bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason)
+    {
+        if (TrySendShouldThrow) throw new InvalidOperationException("stub: TrySendSticker forced throw");
+        StickerSendCalls.Add((target, stickerConfigId));
+        failureReason = NextTrySendResult ? null : NextFailureReason;
+        return NextTrySendResult;
+    }
+
+    /// <summary>How many times <see cref="ResetSession"/> ran.</summary>
+    public int ResetSessionCalls { get; private set; }
+
+    public void ResetSession() => ResetSessionCalls++;
 }

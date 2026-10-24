@@ -19,6 +19,139 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.26.0 adds <c>IPluginServices.PlayerProfile</c> (<c>IPlayerProfile</c>) — resolve a player's profile
+    /// AVATAR IMAGE URL by char/role id. <c>RequestAvatarUrl(long charId, Action&lt;string?&gt; onResult)</c>
+    /// issues the game's own <c>Social.GetSocialData</c> RPC (service uuid 901134105, methodId 1, with the
+    /// request Mask bit 2 = <c>SocialDataTypeAvatar</c>) and invokes <c>onResult</c> exactly once on the main
+    /// (Unity) thread with the full server-supplied <c>https://…png</c> URL read from
+    /// <c>GetSocialDataReply.Data.AvatarInfo.Profile.Url</c>, or <c>null</c> when the player has no custom photo
+    /// or the request failed. Fire-and-forget and defensive (never throws across the IL2CPP boundary); the proxy
+    /// is acquired through the game's own <c>Zservice.ServiceRegister.GetSocialProxy(ZRpcCtrl.Instance, true)</c>
+    /// accessor and the returned <c>UniTask&lt;GetSocialDataReply&gt;</c> is polled on the framework tick (the
+    /// framework has no compile-time <c>UniTask</c> reference, so it mirrors <c>GameAssetsService</c>'s reflected
+    /// <c>Status</c>/<c>GetAwaiter</c>/<c>GetResult</c> poll rather than awaiting). The service returns only the
+    /// URL — the consumer owns downloading, caching and texture creation. Intended for chat / nameplate avatars.
+    /// 2.26.0 also adds window-element API for chat-style UIs (all <c>init</c> props, not ctor params):
+    /// <c>TextElement.RichEmoji</c> / <c>InputElement.RichEmoji</c> (TMP text / TMP_InputField with the game's chat
+    /// sprite asset, so <c>&lt;sprite=N&gt;</c> draws as an emoji image — falls back to plain uGUI when TMP or the
+    /// rich field is unavailable); <c>InputElement.FocusRequest</c> (counter token: a change focuses the field with
+    /// the caret at the end); <c>InputElement.Placeholder</c> (polled hint text shown while the field is empty, both
+    /// field kinds); <c>VirtualListElement.OnAtBottomChanged</c> (reports the stick-to-bottom pin decision)
+    /// and <c>ScrollToBottomRequest</c> (counter token: forces the bottom pin until unmeasured rows settle) —
+    /// VariableHeight + StickToBottom only; <c>SelectableElement.OnRightClick</c> (right-button-down, ticker hook,
+    /// FrontWindowBlocks-aware); <c>ListElement.OnReorder(from, to)</c> (ticker-driven drag reorder,
+    /// remove-then-insert indices, never fires for a no-op). <c>IWindowHost.PrewarmText(string)</c> is a new member
+    /// WITH a default no-op body (implementors keep compiling): the framework rasterizes the text's missing TMP glyphs
+    /// a few per rendered frame (≤8 glyphs / ~3 ms) ahead of layout — a plugin that calls it needs ≥2.26.0.
+    /// <c>HitchProbe.Count(name, n)</c> adds per-frame <c>[Hitch]</c> event counters (<c>name=#N</c>).
+    /// Rendering changes behind the same release (login chat-history freeze fix, 0.9–4.3 s → ~70 ms): TMP dynamic
+    /// faces sample at 48 pt / pad 5 instead of 90 / 9 (~3.5× cheaper per glyph, same SDF spread), and a
+    /// variable-height <c>VirtualListElement</c> keeps at most 8 not-yet-measured rows active at once (the rest
+    /// stay inactive until a latch frees budget; Conditionals inside an inactive slot don't poll or lazy-build).
+    /// Additive throughout — binary-compatible with plugins built against ≤2.25.5.
+    /// 2.26.0 also adds chat/whisper API (all init-only props, new types, or default-implemented members):
+    /// <c>ChatMessage.TargetId</c> (decoded <c>ChatMsgInfo.target_id</c>, a charId) and <c>ChatMessage.PeerId</c> (the
+    /// other party of a whisper — sender, or target when the sender is self; private history batches tagged from the
+    /// request's <c>target_id</c>; <c>ChatTarget.Reply</c> uses it); client-generated SYSTEM notices ("Obtained …")
+    /// captured by a Lua wrap of the chat VM's <c>SetReceiveSystemMsg</c> (polled 4 Hz in-world, no Lua→C# callback)
+    /// and raised on <c>IChat.MessageReceived</c> as <c>ChatChannel.System</c> with <c>ChatMessage.SystemLabel</c>/
+    /// <c>SystemType</c>/<c>SystemRefId</c>; the server-driven send cooldown from <c>SendChitChatMsgReply.cd_end_time</c>
+    /// (Unix seconds) via <c>IChat.TryGetSendCooldown(channel, out remainingSeconds)</c> + <c>IChat.SendResult</c>
+    /// (<c>ChatSendResult</c>, <c>ErrorTooFrequent</c> = 5211) — both default-implemented on <c>IChat</c>; and
+    /// <c>IPluginServices.Friends</c> (<c>IFriends</c>: <c>Friends</c> / <c>PrivateChats</c> / <c>Changed</c> polled from the
+    /// game's Lua data every 2.5 s in-world, plus queued <c>RequestPrivateHistory</c> / <c>MarkPrivateRead</c> /
+    /// <c>CreatePrivateChat</c> / <c>ClosePrivateChat</c> run as the game's own coroutine VM calls). A plugin that CALLS
+    /// any of these needs ≥2.26.0.
+    /// 2.25.5 is a fix: switching chat tabs/channels (any <c>ResetScroll</c> on a variable-height
+    /// <c>VirtualListElement</c>) — and, more briefly, a burst of new messages — no longer FLASHES the rows
+    /// overlapping each other for a couple of frames before they settle into place. On a <c>ResetScroll</c> every
+    /// row's latched height is cleared (<c>ResetState</c>), so for the 2-3 applies it takes <c>MeasureActiveSlots</c>
+    /// to re-latch them each row falls back to the seed/running-average ESTIMATE (the chat consumer seeds
+    /// <c>RowHeight</c> 28px, shorter than a real wrapping bubble); <c>BuildOffsets</c> packed the rows at that
+    /// too-short estimate while <c>Reposition</c> sized each slot to its real content, so adjacent rows visibly
+    /// OVERLAPPED inside the clipped viewport until the real heights latched and the offsets rebuilt. Now
+    /// <c>Reposition</c> PARKS any row whose height is not yet latched off-screen (a large positive y, above the
+    /// viewport top where the ScrollRect viewport's <c>RectMask2D</c> clips it) instead of drawing it at its estimate
+    /// offset — the slot stays ACTIVE and sized so <c>MeasureActiveSlots</c> can still measure it, and the apply it
+    /// latches, <c>Reposition</c> re-runs and snaps it on-screen at its true offset. The viewport briefly blanks
+    /// (~2 frames) on a tab switch rather than flashing overlapped rows; steady state and scrolling of
+    /// already-measured rows are unchanged (a measured row always takes the on-screen branch). Infrastructure-only
+    /// (<c>VariableListBinding.Reposition</c> in <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and
+    /// the <c>VirtualListElement</c> API are unchanged — no API change, binary-compatible with all existing plugins
+    /// (chat consumers like ChatTools need no rebuild).
+    /// 2.25.4 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping chat log of
+    /// <c>BubbleElement</c> rows) no longer leaves a tall empty GAP below a freshly appended message (the text also
+    /// briefly wrapped one character per line before snapping to size). This was a regression introduced by 2.25.3's
+    /// own measure-once cache: a row's height latched from the FIRST reading taken while the slot was active, but
+    /// <c>BubbleElement</c> solves the row's WIDTH a tick LATER (<c>BubbleBinding</c>), so that first reading was taken
+    /// at ~0 width — the text wrapped to ~1 char per line → a hugely tall preferred height that got locked in
+    /// permanently even after the text visually corrected. The latch policy is now "measure until stable, then latch":
+    /// a height is committed only after two CONSECUTIVE measurements agree within a small epsilon (<c>StableEps</c>),
+    /// which waits out the width-solve lag without depending on its exact timing (a pre-width-solve tall reading never
+    /// matches the next settled one, so it stays provisional and never latches). A settled on-screen row is still
+    /// latched and never re-measured, so 2.25.3's no-jitter property is fully preserved. Infrastructure-only
+    /// (<c>VariableListBinding</c> in <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and the
+    /// <c>VirtualListElement</c> API are unchanged — no API change, binary-compatible with all existing plugins
+    /// (chat consumers like ChatTools need no rebuild).
+    /// 2.25.3 is a fix: a variable-height <c>VirtualListElement</c> (the 2.25.0 measured/wrapping list — a chat
+    /// log of <c>BubbleElement</c> rows) no longer JITTERS while you scroll. The rows would "shift back and forth"
+    /// vertically mid-scroll because the renderer re-read every visible slot's uGUI preferred height EVERY apply:
+    /// sub-pixel layout jitter — compounded by the <c>BubbleElement</c> width-solve settling one tick behind — let
+    /// a SETTLED on-screen row's measured height cross the 0.5 px change threshold frame-to-frame, and each crossing
+    /// rebuilt the cumulative offsets and re-drove the scroll position, fighting the ScrollRect's own inertia. The
+    /// height model is now a per-DATA-INDEX cache: each row is measured ONCE (the apply after it binds and lays out)
+    /// and never re-measured, so a settled visible row is pinned and cannot wobble. A stored height is dropped and
+    /// re-measured only on a viewport-WIDTH change (rows re-wrap), <c>ResetScroll</c> (tab switch), or a Count
+    /// DECREASE (rows dropped/filtered/front-dropped → indices remap); an append (Count INCREASE) keeps the cache
+    /// and measures only the new tail rows. The topmost-visible anchor compensation (unchanged) now fires only on a
+    /// row's one-time estimate→measured correction as it scrolls into view, not every tick, so append +
+    /// stick-to-bottom + tab-switch behaviour is preserved. Infrastructure-only (<c>VariableListBinding</c> in
+    /// <c>WindowBuilder.VariableList.cs</c>); <c>VariableListMath</c> and the <c>VirtualListElement</c> API are
+    /// unchanged — no API change, binary-compatible with all existing plugins (chat consumers like ChatTools need
+    /// no rebuild).
+    /// 2.25.2 is a fix: login chat HISTORY is correctly filed by channel again — the 2.25.1 fix did not work
+    /// in-game. 2.25.1 moved the per-request channel capture to a Harmony prefix on
+    /// <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c>, but the game's own RPC never calls that overload (it is a
+    /// plugin/helper entry — the prefix fired ZERO times for game traffic), and chat can route over UDP/KCP
+    /// entirely, so nothing was ever stored and every login history batch resolved <c>Unknown</c> (messages appeared
+    /// under NO channel tab). The capture now sits on the transport-agnostic
+    /// <c>ZRpcImpl.SendBytes(uuid, stubId, callId, methodId, pbData, pbSize, framePack)</c> — above the TCP/UDP
+    /// split, cold, public (<c>PosingSendTap</c> already patches it and proved it fires) — which carries BOTH the
+    /// <c>call_id</c> and the raw request body as plain params: the channel is parsed off the body argument (the
+    /// proven pre-2.25.1 source) and keyed by <c>call_id</c> in one invocation, with no cross-site/thread
+    /// correlation. The call_id-keyed Return resolve (unconditional <c>TryRemove(callId)</c>), the map bounding, and
+    /// the per-sender fallback are unchanged. Infrastructure-only — no API change, binary-compatible with all
+    /// existing plugins (chat consumers like ChatTools need no rebuild).
+    /// 2.25.1 is a fix: login chat HISTORY is no longer mislabeled with the wrong channel (e.g. Party/Guild
+    /// history showing under World). The framework back-fills a history batch's channel by correlating its
+    /// <c>GetChipChatRecords</c> reply to the channel that was requested; that correlation was a positional FIFO
+    /// (<c>_pendingHistoryChannels</c>) whose dequeue sat AFTER the empty/invalid early-returns, so the FIRST
+    /// requested channel with EMPTY login history never dequeued and left its stale channel at the queue head for
+    /// the next non-empty batch to mis-claim (and it also broke under out-of-order RPC replies). Now the channel is
+    /// keyed by the RPC <c>call_id</c>: the <c>ZTcpClient.Send</c> prefix records <c>call_id -&gt; channel_type</c>
+    /// for each outbound GetChipChatRecords, and the Return resolves it with an UNCONDITIONAL <c>TryRemove(call_id)</c>
+    /// (so an empty batch removes its own entry and poisons no other, and the map never leaks); a Return with no
+    /// recorded id stays Unknown and falls through to the existing per-sender channel hint. The map is bounded
+    /// (evict-oldest). The redundant <c>ZRpcImpl.ProxyCall</c> channel-capture patch was retired. Infrastructure-only
+    /// — no API change, binary-compatible with all existing plugins (chat consumers like ChatTools need no rebuild).
+    /// 2.25.0 adds VARIABLE-HEIGHT virtualization to <c>VirtualListElement</c> via two init props:
+    /// <c>VariableHeight</c> (opt into measured rows — each pooled slot's uGUI preferred height is measured after
+    /// it binds to a data index, with un-measured rows using <c>RowHeight</c> as a running-average estimate; a
+    /// per-index height model + cumulative offsets position the slots and derive the content height, so a long
+    /// history of WRAPPING rows — e.g. chat bubbles — renders with only ~viewport+buffer GameObjects) and
+    /// <c>StickToBottom</c> (newest-at-bottom: start scrolled to the bottom, keep pinned on append while at the
+    /// bottom, preserve position when scrolled up). A measurement that replaces an estimate anchors to the topmost
+    /// visible row so the view does not jump. New pure math helper <c>VariableListMath</c> (BCL, unit-tested).
+    /// Both props default off → the uniform fixed-<c>RowHeight</c> path is byte-identical; init-props only, so
+    /// additive and binary-compatible with plugins built against ≤2.24.0.
+    /// 2.24.0 adds <c>BubbleElement</c> — a content-hugging rounded "chat bubble" / card for window UIs: a
+    /// <c>FillColor</c>-tinted rounded sliced background (alpha honoured, so translucent bubbles work; null = a
+    /// themed default) hosting one child with <c>PaddingX</c>/<c>PaddingY</c>. Its width HUGS the child's preferred
+    /// width (short label → narrow bubble; long sentence → wide), capped at <c>MaxWidth</c> (0 = the available/parent
+    /// width) past which a wrapping child flows to multiple lines and the bubble grows in height — the content-size
+    /// measurement a plugin cannot do itself. <c>CornerRadius</c> 0 reuses the <c>SelectableElement</c> chip, &gt; 0
+    /// bakes a rounder sprite. Purely visual (click-through-neutral — wrap it in a <c>SelectableElement</c> to make
+    /// it clickable). New record only — additive, binary-compatible with plugins built against ≤2.23.0.
     /// 2.23.1 is a fix: the Module Optimizer produces results again after the <c>release_3.7_2</c> game
     /// patch moved each module part's magnitude into <c>Item.ModPartLevel.Levels</c> (per-attribute module
     /// leveling); the old positional read returned 0 for every part, so Optimize scored every combo at ~0.
@@ -296,5 +429,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.23.1";
+    public const string Value = "2.26.0";
 }

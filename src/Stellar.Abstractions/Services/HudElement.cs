@@ -20,6 +20,27 @@ public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 
     public RowElement(IReadOnlyList<HudElement> children, float gap)
         : this(children, gap, RowJustify.Left) { }
 #pragma warning restore STELLAR0004
+
+    /// <summary>When true, this row's NATURAL width (the sum of its children's preferred widths + gaps) becomes a
+    /// floor on the window's minimum width: the window can't be grip-resized narrower than the row needs, a saved
+    /// layout narrower than that is widened on load, and the window widens once if the requirement grows later (a
+    /// language / font-scale / theme change). The window never shrinks automatically. The window minimum is the
+    /// largest requirement across every marked row that is currently shown, never below
+    /// <see cref="Stellar.Abstractions.Domain.WindowSpec.MinWidth"/> and capped at
+    /// <see cref="Stellar.Abstractions.Domain.WindowSpec.MaxWidth"/>. Use it on a row that must never overflow in
+    /// any language (a tab strip, an input/action row). Only <see cref="Stellar.Abstractions.Domain.WindowSpec.Resizable"/>
+    /// windows are affected — a content-sized window already sizes to its content. A
+    /// <see cref="BubbleElement"/> nested inside a marked row hugs its natural width (it is not capped to its
+    /// parent's width), so it can't shrink the very measurement that is meant to make room for it.</summary>
+    public bool ConstrainsWindowMinWidth { get; init; }
+
+    /// <summary>Optional — fires with <c>true</c> when the pointer enters the row's rectangle and <c>false</c> when it
+    /// leaves (or the row is hidden). Ticker-driven, the same hover hook <see cref="SelectableElement.OnHover"/> uses,
+    /// so a window in front that covers the pointer counts as "not over"; never fires in the static sandbox. Unlike a
+    /// <see cref="SelectableElement"/> it adds NOTHING to the row — no tint, no padding, no click target — so it can
+    /// reveal hover-only controls (e.g. a per-message action button) without changing the row's look or layout.
+    /// Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Action<bool>? OnHover { get; init; }
 }
 
 /// <summary>Vertical layout container: children stacked top-to-bottom with optional spacing.</summary>
@@ -38,6 +59,64 @@ public sealed record ColumnElement(IReadOnlyList<HudElement> Children, float Gap
 /// <param name="Child">The content laid out inside the panel.</param>
 /// <param name="Padding">Uniform inner padding in pixels.</param>
 public sealed record PanelElement(HudElement Child, float Padding = 8f) : HudElement;
+
+/// <summary>A content-hugging rounded "chat bubble" / card: a <see cref="FillColor"/>-tinted rounded sliced
+/// background (the same rounded chip sprite <see cref="SelectableElement"/> draws) hosting a single
+/// <paramref name="Child"/> with inner padding. Unlike <see cref="SelectableElement"/> — which is forced to
+/// stretch the full column width — a bubble's width HUGS its child's preferred width, so a short label makes a
+/// narrow bubble and a long sentence makes a wide one, capped at <see cref="MaxWidth"/> (or the available width)
+/// past which a wrapping <see cref="TextElement"/> child flows to multiple lines and the bubble grows in height.
+/// Built for a game-style chat UI (translucent fills + right-aligned self rows). It is a PURELY VISUAL container:
+/// it does not intercept clicks (its background is not a raycast target), so to make a bubble clickable, wrap it
+/// in a <see cref="SelectableElement"/> (or place a <see cref="ButtonElement"/> beside it) — the bubble renders on
+/// top of the selectable's own tint.
+/// <para>⚠️ Content-hug needs a layout parent that does NOT force-expand child width. A <see cref="RowElement"/>'s
+/// layout respects the child's intrinsic width, so place a bubble inside a Row (right-align a self bubble with
+/// <see cref="RowJustify.Right"/> + a weighted gutter). Dropped DIRECTLY into a <see cref="ColumnElement"/> (which
+/// force-expands width) the bubble fills the column width instead of hugging — same gotcha as a fixed-size icon
+/// (see WindowBuilder-Patterns.md).</para></summary>
+/// <param name="Child">The content laid out inside the bubble (e.g. a wrapping <see cref="TextElement"/>).</param>
+public sealed record BubbleElement(HudElement Child) : HudElement
+{
+    /// <summary>Bubble fill colour; the ALPHA is honoured so translucent tints work (the typical chat-bubble
+    /// look). Null (default) = a sensible themed default (the menu accent at a soft alpha, re-tinted on a theme
+    /// change so the four presets track).</summary>
+    public ColorRgba? FillColor { get; init; }
+
+    /// <summary>Hard width cap in px (canvas units). <c>0</c> (default) = clamp to the parent/available width
+    /// instead of a fixed cap. When the child's natural (unwrapped) width exceeds the cap the bubble fixes at the
+    /// cap and the child's wrapping text flows to multiple lines; below the cap the bubble hugs the child's width.
+    /// For a right-aligned self row set an explicit cap (e.g. ~70% of the chat window) — a content-sized Row has
+    /// no definite "available width" to clamp to.</summary>
+    public float MaxWidth { get; init; }
+
+    /// <summary>Corner radius in px. <c>0</c> (default) reuses the shared 3-radius rounded chip sprite (the
+    /// <see cref="SelectableElement"/> chip); a positive value bakes a rounder sliced sprite at that radius (cached
+    /// per radius, theme-independent). Use ~8–12 for a softer game-style bubble.</summary>
+    public float CornerRadius { get; init; }
+
+    /// <summary>Inner horizontal padding (each side) in px between the bubble edge and its child. Default 10.</summary>
+    public float PaddingX { get; init; } = 10f;
+
+    /// <summary>Inner vertical padding (top and bottom) in px between the bubble edge and its child. Default 6.</summary>
+    public float PaddingY { get; init; } = 6f;
+
+    /// <summary>Per-refresh fill colour, mirroring <see cref="BarElement.FillColorFn"/>: evaluated every HUD
+    /// refresh so the bubble can re-tint live (e.g. a chat channel tab lighting up when it becomes active)
+    /// without rebuilding the element tree. Non-null wins over the static <see cref="FillColor"/>; returning
+    /// null falls back to <see cref="FillColor"/> (then the themed default). Default null = unchanged: a bubble
+    /// that leaves it null renders with the static fill exactly as before, no override machinery attached.
+    /// Added as an init property (NOT a ctor param) so the record stays source + binary compatible with
+    /// already-compiled plugins.</summary>
+    public Func<ColorRgba?>? FillColorFn { get; init; }
+
+    /// <summary>Per-refresh OUTLINE colour: a thin (1 px) ring drawn along the bubble's rounded edge, following the
+    /// same <see cref="CornerRadius"/>. Evaluated every refresh; a colour shows the ring in it (alpha honoured), null
+    /// hides it — so a bubble can light up a state border (e.g. "busy", "translated") without rebuilding the tree. The
+    /// ring is overlaid (never measured), so toggling it never changes the bubble's size. Default null = no ring is
+    /// even created: the bubble renders exactly as before. An <c>init</c> property (binary-compatible).</summary>
+    public Func<ColorRgba?>? OutlineColorFn { get; init; }
+}
 
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>
 public enum RowJustify
@@ -101,6 +180,34 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
 
     /// <summary>Draw a line through the text (works in every script). Window surfaces only.</summary>
     public bool Strikethrough { get; init; }
+
+    /// <summary>Render <c>&lt;sprite=N&gt;</c> inline emoji (the game chat's 1-based N, passed through
+    /// unchanged) as actual emoji images, by hosting the text in TextMeshPro with rich text on and the GAME's own
+    /// chat sprite asset — the same way the game draws chat emoji. Opt-in and additive: off (the default) nothing
+    /// changes. The text then uses the framework's TMP faces (as the Bold/Italic/... styles do), and those style
+    /// flags still apply. Falls back to a plain uGUI <c>Text</c> off-game (Mono sandbox) or if TMP is unavailable —
+    /// worst case the literal <c>&lt;sprite=N&gt;</c> shows, so text rendering can never break; the literal tag
+    /// also shows until the game's sprite asset has been found (resolved lazily once in-world). Window surfaces
+    /// only; ignored on HUD-overlay and on Shadow text.</summary>
+    public bool RichEmoji { get; init; }
+
+    /// <summary>Keep the text on ONE line and, when it is wider than the space the layout gives it, cut it with a
+    /// trailing "..." so it fits — re-fitted whenever the string or the laid-out width changes (e.g. the window is
+    /// resized). Use it in a width-constrained slot, typically a <see cref="CellElement"/> with a <c>Weight</c> in a
+    /// <see cref="RowElement"/> next to fixed-width controls: the cell's width is what the text is fitted to, and
+    /// nothing spills onto the neighbours. Plain text is cut with "..." and clipped to its rect; styled
+    /// (<see cref="Emphasis"/>/<see cref="Bold"/>/...) and <see cref="RichEmoji"/> text uses TextMeshPro's own ellipsis
+    /// (a hard cut if the face lacks the glyph). Ignored on Shadow and HUD-overlay text. Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool Ellipsize { get; init; }
+
+    /// <summary>Vertically centre what is actually DRAWN (the glyphs' / emoji pictures' own bounds) in the text's
+    /// box, instead of the font's line box. For icon-only texts — typically a lone <see cref="RichEmoji"/>
+    /// <c>&lt;sprite=N&gt;</c> used as a button or grid icon: an emoji sits on the text baseline, so with the
+    /// default line-box centring it draws visibly ABOVE the middle of its box. Scales with any font size (no fixed
+    /// offset). Leave it off for running text, where letters and inline emoji must share one baseline. Applies to the
+    /// TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and HUD-overlay text.
+    /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool CenterGlyphs { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
@@ -203,4 +310,29 @@ public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudEle
 /// default cell size — use to widen columns past the framework default (e.g. the StatInspector mini-HUD, whose
 /// icon+label+value row needs more than the default cell width).</summary>
 public sealed record ListElement(Func<int> VisibleCount, IReadOnlyList<HudElement> Slots, int Columns = 1,
-    float CellWidth = 0f, float CellHeight = 0f) : HudElement;
+    float CellWidth = 0f, float CellHeight = 0f) : HudElement
+{
+    /// <summary>Multi-column grid only: when true, the grid FLOWS to fill the container width instead of using the
+    /// fixed <see cref="Columns"/> count — it packs as many <see cref="CellWidth"/>×<see cref="CellHeight"/> cells
+    /// per row as the current width allows and wraps to new rows, re-flowing automatically when the window resizes
+    /// (so the grid fills a wide/resized popover instead of leaving dead space on the right). <see cref="Columns"/>
+    /// becomes advisory under this mode, and <see cref="CellWidth"/> MUST be &gt; 0 (it drives the flowed cell size).
+    /// Default false = the fixed-column grid, byte-identical for every existing caller. Added as an init property
+    /// (NOT a positional ctor param) so the record stays source + binary compatible with already-compiled plugins —
+    /// a new ctor param would be a MissingMethodException at runtime (see WindowBuilder-Patterns.md "Binary
+    /// compatibility rules").</summary>
+    public bool FillWidth { get; init; }
+
+    /// <summary>Optional — turns on drag-and-drop REORDERING of the visible items. A press on an item that moves past
+    /// a small threshold (~6 screen px) starts a drag: the item dims, a ghost follows the cursor and an accent bar
+    /// marks the insertion point (between grid cells, or between rows for a 1-column list). Dropping fires
+    /// <c>OnReorder(from, to)</c> with REMOVE-THEN-INSERT semantics — <c>to</c> is the item's index AFTER the move,
+    /// so the consumer does <c>var x = list[from]; list.RemoveAt(from); list.Insert(to, x);</c>. It never fires for a
+    /// no-op drop (<c>from == to</c>). Esc, or a drop outside the list (outside its scroll viewport when it sits in a
+    /// <see cref="ScrollElement"/>), cancels. A press released before the threshold is an ordinary click (the item's
+    /// own <see cref="SelectableElement.OnClick"/> still fires); after a real drag the click is swallowed. The drag
+    /// never moves the window or scrolls the enclosing scroll view. The grid does not reflow mid-drag — the consumer
+    /// reorders its data and the list re-pulls. Default null = not reorderable. Init property, NOT a ctor param
+    /// (binary compatibility).</summary>
+    public Action<int, int>? OnReorder { get; init; }
+}

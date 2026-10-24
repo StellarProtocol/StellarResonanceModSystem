@@ -50,13 +50,165 @@ internal sealed partial class WindowBuilder
         public UGuiTextInput Field = null!;
         public Func<string> Get = null!;
         public string Last = "";
+        // InputElement.FocusRequest: a CHANGE of the polled value asks the field for focus. Seeded at build time
+        // (LastFocus = the first value), so a (re)mount never fires one on its own.
+        public Func<int>? FocusReq;
+        public int LastFocus;
+        // InputElement.Placeholder: diffed so an unchanged hint writes nothing (null Func = no hint).
+        public Func<string>? PlaceholderFn;
+        public string LastPlaceholder = "";
+        // InputElement.Locked: diffed (null Func = never locked). Seeded with the build-time state BuildInput applied.
+        public Func<bool>? LockedFn;
+        public bool LastLocked;
+        // InputElement.InsertRequest: a CHANGE of Seq inserts Text at the caret (seeded at build like FocusReq).
+        public Func<(int Seq, string Text)>? InsertReq;
+        public int LastInsert;
         public void Apply()
         {
             if (Field == null) return;
             var v = Get();
-            if (v == Last) return;
-            Last = v;
-            if (Field.Text != v) Field.SetText(v);
+            if (v != Last)
+            {
+                Last = v;
+                if (Field.Text != v) Field.SetText(v);
+            }
+            if (PlaceholderFn != null)
+            {
+                var p = PlaceholderFn() ?? "";
+                if (!string.Equals(p, LastPlaceholder, StringComparison.Ordinal)) { LastPlaceholder = p; Field.SetPlaceholder(p); }
+            }
+            // Before the focus request: an unlock + replace-text + focus in one plugin step lands editable and focused.
+            if (LockedFn != null)
+            {
+                var l = LockedFn();
+                if (l != LastLocked) { LastLocked = l; Field.SetLocked(l); }
+            }
+            // After the text re-seed + lock, before the focus request (the insert requests focus itself and keeps its caret).
+            if (InsertReq != null)
+            {
+                var (seq, text) = InsertReq();
+                if (seq != LastInsert) { LastInsert = seq; Field.InsertAtCaret(text ?? ""); Last = Get(); }
+            }
+            // After the text re-seed, so a picker's append + focus request in one click lands text first, then focus
+            // (the caret-to-end runs once the field reports focused — see UGuiTextInput.FocusRequest.cs).
+            if (FocusReq == null) return;
+            var f = FocusReq();
+            if (f == LastFocus) return;
+            LastFocus = f;
+            Field.RequestFocus();
+        }
+    }
+
+    // Per-apply width solver for a BubbleElement: content-hug up to a cap, then wrap. Reads the child's NATURAL
+    // (unwrapped) preferred width — which is wrap-INDEPENDENT (uGUI Text.preferredWidth ignores the current rect
+    // width), so pinning the bubble narrower never feeds back and oscillates — caps it at MaxWidth (or the
+    // parent's current width when MaxWidth == 0), and pins the bubble's LayoutElement to that width. A short child
+    // → a narrow bubble; a long child → the bubble fixes at the cap and its wrapping Text flows to >1 line (the
+    // vertical ContentSizeFitter then grows the height). Diffs on the resolved width so an unchanged bubble writes
+    // nothing. Setting preferredWidth marks the layout dirty, so Unity rebuilds it on the next render frame.
+    internal sealed class BubbleBinding
+    {
+        public LayoutElement Le = null!;       // on the bubble GO (the width driver)
+        public RectTransform Child = null!;    // the single content child (measured)
+        public RectTransform? Parent;          // bubble's parent (its width = the cap when MaxWidth == 0)
+        public float MaxWidth;                  // 0 = clamp to Parent's current width
+        public float PadX;                      // total horizontal padding (left + right)
+        // Built inside a RowElement.ConstrainsWindowMinWidth row: hug the NATURAL width, never cap at the parent.
+        // The row's measured natural width drives the window minimum, so a parent-capped bubble would shrink the
+        // very number meant to make room for it (see WindowBuilder.BuildRow). Transiently overflows its parent
+        // until the window is widened (same apply cycle at mount; within one ~0.5 s poll for a later growth).
+        public bool NoCap;
+        // Per-refresh fill colour (BubbleElement.FillColorFn). FillGraphic/FillColorFn left null → the bubble keeps
+        // its build-time colour (the static FillColor / themed default painted once in AddBubbleBackground) with no
+        // override machinery — a bubble that doesn't set FillColorFn is byte-for-byte unchanged. Mirrors
+        // BarBinding.ApplyFillColor: Override every poll a colour is returned (so a theme reskin never wins),
+        // RestoreDefault once it goes back to null. The restore-default is the fill's build-time colour captured on
+        // the first poll (= the static fill AddBubbleBackground painted).
+        public Graphic? FillGraphic; public Func<ColorRgba?>? FillColorFn;
+        private ColorOverrideTracker _fillColor; private Color? _fillBuildColor;
+        // Per-refresh outline ring (BubbleElement.OutlineColorFn) — null on every bubble that didn't opt in.
+        public Image? Outline; public Func<ColorRgba?>? OutlineColorFn;
+        private ColorRgba? _lastOutline;
+        private float _last = -1f;
+        // ---- re-measure gating (see WindowBuilder.BubbleOwner.cs) ----
+        // Enclosing bubble (nested bubbles): when THIS bubble's pinned width changes, the outer one's content changed.
+        public BubbleBinding? Owner;
+        private bool _dirty = true;     // content changed since the last measure (set by MarkDirty / activation / reskin)
+        private int _settle;            // extra measures still owed after a dirty one (absorbs a one-apply layout lag)
+        private const int SettleApplies = 2;
+        private bool _wasActive;        // child active on the previous apply? (false→true edge = re-measure)
+        private float _natural = -1f;   // last measured natural (unwrapped) width incl. padding; ≤0 = never measured
+
+        /// <summary>The bubble's content changed (a text/label/branch/count/image inside it, a nested bubble's width, or a
+        /// re-skin): re-measure its natural width on its next apply.</summary>
+        internal void MarkDirty() => _dirty = true;
+
+        public void Apply()
+        {
+            if (Le == null || Child == null) return;
+            // Fill colour is polled BEFORE the width-diff early-return below, so a live re-tint lands even on a
+            // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
+            if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
+            if (Outline != null && OutlineColorFn != null) ApplyOutline(OutlineColorFn());
+            // Inactive (a hidden branch, a parked/over-budget list slot, a hidden window) → keep the last pinned width,
+            // never collapse; becoming active again re-measures (its layout may be stale and its content may have changed
+            // while every value binding inside it skipped the inactive leaves).
+            if (!Child.gameObject.activeInHierarchy) { _wasActive = false; return; }
+            if (!_wasActive) { _wasActive = true; _dirty = true; }
+            if (_dirty || _settle > 0) Measure();
+            if (_natural <= 0f) return;   // nothing measurable yet → keep the last pinned width, never collapse
+            // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
+            // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out. The cap
+            // is re-read EVERY apply (a cheap rect read) against the cached natural width, so a parent/window resize
+            // re-caps without a re-measure: the natural width is wrap-independent, so the width alone can't change it.
+            var cap = NoCap ? _natural : MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : _natural);
+            if (cap <= 0f) cap = _natural;
+            var w = Mathf.Max(0f, Mathf.Min(_natural, cap));
+            if (Mathf.Approximately(w, _last)) return;
+            Le.minWidth = Le.preferredWidth = w; Le.flexibleWidth = 0f;
+            _last = w;
+            Owner?.MarkDirty();   // a nested bubble resized → the enclosing bubble's content width changed
+        }
+
+        // Re-measure the content's natural width. ONLY on a content change (MarkDirty), an activation, and the
+        // SettleApplies applies after one — never every apply. Measuring every active bubble on every 10 Hz apply was the
+        // ChatTools-at-rest FPS loss (113→40) once chat text moved to TMP (0c9e67a): the log keeps its whole pool active
+        // (off-view rows are only clipped), and TMP's preferredWidth is a full text layout on EVERY read (legacy Text kept a
+        // cached generator), so ~50 bubbles × (forced rebuild + preferred-size reads) made each apply frame ~55 ms.
+        //
+        // When it does measure, the forced rebuild stays: a recycled VirtualList slot rebinds to new content within the
+        // same apply that measures it, but the uGUI layout cache GetPreferredWidth reads is only refreshed by the
+        // CanvasUpdate that runs BETWEEN applies — so a plain read returns the PREVIOUS row's width (too-narrow bubble,
+        // text wrapping ~1 word per line while scrolling). Rebuild JUST this bubble's content child so the reading is current.
+        private void Measure()
+        {
+            if (_dirty) _settle = SettleApplies; else _settle--;
+            _dirty = false;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(Child);
+            UiPerfStats.Count(UiCounter.BubbleMeasure);
+            var measured = LayoutUtility.GetPreferredWidth(Child);
+            // Unmeasurable (empty content) → keep the last natural width. Not re-dirtied: an empty text stays empty until
+            // its binding changes it, and that change marks the bubble dirty again.
+            if (measured > 0f) _natural = measured + PadX;
+        }
+
+        private void ApplyFillColor(ColorRgba? v)
+        {
+            _fillBuildColor ??= FillGraphic!.color;   // the static fill painted at build = the restore-default
+            switch (_fillColor.Next(v.HasValue))
+            {
+                case ColorStep.Override: FillGraphic!.color = new Color(v!.Value.R, v.Value.G, v.Value.B, v.Value.A); break;
+                case ColorStep.RestoreDefault: FillGraphic!.color = _fillBuildColor.Value; break;
+            }
+        }
+
+        // Diffed: an unchanged poll writes nothing (no vertex-dirty / rebatch for idle bubbles). null = ring off.
+        private void ApplyOutline(ColorRgba? v)
+        {
+            if (Nullable.Equals(v, _lastOutline)) return;
+            _lastOutline = v;
+            if (v is { } c) Outline!.color = new Color(c.R, c.G, c.B, c.A);
+            Outline!.enabled = v.HasValue;
         }
     }
 
@@ -68,18 +220,54 @@ internal sealed partial class WindowBuilder
     internal sealed class SelectableBinding
     {
         public Image Bg = null!;
+        public Image? Bar;            // optional "active tab" accent underline (SelectableElement.SelectedBar); null = none
         public Func<bool>? SelectedFn;
         public Color Rest, Hover, On;
         public bool HoverState;
         private int _last = -1;
+        // Height pin for a Selectable built WITHOUT a ContentSizeFitter (its parent group owns the height — see
+        // WindowBuilder.Table.cs FitHeightUnlessParentDoes). Null when it kept its fitter.
+        public HorizontalOrVerticalLayoutGroup? Host;   // the Selectable's own child host (its content's preferred height)
+        public LayoutElement? HostLe;                   // the Selectable's LayoutElement (minHeight pinned here)
+        private float _minH = -1f;
+        private bool _seeded;
         public void Apply()
         {
             if (Bg == null) return;
+            if (Host != null) SyncMinHeight();
             var state = (SelectedFn?.Invoke() ?? false) ? 2 : HoverState ? 1 : 0;
             if (state == _last) return;
             Bg.color = state == 2 ? On : state == 1 ? Hover : Rest;
+            // The underline shows only in the selected state (2). Set inside the state-changed branch — the bar's
+            // visibility is a pure function of state, so an unchanged state already has it right (same diff as Bg).
+            if (Bar != null) Bar.enabled = state == 2;
             _last = state;
         }
         public void ForceRepaint() { _last = -1; Apply(); }
+
+        // min height = the content's preferred height, so the parent group gives the row exactly its preferred height
+        // even when the parent has less room (a fixed-height title bar, a 50-unit list slot). A layout group SHRINKS its
+        // children toward their MIN size when it is short of space, and a Selectable's min is only its fixed-size
+        // leaves (an avatar or icon; text reports min 0): the conversation rows lost their name/preview lines and the
+        // title-bar ⚙ was squashed once the fitter went (f40b9e1). This is the size the fitter used to force, but with a
+        // single height controller (the parent), so there's no per-frame re-layout fight.
+        // Reads the host group's CACHED preferredHeight (set by the last layout pass — no TMP re-layout) and writes only on
+        // a change of ≥ 0.5 unit, so an idle row costs one property read per apply. Lags a content change by one apply.
+        // A host never laid out yet (a lazily built branch, a list slot that is its own layout root) reads 0: lay it out
+        // ONCE immediately so its first shown frame is already the right height instead of squashed until the next apply.
+        private void SyncMinHeight()
+        {
+            if (!Host!.gameObject.activeInHierarchy) return;
+            var p = Host.preferredHeight;
+            if (p <= 0f && !_seeded)
+            {
+                _seeded = true;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(Host.GetComponent<RectTransform>());
+                p = Host.preferredHeight;
+            }
+            if (p <= 0f || Mathf.Abs(p - _minH) < 0.5f) return;
+            _minH = p;
+            HostLe!.minHeight = p;
+        }
     }
 }

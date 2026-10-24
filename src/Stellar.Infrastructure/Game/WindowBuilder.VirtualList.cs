@@ -41,6 +41,7 @@ internal sealed partial class WindowBuilder
         var viewport = viewportGo.GetComponent<RectTransform>();
         sr.viewport = viewport; sr.content = crt;
         BuildScrollbar(sr, go, token);   // thin themed scrollbar (registers a reskin closure on token)
+        RegisterScrollView?.Invoke(crt);   // crt moves during scroll → ticker drops pixelPerfect while it's moving
         return (viewport, crt, sr);
     }
 
@@ -50,6 +51,11 @@ internal sealed partial class WindowBuilder
     // rebinds them when the first-index changes.
     private void BuildVirtualList(VirtualListElement v, Transform parent, WindowToken token)
     {
+        // Variable-height rows (wrapping chat bubbles) take a wholly different model (measure + cumulative
+        // offsets + scroll-anchoring), kept in the sibling partial WindowBuilder.VariableList.cs for the
+        // file-size gate. The uniform fixed-RowHeight path below is unchanged.
+        if (v.VariableHeight) { BuildVariableList(v, parent, token); return; }
+
         var (_, content, scrollRect) = BuildScrollViewport(parent, v.Height, token);
         content.anchorMin = new Vector2(0f, 1f); content.anchorMax = new Vector2(1f, 1f);
         content.pivot = new Vector2(0.5f, 1f); content.anchoredPosition = Vector2.zero;
@@ -78,7 +84,7 @@ internal sealed partial class WindowBuilder
     // (VirtualListMath), pushes that to the plugin via OnWindow (so slot Funcs resolve snapshot[first+i] THIS
     // poll), sizes the content spacer to Count*RowHeight, and repositions + activates the K pooled slots over
     // the visible window. Returns true when the visible set changed. Runs BEFORE Conds/Texts (WindowToken.Apply).
-    internal sealed class VirtualListBinding
+    internal sealed class VirtualListBinding : IVirtualListBinding
     {
         public ScrollRect Sr = null!;
         public RectTransform Content = null!;

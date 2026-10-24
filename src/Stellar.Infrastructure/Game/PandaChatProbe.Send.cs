@@ -13,7 +13,8 @@ namespace Stellar.Infrastructure.Game;
 /// <list type="bullet">
 /// <item><c>Send.Builders.cs</c> — packet/envelope construction + byte writers.</item>
 /// <item><c>Send.Il2Cpp.cs</c> — managed-byte[] to IL2CPP ReadOnlySpan&lt;byte&gt; coercion.</item>
-/// <item><c>Send.Hooks.cs</c> — ProxyCall + ZTcpClient.Send PREFIX installation and handlers.</item>
+/// <item><c>Send.Hooks.Tcp.cs</c> — resolves <c>ZTcpClient.Send(ReadOnlySpan&lt;byte&gt;)</c> as the plugin send target for <see cref="TrySend"/> + installs the connection-close hooks (no capture — the game does not use this overload).</item>
+/// <item><c>Send.Hooks.Rpc.cs</c> — <c>ZRpcImpl.SendBytes</c> PREFIX; captures outbound ChitChat call_ids (and the per-call history channel_type) for Return correlation at the transport-agnostic RPC framing layer.</item>
 /// <item><c>Send.Connection.cs</c> — cached chat ZTcpClient lifetime: re-cache on reconnect, close PREFIXes, handle liveness check.</item>
 /// </list>
 /// </summary>
@@ -26,20 +27,38 @@ internal sealed partial class PandaChatProbe
     // way to identify a Return as chat-related is to remember which call_ids we
     // sent ChitChat Calls with and match Returns against that set.
     //
-    // Populated by the ZTcpClient.Send prefix when an outbound packet has
-    // msgType=Call and serviceUuid==ChitChatServiceUuid. Consumed (TryRemove) by
-    // the recv-path drain loop when a Return arrives with a matching call_id.
+    // Populated by the ZRpcImpl.SendBytes prefix (Send.Hooks.Rpc.cs) for every
+    // outbound ChitChat Call (serviceUuid==ChitChatServiceUuid). Consumed
+    // (TryRemove) by the recv-path drain loop when a Return arrives with a
+    // matching call_id.
     // Bounded to MaxPendingChatCalls to prevent unbounded growth if Returns are
     // dropped or never arrive (e.g., server-side timeout).
     private readonly ConcurrentDictionary<uint, byte> _pendingChitChatCallIds = new();
     private const int MaxPendingChatCalls = 64;
 
-    // FIFO of channel_type values from outbound GetChipChatRecords requests.
-    // Populated by the ZRpcImpl.ProxyCall PREFIX (OnProxyCall) when it observes
-    // a GetChipChatRecords call; consumed by ProcessChitChatReturnPayload on
-    // the matching Return so history batches can be attributed to a channel.
-    private readonly ConcurrentQueue<int> _pendingHistoryChannels = new();
-    private bool _firstProxyCallObservedLogged;
+    // Map of outbound GetChipChatRecords call_id -> requested channel_type, so a
+    // history Return can be attributed to the channel that ASKED for it, keyed by
+    // the RPC call_id (NOT a positional FIFO). Keying by call_id is correct even
+    // when a channel's login history is EMPTY (that Return removes its own entry
+    // and poisons no other), when Returns complete out of order, and when a send
+    // is dropped/unrecorded (its Return just misses -> resolves Unknown -> the
+    // per-sender hint). Populated by the ZRpcImpl.SendBytes prefix
+    // (TryCaptureHistoryChannel on Send.Hooks.Rpc.cs — that transport-agnostic
+    // framing method has both the call_id and the raw request body as plain
+    // params); consumed (TryRemove) by ProcessChitChatReturnPayload on the
+    // matching Return.
+    //
+    // Bounded by MaxPendingChatCalls via a companion insertion-order queue:
+    // whenever the order queue exceeds the cap we drain its head, evicting the
+    // oldest still-live entry (a never-returned call) and draining stale ids
+    // that a Return already removed. Both structures therefore stay <= the cap.
+    private readonly ConcurrentDictionary<uint, int> _historyChannelByCallId = new();
+    // Companion of _historyChannelByCallId for PRIVATE history fetches: call_id -> the request's target_id
+    // (the whisper peer's charId). Same lifetime: written by TryCaptureHistoryChannel, consumed by
+    // ResolveHistoryChannel, evicted through the shared order queue.
+    private readonly ConcurrentDictionary<uint, long> _historyPeerByCallId = new();
+    private readonly ConcurrentQueue<uint> _historyChannelCallIdOrder = new();
+    private bool _firstHistoryChannelCapturedLogged;
 
     // Cached chat-server ZTcpClient instance, captured from env.Connection on
     // chat packets (in OnChatNotifyEnvelope / OnChatMethod3Envelope). Lives as
@@ -72,13 +91,14 @@ internal sealed partial class PandaChatProbe
     private long _callIdCounter;
 
     // One-shot diagnostic — first observed outbound ChitChat Call (by the
-    // ZTcpClient.Send PREFIX). Confirms the send-side hook is firing.
+    // ZRpcImpl.SendBytes PREFIX). Confirms the send-side capture hook is firing.
     private bool _firstSendObservedLogged;
 
-    // One-shot diagnostic — first invocation of the ZTcpClient.Send PREFIX
-    // regardless of payload contents. Confirms HarmonyX is wired correctly
-    // (IL2CPP direct dispatch can bypass managed prefix patches).
-    private static int _firstSendPrefixFiredLogged;
+    // One-shot diagnostic — first invocation of the ZRpcImpl.SendBytes PREFIX
+    // regardless of service/payload. Confirms HarmonyX is wired correctly onto
+    // the transport-agnostic outbound RPC framing method (the capture site as of
+    // 2.25.2; the 2.25.1 ZTcpClient.Send site never fired for game traffic).
+    private static int _firstRpcSendBytesFiredLogged;
 
     /// <summary>
     /// Successful result from <see cref="BuildOutboundFrame"/>: the encoded packet,
@@ -125,6 +145,78 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
+    /// Sticker counterpart of <see cref="TrySend"/>: build + dispatch a ChitChat.SendChitChatMsg Call carrying a
+    /// <c>ChatPictureEmoji{ config_id }</c> (msg_type = PictureEmoji) instead of text. The SAME RPC and the SAME
+    /// live/passive client resolution + dispatch as text — only the payload builder differs. Returns false with a
+    /// descriptive <paramref name="failureReason"/> on a precondition miss or when both client sources are gone.
+    /// </summary>
+    public bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason)
+    {
+        if (!BuildOutboundStickerFrame(target, stickerConfigId, out failureReason, out var frame))
+        {
+            return false;
+        }
+
+        // Identical resolution to TrySend: live ZRpcCtrl client first, passive captured client as fallback.
+        object? client = TryResolveLiveChatClient();
+        if (client is null)
+        {
+            if (!TryTakeLiveChatClient(out var passive, out failureReason))
+            {
+                return false;
+            }
+            client = passive;
+        }
+
+        // The text arg is only used for the one-shot diagnostic log line — pass a descriptive label.
+        return SendThroughClient(client, frame, $"<sticker {stickerConfigId}>", out failureReason);
+    }
+
+    /// <summary>
+    /// Sticker analogue of <see cref="BuildOutboundFrame"/>: validate preconditions (<c>ZTcpClient.Send</c>
+    /// resolved, a positive config id, a mappable target — but NO empty-text guard, a sticker carries no text)
+    /// and encode the outbound Call frame via <see cref="BuildSendStickerEnvelope"/>.
+    /// </summary>
+    private bool BuildOutboundStickerFrame(
+        ChatTarget target,
+        int stickerConfigId,
+        out string? failureReason,
+        out OutboundFrameResult frame)
+    {
+        failureReason = null;
+        frame = default;
+
+        if (_tcpClientSend is null)
+        {
+            failureReason = "ZTcpClient.Send(ReadOnlySpan<byte>) not resolved";
+            return false;
+        }
+        if (stickerConfigId <= 0)
+        {
+            failureReason = "invalid sticker config id";
+            return false;
+        }
+
+        (int channelType, long whisperTargetId) = MapSendTarget(target);
+        if (channelType < 0)
+        {
+            failureReason = $"unsupported chat target: {target.GetType().Name}";
+            return false;
+        }
+
+        var payload = BuildSendStickerEnvelope(channelType, stickerConfigId, whisperTargetId);
+        uint callId = (uint)System.Threading.Interlocked.Increment(ref _callIdCounter);
+        var packet = BuildCallPacket(
+            serviceUuid: ChitChatServiceUuid,
+            stubId: 0u,
+            callId: callId,
+            methodId: SendChitChatMsgMethodId,
+            payload: payload);
+        frame = new OutboundFrameResult(packet, callId, channelType);
+        return true;
+    }
+
+    /// <summary>
     /// Dispatch an already-built frame through a resolved (live or passive) chat
     /// <c>ZTcpClient</c>: coerce the managed <c>byte[]</c> to an IL2CPP
     /// <c>ReadOnlySpan&lt;byte&gt;</c> and reflection-invoke <c>Send</c>. Shared by
@@ -140,6 +232,8 @@ internal sealed partial class PandaChatProbe
             // reflection Invoke. Resolved lazily on first call.
             object spanArg = WrapBytesAsIl2CppSpan(frame.Packet);
 
+            // Track the call BEFORE dispatch so even an instant reply finds its channel (cooldown/err).
+            RecordSendCall(frame.CallId, frame.ChannelType, viaFramework: true);
             _tcpClientSend!.Invoke(client, new object[] { spanArg });
 
             if (!_firstSendLogged)
@@ -151,6 +245,7 @@ internal sealed partial class PandaChatProbe
         }
         catch (Exception ex)
         {
+            _sendByCallId.TryRemove(frame.CallId, out _);   // never went out — no reply will come
             var inner = ex.InnerException;
             failureReason = inner is not null
                 ? $"{ex.GetType().Name}: {ex.Message} (inner {inner.GetType().Name}: {inner.Message})"

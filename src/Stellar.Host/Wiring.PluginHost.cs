@@ -52,9 +52,22 @@ public sealed partial class BootstrapPlugin
     /// </summary>
     private void ConstructPluginServices(BepInExPluginLog log, PluginConfigFactory configFactory)
     {
+        var services = BuildPluginServices(log);
+        _capturedServices = services;
+        WireProfileCardActionInjector(log);
+        BuildRegistryAndHost(log, configFactory, services);
+    }
+
+    /// <summary>
+    /// Selects real vs mock implementations (visual-capture toolkit) + the infra services, then
+    /// constructs the <see cref="PluginServices"/> aggregator. Split out of
+    /// <see cref="ConstructPluginServices"/> so that method stays under the 50-LoC analyzer gate.
+    /// </summary>
+    private PluginServices BuildPluginServices(BepInExPluginLog log)
+    {
         var (combatSnapshot, playerState, inventory) = SelectVisualMocks(log);
         var (gameAssets, entityTransforms, entityVitals, portraitService, wardrobePreview) = BuildInfraServices(log);
-        var services = new PluginServices(log, _framework!, _clientState!, _gameDataService!,
+        return new PluginServices(log, _framework!, _clientState!, _gameDataService!,
             _playerStatsService!, inventory, _moduleEquipService!, _loadoutService!, _exchangeService!, _notificationService!,
             _pluginConfigService!,
             _gameEvents!, playerState, _chatService!,
@@ -96,10 +109,9 @@ public sealed partial class BootstrapPlugin
             // Shared-bag fallback only: every plugin gets its own IPluginDownloads from the per-plugin factory
             // (BuildPluginDownloadsFactory), so this placeholder is never what a plugin sees.
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
-            _reShadeService!, _voiceService!);
-        _capturedServices = services;
-        WireProfileCardActionInjector(log);
-        BuildRegistryAndHost(log, configFactory, services);
+            _reShadeService!, _voiceService!,
+            _playerProfileService!,
+            _friendsService!);
     }
 
     /// <summary>
@@ -164,7 +176,7 @@ public sealed partial class BootstrapPlugin
              Stellar.Infrastructure.Game.WardrobePreviewService wardrobePreview)
         BuildInfraServices(BepInExPluginLog log)
     {
-        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory);
+        var gameAssets = new GameAssetsService(log, _gameDataService!.Combat, _gameDataResonance!, _gameDataService!.Inventory, _luaService!);
         var entityTransforms = new EntityTransformsService(_gameTypeRegistry!, _wirePositions, log);
         _entityTransforms = entityTransforms;   // photo look focus-on-player (Wiring.PhotoStudio.cs)
         // Native boss-HP tap (2026-08-26 raid-bosshp-capture-design § decision 2) — reads the SAME
@@ -177,6 +189,11 @@ public sealed partial class BootstrapPlugin
         // half of the no-polling doctrine (decision 2). Mirrors the other lightweight per-tick
         // subscribers wired here (e.g. WireProfileCardActionInjector's _profileCardActionInjector.Tick()).
         _framework!.Update += _ => entityVitals.Tick();
+        // Player-profile avatar lookups (IPlayerProfile): originates the game's own social-data request (Lua) via
+        // _socialRefresh on demand, then polls SocialDataCache for the wire-tapped reply's avatar URL on the main
+        // thread. Ticked here beside the other lightweight per-tick subscribers.
+        _playerProfileService = new PlayerProfileService(log, _socialRefresh!, _socialDataCache!);
+        _framework!.Update += _ => _playerProfileService.Tick();
         _noticeTipService = new Stellar.Application.Services.NoticeTipService(log.Info, _clientState!);
         // Party-size control bridge (Lua → game's own ChangeTeamMemberType). Lazy-resolves in-world.
         _teamControlProbe = new PandaTeamControlProbe(_gameTypeRegistry!, log);

@@ -32,4 +32,6 @@ internal sealed class PerPluginWindowHost : IWindowHost
     public IWindowControl? Find(string id) => _shared.Find(id);
 
     public bool IsLayoutEditing => _shared.IsLayoutEditing;
+
+    public void PrewarmText(string text) => _shared.PrewarmText(text);
 }

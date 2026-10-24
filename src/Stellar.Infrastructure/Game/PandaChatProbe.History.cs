@@ -50,6 +50,11 @@ internal sealed partial class PandaChatProbe
     /// </summary>
     private void ProcessChitChatReturnPayload(ReadOnlySpan<byte> payload, uint callId, bool correlated)
     {
+        // Resolve THIS Return's history channel by call_id BEFORE any early
+        // return (see ResolveHistoryChannel) — so an EMPTY-history batch consumes
+        // its OWN map entry and can never poison a later channel's batch.
+        ChatChannel batchChannel = ResolveHistoryChannel(callId, out long batchPeerId);
+
         // First-correlated-Return diagnostic — fires only when call_id matched
         // the pending set (Send hook actually worked), so spam-free.
         if (correlated && !_firstChitChatReturnObservedLogged)
@@ -79,20 +84,38 @@ internal sealed partial class PandaChatProbe
         int validCount = CountValidHistoryMessages(messages);
         if (validCount == 0) return;
 
-        // CONFIRMED chat history batch. Resolve the channel — two sources:
-        //   1. Outbound-hook FIFO (populated by the ZRpcImpl.ProxyCall
-        //      prefix when it observes an outbound GetChipChatRecords).
-        //   2. Per-message sender hint: if the sender appeared in a live
-        //      Notify on a known channel, use that as the per-message override.
-        // No hardcoded send-order fallback — game send order is not fixed.
+        // CONFIRMED chat history batch. The channel was already resolved at the
+        // top of this method from the call_id -> channel_type map (populated by
+        // the outbound ZTcpClient.Send prefix). If that missed, batchChannel is
+        // Unknown and DispatchHistoryRecords falls through to the per-sender
+        // hint (a sender seen on a live Notify on a known channel).
         System.Threading.Interlocked.Increment(ref _historyBatchCount);
-        ChatChannel batchChannel = ChatChannel.Unknown;
-        if (_pendingHistoryChannels.TryDequeue(out var wireChannel))
-        {
-            batchChannel = WireProtocol.MapWireChannel(wireChannel);
-        }
 
-        DispatchHistoryRecords(messages, batchChannel, callId, historyCount, validCount);
+        DispatchHistoryRecords(messages, new HistoryBatch(batchChannel, batchPeerId, callId), historyCount, validCount);
+    }
+
+    /// <summary>Per-Return attribution resolved from the request's call_id: channel + (private only) peer charId.</summary>
+    private readonly record struct HistoryBatch(ChatChannel Channel, long PeerId, uint CallId);
+
+    /// <summary>
+    /// Resolve (and consume) the history channel recorded for a Return's
+    /// <paramref name="callId"/> by the outbound <c>ZTcpClient.Send</c> prefix.
+    /// The <c>TryRemove</c> is UNCONDITIONAL — the caller invokes this before its
+    /// empty/invalid early-returns — so an empty-history batch removes its OWN
+    /// entry (never leaving a stale one for the next channel to mis-claim, the
+    /// old positional-FIFO bug) and the map never leaks. A Return whose call_id
+    /// we never recorded (non-chat Return, dropped/compressed/overflowed send)
+    /// resolves <see cref="ChatChannel.Unknown"/>, and the caller's
+    /// <see cref="DispatchHistoryRecords"/> falls through to the per-sender hint.
+    /// <see cref="WireProtocol.MapWireChannel"/> runs only on a hit. <paramref name="peerId"/> is the private
+    /// fetch's <c>target_id</c> (0 for non-private batches), consumed from its companion map the same way.
+    /// </summary>
+    private ChatChannel ResolveHistoryChannel(uint callId, out long peerId)
+    {
+        if (!_historyPeerByCallId.TryRemove(callId, out peerId)) peerId = 0;
+        return _historyChannelByCallId.TryRemove(callId, out var wireChannel)
+            ? WireProtocol.MapWireChannel(wireChannel)
+            : ChatChannel.Unknown;
     }
 
     /// <summary>
@@ -103,10 +126,10 @@ internal sealed partial class PandaChatProbe
     private void LogFirstCorrelatedChitChatReturn(ReadOnlySpan<byte> payload, uint callId)
     {
         _firstChitChatReturnObservedLogged = true;
-        var dumpLen = payload.Length < 32 ? payload.Length : 32;
-        var sb = new System.Text.StringBuilder(dumpLen * 3);
-        for (int i = 0; i < dumpLen; i++) { sb.Append(payload[i].ToString("X2")); sb.Append(' '); }
-        _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length} firstBytes={sb}");
+        // The leading bytes of a history reply are its first record (sender char info incl. the NAME, then text), so
+        // normal play logs the framing facts alone; the hex prefix is a diagnostics-mode extra (DiagFirstReturnBytes).
+        _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length}");
+        DiagFirstReturnBytes(payload, callId);
     }
 
     /// <summary>
@@ -138,11 +161,12 @@ internal sealed partial class PandaChatProbe
     /// </summary>
     private void DispatchHistoryRecords(
         List<(ChatMessage Msg, long MsgId)> messages,
-        ChatChannel batchChannel,
-        uint callId,
+        HistoryBatch batch,
         int historyCount,
         int validCount)
     {
+        ChatChannel batchChannel = batch.Channel;
+        uint callId = batch.CallId;
         int dispatched = 0;
         ChatMessage? firstDispatched = null;
         foreach (var (origMsg, msgId) in messages)
@@ -161,6 +185,9 @@ internal sealed partial class PandaChatProbe
             var msg = effective != ChatChannel.Unknown
                 ? origMsg with { Channel = effective }
                 : origMsg;
+            // A private fetch names its peer in the REQUEST (the reply rows don't) — authoritative, so it
+            // wins over ChatService's sender/target inference for the whole batch.
+            if (batch.PeerId != 0 && effective == ChatChannel.Whisper) msg = msg with { PeerId = batch.PeerId };
 
             OnMessageReceived?.Invoke(msg);
             firstDispatched ??= msg;
@@ -169,11 +196,13 @@ internal sealed partial class PandaChatProbe
 
         // Log every batch (not just the first) so we can correlate each
         // resolved channel with what the user sees in the UI. Login fetches
-        // typically produce 4 batches — small log footprint.
+        // typically produce 4 batches — small log footprint. Counts, channel and
+        // lengths ONLY: never the message text, sender name or peer charId (a
+        // private batch is someone's whisper conversation — the log is shared).
         if (dispatched > 0)
         {
             var f = firstDispatched!;
-            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel}; first: channel={f.Channel} sender='{f.SenderName}' text='{f.Text}')");
+            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel} hasPeer={batch.PeerId != 0}; first: channel={f.Channel} textLen={f.Text?.Length ?? 0})");
         }
         else if (validCount > 0)
         {
