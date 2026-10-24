@@ -151,6 +151,7 @@ internal sealed partial class WindowBuilder
             // Stale: a RichEmoji row whose sprite asset resolved after its string was set — re-apply so the
             // already-shown <sprite=N> tags pick the asset up without waiting for the row to rebind.
             if (s != _last || H.Stale) { _last = s; H.SetText(s); Owner?.MarkDirty(); }
+            H.FitToRect();   // Ellipsize: re-cut on a laid-out width change (reads rect.width only; no-op otherwise)
             if (ColorFn != null)
             {
                 var v = ColorFn();

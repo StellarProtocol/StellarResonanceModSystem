@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// Game-only file: the Mono UI-sandbox has no TextMeshPro package, so this must never be symlinked into
 /// it; the sandbox leaves the factory null and renders the legacy crisp fallback.
 /// </summary>
-internal sealed class TmpStyledText : IStyledTextHandle
+internal sealed partial class TmpStyledText : IStyledTextHandle
 {
     private readonly TextMeshProUGUI _t;
     private readonly bool _bold;
@@ -34,10 +34,10 @@ internal sealed class TmpStyledText : IStyledTextHandle
     private bool _hasTag;
     private int _spriteGen;
 
-    private TmpStyledText(TextMeshProUGUI t, bool bold, bool rich,
+    private TmpStyledText(TextMeshProUGUI t, bool bold, bool rich, bool ellipsis,
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
-        _t = t; _bold = bold; _rich = rich;
+        _t = t; _bold = bold; _rich = rich; _ellipsis = ellipsis;
         _ul = underline.Rt; _ulImg = underline.Img;
         _st = strike.Rt; _stImg = strike.Img;
     }
@@ -53,7 +53,8 @@ internal sealed class TmpStyledText : IStyledTextHandle
         var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
         if (_rich) ApplySpriteAsset(s);
-        _t.text = s;
+        if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
+        else _t.text = s;
         FitDecorations();
     }
 
@@ -73,6 +74,7 @@ internal sealed class TmpStyledText : IStyledTextHandle
     public void SetFontSize(int px)
     {
         _t.fontSize = px;
+        if (_ellipsis) MeasureAndFit();   // natural width scales with the size → re-pad + re-cut
         FitDecorations();
     }
 
@@ -142,9 +144,9 @@ internal sealed class TmpStyledText : IStyledTextHandle
         t.color = spec.Color;
         t.raycastTarget = false;
         t.enableWordWrapping = spec.Wrap;
-        // TextElement.Ellipsize: TMP cuts at its own rect and appends its ellipsis glyph (a face without U+2026 makes
-        // TMP fall back to a hard truncate). The rect is the layout slot, so a resize re-fits on the next mesh rebuild.
-        if (spec.Ellipsis) { t.enableWordWrapping = false; t.overflowMode = TextOverflowModes.Ellipsis; }
+        // TextElement.Ellipsize: one line, overflowMode left at Overflow — the framework cuts the string itself, because
+        // TMP's Ellipsis mode wiped a whole single-word line in-game (see TmpStyledText.Ellipsis.cs).
+        if (spec.Ellipsis) t.enableWordWrapping = false;
         // CenterGlyphs → TMP's Midline row: it centres the MESH extents (what is drawn) in the rect, where the default
         // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
         // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes
@@ -162,7 +164,7 @@ internal sealed class TmpStyledText : IStyledTextHandle
         if (spec.RichEmoji) t.richText = true;   // TMP's default, made explicit: <sprite=N> parsing depends on it
         var ul = spec.Underline ? BuildLine(go.transform, "Underline", spec.Color) : (null, null);
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
-        var handle = new TmpStyledText(t, spec.Bold, spec.RichEmoji, ul, st);
+        var handle = new TmpStyledText(t, spec.Bold, spec.RichEmoji, spec.Ellipsis, ul, st);
         handle.SetText(spec.Text);
         return handle;
     }

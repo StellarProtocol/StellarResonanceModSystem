@@ -130,7 +130,8 @@ internal readonly struct StyledTextSpec
     /// asset (TextElement.RichEmoji — see <c>TmpEmojiSprites</c>). Off = the styled path is unchanged.</summary>
     public bool RichEmoji { get; init; }
 
-    /// <summary>One line; overflow is cut with TMP's own ellipsis at the rect edge (TextElement.Ellipsize).</summary>
+    /// <summary>One line; overflow is cut to a prefix + ellipsis at the rect edge (TextElement.Ellipsize). The cut is
+    /// the framework's own (TmpStyledText.Ellipsis.cs), not TMP's Ellipsis overflow mode.</summary>
     public bool Ellipsis { get; init; }
 
     /// <summary>Centre the drawn geometry vertically (TMP Midline) instead of the line box (TextElement.CenterGlyphs).</summary>
@@ -169,4 +170,12 @@ internal interface IStyledTextHandle
     /// text whose sprite asset resolved (lazily, in World) AFTER its string was set, so its literal
     /// <c>&lt;sprite=N&gt;</c> tags can now draw as images. Always false for a non-RichEmoji handle.</summary>
     bool Stale { get; }
+
+    /// <summary>Ellipsis only (no-op otherwise): re-cut the shown string to the rect's current width. Polled every
+    /// apply; it reads only <c>rect.width</c> and re-measures text only when that width or the string changed.</summary>
+    void FitToRect();
+
+    /// <summary>Ellipsis only: own <paramref name="le"/>'s preferred width = the FULL string's natural width rounded
+    /// up + 1, so a slot with room is never an exact (float-noise) fit and the shown cut never feeds back into layout.</summary>
+    void PadPreferredWidth(LayoutElement le);
 }
