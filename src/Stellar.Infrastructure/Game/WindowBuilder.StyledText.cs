@@ -26,6 +26,7 @@ internal sealed partial class WindowBuilder
             Align = t.Align,
             RichEmoji = t.RichEmoji,   // <sprite=N> from the game's chat sprite asset (WindowBuilder.RichText.cs)
             Ellipsis = t.Ellipsize,    // TMP-native ellipsis (the plain path fits "..." itself, TextBinding.EllipsizeToRect)
+            CenterGlyphs = t.CenterGlyphs,   // Midline: centre the drawn quads, not the line box (lone sprite icons)
         });
         if (h?.Go == null) return false;
         // Mirror the legacy path's layout contract: natural width, a sibling Spacer does the pushing.

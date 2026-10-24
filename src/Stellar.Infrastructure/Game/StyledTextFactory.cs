@@ -112,11 +112,14 @@ internal readonly struct StyledTextSpec
     /// <summary>One line; overflow is cut with TMP's own ellipsis at the rect edge (TextElement.Ellipsize).</summary>
     public bool Ellipsis { get; init; }
 
+    /// <summary>Centre the drawn geometry vertically (TMP Midline) instead of the line box (TextElement.CenterGlyphs).</summary>
+    public bool CenterGlyphs { get; init; }
+
     public StyledTextSpec(string text, int fontSize, Color color, bool wrap)
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
         Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
-        RichEmoji = false; Ellipsis = false;
+        RichEmoji = false; Ellipsis = false; CenterGlyphs = false;
     }
 }
 

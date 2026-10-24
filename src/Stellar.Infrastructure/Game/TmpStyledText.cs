@@ -145,10 +145,17 @@ internal sealed class TmpStyledText : IStyledTextHandle
         // TextElement.Ellipsize: TMP cuts at its own rect and appends its ellipsis glyph (a face without U+2026 makes
         // TMP fall back to a hard truncate). The rect is the layout slot, so a resize re-fits on the next mesh rebuild.
         if (spec.Ellipsis) { t.enableWordWrapping = false; t.overflowMode = TextOverflowModes.Ellipsis; }
-        t.alignment = spec.Align switch
+        // CenterGlyphs → TMP's Midline row: it centres the MESH extents (what is drawn) in the rect, where the default
+        // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
+        // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes
+        // that with no hand-tuned voffset and scales with any font size. Preferred size (layout) is unaffected.
+        t.alignment = (spec.Align, spec.CenterGlyphs) switch
         {
-            TextAlign.Center => TextAlignmentOptions.Center,
-            TextAlign.Right => TextAlignmentOptions.Right,
+            (TextAlign.Center, true) => TextAlignmentOptions.Midline,
+            (TextAlign.Right, true) => TextAlignmentOptions.MidlineRight,
+            (_, true) => TextAlignmentOptions.MidlineLeft,
+            (TextAlign.Center, _) => TextAlignmentOptions.Center,
+            (TextAlign.Right, _) => TextAlignmentOptions.Right,
             _ => TextAlignmentOptions.Left,
         };
         if (spec.Italic) t.fontStyle = FontStyles.Italic;

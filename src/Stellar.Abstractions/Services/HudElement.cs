@@ -199,6 +199,15 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// (<see cref="Emphasis"/>/<see cref="Bold"/>/...) and <see cref="RichEmoji"/> text uses TextMeshPro's own ellipsis
     /// (a hard cut if the face lacks the glyph). Ignored on Shadow and HUD-overlay text. Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool Ellipsize { get; init; }
+
+    /// <summary>Vertically centre what is actually DRAWN (the glyphs' / emoji pictures' own bounds) in the text's
+    /// box, instead of the font's line box. For icon-only texts — typically a lone <see cref="RichEmoji"/>
+    /// <c>&lt;sprite=N&gt;</c> used as a button or grid icon: an emoji sits on the text baseline, so with the
+    /// default line-box centring it draws visibly ABOVE the middle of its box. Scales with any font size (no fixed
+    /// offset). Leave it off for running text, where letters and inline emoji must share one baseline. Applies to the
+    /// TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and HUD-overlay text.
+    /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool CenterGlyphs { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
