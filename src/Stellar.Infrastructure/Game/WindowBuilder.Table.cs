@@ -58,7 +58,7 @@ internal sealed partial class WindowBuilder
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
         vlg.childAlignment = TextAnchor.UpperLeft;
-        FitHeightUnlessParentDoes(go, parent);   // vertical CSF only when no parent group owns the height
+        var pinHeight = !FitHeightUnlessParentDoes(go, parent);   // CSF only when no parent group owns the height
         BuildElement(sel.Child, go.transform, token);
 
         // Optional "active tab" underline bar (SelectedBar) — null when not opted in; shown only while selected,
@@ -78,6 +78,7 @@ internal sealed partial class WindowBuilder
         token.Selectables.Add(binding);
         token.ReskinActions.Add(() => { if (!sel.Bare) { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); } binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
+        if (pinHeight) { binding.Host = vlg; binding.HostLe = le; }   // after the build paint: first height sync = first apply
     }
 
     // A vertical ContentSizeFitter ONLY when nothing above already owns the row's height. Inside a framework
@@ -87,11 +88,15 @@ internal sealed partial class WindowBuilder
     // ChatTools-at-rest canvasRebuild cost (5.7-8.4 ms/frame, scaling with visible rows: each VSlot layout-rebuilt and
     // its Selectable/Bubble/avatar graphics re-dirtied per frame; the title-bar ⚙ Selectable did the same to the
     // window root) — the anti-pattern BuildBubble already dropped its CSF for. A Selectable with no height-controlling
-    // parent keeps the CSF, so it still sizes to its content exactly as before.
-    private static void FitHeightUnlessParentDoes(GameObject go, Transform parent)
+    // parent keeps the CSF, so it still sizes to its content exactly as before. Under one, the row pins its LayoutElement
+    // minHeight to its content's preferred height instead (SelectableBinding.SyncMinHeight): a layout group short of
+    // room shrinks children toward their MIN height, which squashed rows whose min is only an avatar/icon.
+    // Returns true when the CSF was added (no height-controlling parent); false = the caller pins min height instead.
+    private static bool FitHeightUnlessParentDoes(GameObject go, Transform parent)
     {
-        if (ParentControlsHeight(parent)) return;
+        if (ParentControlsHeight(parent)) return false;
         go.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        return true;
     }
 
     // True when `parent` carries a layout group that sets its children's heights (an H/V group with childControlHeight,

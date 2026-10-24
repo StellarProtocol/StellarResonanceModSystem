@@ -225,9 +225,16 @@ internal sealed partial class WindowBuilder
         public Color Rest, Hover, On;
         public bool HoverState;
         private int _last = -1;
+        // Height pin for a Selectable built WITHOUT a ContentSizeFitter (its parent group owns the height — see
+        // WindowBuilder.Table.cs FitHeightUnlessParentDoes). Null when it kept its fitter.
+        public HorizontalOrVerticalLayoutGroup? Host;   // the Selectable's own child host (its content's preferred height)
+        public LayoutElement? HostLe;                   // the Selectable's LayoutElement (minHeight pinned here)
+        private float _minH = -1f;
+        private bool _seeded;
         public void Apply()
         {
             if (Bg == null) return;
+            if (Host != null) SyncMinHeight();
             var state = (SelectedFn?.Invoke() ?? false) ? 2 : HoverState ? 1 : 0;
             if (state == _last) return;
             Bg.color = state == 2 ? On : state == 1 ? Hover : Rest;
@@ -237,5 +244,30 @@ internal sealed partial class WindowBuilder
             _last = state;
         }
         public void ForceRepaint() { _last = -1; Apply(); }
+
+        // min height = the content's preferred height, so the parent group gives the row exactly its preferred height
+        // even when the parent has less room (a fixed-height title bar, a 50-unit list slot). A layout group SHRINKS its
+        // children toward their MIN size when it is short of space, and a Selectable's min is only its fixed-size
+        // leaves (an avatar or icon; text reports min 0): the conversation rows lost their name/preview lines and the
+        // title-bar ⚙ was squashed once the fitter went (f40b9e1). This is the size the fitter used to force, but with a
+        // single height controller (the parent), so there's no per-frame re-layout fight.
+        // Reads the host group's CACHED preferredHeight (set by the last layout pass — no TMP re-layout) and writes only on
+        // a change of ≥ 0.5 unit, so an idle row costs one property read per apply. Lags a content change by one apply.
+        // A host never laid out yet (a lazily built branch, a list slot that is its own layout root) reads 0: lay it out
+        // ONCE immediately so its first shown frame is already the right height instead of squashed until the next apply.
+        private void SyncMinHeight()
+        {
+            if (!Host!.gameObject.activeInHierarchy) return;
+            var p = Host.preferredHeight;
+            if (p <= 0f && !_seeded)
+            {
+                _seeded = true;
+                LayoutRebuilder.ForceRebuildLayoutImmediate(Host.GetComponent<RectTransform>());
+                p = Host.preferredHeight;
+            }
+            if (p <= 0f || Mathf.Abs(p - _minH) < 0.5f) return;
+            _minH = p;
+            HostLe!.minHeight = p;
+        }
     }
 }
