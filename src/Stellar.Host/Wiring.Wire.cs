@@ -175,6 +175,7 @@ public sealed partial class BootstrapPlugin
         _socialDataCache?.ClearSession();
         _partyService?.ClearSession();
         _combatService?.ClearSession();           // resets the shared CombatEntityTracker + buffs + local id/cooldowns
+        _chatService?.ClearSession();             // chat rings + history/live dedup: the next character's copy of a whisper the previous one saw must not be dropped as a duplicate
         _combatStubProbe?.ResetLocalEntityId();
         _entityVitals?.Reset();                   // I1 review fix — mirrors the ClearSession reset above
         _harmonyBridge!.Publish("Panda.Core.LogoutEvent", null);

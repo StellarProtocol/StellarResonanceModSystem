@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Stellar.Abstractions.Domain;
+using Stellar.Application.Abstractions;
 
 namespace Stellar.Application.Services;
 
@@ -30,6 +31,24 @@ internal sealed partial class ChatService
     private long _arrivalSeq;   // global arrival number across both rings (merge key)
 
     private static bool IsClientNotice(ChatMessage msg) => msg.SystemLabel != null;
+
+    /// <summary>Logout (Host OnLogout, main thread, AFTER <c>IClientState.Logout</c> subscribers ran — a plugin cutting
+    /// its view at logout still sees the old tail first): empty both rings and the not-yet-drained queue, forget the
+    /// per-channel send cooldowns, and reset the probe's per-session receive state (the history/live dedup — see
+    /// <see cref="IChatProbe.ResetSession"/>). <c>RecentMessages</c> then really is "since the last login" as documented.
+    /// Consumers holding a ring entry as a cut point find it gone, which already means "everything left is newer".</summary>
+    internal void ClearSession()
+    {
+        while (_wireQueue.TryDequeue(out _)) { }
+        lock (_ringLock)
+        {
+            _ring.Clear();
+            _noticeRing.Clear();
+            Interlocked.Increment(ref _ringVersion);
+        }
+        lock (_cooldownLock) _cooldowns.Clear();
+        _probe?.ResetSession();
+    }
 
     // ── Consumers (lazy background work) ──
     // A plugin "uses chat" while it has a MessageReceived subscriber or has read RecentMessages within this window.

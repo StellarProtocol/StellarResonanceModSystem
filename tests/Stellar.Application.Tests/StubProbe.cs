@@ -44,4 +44,9 @@ internal sealed class StubProbe : IChatProbe
         failureReason = NextTrySendResult ? null : NextFailureReason;
         return NextTrySendResult;
     }
+
+    /// <summary>How many times <see cref="ResetSession"/> ran.</summary>
+    public int ResetSessionCalls { get; private set; }
+
+    public void ResetSession() => ResetSessionCalls++;
 }

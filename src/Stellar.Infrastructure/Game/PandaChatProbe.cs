@@ -154,6 +154,15 @@ internal sealed partial class PandaChatProbe : IChatProbe
     private bool MarkSeen(long senderId, long msgId, long timestampTicks)
         => _dedup.MarkSeen(senderId, msgId, timestampTicks);
 
+    /// <summary>Logout (via ChatService.ClearSession): the dedup set and the per-sender channel hints belong to the
+    /// character that saw them. Without this, character B's history copy of a whisper character A already saw live — same
+    /// (sender, msgId, send_time) on both sides — was dropped as "fully deduped" (A whispers offline B, relog as B).</summary>
+    public void ResetSession()
+    {
+        _dedup.Reset();
+        _senderLastChannel.Clear();
+    }
+
     /// <summary>
     /// Advance <see cref="_callIdCounter"/> to at least <paramref name="observed"/>
     /// so subsequent outbound Calls we generate don't collide with call_ids the

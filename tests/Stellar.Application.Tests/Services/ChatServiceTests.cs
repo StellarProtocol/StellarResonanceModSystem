@@ -238,6 +238,34 @@ public sealed class ChatServiceTests
         Assert.Equal(2, all[^2].MsgId);
     }
 
+    [Fact]
+    public void ClearSession_EmptiesBothRings_DropsQueued_AndResetsProbe()
+    {
+        var (svc, probe) = NewService();
+        probe.OnMessageReceived!(MakeMsg(1));
+        svc.PublishLocal(MakeNotice(-1));
+        svc.Drain();
+        var before = svc.RecentMessages;
+        probe.OnMessageReceived!(MakeMsg(2));   // queued, not yet drained: the old character's
+
+        svc.ClearSession();
+        svc.Drain();
+
+        Assert.Equal(2, before.Count);
+        Assert.Empty(svc.RecentMessages);
+        Assert.Equal(1, probe.ResetSessionCalls);
+    }
+
+    [Fact]
+    public void WhisperDedup_Reset_LetsTheSameKeyThroughAgain()
+    {
+        var d = new Stellar.Application.Wire.WhisperDedup();
+        Assert.True(d.MarkSeen(63285900, 12, 1000));
+        Assert.False(d.MarkSeen(63285900, 12, 1000));   // same session: duplicate
+        d.Reset();                                        // logout
+        Assert.True(d.MarkSeen(63285900, 12, 1000));     // next character's history copy is delivered
+    }
+
     private static ChatMessage MakeNotice(long msgId) => MakeMsg(msgId) with
     {
         Channel = ChatChannel.System, Type = ChatMessageType.System, SystemLabel = "Obtained",
