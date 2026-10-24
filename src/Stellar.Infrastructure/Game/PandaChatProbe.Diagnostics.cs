@@ -70,6 +70,20 @@ internal sealed partial class PandaChatProbe
     }
 
     /// <summary>
+    /// Diagnostics mode: hex prefix (≤32 bytes) of the first correlated
+    /// ChitChat Return, for framing checks. Diagnostics-only because those
+    /// bytes are the first history record (sender name, then text).
+    /// </summary>
+    private void DiagFirstReturnBytes(ReadOnlySpan<byte> payload, uint callId)
+    {
+        if (!StellarDiagnostics.IsEnabled) return;
+        var dumpLen = payload.Length < 32 ? payload.Length : 32;
+        var sb = new System.Text.StringBuilder(dumpLen * 3);
+        for (int i = 0; i < dumpLen; i++) { sb.Append(payload[i].ToString("X2")); sb.Append(' '); }
+        _log.Info($"[ChatProbe] first correlated ChitChat Return bytes: callId={callId} firstBytes={sb}");
+    }
+
+    /// <summary>
     /// Diagnostics mode: log every subsequent stub-call receive. Restores the
     /// per-message visibility used during whisper-drop debugging without
     /// forcing a rebuild.

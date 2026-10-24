@@ -127,16 +127,9 @@ internal sealed partial class PandaChatProbe
     {
         _firstChitChatReturnObservedLogged = true;
         // The leading bytes of a history reply are its first record (sender char info incl. the NAME, then text), so
-        // the hex prefix is only dumped in diagnostics mode; normal play logs the framing facts alone.
-        if (!Stellar.Abstractions.Diagnostics.StellarDiagnostics.IsEnabled)
-        {
-            _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length}");
-            return;
-        }
-        var dumpLen = payload.Length < 32 ? payload.Length : 32;
-        var sb = new System.Text.StringBuilder(dumpLen * 3);
-        for (int i = 0; i < dumpLen; i++) { sb.Append(payload[i].ToString("X2")); sb.Append(' '); }
-        _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length} firstBytes={sb}");
+        // normal play logs the framing facts alone; the hex prefix is a diagnostics-mode extra (DiagFirstReturnBytes).
+        _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length}");
+        DiagFirstReturnBytes(payload, callId);
     }
 
     /// <summary>
