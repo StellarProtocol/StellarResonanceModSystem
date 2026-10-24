@@ -78,4 +78,15 @@ public sealed record VirtualListElement(
     /// <see cref="StickToBottom"/> it is a one-shot jump to the current (estimated) bottom. Honoured in
     /// <see cref="VariableHeight"/> mode only. Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public Func<int>? ScrollToBottomRequest { get; init; }
+
+    /// <summary>Optional per-row CONTENT revision (data index → a number the consumer changes whenever that row's
+    /// content changes in a way that can change its height — e.g. a chat message swapping to its translation, or a
+    /// status line appearing under it). <see cref="VariableHeight"/> mode only. A row's measured height is normally
+    /// latched for good; when its revision differs from the one it was latched under, the list re-measures that one
+    /// row IN PLACE (it stays on screen at its old height meanwhile — no blank, no park) and commits the new height
+    /// once two consecutive readings agree, then re-flows the rows below (a bottom-pinned
+    /// <see cref="StickToBottom"/> view stays pinned; otherwise the topmost visible row holds still). Return the same
+    /// value (e.g. 0) for rows that never change. Independent of <see cref="RowId"/> (identity) — use both together.
+    /// Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Func<int, long>? RowRevision { get; init; }
 }

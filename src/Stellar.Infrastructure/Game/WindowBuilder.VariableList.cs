@@ -115,7 +115,7 @@ internal sealed partial class WindowBuilder
         {
             Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
-            Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId,
+            Baseline = baseline, StickToBottom = v.StickToBottom, RowId = v.RowId, RowRevision = v.RowRevision,
             // ScrollToBottomRequest: the build-time value is the BASELINE, not a request (mirrors InputElement.FocusRequest).
             OnAtBottomChanged = v.OnAtBottomChanged, ScrollToBottomRequest = v.ScrollToBottomRequest,
             LastScrollRequest = v.ScrollToBottomRequest?.Invoke() ?? 0,
@@ -138,6 +138,7 @@ internal sealed partial class WindowBuilder
         public float Baseline = 28f;
         public bool StickToBottom;
         public Func<int, long>? RowId;   // VirtualListElement.RowId: data index → stable per-message id (null = never re-verify a latch)
+        public Func<int, long>? RowRevision;   // VirtualListElement.RowRevision: data index → content revision (null = a latch is never re-measured in place)
         public Action<bool>? OnAtBottomChanged;   // VirtualListElement.OnAtBottomChanged: told whenever the StickToBottom pin decision flips
         public Func<int>? ScrollToBottomRequest;  // VirtualListElement.ScrollToBottomRequest: a CHANGE of this token = jump to bottom + re-pin
         public int LastScrollRequest;             // last-seen token (seeded at build, so a (re)mount never jumps by itself)
@@ -150,6 +151,8 @@ internal sealed partial class WindowBuilder
         private bool[] _prov = Array.Empty<bool>();        // a provisional measurement exists for index i, awaiting a 2nd-reading confirm
         private long[] _hId = Array.Empty<long>();         // RowId the cached _h[i] was measured FOR (only read/written when RowId != null; stamped on latch)
         private bool[] _verify = Array.Empty<bool>();      // index i's identity changed → re-measure it ONE apply later (after its slot's content caught up) before trusting the latch
+        private long[] _hRev = Array.Empty<long>();        // RowRevision the cached _h[i] was measured AT (only used when RowRevision != null; stamped on latch)
+        private bool[] _remeasure = Array.Empty<bool>();   // index i's revision changed → re-measure it in place (stays latched + on-screen until the new height confirms)
         private float[] _off = Array.Empty<float>();       // cumulative top offsets, length ≥ count+1
         private int[] _slotLogical = Array.Empty<int>();   // data index each pool slot currently shows (-1 = hidden)
         private float _sum; private int _n;                // running sum/count of measured heights → average estimate
@@ -369,6 +372,8 @@ internal sealed partial class WindowBuilder
             Array.Copy(_provH, ph, _provH.Length); Array.Copy(_prov, p, _prov.Length);
             Array.Copy(_hId, hid, _hId.Length); Array.Copy(_verify, vf, _verify.Length);
             var sn = new bool[cap]; Array.Copy(_seen, sn, _seen.Length); _seen = sn;   // first-build cap exemption (.Measure.cs)
+            var hr = new long[cap]; Array.Copy(_hRev, hr, _hRev.Length); _hRev = hr;   // RowRevision stamps (.Measure.cs)
+            var rm = new bool[cap]; Array.Copy(_remeasure, rm, _remeasure.Length); _remeasure = rm;
             _h = h; _measured = m; _provH = ph; _prov = p; _hId = hid; _verify = vf; _off = new float[cap + 1];
             _offDirty = true;
         }
@@ -388,6 +393,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);   // rows re-run the stable-confirm from scratch at the new width
             Array.Clear(_verify, 0, _verify.Length);   // no latch survives → any pending identity re-verify is moot (_hId re-stamped on re-latch)
+            Array.Clear(_remeasure, 0, _remeasure.Length);   // likewise any in-place re-measure (_hRev re-stamped on re-latch)
             _estSeed = Estimate();   // carry the real average across the clear (see comment above) — MUST precede the zeroing
             _sum = 0f; _n = 0; _offDirty = true;
         }
@@ -401,6 +407,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_measured, 0, _measured.Length);
             Array.Clear(_prov, 0, _prov.Length);
             Array.Clear(_hId, 0, _hId.Length); Array.Clear(_verify, 0, _verify.Length);   // genuinely new content → forget identities + pending re-verifies
+            Array.Clear(_remeasure, 0, _remeasure.Length);
             Array.Clear(_seen, 0, _seen.Length);   // new content → no row is exempt from the first-build cap
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;

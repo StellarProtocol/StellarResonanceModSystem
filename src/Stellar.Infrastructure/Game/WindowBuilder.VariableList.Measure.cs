@@ -93,13 +93,17 @@ internal sealed partial class WindowBuilder
 
                 // A latched row is final — EXCEPT in RowId mode, where VerifyLatchedRow re-checks its identity and may
                 // drop the latch (→ changed, so the offsets/scroll recompute). RowId==null keeps it byte-identical.
-                if (_measured[l]) { if (VerifyLatchedRow(l, rt)) changed = true; continue; }
+                // A latch that survives may still be re-measured IN PLACE when its RowRevision moved (RemeasureRevisedRow).
+                if (_measured[l]) { if (VerifyLatchedRow(l, rt) || RemeasureRevisedRow(l, rt)) changed = true; continue; }
 
                 try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave for next apply
                 if (_prov[l] && Mathf.Abs(h - _provH[l]) <= StableEps)   // stable across two reads → commit
-                { _h[l] = h; _measured[l] = true; _seen[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l); }
+                {
+                    _h[l] = h; _measured[l] = true; _seen[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l);
+                    _remeasure[l] = false; if (RowRevision != null) _hRev[l] = RowRevision(l);   // latched at the CURRENT revision
+                }
                 else { _provH[l] = h; _prov[l] = true; }   // first/unstable reading — provisional only, no offset churn
             }
             if (changed) _offDirty = true;
@@ -136,6 +140,32 @@ internal sealed partial class WindowBuilder
             if (Mathf.Abs(hv - _h[l]) > VerifyEps)
             { _sum -= _h[l]; _n = Mathf.Max(0, _n - 1); _measured[l] = false; _prov[l] = false; _provH[l] = 0f; return true; }
             return false;
+        }
+
+        // RowRevision mode (VirtualListElement.RowRevision): the consumer says a LATCHED row's content changed (a chat
+        // bubble swapped to its translation, gained a status line …). Unlike VerifyLatchedRow we do NOT drop the latch —
+        // an unlatched row is parked off-screen (Reposition), which would blink the row out and jump the rows below for
+        // the 2-3 applies a re-latch takes. Instead the row keeps its old height on screen while it is re-measured with
+        // the same two-read stable-confirm as a first latch (_prov/_provH are free while a row is latched), and only the
+        // confirmed new height replaces _h — one offset rebuild, anchored/pinned by Apply like any other latch.
+        //   • revision moved → record it + arm, but don't measure THIS apply (the slot's content refresh runs after
+        //     MeasureActiveSlots — same reason as the deferred identity verify).
+        //   • armed → read; first/unstable reading is provisional; two agreeing reads commit (if the height really moved).
+        // Returns true iff the committed height changed (caller marks the offsets dirty). RowRevision==null → no-op.
+        private bool RemeasureRevisedRow(int l, RectTransform rt)
+        {
+            if (RowRevision == null) return false;
+            var rev = RowRevision(l);
+            if (rev != _hRev[l]) { _hRev[l] = rev; _remeasure[l] = true; _prov[l] = false; return false; }
+            if (!_remeasure[l]) return false;
+            try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
+            var h = LayoutUtility.GetPreferredHeight(rt);
+            if (h < 1f) return false;   // not laid out yet — stay armed
+            if (!_prov[l] || Mathf.Abs(h - _provH[l]) > StableEps) { _provH[l] = h; _prov[l] = true; return false; }
+            _remeasure[l] = false; _prov[l] = false;
+            if (Mathf.Abs(h - _h[l]) <= StableEps) return false;   // same height after all → nothing to re-flow
+            _sum += h - _h[l]; _h[l] = h;
+            return true;
         }
     }
 }
