@@ -190,6 +190,9 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             if (e.Token is null) return;
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
             ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
+            // A click-away popup placed BEFORE its first mount (Entry.SetRect while Token was null): apply that rect now,
+            // over the saved one and before the first paint, so it never shows a frame at its old position.
+            if (e.PendingRect is { } pending) { e.PendingRect = null; e.SetRect(pending); }
             SafeApply(e);
             TryAutoFocus(e);     // fresh mount after a user-show: SafeApply activated the tree, so focus now
             e.Dirty = false; return;
@@ -314,9 +317,12 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             else BringToFrontPending = true;   // window not yet mounted — apply on next mount
         }
         public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Owner.ResolveAnchoredDefault(Reg.Spec);
+        // Click-away popups only: a SetRect issued before the window has mounted, applied by TickEntry right after the
+        // mount (see there). Other windows keep the old pre-mount no-op.
+        public WindowRect? PendingRect;
         public void SetRect(WindowRect rect)
         {
-            if (Token == null) return;
+            if (Token == null) { if (Reg.Spec.DismissOnOutsideClick) PendingRect = rect; return; }
             Owner._renderer.SetRect(Token, rect);
             // Persist the explicit set immediately (the per-mode geometry restore path) — don't wait for a drag.
             // Skip when the rect already IS the persisted one: per-tick callers (the layout toolbar's re-centre)
