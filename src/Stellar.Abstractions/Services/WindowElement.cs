@@ -316,6 +316,13 @@ public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bo
     /// itself (e.g. a clickable name). Default <c>false</c> = the normal tinted, padded row. Init property, NOT a ctor
     /// param (binary-compatible).</summary>
     public bool Bare { get; init; }
+
+    /// <summary>When non-null, invoked on a left click (right after <see cref="OnClick"/>) with the row's on-screen
+    /// rect in screen PIXELS, top-left origin — the same space as <see cref="ButtonElement.OnClickWithRect"/>. Use to
+    /// anchor a popup to the clicked element instead of the cursor. ⚠️ <see cref="IWindowControl.SetRect"/> takes
+    /// CANVAS units: multiply by <c>CanvasWidth / ScreenWidth</c> first. Init property, NOT a ctor param
+    /// (binary-compatible).</summary>
+    public Action<Stellar.Abstractions.Domain.WindowRect>? OnClickWithRect { get; init; }
 }
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint

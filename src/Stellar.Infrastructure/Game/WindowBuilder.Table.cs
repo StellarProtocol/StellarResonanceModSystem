@@ -48,8 +48,7 @@ internal sealed partial class WindowBuilder
         // currentSelectedGameObject (which makes the game route WASD into chat instead of movement).
         // A release that ends a ListElement drag-reorder may still be delivered as a click (drop back on the same
         // cell inside the EventSystem's own drag threshold) — ClickSuppressed swallows it so a drag never "clicks".
-        var onClick = sel.OnClick;
-        btn.onClick.AddListener((UnityAction)(() => { if (ClickSuppressed?.Invoke() != true) onClick(); ClearSelectionAfterClick(); }));
+        WireSelectableClick(btn, sel, go.GetComponent<RectTransform>());
 
         // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h); CSF sizes the row
         // height to content (same combo as BuildTile).
@@ -104,4 +103,33 @@ internal sealed partial class WindowBuilder
     private Color SelRest()  => new(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 0f);
     private Color SelHover() => new(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 0.14f);
     private Color SelOn()    => new(_assets.MenuAccent.r, _assets.MenuAccent.g, _assets.MenuAccent.b, 0.28f);
+
+    // The row's left click: OnClick, then OnClickWithRect with the live rect (read at click time, so a moved/resized
+    // window reports where the row IS) — the same order as ButtonElement. ClickSuppressed gates both.
+    private void WireSelectableClick(Button btn, SelectableElement sel, RectTransform? rt)
+    {
+        var onClick = sel.OnClick;
+        var onClickWithRect = sel.OnClickWithRect;
+        btn.onClick.AddListener((UnityAction)(() =>
+        {
+            if (ClickSuppressed?.Invoke() != true)
+            {
+                onClick();
+                if (onClickWithRect != null && rt != null) onClickWithRect(ScreenRectOf(rt));
+            }
+            ClearSelectionAfterClick();
+        }));
+    }
+
+    // SelectableElement.OnClickWithRect: the element's live screen rect in PIXELS, top-left origin (ButtonElement's
+    // space). Every window canvas is ScreenSpaceOverlay, so world space == screen px (Y up). The two local corners go
+    // through TransformPoint, which folds in every scale on the chain (canvas scaleFactor AND any scaled ancestor) —
+    // NOT GetWorldCorners(new Vector3[4]): IL2CPP fills a native copy and the managed array stays all zeros.
+    private static Abstractions.Domain.WindowRect ScreenRectOf(RectTransform rt)
+    {
+        var r = rt.rect;
+        var lo = rt.TransformPoint(new Vector3(r.xMin, r.yMin, 0f));
+        var hi = rt.TransformPoint(new Vector3(r.xMax, r.yMax, 0f));
+        return new Abstractions.Domain.WindowRect(lo.x, Screen.height - hi.y, hi.x - lo.x, hi.y - lo.y);
+    }
 }
