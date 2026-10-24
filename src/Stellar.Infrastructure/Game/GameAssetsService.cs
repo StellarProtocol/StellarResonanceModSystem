@@ -219,16 +219,21 @@ internal sealed partial class GameAssetsService : IGameAssets
         uv = new UvRect(0f, 0f, 1f, 1f);
         state = LoadState.Failed;
         if (string.IsNullOrEmpty(loadAddress)) return null;
-        if (!_pathKeys.TryGetValue(cacheKey, out var key))
-        {
-            key = _pathKeys.Count + 1;                           // stable per-cacheKey int (no hash collisions)
-            _pathKeys[cacheKey] = key;
-        }
+        var key = PathKeyFor(cacheKey);
         var tex = _pathSlots.ContainsKey(key)                    // existing slot: don't re-pass the address
             ? LoadIcon(_pathSlots, key, address: null, kind, out uv)
             : LoadIcon(_pathSlots, key, loadAddress, kind, out uv);
         if (_pathSlots.TryGetValue(key, out var slot)) state = slot.State;
         return tex;
+    }
+
+    // Stable per-cacheKey int (no hash collisions) — interned on first use.
+    private int PathKeyFor(string cacheKey)
+    {
+        if (_pathKeys.TryGetValue(cacheKey, out var key)) return key;
+        key = _pathKeys.Count + 1;
+        _pathKeys[cacheKey] = key;
+        return key;
     }
 
     /// <inheritdoc/>
@@ -318,7 +323,7 @@ internal sealed partial class GameAssetsService : IGameAssets
     }
 
     // Atlas Sprite (profession crest) → (Texture2D, normalised UV sub-rect).
-    private void ResolveSprite(Slot slot, int key, string label, Sprite sprite)
+    private void ResolveSprite(Slot slot, int key, string label, Sprite sprite, bool quiet = false)
     {
         var tex = sprite.texture;
         if (tex is null)
@@ -337,7 +342,7 @@ internal sealed partial class GameAssetsService : IGameAssets
         slot.Texture = tex;
         slot.State = LoadState.Loaded;
         slot.UniTask = null;
-        _log.Info($"[GameAssets][icon] loaded {label}={key} sprite='{sprite.name}' atlas={tex.width}x{tex.height} rect=({r.x},{r.y},{r.width},{r.height})");
+        if (!quiet) _log.Info($"[GameAssets][icon] loaded {label}={key} sprite='{sprite.name}' atlas={tex.width}x{tex.height} rect=({r.x},{r.y},{r.width},{r.height})");
     }
 
     // Address-agnostic load core: kick off LoadAssetAsync for an already-resolved
@@ -364,13 +369,17 @@ internal sealed partial class GameAssetsService : IGameAssets
             var isTexture = IsTexture(kind);
             var method = isTexture ? _loadAssetAsyncTexture! : _loadAssetAsyncString!;
             var loadAddr = isTexture ? BuildTextureLoadAddress(address) : address;
-            var unitask = method.Invoke(_loaderInstance, new object[] { loadAddr, token, 0, false });
+            // allowFail=TRUE only for the localized sticker probe (an expected miss for base-only stickers): with false
+            // the game Debug.LogError's "fail, asset not exist" + a stack trace, synchronously, per miss. It gates only
+            // that log — same lookups, still Succeeded(null) (StickerLoad.cs). Every other load keeps false.
+            var allowFail = kind == IconKind.Sticker;
+            var unitask = method.Invoke(_loaderInstance, new object[] { loadAddr, token, 0, allowFail });
             if (unitask is null)
             {
                 _log.Warning($"[GameAssets][icon] LoadAssetAsync returned null for {label}={key} path='{address}'");
                 return new Slot { State = LoadState.Failed };
             }
-            _log.Info($"[GameAssets][icon] requested {label}={key} path='{address}'");
+            if (!IsQuietSlot(kind, key)) _log.Info($"[GameAssets][icon] requested {label}={key} path='{address}'");
             return new Slot { State = LoadState.Loading, UniTask = unitask, Path = address };
         }
         catch (Exception ex)
