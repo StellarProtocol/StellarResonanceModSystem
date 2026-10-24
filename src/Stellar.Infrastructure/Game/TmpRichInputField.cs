@@ -181,11 +181,32 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     // only while a tag is present) assign it and re-label so the pictures appear without an edit.
     public void Tick()
     {
+        PinVerticalScroll();
         if (!_hasTag || _t == null || _t.spriteAsset != null) return;
         var asset = TmpEmojiSprites.Get(probe: true);
         if (asset == null) return;
         _t.spriteAsset = asset;
         _f.ForceLabelUpdate();
+    }
+
+    // PageUp/PageDown (2026-10-24: bound as ChatTools tab hotkeys) shifted the composer text up/down. In any mode but
+    // SingleLine, TMP_InputField's MovePageUp/MovePageDown ALSO scroll the text: they add
+    // (viewport top − text-bounds top) / (… bottom) to textComponent.rectTransform.anchoredPosition.y. Our CentreLine
+    // margin puts the glyph bounds `pad` px inside the rect, so each press moved the line by that margin, and it stayed
+    // put. The field grows to fit its draft (no vertical scrolling is ever needed while the whole text fits the
+    // viewport), so pin y back to 0 whenever it fits. That keeps caret/selection/IME and Left/Right/Home/End untouched,
+    // and also covers Up/Down or any other key that nudges it. A field capped shorter than its text (needs a real
+    // scroll to keep the caret visible) is left to TMP. Per frame (UGuiTextInput.Tick): the 0 check is one property read; the
+    // fit test runs only when a shift actually happened. The order against the EventSystem update is undefined, so a
+    // press may show for at most one frame before the pin.
+    private void PinVerticalScroll()
+    {
+        if (_t == null || _viewport == null) return;
+        var rt = _t.rectTransform;
+        var pos = rt.anchoredPosition;
+        if (Mathf.Abs(pos.y) < 0.01f) return;
+        if (_t.preferredHeight > _viewport.rect.height + 0.5f) return;   // taller than the box: TMP's caret scroll owns it
+        rt.anchoredPosition = new Vector2(pos.x, 0f);
     }
 
     // User edits first get atomic-tag repair (a partial tag deletion widened to the whole tag, caret placed after
