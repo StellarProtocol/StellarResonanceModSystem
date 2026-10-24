@@ -44,4 +44,26 @@ internal static class SpriteTagEdit
         caret = ns + inserted.Length;
         return true;
     }
+
+    /// <summary>InputElement.InsertRequest: <paramref name="insert"/> replaces the selection
+    /// [<paramref name="a"/>, <paramref name="b"/>) of <paramref name="text"/> (either order; a caret = a == b; clamped
+    /// to the text; -1 = "no known caret" → append at the end). A bound that falls INSIDE a <c>&lt;sprite=N&gt;</c> tag
+    /// is moved out of it — the start to the tag's start, the end to the tag's end — so a tag is never split.
+    /// <paramref name="caret"/> = the string index right after the inserted text.</summary>
+    public static string InsertAt(string text, int a, int b, string insert, out int caret)
+    {
+        text ??= string.Empty; insert ??= string.Empty;
+        int lo, hi;
+        if (a < 0 || b < 0) lo = hi = text.Length;
+        else { lo = Math.Clamp(Math.Min(a, b), 0, text.Length); hi = Math.Clamp(Math.Max(a, b), 0, text.Length); }
+        bool caretOnly = lo == hi;   // a plain caret inside a tag moves to its start (a selection is widened instead)
+        for (var m = Tag.Match(text); m.Success; m = m.NextMatch())
+        {
+            int ts = m.Index, te = m.Index + m.Length;
+            if (lo > ts && lo < te) lo = ts;
+            if (hi > ts && hi < te) hi = caretOnly ? ts : te;
+        }
+        caret = lo + insert.Length;
+        return text.Substring(0, lo) + insert + text.Substring(hi);
+    }
 }

@@ -22,7 +22,7 @@ namespace Stellar.Infrastructure.Game;
 /// reporting for the keyboard gate); this class only adapts the field and adds atomic-tag deletion
 /// (<see cref="SpriteTagEdit"/>). Game-only file (TMP types): never symlink it into the Mono UI-sandbox.
 /// </summary>
-internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder, IRichInputLock
+internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder, IRichInputLock, IRichInputCaret
 {
     private const int FontPx = 13;   // = the legacy field's Text size
 
@@ -164,6 +164,17 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         if (_f == null) return;
         _f.stringPosition = Text.Length;
+    }
+
+    // InputElement.InsertRequest (IRichInputCaret): the STRING-index selection (not caretPosition, which counts visible
+    // characters — a <sprite=N> tag is one), and the same stringPosition write CaretToEnd uses to collapse it.
+    public (int Anchor, int Focus) StringSelection
+        => _f == null ? (-1, -1) : (_f.selectionStringAnchorPosition, _f.selectionStringFocusPosition);
+
+    public void SetStringCaret(int index)
+    {
+        if (_f == null) return;
+        _f.stringPosition = Math.Clamp(index, 0, Text.Length);
     }
 
     // A tag shown before the sprite asset resolved prints literally; once it resolves (throttled probe inside,

@@ -146,6 +146,16 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// property (NOT a ctor param) for binary compatibility.</summary>
     public Func<int>? FocusRequest { get; init; }
 
+    /// <summary>Opt-in: insert text AT THE CARET on demand (an emoji/insert picker). The framework polls the returned
+    /// pair; whenever <c>Seq</c> CHANGES (the first value observed when the window is built never counts), <c>Text</c> is
+    /// inserted where the caret was when the field last had focus — replacing the selection if there was one, and
+    /// never inside a <see cref="RichEmoji"/> <c>&lt;sprite=N&gt;</c> tag — then the field takes focus with the caret right
+    /// AFTER the inserted text. No known caret (never focused, or the text was replaced from <see cref="Get"/> since) =
+    /// append at the end. <see cref="OnChange"/> then reports the new text, exactly like a typed edit, so the bound
+    /// value follows; no separate <see cref="FocusRequest"/> is needed. Default null = unchanged. Init property (NOT a
+    /// ctor param) for binary compatibility.</summary>
+    public Func<(int Seq, string Text)>? InsertRequest { get; init; }
+
     /// <summary>Opt-in hint text shown dimmed inside the field while it is EMPTY (e.g. "Message Guild…"), in both the
     /// plain and the <see cref="RichEmoji"/> field. Polled with the window refresh and diffed, so it can follow live
     /// state; return a cached string (it is read every refresh). Default null = no hint, unchanged. Init property

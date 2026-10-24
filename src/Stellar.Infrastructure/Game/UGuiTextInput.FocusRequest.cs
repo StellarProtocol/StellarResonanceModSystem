@@ -50,12 +50,13 @@ internal sealed partial class UGuiTextInput
             // Not active in the hierarchy (collapsed / hidden window): keep retrying until the deadline, then drop
             // — a stale request must not grab the keyboard whenever the field happens to show up later.
             if (TryActivateFocus()) { _focusReqActivations++; _focusReqState = 2; _focusReqCheckFrame = frame + 1; }
-            else if (frame > _focusReqUntilFrame) _focusReqState = 0;
+            else if (frame > _focusReqUntilFrame) { _focusReqState = 0; _pendingCaret = -1; }
             return;
         }
         if (frame < _focusReqCheckFrame) return;   // the field's LateUpdate hasn't run the activation yet
-        if (FieldFocused) { CaretToEnd(); _focusReqState = 0; return; }
+        if (FieldFocused) { PlaceCaretAfterFocus(); _focusReqState = 0; return; }   // insert caret (.Insert.cs) or the end
         _focusReqState = _focusReqActivations < FocusReqMaxActivations ? 1 : 0;   // re-assert once, then give up
+        if (_focusReqState == 0) _pendingCaret = -1;
     }
 
     // Collapse any selection and put the caret after the last character (after a trailing <sprite=N> tag for the

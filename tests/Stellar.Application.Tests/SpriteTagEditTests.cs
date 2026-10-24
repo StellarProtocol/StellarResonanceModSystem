@@ -36,4 +36,19 @@ public class SpriteTagEditTests
     [InlineData("", "a")]
     public void Edit_that_does_not_split_a_tag_is_left_alone(string before, string after)
         => Assert.False(SpriteTagEdit.TryRepair(before, after, out _, out _));
+
+    // InputElement.InsertRequest: insert at the caret / replace the selection, never splitting a tag.
+    [Theory]
+    [InlineData("hello", 2, 2, "<sprite=3>", "he<sprite=3>llo", 12)]      // at the caret
+    [InlineData("hello", 1, 4, "X", "hXo", 2)]                              // selection replaced
+    [InlineData("hello", 4, 1, "X", "hXo", 2)]                              // reversed selection
+    [InlineData("hello", -1, -1, "!", "hello!", 6)]                         // no known caret → end
+    [InlineData("hi", 9, 9, "!", "hi!", 3)]                                 // stale caret clamped
+    [InlineData("a<sprite=12>b", 4, 4, "X", "aX<sprite=12>b", 2)]           // caret inside a tag → before it
+    [InlineData("a<sprite=12>b", 0, 5, "X", "Xb", 1)]                       // selection end inside a tag → whole tag
+    public void InsertAt_inserts_at_the_caret_without_splitting_tags(string text, int a, int b, string ins, string expect, int caret)
+    {
+        Assert.Equal(expect, SpriteTagEdit.InsertAt(text, a, b, ins, out var c));
+        Assert.Equal(caret, c);
+    }
 }

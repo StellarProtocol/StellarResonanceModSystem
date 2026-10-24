@@ -307,7 +307,7 @@ internal sealed partial class WindowBuilder
         if (ph.Length > 0) field.SetPlaceholder(ph);
         var locked = inp.Locked?.Invoke() ?? false;   // read-only + dimmed (null Func = never), after the styling it dims
         if (locked) field.SetLocked(true);
-        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph, LockedFn = inp.Locked, LastLocked = locked });
+        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph, LockedFn = inp.Locked, LastLocked = locked, InsertReq = inp.InsertRequest, LastInsert = inp.InsertRequest?.Invoke().Seq ?? 0 });
     }
 
     // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where

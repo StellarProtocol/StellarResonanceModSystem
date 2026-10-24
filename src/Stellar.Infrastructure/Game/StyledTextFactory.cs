@@ -81,6 +81,19 @@ internal interface IRichInputPlaceholder
     void SetPlaceholder(string text);
 }
 
+/// <summary>Optional rich-field capability (8-member cap on <see cref="IRichInputField"/>): STRING-index caret access
+/// for InputElement.InsertRequest (TMP's caretPosition is a visible-character index — tags differ). UGuiTextInput
+/// queries it with <c>as</c>.</summary>
+internal interface IRichInputCaret
+{
+    /// <summary>Current selection as raw-string indices (anchor, focus); equal = a plain caret.</summary>
+    (int Anchor, int Focus) StringSelection { get; }
+
+    /// <summary>Collapse the selection to the raw-string index <paramref name="index"/> (run once focused: TMP resets
+    /// the caret on focus changes).</summary>
+    void SetStringCaret(int index);
+}
+
 /// <summary>Optional rich-field capability (8-member cap on <see cref="IRichInputField"/>): InputElement.Locked —
 /// read-only + dimmed text. UGuiTextInput queries it with <c>as</c>.</summary>
 internal interface IRichInputLock

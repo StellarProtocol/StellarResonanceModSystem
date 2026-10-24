@@ -248,6 +248,7 @@ internal sealed partial class UGuiTextInput
     /// also moves its caret to the END (an external change is usually an append, e.g. a picked emoji).</summary>
     public void SetText(string value)
     {
+        ForgetSelection();   // .Insert.cs — remembered indices pointed into the old text
         if (_field != null) _field.text = value ?? string.Empty;
         else _rich?.SetText(value ?? string.Empty, caretToEnd: true);
     }
@@ -313,6 +314,7 @@ internal sealed partial class UGuiTextInput
             _onFocusChanged?.Invoke(false);
         }
         _wasFocused = focused;
+        if (focused) TrackSelection();   // InputElement.InsertRequest (.Insert.cs) — remember the caret for a later pick
         if (_multiLine) TickTextArea(focused);
 
         if (!focused) return;
@@ -335,6 +337,7 @@ internal sealed partial class UGuiTextInput
         _enterLatched = false;
         _submitGrace = false;
         ResetFocusRequest();
+        ForgetSelection(); _pendingCaret = -1;   // .Insert.cs
         _locked = false;   // InputElement.Locked (.Locked.cs)
         _field = null;
         _rich = null;

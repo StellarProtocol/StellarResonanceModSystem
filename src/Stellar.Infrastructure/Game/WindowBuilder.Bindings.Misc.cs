@@ -60,6 +60,9 @@ internal sealed partial class WindowBuilder
         // InputElement.Locked: diffed (null Func = never locked). Seeded with the build-time state BuildInput applied.
         public Func<bool>? LockedFn;
         public bool LastLocked;
+        // InputElement.InsertRequest: a CHANGE of Seq inserts Text at the caret (seeded at build like FocusReq).
+        public Func<(int Seq, string Text)>? InsertReq;
+        public int LastInsert;
         public void Apply()
         {
             if (Field == null) return;
@@ -79,6 +82,12 @@ internal sealed partial class WindowBuilder
             {
                 var l = LockedFn();
                 if (l != LastLocked) { LastLocked = l; Field.SetLocked(l); }
+            }
+            // After the text re-seed + lock, before the focus request (the insert requests focus itself and keeps its caret).
+            if (InsertReq != null)
+            {
+                var (seq, text) = InsertReq();
+                if (seq != LastInsert) { LastInsert = seq; Field.InsertAtCaret(text ?? ""); Last = Get(); }
             }
             // After the text re-seed, so a picker's append + focus request in one click lands text first, then focus
             // (the caret-to-end runs once the field reports focused — see UGuiTextInput.FocusRequest.cs).
