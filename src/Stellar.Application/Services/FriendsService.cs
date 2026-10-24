@@ -76,7 +76,21 @@ internal sealed partial class FriendsService : IFriends
     private void Enqueue(ActionKind kind, long charId)
     {
         if (charId <= 0 || _actions.Count >= 64) return;
+        if (kind == ActionKind.Read && !TakeReadSlot(charId)) return;
         _actions.Enqueue((kind, charId));
+    }
+
+    // MarkPrivateRead debounce: at most one per conversation per ReadDebounceMs, whatever the caller does (it is a server
+    // write, and an RPC error < 1000 makes the game's proxy Disconnect — never let a consumer loop spam it). Any thread.
+    private const long ReadDebounceMs = 1000;
+    private readonly ConcurrentDictionary<long, long> _lastReadAt = new();
+
+    private bool TakeReadSlot(long charId)
+    {
+        long now = Environment.TickCount64;
+        if (_lastReadAt.TryGetValue(charId, out var last) && now - last < ReadDebounceMs) return false;
+        _lastReadAt[charId] = now;
+        return true;
     }
 
     /// <summary>Framework Update tick (world-gated by the caller). Idle (no Lua at all) while nobody uses the service.</summary>

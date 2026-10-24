@@ -96,6 +96,24 @@ public sealed class FriendsServiceTests
     }
 
     [Fact]
+    public void MarkPrivateRead_GuardedRefreshing_AndDebounced()
+    {
+        var lua = new FakeLua { Ok = true, Friends = "", Private = "" };
+        IFriends svc = new FriendsService(lua, _ => { });
+
+        svc.MarkPrivateRead(77);
+        svc.MarkPrivateRead(77);      // within 1 s → dropped
+        ((FriendsService)svc).Tick(0f);
+
+        var reads = lua.Chunks.FindAll(c => c.Contains("AsyncSetPrivateChatHasRead"));
+        var chunk = Assert.Single(reads);
+        Assert.Contains("maxReadMsgId or 0) < lm.msgId", chunk);                        // only while unread
+        Assert.Contains("GetPrivateChatUnReadCount(), true)", chunk);                   // red dot, native args
+        Assert.Contains("CheckMainUIFriendNewMessage", chunk);                          // HUD badge
+        Assert.Contains("PrivateChatRefresh", chunk);
+    }
+
+    [Fact]
     public void Lazy_NoUser_NoLua_FirstReadStartsPolling()
     {
         var lua = new FakeLua { Ok = true, Friends = R("1", "A", "", "1", "1", "1", "1", ""), Private = "" };

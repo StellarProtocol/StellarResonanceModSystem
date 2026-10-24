@@ -118,11 +118,19 @@ end)";
         "vm.AsyncGetPrivateChatRecord(cid, 0, true) d:SortPrivateChatList() " +
         "pcall(vm.CheckMainUIFriendNewMessage) (Z.EventMgr):Dispatch(Z.ConstValue.Chat.PrivateChatRefresh)";
 
+    // Mirrors friend_chat_item_pc.lua setRead: the RPC (ChitChat method 6) runs ONLY while something is unread
+    // (maxReadMsgId < latestMsg.msgId, both read NOW, at run time) — the server write is skipped entirely otherwise, which
+    // also keeps a failing RPC (codes < 1000 make the proxy Disconnect) as rare as possible. The VM does NOT refresh any
+    // badge itself: on success the caller must update the FriendChatTab red dot (3rd arg true = keep its shown state, as
+    // the native caller does), the HUD friend-message badge (CheckMainUIFriendNewMessage) and the native conversation rows
+    // (PrivateChatRefresh). Each refresh is its own pcall so one failing can't skip the others.
     private const string ReadBody =
-        "local it = d:GetPrivateChatItemByCharId(cid) if it and it.latestMsg and it.latestMsg.msgId then " +
-        "vm.AsyncSetPrivateChatHasRead(cid, it.latestMsg.msgId, d.CancelSource:CreateToken()) " +
-        "pcall(function() (Z.RedPointMgr).UpdateNodeCount(E.RedType.FriendChatTab, d:GetPrivateChatUnReadCount()) end) " +
-        "pcall(vm.CheckMainUIFriendNewMessage) end";
+        "local it = d:GetPrivateChatItemByCharId(cid) local lm = it and it.latestMsg " +
+        "if lm and lm.msgId and (it.maxReadMsgId or 0) < lm.msgId then " +
+        "if vm.AsyncSetPrivateChatHasRead(cid, lm.msgId, d.CancelSource:CreateToken()) then " +
+        "pcall(function() (Z.RedPointMgr).UpdateNodeCount(E.RedType.FriendChatTab, d:GetPrivateChatUnReadCount(), true) end) " +
+        "pcall(vm.CheckMainUIFriendNewMessage) " +
+        "pcall(function() (Z.EventMgr):Dispatch(Z.ConstValue.Chat.PrivateChatRefresh) end) end end";
 
     private const string CloseBody =
         "vm.AsyncDeletePrivateChat(cid, d.CancelSource:CreateToken()) " +

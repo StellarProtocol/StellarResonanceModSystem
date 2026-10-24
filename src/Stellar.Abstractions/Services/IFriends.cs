@@ -32,8 +32,9 @@ public interface IFriends
     /// <see cref="ChatMessage.PeerId"/> set; ones already delivered are not repeated. Does not mark them read.</summary>
     void RequestPrivateHistory(long charId);
 
-    /// <summary>Marks the conversation with <paramref name="charId"/> read up to its latest message (clears the
-    /// game's unread badge too).</summary>
+    /// <summary>Marks the conversation with <paramref name="charId"/> read up to its latest message, and refreshes the
+    /// game's unread badges (friend-chat red dot, HUD friend-message badge, native conversation rows). Does nothing
+    /// when the game holds nothing unread for it; at most once a second per conversation (extra calls are dropped).</summary>
     void MarkPrivateRead(long charId);
 
     /// <summary>Opens (creates) a conversation with <paramref name="charId"/> in the game's conversation list and
