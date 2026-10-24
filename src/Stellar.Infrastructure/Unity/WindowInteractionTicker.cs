@@ -138,6 +138,15 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void Update()
     {
         TickHitch();   // .Diagnostics.cs — reports the frame that just ended if it was a hitch
+        // Everything AFTER the hitch report is this frame's ticker cost (ui:ticker; 0 = HITCH off). Not try/finally: a
+        // throwing Update leaves one frame untimed, which is fine for a diagnostic.
+        var tickT = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
+        UpdateBody();
+        UiPerfStats.AddTicker(tickT);
+    }
+
+    private void UpdateBody()
+    {
         TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         SyncUiScale();
         TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too

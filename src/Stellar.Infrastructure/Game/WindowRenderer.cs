@@ -246,7 +246,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
         // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
         if (!hideAll && wasHidden) t.ResetLayout();
-        if (!hideAll) { t.Apply(); ApplyContentMinWidth(t, force: false); }   // gated re-measure (.ContentMinWidth.cs)
+        if (hideAll) return;
+        var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
+        t.Apply(); ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        UiPerfStats.AddApply(reg.Spec.Id, perfT);
     }
 
     public void SetRect(object? token, WindowRect rect)

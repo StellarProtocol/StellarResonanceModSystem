@@ -167,6 +167,7 @@ internal sealed partial class WindowBuilder
                 }
                 catch { }
                 MarkMinWidthDue();
+                if (structuralChange) UiPerfStats.Count(UiCounter.Structural);   // [Hitch] ui:structural — whole-window rebuild marks
             }
             ApplyValues();
         }
