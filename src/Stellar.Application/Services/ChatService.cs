@@ -10,13 +10,7 @@ namespace Stellar.Application.Services;
 
 internal sealed partial class ChatService : IChat
 {
-    // Bumped from 100 to 500 to hold the login-time history fetch (typically
-    // 4 batches × ~30 messages = 120) without evicting older batches before
-    // the user can scroll back to read them.
-    private const int RingCapacity = 500;
-
     private readonly ConcurrentQueue<ChatMessage> _wireQueue = new();
-    private readonly Queue<ChatMessage>           _ring      = new(RingCapacity);
     private readonly object                       _ringLock  = new();
     private readonly IPluginLog                   _log;
 
@@ -51,7 +45,7 @@ internal sealed partial class ChatService : IChat
                 var cur = _ringVersion;
                 if (cur != _snapshotVersion)
                 {
-                    _snapshot = _ring.ToArray();
+                    _snapshot = MergedRingSnapshot();   // .Ring.cs — chat + notice rings, arrival order
                     _snapshotVersion = cur;
                 }
                 return _snapshot;
@@ -153,8 +147,7 @@ internal sealed partial class ChatService : IChat
             var msg = ResolveWhisperPeer(queued);
             lock (_ringLock)
             {
-                if (_ring.Count >= RingCapacity) _ring.Dequeue();
-                _ring.Enqueue(msg);
+                AppendToRing(msg);   // .Ring.cs
                 Interlocked.Increment(ref _ringVersion);
             }
             FireReceived(msg);

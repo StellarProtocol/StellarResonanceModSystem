@@ -217,6 +217,32 @@ public sealed class ChatServiceTests
         Assert.Contains(log.WarningLines, l => l.Contains("send threw"));
     }
 
+    // -------- Client system notices: own ring, merged by arrival --------
+
+    [Fact]
+    public void Notices_DoNotEvictChat_AndInterleaveByArrival()
+    {
+        var (svc, probe) = NewService();
+        probe.OnMessageReceived!(MakeMsg(1));
+        for (var i = 0; i < 600; i++) svc.PublishLocal(MakeNotice(-1 - i));   // far past the notice cap
+        probe.OnMessageReceived!(MakeMsg(2));
+        svc.PublishLocal(MakeNotice(-9999));
+        svc.Drain();
+
+        var all = svc.RecentMessages;
+        Assert.Equal(1, all[0].MsgId);                       // the old chat line survived the notice burst
+        Assert.Equal(new long[] { 1, 2 }, all.Where(m => m.SystemLabel == null).Select(m => m.MsgId).ToArray());
+        var notices = all.Where(m => m.SystemLabel != null).ToArray();
+        Assert.True(notices.Length < 600);                   // notices capped on their own
+        Assert.Equal(-9999, all[^1].MsgId);                  // arrival order kept: newest notice after chat #2
+        Assert.Equal(2, all[^2].MsgId);
+    }
+
+    private static ChatMessage MakeNotice(long msgId) => MakeMsg(msgId) with
+    {
+        Channel = ChatChannel.System, Type = ChatMessageType.System, SystemLabel = "Obtained",
+    };
+
     // -------- Local send failure (ErrorNotSent) --------
 
     [Fact]

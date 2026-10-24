@@ -10,7 +10,9 @@ namespace Stellar.Abstractions.Services;
 /// </summary>
 public interface IChat
 {
-    /// <summary>Most recent messages received since the last login (capped by framework; exact cap may vary).</summary>
+    /// <summary>Most recent messages received since the last login, in arrival order (capped by framework; exact cap may
+    /// vary). The game's client system notices (<see cref="ChatMessage.SystemLabel"/> set) are capped SEPARATELY, so a
+    /// burst of them never pushes real chat out; they still appear interleaved where they arrived.</summary>
     IReadOnlyList<ChatMessage> RecentMessages { get; }
     /// <summary>Fires on the Unity main thread each time a new chat message is received.</summary>
     event Action<ChatMessage>  MessageReceived;
