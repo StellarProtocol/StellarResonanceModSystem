@@ -94,7 +94,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
         for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
-        PruneChartPans(); PruneChartNavs(); PruneReorder();
+        PruneChartPans(); PruneChartNavs(); PruneReorder(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -111,6 +111,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (cell == null) continue;
             if (!cell.gameObject.activeInHierarchy) { if (_hoverState[i]) { _hoverState[i] = false; try { set(false); } catch { } } continue; }
             var over = RectTransformUtility.RectangleContainsScreenPoint(cell, hp, null)
+                       && !OutsideClip(cell, hp)   // the scrolled-off (clipped) part of a row is not hoverable
                        && !FrontWindowBlocks(hp, FindWindowRoot(cell));
             if (over != _hoverState[i]) { _hoverState[i] = over; try { set(over); } catch { } }
         }
@@ -297,7 +298,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         {
             var (cell, _, canDrag, _) = DragSlots[i];
             if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null) || OutsideClip(cell, mp)) continue;
             try { if (canDrag != null && !canDrag()) continue; } catch { continue; }
             if (FrontWindowBlocks(mp, FindWindowRoot(cell))) continue;
             return i;
@@ -314,7 +315,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         {
             var cell = DragSlots[i].Cell;
             if (cell == null || !cell.gameObject.activeInHierarchy) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) return i;
+            if (RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null) && !OutsideClip(cell, mp)) return i;
         }
         return -1;
     }
@@ -423,7 +424,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         {
             var rt = VoiceClickRects[i];
             if (rt == null || !rt.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(rt, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(rt, mp, null) || OutsideClip(rt, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
             return true;
         }
@@ -455,7 +456,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             var area = DragAreas[i].Area;
             if (area == null) continue;
             if (!PointerHitRule.AcceptsPress(alive: true, area.gameObject.activeInHierarchy,
-                    RectTransformUtility.RectangleContainsScreenPoint(area, mp, null),
+                    RectTransformUtility.RectangleContainsScreenPoint(area, mp, null) && !OutsideClip(area, mp),
                     () => FrontWindowBlocks(mp, FindWindowRoot(area)))) continue;
             return i;
         }

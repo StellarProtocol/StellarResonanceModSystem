@@ -38,7 +38,7 @@ public sealed partial class WindowInteractionTicker
         {
             var (img, _, _, zoom, _, _) = RenderHosts[i];
             if (img == null || zoom == null || !img.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null) || OutsideClip(img.rectTransform, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(img.rectTransform))) continue;
             try { zoom(scroll); } catch { }
             return;
@@ -148,7 +148,7 @@ public sealed partial class WindowInteractionTicker
         {
             var (img, _, drag, _, pan, _) = RenderHosts[i];
             if (img == null || (drag == null && pan == null) || !img.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null) || OutsideClip(img.rectTransform, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(img.rectTransform))) continue;
             return i;
         }
