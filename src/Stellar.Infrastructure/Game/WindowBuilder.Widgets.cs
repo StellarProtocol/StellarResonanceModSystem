@@ -305,7 +305,9 @@ internal sealed partial class WindowBuilder
         var focusReq = inp.FocusRequest;   // on-demand focus (null = none); first value is the baseline, not a request
         var ph = inp.Placeholder?.Invoke() ?? "";   // empty-field hint (null Func = none), re-polled by the binding
         if (ph.Length > 0) field.SetPlaceholder(ph);
-        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph });
+        var locked = inp.Locked?.Invoke() ?? false;   // read-only + dimmed (null Func = never), after the styling it dims
+        if (locked) field.SetLocked(true);
+        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph, LockedFn = inp.Locked, LastLocked = locked });
     }
 
     // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where

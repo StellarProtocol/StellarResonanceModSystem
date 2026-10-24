@@ -151,6 +151,14 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// state; return a cached string (it is read every refresh). Default null = no hint, unchanged. Init property
     /// (NOT a ctor param) for binary compatibility.</summary>
     public Func<string>? Placeholder { get; init; }
+
+    /// <summary>Opt-in live lock: while the returned value is <c>true</c> the field is READ-ONLY (typing, paste, cut,
+    /// delete and Enter-submit are blocked; focus, caret and selection still work, and <see cref="Get"/> still re-seeds
+    /// the text) and its text is drawn DIMMED, as a "busy, please wait" state — e.g. a chat composer while its draft is
+    /// being translated. Polled with the window refresh and diffed (only a change writes anything); the box keeps its
+    /// size. Both the plain and the <see cref="RichEmoji"/> field. Default null = never locked, unchanged. Init
+    /// property (NOT a ctor param) for binary compatibility.</summary>
+    public Func<bool>? Locked { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline

@@ -57,6 +57,9 @@ internal sealed partial class WindowBuilder
         // InputElement.Placeholder: diffed so an unchanged hint writes nothing (null Func = no hint).
         public Func<string>? PlaceholderFn;
         public string LastPlaceholder = "";
+        // InputElement.Locked: diffed (null Func = never locked). Seeded with the build-time state BuildInput applied.
+        public Func<bool>? LockedFn;
+        public bool LastLocked;
         public void Apply()
         {
             if (Field == null) return;
@@ -70,6 +73,12 @@ internal sealed partial class WindowBuilder
             {
                 var p = PlaceholderFn() ?? "";
                 if (!string.Equals(p, LastPlaceholder, StringComparison.Ordinal)) { LastPlaceholder = p; Field.SetPlaceholder(p); }
+            }
+            // Before the focus request: an unlock + replace-text + focus in one plugin step lands editable and focused.
+            if (LockedFn != null)
+            {
+                var l = LockedFn();
+                if (l != LastLocked) { LastLocked = l; Field.SetLocked(l); }
             }
             // After the text re-seed, so a picker's append + focus request in one click lands text first, then focus
             // (the caret-to-end runs once the field reports focused — see UGuiTextInput.FocusRequest.cs).

@@ -81,6 +81,14 @@ internal interface IRichInputPlaceholder
     void SetPlaceholder(string text);
 }
 
+/// <summary>Optional rich-field capability (8-member cap on <see cref="IRichInputField"/>): InputElement.Locked —
+/// read-only + dimmed text. UGuiTextInput queries it with <c>as</c>.</summary>
+internal interface IRichInputLock
+{
+    /// <summary>Lock (read-only, text alpha × <paramref name="textAlpha"/>) or unlock (editable, styled colour).</summary>
+    void SetLocked(bool locked, float textAlpha);
+}
+
 /// <summary>Creation inputs for a styled text element (initial values; live updates go through the
 /// handle). Styles are per-element constants — only the string and colour are live-bound.</summary>
 internal readonly struct StyledTextSpec

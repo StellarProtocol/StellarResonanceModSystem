@@ -22,7 +22,7 @@ namespace Stellar.Infrastructure.Game;
 /// reporting for the keyboard gate); this class only adapts the field and adds atomic-tag deletion
 /// (<see cref="SpriteTagEdit"/>). Game-only file (TMP types): never symlink it into the Mono UI-sandbox.
 /// </summary>
-internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
+internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder, IRichInputLock
 {
     private const int FontPx = 13;   // = the legacy field's Text size
 
@@ -36,6 +36,9 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     private bool _repairing;   // the repair's own text write re-enters onValueChanged
     private bool _cjk;
     private bool _hasTag;
+    private Color _textColor = Color.black;   // last ApplyStyle colour (the unlocked text colour)
+    private bool _locked;
+    private float _lockedAlpha = 1f;
 
     private TmpRichInputField(TMP_InputField f, TextMeshProUGUI t, TextMeshProUGUI ph, RectTransform viewport,
         Action<string> onChanged)
@@ -109,7 +112,8 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
 
     public void ApplyStyle(Color textColor, float leftPad)
     {
-        _t.color = textColor;
+        _textColor = textColor;
+        _t.color = _locked ? Dim(textColor, _lockedAlpha) : textColor;
         _ph.color = new Color(textColor.r, textColor.g, textColor.b, textColor.a * 0.5f);
         // Pad the VIEWPORT (not the text, as the legacy field does) so the RectMask2D clips inside the padding and
         // TMP's sideways scroll keeps the caret clear of the rounded border.
@@ -131,6 +135,18 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         if (face != null && _ph.font != face) _ph.font = face;
         _ph.text = text;
     }
+
+    // InputElement.Locked. TMP's readOnly gates the edit paths only (typing, paste, cut, delete — and so the '\n' the
+    // default mode turns into a submit); focus, caret and the framework's own text setter keep working.
+    public void SetLocked(bool locked, float textAlpha)
+    {
+        _locked = locked;
+        _lockedAlpha = textAlpha;
+        if (_f != null) _f.readOnly = locked;
+        if (_t != null) _t.color = locked ? Dim(_textColor, textAlpha) : _textColor;
+    }
+
+    private static Color Dim(Color c, float alpha) => new(c.r, c.g, c.b, c.a * alpha);
 
     public bool TryActivateFocus()
     {

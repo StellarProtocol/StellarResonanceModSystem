@@ -335,6 +335,7 @@ internal sealed partial class UGuiTextInput
         _enterLatched = false;
         _submitGrace = false;
         ResetFocusRequest();
+        _locked = false;   // InputElement.Locked (.Locked.cs)
         _field = null;
         _rich = null;
         _placeholder = null;
