@@ -132,7 +132,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         var cjk = TextFacePick.For(text) == FaceScript.Cjk;
         var face = cjk ? TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold : null;
         face ??= TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
-        if (face != null && _ph.font != face) _ph.font = face;
+        if (face != null && _ph.font != face) { _ph.font = face; CentreLine(_ph); }
         _ph.text = text;
     }
 
@@ -216,7 +216,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         if (cjk == _cjk) return;
         _cjk = cjk;
         var face = cjk ? TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold : TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
-        if (face != null && _t.font != face) _t.font = face;
+        if (face != null && _t.font != face) { _t.font = face; CentreLine(_t); }
     }
 
     private static TextMeshProUGUI NewText(string name, Transform parent, TMP_FontAsset face)
@@ -226,9 +226,37 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         t.font = face;
         t.fontSize = FontPx;
         t.color = Color.black;
-        t.alignment = TextAlignmentOptions.Left;   // TMP "Left" = middle-left, = the legacy MiddleLeft
+        // TOP-left + an explicit top/bottom margin (CentreLine), NOT TMP's middle-left. Under TMP_InputField the typed
+        // text drew with its line box against the TOP of the 28 box (measured off an in-game screenshot 2026-10-24:
+        // baseline = box top + the face's ascender, i.e. top-aligned, ~4 px above centre) while the composer pills'
+        // labels sat centred. Placing the line ourselves makes the position independent of how TMP_InputField treats
+        // the vertical alignment, and the caret (drawn over the line's ascender..descender) is centred with it.
+        t.alignment = TextAlignmentOptions.TopLeft;
         t.raycastTarget = false;                   // clicks land on the root bg (the field's targetGraphic)
+        CentreLine(t);
         return t;
+    }
+
+    // = UGuiTextInput.BuildBox's boxHeight: the one-line box the text area fills (stretch, no vertical inset).
+    private const float BoxPx = 28f;
+
+    // Centre ONE line of t's current face in the 28 box: margin top = bottom = (box − line box) / 2, where the line box
+    // is the face's ascender..descender at t's size — the same extent TMP lays a text line (and the caret) out on. Per
+    // text and re-run on every face swap (the Latin/Thai face and the system CJK face have different metrics). Bottom
+    // gets the same margin so a wrapped draft (default mode grows downward from TMP's preferred height, which includes
+    // the margins) keeps equal padding above and below. A sprite taller than the face's ascender grows its line a
+    // little, which pushes that line's baseline down by the excess.
+    private static void CentreLine(TextMeshProUGUI t)
+    {
+        var face = t.font;
+        if (face == null) return;
+        var fi = face.faceInfo;
+        if (fi.pointSize <= 0f) return;
+        float k = t.fontSize / fi.pointSize * (fi.scale > 0f ? fi.scale : 1f);
+        float pad = Mathf.Max(0f, (BoxPx - (fi.ascentLine - fi.descentLine) * k) * 0.5f);
+        var m = t.margin;
+        if (Mathf.Abs(m.y - pad) < 0.01f && Mathf.Abs(m.w - pad) < 0.01f) return;
+        t.margin = new Vector4(m.x, pad, m.z, pad);
     }
 
     private static GameObject NewChild(string name, Transform parent)
