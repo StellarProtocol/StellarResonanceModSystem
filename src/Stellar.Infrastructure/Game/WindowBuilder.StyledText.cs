@@ -25,6 +25,7 @@ internal sealed partial class WindowBuilder
             Strikethrough = t.Strikethrough,
             Align = t.Align,
             RichEmoji = t.RichEmoji,   // <sprite=N> from the game's chat sprite asset (WindowBuilder.RichText.cs)
+            Ellipsis = t.Ellipsize,    // TMP-native ellipsis (the plain path fits "..." itself, TextBinding.EllipsizeToRect)
         });
         if (h?.Go == null) return false;
         // Mirror the legacy path's layout contract: natural width, a sibling Spacer does the pushing.

@@ -195,9 +195,9 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// trailing "..." so it fits — re-fitted whenever the string or the laid-out width changes (e.g. the window is
     /// resized). Use it in a width-constrained slot, typically a <see cref="CellElement"/> with a <c>Weight</c> in a
     /// <see cref="RowElement"/> next to fixed-width controls: the cell's width is what the text is fitted to, and
-    /// nothing spills onto the neighbours (the text is also clipped to its own rect). Plain window text only —
-    /// ignored by the styled (<see cref="Emphasis"/>/<see cref="Bold"/>/...), <see cref="RichEmoji"/>, Shadow and
-    /// HUD-overlay paths. Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    /// nothing spills onto the neighbours. Plain text is cut with "..." and clipped to its rect; styled
+    /// (<see cref="Emphasis"/>/<see cref="Bold"/>/...) and <see cref="RichEmoji"/> text uses TextMeshPro's own ellipsis
+    /// (a hard cut if the face lacks the glyph). Ignored on Shadow and HUD-overlay text. Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool Ellipsize { get; init; }
 }
 

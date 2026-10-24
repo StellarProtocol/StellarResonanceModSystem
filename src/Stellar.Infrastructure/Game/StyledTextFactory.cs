@@ -109,11 +109,14 @@ internal readonly struct StyledTextSpec
     /// asset (TextElement.RichEmoji — see <c>TmpEmojiSprites</c>). Off = the styled path is unchanged.</summary>
     public bool RichEmoji { get; init; }
 
+    /// <summary>One line; overflow is cut with TMP's own ellipsis at the rect edge (TextElement.Ellipsize).</summary>
+    public bool Ellipsis { get; init; }
+
     public StyledTextSpec(string text, int fontSize, Color color, bool wrap)
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
         Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
-        RichEmoji = false;
+        RichEmoji = false; Ellipsis = false;
     }
 }
 

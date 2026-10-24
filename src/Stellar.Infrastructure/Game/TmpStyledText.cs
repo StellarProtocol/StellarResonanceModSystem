@@ -142,6 +142,9 @@ internal sealed class TmpStyledText : IStyledTextHandle
         t.color = spec.Color;
         t.raycastTarget = false;
         t.enableWordWrapping = spec.Wrap;
+        // TextElement.Ellipsize: TMP cuts at its own rect and appends its ellipsis glyph (a face without U+2026 makes
+        // TMP fall back to a hard truncate). The rect is the layout slot, so a resize re-fits on the next mesh rebuild.
+        if (spec.Ellipsis) { t.enableWordWrapping = false; t.overflowMode = TextOverflowModes.Ellipsis; }
         t.alignment = spec.Align switch
         {
             TextAlign.Center => TextAlignmentOptions.Center,
