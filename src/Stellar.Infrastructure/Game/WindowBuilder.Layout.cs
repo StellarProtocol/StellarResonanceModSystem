@@ -104,6 +104,9 @@ internal sealed partial class WindowBuilder
         finally { if (r.ConstrainsWindowMinWidth) _widthRowDepth--; }
         var row = parent.GetChild(parent.childCount - 1);   // BuildLayout appends the row as the last child
         if (r.ConstrainsWindowMinWidth && row is RectTransform rowRt) token.WidthRows.Add(rowRt);
+        // RowElement.OnHover: the plain row rect joins the ticker's hover list (RectangleContainsScreenPoint +
+        // FrontWindowBlocks, TickHoversAndPulses) — no Image/raycast/tint is added, so the row looks and lays out as before.
+        if (r.OnHover is { } onHover && row is RectTransform hoverRt) _registerHover?.Invoke(hoverRt, onHover);
         if (r.Justify != RowJustify.Left && row.GetComponent<HorizontalLayoutGroup>() is { } hlg)
             hlg.childAlignment = r.Justify == RowJustify.Center ? TextAnchor.MiddleCenter : TextAnchor.MiddleRight;
     }

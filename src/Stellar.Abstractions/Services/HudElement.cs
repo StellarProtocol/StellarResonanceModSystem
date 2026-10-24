@@ -33,6 +33,14 @@ public sealed record RowElement(IReadOnlyList<HudElement> Children, float Gap = 
     /// <see cref="BubbleElement"/> nested inside a marked row hugs its natural width (it is not capped to its
     /// parent's width), so it can't shrink the very measurement that is meant to make room for it.</summary>
     public bool ConstrainsWindowMinWidth { get; init; }
+
+    /// <summary>Optional — fires with <c>true</c> when the pointer enters the row's rectangle and <c>false</c> when it
+    /// leaves (or the row is hidden). Ticker-driven, the same hover hook <see cref="SelectableElement.OnHover"/> uses,
+    /// so a window in front that covers the pointer counts as "not over"; never fires in the static sandbox. Unlike a
+    /// <see cref="SelectableElement"/> it adds NOTHING to the row — no tint, no padding, no click target — so it can
+    /// reveal hover-only controls (e.g. a per-message action button) without changing the row's look or layout.
+    /// Default null = unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Action<bool>? OnHover { get; init; }
 }
 
 /// <summary>Vertical layout container: children stacked top-to-bottom with optional spacing.</summary>
