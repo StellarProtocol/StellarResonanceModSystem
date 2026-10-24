@@ -186,8 +186,8 @@ internal sealed partial class PandaChatProbe
 
     /// <summary>
     /// One-shot boot diagnostic for the method=1 receive path. The first parsed
-    /// Notify logs the channel/sender/text triple (text truncated to 80 chars)
-    /// so the wire path is observable at boot; subsequent messages fall
+    /// Notify logs its channel + text LENGTH (never the text or the sender —
+    /// chat is private data in a shared log) so the wire path is observable at boot; subsequent messages fall
     /// through to <see cref="DiagChatReceived"/> which gates on
     /// STELLAR_DIAGNOSTICS=1.
     /// </summary>
@@ -196,9 +196,7 @@ internal sealed partial class PandaChatProbe
         if (!_firstChatParsedLogged)
         {
             _firstChatParsedLogged = true;
-            var dbgText = chatMsg.Text ?? string.Empty;
-            if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-            _log.Info($"[Chat] first received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+            _log.Info($"[Chat] first received: channel={chatMsg.Channel} textLen={chatMsg.Text?.Length ?? 0}");
         }
         else
         {
@@ -217,9 +215,7 @@ internal sealed partial class PandaChatProbe
         if (!_firstMethod3ReceivedLogged)
         {
             _firstMethod3ReceivedLogged = true;
-            var dbgText = chatMsg.Text ?? string.Empty;
-            if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-            _log.Info($"[Chat method=3] first received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+            _log.Info($"[Chat method=3] first received: channel={chatMsg.Channel} textLen={chatMsg.Text?.Length ?? 0}");
         }
         else
         {

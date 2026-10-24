@@ -17,15 +17,13 @@ internal sealed partial class ChatService
     /// <summary>
     /// Diagnostics mode: log every dispatch across the wire→main-thread
     /// boundary. Confirms whether <see cref="Drain"/> is actually running
-    /// and how many subscribers see each message. Truncates text to 80
-    /// chars for volume control.
+    /// and how many subscribers see each message. Ids + lengths only — never
+    /// the message text or sender name (chat is private data in a shared log).
     /// </summary>
     private void DiagDispatched(ChatMessage msg, Action<ChatMessage>[]? snapshot)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        var dbgText = msg.Text ?? string.Empty;
-        if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
         var subCount = snapshot?.Length ?? 0;
-        _log.Info($"[Chat] dispatched: channel={msg.Channel} sender='{msg.SenderName}' (id={msg.SenderId}) text='{dbgText}' subscribers={subCount}");
+        _log.Info($"[Chat] dispatched: channel={msg.Channel} senderId={msg.SenderId} textLen={msg.Text?.Length ?? 0} subscribers={subCount}");
     }
 }

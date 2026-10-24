@@ -92,7 +92,7 @@ internal sealed partial class FriendsService : IFriends
                 _ => CloseBody,
             };
             _lua.DoString(ActionPrologue + a.CharId.ToString(CultureInfo.InvariantCulture) + " " + body + ActionEpilogue);
-            _log($"[Friends] {a.Kind} charId={a.CharId} issued");
+            _log($"[Friends] {a.Kind} issued");   // no charId: who you whisper is private (shared log)
             any = true;
         }
         return any;

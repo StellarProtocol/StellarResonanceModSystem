@@ -55,9 +55,8 @@ internal sealed partial class PandaChatProbe
     private void DiagChatReceived(ChatMessage chatMsg)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        var dbgText = chatMsg.Text ?? string.Empty;
-        if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-        _log.Info($"[Chat] received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+        // Ids + lengths only, even in diagnostics mode: never the message text or the sender name.
+        _log.Info($"[Chat] received: channel={chatMsg.Channel} senderId={chatMsg.SenderId} textLen={chatMsg.Text?.Length ?? 0}");
     }
 
     /// <summary>
@@ -67,9 +66,7 @@ internal sealed partial class PandaChatProbe
     private void DiagChatMethod3Received(ChatMessage chatMsg)
     {
         if (!StellarDiagnostics.IsEnabled) return;
-        var dbgText = chatMsg.Text ?? string.Empty;
-        if (dbgText.Length > 80) dbgText = dbgText.Substring(0, 80);
-        _log.Info($"[Chat method=3] received: channel={chatMsg.Channel} sender='{chatMsg.SenderName}' (id={chatMsg.SenderId}) text='{dbgText}'");
+        _log.Info($"[Chat method=3] received: channel={chatMsg.Channel} senderId={chatMsg.SenderId} textLen={chatMsg.Text?.Length ?? 0}");
     }
 
     /// <summary>

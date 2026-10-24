@@ -126,6 +126,13 @@ internal sealed partial class PandaChatProbe
     private void LogFirstCorrelatedChitChatReturn(ReadOnlySpan<byte> payload, uint callId)
     {
         _firstChitChatReturnObservedLogged = true;
+        // The leading bytes of a history reply are its first record (sender char info incl. the NAME, then text), so
+        // the hex prefix is only dumped in diagnostics mode; normal play logs the framing facts alone.
+        if (!Stellar.Abstractions.Diagnostics.StellarDiagnostics.IsEnabled)
+        {
+            _log.Info($"[ChatProbe] first correlated ChitChat Return: callId={callId} payloadLen={payload.Length}");
+            return;
+        }
         var dumpLen = payload.Length < 32 ? payload.Length : 32;
         var sb = new System.Text.StringBuilder(dumpLen * 3);
         for (int i = 0; i < dumpLen; i++) { sb.Append(payload[i].ToString("X2")); sb.Append(' '); }
@@ -196,11 +203,13 @@ internal sealed partial class PandaChatProbe
 
         // Log every batch (not just the first) so we can correlate each
         // resolved channel with what the user sees in the UI. Login fetches
-        // typically produce 4 batches — small log footprint.
+        // typically produce 4 batches — small log footprint. Counts, channel and
+        // lengths ONLY: never the message text, sender name or peer charId (a
+        // private batch is someone's whisper conversation — the log is shared).
         if (dispatched > 0)
         {
             var f = firstDispatched!;
-            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel} batchPeer={batch.PeerId}; first: channel={f.Channel} sender='{f.SenderName}' text='{f.Text}')");
+            _log.Info($"[Chat] history batch received: {dispatched}/{historyCount} dispatched after dedup (callId={callId}; batchIdx={_historyBatchCount} batchChannel={batchChannel} hasPeer={batch.PeerId != 0}; first: channel={f.Channel} textLen={f.Text?.Length ?? 0})");
         }
         else if (validCount > 0)
         {
