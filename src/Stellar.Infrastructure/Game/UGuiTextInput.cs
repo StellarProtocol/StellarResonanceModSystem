@@ -344,7 +344,7 @@ internal sealed partial class UGuiTextInput
         _placeholder = null;
         _bg = null; _scroll = null; _fieldRect = null; _textRightReserve = 0f;   // TextArea state (.TextArea.cs)
         _lastFieldSize = new Vector2(-1f, -1f); _lastCaret = -1; _followUntilFrame = -1;
-        _caretRenderer = null; _clipMasks.Clear();
+        _caretRenderer = null; _clipMasks.Clear(); _caretClipOn = false;
     }
 
     // onValueChanged fires AFTER a char is committed to the field (full UTF-16 string — no IL2CPP char

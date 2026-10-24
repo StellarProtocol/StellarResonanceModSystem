@@ -67,7 +67,7 @@ public sealed partial class WindowInteractionTicker
                 // every open until the model landed. With it hidden, the dark RenderHostBg backdrop shows
                 // instead. Same guard the icon-host path (TickIconHosts) already applies.
                 var tex = fn() as Texture;
-                img.texture = tex;
+                if (img.texture != tex) img.texture = tex;   // diffed: an unchanged bind writes nothing per frame
                 if (img.enabled != (tex != null)) img.enabled = tex != null;
             }
             catch { }
