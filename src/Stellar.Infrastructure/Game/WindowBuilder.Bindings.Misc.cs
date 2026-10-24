@@ -108,6 +108,9 @@ internal sealed partial class WindowBuilder
         // the first poll (= the static fill AddBubbleBackground painted).
         public Graphic? FillGraphic; public Func<ColorRgba?>? FillColorFn;
         private ColorOverrideTracker _fillColor; private Color? _fillBuildColor;
+        // Per-refresh outline ring (BubbleElement.OutlineColorFn) — null on every bubble that didn't opt in.
+        public Image? Outline; public Func<ColorRgba?>? OutlineColorFn;
+        private ColorRgba? _lastOutline;
         private float _last = -1f;
         public void Apply()
         {
@@ -115,6 +118,7 @@ internal sealed partial class WindowBuilder
             // Fill colour is polled BEFORE the width-diff early-return below, so a live re-tint lands even on a
             // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
+            if (Outline != null && OutlineColorFn != null) ApplyOutline(OutlineColorFn());
             // A recycled VirtualList slot rebinds to new content within the same 10 Hz apply that measures it, but the uGUI
             // layout cache GetPreferredWidth reads is only refreshed by the CanvasUpdate that runs BETWEEN applies — so a plain
             // read returns the PREVIOUS row's width and the bubble renders at the wrong (usually too-narrow) width while
@@ -145,6 +149,15 @@ internal sealed partial class WindowBuilder
                 case ColorStep.Override: FillGraphic!.color = new Color(v!.Value.R, v.Value.G, v.Value.B, v.Value.A); break;
                 case ColorStep.RestoreDefault: FillGraphic!.color = _fillBuildColor.Value; break;
             }
+        }
+
+        // Diffed: an unchanged poll writes nothing (no vertex-dirty / rebatch for idle bubbles). null = ring off.
+        private void ApplyOutline(ColorRgba? v)
+        {
+            if (Nullable.Equals(v, _lastOutline)) return;
+            _lastOutline = v;
+            if (v is { } c) Outline!.color = new Color(c.R, c.G, c.B, c.A);
+            Outline!.enabled = v.HasValue;
         }
     }
 

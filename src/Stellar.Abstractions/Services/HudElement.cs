@@ -109,6 +109,13 @@ public sealed record BubbleElement(HudElement Child) : HudElement
     /// Added as an init property (NOT a ctor param) so the record stays source + binary compatible with
     /// already-compiled plugins.</summary>
     public Func<ColorRgba?>? FillColorFn { get; init; }
+
+    /// <summary>Per-refresh OUTLINE colour: a thin (1 px) ring drawn along the bubble's rounded edge, following the
+    /// same <see cref="CornerRadius"/>. Evaluated every refresh; a colour shows the ring in it (alpha honoured), null
+    /// hides it — so a bubble can light up a state border (e.g. "busy", "translated") without rebuilding the tree. The
+    /// ring is overlaid (never measured), so toggling it never changes the bubble's size. Default null = no ring is
+    /// even created: the bubble renders exactly as before. An <c>init</c> property (binary-compatible).</summary>
+    public Func<ColorRgba?>? OutlineColorFn { get; init; }
 }
 
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>

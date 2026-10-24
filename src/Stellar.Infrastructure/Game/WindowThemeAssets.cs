@@ -79,6 +79,23 @@ internal sealed class WindowThemeAssets
         _bubbleSprites[radius] = (tex, sprite);
         return sprite;
     }
+
+    // White 1-px rounded RINGS (transparent interior) for BubbleElement.OutlineColorFn, keyed by the same radius as the
+    // bubble's fill sprite so the ring hugs its exact edge. Same lifetime rule as _bubbleSprites (kept across re-bakes).
+    private readonly System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> _bubbleOutlines = new();
+
+    /// <summary>A white 1-px rounded ring matching <see cref="BubbleBg"/> at the same <paramref name="radius"/>
+    /// (&lt;= 0 → the 3-radius chip rounding), tinted at the use-site. Baked once per radius; main-thread only.</summary>
+    public Sprite? BubbleOutline(int radius)
+    {
+        var r = radius <= 0 ? SwatchRadius : radius;
+        if (_bubbleOutlines.TryGetValue(r, out var e)) return e.sprite;
+        var size = r * 2 + 4;
+        var tex = RoundedTextureBaker.RoundedBordered(size, r, 1, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
+        var sprite = Sliced(tex, r + 1);
+        _bubbleOutlines[r] = (tex, sprite);
+        return sprite;
+    }
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;
@@ -231,6 +248,12 @@ internal sealed class WindowThemeAssets
             if (e.tex != null) Object.Destroy(e.tex);
         }
         _bubbleSprites.Clear();
+        foreach (var e in _bubbleOutlines.Values)
+        {
+            if (e.sprite != null) Object.Destroy(e.sprite);
+            if (e.tex != null) Object.Destroy(e.tex);
+        }
+        _bubbleOutlines.Clear();
     }
 
     // White sprite with the TOP two corners rounded (radius r), bottom square. 4× supersampled AA.

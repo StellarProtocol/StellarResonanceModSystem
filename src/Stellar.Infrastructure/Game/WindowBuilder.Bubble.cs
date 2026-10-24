@@ -63,6 +63,7 @@ internal sealed partial class WindowBuilder
         // Per-refresh fill colour (BubbleElement.FillColorFn, mirroring BarElement.FillColorFn): attach the override
         // ONLY when set, so a bubble that leaves it null keeps the static fill painted above with no machinery.
         if (bubble.FillColorFn != null) { binding.FillGraphic = bg; binding.FillColorFn = bubble.FillColorFn; }
+        if (bubble.OutlineColorFn != null) { binding.Outline = AddBubbleOutline(go, bubble); binding.OutlineColorFn = bubble.OutlineColorFn; }
         token.Bubbles.Add(binding);
         binding.Apply();        // seed the width (and the first fill-colour poll) before the window's first layout rebuild
     }
@@ -86,5 +87,23 @@ internal sealed partial class WindowBuilder
         bg.color = Tint();
         if (fill == null) token.ReskinActions.Add(() => { if (bg != null) bg.color = Tint(); });
         return bg;
+    }
+
+    // BubbleElement.OutlineColorFn: a 1-px rounded ring (same radius as the fill sprite) stretched over the bubble.
+    // ignoreLayout → the VLG never measures it, so showing/hiding it can't change the bubble's size; added AFTER the
+    // content child so BuildBubble's "single content child" index is unaffected; raycastTarget=false like the fill.
+    // Starts disabled — BubbleBinding enables + tints it from the first OutlineColorFn poll.
+    private Image AddBubbleOutline(GameObject go, BubbleElement bubble)
+    {
+        var ringGo = UGuiPrimitives.NewChild("Outline", go.transform);
+        ringGo.AddComponent<LayoutElement>().ignoreLayout = true;
+        var rt = ringGo.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+        var ring = ringGo.AddComponent<Image>();
+        var sprite = _assets.BubbleOutline(Mathf.RoundToInt(bubble.CornerRadius));
+        if (sprite != null) { ring.sprite = sprite; ring.type = Image.Type.Sliced; }
+        ring.raycastTarget = false;
+        ring.enabled = false;
+        return ring;
     }
 }
