@@ -50,22 +50,36 @@ internal sealed partial class WindowBuilder
         // whenever a BubbleElement window (the ChatTools log) is open. Width was never CSF-driven (horizontalFit was
         // already Unconstrained — BubbleBinding's LayoutElement pins the hugged width), so the whole component goes.
 
-        var childIdx = go.transform.childCount;            // the single content child BuildElement is about to add
-        BuildElement(bubble.Child, go.transform, token);
-        var child = childIdx < go.transform.childCount ? go.transform.GetChild(childIdx) as RectTransform : null;
-
+        // The binding exists BEFORE the child is built so the child's content bindings — including ones a lazy
+        // Conditional branch builds later (BuildScope carries _bubbleOwner) — can be tagged as this bubble's
+        // (.BubbleOwner.cs): their changes are what trigger a width re-measure.
         var binding = new BubbleBinding
         {
-            Le = le, Child = child!, Parent = parent as RectTransform,
+            Le = le, Parent = parent as RectTransform,
             MaxWidth = bubble.MaxWidth, PadX = padX * 2f,   // total horizontal padding (both sides)
             NoCap = _widthRowDepth > 0,                      // inside a min-width row: hug natural (see BuildRow)
         };
+        binding.Child = BuildOwnedChild(bubble.Child, go.transform, token, binding)!;
         // Per-refresh fill colour (BubbleElement.FillColorFn, mirroring BarElement.FillColorFn): attach the override
         // ONLY when set, so a bubble that leaves it null keeps the static fill painted above with no machinery.
         if (bubble.FillColorFn != null) { binding.FillGraphic = bg; binding.FillColorFn = bubble.FillColorFn; }
         if (bubble.OutlineColorFn != null) { binding.Outline = AddBubbleOutline(go, bubble); binding.OutlineColorFn = bubble.OutlineColorFn; }
         token.Bubbles.Add(binding);
         binding.Apply();        // seed the width (and the first fill-colour poll) before the window's first layout rebuild
+    }
+
+    // Build the bubble's single content child with `owner` as the current bubble (captured by any Conditional inside for
+    // its lazy branch build), then claim every content binding the child added (.BubbleOwner.cs). Returns the child.
+    private RectTransform? BuildOwnedChild(HudElement child, Transform host, WindowToken token, BubbleBinding owner)
+    {
+        var marks = new BindingMarks(token);
+        var prevOwner = _bubbleOwner;
+        _bubbleOwner = owner;
+        var childIdx = host.childCount;            // the single content child BuildElement is about to add
+        try { BuildElement(child, host, token); }
+        finally { _bubbleOwner = prevOwner; }
+        TagBubbleOwner(token, marks, owner);
+        return childIdx < host.childCount ? host.GetChild(childIdx) as RectTransform : null;
     }
 
     // The rounded SLICED background (the same SwatchBg chip BuildSelectable uses, or a baked rounder sprite when

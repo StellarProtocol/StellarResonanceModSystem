@@ -130,6 +130,19 @@ internal sealed partial class WindowBuilder
         public Image? Outline; public Func<ColorRgba?>? OutlineColorFn;
         private ColorRgba? _lastOutline;
         private float _last = -1f;
+        // ---- re-measure gating (see WindowBuilder.BubbleOwner.cs) ----
+        // Enclosing bubble (nested bubbles): when THIS bubble's pinned width changes, the outer one's content changed.
+        public BubbleBinding? Owner;
+        private bool _dirty = true;     // content changed since the last measure (set by MarkDirty / activation / reskin)
+        private int _settle;            // extra measures still owed after a dirty one (absorbs a one-apply layout lag)
+        private const int SettleApplies = 2;
+        private bool _wasActive;        // child active on the previous apply? (false→true edge = re-measure)
+        private float _natural = -1f;   // last measured natural (unwrapped) width incl. padding; ≤0 = never measured
+
+        /// <summary>The bubble's content changed (a text/label/branch/count/image inside it, a nested bubble's width, or a
+        /// re-skin): re-measure its natural width on its next apply.</summary>
+        internal void MarkDirty() => _dirty = true;
+
         public void Apply()
         {
             if (Le == null || Child == null) return;
@@ -137,26 +150,46 @@ internal sealed partial class WindowBuilder
             // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
             if (Outline != null && OutlineColorFn != null) ApplyOutline(OutlineColorFn());
-            // A recycled VirtualList slot rebinds to new content within the same 10 Hz apply that measures it, but the uGUI
-            // layout cache GetPreferredWidth reads is only refreshed by the CanvasUpdate that runs BETWEEN applies — so a plain
-            // read returns the PREVIOUS row's width and the bubble renders at the wrong (usually too-narrow) width while
-            // scrolling (text wraps ~1 word/char per line), snapping right only when scrolling stops. Force a one-shot rebuild
-            // of JUST this bubble's content child so the preferred width reflects the CURRENT content THIS apply. This is a
-            // 10 Hz cost over only the visible (active) bubbles — NOT the per-render-frame CanvasUpdate rebuild the removed
-            // ContentSizeFitter caused — so it does not reintroduce the FPS cliff.
-            if (Child.gameObject.activeInHierarchy)
-                LayoutRebuilder.ForceRebuildLayoutImmediate(Child);
-            var measured = LayoutUtility.GetPreferredWidth(Child);
-            if (measured <= 0f) return;   // inactive/unmeasurable this frame → keep the last pinned width, never collapse
-            var natural = measured + PadX;
+            // Inactive (a hidden branch, a parked/over-budget list slot, a hidden window) → keep the last pinned width,
+            // never collapse; becoming active again re-measures (its layout may be stale and its content may have changed
+            // while every value binding inside it skipped the inactive leaves).
+            if (!Child.gameObject.activeInHierarchy) { _wasActive = false; return; }
+            if (!_wasActive) { _wasActive = true; _dirty = true; }
+            if (_dirty || _settle > 0) Measure();
+            if (_natural <= 0f) return;   // nothing measurable yet → keep the last pinned width, never collapse
             // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
-            // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out.
-            var cap = NoCap ? natural : MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : natural);
-            if (cap <= 0f) cap = natural;
-            var w = Mathf.Max(0f, Mathf.Min(natural, cap));
+            // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out. The cap
+            // is re-read EVERY apply (a cheap rect read) against the cached natural width, so a parent/window resize
+            // re-caps without a re-measure: the natural width is wrap-independent, so the width alone can't change it.
+            var cap = NoCap ? _natural : MaxWidth > 0f ? MaxWidth : (Parent != null ? Parent.rect.width : _natural);
+            if (cap <= 0f) cap = _natural;
+            var w = Mathf.Max(0f, Mathf.Min(_natural, cap));
             if (Mathf.Approximately(w, _last)) return;
             Le.minWidth = Le.preferredWidth = w; Le.flexibleWidth = 0f;
             _last = w;
+            Owner?.MarkDirty();   // a nested bubble resized → the enclosing bubble's content width changed
+        }
+
+        // Re-measure the content's natural width. ONLY on a content change (MarkDirty), an activation, and the
+        // SettleApplies applies after one — never every apply. Measuring every active bubble on every 10 Hz apply was the
+        // ChatTools-at-rest FPS loss (113→40) once chat text moved to TMP (0c9e67a): the log keeps its whole pool active
+        // (off-view rows are only clipped), and TMP's preferredWidth is a full text layout on EVERY read (legacy Text kept a
+        // cached generator), so ~50 bubbles × (forced rebuild + preferred-size reads) made each apply frame ~55 ms.
+        //
+        // When it does measure, the forced rebuild stays: a recycled VirtualList slot rebinds to new content within the
+        // same apply that measures it, but the uGUI layout cache GetPreferredWidth reads is only refreshed by the
+        // CanvasUpdate that runs BETWEEN applies — so a plain read returns the PREVIOUS row's width (too-narrow bubble,
+        // text wrapping ~1 word per line while scrolling). Rebuild JUST this bubble's content child so the reading is current.
+        private void Measure()
+        {
+            if (_dirty) _settle = SettleApplies; else _settle--;
+            _dirty = false;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(Child);
+            UiPerfStats.Count(UiCounter.BubbleMeasure);
+            var measured = LayoutUtility.GetPreferredWidth(Child);
+            // Unmeasurable (empty content) → keep the last natural width. Not re-dirtied: an empty text stays empty until
+            // its binding changes it, and that change marks the bubble dirty again.
+            if (measured > 0f) _natural = measured + PadX;
         }
 
         private void ApplyFillColor(ColorRgba? v)

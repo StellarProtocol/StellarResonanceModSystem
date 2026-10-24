@@ -124,6 +124,9 @@ internal sealed partial class WindowBuilder
             {
                 try { ReskinActions[i](); } catch { /* skip a bad leaf; never break the whole re-skin */ }
             }
+            // A theme / font-scale change can move every bubble's natural width without any text changing, and bubbles
+            // otherwise re-measure only on a content change (BubbleBinding.MarkDirty) — so re-measure them all once.
+            for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].MarkDirty();
             Apply();
             // Text sizes (Font Scale) change preferred sizes, but a re-skin doesn't auto-rebuild the layout —
             // rows could collapse (the "all sliders vanish after a font-scale drag; a tab switch brings them

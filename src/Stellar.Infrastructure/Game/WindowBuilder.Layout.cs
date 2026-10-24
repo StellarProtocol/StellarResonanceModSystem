@@ -72,23 +72,28 @@ internal sealed partial class WindowBuilder
     // A deferred branch build runs later, from the window's Apply — restore the per-window surface the shared
     // builder had when this window was built, the enclosing variable-list slot gate (so a Conditional nested in
     // the lazily-built branch is gated on the same slot), and the min-width-row depth (uncapped bubbles).
+    // The enclosing bubble (if any) claims the branch's new content bindings, so their later changes re-measure it.
     private void BuildDeferred(HudElement el, Transform parent, WindowToken token, BuildScope scope)
     {
         var prev = CaptureScope();
         RestoreScope(scope);
+        var marks = new BindingMarks(token);
         try { BuildElement(el, parent, token); }
         finally { RestoreScope(prev); }
+        if (scope.BubbleOwner is { } owner) { TagBubbleOwner(token, marks, owner); owner.MarkDirty(); }
     }
 
     // The builder state a lazily-built branch must see exactly as it was when its window was built.
     private readonly struct BuildScope
     {
         public readonly SurfaceStyle Surface; public readonly GameObject? Gate; public readonly int WidthRowDepth;
-        public BuildScope(SurfaceStyle surface, GameObject? gate, int widthRowDepth)
-        { Surface = surface; Gate = gate; WidthRowDepth = widthRowDepth; }
+        public readonly BubbleBinding? BubbleOwner;   // innermost enclosing BubbleElement (.BubbleOwner.cs)
+        public BuildScope(SurfaceStyle surface, GameObject? gate, int widthRowDepth, BubbleBinding? bubbleOwner)
+        { Surface = surface; Gate = gate; WidthRowDepth = widthRowDepth; BubbleOwner = bubbleOwner; }
     }
-    private BuildScope CaptureScope() => new(_surface, _condGate, _widthRowDepth);
-    private void RestoreScope(BuildScope s) { _surface = s.Surface; _condGate = s.Gate; _widthRowDepth = s.WidthRowDepth; }
+    private BuildScope CaptureScope() => new(_surface, _condGate, _widthRowDepth, _bubbleOwner);
+    private void RestoreScope(BuildScope s)
+    { _surface = s.Surface; _condGate = s.Gate; _widthRowDepth = s.WidthRowDepth; _bubbleOwner = s.BubbleOwner; }
 
     // RowElement: an HLG row (Gap 0 = the default RowGap), optionally justified. A ConstrainsWindowMinWidth row is
     // also recorded on the token so the renderer can derive the window's minimum width from its natural width
