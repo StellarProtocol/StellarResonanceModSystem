@@ -18,6 +18,7 @@ public sealed partial class WindowInteractionTicker
         HitchProbe.OnRenderFrame(frameMs, Il2CppGcCount(), HitchLog);
         // The ~10 s [UiPerf] summary (sub-threshold frames are invisible to [Hitch]) + the canvas-rebuild timer it reports.
         Stellar.Infrastructure.Game.UiPerfStats.OnFrame(frameMs, HitchLog);
+        CanvasQueueProbe.Root = transform;   // re-pointed each frame: a canvas re-create brings a new ticker
         CanvasRebuildProbe.EnsureInstalled(HitchLog);
     }
 

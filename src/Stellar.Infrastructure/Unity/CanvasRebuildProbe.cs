@@ -18,12 +18,14 @@ internal static class CanvasRebuildProbe
 {
     private static bool _installed;
     private static long _start;
+    private static Action<string>? _log;
     // Cached so the IL2CPP delegate wrappers stay alive for the session (never unsubscribed; the probe is session-long).
     private static Canvas.WillRenderCanvases? _pre, _post;
 
     public static void EnsureInstalled(Action<string> log)
     {
         if (_installed || !HitchProbe.IsEnabled) return;
+        _log = log;
         _installed = true;   // one attempt per session, success or not
         try
         {
@@ -36,7 +38,12 @@ internal static class CanvasRebuildProbe
         catch (Exception ex) { log($"[UiPerf] canvas-rebuild timing unavailable: {ex.GetType().Name}: {ex.Message}"); }
     }
 
-    private static void OnPre() => _start = HitchProbe.Begin();
+    // The queue probe runs FIRST, so its own cost (and its once-per-window timed extra Cull) stays out of ui:canvasRebuild.
+    private static void OnPre()
+    {
+        if (_log != null) CanvasQueueProbe.OnPreRender(_log);
+        _start = HitchProbe.Begin();
+    }
 
     private static void OnPost()
     {
