@@ -19,6 +19,12 @@ public readonly record struct ChatSendResult(ChatChannel Channel, bool Ok, int E
     /// <summary><c>ErrChatSendCdNoEnd</c> — "Message too frequently, please try again later".</summary>
     public const int ErrorTooFrequent = 5211;
 
+    /// <summary>Framework-made code (never a server one): the send NEVER LEFT THE CLIENT — no live chat connection,
+    /// an unsupported target, or the send threw. <see cref="Ok"/> is false and <see cref="ViaFramework"/> true. Raised
+    /// before <c>IChat.Send</c>/<c>SendSticker</c> returns when they are called on the main thread (so a chat box can
+    /// keep its draft instead of clearing it), otherwise on the main thread right after. No server reply follows.</summary>
+    public const int ErrorNotSent = -1;
+
     /// <summary>True when the send was issued through <c>IChat.Send</c>/<c>SendSticker</c> (by some plugin); false
     /// when the player sent it from the game's own chat box (the game shows its own error tip for those).</summary>
     public bool ViaFramework { get; init; }

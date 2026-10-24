@@ -14,7 +14,9 @@ public interface IChat
     IReadOnlyList<ChatMessage> RecentMessages { get; }
     /// <summary>Fires on the Unity main thread each time a new chat message is received.</summary>
     event Action<ChatMessage>  MessageReceived;
-    /// <summary>Sends <paramref name="text"/> to the specified <paramref name="target"/> channel. Fire-and-forget; failures are logged, never thrown.</summary>
+    /// <summary>Sends <paramref name="text"/> to the specified <paramref name="target"/> channel. Fire-and-forget; failures are logged, never thrown.
+    /// A send that never left the client (e.g. no live chat connection) raises <see cref="SendResult"/> with
+    /// <see cref="ChatSendResult.ErrorNotSent"/> — before this returns, when called on the main thread.</summary>
     void Send(ChatTarget target, string text);
     /// <summary>Sends the picture-emoji / sticker identified by <paramref name="stickerConfigId"/> (a
     /// <c>ChatStickersTable</c> config_id — see <see cref="IGameAssets.GetSendableStickers"/>) to

@@ -22,6 +22,7 @@ internal sealed partial class ChatService
     private readonly object _cooldownLock = new();
     private readonly ConcurrentQueue<ChatSendResult> _sendResults = new();
     private Action<ChatSendResult>? _sendResultHandlers;
+    private int _mainThreadId;   // managed id of the Unity main thread, learned in Drain (0 = not yet)
 
     /// <summary>Framework interpolated server clock (Unix ms, 0 = not yet synced) — <c>CombatSnapshot.ServerNowMs</c>.
     /// Set by Host wiring.</summary>
@@ -75,15 +76,40 @@ internal sealed partial class ChatService
     // Main thread, from Drain.
     private void DrainSendResults()
     {
-        while (_sendResults.TryDequeue(out var r))
+        while (_sendResults.TryDequeue(out var r)) DispatchSendResult(r);
+    }
+
+    private void DispatchSendResult(ChatSendResult r)
+    {
+        var handlers = _sendResultHandlers;
+        if (handlers is null) return;
+        foreach (Action<ChatSendResult> h in handlers.GetInvocationList())
         {
-            var handlers = _sendResultHandlers;
-            if (handlers is null) continue;
-            foreach (Action<ChatSendResult> h in handlers.GetInvocationList())
-            {
-                try { h(r); }
-                catch (Exception ex) { _log.Warning($"[Chat] SendResult subscriber threw: {ex.GetType().Name}: {ex.Message}"); }
-            }
+            try { h(r); }
+            catch (Exception ex) { _log.Warning($"[Chat] SendResult subscriber threw: {ex.GetType().Name}: {ex.Message}"); }
         }
     }
+
+    // A send that never left the client (no probe; the probe refused it — no live connection, unsupported target; or it
+    // threw) is reported as a refused SendResult with ErrorNotSent, so a chat box can keep its draft. No server reply
+    // will follow, so the cooldown slots are untouched. Called on the main thread (the normal case — plugins send from
+    // UI handlers) it is raised SYNCHRONOUSLY, before Send returns: the caller learns the verdict before it would clear
+    // its composer, with no draft round trip. From any other thread it is queued for the next Drain (main-thread
+    // contract). _mainThreadId is 0 until the first Drain → queued.
+    private void ReportNotSent(ChatTarget target)
+    {
+        var r = new ChatSendResult(ChannelOf(target), false, ChatSendResult.ErrorNotSent, null) { ViaFramework = true };
+        if (_mainThreadId != 0 && Environment.CurrentManagedThreadId == _mainThreadId) DispatchSendResult(r);
+        else _sendResults.Enqueue(r);
+    }
+
+    private static ChatChannel ChannelOf(ChatTarget target) => target switch
+    {
+        ChatTarget.SayTarget     => ChatChannel.Say,
+        ChatTarget.WorldTarget   => ChatChannel.World,
+        ChatTarget.PartyTarget   => ChatChannel.Party,
+        ChatTarget.GuildTarget   => ChatChannel.Guild,
+        ChatTarget.WhisperTarget => ChatChannel.Whisper,
+        _                        => ChatChannel.Unknown,
+    };
 }

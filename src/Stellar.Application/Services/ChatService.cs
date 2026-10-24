@@ -103,6 +103,7 @@ internal sealed partial class ChatService : IChat
         if (_probe is null)
         {
             _log.Info("[Chat] send failed: probe not attached");
+            ReportNotSent(target);
             return;
         }
         try
@@ -110,11 +111,13 @@ internal sealed partial class ChatService : IChat
             if (!_probe.TrySend(target, text, out var reason))
             {
                 _log.Info($"[Chat] send failed: {reason ?? "(no reason given)"}");
+                ReportNotSent(target);
             }
         }
         catch (Exception ex)
         {
             _log.Warning($"[Chat] send threw: {ex.GetType().Name}: {ex.Message}");
+            ReportNotSent(target);
         }
     }
 
@@ -123,6 +126,7 @@ internal sealed partial class ChatService : IChat
         if (_probe is null)
         {
             _log.Info("[Chat] sticker send failed: probe not attached");
+            ReportNotSent(target);
             return;
         }
         try
@@ -130,17 +134,20 @@ internal sealed partial class ChatService : IChat
             if (!_probe.TrySendSticker(target, stickerConfigId, out var reason))
             {
                 _log.Info($"[Chat] sticker send failed: {reason ?? "(no reason given)"}");
+                ReportNotSent(target);
             }
         }
         catch (Exception ex)
         {
             _log.Warning($"[Chat] sticker send threw: {ex.GetType().Name}: {ex.Message}");
+            ReportNotSent(target);
         }
     }
 
     // Cadence: called once per Game.Update postfix on the main thread. Drains wire queue, updates ring, fires MessageReceived.
     public void Drain()
     {
+        _mainThreadId = Environment.CurrentManagedThreadId;   // learned here: Drain only ever runs on the main thread
         while (_wireQueue.TryDequeue(out var queued))
         {
             var msg = ResolveWhisperPeer(queued);

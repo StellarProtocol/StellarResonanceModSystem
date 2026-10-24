@@ -217,6 +217,55 @@ public sealed class ChatServiceTests
         Assert.Contains(log.WarningLines, l => l.Contains("send threw"));
     }
 
+    // -------- Local send failure (ErrorNotSent) --------
+
+    [Fact]
+    public void Send_RefusedOnMainThread_RaisesNotSentBeforeReturning()
+    {
+        var (svc, probe) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        svc.Drain();   // learns the main thread (this test thread)
+        probe.NextTrySendResult = false;
+
+        svc.Send(ChatTarget.Whisper(42), "hi");
+
+        var r = Assert.Single(got);
+        Assert.False(r.Ok);
+        Assert.Equal(ChatSendResult.ErrorNotSent, r.ErrorCode);
+        Assert.Equal(ChatChannel.Whisper, r.Channel);
+        Assert.True(r.ViaFramework);
+    }
+
+    [Fact]
+    public void Send_RefusedBeforeFirstDrain_QueuesNotSentForDrain()
+    {
+        var (svc, probe) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        probe.TrySendShouldThrow = true;
+
+        svc.SendSticker(ChatTarget.World, 7);
+        Assert.Empty(got);
+        svc.Drain();
+
+        Assert.Equal(ChatSendResult.ErrorNotSent, Assert.Single(got).ErrorCode);
+    }
+
+    [Fact]
+    public void Send_Dispatched_RaisesNothing()
+    {
+        var (svc, _) = NewService();
+        var got = new List<ChatSendResult>();
+        svc.SendResult += got.Add;
+        svc.Drain();
+
+        svc.Send(ChatTarget.Party, "ok");
+        svc.Drain();
+
+        Assert.Empty(got);
+    }
+
     // -------- Helpers --------
 
     private static (ChatService svc, StubProbe probe) NewService()
