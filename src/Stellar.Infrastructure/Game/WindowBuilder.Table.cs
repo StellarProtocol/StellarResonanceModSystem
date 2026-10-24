@@ -50,15 +50,15 @@ internal sealed partial class WindowBuilder
         // cell inside the EventSystem's own drag threshold) — ClickSuppressed swallows it so a drag never "clicks".
         WireSelectableClick(btn, sel, go.GetComponent<RectTransform>());
 
-        // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h); CSF sizes the row
-        // height to content (same combo as BuildTile).
+        // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h). The VLG reports the content's
+        // preferred height up the chain; the PARENT layout group sizes the row from it (see the CSF note below).
         var vlg = go.AddComponent<VerticalLayoutGroup>();
         // Bare: no inset at all, so the click target is exactly the child's rect and wrapping changes no size.
         vlg.padding = sel.Bare ? new RectOffset(0, 0, 0, 0) : new RectOffset(6, 6, 4, 4); vlg.spacing = sel.Bare ? 0f : 2f;
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
         vlg.childAlignment = TextAnchor.UpperLeft;
-        var csf = go.AddComponent<ContentSizeFitter>(); csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        FitHeightUnlessParentDoes(go, parent);   // vertical CSF only when no parent group owns the height
         BuildElement(sel.Child, go.transform, token);
 
         // Optional "active tab" underline bar (SelectedBar) — null when not opted in; shown only while selected,
@@ -78,6 +78,30 @@ internal sealed partial class WindowBuilder
         token.Selectables.Add(binding);
         token.ReskinActions.Add(() => { if (!sel.Bare) { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); } binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
+    }
+
+    // A vertical ContentSizeFitter ONLY when nothing above already owns the row's height. Inside a framework
+    // container (Row/Column/Cell/List slot/variable-list VSlot/Bubble/Selectable host — all childControlHeight, or a
+    // Grid) the parent IS the height authority, and a CSF too gives the height TWO controllers that never agree:
+    // uGUI then re-marks the enclosing layout root and re-dirties the row's graphics on EVERY frame. That was the
+    // ChatTools-at-rest canvasRebuild cost (5.7-8.4 ms/frame, scaling with visible rows: each VSlot layout-rebuilt and
+    // its Selectable/Bubble/avatar graphics re-dirtied per frame; the title-bar ⚙ Selectable did the same to the
+    // window root) — the anti-pattern BuildBubble already dropped its CSF for. A Selectable with no height-controlling
+    // parent keeps the CSF, so it still sizes to its content exactly as before.
+    private static void FitHeightUnlessParentDoes(GameObject go, Transform parent)
+    {
+        if (ParentControlsHeight(parent)) return;
+        go.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+    }
+
+    // True when `parent` carries a layout group that sets its children's heights (an H/V group with childControlHeight,
+    // or a Grid, which sizes every cell) — then a child must NOT also carry a ContentSizeFitter (see BuildSelectable).
+    // Concrete GetComponent types (not the abstract HorizontalOrVerticalLayoutGroup) for IL2CPP interop safety.
+    private static bool ParentControlsHeight(Transform parent)
+    {
+        if (parent.GetComponent<VerticalLayoutGroup>() is { } v) return v.childControlHeight;
+        if (parent.GetComponent<HorizontalLayoutGroup>() is { } h) return h.childControlHeight;
+        return parent.GetComponent<GridLayoutGroup>() != null;
     }
 
     // A ~3 px full-width accent underline overlaid on the row's BOTTOM edge for SelectableElement.SelectedBar (an
