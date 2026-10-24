@@ -289,6 +289,15 @@ public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bo
     /// context menu. A right-click never fires <see cref="OnClick"/>, and the left-click path is unchanged. Init
     /// property, NOT a ctor param, so the record's primary constructor stays binary-compatible.</summary>
     public Action? OnRightClick { get; init; }
+
+    /// <summary>Opt in to a click target with NO visuals of its own: no background tint (rest, hover and selected all
+    /// stay fully transparent), no padding, and the element HUGS its child instead of filling the row — so wrapping
+    /// a text in it changes neither the layout nor the look, and only the child's own rect is clickable. Click,
+    /// <see cref="OnHover"/>, <see cref="OnRightClick"/>, FrontWindowBlocks and the drag-reorder click swallow work as
+    /// usual; <see cref="SelectedBar"/> is ignored. Use for a link-styled label whose hover look the plugin draws
+    /// itself (e.g. a clickable name). Default <c>false</c> = the normal tinted, padded row. Init property, NOT a ctor
+    /// param (binary-compatible).</summary>
+    public bool Bare { get; init; }
 }
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint

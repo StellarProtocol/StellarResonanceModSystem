@@ -37,9 +37,10 @@ internal sealed partial class WindowBuilder
     private void BuildSelectable(SelectableElement sel, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("Selectable", parent);
-        var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = 1f;   // fill the column width
+        var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = sel.Bare ? 0f : 1f;   // fill the column width (Bare: hug the child)
         var bg = go.AddComponent<Image>();
-        if (_assets.SwatchBg != null) { bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; }
+        // Bare: no sprite — a sliced chip reports its border as a minimum layout size, which could pad a tiny child.
+        if (_assets.SwatchBg != null && !sel.Bare) { bg.sprite = _assets.SwatchBg; bg.type = Image.Type.Sliced; }
         bg.raycastTarget = true;
         var btn = go.AddComponent<Button>(); btn.targetGraphic = bg; btn.transition = Selectable.Transition.None;
         DisableKeyboardNav(btn);
@@ -53,7 +54,8 @@ internal sealed partial class WindowBuilder
         // Child host: a VLG with row padding so the tint has breathing room (4 v / 6 h); CSF sizes the row
         // height to content (same combo as BuildTile).
         var vlg = go.AddComponent<VerticalLayoutGroup>();
-        vlg.padding = new RectOffset(6, 6, 4, 4); vlg.spacing = 2f;
+        // Bare: no inset at all, so the click target is exactly the child's rect and wrapping changes no size.
+        vlg.padding = sel.Bare ? new RectOffset(0, 0, 0, 0) : new RectOffset(6, 6, 4, 4); vlg.spacing = sel.Bare ? 0f : 2f;
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
         vlg.childAlignment = TextAnchor.UpperLeft;
@@ -62,18 +64,20 @@ internal sealed partial class WindowBuilder
 
         // Optional "active tab" underline bar (SelectedBar) — null when not opted in; shown only while selected,
         // driven by the binding below.
-        var bar = sel.SelectedBar ? AddSelectedBar(go, token) : null;
+        var bar = sel.SelectedBar && !sel.Bare ? AddSelectedBar(go, token) : null;
 
         // 3-state re-tint via a diffing binding (no-change poll writes nothing). Hover is ticker-driven (null
         // in sandbox → rest/selected only); selected is polled; reskin recomputes the accent-derived tints.
+        // Bare (SelectableElement.Bare): every state paints clear — the Image stays only as the (alpha-0) raycast target.
         var binding = new SelectableBinding { Bg = bg, Bar = bar, SelectedFn = sel.Selected, Rest = SelRest(), Hover = SelHover(), On = SelOn() };
+        if (sel.Bare) binding.Rest = binding.Hover = binding.On = Color.clear;
         var onHover = sel.OnHover;
         _registerHover?.Invoke(go.GetComponent<RectTransform>(), on => { binding.HoverState = on; binding.ForceRepaint(); onHover?.Invoke(on); });
         // Right-click: the ticker's RightClicks hook (right-button-down, FrontWindowBlocks-gated, the CombatMeter row
         // menu path). uGUI's Button only reacts to the LEFT button, so a right-click can never also fire OnClick.
         if (sel.OnRightClick is { } rc) RegisterRightClick?.Invoke(go.GetComponent<RectTransform>(), rc);
         token.Selectables.Add(binding);
-        token.ReskinActions.Add(() => { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); binding.ForceRepaint(); });
+        token.ReskinActions.Add(() => { if (!sel.Bare) { binding.Rest = SelRest(); binding.Hover = SelHover(); binding.On = SelOn(); } binding.ForceRepaint(); });
         binding.ForceRepaint();   // initial paint (also covers the sandbox static-render path)
     }
 
