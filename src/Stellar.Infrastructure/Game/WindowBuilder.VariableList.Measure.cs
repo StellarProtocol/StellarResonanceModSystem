@@ -24,6 +24,8 @@ internal sealed partial class WindowBuilder
         // neighbour that has already been laid out, so its re-measure is cheap — exempt from the cap so a resize or a
         // ring front-drop re-latches the whole window as fast as before. ResetState (new tab) clears it.
         private bool[] _seen = System.Array.Empty<bool>();
+        // per DATA INDEX: failed stable-confirms of the current measuring run (GiveUpConfirm caps it; reset on latch/leave).
+        private byte[] _tries = System.Array.Empty<byte>();
 
         // Decide, per pool slot, whether its row is shown this Reposition. Latched rows always are (they are on-screen
         // at their true offset — hiding one would open a visible hole). Unlatched rows are admitted under the budget:
@@ -106,17 +108,37 @@ internal sealed partial class WindowBuilder
                 if (_measured[l]) { if (VerifyLatchedRow(l, rt) || RemeasureRevisedRow(l, rt)) changed = true; continue; }
 
                 try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
+                UiPerfStats.Count(UiCounter.RowMeasure);   // [Hitch] ui:rowMeasure — 0 at rest once every shown row latched
                 var h = LayoutUtility.GetPreferredHeight(rt);
                 if (h < 1f) continue;   // not laid out yet — leave for next apply
-                if (_prov[l] && Mathf.Abs(h - _provH[l]) <= StableEps)   // stable across two reads → commit
-                {
-                    _h[l] = h; _measured[l] = true; _seen[l] = true; _sum += h; _n++; changed = true; _prov[l] = false; if (RowId != null) _hId[l] = RowId(l);
-                    _remeasure[l] = false; if (RowRevision != null) _hRev[l] = RowRevision(l);   // latched at the CURRENT revision
-                }
+                if (_prov[l] && Mathf.Abs(h - _provH[l]) <= StableEps) { Latch(l, h); changed = true; }   // stable across two reads → commit
+                else if (GiveUpConfirm(l)) { Latch(l, Mathf.Max(h, _provH[l])); changed = true; }
                 else { _provH[l] = h; _prov[l] = true; }   // first/unstable reading — provisional only, no offset churn
             }
             if (changed) _offDirty = true;
             return changed;
+        }
+
+        // A row whose consecutive readings never agree within StableEps (sub-pixel layout wobble that straddles the
+        // threshold, a bubble whose wrap flips between two states) used to stay unlatched FOREVER — a forced slot rebuild
+        // on every apply, for as long as it was shown. After MaxFailedConfirms failed confirms (~0.4 s) give up waiting
+        // and latch the LARGER of the last two readings: a too-tall row leaves a small gap, a too-short one would clip.
+        // The first reading never counts (nothing to compare to), so the normal pre-width-solve tall reading → settled
+        // reading → confirm sequence never comes near the cap.
+        private const int MaxFailedConfirms = 3;
+        private bool GiveUpConfirm(int l)
+        {
+            if (!_prov[l] || ++_tries[l] < MaxFailedConfirms) return false;
+            UiPerfStats.Count(UiCounter.RowForceLatch);
+            return true;
+        }
+
+        // Commit index l's height (a confirmed or a given-up reading) as its final latched height.
+        private void Latch(int l, float h)
+        {
+            _h[l] = h; _measured[l] = true; _seen[l] = true; _sum += h; _n++; _prov[l] = false; _tries[l] = 0;
+            if (RowId != null) _hId[l] = RowId(l);
+            _remeasure[l] = false; if (RowRevision != null) _hRev[l] = RowRevision(l);   // latched at the CURRENT revision
         }
 
         // Identity re-check for a LATCHED row in RowId mode (extracted from MeasureActiveSlots for the method-length
@@ -165,13 +187,16 @@ internal sealed partial class WindowBuilder
         {
             if (RowRevision == null) return false;
             var rev = RowRevision(l);
-            if (rev != _hRev[l]) { _hRev[l] = rev; _remeasure[l] = true; _prov[l] = false; return false; }
+            if (rev != _hRev[l]) { _hRev[l] = rev; _remeasure[l] = true; _prov[l] = false; _tries[l] = 0; return false; }
             if (!_remeasure[l]) return false;
             try { LayoutRebuilder.ForceRebuildLayoutImmediate(rt); } catch { }
+            UiPerfStats.Count(UiCounter.RowMeasure);
             var h = LayoutUtility.GetPreferredHeight(rt);
             if (h < 1f) return false;   // not laid out yet — stay armed
-            if (!_prov[l] || Mathf.Abs(h - _provH[l]) > StableEps) { _provH[l] = h; _prov[l] = true; return false; }
-            _remeasure[l] = false; _prov[l] = false;
+            // Same try cap as a first latch (GiveUpConfirm): a revised row that never settles commits its larger reading.
+            if (_prov[l] && Mathf.Abs(h - _provH[l]) > StableEps && GiveUpConfirm(l)) h = Mathf.Max(h, _provH[l]);
+            else if (!_prov[l] || Mathf.Abs(h - _provH[l]) > StableEps) { _provH[l] = h; _prov[l] = true; return false; }
+            _remeasure[l] = false; _prov[l] = false; _tries[l] = 0;
             if (Mathf.Abs(h - _h[l]) <= StableEps) return false;   // same height after all → nothing to re-flow
             _sum += h - _h[l]; _h[l] = h;
             return true;

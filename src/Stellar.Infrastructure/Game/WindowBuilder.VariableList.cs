@@ -331,7 +331,7 @@ internal sealed partial class WindowBuilder
                 // place under a stationary slot (the rolling-buffer index remap, header limit #3) — see commit msg.
                 var bound = show ? logical : -1;
                 var leaving = _slotLogical[k];
-                if (leaving >= 0 && leaving != bound && leaving < _prov.Length) { _prov[leaving] = false; _provH[leaving] = 0f; }
+                if (leaving >= 0 && leaving != bound && leaving < _prov.Length) { _prov[leaving] = false; _provH[leaving] = 0f; _tries[leaving] = 0; }
                 if (show)
                 {
                     // Size to the row height in BOTH cases (real height for a latched row, estimate for an unmeasured
@@ -376,6 +376,7 @@ internal sealed partial class WindowBuilder
             var sn = new bool[cap]; Array.Copy(_seen, sn, _seen.Length); _seen = sn;   // first-build cap exemption (.Measure.cs)
             var hr = new long[cap]; Array.Copy(_hRev, hr, _hRev.Length); _hRev = hr;   // RowRevision stamps (.Measure.cs)
             var rm = new bool[cap]; Array.Copy(_remeasure, rm, _remeasure.Length); _remeasure = rm;
+            var tr = new byte[cap]; Array.Copy(_tries, tr, _tries.Length); _tries = tr;   // failed-confirm counts (.Measure.cs)
             _h = h; _measured = m; _provH = ph; _prov = p; _hId = hid; _verify = vf; _off = new float[cap + 1];
             _offDirty = true;
         }
@@ -396,6 +397,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_prov, 0, _prov.Length);   // rows re-run the stable-confirm from scratch at the new width
             Array.Clear(_verify, 0, _verify.Length);   // no latch survives → any pending identity re-verify is moot (_hId re-stamped on re-latch)
             Array.Clear(_remeasure, 0, _remeasure.Length);   // likewise any in-place re-measure (_hRev re-stamped on re-latch)
+            Array.Clear(_tries, 0, _tries.Length);   // fresh stable-confirm → fresh try budget
             _estSeed = Estimate();   // carry the real average across the clear (see comment above) — MUST precede the zeroing
             _sum = 0f; _n = 0; _offDirty = true;
         }
@@ -410,6 +412,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_prov, 0, _prov.Length);
             Array.Clear(_hId, 0, _hId.Length); Array.Clear(_verify, 0, _verify.Length);   // genuinely new content → forget identities + pending re-verifies
             Array.Clear(_remeasure, 0, _remeasure.Length);
+            Array.Clear(_tries, 0, _tries.Length);
             Array.Clear(_seen, 0, _seen.Length);   // new content → no row is exempt from the first-build cap
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
