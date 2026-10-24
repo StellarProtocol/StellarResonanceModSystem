@@ -12,7 +12,8 @@ namespace Stellar.Infrastructure.Unity;
 //    here, so BeginPointerDrag returns before the window-drag / resize / slot paths — the window can never move.
 //    The enclosing ScrollRect's axes are switched off for the whole press so the EventSystem's own drag (which
 //    bubbles from the item's Button to the ScrollRect) cannot scroll the grid under the cursor.
-//  • moved past ReorderThresholdPx → DRAGGING: the source dims, a ghost copy follows the cursor, an accent bar marks
+//  • moved past ReorderThresholdPx → DRAGGING: the source dims, a same-size ghost copy follows the cursor holding the
+//    press-time grab offset (the grabbed point stays under the pointer), an accent bar marks
 //    the insertion point. The real grid is NOT reflowed mid-drag (stable — the consumer reorders on drop).
 //  • release → drop: insertion recomputed at the release point; OnReorder(from, to) with remove-then-insert `to`.
 //    Released while still PENDING = an ordinary click (the Button's onClick fires as usual).
@@ -37,6 +38,8 @@ public sealed partial class WindowInteractionTicker
     private bool _rlScrollH, _rlScrollV;           // the ScrollRect's axes before the press locked them
     private GameObject? _rlGhost;
     private RectTransform? _rlGhostRt;
+    private RectTransform? _rlGhostParent;         // the ghost's parent (nearest Canvas) — the grab offset's space
+    private Vector2 _rlGrab;                       // ghost pivot − press point, in _rlGhostParent local units
     private RectTransform? _rlBarRt;
     private CanvasGroup? _rlSrcGroup;
     private float _rlSrcAlpha = 1f;
@@ -97,7 +100,7 @@ public sealed partial class WindowInteractionTicker
             if ((mp - _rlPress).sqrMagnitude < ReorderThresholdPx * ReorderThresholdPx) return;
             StartReorderDrag(reg);
         }
-        if (_rlGhostRt != null) _rlGhostRt.position = mp;
+        PlaceGhost(mp);
         PlaceInsertionBar(reg, mp);
     }
 
@@ -120,9 +123,12 @@ public sealed partial class WindowInteractionTicker
         _rlGhost.name = "ReorderGhost";
         _rlGhostRt = _rlGhost.GetComponent<RectTransform>();
         IgnoreLayout(_rlGhost);
-        _rlGhostRt.anchorMin = _rlGhostRt.anchorMax = _rlGhostRt.pivot = new Vector2(0.5f, 0.5f);
-        _rlGhostRt.sizeDelta = src.rect.size;
-        _rlGhostRt.position = Input.mousePosition;
+        // A fitter on the cell's root would re-size the clone from its content, overriding the explicit sizeDelta.
+        var csf = _rlGhost.GetComponent<ContentSizeFitter>(); if (csf != null) csf.enabled = false;
+        var arf = _rlGhost.GetComponent<AspectRatioFitter>(); if (arf != null) arf.enabled = false;
+        _rlGhostParent = parent as RectTransform;
+        MatchGhostToSource(src);
+        PlaceGhost(Input.mousePosition);   // same frame as the Instantiate → never rendered at the clone's old spot
         var gcg = _rlGhost.GetComponent<CanvasGroup>();
         if (gcg == null) gcg = _rlGhost.AddComponent<CanvasGroup>();
         gcg.alpha = 0.75f; gcg.blocksRaycasts = false; gcg.interactable = false;
@@ -149,6 +155,46 @@ public sealed partial class WindowInteractionTicker
         var le = go.GetComponent<LayoutElement>();
         if (le == null) le = go.AddComponent<LayoutElement>();
         le.ignoreLayout = true;
+    }
+
+    // Give the ghost the source cell's exact on-screen rect and record the grab offset. Everything is measured in the
+    // ghost PARENT's local space (the nearest Canvas): the cell usually sits under a scaled window/content chain, so
+    // copying src.rect.size (cell-local units) drew the ghost at the wrong size, and pinning the ghost's centre to the
+    // cursor made it jump away from where it was grabbed.
+    private void MatchGhostToSource(RectTransform src)
+    {
+        var g = _rlGhostRt;
+        if (g == null) return;
+        g.localScale = Vector3.one;
+        g.localRotation = Quaternion.identity;
+        g.anchorMin = g.anchorMax = new Vector2(0.5f, 0.5f);   // fixed anchors: size = sizeDelta, never parent-driven
+        g.pivot = src.pivot;                                    // so the pivot maps to the same point of the cell
+        var parent = g.parent;
+        var corners = new Vector3[4];
+        src.GetWorldCorners(corners);
+        Vector2 bl = parent.InverseTransformPoint(corners[0]), tr = parent.InverseTransformPoint(corners[2]);
+        g.sizeDelta = new Vector2(Mathf.Abs(tr.x - bl.x), Mathf.Abs(tr.y - bl.y));
+        // Offset from the press point (not the threshold-crossing point) to the cell's pivot. The cell hasn't moved
+        // since the press — the scroll is locked and the grid isn't reflowed mid-drag.
+        Vector2 pivotLocal = parent.InverseTransformPoint(src.position);
+        _rlGrab = pivotLocal - ToGhostParentLocal(_rlPress);
+    }
+
+    // Keep the press-time grab point under the cursor: ghost pivot = pointer + grab offset (parent-local units).
+    private void PlaceGhost(Vector2 mp)
+    {
+        if (_rlGhostRt == null) return;
+        var p = ToGhostParentLocal(mp) + _rlGrab;
+        _rlGhostRt.localPosition = new Vector3(p.x, p.y, 0f);
+    }
+
+    // Screen px → the ghost parent's local space. Null camera, like every hit-test here (overlay canvases).
+    private Vector2 ToGhostParentLocal(Vector2 screen)
+    {
+        if (_rlGhostParent != null
+            && RectTransformUtility.ScreenPointToLocalPointInRectangle(_rlGhostParent, screen, null, out var lp)) return lp;
+        var t = _rlGhostRt != null ? _rlGhostRt.parent : null;
+        return t != null ? (Vector2)t.InverseTransformPoint(new Vector3(screen.x, screen.y, 0f)) : screen;
     }
 
     // Insertion slot (0..n, ORIGINAL indexing) under the pointer, or -1 = outside the list (drop cancels). The item
@@ -227,7 +273,7 @@ public sealed partial class WindowInteractionTicker
         if (_rlGhost != null) Object.Destroy(_rlGhost);
         if (_rlBarRt != null) Object.Destroy(_rlBarRt.gameObject);
         if (_rlSrcGroup != null) _rlSrcGroup.alpha = _rlSrcAlpha;
-        _rlGhost = null; _rlGhostRt = null; _rlBarRt = null; _rlSrcGroup = null;
+        _rlGhost = null; _rlGhostRt = null; _rlGhostParent = null; _rlBarRt = null; _rlSrcGroup = null;
         UnlockScroll();
         _rl = null; _rlFrom = -1; _rlDragging = false; _rlZone = null;
     }
