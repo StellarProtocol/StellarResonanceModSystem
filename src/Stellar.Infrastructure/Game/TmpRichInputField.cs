@@ -79,6 +79,9 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         // No select-all on focus: the composer's draft (often a just-appended emoji) would otherwise be replaced
         // by the next keystroke; a click places the caret, AutoFocus/external sets leave it at the end.
         f.onFocusSelectAll = false;
+        // TMP's default caretWidth of 1 scales by the font size (≈0.05 × line height), so at our 13 px it is a
+        // sub-pixel quad that rasterizes to nothing: focused, typing works, but no caret shows. 2 draws ~1.5 px.
+        f.caretWidth = 2;
         // Same line-type split as the legacy field (UGuiTextInput.ConfigureLineMode): MultiLineNewline never
         // deactivates on Enter (the '\n' is stripped + submitted in onValueChanged); SingleLine finishes + submits.
         // The setter also sets the text's word wrapping (SingleLine = no wrap → TMP scrolls the viewport sideways).
