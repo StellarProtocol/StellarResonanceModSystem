@@ -288,7 +288,7 @@ internal sealed partial class WindowBuilder
         var submit = inp.Submit;
         var onChange = inp.OnChange;
         var field = new UGuiTextInput(onSubmit: s => submit(s), onChange: onChange != null ? s => onChange(s) : (System.Action<string>?)null);
-        var go = field.Build(parent, inp.SingleLine);
+        var go = field.Build(parent, inp.SingleLine, richEmoji: inp.RichEmoji);   // RichEmoji: TMP field, else legacy
         var le = go.GetComponent<LayoutElement>() ?? go.AddComponent<LayoutElement>();
         le.preferredWidth = inp.Width; le.flexibleWidth = 0f;
         field.SetFont(_assets.MenuFont);
@@ -299,7 +299,15 @@ internal sealed partial class WindowBuilder
         field.ApplyStyle(_assets.Capsule, new Color(0.05f, 0.07f, 0.10f, 0.95f), new Color(0.92f, 0.94f, 0.97f, 1f), 8f);
         _registerField?.Invoke(field);
         token.Fields.Add(field);
-        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get() });
+        // AutoFocus opt-in: remember the FIRST such field so the framework can focus it on a user-initiated show
+        // (WindowService → IWindowAutoFocus.TryFocusAutoField). ??= → first one built wins per window.
+        if (inp.AutoFocus) token.AutoFocusField ??= field;
+        var focusReq = inp.FocusRequest;   // on-demand focus (null = none); first value is the baseline, not a request
+        var ph = inp.Placeholder?.Invoke() ?? "";   // empty-field hint (null Func = none), re-polled by the binding
+        if (ph.Length > 0) field.SetPlaceholder(ph);
+        var locked = inp.Locked?.Invoke() ?? false;   // read-only + dimmed (null Func = never), after the styling it dims
+        if (locked) field.SetLocked(true);
+        token.FieldSyncs.Add(new FieldBinding { Field = field, Get = inp.Get, Last = inp.Get(), FocusReq = focusReq, LastFocus = focusReq?.Invoke() ?? 0, PlaceholderFn = inp.Placeholder, LastPlaceholder = ph, LockedFn = inp.Locked, LastLocked = locked, InsertReq = inp.InsertRequest, LastInsert = inp.InsertRequest?.Invoke().Seq ?? 0 });
     }
 
     // TextArea: the SAME UGuiTextInput in MULTI-LINE mode — a fixed-height box (ta.Lines rows + inner padding) where
@@ -334,9 +342,16 @@ internal sealed partial class WindowBuilder
     private void BuildScroll(ScrollElement sc, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("Scroll", parent);
-        // flexibleHeight=1 so the scroll absorbs slack height in a fixed-size (Resizable) window; in a
-        // content-height-fit window there's no slack, so it stays at preferredHeight (no behaviour change).
-        var le = go.AddComponent<LayoutElement>(); le.preferredHeight = sc.Height; le.flexibleWidth = 1f; le.flexibleHeight = 1f;
+        var le = go.AddComponent<LayoutElement>(); le.flexibleWidth = 1f;
+        if (sc.FixedHeight)
+            // Pin to Height (min==preferred, flexibleHeight 0) so this scroll does NOT absorb slack in a resizable
+            // window — all leftover vertical space stays with its siblings (e.g. the sticker grid keeps its fixed
+            // size while the chat log soaks up the rest). Same pin pattern as WindowBuilder.cs's fixed-height box.
+            le.minHeight = le.preferredHeight = sc.Height; // flexibleHeight defaults to 0
+        else
+            // flexibleHeight=1 so the scroll absorbs slack height in a fixed-size (Resizable) window; in a
+            // content-height-fit window there's no slack, so it stays at preferredHeight (no behaviour change).
+            { le.preferredHeight = sc.Height; le.flexibleHeight = 1f; }
         var sr = go.AddComponent<ScrollRect>(); sr.horizontal = false; sr.vertical = true; sr.movementType = ScrollRect.MovementType.Clamped;
 
         var viewport = UGuiPrimitives.NewChild("Viewport", go.transform); UGuiPrimitives.Stretch(viewport);

@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// IL2CPP-free <see cref="WindowBuilder"/> (shared with the UI sandbox); this class wires it to the canvas.
 /// Mirrors <see cref="HudRenderer"/>; the HUD path is untouched.
 /// </summary>
-internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups
+internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IWindowCanvasMetrics, IWindowParking, IWindowPopups, IWindowAutoFocus
 {
     // Above HUDs (32750), below the input blocker (32760) — windows draw over HUDs, blocker over all.
     private const int WindowSortingOrder = 32755;
@@ -120,20 +120,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         {
             var token = _builder.Build(reg, _canvasRoot);
             _tokens.Add(token);   // track for in-place re-skin on theme change
-            // Per-window override sorting (WindowSpec.OverrideSortingOrder): lift this window onto its OWN nested
-            // Canvas at an absolute sortingOrder, independent of the shared-canvas sibling z — so it can draw ABOVE
-            // sibling-ordered overlays on higher canvases (the layout-edit chrome at 32758) while staying below the
-            // top input blocker (32760). overrideSorting opts THIS child out of sibling-order z only; every other
-            // window still sorts by ReorderWindows' sibling index, so their z-order is untouched. The nested Canvas
-            // needs its own GraphicRaycaster or its widgets become un-hittable (the parent raycaster skips a child
-            // canvas) — the toolbar's buttons + whole-frame drag rely on it, and IsPointerOver* read its order.
-            if (reg.Spec.OverrideSortingOrder is { } so && token.Root != null)
-            {
-                var oc = token.Root.AddComponent<Canvas>();
-                oc.overrideSorting = true;
-                oc.sortingOrder = so;
-                token.Root.AddComponent<GraphicRaycaster>();
-            }
+            AttachNestedCanvas(token, reg.Spec);   // OverrideSortingOrder / IsolateCanvas → own Canvas (+ raycaster)
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
             // The dismiss runs OnClose — the same path the ✕ uses — so IsShown stays in sync.
             if (reg.Spec.DismissOnOutsideClick && reg.OnClose is { } onClose && _ticker != null && token.Rect != null)
@@ -150,10 +137,38 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             token.ZPopup = reg.Spec.DismissOnOutsideClick;
             token.ZSeq = _zseq++;
             ReorderWindows();
+            ApplyContentMinWidth(token, force: true);   // before ApplySavedRect, so the restore clamps to it (.ContentMinWidth.cs)
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
             return token;
         }
         catch (Exception ex) { _log.Warning($"[Window] mount '{reg.Spec.Id}' threw: {ex.Message}"); return null; }
+    }
+
+    // Per-window nested Canvas — two independent reasons to give ONE window its own Canvas:
+    //   • OverrideSortingOrder: lift it onto an ABSOLUTE sortingOrder (overrideSorting=true), independent of the
+    //     shared-canvas sibling z — so it can draw ABOVE sibling-ordered overlays on higher canvases (the layout-edit
+    //     chrome at 32758) while staying below the top input blocker (32760). overrideSorting opts THIS child out of
+    //     sibling-order z only; IsPointerOver* read its order.
+    //   • IsolateCanvas: make it a BATCHING BOUNDARY only (overrideSorting LEFT false). A Canvas is where uGUI rebuilds
+    //     its vertex batch, so a per-frame change inside this window (a ScrollRect moving its content) rebuilds ONLY
+    //     this window's batch instead of dirtying + rebatching the whole shared overlay (and every graphic on it) each
+    //     render frame. With overrideSorting=false it inherits the parent canvas's sorting and still orders by sibling
+    //     index — so ReorderWindows / BringToFront / FrontWindowBlocks (all sibling-index based) keep working
+    //     unchanged, and no other window's z is perturbed.
+    // Either way the nested Canvas needs its OWN GraphicRaycaster or its widgets become un-hittable (the parent
+    // raycaster skips a child canvas) — the override toolbar's buttons/drag AND chat's buttons/scroll rely on it.
+    private static void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
+    {
+        if (token.Root == null || (spec.OverrideSortingOrder is null && !spec.IsolateCanvas)) return;
+        var oc = token.Root.AddComponent<Canvas>();
+        if (spec.OverrideSortingOrder is { } so)
+        {
+            oc.overrideSorting = true;   // absolute order; opts out of sibling-order z (override path only)
+            oc.sortingOrder = so;
+        }
+        // IsolateCanvas-only path: overrideSorting stays at its default (false) → batching boundary that still
+        // sorts by sibling index within the shared parent canvas (z unchanged).
+        token.Root.AddComponent<GraphicRaycaster>();
     }
 
     private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
@@ -231,7 +246,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
         // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
         if (!hideAll && wasHidden) t.ResetLayout();
-        if (!hideAll) t.Apply();
+        if (hideAll) return;
+        var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
+        t.Apply(); ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        UiPerfStats.AddApply(reg.Spec.Id, perfT);
     }
 
     public void SetRect(object? token, WindowRect rect)
@@ -240,17 +258,20 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // Clamp programmatic placement on-screen the SAME way drags do (WindowInteractionTicker →
         // LayoutStorage.ClampVisible): without this, a default/saved/plugin-supplied position (e.g. CombatMeter's
         // off-screen party-focus x) could drop a window fully off-canvas and unreachable, since drags clamp but
-        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor.
-        var clamped = ClampToScreen(t, rect);
-        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
+        // SetRect did not. anchoredPosition is (X, -Y) with a top-left anchor. Size is clamped FIRST so the position
+        // clamp measures the final width (a content min-width widen can grow it — WindowRenderer.ContentMinWidth.cs).
         if (t.Resizable && rect.Width > 0f && rect.Height > 0f)
         {
             var min = Vector2.zero; var max = new Vector2(float.MaxValue, float.MaxValue);
             if (_ticker != null)
                 for (var i = 0; i < _ticker.DragResizers.Count; i++)
                     if (_ticker.DragResizers[i].Target == t.Rect) { min = _ticker.DragResizers[i].Min; max = _ticker.DragResizers[i].Max; break; }
-            t.Rect.sizeDelta = new Vector2(Mathf.Clamp(rect.Width, min.x, max.x), Mathf.Clamp(rect.Height, min.y, max.y));
+            var size = new Vector2(Mathf.Clamp(rect.Width, min.x, max.x), Mathf.Clamp(rect.Height, min.y, max.y));
+            t.Rect.sizeDelta = size;
+            rect = KeepWidenedOnScreen(new WindowRect(rect.X, rect.Y, size.x, size.y), rect.Width);
         }
+        var clamped = ClampToScreen(t, rect);
+        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
@@ -314,6 +335,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     public bool HasFocusedField(object? token) => token is WindowToken t && t.AnyFieldFocused;
 
+    // IWindowAutoFocus — focus the window's AutoFocus field (InputElement.AutoFocus) on a user-initiated show.
+    // true = done (focused, or no AutoFocus field declared); false = a field exists but its GameObject isn't
+    // active yet (window still draw-suppressed / one-frame activation gap) → WindowService retries next tick.
+    public bool TryFocusAutoField(object? token)
+    {
+        if (token is not WindowToken t) return true;      // dead/foreign token — nothing to retry
+        if (t.AutoFocusField is not { } f) return true;   // window declared no AutoFocus field — done
+        return f.TryActivateFocus();                      // false → not active in hierarchy yet, retry
+    }
+
     public void Destroy(object? token)
     {
         if (token is WindowToken t)
@@ -332,119 +363,4 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed
     }
-
-    /// <summary>Lazily create the Stellar window canvas + its GraphicRaycaster. Re-creates if a scene
-    /// change destroyed it (WindowService self-heal then re-mounts each window).</summary>
-    // Register the injected managed UnityEngine.Object subclasses with Il2CppInterop, once each, before any
-    // AddComponent of them runs. ChartGraphic overrides OnPopulateMesh (vtable virtual) — the spike confirmed
-    // native→managed dispatch works under Il2CppInterop 1.5.1; WindowInteractionTicker is a plain MonoBehaviour.
-    private void RegisterInjectedTypes()
-    {
-        if (!_tickerRegistered)
-        {
-            try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
-            _tickerRegistered = true;
-        }
-        if (!_chartRegistered)
-        {
-            try { ClassInjector.RegisterTypeInIl2Cpp<ChartGraphic>(); } catch { /* already registered */ }
-            _chartRegistered = true;
-        }
-    }
-
-    private bool EnsureCanvas()
-    {
-        if (_canvas != null) return true;
-        _tokens.Clear();   // (re)creating the canvas — any tokens from a scene-destroyed canvas are dead
-        try
-        {
-            var go = new GameObject("StellarWindowCanvas") { hideFlags = HideFlags.HideAndDontSave };
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            var canvas = go.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.pixelPerfect = true;
-            canvas.sortingOrder = WindowSortingOrder;
-            var scaler = go.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = UiRefResolution(
-                Mathf.Clamp((_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f, 0.75f, 1.5f));
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 0.5f;
-            // Interactive: ride the game's existing EventSystem; DO NOT create a second one.
-            go.AddComponent<GraphicRaycaster>();
-            RegisterInjectedTypes();
-            _ticker = go.AddComponent<WindowInteractionTicker>();
-            // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
-            _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
-            _ticker.HitchLog = _log.Info;   // per-render-frame [Hitch] attribution sink (diagnostics only)
-            if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
-            _canvas = go;
-            _canvasComp = canvas;
-            _canvasRoot = go.transform;
-            _canvasGeneration++;                   // recreate detector (Host reapply trigger)
-            _canvasCreatedFrame = Time.frameCount; // scale-ready gate: the scaler settles a frame LATER
-            _assets.EnsureBaked(_colors);
-            _hudAssets.EnsureBaked(_hudColors);                        // HUD pill/bar 9-slice sprites + shadowed HudText (HudOverlay windows)
-            _assets.OpacityProvider = () => _chrome.WindowOpacity;     // live frame-alpha tint (no rebake/flicker)
-            _assets.FontScaleProvider = () => _chrome.FontScale;        // live uGUI text scaling
-            _assets.ButtonStyleProvider = () => _chrome.ButtonStyle;    // global Button style → window buttons
-            _assets.ScrollbarStyleProvider = () => _chrome.ScrollbarStyle;
-            // Per-frame field tick (cursor/Esc) + ColorPicker SV/hue drag are driven by the ticker.
-            _builder = new WindowBuilder(_assets,
-                registerField: f => _ticker!.Fields.Add(f),
-                registerDrag: (area, pick) => _ticker!.DragAreas.Add((area, pick)),
-                registerWindowDrag: (handle, target, windowId, editOnly) => _ticker!.DragWindows.Add((handle, target, windowId, editOnly)),
-                registerHover: (cell, set) => _ticker!.Hovers.Add((cell, set)),
-                registerPulse: p => _ticker!.Pulses.Add(p));
-            WireBuilderHooks();
-            OnCanvasCreated();
-            return true;
-        }
-        catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }
-    }
-
-    // Wire the builder's sandbox-pure registration callbacks onto the live ticker. Split out of EnsureCanvas
-    // to keep it under the 50-LoC gate; runs once per canvas create (the ticker is non-null here).
-    private void WireBuilderHooks()
-    {
-        // Real-bold titles/headers in every script: install the TMP factory before any window builds
-        // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
-        TmpStyledText.Register();
-        _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
-        _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
-        _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
-        _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));
-        _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
-        _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
-        _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
-        _builder.RegisterDismissable = (root, dismiss) => _ticker!.Dismissables.Add((root, dismiss));
-        _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
-        _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
-            new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
-        _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
-        _builder.SetVoiceClickExcluded = (rt, on) =>
-        {
-            if (_ticker == null || rt == null) return;
-            if (on) { if (!_ticker.VoiceClickRects.Contains(rt)) _ticker.VoiceClickRects.Add(rt); }
-            else _ticker.VoiceClickRects.Remove(rt);
-        };
-        _builder.RegisterChartPan = (plot, get, set, total, minSpan)
-            => _ticker!.ChartPans.Add(MakeChartPan(plot, get, set, total, minSpan));
-        _builder.RegisterChartNav = new WindowBuilder.ChartNavRegistrar(reg => _ticker!.ChartNavs.Add(
-            new WindowInteractionTicker.ChartNav
-            {
-                Nav = reg.Nav, Left = reg.Left, Right = reg.Right, Body = reg.Body,
-                Get = reg.Get, Set = reg.Set, Total = reg.Total, MinSpan = reg.MinSpan,
-            }));
-    }
-
-    // Build a ChartPan entry, computing the scroll-pipeline guard ONCE (plot is live in the hierarchy here):
-    // a chart nested in a ScrollRect yields the wheel to the scroll instead of zooming (see ChartPan.cs).
-    private static WindowInteractionTicker.ChartPan MakeChartPan(
-        RectTransform plot, Func<(float, float)> get, Action<(float, float)> set, Func<float> total, Func<float> minSpan)
-        => new()
-        {
-            Plot = plot, Get = get, Set = set, Total = total, MinSpan = minSpan,
-            InsideScrollRect = plot.GetComponentInParent<UnityEngine.UI.ScrollRect>() != null,
-        };
 }

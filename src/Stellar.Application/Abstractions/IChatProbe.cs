@@ -7,5 +7,12 @@ namespace Stellar.Application.Abstractions;
 internal interface IChatProbe
 {
     bool TrySend(ChatTarget target, string text, out string? failureReason);
+    bool TrySendSticker(ChatTarget target, int stickerConfigId, out string? failureReason);
     Action<ChatMessage>? OnMessageReceived { get; set; }
+    // Server reply to a SendChitChatMsg (ours or the game's), correlated to its channel by call_id. Wire thread.
+    Action<ChatSendResult>? OnSendResult { get; set; }
+    // Logout (ChatService.ClearSession, main thread): forget per-session receive state — above all the history/live dedup,
+    // whose (sender, msgId, time) key is the SAME on both sides of a whisper, so the next character's copy of a message
+    // the previous character saw would otherwise be dropped as a duplicate.
+    void ResetSession();
 }

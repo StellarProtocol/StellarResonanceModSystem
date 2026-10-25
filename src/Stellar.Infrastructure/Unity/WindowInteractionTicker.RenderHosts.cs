@@ -38,7 +38,7 @@ public sealed partial class WindowInteractionTicker
         {
             var (img, _, _, zoom, _, _) = RenderHosts[i];
             if (img == null || zoom == null || !img.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null) || OutsideClip(img.rectTransform, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(img.rectTransform))) continue;
             try { zoom(scroll); } catch { }
             return;
@@ -67,7 +67,7 @@ public sealed partial class WindowInteractionTicker
                 // every open until the model landed. With it hidden, the dark RenderHostBg backdrop shows
                 // instead. Same guard the icon-host path (TickIconHosts) already applies.
                 var tex = fn() as Texture;
-                img.texture = tex;
+                if (img.texture != tex) img.texture = tex;   // diffed: an unchanged bind writes nothing per frame
                 if (img.enabled != (tex != null)) img.enabled = tex != null;
             }
             catch { }
@@ -148,7 +148,7 @@ public sealed partial class WindowInteractionTicker
         {
             var (img, _, drag, _, pan, _) = RenderHosts[i];
             if (img == null || (drag == null && pan == null) || !img.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null)) continue;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(img.rectTransform, mp, null) || OutsideClip(img.rectTransform, mp)) continue;
             if (FrontWindowBlocks(mp, FindWindowRoot(img.rectTransform))) continue;
             return i;
         }

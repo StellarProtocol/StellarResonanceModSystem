@@ -63,6 +63,8 @@
     <Reference Include="UnityEngine.UIModule"><HintPath>$(GameInterop)/UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.UI"><HintPath>$(GameInterop)/UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Unity.TextMeshPro"><HintPath>$(GameInterop)/Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <!-- TMP_FontAsset.faceInfo (UnityEngine.TextCore.FaceInfo): line metrics for centring the rich input's line (TmpRichInputField). -->
+    <Reference Include="UnityEngine.TextCoreFontEngineModule"><HintPath>$(GameInterop)/UnityEngine.TextCoreFontEngineModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameInterop)/UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(GameInterop)/UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(GameInterop)/UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>

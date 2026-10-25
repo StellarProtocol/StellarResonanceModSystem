@@ -29,11 +29,11 @@ REFASMER="${REFASMER:-$DOTNET_ROOT/tools/refasmer}"
 [ -x "$REFASMER" ] || { echo "refasmer not found at $REFASMER — dotnet tool install -g JetBrains.Refasmer.CliTool"; exit 1; }
 [ -d "$INTEROP" ] || { echo "interop dir not found: $INTEROP"; exit 1; }
 
-# Union of every interop assembly referenced by Infrastructure/Host (16) — a
+# Union of every interop assembly referenced by Infrastructure/Host (17) — a
 # superset of what the sample plugins reference, so plugin CI reuses these.
 INTEROP_DLLS="Il2Cppmscorlib Il2CppSystem UnityEngine UnityEngine.CoreModule \
   UnityEngine.IMGUIModule UnityEngine.InputLegacyModule UnityEngine.TextRenderingModule \
-  UnityEngine.ImageConversionModule UnityEngine.UI UnityEngine.UIModule Unity.TextMeshPro"
+  UnityEngine.TextCoreFontEngineModule UnityEngine.ImageConversionModule UnityEngine.UI UnityEngine.UIModule Unity.TextMeshPro"
 CORE_DLLS="Il2CppInterop.Runtime Il2CppInterop.Common BepInEx.Core BepInEx.Unity.IL2CPP 0Harmony"
 
 rm -rf "$OUT"; mkdir -p "$OUT"

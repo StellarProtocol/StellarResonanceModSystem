@@ -111,6 +111,64 @@ public sealed record InputElement(Func<string> Get, Action<string> Submit, float
     /// param) so the record constructor stays source AND binary compatible with already-compiled plugins
     /// — see PerPluginServices-Decoration.md §3 / WindowBuilder-Patterns.md "Binary compatibility rules".</summary>
     public bool SingleLine { get; init; }
+
+    /// <summary>Opt-in: when the window hosting this field is OPENED/toggled visible by the user, the framework
+    /// gives this field keyboard focus (uGUI ActivateInputField) so the user can type immediately without
+    /// clicking it first. Focus fires on the user-initiated show transition (hotkey toggle, SetVisible(true),
+    /// close-button reopen) — NOT on a ShouldRender re-mount (e.g. zoning back into the world with the window
+    /// already toggled on), so chat never steals movement keys on a world load. Only fires when the field's
+    /// GameObject is active in the hierarchy (a field inside a collapsed ConditionalElement is skipped). If more
+    /// than one field in a window sets it, the first one built wins. Default false = unchanged. Added as an init
+    /// property (NOT a ctor param) so the record stays source + binary compatible with already-compiled plugins.</summary>
+    public bool AutoFocus { get; init; }
+
+    /// <summary>Opt-in: draw inline chat emoji tags (<c>&lt;sprite=N&gt;</c>, N = 1..63) in the field as the game's
+    /// emoji PICTURES — like the game's own chat input box — instead of the literal tag text. The tag stays in the
+    /// text unchanged (Get / OnChange / Submit all see <c>&lt;sprite=N&gt;</c>), the caret steps over a picture as
+    /// one character, and one Backspace/Delete removes the whole tag. When <see cref="Get"/> changes externally
+    /// (e.g. a picker appended a tag) the field shows it and the caret moves to the END. Other behaviour (Enter
+    /// submit without opening chat, Esc, keyboard gate, <see cref="SingleLine"/>, <see cref="AutoFocus"/>) is the
+    /// same; one difference: focusing does NOT select all, so a click places the caret instead of arming a
+    /// replace-everything. Same per-string font limitation as <see cref="TextElement.RichEmoji"/> (one face per
+    /// string: mixed Thai + CJK shows boxes for one script). Window surfaces only; falls back to the plain field
+    /// when the rich field can't be built. Default false = unchanged. Init property (NOT a ctor param) for binary
+    /// compatibility.</summary>
+    public bool RichEmoji { get; init; }
+
+    /// <summary>Opt-in: focus this field ON DEMAND, at any time (not just on window open like <see cref="AutoFocus"/>).
+    /// The framework polls the returned number; whenever it CHANGES (the first value observed when the window is
+    /// built never counts), the field takes keyboard focus the same way a click on it would, with the caret at the
+    /// END of the text and nothing selected — so the user can keep typing. Typical use: an emoji/insert picker
+    /// whose click would otherwise leave the field unfocused — keep an int, increment it in the click handler, and
+    /// bind <c>FocusRequest = () =&gt; _seq</c>. While focused the game's keyboard is suppressed as for any focused
+    /// field; Esc/click-away release it. A request on a field that isn't visible (collapsed ConditionalElement,
+    /// hidden window) is dropped after a short wait rather than firing later. Default null = unchanged. Init
+    /// property (NOT a ctor param) for binary compatibility.</summary>
+    public Func<int>? FocusRequest { get; init; }
+
+    /// <summary>Opt-in: insert text AT THE CARET on demand (an emoji/insert picker). The framework polls the returned
+    /// pair; whenever <c>Seq</c> CHANGES (the first value observed when the window is built never counts), <c>Text</c> is
+    /// inserted where the caret was when the field last had focus — replacing the selection if there was one, and
+    /// never inside a <see cref="RichEmoji"/> <c>&lt;sprite=N&gt;</c> tag — then the field takes focus with the caret right
+    /// AFTER the inserted text. No known caret (never focused, or the text was replaced from <see cref="Get"/> since) =
+    /// append at the end. <see cref="OnChange"/> then reports the new text, exactly like a typed edit, so the bound
+    /// value follows; no separate <see cref="FocusRequest"/> is needed. Default null = unchanged. Init property (NOT a
+    /// ctor param) for binary compatibility.</summary>
+    public Func<(int Seq, string Text)>? InsertRequest { get; init; }
+
+    /// <summary>Opt-in hint text shown dimmed inside the field while it is EMPTY (e.g. "Message Guild…"), in both the
+    /// plain and the <see cref="RichEmoji"/> field. Polled with the window refresh and diffed, so it can follow live
+    /// state; return a cached string (it is read every refresh). Default null = no hint, unchanged. Init property
+    /// (NOT a ctor param) for binary compatibility.</summary>
+    public Func<string>? Placeholder { get; init; }
+
+    /// <summary>Opt-in live lock: while the returned value is <c>true</c> the field is READ-ONLY (typing, paste, cut,
+    /// delete and Enter-submit are blocked; focus, caret and selection still work, and <see cref="Get"/> still re-seeds
+    /// the text) and its text is drawn DIMMED, as a "busy, please wait" state — e.g. a chat composer while its draft is
+    /// being translated. Polled with the window refresh and diffed (only a change writes anything); the box keeps its
+    /// size. Both the plain and the <see cref="RichEmoji"/> field. Default null = never locked, unchanged. Init
+    /// property (NOT a ctor param) for binary compatibility.</summary>
+    public Func<bool>? Locked { get; init; }
 }
 
 /// <summary>Multi-line editable text box (wraps UGuiTextInput in multi-line mode). Enter inserts a REAL newline
@@ -162,9 +220,18 @@ public sealed record DropdownElement(
     public int MaxVisibleRows { get; init; }
 }
 
-/// <summary>Vertical scroll viewport (fixed <paramref name="Height"/>) wrapping a child subtree + a themed
-/// thin scrollbar.</summary>
-public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudElement;
+/// <summary>Vertical scroll viewport wrapping a child subtree + a themed thin scrollbar. By default the viewport
+/// uses <paramref name="Height"/> only as a PREFERRED baseline and still GROWS to absorb slack height in a
+/// resizable window (<c>flexibleHeight 1</c>); set <see cref="FixedHeight"/> to pin it instead.</summary>
+public sealed record ScrollElement(HudElement Child, float Height = 200f) : HudElement
+{
+    /// <summary>When true, the viewport is pinned to <see cref="Height"/> (min==preferred, flexibleHeight 0) so it
+    /// does NOT absorb slack height in a resizable window. Default false preserves the existing behaviour
+    /// (flexibleHeight 1 → the scroll grows to fill leftover vertical space). An <c>init</c> property (NOT a
+    /// primary-ctor parameter) so the record stays source AND binary compatible with already-compiled plugins —
+    /// see WindowBuilder-Patterns.md "Binary compatibility rules for HudElement records".</summary>
+    public bool FixedHeight { get; init; }
+}
 
 /// <summary>HSV colour picker (SV square + hue bar + hex field). <paramref name="Get"/> reflects the slot's
 /// colour; a pick calls <paramref name="Set"/>. The one hand-drawn custom widget.</summary>
@@ -225,6 +292,37 @@ public sealed record SelectableElement(HudElement Child, Action OnClick, Func<bo
     /// (ticker-driven; never fires in the static sandbox). Use for hover-preview panes. Added as an init property,
     /// NOT a ctor param, so the record's primary constructor stays binary-compatible with existing plugins.</summary>
     public Action<bool>? OnHover { get; init; }
+
+    /// <summary>Opt in to a thin accent underline bar drawn across the row's BOTTOM edge while
+    /// <see cref="Selected"/>() is true — on TOP of the selected-fill tint — to mark an "active tab" in a tab
+    /// strip (a soft accent pill + an underline indicator). The bar is ~3 px tall, full-width, in the theme menu
+    /// accent, and is OVERLAID (ignores layout) so it never changes the row's measured size. Default <c>false</c>:
+    /// every other <see cref="SelectableElement"/> (ordinary list rows, grid cells with no <see cref="Selected"/>
+    /// state) is drawn exactly as before. Added as an init property, NOT a ctor param, so the record's primary
+    /// constructor stays binary-compatible with existing plugins.</summary>
+    public bool SelectedBar { get; init; }
+
+    /// <summary>Optional — fires on RIGHT-button-down over the row (ticker-driven, the same hook as
+    /// <see cref="MeterRowElement.OnRightClick"/>; skipped when a window in front covers the pointer). Use to open a
+    /// context menu. A right-click never fires <see cref="OnClick"/>, and the left-click path is unchanged. Init
+    /// property, NOT a ctor param, so the record's primary constructor stays binary-compatible.</summary>
+    public Action? OnRightClick { get; init; }
+
+    /// <summary>Opt in to a click target with NO visuals of its own: no background tint (rest, hover and selected all
+    /// stay fully transparent), no padding, and the element HUGS its child instead of filling the row — so wrapping
+    /// a text in it changes neither the layout nor the look, and only the child's own rect is clickable. Click,
+    /// <see cref="OnHover"/>, <see cref="OnRightClick"/>, FrontWindowBlocks and the drag-reorder click swallow work as
+    /// usual; <see cref="SelectedBar"/> is ignored. Use for a link-styled label whose hover look the plugin draws
+    /// itself (e.g. a clickable name). Default <c>false</c> = the normal tinted, padded row. Init property, NOT a ctor
+    /// param (binary-compatible).</summary>
+    public bool Bare { get; init; }
+
+    /// <summary>When non-null, invoked on a left click (right after <see cref="OnClick"/>) with the row's on-screen
+    /// rect in screen PIXELS, top-left origin — the same space as <see cref="ButtonElement.OnClickWithRect"/>. Use to
+    /// anchor a popup to the clicked element instead of the cursor. ⚠️ <see cref="IWindowControl.SetRect"/> takes
+    /// CANVAS units: multiply by <c>CanvasWidth / ScreenWidth</c> first. Init property, NOT a ctor param
+    /// (binary-compatible).</summary>
+    public Action<Stellar.Abstractions.Domain.WindowRect>? OnClickWithRect { get; init; }
 }
 
 /// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint
@@ -320,25 +418,6 @@ public sealed record GameTextureElement(Func<object?> Texture, int Width, int He
 /// the attribute the row currently represents). When null, <paramref name="Uv"/> is static (set once at build)
 /// — use that for a fixed icon (e.g. a gear).</summary>
 public sealed record SpriteElement(Func<byte[]?> Atlas, UvRect Uv, int Width, int Height, Func<UvRect>? UvFunc = null) : HudElement;
-
-/// <summary>Scroll-windowed variable list: renders a small fixed <paramref name="Pool"/> of K rows
-/// (K ≈ viewport rows + a few margin rows) over a logical list of <paramref name="Count"/>() items that may
-/// be FAR larger than K. The framework sizes a scroll content spacer to Count()*RowHeight, tracks the scroll
-/// offset, computes the first visible logical index, calls <paramref name="OnWindow"/>(first) BEFORE pulling
-/// any slot values (so the plugin's row Funcs resolve item first+slotIndex), positions the pool rows at their
-/// logical offset, and SetActive-shows only rows whose logical index &lt; Count(). Rows MUST be uniform
-/// fixed-height (<paramref name="RowHeight"/>). Use for large pickers; the small <see cref="ListElement"/>
-/// (eager full pool) stays for short lists. <paramref name="Height"/> is the viewport height.</summary>
-public sealed record VirtualListElement(
-    Func<int>  Count,
-    float      RowHeight,
-    IReadOnlyList<HudElement> Pool,
-    Action<int> OnWindow,
-    float      Height = 200f) : HudElement
-{
-    /// <summary>When non-null, polled each refresh — returning true resets the scroll offset to the top.</summary>
-    public Func<bool>? ResetScroll { get; init; }
-}
 
 /// <summary>One cooldown/debuff tile for the CooldownBar: a fixed icon square (game-asset art via
 /// <paramref name="Icon"/>/<paramref name="Uv"/>) with an <paramref name="Accent"/>-tinted outline, a foot

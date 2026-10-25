@@ -19,7 +19,7 @@ namespace Stellar.Infrastructure.Game;
 /// Game-only file: the Mono UI-sandbox has no TextMeshPro package, so this must never be symlinked into
 /// it; the sandbox leaves the factory null and renders the legacy crisp fallback.
 /// </summary>
-internal sealed class TmpStyledText : IStyledTextHandle
+internal sealed partial class TmpStyledText : IStyledTextHandle
 {
     private readonly TextMeshProUGUI _t;
     private readonly bool _bold;
@@ -28,11 +28,16 @@ internal sealed class TmpStyledText : IStyledTextHandle
     private readonly RectTransform? _st;
     private readonly Image? _stImg;
     private bool _cjk;
+    // RichEmoji: draw <sprite=N> from the game's chat sprite asset (TmpEmojiSprites). _hasTag gates the lazy
+    // resolve probe to strings that need it; _spriteGen is the asset generation this string was applied under.
+    private readonly bool _rich;
+    private bool _hasTag;
+    private int _spriteGen;
 
-    private TmpStyledText(TextMeshProUGUI t, bool bold,
+    private TmpStyledText(TextMeshProUGUI t, bool bold, bool rich, bool ellipsis,
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
-        _t = t; _bold = bold;
+        _t = t; _bold = bold; _rich = rich; _ellipsis = ellipsis;
         _ul = underline.Rt; _ulImg = underline.Img;
         _st = strike.Rt; _stImg = strike.Img;
     }
@@ -43,18 +48,33 @@ internal sealed class TmpStyledText : IStyledTextHandle
     {
         // Re-pick the face per string so a live language switch (EN↔JA↔TH) lands on the right script's
         // face at the right weight. Latin + Thai → shipped merged faces; CJK/kana/Hangul → system family.
+        // (TmpFontAssets.FaceFor is the shared pick — TmpGlyphPrewarm warms the same face this lands on.)
         _cjk = TextFacePick.For(s) == FaceScript.Cjk;
-        var face = _cjk && TmpFontAssets.CjkBold != null
-            ? (_bold ? TmpFontAssets.CjkBold : TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold)
-            : _bold ? TmpFontAssets.UiBold : TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
+        var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
-        _t.text = s;
+        if (_rich) ApplySpriteAsset(s);
+        if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
+        else _t.text = s;
         FitDecorations();
     }
+
+    // Tag passed through UNCHANGED — the game writes the 1-based index into TMP against this same asset.
+    private void ApplySpriteAsset(string s)
+    {
+        _hasTag = s != null && s.IndexOf("<sprite", System.StringComparison.Ordinal) >= 0;
+        var asset = TmpEmojiSprites.Get(_hasTag);
+        _spriteGen = TmpEmojiSprites.Generation;
+        if (asset != null && _t.spriteAsset != asset) _t.spriteAsset = asset;
+    }
+
+    // Polled per apply by StyledTextBinding. Only a tagged RichEmoji string probes (throttled inside), and it
+    // flips true exactly once — the apply after the asset resolves — so its literal tags re-render as images.
+    public bool Stale => _rich && _hasTag && TmpEmojiSprites.Get(probe: true) != null && _spriteGen != TmpEmojiSprites.Generation;
 
     public void SetFontSize(int px)
     {
         _t.fontSize = px;
+        if (_ellipsis) MeasureAndFit();   // natural width scales with the size → re-pad + re-cut
         FitDecorations();
     }
 
@@ -80,6 +100,9 @@ internal sealed class TmpStyledText : IStyledTextHandle
     // space); the strike line rides at the glyph-box middle ("higher" than TMP's own — owner correction).
     private void FitDecorations()
     {
+        // No owned lines → skip the preferredWidth read: it is a full TMP layout pass, and RichEmoji chat rows
+        // re-set their string on every pool rebind while scrolling.
+        if (_ul == null && _st == null) return;
         var size = _t.fontSize;
         var w = Mathf.Max(1f, _t.preferredWidth);
         var h = Mathf.Max(1.6f, size / 9f);
@@ -98,7 +121,13 @@ internal sealed class TmpStyledText : IStyledTextHandle
     }
 
     /// <summary>Install as the shared styled-text factory. Idempotent.</summary>
-    public static void Register() => StyledTextFactory.CreateBold ??= TryCreate;
+    public static void Register(System.Action<string>? log = null)
+    {
+        StyledTextFactory.CreateBold ??= TryCreate;
+        TmpEmojiSprites.Log ??= log;   // RichEmoji sprite-asset resolution outcome (one line per outcome)
+        StyledTextFactory.Log ??= log;
+        TmpRichInputField.Register();  // InputElement.RichEmoji field (same TMP faces + sprite asset)
+    }
 
     private static IStyledTextHandle? TryCreate(Transform parent, StyledTextSpec spec)
     {
@@ -115,16 +144,27 @@ internal sealed class TmpStyledText : IStyledTextHandle
         t.color = spec.Color;
         t.raycastTarget = false;
         t.enableWordWrapping = spec.Wrap;
-        t.alignment = spec.Align switch
+        // TextElement.Ellipsize: one line, overflowMode left at Overflow — the framework cuts the string itself, because
+        // TMP's Ellipsis mode wiped a whole single-word line in-game (see TmpStyledText.Ellipsis.cs).
+        if (spec.Ellipsis) t.enableWordWrapping = false;
+        // CenterGlyphs → TMP's Midline row: it centres the MESH extents (what is drawn) in the rect, where the default
+        // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
+        // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes
+        // that with no hand-tuned voffset and scales with any font size. Preferred size (layout) is unaffected.
+        t.alignment = (spec.Align, spec.CenterGlyphs) switch
         {
-            TextAlign.Center => TextAlignmentOptions.Center,
-            TextAlign.Right => TextAlignmentOptions.Right,
+            (TextAlign.Center, true) => TextAlignmentOptions.Midline,
+            (TextAlign.Right, true) => TextAlignmentOptions.MidlineRight,
+            (_, true) => TextAlignmentOptions.MidlineLeft,
+            (TextAlign.Center, _) => TextAlignmentOptions.Center,
+            (TextAlign.Right, _) => TextAlignmentOptions.Right,
             _ => TextAlignmentOptions.Left,
         };
         if (spec.Italic) t.fontStyle = FontStyles.Italic;
+        if (spec.RichEmoji) t.richText = true;   // TMP's default, made explicit: <sprite=N> parsing depends on it
         var ul = spec.Underline ? BuildLine(go.transform, "Underline", spec.Color) : (null, null);
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
-        var handle = new TmpStyledText(t, spec.Bold, ul, st);
+        var handle = new TmpStyledText(t, spec.Bold, spec.RichEmoji, spec.Ellipsis, ul, st);
         handle.SetText(spec.Text);
         return handle;
     }

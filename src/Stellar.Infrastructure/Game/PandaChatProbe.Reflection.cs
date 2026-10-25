@@ -187,10 +187,14 @@ internal sealed partial class PandaChatProbe
 
     // Recv-side TCP hook now lives on PandaWireTap (single owner). The chat
     // probe consumes parsed envelopes via RegisterOnWireTap. We still need to
-    // resolve + patch ZTcpClient.Send so outbound chat send + outbound call_id
-    // correlation work — that lives in ResolveTcpClientSend, which we invoke
-    // directly after locating ZTcpConnection so the .Send parameter type is
-    // reachable.
+    // resolve ZTcpClient.Send so the plugin's own outbound chat send (TrySend)
+    // has a dispatch target and the connection-close hooks install — that lives
+    // in ResolveTcpClientSend, which we invoke directly after locating
+    // ZTcpConnection so the .Send parameter type is reachable. Outbound call_id /
+    // history-channel CAPTURE no longer lives here: it moved to the
+    // transport-agnostic ZRpcImpl.SendBytes hook (ResolveRpcSendHook /
+    // Send.Hooks.Rpc.cs), because the game never calls this ZTcpClient.Send
+    // overload for its own RPC traffic.
     private void ResolveTcpSendHook()
     {
         try

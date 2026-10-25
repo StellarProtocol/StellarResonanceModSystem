@@ -32,6 +32,12 @@ internal sealed partial class WindowBuilder
     // the recursive descent, so every nested Text/Bar/Pill leaf sees it. Menu (default) leaves every existing
     // window byte-identical; HudOverlay reroutes those three leaf types to the ported HUD renders (.HudOverlay.cs).
     private SurfaceStyle _surface = SurfaceStyle.Menu;
+    // The variable-list SLOT whose pool element is being built (null outside one). Every Conditional built under it
+    // captures it as CondBinding.Gate, so the first-build cap can keep an over-budget slot fully idle (.VariableList.cs).
+    private GameObject? _condGate;
+    // >0 while building INSIDE a RowElement.ConstrainsWindowMinWidth row: a BubbleElement built there hugs its natural
+    // width instead of capping at its parent's width (BubbleBinding.NoCap) — see BuildRow (.Layout.cs) for why.
+    private int _widthRowDepth;
     // Per-frame field-tick hook (cursor/Esc/debounce). Injected by the renderer (which owns a
     // MonoBehaviour ticker); null in the sandbox (static render needs no tick). Mirrors HudElementBuilder's
     // registerBar animator hook.
@@ -69,6 +75,12 @@ internal sealed partial class WindowBuilder
     // cell. Used by the CombatMeter row context menu. Null in the sandbox → right-click is inert.
     internal Action<RectTransform, Action>? RegisterRightClick { get; set; }
 
+    // Drag-reorder hook for ListElement.OnReorder: the ticker drives the press→threshold→drag→drop gesture over the
+    // list's slots (ghost + insertion bar + scroll lock). ClickSuppressed: true while/just after a reorder drag, so
+    // the Selectable click the EventSystem may deliver on the release is swallowed. Null in the sandbox → static.
+    internal Action<ReorderListReg>? RegisterReorderList { get; set; }
+    internal Func<bool>? ClickSuppressed { get; set; }
+
     // Render-texture host hook: (RawImage, boxed-texture supplier, drag cb, scroll cb, pan cb) → the ticker binds
     // the texture each frame and routes drag (orbit), scroll (zoom) and shift+drag (pan) over the box to the
     // callbacks. Used by the inspector 3D portrait. Null in the sandbox → the box stays blank.
@@ -83,6 +95,11 @@ internal sealed partial class WindowBuilder
     // Scrollbar drag-exclusion hook: the interaction ticker skips window-drag starts over these rects so
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
+
+    // Scroll-view content-rect hook: the interaction ticker watches these content rects for per-frame motion so
+    // SyncPixelPerfect can drop pixelPerfect while a list is being scrolled (same per-frame re-snap/rebatch cost
+    // as a window drag — this is the chat-log scroll FPS fix). Null in the sandbox → a no-op.
+    internal Action<RectTransform>? RegisterScrollView { get; set; }
 
     // Slot-drag exclusion hook for a clickable meter-row voice icon: (cell rect, excluded) → the ticker
     // adds/removes it from VoiceClickRects so a press on the icon reaches its EventSystem Button (cycle voice)
@@ -141,6 +158,8 @@ internal sealed partial class WindowBuilder
         var token = new WindowToken();
         _surface = reg.Spec.Surface;   // per-window; read by BuildText/BuildBar/BuildPill for the HudOverlay branch
         token.Resizable = reg.Spec.Resizable;
+        token.WindowId = reg.Spec.Id;
+        token.SpecMinWidth = token.EffectiveMinWidth = reg.Spec.MinWidth; token.SpecMaxWidth = reg.Spec.MaxWidth;
         // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
         // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
         token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
@@ -165,13 +184,10 @@ internal sealed partial class WindowBuilder
     {
         switch (el)
         {
-            case RowElement r:
-                BuildLayout(r.Children, parent, token, r.Gap == 0f ? RowGap : r.Gap, UGuiPrimitives.RowMode);
-                if (r.Justify != RowJustify.Left && parent.GetChild(parent.childCount - 1).GetComponent<HorizontalLayoutGroup>() is { } hlg)
-                    hlg.childAlignment = r.Justify == RowJustify.Center ? TextAnchor.MiddleCenter : TextAnchor.MiddleRight;
-                break;
+            case RowElement r: BuildRow(r, parent, token); break;              // .Layout.cs
             case ColumnElement c: BuildColumn(c, parent, token); break;
             case PanelElement pn: BuildPanel(pn, parent, token); break;
+            case BubbleElement bub: BuildBubble(bub, parent, token); break;    // .Bubble.cs
             case BackdropElement bd: BuildBackdrop(bd, parent, token); break;
             case TextElement t:   BuildText(t, parent, token); break;
             case SeparatorElement sep: BuildSeparator(parent, token, sep.Vertical); break;
@@ -241,7 +257,9 @@ internal sealed partial class WindowBuilder
         // must work in EVERY language; the accent-colour and synthetic-bold iterations are retired).
         // Shadow elements (HUD-halo look) and the sandbox/no-face cases keep the legacy path below.
         var styled = t.Emphasis || t.Bold || t.Italic || t.Underline || t.Strikethrough;
-        if (styled && !t.Shadow && TryBuildEmphasisText(t, parent, token)) return;
+        // RichEmoji: the same TMP path, with the game's chat sprite asset so inline <sprite=N> draws as images
+        // (WindowBuilder.RichText.cs). False (sandbox / no face / throw) → the plain Text below, literal tags.
+        if (!t.Shadow && (t.RichEmoji ? TryBuildRichEmojiText(t, parent, token) : styled && TryBuildEmphasisText(t, parent, token))) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
         var txt = go.AddComponent<Text>();
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
@@ -257,7 +275,7 @@ internal sealed partial class WindowBuilder
         // window panels have long labels/descriptions that must wrap, not spill past the frame). NoWrap keeps
         // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
         // the cell edge rather than wrapping into a multi-line block.
-        txt.horizontalOverflow = t.NoWrap ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;
+        txt.horizontalOverflow = t.NoWrap || t.Ellipsize ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;   // Ellipsize = one line too
         txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
@@ -268,7 +286,8 @@ internal sealed partial class WindowBuilder
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }   // fixed column cell
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
         // Clip a fixed-width single line to its column so a long label truncates instead of spilling onto neighbours.
-        if (t.Width > 0f && t.NoWrap) go.AddComponent<RectMask2D>();
+        // Ellipsize clips too: between a resize and the next apply's re-fit the old cut may be a few px too wide.
+        if ((t.Width > 0f && t.NoWrap) || t.Ellipsize) go.AddComponent<RectMask2D>();
         // Readability outline for chrome-less overlays — the shared recipe (also the meter bar values).
         if (t.Shadow) UGuiPrimitives.AddReadabilityOutline(go);
         token.Texts.Add(BuildTextBinding(t, txt));
@@ -285,7 +304,7 @@ internal sealed partial class WindowBuilder
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
-        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis };
+        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize };
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }

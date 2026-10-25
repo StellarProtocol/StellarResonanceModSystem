@@ -24,12 +24,21 @@ internal sealed partial class WindowBuilder
             Underline = t.Underline,
             Strikethrough = t.Strikethrough,
             Align = t.Align,
+            RichEmoji = t.RichEmoji,   // <sprite=N> from the game's chat sprite asset (WindowBuilder.RichText.cs)
+            Ellipsis = t.Ellipsize,    // prefix + "…" cut to the slot (TmpStyledText.Ellipsis.cs; plain path: TextBinding.EllipsizeToRect)
+            CenterGlyphs = t.CenterGlyphs,   // Midline: centre the drawn quads, not the line box (lone sprite icons)
         });
         if (h?.Go == null) return false;
         // Mirror the legacy path's layout contract: natural width, a sibling Spacer does the pushing.
         var le = h.Go.AddComponent<LayoutElement>();
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }
-        else { le.flexibleWidth = 0f; le.minWidth = 0f; }
+        else
+        {
+            le.flexibleWidth = 0f; le.minWidth = 0f;
+            // Ellipsize: the handle owns preferredWidth = full string's natural width padded (never an exact fit, and
+            // the shown cut can't shrink its own slot); LayoutElement's priority 1 beats TMP's own preferred width.
+            if (t.Ellipsize) h.PadPreferredWidth(le);
+        }
         token.StyledTexts.Add(new StyledTextBinding { H = h, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn });
         token.ReskinActions.Add(() => { h.SetFontSize(Scaled(size)); h.SetColor(_assets.MenuText); });
         return true;

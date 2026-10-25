@@ -242,7 +242,13 @@ internal sealed partial class WindowService
         // saved entry (or one marked shown), and SetVisible(true) is a no-op when already shown, so this never
         // force-renders (ShouldRender still gates the actual mount in TickEntry). The applyVisibility==false path
         // (resolution-change reapply) never reaches here — it repositions only and leaves current visibility.
-        if (applyVisibility) e.SetVisible(visible);   // TickEntry mounts/destroys next tick to match
+        // NOT for click-away popups (DismissOnOutsideClick): they are transient and plugin-driven — they only mount
+        // because the plugin just showed them. Their saved flag is whatever Entry.SetRect last persisted, usually
+        // FALSE (a plugin places the parked popup with SetRect BEFORE SetVisible(true)), so restoring it re-hid the
+        // popup the moment its first mount of the session landed: a one-frame flash at the old spot, then gone, with
+        // the plugin still believing it open (ChatTools channel picker, 2026-10-24). A slot switch must not pop a
+        // context menu open either, so the skip holds for every applyVisibility caller.
+        if (applyVisibility && !e.Reg.Spec.DismissOnOutsideClick) e.SetVisible(visible);   // TickEntry mounts/destroys next tick to match
     }
 
     // Persist once after a drag settles: the rect is unchanged since last tick (drag stopped) AND differs

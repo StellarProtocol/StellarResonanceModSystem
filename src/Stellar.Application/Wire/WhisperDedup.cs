@@ -67,7 +67,8 @@ internal sealed class WhisperDedup
         }
     }
 
-    /// <summary>Clear all dedup state. Test-only — production never resets mid-session.</summary>
+    /// <summary>Clear all dedup state. Called at logout (PandaChatProbe.ResetSession): the set belongs to ONE character —
+    /// a whisper's key is identical on both sides, so keeping it would drop the next character's copy as a duplicate.</summary>
     public void Reset()
     {
         lock (_lock)

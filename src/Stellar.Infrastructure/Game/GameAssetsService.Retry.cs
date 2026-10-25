@@ -18,6 +18,7 @@ internal sealed partial class GameAssetsService
     private void TryRetryFailedIcon(Dictionary<int, Slot> slots, int key, Slot slot, IconKind kind)
     {
         if (slot.Path is null) return;                       // no-address gap → permanent, never retry
+        if (kind == IconKind.Sticker) return;                // localized miss is permanent → base fallback (LoadStickerIcon)
         if (slot.Attempts >= MaxIconRetries)
         {
             if (!slot.RetryExhaustedLogged)
@@ -62,7 +63,7 @@ internal sealed partial class GameAssetsService
             {
                 var awaiter = getAwaiter.Invoke(slot.UniTask, null);
                 var result = awaiter is null ? null : getResult.Invoke(awaiter, null);
-                ResolveResult(slot, key, label, result);
+                ResolveResult(slot, key, kind, result);
                 if (slot.State == LoadState.Failed)
                     RetryItemAlternate(slots, slot, key, kind, "Texture2D load failed");
                 else
@@ -70,11 +71,18 @@ internal sealed partial class GameAssetsService
                 return slot.Texture;
             }
 
-            // Faulted / Canceled.
-            string exDetail = status == 2 ? FaultDetail(slot.UniTask, getAwaiter, getResult) : "";
+            // Faulted / Canceled. A Sticker-kind (localized) miss is EXPECTED for base-only stickers and falls back
+            // to the base bundle, so log it at Info (and skip FaultDetail) — a non-zh client's face-emoji otherwise
+            // spam a warning each. FaultDetail must run BEFORE nulling UniTask (it awaits it to surface the cause).
+            if (kind == IconKind.Sticker)
+                _log.Info($"[GameAssets][icon] sticker localized miss key={key} status={status} — base fallback");
+            else
+            {
+                string exDetail = status == 2 ? FaultDetail(slot.UniTask, getAwaiter, getResult) : "";
+                _log.Warning($"[GameAssets][icon] load failed {label}={key} status={status}{exDetail}");
+            }
             slot.State = LoadState.Failed;
             slot.UniTask = null;
-            _log.Warning($"[GameAssets][icon] load failed {label}={key} status={status}{exDetail}");
             RetryItemAlternate(slots, slot, key, kind, $"Texture2D load failed status={status}");
             return null;
         }
@@ -154,13 +162,21 @@ internal sealed partial class GameAssetsService
     // UV coordinates are normalised 0..1 and also bottom-left (UV convention), so
     // this is a straight normalise with NO y-flip. (An earlier 1-(y+h)/th flip
     // incorrectly assumed top-left origin and sampled the wrong atlas band → garbled icon.)
-    private void ResolveResult(Slot slot, int key, string label, object? result)
+    //
+    // Null result: the address doesn't exist (the loader completes Succeeded(null), it does not fault). For the
+    // LOCALIZED sticker probe that is the expected base-only case — the 2026-10-24 "loaded sticker=17 but result was
+    // null" warnings were exactly that (17 = the interned path-slot key, NOT a sticker config id); LoadStickerIcon falls
+    // back to base and logs the outcome once, so stay silent here. Quiet slots (stickers) also skip the routine
+    // "loaded" Info line — the [GameAssets][sticker] summary covers them.
+    private void ResolveResult(Slot slot, int key, IconKind kind, object? result)
     {
+        var label = LabelOf(kind);
+        bool quiet = IsQuietSlot(kind, key);
         if (result is null)
         {
             slot.State = LoadState.Failed;
             slot.UniTask = null;
-            _log.Warning($"[GameAssets][icon] loaded {label}={key} but result was null");
+            if (kind != IconKind.Sticker) _log.Warning($"[GameAssets][icon] loaded {label}={key} but result was null");
             return;
         }
 
@@ -175,11 +191,11 @@ internal sealed partial class GameAssetsService
             slot.Uv = new UvRect(0f, 0f, 1f, 1f);
             slot.State = LoadState.Loaded;
             slot.UniTask = null;
-            _log.Info($"[GameAssets][icon] loaded {label}={key} texture='{directTex.name}' {directTex.width}x{directTex.height}");
+            if (!quiet) _log.Info($"[GameAssets][icon] loaded {label}={key} texture='{directTex.name}' {directTex.width}x{directTex.height}");
             return;
         }
 
-        if (result is Sprite sprite) { ResolveSprite(slot, key, label, sprite); return; }
+        if (result is Sprite sprite) { ResolveSprite(slot, key, label, sprite, quiet); return; }
 
         slot.State = LoadState.Failed;
         slot.UniTask = null;

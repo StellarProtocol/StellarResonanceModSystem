@@ -44,6 +44,7 @@ internal sealed partial class GameAssetsService : IGameAssets
     private readonly IGameDataCombat _combatData;
     private readonly IGameDataResonance _resonanceData;
     private readonly IGameDataInventory _inventoryData;
+    private readonly ILua _lua;   // chat-sticker ownership probe (IsStickerOwned) runs the game's own Lua predicate
 
     // Per-profession state. Resolved lazily on first LoadProfessionIcon(id) call.
     private readonly Dictionary<int, Slot> _slots = new();
@@ -70,6 +71,24 @@ internal sealed partial class GameAssetsService : IGameAssets
     private readonly Dictionary<int, Slot> _pathSlots = new();
     private readonly Dictionary<string, int> _pathKeys = new();
 
+    // chat sticker config_id → its (localized, base) load addresses for the CURRENT client language. The game picks
+    // a text-bearing sticker's language variant by REWRITING THE PATH (localized directory), not by a catalog remap
+    // (StickerLoc.cs). Cached by id alone (language is fixed per session and folded into the addresses); only cached
+    // once the language word is known, so an early call before LocalizationMgr is up re-resolves and upgrades. We
+    // re-reflect only until the ChatStickersTable loads (lazy at boot); once cached, LoadStickerIcon drives the
+    // localized→base attempt through LoadByPathKeyed with per-attempt slot keys (no re-reflect).
+    private readonly Dictionary<int, StickerAddrs> _stickerAddrs = new();
+
+    // Whole-catalog sticker list for the send picker (IGameAssets.GetSendableStickers). Built once via reflection
+    // (BuildSendableStickers, GameAssetsService.Reflection.cs) and cached; null means "not built yet / was empty
+    // last time" so we retry until the ChatStickersTable populates (lazy at boot).
+    private IReadOnlyList<StickerInfo>? _sendableStickers;
+
+    // One-shot-per-id diagnostic gate for IsStickerOwned (first ~12 distinct GATED ids evaluated). Lets us confirm
+    // from one redeploy whether the ownership probe resolves (e.g. the dot-vs-colon call, or the VM/unlock_map
+    // being ready at catalog-build time). Caps at 12 so a big gated set can't spam the log.
+    private readonly HashSet<int> _stickerOwnedLogged = new();
+
     // Reflection cache. Populated in ResolveOnce(). Success is cached permanently;
     // failures retry (bounded + backoff-gated) so a boot race self-heals instead
     // of latching Failed forever.
@@ -89,12 +108,13 @@ internal sealed partial class GameAssetsService : IGameAssets
     private object? _cancelSourceInstance;           // ZCancelSource (rented)
     private MethodInfo? _createTokenMethod;          // ZCancelSource.CreateToken()
 
-    public GameAssetsService(IPluginLog log, IGameDataCombat combatData, IGameDataResonance resonanceData, IGameDataInventory inventoryData)
+    public GameAssetsService(IPluginLog log, IGameDataCombat combatData, IGameDataResonance resonanceData, IGameDataInventory inventoryData, ILua lua)
     {
         _log = log;
         _combatData = combatData;
         _resonanceData = resonanceData;
         _inventoryData = inventoryData;
+        _lua = lua;
     }
 
     /// <inheritdoc/>
@@ -186,18 +206,81 @@ internal sealed partial class GameAssetsService : IGameAssets
     }
 
     /// <inheritdoc/>
-    public object? LoadByPath(string assetPath, out UvRect uv)
+    public object? LoadByPath(string assetPath, out UvRect uv) => LoadByPathKeyed(assetPath, assetPath, IconKind.Path, out uv, out _);
+
+    // Shared path-load core. cacheKey distinguishes slots; loadAddress is what reaches the loader; kind selects the
+    // loader/retry behaviour; state reports the slot's state AFTER this call (so a caller can tell "still loading"
+    // from "failed"). For every normal caller (and the public LoadByPath) cacheKey == loadAddress and kind == Path —
+    // byte-identical to before. Stickers pass per-attempt cacheKeys with already-localized/base addresses (and
+    // IconKind.Sticker for the localized attempt) so each language variant gets its own slot and a localized miss
+    // surfaces as Failed for the base fallback (LoadStickerIcon).
+    private object? LoadByPathKeyed(string cacheKey, string loadAddress, IconKind kind, out UvRect uv, out LoadState state)
     {
         uv = new UvRect(0f, 0f, 1f, 1f);
-        if (string.IsNullOrEmpty(assetPath)) return null;
-        if (!_pathKeys.TryGetValue(assetPath, out var key))
-        {
-            key = _pathKeys.Count + 1;                           // stable per-path int (no hash collisions)
-            _pathKeys[assetPath] = key;
-        }
-        if (_pathSlots.ContainsKey(key))                         // existing slot: don't re-pass the address
-            return LoadIcon(_pathSlots, key, address: null, IconKind.Path, out uv);
-        return LoadIcon(_pathSlots, key, assetPath, IconKind.Path, out uv);
+        state = LoadState.Failed;
+        if (string.IsNullOrEmpty(loadAddress)) return null;
+        var key = PathKeyFor(cacheKey);
+        var tex = _pathSlots.ContainsKey(key)                    // existing slot: don't re-pass the address
+            ? LoadIcon(_pathSlots, key, address: null, kind, out uv)
+            : LoadIcon(_pathSlots, key, loadAddress, kind, out uv);
+        if (_pathSlots.TryGetValue(key, out var slot)) state = slot.State;
+        return tex;
+    }
+
+    // Stable per-cacheKey int (no hash collisions) — interned on first use.
+    private int PathKeyFor(string cacheKey)
+    {
+        if (_pathKeys.TryGetValue(cacheKey, out var key)) return key;
+        key = _pathKeys.Count + 1;
+        _pathKeys[cacheKey] = key;
+        return key;
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<StickerInfo> GetSendableStickers()
+    {
+        if (_sendableStickers is { Count: > 0 }) return _sendableStickers;
+        // Build (reflection, GameAssetsService.Reflection.cs). The table loads lazily at boot, so an early call
+        // returns empty — do NOT cache an empty result, so a later call rebuilds until the table populates.
+        var built = BuildSendableStickers();
+        if (built.Count > 0) _sendableStickers = built;
+        return built;
+    }
+
+    /// <inheritdoc/>
+    public bool IsStickerOwned(int configId)
+    {
+        if (configId <= 0) return false;
+        // FAIL-CLOSED: a Lua bridge that isn't up yet (pre-login) → not owned (hide it). Gating on Ready FIRST also
+        // guarantees the sentinel-clear below actually runs, so we never read a stale `true` left by a previous
+        // sticker when DoString would have no-op'd.
+        if (!_lua.Ready) { LogOwnedOnce(configId, ready: false, result: false); return false; }
+
+        // ILua has no "call a function and return its value" primitive, so park-and-read (Framework-Interop §2):
+        //   • clear the sentinel FIRST, OUTSIDE the pcall — so a failed/errored/absent call leaves it nil (false),
+        //     never a stale value from the previous sticker;
+        //   • GetChatEmojiUnlock is a DOT function (chat_main_vm.lua:2434 — first arg is emojiId, NO implicit self),
+        //     and the game's own callers invoke it with a dot (chat_emoji_item.lua:58 vm.GetChatEmojiUnlock(id)).
+        //     A COLON would pass the VM table as self→emojiId and shift the real id to an ignored arg #2 → false for
+        //     every id (hides all gated stickers). So call it with a DOT. (GetVM stays a dot too.)
+        //   • it returns a Lua boolean; `<result> and true or nil` collapses false/nil → nil (the global is removed)
+        //     and true → true, so the type-STRICT TryReadGlobalBool only ever sees true-or-absent (a Lua number/false
+        //     can never surface and be misread).
+        _lua.DoString(
+            "rawset(_G,'__stellar_sticker_owned',nil)\n" +
+            "pcall(function() rawset(_G,'__stellar_sticker_owned', (Z.VMMgr.GetVM('chat_main').GetChatEmojiUnlock("
+            + configId + ")) and true or nil) end)");
+        bool owned = _lua.TryReadGlobalBool("__stellar_sticker_owned", out var v) && v;
+        LogOwnedOnce(configId, ready: true, result: owned);
+        return owned;
+    }
+
+    // One-shot-per-id (capped at 12) developer diagnostic for the ownership probe — English, Info level. Dedups by
+    // configId and stops after 12 distinct ids so a large gated set can't spam the log.
+    private void LogOwnedOnce(int configId, bool ready, bool result)
+    {
+        if (_stickerOwnedLogged.Count >= 12 || !_stickerOwnedLogged.Add(configId)) return;
+        _log.Info($"[GameAssets][sticker] owned? id={configId} ready={ready} result={result}");
     }
 
     // Address-agnostic slot machinery shared by all icon kinds. The caller
@@ -240,7 +323,7 @@ internal sealed partial class GameAssetsService : IGameAssets
     }
 
     // Atlas Sprite (profession crest) → (Texture2D, normalised UV sub-rect).
-    private void ResolveSprite(Slot slot, int key, string label, Sprite sprite)
+    private void ResolveSprite(Slot slot, int key, string label, Sprite sprite, bool quiet = false)
     {
         var tex = sprite.texture;
         if (tex is null)
@@ -259,7 +342,7 @@ internal sealed partial class GameAssetsService : IGameAssets
         slot.Texture = tex;
         slot.State = LoadState.Loaded;
         slot.UniTask = null;
-        _log.Info($"[GameAssets][icon] loaded {label}={key} sprite='{sprite.name}' atlas={tex.width}x{tex.height} rect=({r.x},{r.y},{r.width},{r.height})");
+        if (!quiet) _log.Info($"[GameAssets][icon] loaded {label}={key} sprite='{sprite.name}' atlas={tex.width}x{tex.height} rect=({r.x},{r.y},{r.width},{r.height})");
     }
 
     // Address-agnostic load core: kick off LoadAssetAsync for an already-resolved
@@ -279,15 +362,24 @@ internal sealed partial class GameAssetsService : IGameAssets
 
         try
         {
-            // loader.LoadAssetAsync<Sprite|Texture2D>(address, token, 0, false) -> UniTask<T>
-            var method = IsTexture(kind) ? _loadAssetAsyncTexture! : _loadAssetAsyncString!;
-            var unitask = method.Invoke(_loaderInstance, new object[] { address, token, 0, false });
+            // loader.LoadAssetAsync<Sprite|Texture2D>(addr, token, 0, false) -> UniTask<T>. Texture2D loads go through
+            // the ZResAddress overload → convert the address via BuildTextureLoadAddress (StickerLoc.cs). The address
+            // is passed as-is; for stickers the per-language choice is already baked into the address STRING (the
+            // loader does NOT remap it). Sprite loads stay on the string overload — byte-identical for every plugin.
+            var isTexture = IsTexture(kind);
+            var method = isTexture ? _loadAssetAsyncTexture! : _loadAssetAsyncString!;
+            var loadAddr = isTexture ? BuildTextureLoadAddress(address) : address;
+            // allowFail=TRUE only for the localized sticker probe (an expected miss for base-only stickers): with false
+            // the game Debug.LogError's "fail, asset not exist" + a stack trace, synchronously, per miss. It gates only
+            // that log — same lookups, still Succeeded(null) (StickerLoad.cs). Every other load keeps false.
+            var allowFail = kind == IconKind.Sticker;
+            var unitask = method.Invoke(_loaderInstance, new object[] { loadAddr, token, 0, allowFail });
             if (unitask is null)
             {
                 _log.Warning($"[GameAssets][icon] LoadAssetAsync returned null for {label}={key} path='{address}'");
                 return new Slot { State = LoadState.Failed };
             }
-            _log.Info($"[GameAssets][icon] requested {label}={key} path='{address}'");
+            if (!IsQuietSlot(kind, key)) _log.Info($"[GameAssets][icon] requested {label}={key} path='{address}'");
             return new Slot { State = LoadState.Loading, UniTask = unitask, Path = address };
         }
         catch (Exception ex)
@@ -319,9 +411,11 @@ internal sealed partial class GameAssetsService : IGameAssets
         Skill,      // standalone Texture2D — skill icons live under ui/textures/ like Imagine
         Buff,       // atlas Sprite — buff icon paths are under ui/atlas/ (Sprite atlas, same family as Profession)
         Path,       // LoadByPath: arbitrary address, type unknown → Texture2D first, Sprite fallback (like Item)
+        Sticker,    // chat sticker LOCALIZED attempt: Texture2D only, NO Sprite retry + NO bounded reload so a
+                    // base-only sticker's localized miss surfaces as Failed at once → base fallback (LoadStickerIcon)
     }
 
-    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Path;
+    private static bool IsTexture(IconKind kind) => kind is IconKind.Imagine or IconKind.Item or IconKind.Skill or IconKind.Path or IconKind.Sticker;
     private static string LabelOf(IconKind kind) => kind switch
     {
         IconKind.Profession => "profession",
@@ -330,6 +424,7 @@ internal sealed partial class GameAssetsService : IGameAssets
         IconKind.Skill      => "skill",
         IconKind.Buff       => "buff",
         IconKind.Path       => "path",
+        IconKind.Sticker    => "sticker",
         _                   => "icon",
     };
 

@@ -28,6 +28,56 @@ internal sealed partial class WindowBuilder
         /// <summary>Re-arm the immediate first-layout path when a hidden window is re-shown, so a content-sized popup
         /// sizes the same frame it reappears instead of one frame at its previous size (deferred rebuild path).</summary>
         internal void ResetLayout() => _laidOut = false;
+
+        // ---- content-driven minimum width (RowElement.ConstrainsWindowMinWidth; enforced by WindowRenderer.ContentMinWidth.cs) ----
+        internal string WindowId = "";
+        internal float SpecMinWidth, SpecMaxWidth;   // WindowSpec.MinWidth / MaxWidth (canvas units)
+        internal float EffectiveMinWidth;            // max(spec min, widest marked row's requirement), capped at max
+        internal readonly List<RectTransform> WidthRows = new();   // the marked rows' HLG rects (BuildRow)
+        // Re-measure every Nth apply (~0.5 s at the 10 Hz apply) as the catch-all for a preferred-width change that
+        // isn't structural (a language switch re-pulls label text → uGUI re-lays-out on the next render). A
+        // structural change / reskin pulls the next measure forward (see MarkMinWidthDue).
+        private const int MinWidthPollEvery = 5;
+        private const float MinWidthShrinkHysteresis = 6f;   // canvas units; see MeasureMinWidth
+        private int _minWidthDue = MinWidthPollEvery;
+
+        // Measure on the apply AFTER this one: a structural change only MARKS the layout dirty (deferred to the next
+        // render), so measuring in the same apply would read the previous layout's cached preferred widths.
+        private void MarkMinWidthDue() { if (_minWidthDue > 2) _minWidthDue = 2; }
+
+        /// <summary>Recompute <see cref="EffectiveMinWidth"/> from the marked rows when due (or when
+        /// <paramref name="force"/> — the mount, right after the forced first layout). Per row:
+        /// <c>required = windowWidth + (row preferred width − row laid-out width)</c> — the delta carries every bit of
+        /// window/column/padding chrome without hardcoding it. Reads only uGUI's CACHED layout values (no rebuild, so
+        /// measuring never changes layout) and allocates nothing. Hidden rows (inactive in hierarchy — e.g. in a
+        /// closed Conditional) are skipped. Stable under widening: growing the window grows the row's laid-out width
+        /// by the same amount while its preferred width is unchanged, so the requirement doesn't move (no loop).
+        /// Returns true when the effective minimum changed (by ≥ 0.5 unit).</summary>
+        internal bool MeasureMinWidth(bool force)
+        {
+            if (WidthRows.Count == 0 || Rect == null) return false;
+            if (!force && --_minWidthDue > 0) return false;
+            _minWidthDue = MinWidthPollEvery;
+            var windowW = Rect.rect.width;
+            var required = 0f;
+            for (var i = 0; i < WidthRows.Count; i++)
+            {
+                var row = WidthRows[i];
+                if (row == null || !row.gameObject.activeInHierarchy) continue;
+                var pref = LayoutUtility.GetPreferredWidth(row);
+                if (pref <= 0f) continue;   // not laid out yet
+                required = Mathf.Max(required, windowW + (pref - row.rect.width));
+            }
+            var eff = Mathf.Min(Mathf.Max(SpecMinWidth, Mathf.Ceil(required)), SpecMaxWidth);
+            if (Mathf.Abs(eff - EffectiveMinWidth) < 0.5f) return false;
+            // Shrink hysteresis: a GROWTH applies at once (the content needs the room), but a drop of only a few units is
+            // ignored — the requirement can flip between two nearby values (ChatTools logged 621↔625 every few polls), and
+            // a minimum held a few units high only raises the grip floor a little. A real shrink (font scale down, language
+            // switch) clears it easily. Mount (force) always takes the measured value.
+            if (!force && eff < EffectiveMinWidth && EffectiveMinWidth - eff < MinWidthShrinkHysteresis) return false;
+            EffectiveMinWidth = eff;
+            return true;
+        }
         internal readonly List<TextBinding> Texts = new();
         internal readonly List<StyledTextBinding> StyledTexts = new();   // TMP real-bold emphasis headers
         internal readonly List<ButtonBinding> Buttons = new();
@@ -35,10 +85,16 @@ internal sealed partial class WindowBuilder
         internal readonly List<SliderBinding> Sliders = new();
         internal readonly List<XYPadBinding> XYPads = new();   // .XYPad.cs: dot follows Get, enabled dim, square fill
         internal readonly List<UGuiTextInput> Fields = new();
+        // First InputElement built with AutoFocus=true (BuildInput records it, "first built wins"). The framework
+        // focuses it on the window's USER-initiated show (WindowService arms it on the rising edge of Visible;
+        // IWindowAutoFocus.TryFocusAutoField focuses it once its GameObject is active). Null = no AutoFocus field.
+        internal UGuiTextInput? AutoFocusField;
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
         internal readonly List<ListBinding> Lists = new();
-        internal readonly List<VirtualListBinding> VirtualLists = new();
+        // Holds both the uniform VirtualListBinding and the measured VariableListBinding (WindowBuilder.VariableList.cs)
+        // behind IVirtualListBinding — Apply() runs them FIRST (see Apply below) so slot Funcs resolve the fresh window.
+        internal readonly List<IVirtualListBinding> VirtualLists = new();
         internal readonly List<SpriteBinding> Sprites = new();   // dynamic atlas sub-rect (SpriteElement.UvFunc)
         internal readonly List<IconBinding> Icons = new();       // live tile icon: re-pull bytes, swap texture on change
         internal readonly List<SwatchBinding> Swatches = new();
@@ -47,6 +103,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<FrameOpacityBinding> FrameOpacities = new();
         internal readonly List<HoverBinding> Hovers = new();           // per-apply pin-state poll (visual hover is ticker-driven)
         internal readonly List<SelectableBinding> Selectables = new(); // per-apply selected-state re-tint for SelectableElement rows
+        internal readonly List<BubbleBinding> Bubbles = new();          // per-apply width solve (content-hug up to cap) for BubbleElement
         internal readonly List<MeterRowBinding> MeterRows = new();      // per-apply poll for bespoke CombatMeter rows
         internal readonly List<AccentRowBinding> AccentRows = new();    // per-apply poll for role-stripe/share-backdrop rows
         internal readonly List<GameTextureBinding> GameTextures = new();   // per-apply poll for GameTextureElement (sync with VirtualList)
@@ -73,11 +130,15 @@ internal sealed partial class WindowBuilder
             {
                 try { ReskinActions[i](); } catch { /* skip a bad leaf; never break the whole re-skin */ }
             }
+            // A theme / font-scale change can move every bubble's natural width without any text changing, and bubbles
+            // otherwise re-measure only on a content change (BubbleBinding.MarkDirty) — so re-measure them all once.
+            for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].MarkDirty();
             Apply();
             // Text sizes (Font Scale) change preferred sizes, but a re-skin doesn't auto-rebuild the layout —
             // rows could collapse (the "all sliders vanish after a font-scale drag; a tab switch brings them
             // back" bug — the tab switch was forcing this rebuild). Force it now.
             if (Rect != null) try { LayoutRebuilder.ForceRebuildLayoutImmediate(Rect); } catch { }
+            _minWidthDue = 1;   // layout is current NOW (forced) → a font-scale/theme growth is measured next apply
         }
 
         public void Apply()
@@ -114,6 +175,8 @@ internal sealed partial class WindowBuilder
                     else { LayoutRebuilder.ForceRebuildLayoutImmediate(Rect); _laidOut = true; }
                 }
                 catch { }
+                MarkMinWidthDue();
+                if (structuralChange) UiPerfStats.Count(UiCounter.Structural);   // [Hitch] ui:structural — whole-window rebuild marks
             }
             ApplyValues();
         }
@@ -135,6 +198,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < FrameOpacities.Count; i++) FrameOpacities[i].Apply();
             for (var i = 0; i < Hovers.Count; i++) Hovers[i].Poll?.Invoke();
             for (var i = 0; i < Selectables.Count; i++) Selectables[i].Apply();
+            for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].Apply();
             for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
             for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
             for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();

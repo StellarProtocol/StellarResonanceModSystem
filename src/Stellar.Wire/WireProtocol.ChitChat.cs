@@ -86,7 +86,7 @@ public static partial class WireProtocol
             return false;
 
         var msg = new ChatMessage(
-            Channel:    ChatChannel.Unknown, // channel implied by original request — overridden by ProcessChitChatReturn via ProxyCall correlation
+            Channel:    ChatChannel.Unknown, // channel implied by original request — overridden by ProcessChitChatReturnPayload via SendBytes call_id correlation
             SenderName: parsed.SenderName,
             SenderId:   parsed.SenderId,
             Text:       parsed.Text,
@@ -97,7 +97,8 @@ public static partial class WireProtocol
             RawPayload: ReadOnlyMemory<byte>.Empty,
             Sender:     new SenderMeta(parsed.SenderLevel, Job: null, Guild: null, Gender: parsed.SenderGender, IsNewbie: parsed.SenderIsNewbie),
             MsgId:      parsed.MsgId,
-            IsHistory:  true);
+            IsHistory:  true)
+        { StickerId = parsed.StickerId, TargetId = parsed.TargetId };
         record = (msg, parsed.MsgId);
         return true;
     }
@@ -135,7 +136,8 @@ public static partial class WireProtocol
             Type:       MapWireMsgType(fields.MsgTypeWire),
             RawPayload: ReadOnlyMemory<byte>.Empty,
             Sender:     new SenderMeta(fields.SenderLevel, Job: null, Guild: null, Gender: fields.SenderGender, IsNewbie: fields.SenderIsNewbie),
-            MsgId:      fields.MsgId);
+            MsgId:      fields.MsgId)
+        { StickerId = fields.StickerId, TargetId = fields.TargetId };
         return true;
     }
 
@@ -173,6 +175,8 @@ public static partial class WireProtocol
             state.Timestamp = parsedMsg.Timestamp;
             state.Text = parsedMsg.Text;
             state.MsgTypeWire = parsedMsg.MsgType;
+            state.StickerId = parsedMsg.StickerId;
+            state.TargetId = parsedMsg.TargetId;
             return true;
         }
         return SkipField(payload, ref pos, wireType);
@@ -194,6 +198,8 @@ public static partial class WireProtocol
         public long Timestamp;
         public string Text;
         public int MsgTypeWire;
+        public int StickerId;
+        public long TargetId;
     }
 
     // ---------------------------------------------------------------------
@@ -203,6 +209,7 @@ public static partial class WireProtocol
     /// <summary>
     /// Parsed result from <see cref="TryParseChitChatMsg"/>.
     /// Public because <see cref="TryParseChitChatMsg"/> is a public plugin-facing API.
+    /// <c>TargetId</c> = <c>ChatMsgInfo.target_id</c> (the whisper RECIPIENT's charId; 0 when absent).
     /// </summary>
     public readonly record struct ChitChatMsgResult(
         long MsgId,
@@ -213,7 +220,9 @@ public static partial class WireProtocol
         bool SenderIsNewbie,
         long Timestamp,
         string Text,
-        int MsgType);
+        int MsgType,
+        int StickerId,
+        long TargetId);
 
     /// <summary>
     /// Parse a <c>ChitChatMsg</c> sub-message. Returns true even on partial
@@ -249,7 +258,9 @@ public static partial class WireProtocol
             SenderIsNewbie: fields.SenderIsNewbie,
             Timestamp: fields.Timestamp,
             Text: fields.Text,
-            MsgType: fields.MsgType);
+            MsgType: fields.MsgType,
+            StickerId: fields.StickerId,
+            TargetId: fields.TargetId);
         return true;
     }
 
@@ -295,7 +306,7 @@ public static partial class WireProtocol
         {
             // msg_info (nested ChatMsgInfo)
             if (!TryReadLengthDelimited(data, ref pos, out var info)) return false;
-            TryParseChatMsgInfo(info, out state.Text, out state.MsgType);
+            TryParseChatMsgInfo(info, out state.Text, out state.MsgType, out state.StickerId, out state.TargetId);
             return true;
         }
         return SkipField(data, ref pos, wireType);
@@ -316,117 +327,37 @@ public static partial class WireProtocol
         public long Timestamp;
         public string Text;
         public int MsgType;
+        public int StickerId;
+        public long TargetId;
     }
 
     // ---------------------------------------------------------------------
-    // BasicShowInfo
+    // ChatMsgInfo  (BasicShowInfo parser → WireProtocol.BasicShowInfo.cs)
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Parsed result from <see cref="TryParseBasicShowInfo"/>.
-    /// Public because <see cref="TryParseBasicShowInfo"/> is a public plugin-facing API.
+    /// Parse the <c>msg_type</c>, <c>msg_text</c>, and <c>picture_emoji.config_id</c>
+    /// (whole-message sticker) fields out of a <c>ChatMsgInfo</c>. Overload kept for
+    /// callers that don't need the whisper recipient — see the 5-arg overload.
     /// </summary>
-    public readonly record struct BasicShowInfoResult(
-        string Name,
-        long CharId,
-        int Gender,
-        int Level,
-        bool IsNewbie);
+    public static void TryParseChatMsgInfo(ReadOnlySpan<byte> data, out string text, out int msgType, out int pictureEmojiId)
+        => TryParseChatMsgInfo(data, out text, out msgType, out pictureEmojiId, out _);
 
     /// <summary>
-    /// Parse <c>BasicShowInfo</c> per <c>stru_basic_show_info.proto</c>: extracts
-    /// char_id (1), name (2), gender (3), level (5), is_newbie (8). body_size,
-    /// talent pool, union hunt idx, and is_backflow are skipped (no plugin
-    /// consumers yet).
+    /// Parse <c>msg_type</c> (1), <c>target_id</c> (2), <c>msg_text</c> (3) and
+    /// <c>picture_emoji.config_id</c> (5) out of a <c>ChatMsgInfo</c>. <paramref name="targetId"/> is the
+    /// whisper RECIPIENT's charId (the game's peer rule, <c>chat_main_vm.lua:796-807</c>: the peer is the
+    /// sender, or <c>msgInfo.targetId</c> when the sender is self) — without it our own whisper echoes
+    /// can't be attributed to a conversation. 0 when absent. The remaining fields (multi_lang_notice,
+    /// voice, chat_hypertext) are skipped.
     /// </summary>
-    public static BasicShowInfoResult TryParseBasicShowInfo(ReadOnlySpan<byte> data)
-    {
-        var fields = new BasicShowInfoState { Name = string.Empty };
-        int pos = 0;
-        while (pos < data.Length)
-        {
-            if (!TryReadTag(data, ref pos, out var field, out var wireType)) break;
-            if (!ReadBasicShowInfoFields(data, ref pos, ref fields, field, wireType)) break;
-        }
-        return new BasicShowInfoResult(
-            Name: fields.Name,
-            CharId: fields.CharId,
-            Gender: fields.Gender,
-            Level: fields.Level,
-            IsNewbie: fields.IsNewbie);
-    }
-
-    /// <summary>
-    /// Per-tag handler for <see cref="TryParseBasicShowInfo"/>. Returns false on
-    /// malformed input — the outer loop short-circuits and preserves whatever
-    /// fields were extracted before the failure (matches the original method's
-    /// tolerant semantics).
-    /// </summary>
-    private static bool ReadBasicShowInfoFields(
-        ReadOnlySpan<byte> data,
-        ref int pos,
-        ref BasicShowInfoState state,
-        int field,
-        int wireType)
-    {
-        if (field == 1 && wireType == 0)
-        {
-            if (!TryReadVarint(data, ref pos, out var v)) return false;
-            state.CharId = unchecked((long)v);
-            return true;
-        }
-        if (field == 2 && wireType == 2)
-        {
-            if (!TryReadString(data, ref pos, out state.Name)) return false;
-            return true;
-        }
-        if (field == 3 && wireType == 0)
-        {
-            if (!TryReadVarint(data, ref pos, out var v)) return false;
-            state.Gender = (int)v;
-            return true;
-        }
-        if (field == 5 && wireType == 0)
-        {
-            if (!TryReadVarint(data, ref pos, out var v)) return false;
-            state.Level = (int)v;
-            return true;
-        }
-        if (field == 8 && wireType == 0)
-        {
-            if (!TryReadVarint(data, ref pos, out var v)) return false;
-            state.IsNewbie = v != 0;
-            return true;
-        }
-        return SkipField(data, ref pos, wireType);
-    }
-
-    /// <summary>
-    /// Mutable state holder threaded through <see cref="ReadBasicShowInfoFields"/>.
-    /// </summary>
-    private ref struct BasicShowInfoState
-    {
-        public string Name;
-        public long CharId;
-        public int Gender;
-        public int Level;
-        public bool IsNewbie;
-    }
-
-    // ---------------------------------------------------------------------
-    // ChatMsgInfo
-    // ---------------------------------------------------------------------
-
-    /// <summary>
-    /// Parse the <c>msg_type</c> + <c>msg_text</c> fields out of a
-    /// <c>ChatMsgInfo</c>. Other fields (multi_lang_notice, picture_emoji,
-    /// voice, chat_hypertext) are skipped — projecting them belongs to a later
-    /// iteration if/when plugins need them.
-    /// </summary>
-    public static void TryParseChatMsgInfo(ReadOnlySpan<byte> data, out string text, out int msgType)
+    public static void TryParseChatMsgInfo(
+        ReadOnlySpan<byte> data, out string text, out int msgType, out int pictureEmojiId, out long targetId)
     {
         text = string.Empty;
         msgType = 0;
+        pictureEmojiId = 0;
+        targetId = 0;
         int pos = 0;
         while (pos < data.Length)
         {
@@ -436,15 +367,48 @@ public static partial class WireProtocol
                 if (!TryReadVarint(data, ref pos, out var v)) return;
                 msgType = (int)v;
             }
+            else if (field == 2 && wireType == 0)
+            {
+                // target_id (int64 varint) — a charId, not an entity uuid.
+                if (!TryReadVarint(data, ref pos, out var t)) return;
+                targetId = unchecked((long)t);
+            }
             else if (field == 3 && wireType == 2)
             {
                 if (!TryReadString(data, ref pos, out text)) return;
+            }
+            else if (field == 5 && wireType == 2)
+            {
+                // picture_emoji (nested ChatPictureEmoji) — whole-message sticker. Read the
+                // length-delimited sub-message, then pull its field 1 (config_id varint).
+                if (!TryReadLengthDelimited(data, ref pos, out var emoji)) return;
+                pictureEmojiId = ReadPictureEmojiConfigId(emoji);
             }
             else
             {
                 if (!SkipField(data, ref pos, wireType)) return;
             }
         }
+    }
+
+    /// <summary>
+    /// Read <c>ChatPictureEmoji.config_id</c> (field 1, varint) out of a picture_emoji
+    /// sub-message. Returns 0 when field 1 is absent or the body is malformed.
+    /// </summary>
+    private static int ReadPictureEmojiConfigId(ReadOnlySpan<byte> data)
+    {
+        int pos = 0;
+        while (pos < data.Length)
+        {
+            if (!TryReadTag(data, ref pos, out var field, out var wireType)) return 0;
+            if (field == 1 && wireType == 0)
+            {
+                if (!TryReadVarint(data, ref pos, out var v)) return 0;
+                return (int)v;
+            }
+            if (!SkipField(data, ref pos, wireType)) return 0;
+        }
+        return 0;
     }
 
     // ---------------------------------------------------------------------
@@ -457,8 +421,16 @@ public static partial class WireProtocol
     /// (field 2, varint enum). Returns -1 on shape mismatch.
     /// </summary>
     public static int ParseChannelTypeFromGetChipChatRecordsRequest(byte[] body)
+        => ParseChannelTypeFromGetChipChatRecordsRequest(new ReadOnlySpan<byte>(body));
+
+    /// <summary>
+    /// Span overload of <see cref="ParseChannelTypeFromGetChipChatRecordsRequest(byte[])"/>.
+    /// Lets the outbound send hook read <c>channel_type</c> straight out of the
+    /// framed wire packet (slicing past the 26-byte Call header) with no
+    /// sub-array allocation. Identical logic; returns -1 on shape mismatch.
+    /// </summary>
+    public static int ParseChannelTypeFromGetChipChatRecordsRequest(ReadOnlySpan<byte> span)
     {
-        var span = new ReadOnlySpan<byte>(body);
         int pos = 0;
 
         // Outer envelope: field 1 (v_request, length-delimited).

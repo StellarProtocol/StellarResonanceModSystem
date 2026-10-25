@@ -10,13 +10,7 @@ namespace Stellar.Application.Services;
 
 internal sealed partial class ChatService : IChat
 {
-    // Bumped from 100 to 500 to hold the login-time history fetch (typically
-    // 4 batches × ~30 messages = 120) without evicting older batches before
-    // the user can scroll back to read them.
-    private const int RingCapacity = 500;
-
     private readonly ConcurrentQueue<ChatMessage> _wireQueue = new();
-    private readonly Queue<ChatMessage>           _ring      = new(RingCapacity);
     private readonly object                       _ringLock  = new();
     private readonly IPluginLog                   _log;
 
@@ -38,19 +32,21 @@ internal sealed partial class ChatService : IChat
         if (probe is null) throw new ArgumentNullException(nameof(probe));
         _probe = probe;
         probe.OnMessageReceived = OnWireMessage;
+        probe.OnSendResult = OnWireSendResult;
     }
 
     public IReadOnlyList<ChatMessage> RecentMessages
     {
         get
         {
+            NoteRecentRead();   // .Ring.cs — a reader counts as a chat consumer (lazy notice capture)
             if (Volatile.Read(ref _ringVersion) == _snapshotVersion) return _snapshot;
             lock (_ringLock)
             {
                 var cur = _ringVersion;
                 if (cur != _snapshotVersion)
                 {
-                    _snapshot = _ring.ToArray();
+                    _snapshot = MergedRingSnapshot();   // .Ring.cs — chat + notice rings, arrival order
                     _snapshotVersion = cur;
                 }
                 return _snapshot;
@@ -102,6 +98,7 @@ internal sealed partial class ChatService : IChat
         if (_probe is null)
         {
             _log.Info("[Chat] send failed: probe not attached");
+            ReportNotSent(target);
             return;
         }
         try
@@ -109,27 +106,54 @@ internal sealed partial class ChatService : IChat
             if (!_probe.TrySend(target, text, out var reason))
             {
                 _log.Info($"[Chat] send failed: {reason ?? "(no reason given)"}");
+                ReportNotSent(target);
             }
         }
         catch (Exception ex)
         {
             _log.Warning($"[Chat] send threw: {ex.GetType().Name}: {ex.Message}");
+            ReportNotSent(target);
+        }
+    }
+
+    public void SendSticker(ChatTarget target, int stickerConfigId)
+    {
+        if (_probe is null)
+        {
+            _log.Info("[Chat] sticker send failed: probe not attached");
+            ReportNotSent(target);
+            return;
+        }
+        try
+        {
+            if (!_probe.TrySendSticker(target, stickerConfigId, out var reason))
+            {
+                _log.Info($"[Chat] sticker send failed: {reason ?? "(no reason given)"}");
+                ReportNotSent(target);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"[Chat] sticker send threw: {ex.GetType().Name}: {ex.Message}");
+            ReportNotSent(target);
         }
     }
 
     // Cadence: called once per Game.Update postfix on the main thread. Drains wire queue, updates ring, fires MessageReceived.
     public void Drain()
     {
-        while (_wireQueue.TryDequeue(out var msg))
+        _mainThreadId = Environment.CurrentManagedThreadId;   // learned here: Drain only ever runs on the main thread
+        while (_wireQueue.TryDequeue(out var queued))
         {
+            var msg = ResolveWhisperPeer(queued);
             lock (_ringLock)
             {
-                if (_ring.Count >= RingCapacity) _ring.Dequeue();
-                _ring.Enqueue(msg);
+                AppendToRing(msg);   // .Ring.cs
                 Interlocked.Increment(ref _ringVersion);
             }
             FireReceived(msg);
         }
+        DrainSendResults();
     }
 
     private void FireReceived(ChatMessage msg)
@@ -149,4 +173,28 @@ internal sealed partial class ChatService : IChat
 
     // Called by the probe on the wire thread.
     private void OnWireMessage(ChatMessage msg) => _wireQueue.Enqueue(msg);
+
+    /// <summary>Injects a framework-sourced message (client-generated system notices — they never reach the wire)
+    /// into the same queue the probe feeds, so it rides the ring + <see cref="MessageReceived"/> on the next
+    /// <see cref="Drain"/>. Any thread.</summary>
+    internal void PublishLocal(ChatMessage msg) => _wireQueue.Enqueue(msg);
+
+    /// <summary>Local player's charId source (<c>IPlayerIdentity.CharId</c>, 0 = unknown). Set by Host wiring;
+    /// read on the main thread in <see cref="Drain"/> only.</summary>
+    internal Func<long>? SelfCharId { get; set; }
+
+    // Whisper peer rule (the game's own, chat_main_vm.lua:796-807): the other party is the sender, or the
+    // msg_info target when the sender is self. Done here on the main thread (not in the wire-thread probe) because
+    // "self" comes from player state. A record with NO target can't be our own echo (an outgoing whisper always
+    // names its recipient), so its sender is the peer even before self is known. Already-tagged rows (private
+    // history batches carry the request's peer) and non-whispers pass through untouched — zero allocation.
+    private ChatMessage ResolveWhisperPeer(ChatMessage msg)
+    {
+        if (msg.Channel != ChatChannel.Whisper || msg.PeerId != 0) return msg;
+        if (msg.TargetId == 0) return msg.SenderId != 0 ? msg with { PeerId = msg.SenderId } : msg;
+        var self = SelfCharId?.Invoke() ?? 0L;
+        if (self == 0) return msg;   // undecidable — plugin compares SenderId/TargetId itself (documented on PeerId)
+        var peer = msg.SenderId == self ? msg.TargetId : msg.SenderId;
+        return peer != 0 ? msg with { PeerId = peer } : msg;
+    }
 }

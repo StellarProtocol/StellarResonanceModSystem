@@ -25,6 +25,7 @@ internal sealed partial class WindowBuilder
         private object? _lastTex;
         private UvRect _lastUv;
         private bool _init;
+        public BubbleBinding? Owner;   // enclosing bubble: an aspect-fit resize changes its content → re-measure it
 
         public void Apply()
         {
@@ -35,6 +36,7 @@ internal sealed partial class WindowBuilder
             var uvChanged  = _init && !uv.Equals(_lastUv);
             if (!texChanged && !uvChanged) return;
             _lastTex = tex; _lastUv = uv; _init = true;
+            Owner?.MarkDirty();
             var t = tex as Texture;
             Raw.texture = t;
             Raw.enabled  = t != null;

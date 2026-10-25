@@ -109,6 +109,8 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
         {
             _log.Warning($"[Hotkeys] action '{action.Id}' declared twice; replacing callback.");
             existing.Callback = callback;
+            existing.IsActive = action.IsActive;   // .Conditional.cs — a re-declare may change the gate too
+            if (action.IsActive is not null) _anyConditional = true;
             return existing;
         }
 
@@ -121,7 +123,9 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
             PluginId = pluginId,
             Description = action.Description ?? string.Empty,
             Saved = saved,
+            IsActive = action.IsActive,   // .Conditional.cs — optional "only while" gate
         };
+        if (action.IsActive is not null) _anyConditional = true;
         _actions[action.Id] = registered;
         _cachedActionsList = null;   // invalidate the snapshot served to IHotkeyDirectory consumers
         SyncBlockedKeys();
@@ -172,6 +176,10 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
         // toggle edit mode in the same frame.
         if (_capturingActionId is not null) return;
 
+        // .Conditional.cs — re-evaluate IsActive gates first, every tick, so the game-side block set follows them even on
+        // frames with no press: the block must be lifted (or raised) BEFORE the next press reaches the game, not on it.
+        RefreshConditionalBlocks();
+
         var pressed = _input.PressedKeysThisFrame;
         if (pressed.Count == 0) return;
 
@@ -183,6 +191,7 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
             if (action.CurrentBinding is not { } binding) continue;
             if (binding.Modifiers != modifiers) continue;
             if (!pressed.Contains(binding.Key)) continue;
+            if (!IsLive(action)) continue;   // .Conditional.cs — a dormant gated action neither fires nor blocks
             _matchedScratch.Add(action);
         }
 
@@ -204,7 +213,7 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
         _blockedKeysScratch.Clear();
         if (_blockAllFromGame)
             foreach (var a in _actions.Values)
-                if (a.CurrentBinding is { } b) _blockedKeysScratch.Add(b);
+                if (a.CurrentBinding is { } b && (a.IsActive is null || a.ActiveLatched)) _blockedKeysScratch.Add(b);   // gated: only while active
         _onBlockedKeysChanged(_blockedKeysScratch);
     }
 
@@ -302,6 +311,10 @@ internal sealed partial class HotkeyService : IHotkeys, IHotkeyDirectory, IHotke
         public string      Description     { get; internal set; } = "";   // set by Relabel
         /// <summary>True when the binding is the player's saved choice (config / Rebind), false for a suggested default.</summary>
         public bool        Saved           { get; internal set; }
+        /// <summary>Optional "only while" gate from <see cref="HotkeyAction.IsActive"/> (null = always active). See .Conditional.cs.</summary>
+        public Func<bool>? IsActive        { get; internal set; }
+        /// <summary>The gate value the game-side block set was last built from (RefreshConditionalBlocks).</summary>
+        public bool        ActiveLatched   { get; internal set; }
 
         public void Dispose()
         {

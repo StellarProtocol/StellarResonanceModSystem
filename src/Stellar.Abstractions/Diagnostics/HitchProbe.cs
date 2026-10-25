@@ -61,6 +61,19 @@ public static class HitchProbe
         return Stopwatch.GetTimestamp();
     }
 
+    // Per-frame event COUNTERS (no time) — e.g. how many glyphs or rows some work handled this frame. Kept
+    // apart from the time buckets so a zero-ms counter is never folded into "rest". Main thread only.
+    private static readonly Dictionary<string, Bucket> _counts = new();
+
+    /// <summary>Add <paramref name="n"/> to a per-frame counter, reported as <c>name=#N</c> on a hitch line.
+    /// Main thread only; stable (non-allocated) names.</summary>
+    public static void Count(string name, int n)
+    {
+        if (!_enabled || n <= 0) return;
+        if (!_counts.TryGetValue(name, out var c)) _counts[name] = c = new Bucket();
+        c.Calls += n;
+    }
+
     private static readonly Dictionary<string, long> _segStart = new();
 
     /// <summary>Open a named segment (main thread); pairs with <see cref="EndSeg"/>. Fed by
@@ -96,6 +109,7 @@ public static class HitchProbe
         if (frameMs >= ThresholdMs && _lastGc0 >= 0) log(Format(frameMs, g0, g1, g2, il2CppGcCount));
         _lastGc0 = g0; _lastGc1 = g1; _lastGc2 = g2; _lastIl2CppGc = il2CppGcCount;
         foreach (var b in _buckets.Values) { b.Ticks = 0; b.Calls = 0; }
+        foreach (var c in _counts.Values) c.Calls = 0;
         for (var k = 0; k < 2; k++) { Interlocked.Exchange(ref _hookTicks[k], 0L); Interlocked.Exchange(ref _hookCalls[k], 0L); }
     }
 
@@ -120,6 +134,7 @@ public static class HitchProbe
             sb.Append(' ').Append(kv.Key).Append('=').Append(ms.ToString("0.0")).Append("ms/").Append(kv.Value.Calls);
         }
         if (restCalls > 0) sb.Append(" rest=").Append(restMs.ToString("0.0")).Append("ms/").Append(restCalls);
+        foreach (var kv in _counts) if (kv.Value.Calls > 0) sb.Append(' ').Append(kv.Key).Append("=#").Append(kv.Value.Calls);
         AppendHook(sb, " combatHooks=", 0);
         AppendHook(sb, " wireHooks=", 1);
         sb.Append(" gc=+").Append(g0 - _lastGc0).Append("/+").Append(g1 - _lastGc1).Append("/+").Append(g2 - _lastGc2);
