@@ -70,6 +70,16 @@ namespace Stellar.Infrastructure.Game;
 // polls and bubble width-solves of the deferred rows all move to later applies. Rows nearest the anchor go first
 // (the bottom when pinned). See PlanAdmission (.Measure.cs).
 //
+// Off-viewport cull (2.26.1): the pool window is ~viewport + a large buffer (ChatTools: 48 slots for ~8-10 visible
+// rows), and every in-window slot used to stay ACTIVE — each is clipped by the viewport's RectMask2D, but
+// PerformClipping still walks every active maskable every frame and every active CanvasRenderer is batched (measured:
+// 246 → 835 Stellar CanvasRenderers with the chat open, clipCull 0.15 → 0.6 ms, ~115 → 100 FPS). So a LATCHED row
+// whose placed rect lies wholly outside the viewport ± a margin is SetActive(false); it keeps its slot (_slotLogical)
+// and its latch. Unlatched rows are never culled (measuring needs activeSelf — they stay parked off-screen as above).
+// Applies run at ~10 Hz while ScrollRect moves the content every frame, so the margin covers one apply of travel
+// (≥ 2 rows / 160 px + the fling velocity × 0.25 s). Reveal happens inside Apply, BEFORE the Conds/value passes, so a
+// re-activated slot is rebound the same tick (no stale frame). See .Cull.cs.
+//
 // Split into its own partial for the 500-LoC file gate; same WindowBuilder partial class, so the nested binding
 // types resolve unqualified.
 internal sealed partial class WindowBuilder
@@ -223,9 +233,9 @@ internal sealed partial class WindowBuilder
             else scrollY = Mathf.Min(scrollY, maxScroll);
             if (!Mathf.Approximately(scrollY, Content.anchoredPosition.y)) SetScroll(scrollY, reset || _firstApply || _jumpReq);
 
-            var first = VariableListMath.FirstIndex(scrollY, _off, count, pool);
-            // wasAtBottom = the pin decision → the first-build cap admits rows from the BOTTOM up while pinned.
-            if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool, wasAtBottom);
+            var first = VariableListMath.FirstIndex(scrollY, _off, count, pool); _viewY = scrollY; _viewH = viewportH;   // view rect for the cull (.Cull.cs)
+            // wasAtBottom = the pin decision → bottom-up admission while pinned. Same `first` → Cull re-diffs shown rows.
+            if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool, wasAtBottom); else Cull(first, count, pool, wasAtBottom);
 
             _lastFirst = first; _lastCount = count; _firstApply = false; _jumpReq = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
@@ -309,10 +319,15 @@ internal sealed partial class WindowBuilder
         // First-build cap: PlanAdmission decides which in-range slots are shown at all. A slot it holds back is treated
         // exactly like a past-the-end slot (inactive, unbound, its provisional dropped) — it was going to be parked
         // off-screen anyway — and is admitted by a later Reposition, which every latch triggers (measuredChanged).
+        //
+        // Off-viewport cull (2.26.1): a shown LATCHED row outside the view ± margin is made inactive (ShowLatched,
+        // .Cull.cs) but is otherwise handled exactly like a shown row — still sized, placed at its true offset and
+        // recorded in _slotLogical — so Cull can re-reveal it later without a Reposition. Unlatched rows never cull.
         private void Reposition(int first, int count, int pool, bool bottomFirst)
         {
             OnWindow(first);
             PlanAdmission(first, count, pool, bottomFirst);
+            BeginCullPass();   // margin + "last culled at" key for this view (.Cull.cs)
             for (var d = 0; d < pool; d++)   // d = row offset in the window; SlotOf picks the slot that shows it
             {
                 var k = SlotOf(first, d, pool);
@@ -320,7 +335,8 @@ internal sealed partial class WindowBuilder
                 if (rt == null) continue;
                 var logical = first + d;
                 var show = logical < count && _admit[k];
-                if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
+                if (show && _measured[logical]) ShowLatched(logical, rt, InView(logical));
+                else if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
                 // A slot leaving a data index DROPS that index's provisional (unconfirmed) reading, so the two-read
                 // stable-confirm can only ever fire from readings taken on CONSECUTIVE applies while the row stayed
                 // continuously shown in ONE slot — never from two unrelated transient readings bridged across the row
@@ -399,7 +415,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_remeasure, 0, _remeasure.Length);   // likewise any in-place re-measure (_hRev re-stamped on re-latch)
             Array.Clear(_tries, 0, _tries.Length);   // fresh stable-confirm → fresh try budget
             _estSeed = Estimate();   // carry the real average across the clear (see comment above) — MUST precede the zeroing
-            _sum = 0f; _n = 0; _offDirty = true;
+            _sum = 0f; _n = 0; _offDirty = true; _cullKeyH = -1f;   // force the next Cull: a culled row that just lost its latch must re-activate to re-measure
         }
 
         // A reset (filter/tab switch via ResetScroll) forgets the model: data indices now map to different rows,

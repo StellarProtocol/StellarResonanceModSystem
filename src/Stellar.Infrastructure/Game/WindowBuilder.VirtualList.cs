@@ -10,6 +10,9 @@ namespace Stellar.Infrastructure.Game;
 // is recycled (repositioned + rebound) by VirtualListBinding as the user scrolls, so a logical list of
 // thousands renders with ~K GameObjects. Split into its own partial to keep WindowBuilder.cs +
 // WindowBuilder.Bindings.cs under the 500-LoC file gate.
+//
+// Off-viewport cull (2.26.1): slots inside the pool window but wholly outside the viewport ± a margin are made
+// inactive (they used to all stay active, clipped yet still clip-walked + batched every frame). See VirtualListBinding.
 internal sealed partial class WindowBuilder
 {
     // Sibling to BuildScroll's plumbing: builds a masked viewport + a content rect + a vertical ScrollRect
@@ -56,7 +59,7 @@ internal sealed partial class WindowBuilder
         // file-size gate. The uniform fixed-RowHeight path below is unchanged.
         if (v.VariableHeight) { BuildVariableList(v, parent, token); return; }
 
-        var (_, content, scrollRect) = BuildScrollViewport(parent, v.Height, token);
+        var (viewport, content, scrollRect) = BuildScrollViewport(parent, v.Height, token);
         content.anchorMin = new Vector2(0f, 1f); content.anchorMax = new Vector2(1f, 1f);
         content.pivot = new Vector2(0.5f, 1f); content.anchoredPosition = Vector2.zero;
 
@@ -75,7 +78,7 @@ internal sealed partial class WindowBuilder
 
         token.VirtualLists.Add(new VirtualListBinding
         {
-            Sr = scrollRect, Content = content, Slots = slots,
+            Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, RowHeight = v.RowHeight, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
         });
     }
@@ -93,7 +96,17 @@ internal sealed partial class WindowBuilder
         public float RowHeight;
         public Action<int> OnWindow = null!;
         public Func<bool>? ResetScroll;
+        public RectTransform? Viewport;   // off-viewport cull (2.26.1): the visible band rows are tested against
         private int _lastFirst = -1, _lastCount = -1;
+        // Off-viewport cull (2.26.1) — same mechanism + reasoning as the variable list (WindowBuilder.VariableList.Cull.cs):
+        // the pool is usually sized ~viewport + buffer and every in-window slot used to stay ACTIVE (clipped, but still
+        // walked by RectMask2D.PerformClipping and batched every frame). A row wholly outside the viewport ± a margin
+        // is SetActive(false) while keeping its position, and re-revealed here — before the Conds/value passes, so it
+        // is rebound the same tick. Applies run ~10 Hz while ScrollRect moves every frame → the margin covers one apply
+        // of travel. Uniform rows have no measurement, so every row can cull. Diffed; an unmoved list does no cull work.
+        private const float CullMarginMinPx = 160f, CullLookaheadSec = 0.25f;
+        private float _cullY = float.NaN, _cullH = -1f, _cullMargin;
+        private bool _cullMoving;
 
         public bool Apply()
         {
@@ -110,6 +123,7 @@ internal sealed partial class WindowBuilder
             if (countChanged) Content.sizeDelta = new Vector2(0f, VirtualListMath.ContentHeight(count, RowHeight));
             var scrollY = Mathf.Max(0f, Content.anchoredPosition.y);
             var first = VirtualListMath.FirstIndex(scrollY, RowHeight, count, pool);
+            var cullDue = BeginCullPass(scrollY, Viewport != null ? Viewport.rect.height : 0f);
             // Only touch the plugin offset + slots when the visible window actually moved (first or count
             // changed) — re-pushing an unchanged window every poll re-runs the plugin's peek reconcile for
             // nothing. The reposition is self-managed (absolute anchoredPosition), so a first-only change needs
@@ -123,13 +137,46 @@ internal sealed partial class WindowBuilder
                     var rt = Slots[i];
                     if (rt == null) continue;
                     var show = logical < count;
-                    if (rt.gameObject.activeSelf != show) rt.gameObject.SetActive(show);
+                    var on = show && InView(logical);   // placed (below) even when culled, so a later reveal is a bare SetActive
+                    if (rt.gameObject.activeSelf != on) rt.gameObject.SetActive(on);
                     if (show) rt.anchoredPosition = new Vector2(0f, -logical * RowHeight);
                 }
                 _lastFirst = first;
             }
+            else if (cullDue) Cull(first, count);   // same window, the view moved → re-diff which rows show
             _lastCount = count;
             return countChanged;
+        }
+
+        // Snapshot this apply's view + margin; true iff the view (scroll Y, viewport height, moving vs at rest) changed
+        // since the last call. Exact float compares are intended (an unmoved list re-reads the identical position).
+        private bool BeginCullPass(float y, float h)
+        {
+            var vel = Sr != null ? Mathf.Abs(Sr.velocity.y) : 0f;
+            var moving = vel >= 1f;
+            var due = y != _cullY || h != _cullH || moving != _cullMoving;
+            _cullY = y; _cullH = h; _cullMoving = moving;
+            _cullMargin = Mathf.Max(2f * RowHeight, CullMarginMinPx) + vel * CullLookaheadSec;
+            return due;
+        }
+
+        // Row `logical`'s rect overlaps the viewport ± margin? No viewport height yet → never cull blind.
+        private bool InView(int logical)
+        {
+            if (_cullH <= 0f) return true;
+            var top = logical * RowHeight;
+            return top + RowHeight > _cullY - _cullMargin && top < _cullY + _cullH + _cullMargin;
+        }
+
+        private void Cull(int first, int count)
+        {
+            for (var i = 0; i < Slots.Length; i++)
+            {
+                var rt = Slots[i]; var logical = first + i;
+                if (rt == null || logical >= count) continue;
+                var on = InView(logical);
+                if (rt.gameObject.activeSelf != on) rt.gameObject.SetActive(on);
+            }
         }
     }
 }
