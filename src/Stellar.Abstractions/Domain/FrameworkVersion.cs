@@ -19,6 +19,10 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.27.0 adds two pure helpers on <c>VariableListMath</c> — <c>TopVisibleIndex</c> (the top visible row without
+    /// <c>FirstIndex</c>'s pool clamp) and <c>FindRowById</c> (bounded outward search by <c>RowId</c>) — used by the
+    /// variable-list scroll anchor; a plugin that calls them needs ≥2.27.0. The rest of 2.27.0 is runtime-only
+    /// (opt-in sticky cursor, game press-check shield, rich-input caret, virtual-list row culling).
     /// 2.26.0 adds <c>IPluginServices.PlayerProfile</c> (<c>IPlayerProfile</c>) — resolve a player's profile
     /// AVATAR IMAGE URL by char/role id. <c>RequestAvatarUrl(long charId, Action&lt;string?&gt; onResult)</c>
     /// issues the game's own <c>Social.GetSocialData</c> RPC (service uuid 901134105, methodId 1, with the
@@ -429,5 +433,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.26.0";
+    public const string Value = "2.27.0";
 }
