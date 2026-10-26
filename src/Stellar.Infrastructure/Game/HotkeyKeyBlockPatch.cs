@@ -27,6 +27,10 @@ internal sealed class HotkeyKeyBlockPatch
     private static readonly HashSet<(int key, int mods)> _blocked = new();
     private static readonly HashSet<int> _blockedPrimaries = new();
     private static bool _captureMode;
+    // Sticky cursor (StickyCursorService): Escape is hidden from the game for the whole sticky period, whatever the
+    // modifiers, so the Esc that hands the cursor back to the camera never opens the game menu. 27 = KeyCode.Escape.
+    private const int EscapeKeyCode = 27;
+    private static bool _swallowEscape;
 
     private Harmony? _harmony;
     private string? _harmonyId;
@@ -48,6 +52,7 @@ internal sealed class HotkeyKeyBlockPatch
         _blocked.Clear();
         _blockedPrimaries.Clear();
         _captureMode = false;
+        _swallowEscape = false;
     }
 
     public void Update(IEnumerable<KeyBinding> bindings)
@@ -68,12 +73,20 @@ internal sealed class HotkeyKeyBlockPatch
         ReconcilePatched();
     }
 
+    /// <summary>Hide (on) / pass (off) Escape from the game regardless of modifiers. Called on a sticky-cursor state change
+    /// only; like a block-set change it installs the prefixes on first need and removes them when nothing needs them.</summary>
+    public void SetEscapeSwallow(bool on)
+    {
+        _swallowEscape = on;
+        ReconcilePatched();
+    }
+
     // Install/remove the Rewired prefixes to match need. Runs on the main thread (HotkeyService
     // tick / capture UI); patching costs ~ms and only happens on a block-set or capture-mode
     // transition, never per-frame.
     private void ReconcilePatched()
     {
-        var want = _captureMode || _blocked.Count > 0;
+        var want = _captureMode || _swallowEscape || _blocked.Count > 0;
         if (want == _patched) return;
         if (want) InstallPatches();
         else RemovePatches();
@@ -106,7 +119,7 @@ internal sealed class HotkeyKeyBlockPatch
         }
 
         _patched = true;
-        _log($"[KeyBlock] installed — {patched} Rewired.Keyboard methods patched (blocked={_blocked.Count} capture={_captureMode})");
+        _log($"[KeyBlock] installed — {patched} Rewired.Keyboard methods patched (blocked={_blocked.Count} capture={_captureMode} esc={_swallowEscape})");
     }
 
     private void RemovePatches()
@@ -115,7 +128,7 @@ internal sealed class HotkeyKeyBlockPatch
         try { _harmony?.UnpatchSelf(); } catch { /* teardown best-effort */ }
         _harmony = null;
         _patched = false;
-        _log?.Invoke("[KeyBlock] removed — no blocked bindings / capture; Rewired input path detour-free");
+        _log?.Invoke("[KeyBlock] removed — no blocked bindings / capture / Esc swallow; Rewired input path detour-free");
     }
 
     // __0 = positional injection — avoids name mismatch between "key" (UnityEngine.Input) and "keyCode" (Rewired.Keyboard)
@@ -127,6 +140,7 @@ internal sealed class HotkeyKeyBlockPatch
         try
         {
             if (_captureMode) { __result = false; return false; }
+            if (_swallowEscape && __0 == EscapeKeyCode) { __result = false; return false; }
             // Primary-key pre-filter: only queries about a key that participates in a blocked
             // binding pay the modifier read (6 Input.GetKey interop calls). Everything else
             // (movement keys, ability polls) exits on a HashSet miss.

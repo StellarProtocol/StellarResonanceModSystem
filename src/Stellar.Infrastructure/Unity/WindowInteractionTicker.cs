@@ -94,7 +94,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
         for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
-        PruneChartPans(); PruneChartNavs(); PruneReorder(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
+        PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -148,6 +148,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void UpdateBody()
     {
         TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
+        var fieldFocused = Sticky != null && AnyFieldFocused();   // before the field ticks: an Esc that defocuses is the field's
         SyncUiScale();
         TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
         SyncPixelPerfect();
@@ -170,6 +171,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         TickRenderHostZoom();
         TickChartZoom();   // .ChartPan.cs
         SyncResizeGripVisibility();
+        TickStickyCursor(fieldFocused);   // .StickyCursor.cs — opt-in "keep cursor after clicking a Stellar window"
     }
 
     // Drive each resize grip's VISIBILITY from the same condition as its interaction gate (HitResizeGrip):

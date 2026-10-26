@@ -167,6 +167,19 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         if (_f == null) return;
         _f.stringPosition = Text.Length;
+        ShowCaretNow();
+    }
+
+    // FocusRequest on an ALREADY-focused field (a tab hotkey while typing): ActivateInputField is a no-op then, so the blink
+    // phase is never restarted and the caret can come back in its OFF half (hidden ~0.5–1 s after every switch, in-game
+    // 2026-10-26). TMP's own SetCaretVisible (m_CaretVisible = true + m_BlinkStartTime = now, the reset a keystroke does),
+    // then ForceLabelUpdate to rebuild the caret mesh — a caret that was off drew an EMPTY mesh, and an unchanged
+    // stringPosition marks nothing dirty.
+    private void ShowCaretNow()
+    {
+        if (!_f.isFocused) return;
+        _f.SetCaretVisible();
+        _f.ForceLabelUpdate();
     }
 
     // InputElement.InsertRequest (IRichInputCaret): the STRING-index selection (not caretPosition, which counts visible
@@ -178,6 +191,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         if (_f == null) return;
         _f.stringPosition = Math.Clamp(index, 0, Text.Length);
+        ShowCaretNow();
     }
 
     // A tag shown before the sprite asset resolved prints literally; once it resolves (throttled probe inside,
@@ -210,6 +224,14 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         if (Mathf.Abs(pos.y) < 0.01f) return;
         if (_t.preferredHeight > _viewport.rect.height + 0.5f) return;   // taller than the box: TMP's caret scroll owns it
         rt.anchoredPosition = new Vector2(pos.x, 0f);
+        // ⭐ Re-sync the CARET to the text (in-game 2026-10-26: caret hidden after a PageUp tab hotkey, sometimes stuck
+        // across typing and clicks until the next PageDown). The caret graphic has its OWN RectTransform that TMP copies
+        // from the text's in AssignPositioningIfNeeded, and only its scroll paths call that (MovePageUp/Down, the
+        // caret-into-view adjust). MovePageUp shifted the text AND copied the shift to the caret; this pin moved only the
+        // text back, so the caret mesh stayed drawn offset by the shift and the viewport RectMask2D clipped it. Typing /
+        // clicking never re-syncs it (the caret looks in view from the text's position, so no adjust runs); the next
+        // PageDown copied a new, smaller shift and the caret came back. Re-copy now, through TMP's own sync.
+        _f.AssignPositioningIfNeeded();
     }
 
     // User edits first get atomic-tag repair (a partial tag deletion widened to the whole tag, caret placed after
