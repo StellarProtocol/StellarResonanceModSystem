@@ -96,6 +96,30 @@ public sealed class StickyCursorServiceTests
     }
 
     [Fact]
+    public void Mouse_stays_blocked_through_the_button_up_frame_then_unblocks()
+    {
+        var (s, b) = Engaged();
+        s.Tick(Idle(StickyPointer.World));
+        s.Tick(Press(StickyPointer.World));
+        Assert.False(s.IsSticky);
+        // The up frame: no button held any more, but the game may still read this frame's release (picking selects on it).
+        var up = Idle(StickyPointer.World); up.AnyMouseUp = true;
+        s.Tick(up);
+        Assert.True(b.MouseBlocked);
+        s.Tick(Idle(StickyPointer.World));
+        Assert.False(b.MouseBlocked);
+    }
+
+    [Fact]
+    public void Button_up_alone_never_arms_the_mouse_block()
+    {
+        var (s, b) = Engaged();
+        var up = Idle(StickyPointer.GameUi); up.AnyMouseUp = true;   // e.g. the release of a click on game UI
+        s.Tick(up);
+        Assert.False(b.MouseBlocked);
+    }
+
+    [Fact]
     public void Clicks_on_game_ui_and_hud_keep_sticky()
     {
         var (s, b) = Engaged();

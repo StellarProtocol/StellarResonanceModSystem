@@ -58,6 +58,7 @@ public sealed partial class WindowInteractionTicker
                 CursorFree = Cursor.visible && Cursor.lockState != CursorLockMode.Locked,
                 MouseDown = mouseDown,
                 AnyMouseHeld = Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2),
+                AnyMouseUp = Input.GetMouseButtonUp(0) || Input.GetMouseButtonUp(1) || Input.GetMouseButtonUp(2),
                 EscDown = Input.GetKeyDown(KeyCode.Escape),
                 EscHeld = Input.GetKey(KeyCode.Escape),
                 FieldFocused = fieldFocused,

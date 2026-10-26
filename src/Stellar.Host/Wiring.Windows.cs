@@ -26,8 +26,12 @@ public sealed partial class BootstrapPlugin
     private void WireStickyCursor(BepInExPluginLog log)
     {
         var mouseGate = new RewiredMouseGate(_gameTypeRegistry!, log);
-        var backend = new StickyCursorBackend(_luaService!, _keyBlockPatch!, mouseGate);
-        _windowRenderer!.StickyCursorDispose = mouseGate.Dispose;
+        // World model-picking reads the game's own pointer layer, not Rewired: patched lazily on first engage, through the
+        // framework's own Harmony host (auto-unpatched on framework teardown).
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        var pointerGate = new WorldPointerGate(_frameworkHarmonyHost, log);
+        var backend = new StickyCursorBackend(_luaService!, _keyBlockPatch!, mouseGate, pointerGate);
+        _windowRenderer!.StickyCursorDispose = () => { mouseGate.Dispose(); pointerGate.Dispose(); };
         _windowRenderer.StickyCursor = new Stellar.Infrastructure.Unity.WindowInteractionTicker.StickyHooks
         {
             Service = new StickyCursorService(backend, log.Info),

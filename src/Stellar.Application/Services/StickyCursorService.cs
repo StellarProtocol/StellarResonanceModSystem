@@ -25,6 +25,7 @@ internal struct StickyCursorFrame
     public bool CursorFree;             // the cursor is usable right now (Alt held, a game panel open, …)
     public bool MouseDown;              // left or right button went down this frame
     public bool AnyMouseHeld;           // left, right or middle is held
+    public bool AnyMouseUp;             // left, right or middle went up this frame
     public bool EscDown;                // Escape went down this frame
     public bool EscHeld;                // Escape is held
     public bool FieldFocused;           // a Stellar text field had focus at the START of this frame (before its Esc ran)
@@ -72,8 +73,10 @@ internal sealed class StickyCursorService
         // Escape: blocked for the whole sticky period, then kept blocked until the key is let go, so the press that
         // released sticky never reaches the game as a down OR an up. Same rule for the mouse: once blocked it stays
         // blocked until every button is up. Re-enabling input under a held button would show the game a fresh press.
+        // The mouse also stays blocked through the frame a button goes UP: we tick in Update with no ordering against
+        // the game, so disarming that frame could let the game read the up (picking may select on the release).
         SetEscBlocked(_sticky || (_escBlocked && f.EscHeld));
-        SetMouseBlocked((_sticky && f.Pointer == StickyPointer.World) || (_mouseBlocked && f.AnyMouseHeld));
+        SetMouseBlocked((_sticky && f.Pointer == StickyPointer.World) || (_mouseBlocked && (f.AnyMouseHeld || f.AnyMouseUp)));
     }
 
     private void TryEngage(StickyCursorFrame f)
