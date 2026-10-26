@@ -15,7 +15,8 @@ internal interface IStickyCursorBackend
     /// <summary>Hides (on) / passes (off) the Escape key from the game's keyboard input.</summary>
     void SetEscapeBlocked(bool on);
 
-    /// <summary>Hides (on) / passes (off) the mouse buttons, wheel and axes from the game's input, including the game's own
-    /// pointer layer that drives world model-picking (not just Rewired actions). Armed only while the pointer is over the world.</summary>
-    void SetWorldMouseBlocked(bool on);
+    /// <summary>Hides (on) / passes (off) the mouse buttons, wheel and axes from the game's input, including the game's
+    /// touch layer that drives world model-picking (not just Rewired actions). Armed only while the pointer is over the world.
+    /// <paramref name="clickSwallowed"/> is set on the disarm that ends a swallowed world click (diagnostic log only).</summary>
+    void SetWorldMouseBlocked(bool on, bool clickSwallowed);
 }

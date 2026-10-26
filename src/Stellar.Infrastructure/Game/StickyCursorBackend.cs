@@ -8,8 +8,8 @@ namespace Stellar.Infrastructure.Game;
 /// (<c>ui_manager.lua:669</c>) rewrites the <c>ZMouseManager</c> UI source on every view show/hide, so setting that source
 /// from C# would be overwritten; a key in <c>showMouseView_</c> is what the game's own chat uses and survives other panels
 /// opening and closing. Escape goes through the Rewired keyboard prefix (<see cref="HotkeyKeyBlockPatch"/>), the mouse
-/// through <see cref="RewiredMouseGate"/> (actions) plus <see cref="WorldPointerGate"/> (the game's own pointer layer,
-/// which drives world model-picking and ignores Rewired). See Knowledge Base <c>Harmony-Rewired-Input-Patching.md</c> (free-cursor section).
+/// through <see cref="RewiredMouseGate"/> (actions) plus <see cref="WorldPointerGate"/> (the game's touch layer, which
+/// drives world model-picking and ignores Rewired). See Knowledge Base <c>Harmony-Rewired-Input-Patching.md</c> (free-cursor section).
 /// </summary>
 internal sealed class StickyCursorBackend : IStickyCursorBackend
 {
@@ -45,9 +45,9 @@ internal sealed class StickyCursorBackend : IStickyCursorBackend
     public void SetEscapeBlocked(bool on) => _keyBlock.SetEscapeSwallow(on);
 
     // Same condition and lifetime for both: a Rewired failure must not leave picking open, so they are independent.
-    public void SetWorldMouseBlocked(bool on)
+    public void SetWorldMouseBlocked(bool on, bool clickSwallowed)
     {
         _mouse.SetBlocked(on);
-        _pointer.SetArmed(on);
+        _pointer.SetArmed(on, clickSwallowed);
     }
 }

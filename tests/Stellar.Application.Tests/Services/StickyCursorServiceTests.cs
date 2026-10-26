@@ -14,7 +14,13 @@ public sealed class StickyCursorServiceTests
         public bool CursorRequested, EscBlocked, MouseBlocked;
         public void RequestGameCursor(bool on) { CursorRequested = on; Calls.Add(on ? "add" : "remove"); }
         public void SetEscapeBlocked(bool on) { EscBlocked = on; Calls.Add(on ? "esc+" : "esc-"); }
-        public void SetWorldMouseBlocked(bool on) { MouseBlocked = on; Calls.Add(on ? "mouse+" : "mouse-"); }
+        public bool LastClickSwallowed;
+        public void SetWorldMouseBlocked(bool on, bool clickSwallowed)
+        {
+            MouseBlocked = on;
+            LastClickSwallowed = clickSwallowed;
+            Calls.Add(on ? "mouse+" : "mouse-");
+        }
     }
 
     // A steady frame: setting on, in world, cursor free, an interactive window up, pointer over it, nothing pressed.
@@ -93,6 +99,18 @@ public sealed class StickyCursorServiceTests
         Assert.True(b.MouseBlocked);
         s.Tick(Idle(StickyPointer.World));
         Assert.False(b.MouseBlocked);                 // released → game gets the mouse back
+        Assert.True(b.LastClickSwallowed);            // that disarm closed a swallowed click (logged once)
+    }
+
+    [Fact]
+    public void Pointer_leaving_the_world_disarms_without_reporting_a_click()
+    {
+        var (s, b) = Engaged();
+        s.Tick(Idle(StickyPointer.World));
+        s.Tick(Idle(StickyPointer.StellarInteractive));
+        Assert.False(b.MouseBlocked);
+        Assert.False(b.LastClickSwallowed);
+        Assert.True(s.IsSticky);
     }
 
     [Fact]

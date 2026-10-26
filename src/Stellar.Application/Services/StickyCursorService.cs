@@ -49,6 +49,7 @@ internal sealed class StickyCursorService
     private bool _requested;      // our key is (or may still be) in the game's show-mouse set
     private bool _escBlocked;
     private bool _mouseBlocked;
+    private bool _worldClick;     // sticky ended on a swallowed world click: reported on the mouse disarm that closes it
     private bool _lastWorldActive;
 
     public StickyCursorService(IStickyCursorBackend backend, Action<string>? log = null)
@@ -96,7 +97,11 @@ internal sealed class StickyCursorService
         else if (!f.AnyInteractiveVisible) Release("no interactive Stellar window visible", true);
         // The release press itself: the world mouse was already blocked last frame (pointer over the world), and
         // Escape for the whole sticky period, so neither reaches the game. The Tick tail keeps them blocked while held.
-        else if (f.MouseDown && f.Pointer == StickyPointer.World) Release("world click", true);
+        else if (f.MouseDown && f.Pointer == StickyPointer.World)
+        {
+            _worldClick = _mouseBlocked;   // only a press the block was already armed for was actually swallowed
+            Release("world click", true);
+        }
         // A focused field owns this Escape (it defocuses); sticky survives that press.
         else if (f.EscDown && !f.FieldFocused) Release("escape", true);
     }
@@ -137,6 +142,7 @@ internal sealed class StickyCursorService
     {
         if (on == _mouseBlocked) return;
         _mouseBlocked = on;
-        _backend.SetWorldMouseBlocked(on);
+        _backend.SetWorldMouseBlocked(on, !on && _worldClick);
+        if (!on) _worldClick = false;
     }
 }
