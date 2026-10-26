@@ -47,6 +47,39 @@ public static class VariableListMath
         return i < 0 ? 0 : i;
     }
 
+    /// <summary>The topmost row at least partly under the viewport top: the first row whose BOTTOM edge
+    /// (<c>offsets[i+1]</c>) is past <paramref name="scrollY"/>, WITHOUT <see cref="FirstIndex"/>'s pool clamp
+    /// (which pins the window to the final rows near the bottom, so its result can sit ABOVE the viewport). Walks
+    /// from <paramref name="from"/> (pass the window's first row — the answer is never above it — to keep it O(window));
+    /// a <paramref name="from"/> that is already past the view top walks back. −1 when <paramref name="count"/> ≤ 0;
+    /// a scroll past the content end returns the last row.</summary>
+    public static int TopVisibleIndex(float scrollY, float[] offsets, int count, int from)
+    {
+        if (count <= 0) return -1;
+        var i = from < 0 ? 0 : (from >= count ? count - 1 : from);
+        while (i > 0 && offsets[i] > scrollY) i--;
+        while (i < count - 1 && offsets[i + 1] <= scrollY) i++;
+        return i;
+    }
+
+    /// <summary>The data index whose <paramref name="rowId"/> equals <paramref name="id"/>, searched outward from
+    /// <paramref name="guess"/> (clamped into the list) up to <paramref name="radius"/> rows each way, nearest first.
+    /// −1 when not found — the row is gone (front-trimmed) or moved further than the radius. Bounded: at most
+    /// 2·radius+1 <paramref name="rowId"/> calls, so a remap event never costs a full scan of the list.</summary>
+    public static int FindRowById(System.Func<int, long> rowId, long id, int count, int guess, int radius)
+    {
+        if (count <= 0) return -1;
+        if (guess < 0) guess = 0; else if (guess >= count) guess = count - 1;
+        for (var r = 0; r <= radius; r++)
+        {
+            var lo = guess - r; var hi = guess + r;
+            if (lo < 0 && hi >= count) break;
+            if (lo >= 0 && rowId(lo) == id) return lo;
+            if (r > 0 && hi < count && rowId(hi) == id) return hi;
+        }
+        return -1;
+    }
+
     /// <summary>The maximum scroll offset: how far the content can move up before its bottom aligns with the
     /// viewport bottom. 0 when the content is shorter than the viewport (nothing to scroll). Drives both the
     /// stick-to-bottom pin and the "is the user currently at the bottom?" test.</summary>

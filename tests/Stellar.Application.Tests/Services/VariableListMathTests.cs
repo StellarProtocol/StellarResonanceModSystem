@@ -104,4 +104,43 @@ public class VariableListMathTests
         Assert.Equal(new[] { 0, 1, 2, 3 }, Window(0));
         Assert.Equal(5, VariableListMath.StableSlotRow(5, 0, 0));   // no pool → plain first + slot
     }
+
+    [Fact]
+    public void TopVisibleIndex_finds_the_row_under_the_view_top_without_the_pool_clamp()
+    {
+        var off = OffsetsOf(10f, 10f, 10f, 10f, 10f);   // tops 0,10,20,30,40; total 50
+        Assert.Equal(-1, VariableListMath.TopVisibleIndex(0f, off, 0, 0));
+        Assert.Equal(0, VariableListMath.TopVisibleIndex(0f, off, 5, 0));
+        Assert.Equal(3, VariableListMath.TopVisibleIndex(35f, off, 5, 0));   // walks forward from `from`
+        Assert.Equal(3, VariableListMath.TopVisibleIndex(30f, off, 5, 1));   // a bottom edge AT scrollY is not visible
+        Assert.Equal(1, VariableListMath.TopVisibleIndex(15f, off, 5, 4));   // `from` past the view top walks back
+        Assert.Equal(4, VariableListMath.TopVisibleIndex(999f, off, 5, 0));  // past the end → last row
+        // FirstIndex with a pool of 3 clamps to count−pool = 2 even though row 4 is the one under the view top.
+        Assert.Equal(2, VariableListMath.FirstIndex(45f, off, 5, 3));
+        Assert.Equal(4, VariableListMath.TopVisibleIndex(45f, off, 5, 2));
+    }
+
+    [Fact]
+    public void FindRowById_searches_outward_from_the_guess_within_the_radius()
+    {
+        // Row i has id 100 + i, as if the first 7 rows of a longer list had been trimmed off the front.
+        long Id(int i) => 100 + i;
+        Assert.Equal(5, VariableListMath.FindRowById(Id, 105, 20, 5, 0));    // exact guess
+        Assert.Equal(8, VariableListMath.FindRowById(Id, 108, 20, 5, 3));    // above the guess
+        Assert.Equal(2, VariableListMath.FindRowById(Id, 102, 20, 5, 3));    // below the guess
+        Assert.Equal(-1, VariableListMath.FindRowById(Id, 109, 20, 5, 3));   // outside the radius
+        Assert.Equal(0, VariableListMath.FindRowById(Id, 100, 20, -7, 1));   // negative guess clamps to 0
+        Assert.Equal(19, VariableListMath.FindRowById(Id, 119, 20, 50, 0));  // guess past the end clamps to the last row
+        Assert.Equal(-1, VariableListMath.FindRowById(Id, 999, 20, 10, 1000));   // gone: whole list scanned once, not found
+        Assert.Equal(-1, VariableListMath.FindRowById(Id, 100, 0, 0, 10));   // empty list
+    }
+
+    [Fact]
+    public void FindRowById_calls_rowId_at_most_twice_the_radius_plus_one()
+    {
+        var calls = 0;
+        long Id(int i) { calls++; return i; }
+        VariableListMath.FindRowById(Id, -1, 1000, 500, 10);
+        Assert.Equal(21, calls);
+    }
 }

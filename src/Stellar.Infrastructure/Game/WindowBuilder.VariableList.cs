@@ -45,6 +45,8 @@ namespace Stellar.Infrastructure.Game;
 // active flick can nudge the position a few px (we never zero the user's scroll velocity mid-flick); (3) a rolling
 // buffer that front-drops WITHOUT changing Count remaps indices undetected — cached heights are then one-row stale
 // until the next width/shrink/reset invalidation (bounded, self-heals; no per-frame jitter in exchange).
+// With RowId, a scrolled-up reader is also anchored by IDENTITY: a trim/rebuild that remaps indices under them keeps
+// the same row at the same screen offset instead of the same pixel offset (which showed newer messages). See .Anchor.cs.
 //
 // Resize: a StickToBottom view that is pinned to the bottom stays pinned as the window grows OR shrinks. The
 // "was I at the bottom?" test is judged against the PREVIOUS apply's viewport height (the size scrollY was set
@@ -193,8 +195,7 @@ internal sealed partial class WindowBuilder
         {
             if (Content == null || !Content.gameObject.activeInHierarchy) return false;
             EnsureSlotMap();
-            var count = Count(); if (count < 0) count = 0;
-            var pool = Slots.Length;
+            var count = Count(); if (count < 0) count = 0; var pool = Slots.Length;
 
             var reset = ResetScroll?.Invoke() == true;
             if (reset) ResetState();
@@ -202,7 +203,7 @@ internal sealed partial class WindowBuilder
             var viewportH = Viewport != null ? Viewport.rect.height : 0f;
             var scrollY = Mathf.Max(0f, Content.anchoredPosition.y);
             // Captured from the OLD model (before any rebuild) for anchoring + the at-bottom decision.
-            var anchorIdx = _lastFirst > 0 ? _lastFirst : 0;
+            var anchorIdx = AnchorIndex();   // RowId mode: the identity anchor's row (.Anchor.cs); else the last window first
             var anchorTopOld = (_lastCount >= 0 && anchorIdx < _off.Length) ? _off[anchorIdx] : 0f;
             var oldTotal = (_lastCount >= 0 && _lastCount < _off.Length) ? _off[_lastCount] : 0f;
             var wasAtBottom = StickyAtBottom(scrollY, oldTotal, viewportH);
@@ -229,6 +230,7 @@ internal sealed partial class WindowBuilder
 
             if (reset || _firstApply) scrollY = StickToBottom ? maxScroll : 0f;
             else if (wasAtBottom) scrollY = maxScroll;   // glued to the TRUE bottom: covers append AND estimate-refine
+            else if (IdentityAnchor(count, anchorIdx, out var idIdx)) scrollY = idIdx < 0 ? 0f : Mathf.Clamp(_off[idIdx] + (scrollY - anchorTopOld), 0f, maxScroll);   // rows remapped under a scrolled-up reader → keep the SAME row (.Anchor.cs)
             else if (measuredChanged && anchorIdx <= count) scrollY = Mathf.Clamp(_off[anchorIdx] + (scrollY - anchorTopOld), 0f, maxScroll);
             else scrollY = Mathf.Min(scrollY, maxScroll);
             if (!Mathf.Approximately(scrollY, Content.anchoredPosition.y)) SetScroll(scrollY, reset || _firstApply || _jumpReq);
@@ -237,7 +239,7 @@ internal sealed partial class WindowBuilder
             // wasAtBottom = the pin decision → bottom-up admission while pinned. Same `first` → Cull re-diffs shown rows.
             if (first != _lastFirst || countChanged || measuredChanged || reset) Reposition(first, count, pool, wasAtBottom); else Cull(first, count, pool, wasAtBottom);
 
-            _lastFirst = first; _lastCount = count; _firstApply = false; _jumpReq = false; if (viewportH > 0f) _lastViewportH = viewportH;
+            RecordAnchor(scrollY, first, count); _lastFirst = first; _lastCount = count; _firstApply = false; _jumpReq = false; if (viewportH > 0f) _lastViewportH = viewportH;
             return countChanged;
         }
 
@@ -432,7 +434,7 @@ internal sealed partial class WindowBuilder
             Array.Clear(_seen, 0, _seen.Length);   // new content → no row is exempt from the first-build cap
             for (var k = 0; k < _slotLogical.Length; k++) _slotLogical[k] = -1;
             _sum = 0f; _n = 0; _estSeed = 0f; _offDirty = true; _lastViewportW = -1f; _lastViewportH = -1f;
-            _lastFirst = -1; _lastCount = -1; _firstApply = true; _pinnedAtBottom = true;   // a reset re-pins to bottom (StickToBottom) → latch starts glued
+            _lastFirst = -1; _lastCount = -1; _firstApply = true; _pinnedAtBottom = true; _anchorIdx = -1; _anchorId = 0L;   // a reset re-pins to bottom (StickToBottom) → latch starts glued
         }
     }
 }
