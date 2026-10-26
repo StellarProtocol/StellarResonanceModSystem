@@ -21,6 +21,16 @@ public sealed partial class BootstrapPlugin
         WireStickyCursor(log);
     }
 
+    // Always-on: a press on a Stellar window must not count as a press INSIDE the game UI under it. The game's
+    // ZUIPointPressCheck (chat input, tips, outside-press popups) tests containment over every raycast hit, not just the
+    // top one, so our canvas alone didn't stop it — clicking a window over the chat area activated the hidden chat input.
+    // Installed from ApplyLifecyclePatches (OnHotUpdateReady), when the game's UI types are loaded.
+    private void InstallGamePressCheckShield(BepInExPluginLog log)
+    {
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        GamePressCheckShield.Install(_frameworkHarmonyHost, log.Info);
+    }
+
     // Opt-in sticky cursor (Settings → Layout). Ticked per rendered frame by the window ticker; the lambdas defer, so the
     // input shield (WireFreeCamera, built later) and the post-hot-update game types are read only when first needed.
     private void WireStickyCursor(BepInExPluginLog log)
