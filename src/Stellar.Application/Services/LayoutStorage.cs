@@ -13,6 +13,7 @@ internal sealed partial class LayoutStorage
     private const string SlotCountKey  = "slot_count";
     private const string SnapThresholdKey = "snap_threshold_px";
     private const string SnapEnabledKey   = "snap_enabled";
+    private const string StickyCursorKey  = "sticky_cursor";
     private const int    DefaultSlotCount = 4;
     private const int    MinSlotCount = 2;
     private const int    MaxSlotCount = 8;
@@ -32,6 +33,7 @@ internal sealed partial class LayoutStorage
     private int _activeSlot;
     private float _snapThresholdPx;
     private bool _snapEnabled;
+    private bool _stickyCursor;
 
     public LayoutStorage(IPluginConfig config, IPluginLog log)
     {
@@ -43,6 +45,7 @@ internal sealed partial class LayoutStorage
         _activeSlot = Math.Clamp(_section.Get(ActiveSlotKey, 0), 0, _slots.Count - 1);
         _snapThresholdPx = Math.Clamp(_section.Get(SnapThresholdKey, DefaultSnapThreshold), MinSnapThreshold, MaxSnapThreshold);
         _snapEnabled     = _section.Get(SnapEnabledKey, true);
+        _stickyCursor    = _section.Get(StickyCursorKey, false);   // opt-in (StickyCursorService)
         _log.Info($"[Layout] loaded {_slots.Count} slots, snap={(_snapEnabled ? "on" : "off")} threshold={_snapThresholdPx:0}px");
     }
 
@@ -70,6 +73,19 @@ internal sealed partial class LayoutStorage
             if (value == _snapEnabled) return;
             _snapEnabled = value;
             _section.Set(SnapEnabledKey, value);
+            _section.Save();
+        }
+    }
+
+    /// <summary>Settings → Layout "Keep cursor after clicking a Stellar window" (sticky cursor). Default off.</summary>
+    public bool StickyCursorEnabled
+    {
+        get => _stickyCursor;
+        set
+        {
+            if (value == _stickyCursor) return;
+            _stickyCursor = value;
+            _section.Set(StickyCursorKey, value);
             _section.Save();
         }
     }

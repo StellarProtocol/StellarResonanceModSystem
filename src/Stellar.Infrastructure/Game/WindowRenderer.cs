@@ -94,6 +94,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     public void Shutdown()
     {
         if (_fontRebuildHooked && _onFontRebuilt != null) { Font.textureRebuilt -= _onFontRebuilt; _fontRebuildHooked = false; }
+        ShutdownStickyCursor();   // before the canvas goes: release the free cursor + re-enable the game's mouse/Esc now
         DropCanvas();
         _assets.DestroyAll();
         _hudAssets.DestroyAll();
@@ -127,7 +128,11 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 _ticker.Dismissables.Add((token.Rect, onClose));
             // Register every window root (popup or regular) so FrontWindowBlocks can check z-order overlap.
             if (_ticker != null && token.Rect != null)
+            {
                 _ticker.WindowRoots.Add(token.Rect);
+                // Sticky cursor engages only on interactive (non-HUD) windows — WindowCategory, not ZOrder, decides.
+                if (reg.Spec.Category != Stellar.Abstractions.Domain.WindowCategory.HUD) _ticker.InteractiveRoots.Add(token.Rect);
+            }
             // Deterministic stacking so draw order doesn't depend on plugin load / mount order. The plugin sets
             // ZOrder to control its own placement; Category is the default tiebreak (HUD behind Tools behind
             // Debug); click-away popups always sit on top. Without this, whichever window mounted last drew on

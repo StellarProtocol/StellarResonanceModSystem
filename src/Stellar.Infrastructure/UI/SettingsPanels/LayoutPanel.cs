@@ -76,6 +76,10 @@ internal sealed partial class LayoutPanel
             new SliderElement(() => _storage.SnapThresholdPx, v => _storage.SnapThresholdPx = v, 0f, 24f, () => _storage.SnapEnabled),
             new TextElement(() => _loc.TFormat("layout.px", _storage.SnapThresholdPx)),
         }));
+        // Sticky cursor (StickyCursorService): Alt+click an interactive window keeps the cursor free after Alt is released.
+        items.Add(new TextElement(() => _loc.T("layout.cursor"), Emphasis: true));
+        items.Add(new RowElement(new HudElement[] { new ToggleElement(() => "", () => _storage.StickyCursorEnabled, v => _storage.StickyCursorEnabled = v), new TextElement(() => _loc.T("layout.stickyCursor")) }));
+        items.Add(new TextElement(() => _loc.T("layout.stickyCursor.desc"), () => _theme.Colors.TextMuted));
         items.Add(new TextElement(() => _loc.T("layout.windowControls"), Emphasis: true));
         items.Add(new ButtonElement(() => _loc.T("layout.resetSelected"), () => ResetSelected()));
         items.Add(new ButtonElement(() => _loc.T("layout.resetAllSlot"), () => ResetAllInSlot()));
