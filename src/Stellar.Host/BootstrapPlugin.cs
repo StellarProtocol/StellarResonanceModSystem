@@ -300,6 +300,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallPhotoModeHooks(hooker);
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
+        InstallGamePressCheckShield(log);               // presses on Stellar windows don't reach game press-checks
         InstallVoiceCaptureHook(log);                   // native DirectSound capture hook (before login's GCloudVoice_Init)
         InstallStickerAddressCapture(log);              // ⚠️ THROWAWAY diagnostic — remove after reading [StickerCap] log
     }
