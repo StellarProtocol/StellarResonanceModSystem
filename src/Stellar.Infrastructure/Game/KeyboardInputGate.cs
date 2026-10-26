@@ -14,7 +14,9 @@ namespace Stellar.Infrastructure.Game;
 /// (1) PRIMARY — disable Rewired's keyboard controller (<c>ReInput.controllers.Keyboard.enabled=false</c>),
 /// the input backend every game layer reads through, so movement + skills + UI hotkeys all stop at once;
 /// (2) <c>PlayerInputController.IgnoreKeyboard</c>, the game's own chat-focus flag;
-/// (3) <c>ZIgnoreMgr.SetInputIgnore</c> gameplay-action mask (proven to stop movement).
+/// (3) <c>ZIgnoreMgr.SetInputIgnore</c> gameplay-action mask for the non-keyboard paths (wheels, emotes,
+/// parkour, interact, …) — EXCEPT the cast/move bits the Auto Combo AI uses, which stay unmasked so auto-battle
+/// keeps fighting while the user types (keyboard casts are already dead via (1)+(2)).
 /// Policy-correct: triggers the game's own gates, never short-circuits input. SetSuppressed is idempotent +
 /// transition-guarded; resolution is lazy + cached; any failure logs once and disables that path (never throws
 /// into the per-frame loop). Dispose() releases both (mod isolation — never leave the keyboard ignored).
@@ -25,14 +27,25 @@ internal sealed class KeyboardInputGate
     private const BindingFlags AnyStatic = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
     private const long CustomOperateId = 10002L;
 
-    // While a Stellar text field is focused we mask ALL gameplay EInputMask actions (movement, skills,
-    // abilities, emotes, parkour, wheels, interact, …) — a hand-picked subset leaked skills/emotes/parkour.
-    // These substrings mark bits to LEAVE UNMASKED so the user can still mouse-look + click away to
-    // defocus: enum sentinels + camera/pointer/cursor/UI/confirm-cancel. Matched case-insensitively.
+    // While a Stellar text field is focused we mask the gameplay EInputMask actions (emotes, parkour,
+    // wheels, interact, items, …) — a hand-picked subset leaked emotes/parkour. These substrings mark bits
+    // to LEAVE UNMASKED so the user can still mouse-look + click away to defocus: enum sentinels +
+    // camera/pointer/cursor/confirm-cancel. Matched case-insensitively. NOT a bare "ui" substring — that
+    // also hit QuickUseItem ("q-UI-ck"); UI bits are excluded by the "UI" name PREFIX instead (UIInteract).
     private static readonly string[] MaskExcludeSubstrings =
         { "none", "all", "max", "count", "invalid", "default",
           "camera", "view", "mouse", "zoom", "rotat", "cursor", "point",
-          "ui", "click", "select", "confirm", "cancel" };
+          "click", "select", "confirm", "cancel" };
+    private const string MaskExcludeUiPrefix = "ui";
+
+    // Bits the Auto Combo (auto-battle) AI needs to cast + move — NEVER masked. The AI cast path
+    // (BT ClientClickSlot → ZBattleUtils.ClickSlot → ZSkillInputMgr.onPress(isAIPress:true)) checks these
+    // ignore masks, so masking them silently stops auto-battle while a field is focused. Keyboard casts/
+    // movement are already blocked by the Rewired keyboard disable + IgnoreKeyboard, which the AI doesn't
+    // go through. Exact names, case-insensitive.
+    private static readonly HashSet<string> MaskExcludeAutoBattle = new(StringComparer.OrdinalIgnoreCase)
+        { "NormalAttack", "Skill", "SkillWithWhiteList", "DoByFuncId", "Resonance1", "Resonance2",
+          "Move", "AutoMove", "Walk", "Run", "LockTarget" };
 
     private readonly IGameTypeRegistry _types;
     private readonly IPluginLog _log;
@@ -51,7 +64,6 @@ internal sealed class KeyboardInputGate
     private bool _pcAvailable;            // any PlayerInputController focus member resolved
     private FieldInfo? _ignoreKbField;    // PlayerInputController.IgnoreKeyboard (if a field)
     private PropertyInfo? _ignoreKbProp;  // PlayerInputController.IgnoreKeyboard (if a property)
-    private FieldInfo? _focusNameField;   // curFocusInputTextName (string)
     private FieldInfo? _focusUiField;     // isFocusUI_ (bool)
 
     // Rewired keyboard controller: ReInput.controllers → .Keyboard → .enabled
@@ -109,7 +121,6 @@ internal sealed class KeyboardInputGate
             if (_ignoreKbField is not null) _ignoreKbField.SetValue(_pcInstance, on);
             else _ignoreKbProp?.SetValue(_pcInstance, on);
             _focusUiField?.SetValue(_pcInstance, on);
-            _focusNameField?.SetValue(_pcInstance, on ? "StellarField" : string.Empty);
         }
         catch (Exception ex)
         {
@@ -203,11 +214,11 @@ internal sealed class KeyboardInputGate
         _ignoreKbField = pcType.GetField("IgnoreKeyboard", AnyInstance);
         _ignoreKbProp = _ignoreKbField is null ? pcType.GetProperty("IgnoreKeyboard", AnyInstance) : null;
         if (_ignoreKbProp is { CanWrite: false }) _ignoreKbProp = null;
-        _focusNameField = pcType.GetField("curFocusInputTextName", AnyInstance);
+        // (No curFocusInputTextName here — that lives on an IMGUI debug-window class, not PlayerInputController.)
         _focusUiField = pcType.GetField("isFocusUI_", AnyInstance);
-        var any = _ignoreKbField is not null || _ignoreKbProp is not null || _focusNameField is not null || _focusUiField is not null;
+        var any = _ignoreKbField is not null || _ignoreKbProp is not null || _focusUiField is not null;
         if (!any) { _log.Info("[KeyboardGate] no settable PlayerInputController focus members"); return false; }
-        _log.Info($"[KeyboardGate] PlayerInputController: ignoreKb={_ignoreKbField is not null || _ignoreKbProp is not null} focusName={_focusNameField is not null} focusUi={_focusUiField is not null}");
+        _log.Info($"[KeyboardGate] PlayerInputController: ignoreKb={_ignoreKbField is not null || _ignoreKbProp is not null} focusUi={_focusUiField is not null}");
         return true;
     }
 
@@ -248,11 +259,14 @@ internal sealed class KeyboardInputGate
         return list.ToArray();
     }
 
-    // True for EInputMask names we must NOT mask (sentinels + camera/pointer/UI) so the user can still
-    // mouse-look and click away to defocus the field while everything else is suppressed.
+    // True for EInputMask names we must NOT mask: the auto-battle cast/move set (Auto Combo keeps
+    // fighting), plus sentinels + camera/pointer/UI so the user can still mouse-look and click away to
+    // defocus the field while everything else is suppressed.
     private static bool IsExcludedMask(string name)
     {
+        if (MaskExcludeAutoBattle.Contains(name)) return true;
         var n = name.ToLowerInvariant();
+        if (n.StartsWith(MaskExcludeUiPrefix, StringComparison.Ordinal)) return true;
         foreach (var ex in MaskExcludeSubstrings)
             if (n.Contains(ex)) return true;
         return false;

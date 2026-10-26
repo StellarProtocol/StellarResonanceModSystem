@@ -56,7 +56,52 @@ internal sealed partial class TmpStyledText
         _naturalW = _t.preferredWidth;
         WritePad();
         _fitW = -1f;
+        RelayoutForNewString();
         FitToRect();
+    }
+
+    // The rect still has the width laid out for the PREVIOUS string: WritePad only dirties the layout, and uGUI rebuilds
+    // it at the end of the frame — after this cut is drawn, and the next re-fit is a whole apply (~10 Hz) away. In a
+    // recycled virtual-list row that showed up in-game as names that fit at rest flashing cut while scrolling ("Welll"
+    // cut to "W…" in a slot that had held a shorter name; ChatTools whisper list, 2026-10-26). So when the new string
+    // would be cut, lay out the parent group now, so the cut uses the width the slot actually gets this frame. A
+    // string that fits needs no cut and no rebuild, which keeps this off the common path (TMP measures are uncached).
+    //
+    // ⚠️ IL2CPP: the first version (0360b92) guarded with `transform.parent is not RectTransform parent`. On interop
+    // wrappers that CLR type-check is unreliable: `parent` comes back as a plain `Transform` wrapper unless a
+    // RectTransform wrapper for the same native object happens to still be alive in Il2CppInterop's weak object pool
+    // (it is right after the build, gone after a GC). So in practice the guard returned early and the rebuild never
+    // ran — the flash survived the "fix". TryCast asks the native type instead (same trap as `is TMP_Text`,
+    // WindowBuilder-Patterns.md).
+    private void RelayoutForNewString()
+    {
+        if (_padLe == null || _naturalW <= _t.rectTransform.rect.width + 0.5f) return;
+        var root = LayoutRootFor(_t.transform);
+        if (root == null) return;
+        try { LayoutRebuilder.ForceRebuildLayoutImmediate(root); }
+        catch { /* mid-destroy: the next apply re-fits from the normal layout pass */ }
+    }
+
+    // The group to rebuild: the label's parent group, climbed while that group is itself CONTENT-sized by its parent
+    // (a Row in a Row, or a Column that doesn't force-expand) — rebuilding such a group alone would re-split its own
+    // stale width. Stops at the first group whose width is handed down from above (a force-expanding Column, a Cell,
+    // a list slot / layout root), which is the width the cut must fit. Whisper row: name → its Row (under a
+    // force-expand Column) = one small group, so the extra cost stays a couple of TMP measures. Capped at 4 hops.
+    private static RectTransform? LayoutRootFor(Transform label)
+    {
+        var p = label.parent;
+        if (p == null || p.GetComponent<LayoutGroup>() == null) return null;
+        for (var hops = 0; hops < 4; hops++)
+        {
+            var up = p.parent;
+            if (up == null) break;
+            var g = up.GetComponent<HorizontalOrVerticalLayoutGroup>();
+            if (g == null) break;   // p is a layout root (list slot, window content) — its width is fixed from outside
+            var contentSized = g.TryCast<HorizontalLayoutGroup>() != null || !g.childForceExpandWidth;
+            if (!contentSized) break;
+            p = up;
+        }
+        return p.TryCast<RectTransform>();
     }
 
     // Ceil + 1: the laid-out width can come back a hair under the measured width after a re-layout (2-decimal rect,
