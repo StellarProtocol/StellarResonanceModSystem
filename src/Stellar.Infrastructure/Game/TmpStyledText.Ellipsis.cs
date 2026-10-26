@@ -56,7 +56,22 @@ internal sealed partial class TmpStyledText
         _naturalW = _t.preferredWidth;
         WritePad();
         _fitW = -1f;
+        RelayoutForNewString();
         FitToRect();
+    }
+
+    // The rect still has the width laid out for the PREVIOUS string: WritePad only dirties the layout, and uGUI rebuilds
+    // it at the end of the frame — after this cut is drawn, and the next re-fit is a whole apply (~10 Hz) away. In a
+    // recycled virtual-list row that showed up in-game as names that fit at rest flashing cut while scrolling ("Welll"
+    // cut to "W…" in a slot that had held a shorter name; ChatTools whisper list, 2026-10-26). So when the new string
+    // would be cut, lay out the parent group now, so the cut uses the width the slot actually gets this frame. A
+    // string that fits needs no cut and no rebuild, which keeps this off the common path (TMP measures are uncached).
+    private void RelayoutForNewString()
+    {
+        if (_padLe == null || _naturalW <= _t.rectTransform.rect.width + 0.5f) return;
+        if (_t.transform.parent is not RectTransform parent || parent.GetComponent<LayoutGroup>() == null) return;
+        try { LayoutRebuilder.ForceRebuildLayoutImmediate(parent); }
+        catch { /* mid-destroy: the next apply re-fits from the normal layout pass */ }
     }
 
     // Ceil + 1: the laid-out width can come back a hair under the measured width after a re-layout (2-decimal rect,
