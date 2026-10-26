@@ -41,9 +41,7 @@ internal sealed partial class TmpStyledText
         _fitW = w;
         // Not laid out yet (0) or room for the whole string → the full string; the first real width re-fits it.
         // The setter is a no-op when the string is unchanged, so this re-assigns only a real change.
-        var cut = !(w <= 1f || _naturalW <= w);
-        _t.text = cut ? Cut(w) : _full;
-        EllipsisDiag(w, cut);   // TEMP [EllipsisDiag] — remove before release
+        _t.text = w <= 1f || _naturalW <= w ? _full : Cut(w);
     }
 
     private void SetEllipsized(string s)
@@ -77,12 +75,11 @@ internal sealed partial class TmpStyledText
     // WindowBuilder-Patterns.md).
     private void RelayoutForNewString()
     {
-        _diagRelayout = null;   // TEMP [EllipsisDiag]
         if (_padLe == null || _naturalW <= _t.rectTransform.rect.width + 0.5f) return;
         var root = LayoutRootFor(_t.transform);
-        if (root == null) { _diagRelayout = "skip(no group)"; return; }
-        try { LayoutRebuilder.ForceRebuildLayoutImmediate(root); _diagRelayout = root.name; }
-        catch { _diagRelayout = "skip(threw)"; /* mid-destroy: the next apply re-fits from the normal layout pass */ }
+        if (root == null) return;
+        try { LayoutRebuilder.ForceRebuildLayoutImmediate(root); }
+        catch { /* mid-destroy: the next apply re-fits from the normal layout pass */ }
     }
 
     // The group to rebuild: the label's parent group, climbed while that group is itself CONTENT-sized by its parent
@@ -162,30 +159,5 @@ internal sealed partial class TmpStyledText
         EllipsisGlyph[id] = has;
         StyledTextFactory.Log?.Invoke($"[StyledText] ellipsis U+2026 in '{face.name}': {(has ? "yes" : "no, using ...")}");
         return has ? "…" : "...";
-    }
-
-    // ── TEMP [EllipsisDiag] — remove before release (fix/virtuallist-rebind-flicker in-game confirmation) ──────────
-    // One line per fit that CUT or that ran a relayout (fits that show the whole string without a relayout are the
-    // common case and stay silent). Rate-limited to DiagPerSec lines per real-time second across all labels.
-    private string? _diagRelayout;   // what RelayoutForNewString did on the current string change (null = not asked)
-    private static float _diagWindowStart = -1f;
-    private static int _diagInWindow;
-    private const int DiagPerSec = 30;
-
-    private void EllipsisDiag(float w, bool cut)
-    {
-        var relayout = _diagRelayout;
-        _diagRelayout = null;   // a later width-only re-fit logs "-" (that is the ~10 Hz self-correction)
-        if (!cut && relayout == null) return;
-        var log = StyledTextFactory.Log;
-        if (log == null) return;
-        var now = Time.realtimeSinceStartup;
-        if (now - _diagWindowStart >= 1f) { _diagWindowStart = now; _diagInWindow = 0; }
-        if (++_diagInWindow > DiagPerSec) return;
-        var p = _t.transform.parent;
-        var prt = p != null ? p.TryCast<RectTransform>() : null;
-        var pw = prt != null ? prt.rect.width : -1f;
-        log($"[EllipsisDiag] f={Time.frameCount} '{_full}' natural={_naturalW:F1} rectW={w:F1} parentW={pw:F1} " +
-            $"cut={(cut ? "'" + _t.text + "'" : "no")} relayout={relayout ?? "-"}");
     }
 }
