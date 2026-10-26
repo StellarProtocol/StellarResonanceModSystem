@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.27.1] - 2026-10-27
+_**2.27.1** (patch) — PR #139. Auto Combo no longer stops while a Stellar text field is focused; ellipsized labels in virtual lists no longer flash a wrong cut while scrolling. No API change, no plugin rebuild._
+### Fixed
+- Auto Combo keeps fighting while you type in a mod's text box. Before, it stopped casting until you left the box.
+### Developer notes
+- **Release scope.** PR #139. The ellipsis fix is only visible through the unreleased ChatTools whisper list, so it is deliberately left out of the player notes.
+- **Auto Combo while typing.** `KeyboardInputGate` masked almost every `EInputMask` via `ZIgnoreMgr.SetInputIgnore` (EUIView) while a field was focused. The auto-battle AI cast path (`ClientClickSlot` → `ZBattleUtils.ClickSlot` → `ZSkillInputMgr.onPress(isAIPress:true)`) honours those masks. New exact-name exclusion set: `NormalAttack, Skill, SkillWithWhiteList, DoByFuncId, Resonance1, Resonance2, Move, AutoMove, Walk, Run, LockTarget`. Keyboard gameplay stays blocked by the Rewired keyboard disable and `PlayerInputController.IgnoreKeyboard`. `QuickUseItem` was wrongly excluded by the bare `"ui"` substring rule and is now masked. Removed the dead `curFocusInputTextName` lookup (not a `PlayerInputController` field).
+- **Ellipsis on rebound rows.** `TmpStyledText.MeasureAndFit` wrote the new string (layout only marked dirty), then `FitToRect` read the stale `rect.width` left by the slot's previous string. The ~10 Hz re-apply corrected it about 100 ms later. Now, when the new string is wider than the rect, `RelayoutForNewString` runs `LayoutRebuilder.ForceRebuildLayoutImmediate` on the group picked by `LayoutRootFor` (climbs at most 4 levels while the width is content-driven) before fitting. Strings that fit cost nothing extra. The first attempt (`0360b92`) was a no-op in-game: `transform.parent is RectTransform` is usually false on IL2CPP, and `845cdf8` uses `TryCast<RectTransform>()`. Known leftover: one stale cut for about 10 frames when a tab first opens.
+- **Validation.** In-game: with the ChatTools composer focused and Auto Combo ON it kept casting (`IsInputIgnore(Skill)` = false, `Jump` = true), and W/2 typed into the field without moving the character. The whisper list had no wrong cuts in a ~125 fps capture or in the owner's scroll test.
+
 ## [2.27.0] - 2026-10-26
 _**2.27.0** (minor) — PRs #135–#137. An opt-in setting keeps the mouse cursor free after you Alt + click a Stellar window. Clicks on Stellar windows no longer reach the game's press-checks underneath. Also includes groundwork for the unreleased ChatTools redesign: the rich input caret, virtual-list row culling and a scroll anchor. Adds `VariableListMath.TopVisibleIndex` / `FindRowById` (Abstractions 2.27.0); additive, no plugin rebuild._
 ### Added
