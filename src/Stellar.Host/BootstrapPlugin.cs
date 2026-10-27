@@ -301,6 +301,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
         InstallFreeCameraLeaveHook(hooker, gameType);   // Game.OnLeaveScene PREFIX: free camera + freeze released first
         InstallInstrumentToneRelay(log);
         InstallGamePressCheckShield(log);               // presses on Stellar windows don't reach game press-checks
+        InstallImeKeepOnPatch(log);                     // Korean 한/영 works in Stellar fields (game HideMousePoint forces IME Off)
         InstallVoiceCaptureHook(log);                   // native DirectSound capture hook (before login's GCloudVoice_Init)
         InstallStickerAddressCapture(log);              // ⚠️ THROWAWAY diagnostic — remove after reading [StickerCap] log
     }
