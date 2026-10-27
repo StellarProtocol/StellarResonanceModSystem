@@ -1,6 +1,7 @@
 using System;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
@@ -36,6 +37,8 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     private bool _repairing;   // the repair's own text write re-enters onValueChanged
     private bool _cjk;
     private bool _hasTag;
+    private string _comp = "";        // last-seen IME composition (TickComposition); "" when none / unfocused
+    private bool _compEndPending;     // composition just emptied: re-pick from the committed text NEXT tick
     private Color _textColor = Color.black;   // last ApplyStyle colour (the unlocked text colour)
     private bool _locked;
     private float _lockedAlpha = 1f;
@@ -199,6 +202,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     public void Tick()
     {
         PinVerticalScroll();
+        TickComposition();
         if (!_hasTag || _t == null || _t.spriteAsset != null) return;
         var asset = TmpEmojiSprites.Get(probe: true);
         if (asset == null) return;
@@ -253,16 +257,70 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         _onChanged(value);
     }
 
-    // Per-string face pick, like TmpStyledText.SetText: TMP draws ONE face per string (no cross-script fallback),
-    // so Latin/Thai → shipped merged face, CJK/kana/Hangul → system family. Swapped only when the script changes.
+    // _hasTag follows the COMMITTED text only (the sprite-asset probe in Tick); the face pick also covers the IME
+    // composition still being typed, which TMP draws in the label at the caret (see TickComposition).
     private void Restyle(string value)
     {
         _hasTag = value.IndexOf("<sprite", StringComparison.Ordinal) >= 0;
-        var cjk = TextFacePick.For(value) == FaceScript.Cjk && (TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold) != null;
-        if (cjk == _cjk) return;
+        PickFace(_comp.Length > 0 ? value + _comp : value);
+    }
+
+    // Per-string face pick, like TmpStyledText.SetText: TMP draws ONE face per string (no cross-script fallback),
+    // so Latin/Thai → shipped merged face, CJK/kana/Hangul → system family. Swapped only when the script changes
+    // (returns true then, so a mid-composition swap can re-label).
+    private bool PickFace(string s)
+    {
+        var cjk = TextFacePick.For(s) == FaceScript.Cjk && (TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold) != null;
+        if (cjk == _cjk) return false;
         _cjk = cjk;
         var face = cjk ? TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold : TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
-        if (face != null && _t.font != face) { _t.font = face; CentreLine(_t); }
+        if (face == null || _t.font == face) return false;
+        _t.font = face; CentreLine(_t);
+        return true;
+    }
+
+    // ⭐ IME composition (in-game 2026-10-27: a Hangul syllable / romaji→kana still being composed was NOT drawn in a
+    // Stellar field; it appeared only once committed, while game chat showed it live). TMP_InputField inserts the
+    // composition string into the LABEL at the caret, but the face was picked from the committed text only — "g" kept
+    // the Latin/Thai face, which has no Hangul/kana glyphs, so the composing glyph drew empty; the commit put Hangul in
+    // the text and Restyle swapped to the CJK face. So pick from text + composition while one is active. One string
+    // read per frame while focused, nothing while not; PickFace is a no-op unless the script changes.
+    // The END edge is deferred one tick: the native composition clears at frame start, but the committed character
+    // arrives through the EventSystem's update (onValueChanged → Restyle). Re-picking from the not-yet-updated "g" in
+    // between would flip back to Latin for a frame and blank the still-drawn syllable. A cancelled composition (Esc,
+    // Backspace to empty, focus loss) has no commit, so the deferred re-pick from the current text restores Latin.
+    private void TickComposition()
+    {
+        if (_f == null || _t == null) return;
+        var comp = _f.isFocused ? ReadComposition() : "";
+        if (comp == _comp)
+        {
+            if (!_compEndPending) return;
+            _compEndPending = false;
+            PickFace(Text);
+            return;
+        }
+        _comp = comp;
+        _compEndPending = comp.Length == 0;
+        if (_compEndPending) return;
+        // A swap leaves the caret placed from the old face's metrics until TMP's next label update (its order against
+        // the EventSystem update is undefined), so re-label once, on the swap edge only. Setting the font already
+        // rebuilds the text mesh, composition included.
+        if (PickFace(Text + comp)) _f.ForceLabelUpdate();
+    }
+
+    // The same source TMP_InputField reads for its compositionString (the EventSystem input module's BaseInput, else
+    // the legacy Input class), so this sees exactly the string TMP draws.
+    private static string ReadComposition()
+    {
+        try
+        {
+            var es = EventSystem.current;
+            var module = es != null ? es.currentInputModule : null;
+            var input = module != null ? module.input : null;
+            return (input != null ? input.compositionString : Input.compositionString) ?? "";
+        }
+        catch { return ""; }
     }
 
     private static TextMeshProUGUI NewText(string name, Transform parent, TMP_FontAsset face)

@@ -31,6 +31,15 @@ public sealed partial class BootstrapPlugin
         GamePressCheckShield.Install(_frameworkHarmonyHost, log.Info);
     }
 
+    // Always-on: the game forces IME Off every frame from DefaultMousePointer.HideMousePoint, so the Korean 한/영 key is
+    // dead in a Stellar field. The prefix skips that write only while one of OUR fields is focused, the same signal that
+    // drives KeyboardInputGate. Installed from ApplyLifecyclePatches (OnHotUpdateReady), when Panda.Script types are loaded.
+    private void InstallImeKeepOnPatch(BepInExPluginLog log)
+    {
+        _frameworkHarmonyHost ??= _harmonyHostFactory!.Create("stellar.framework");
+        ImeKeepOnPatch.Install(_frameworkHarmonyHost, () => _windowService?.AnyFieldFocused ?? false, log.Info);
+    }
+
     // Opt-in sticky cursor (Settings → Layout). Ticked per rendered frame by the window ticker; the lambdas defer, so the
     // input shield (WireFreeCamera, built later) and the post-hot-update game types are read only when first needed.
     private void WireStickyCursor(BepInExPluginLog log)
