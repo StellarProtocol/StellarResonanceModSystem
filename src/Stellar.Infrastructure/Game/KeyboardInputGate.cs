@@ -47,6 +47,13 @@ internal sealed class KeyboardInputGate
         { "NormalAttack", "Skill", "SkillWithWhiteList", "DoByFuncId", "Resonance1", "Resonance2",
           "Move", "AutoMove", "Walk", "Run", "LockTarget" };
 
+    // Bits whose HUD the game HIDES while masked — NEVER masked. QuickUseItem drives the bottom-right F1–F3
+    // item bar (in-game 2026-10-27: the bar vanished while the composer was focused, a 2.27.1 regression —
+    // before, the old bare "ui" substring spared it by accident). Its keys are already blocked by the
+    // Rewired keyboard disable while a field is focused. Exact names, case-insensitive.
+    private static readonly HashSet<string> MaskExcludeHud = new(StringComparer.OrdinalIgnoreCase)
+        { "QuickUseItem" };
+
     private readonly IGameTypeRegistry _types;
     private readonly IPluginLog _log;
 
@@ -260,11 +267,11 @@ internal sealed class KeyboardInputGate
     }
 
     // True for EInputMask names we must NOT mask: the auto-battle cast/move set (Auto Combo keeps
-    // fighting), plus sentinels + camera/pointer/UI so the user can still mouse-look and click away to
+    // fighting) and HUD-hiding bits (item bar), plus sentinels + camera/pointer/UI so the user can still mouse-look and click away to
     // defocus the field while everything else is suppressed.
     private static bool IsExcludedMask(string name)
     {
-        if (MaskExcludeAutoBattle.Contains(name)) return true;
+        if (MaskExcludeAutoBattle.Contains(name) || MaskExcludeHud.Contains(name)) return true;
         var n = name.ToLowerInvariant();
         if (n.StartsWith(MaskExcludeUiPrefix, StringComparison.Ordinal)) return true;
         foreach (var ex in MaskExcludeSubstrings)
