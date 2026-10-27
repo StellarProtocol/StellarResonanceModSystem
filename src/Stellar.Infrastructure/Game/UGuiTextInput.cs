@@ -305,14 +305,17 @@ internal sealed partial class UGuiTextInput
         {
             _savedCursorVisible = Cursor.visible;
             _savedCursorLock = Cursor.lockState;
+            ImeOnFocusGained();   // force IME On for the session (Korean 한/영 key) — .Ime.cs
             _onFocusChanged?.Invoke(true);
         }
         else if (!focused && _wasFocused)
         {
             Cursor.visible = _savedCursorVisible;
             Cursor.lockState = _savedCursorLock;
+            ImeRelease();         // restore the pre-focus IME mode (owner-guarded) — .Ime.cs
             _onFocusChanged?.Invoke(false);
         }
+        else if (focused) ImeTickFocused();   // re-assert On if the game reset it — .Ime.cs
         _wasFocused = focused;
         if (focused) TrackSelection();   // InputElement.InsertRequest (.Insert.cs) — remember the caret for a later pick
         if (_multiLine) TickTextArea(focused);
@@ -333,6 +336,7 @@ internal sealed partial class UGuiTextInput
             Cursor.visible = _savedCursorVisible;
             Cursor.lockState = _savedCursorLock;
         }
+        ImeRelease();          // owner-guarded: no-op unless this field still holds the IME override
         _wasFocused = false;   // always reset so a later Build() on a reused instance is clean
         _enterLatched = false;
         _submitGrace = false;
