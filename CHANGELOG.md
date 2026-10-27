@@ -14,6 +14,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.27.2] - 2026-10-27
+_**2.27.2** (patch) — PR #141. The Korean 한/영 key and live IME composition (Korean, Japanese) now work in Stellar text boxes, and the F1/F2/F3 quick-use item bar no longer disappears while you type in one. No API change, no plugin rebuild._
+### Fixed
+- The Korean 한/영 key now switches input language in a mod's text box, the same as in the game's own chat.
+- Korean and Japanese text now shows while you are still typing it in a mod's text box, instead of only after it is finished.
+- The quick-use item bar (F1, F2, F3) no longer disappears while you type in a mod's text box. The keys still type text and do not use items.
+### Developer notes
+- **Release scope.** PR #141.
+- **IME forced off every frame.** `ZMouseManager.Update` → `updateMouseLock` calls `Panda.ZInput.DefaultMousePointer.HideMousePoint()` every frame unless a game view registered a show-mouse source; its body sets `Cursor.lockState = Locked`, `Cursor.visible = false` and `Input.imeCompositionMode = Off`. The setter icall is inlined, so it can't be patched, and re-asserting `On` every frame (a01d827, reverted in 4ac9b6e) defeats the IME. New `ImeKeepOnPatch` is a Harmony prefix on `HideMousePoint`: while a Stellar field has focus (`AnyFieldFocused`, the same signal `KeyboardInputGate` uses) it re-applies the cursor lock + hide and skips the original, so IME Off is never written; otherwise the original runs. Installed from `ApplyLifecyclePatches`, unpatched by the framework Harmony host. `AddShowMouseView` was rejected: it switches `InputMode` to UI and shows the cursor.
+- **Composing text drew nothing.** TMP draws one font per string, and `TmpRichInputField` picked it from the committed text only, while TMP appends the composition string to the label, not to `text`. `TickComposition()` now re-picks the font from committed text + composition while focused; the re-pick after a commit waits one tick so it doesn't blink, and a cancelled composition falls back to the Latin font.
+- **Quick-use item bar.** Regression from 2.27.1 (a2483bc): the narrowed "UI" prefix rule stopped sparing `QuickUseItem` (previously spared by accident via the bare `ui` substring), and the game hides that HUD while its input mask is ignored. `QuickUseItem` is now in a `MaskExcludeHud` exact-name set; the keys stay blocked by the Rewired keyboard disable.
+- **Validation (in-game, 2026-10-27).** ChatTools composer, 한/영 simulated as `VK_HANGUL`: before, 한/영 + `gks` gave `ggks`; after, it gives `한`, drawn live as ㅎ → 하 → 한; backspace-cancel leaves `g`; Japanese `nihonn` shows `にほん` while composing and Space converts to `日本`; game chat unaffected. Item bar stays visible while focused, and F2 while focused used no item. Not checked: whether Alt still frees the cursor while a field is focused (screenshots don't capture the cursor; Alt goes through the unpatched Show path).
+
 ## [2.27.1] - 2026-10-27
 _**2.27.1** (patch) — PR #139. Auto Combo no longer stops while a Stellar text field is focused; ellipsized labels in virtual lists no longer flash a wrong cut while scrolling. No API change, no plugin rebuild._
 ### Fixed

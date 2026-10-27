@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.27.2 is runtime-only (no API change): the Korean Han/Eng key and live IME composition work in Stellar text
+    /// fields, and the quick-use item bar stays visible while one is focused.
     /// 2.27.1 is runtime-only (no API change): Auto Combo keeps casting while a Stellar text field is focused, and
     /// ellipsized labels re-cut against the final width when a virtual-list row is rebound.
     /// 2.27.0 adds two pure helpers on <c>VariableListMath</c> — <c>TopVisibleIndex</c> (the top visible row without
@@ -435,5 +437,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.27.1";
+    public const string Value = "2.27.2";
 }
