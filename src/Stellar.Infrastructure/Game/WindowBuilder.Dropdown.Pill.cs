@@ -21,13 +21,17 @@ internal sealed partial class WindowBuilder
     private const float PillDdHeight     = 28f;   // trigger height (the house PillButton height)
     private const float PillDdPadX       = 12f;   // trigger inset each side of the caption / chevron
     private const float PillDdChevronGap = 6f;    // caption → ▾
-    private const float PillDdChevronW   = 10f;   // fixed ▾ cell, so a fixed-Width trigger's split is exact
+    private const float PillDdChevronW   = 8f;    // ▾ image size (canvas units) — ChatTools' composer chevron size
+    private const float PillDdChevronH   = 5f;
     private const int   PillDdFontSize   = 13;    // bold 13 stays under the 28 px strut (house PillButton rule)
     private const int   PillDdPanelRadius = 8;
     private const int   PillDdPanelPad   = 4;
     private const int   PillDdItemRadius = 5;
     private const float PillDdItemHeight = 26f;
     private const float PillDdItemGap    = 2f;
+
+    // Baked once: a white anti-aliased down-pointing chevron, tinted MenuMuted at the use-site (see PillChevronSprite).
+    private static Sprite? _pillChevronSprite;
 
     // Trigger: Bubble{FillColorFn} → Selectable{Bare} → Row[strut, bold caption, ▾, strut] — the house PillButton
     // composed from the framework's own elements, so the rounded fill, polled caption, live colours, hover and click
@@ -46,18 +50,18 @@ internal sealed partial class WindowBuilder
             return opts != null && i >= 0 && i < opts.Count ? opts[i] : "";
         }
 
-        // The caption + ▾ GROUP is centred in the pill (house PillButton: Row(Center)). The caption hugs its text; the ▾
-        // sits in a fixed-width Cell — in-game, a bare TextElement(Width: 10) "▾" got a ZERO-size rect (drawn mesh, no
-        // layout width → invisible), while a Cell's own LayoutElement + force-expand VLG always hands its child the width.
+        // The caption + ▾ GROUP is centred in the pill (house PillButton: Row(Center)). The caption hugs its text.
+        // The ▾ is an IMAGE, not a glyph: the TMP bold face has no "▾" — in-game a TMP "▾" reported a ZERO preferred
+        // size (first 0×0, then 10×0 inside a Width-10 Cell, whose VLG gives a child its PREFERRED height) and drew
+        // nothing; a plain Text "▾" falls back to a taller OS face and grows the row (ChatTools hit both → 8×5 image).
+        // The slot is a fixed 8×5 Spacer placeholder; AttachPillChevron hangs the tinted image on it after the build.
         // 0.01 gaps = a real zero gap (Gap 0 means the default 8).
         var group = new RowElement(new HudElement[]
         {
             new TextElement(Caption, Color: () => EnsureContrast(ToRgba(_assets.MenuText), Fill(), 4.5f),
                 NoWrap: true, FontSize: PillDdFontSize) { Bold = true, Ellipsize = dd.Width > 0f },
             new SpacerElement(PillDdChevronGap, 0f),
-            // Bold (TMP) on purpose: a plain Text lacking "▾" falls back to a taller OS font and grows the row.
-            new CellElement(new TextElement(() => "▾", Color: () => ToRgba(_assets.MenuMuted),
-                Align: TextAlign.Center, NoWrap: true, FontSize: PillDdFontSize) { Bold = true }, Width: PillDdChevronW),
+            new SpacerElement(PillDdChevronW, PillDdChevronH),   // ▾ slot (index 2) — see AttachPillChevron
         }, Gap: 0.01f, Justify: RowJustify.Center);
         // Width 0 → the pill hugs the group; Width > 0 → a fixed inner Cell makes the pill exactly Width, the group centred
         // in it (a caption longer than the room shrinks toward its min width 0 and is ellipsized).
@@ -83,6 +87,51 @@ internal sealed partial class WindowBuilder
             FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f,
         };
         BuildElement(pill, parent, token);
+        AttachPillChevron(parent.GetChild(parent.childCount - 1), inner > 0f, token);
+    }
+
+    // Find the ▾ placeholder in the tree just built and hang the chevron image on it. The path is fixed by the
+    // composition above: Bubble → [0] Selectable → [0] Row → [1] (Cell → [0])? group Row → [2] slot Spacer (Bubble adds
+    // its content as child 0 and no outline here; a Bare Selectable adds no bar). Guarded: a mismatch just omits the ▾.
+    private void AttachPillChevron(Transform bubble, bool hasInnerCell, WindowToken token)
+    {
+        static Transform? Child(Transform? t, int i) => t != null && t.childCount > i ? t.GetChild(i) : null;
+        var group = Child(Child(Child(bubble, 0), 0), 1);
+        if (hasInnerCell) group = Child(group, 0);
+        var slot = Child(group, 2);
+        if (slot == null) return;
+        var go = UGuiPrimitives.NewChild("Chevron", slot);
+        UGuiPrimitives.Stretch(go);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        var img = go.AddComponent<Image>();
+        img.sprite = PillChevronSprite(); img.raycastTarget = false;
+        img.color = _assets.MenuMuted;
+        token.ReskinActions.Add(() => { if (img != null) img.color = _assets.MenuMuted; });   // live theme switch
+    }
+
+    // 4× supersampled triangle (top edge full width → point at the bottom), white with AA coverage in alpha, bilinear.
+    private static Sprite PillChevronSprite()
+    {
+        if (_pillChevronSprite != null) return _pillChevronSprite;
+        const int W = 32, H = 20, S = 4;
+        var t = new Texture2D(W, H, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear };
+        for (var y = 0; y < H; y++)
+            for (var x = 0; x < W; x++)
+            {
+                var hit = 0;
+                for (var sy = 0; sy < S; sy++)
+                    for (var sx = 0; sx < S; sx++)
+                    {
+                        var fx = x + (sx + 0.5f) / S;
+                        var depth = H - (y + (sy + 0.5f) / S);        // 0 at the top edge (texture y is bottom-up)
+                        var half = W * 0.5f * (1f - depth / H);       // half-width shrinks linearly to the point
+                        if (Mathf.Abs(fx - W * 0.5f) <= half) hit++;
+                    }
+                t.SetPixel(x, y, new Color(1f, 1f, 1f, hit / (float)(S * S)));
+            }
+        t.Apply();
+        _pillChevronSprite = Sprite.Create(t, new Rect(0, 0, W, H), new Vector2(0.5f, 0.5f));
+        return _pillChevronSprite;
     }
 
     // Option panel: rounded Panel-coloured card with a 1 px Neutral ring (BubbleBg / BubbleOutline sprites at the same
