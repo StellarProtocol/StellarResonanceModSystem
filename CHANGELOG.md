@@ -14,6 +14,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.28.0] - 2026-10-29
+_**2.28.0** (minor) — PRs #143, #144. Mod dropdowns can use the rounded pill look from the Stellar Design Language, and a mod can give one of its windows its own background opacity instead of the global Window Opacity setting. Adds `DropdownStyle` / `DropdownElement.Style` and `WindowSpec.FrameOpacity` (Abstractions 2.28.0); additive, no plugin rebuild._
+### Added
+- Mod dropdown menus can now use a rounded "pill" look that matches the newer Stellar windows. Dropdowns that don't opt in look the same as before.
+- A mod can now let you set the background see-through level for one of its windows, separate from the global Window Opacity setting. Text and buttons stay solid.
+### Developer notes
+- **Release scope.** PRs #143, #144. Neither change shows up for players until a plugin uses it: the first users are MultiTool (Band Mute "Mode" dropdown) and ChatTools (a "Custom window opacity" slider), and both are released separately.
+- **Pill dropdown (#143).** New `public enum DropdownStyle { Classic = 0, Pill = 1 }` and the `DropdownElement.Style` `init` property, default `Classic`. It is not a primary-ctor parameter, so the record stays source and binary compatible (same pattern as `MaxVisibleRows`). New `WindowBuilder.Dropdown.Pill.cs`:
+  - **Trigger:** a 28 px rounded pill filled `Over(MenuMuted@0.22, Over(black@0.20, MenuBackground))`, with a bold 13 caption whose contrast is checked against the fill. Hover adds `MenuText@0.08`. `Width` is honoured (0 = hug). Colours are read live from the theme, so a theme switch repaints it.
+  - **Chevron:** an 8×5 anti-aliased triangle image. The bold TMP face has no "▾" glyph, so a text chevron gets a zero preferred size and never draws.
+  - **Popup:** a rounded panel with a 1 px edge and 4 px padding, and 26 px rows. The selected row gets a `MenuAccent@0.28` wash. `MaxVisibleRows` scrolling still works. Positioning, the blocker, dismiss on Esc or an outside click, and the popup canvas are shared with Classic.
+  - **Refactor:** `BuildDropdownScroll` now takes a `(float H, float Gap) row` tuple to stay under the STELLAR0003 five-parameter cap. Classic passes its old values.
+- **Per-window frame opacity (#144).** New `WindowSpec.FrameOpacity`, an `init` property of type `Func<float?>?`, for GlassMenu windows only (Borderless windows already have `BackgroundOpacity`).
+  - **Values:** the delegate returns an override, or `null` to follow the global `IChromeStyle.WindowOpacity`, so a plugin can switch between the two live. A null delegate keeps today's behaviour.
+  - **Implementation:** `ConfigureGlassRoot` gets its provider from `FrameOpacityOf(spec)`, which returns `Clamp(own() ?? global, 0.3, 1)` (the same 0.3 floor as the global slider). That feeds the existing `FrameOpacityBinding`. Only the frame Image's alpha changes, and `ForceOpaque` / `ChromeKill` are still honoured. If the delegate throws, the global value is used.
+- **Validation (in-game, 2026-10-29).**
+  - **#143**, on a local 2.28.0 package with the Default theme: MultiTool's Band Mute "Mode" dropdown in Pill style showed a centred caption and chevron in a 140×28 pill, hover worked, the open list showed the selected-row wash, and picking a mode applied it. ChatTools' "Translate to" dropdown kept the Classic look.
+  - **#144**, on a local 2.29.0 package with #144 rebased on #143, global opacity at 100%: ChatTools' chat window frame followed the slider live (85% → 30% → 100%) while its text and input stayed solid. Other GlassMenu windows, including ChatTools' Settings window, stayed at the global value, and returning `null` reverted the window.
+  - **Tests and gates:** #143's build had 0 errors, and its tests ran 3035 passed / 42 failed (all 42 are the known Windows-only ReShade tests). Neither PR ran `check-standards.sh` or #144's unit tests locally; CI covers both.
+
 ## [2.27.2] - 2026-10-27
 _**2.27.2** (patch) — PR #141. The Korean 한/영 key and live IME composition (Korean, Japanese) now work in Stellar text boxes, and the F1/F2/F3 quick-use item bar no longer disappears while you type in one. No API change, no plugin rebuild._
 ### Fixed
