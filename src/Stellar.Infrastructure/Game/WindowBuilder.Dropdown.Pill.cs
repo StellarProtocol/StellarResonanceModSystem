@@ -46,19 +46,28 @@ internal sealed partial class WindowBuilder
             return opts != null && i >= 0 && i < opts.Count ? opts[i] : "";
         }
 
-        // Width 0 → hug the caption; Width > 0 → the trigger is exactly Width (caption box = the remainder, ellipsized).
-        var captionW = dd.Width > 0f ? Mathf.Max(0f, dd.Width - 2f * PillDdPadX - PillDdChevronGap - PillDdChevronW) : 0f;
+        // The caption + ▾ GROUP is centred in the pill (house PillButton: Row(Center)). The caption hugs its text; the ▾
+        // sits in a fixed-width Cell — in-game, a bare TextElement(Width: 10) "▾" got a ZERO-size rect (drawn mesh, no
+        // layout width → invisible), while a Cell's own LayoutElement + force-expand VLG always hands its child the width.
+        // 0.01 gaps = a real zero gap (Gap 0 means the default 8).
+        var group = new RowElement(new HudElement[]
+        {
+            new TextElement(Caption, Color: () => EnsureContrast(ToRgba(_assets.MenuText), Fill(), 4.5f),
+                NoWrap: true, FontSize: PillDdFontSize) { Bold = true, Ellipsize = dd.Width > 0f },
+            new SpacerElement(PillDdChevronGap, 0f),
+            // Bold (TMP) on purpose: a plain Text lacking "▾" falls back to a taller OS font and grows the row.
+            new CellElement(new TextElement(() => "▾", Color: () => ToRgba(_assets.MenuMuted),
+                Align: TextAlign.Center, NoWrap: true, FontSize: PillDdFontSize) { Bold = true }, Width: PillDdChevronW),
+        }, Gap: 0.01f, Justify: RowJustify.Center);
+        // Width 0 → the pill hugs the group; Width > 0 → a fixed inner Cell makes the pill exactly Width, the group centred
+        // in it (a caption longer than the room shrinks toward its min width 0 and is ellipsized).
+        var inner = dd.Width > 0f ? Mathf.Max(0f, dd.Width - 2f * PillDdPadX) : 0f;
         var row = new RowElement(new HudElement[]
         {
             new SpacerElement(PillDdPadX, PillDdHeight),
-            new TextElement(Caption, Color: () => EnsureContrast(ToRgba(_assets.MenuText), Fill(), 4.5f),
-                Width: captionW, NoWrap: true, FontSize: PillDdFontSize) { Bold = true, Ellipsize = dd.Width > 0f },
-            new SpacerElement(PillDdChevronGap, 0f),
-            // Bold (TMP) on purpose: a plain Text lacking "▾" falls back to a taller OS font and grows the row.
-            new TextElement(() => "▾", Color: () => ToRgba(_assets.MenuMuted), Width: PillDdChevronW,
-                Align: TextAlign.Center, NoWrap: true, FontSize: PillDdFontSize) { Bold = true },
+            inner > 0f ? new CellElement(group, Width: inner) : group,
             new SpacerElement(PillDdPadX, PillDdHeight),
-        }, Gap: 0.01f);   // 0.01 = a real zero gap (Gap 0 means the default 8)
+        }, Gap: 0.01f, Justify: RowJustify.Center);
 
         var pill = new BubbleElement(new SelectableElement(row, OnClick: () => { })
         {
