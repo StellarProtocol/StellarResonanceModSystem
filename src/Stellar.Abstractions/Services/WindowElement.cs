@@ -218,6 +218,25 @@ public sealed record DropdownElement(
     /// primary-ctor parameter) so the record stays source AND binary compatible with already-compiled plugins —
     /// see WindowBuilder-Patterns.md "Binary compatibility rules for HudElement records".</summary>
     public int MaxVisibleRows { get; init; }
+
+    /// <summary>Visual style. <see cref="DropdownStyle.Classic"/> (default) = the themed button trigger and bordered
+    /// option list, exactly as before, so existing dropdowns are unchanged. <see cref="DropdownStyle.Pill"/> = the
+    /// Stellar house-style look: a 28 px rounded neutral pill (bold caption + muted ▾) and a rounded option panel with
+    /// an accent-washed selected row; colours follow the live theme. Behaviour (positioning, dismiss,
+    /// <see cref="MaxVisibleRows"/>) is identical in both. An <c>init</c> property (NOT a primary-ctor parameter) so
+    /// the record stays source AND binary compatible with already-compiled plugins — see WindowBuilder-Patterns.md
+    /// "Binary compatibility rules for HudElement records".</summary>
+    public DropdownStyle Style { get; init; }
+}
+
+/// <summary>Render style for a <see cref="DropdownElement"/>.</summary>
+public enum DropdownStyle
+{
+    /// <summary>The original themed button trigger (caption + ▾) and bordered option list (default).</summary>
+    Classic = 0,
+    /// <summary>House-style pill: a 28 px rounded neutral trigger (bold caption + muted ▾, hover lightens) and a
+    /// rounded panel-coloured option list whose selected row carries a soft accent wash.</summary>
+    Pill = 1,
 }
 
 /// <summary>Vertical scroll viewport wrapping a child subtree + a themed thin scrollbar. By default the viewport
