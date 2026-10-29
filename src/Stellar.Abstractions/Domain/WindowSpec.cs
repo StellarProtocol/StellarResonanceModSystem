@@ -113,6 +113,12 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// expands when the user resizes height — no separate child GO needed. Null = no background (default).</summary>
     public Func<float>? BackgroundOpacity { get; init; }
 
+    /// <summary>GlassMenu windows only: per-window override of the frame (background) opacity, polled live like the
+    /// global theme setting. Return a value in [0.3, 1] to override, or null to follow the framework's
+    /// Themes → Window Opacity (IChromeStyle.WindowOpacity). Only the frame background fades; content stays opaque.
+    /// Null delegate (default) = always follow the framework.</summary>
+    public Func<float?>? FrameOpacity { get; init; }
+
     /// <summary>Borderless windows only: a purely visual layer. No content padding (the content starts at the window's
     /// top-left corner and fills its rect exactly) and no click blocker, so presses and pointer-over-UI checks fall
     /// through to the game and to every window behind it. For full-screen guides and overlays that must never take

@@ -174,11 +174,28 @@ internal sealed partial class WindowBuilder
         var frame = root.gameObject.AddComponent<Image>();
         frame.sprite = _assets.FrameBg; frame.type = Image.Type.Sliced; frame.raycastTarget = true;
         token.ReskinActions.Add(() => { if (frame != null) frame.sprite = _assets.FrameBg; });
-        if (_assets.OpacityProvider is { } op)
+        if (FrameOpacityOf(spec) is { } op)
         {
             var c0 = frame.color; frame.color = new Color(c0.r, c0.g, c0.b, op());
             token.FrameOpacities.Add(new FrameOpacityBinding { Img = frame, Opacity = op });
         }
+    }
+
+    // The frame-alpha provider for a GlassMenu window: the global theme opacity (null in the sandbox → no binding,
+    // exactly as before), or — when the plugin supplied spec.FrameOpacity — its per-window override, falling back to
+    // the global value whenever it returns null. Re-read every poll, so a plugin can flip override ↔ follow live.
+    private System.Func<float>? FrameOpacityOf(WindowSpec spec)
+    {
+        var global = _assets.OpacityProvider;
+        if (spec.FrameOpacity is not { } own) return global;
+        float Global() => global?.Invoke() ?? 1f;
+        return () =>
+        {
+            float? v;
+            // A plugin delegate runs inside the shared poll loop: a throw here must not break every other binding.
+            try { v = own(); } catch { v = null; }
+            return System.Math.Clamp(v ?? Global(), 0.3f, 1f);
+        };
     }
 
     private GameObject BuildTitleBar(WindowRegistration reg, Transform parent, WindowToken token)
