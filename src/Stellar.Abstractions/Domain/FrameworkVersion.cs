@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.28.0 adds <c>DropdownStyle</c> + the <c>DropdownElement.Style</c> init property (opt-in Pill dropdown look) and
+    /// <c>WindowSpec.FrameOpacity</c> (per-window GlassMenu frame opacity override; null follows the global setting);
+    /// a plugin that sets either needs ≥2.28.0.
     /// 2.27.2 is runtime-only (no API change): the Korean Han/Eng key and live IME composition work in Stellar text
     /// fields, and the quick-use item bar stays visible while one is focused.
     /// 2.27.1 is runtime-only (no API change): Auto Combo keeps casting while a Stellar text field is focused, and
@@ -437,5 +440,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.27.2";
+    public const string Value = "2.28.0";
 }
