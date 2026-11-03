@@ -62,13 +62,14 @@ internal sealed partial class PandaSocialDataProbe
             $"levelArea={l.LevelAreaId}");
     }
 
-    /// <summary>Party probe (fires regardless of the diagnostics toggle): one line per reply that carries
-    /// <c>SocialData.team_data</c>, so we can learn in-game whether the server sends the member list for players
-    /// OUTSIDE our party or only <c>team_num</c>. Not deduped like the location probe — team_data is
-    /// full-mask-only (ID-card opens), so it's already low-volume. A present-but-zeroed section logs <c>empty</c>.</summary>
+    /// <summary>Party probe (<c>STELLAR_DIAGNOSTICS=1</c> only): one line per reply that carries
+    /// <c>SocialData.team_data</c>. It answered its question (2026-11-04: the server DOES send the full roster for
+    /// players outside our party — Social-Location-Probe.md), so it no longer runs in a normal session; keep it for
+    /// re-checking the decode. Not deduped like the location probe — team_data is full-mask-only (ID-card opens and
+    /// EntityInspector refreshes), so it's low-volume. A present-but-zeroed section logs <c>empty</c>.</summary>
     private void LogTeamProbe(SocialSnapshot s)
     {
-        if (s.Party is not { } t) return;
+        if (!StellarDiagnostics.IsEnabled || s.Party is not { } t) return;
         bool empty = t.TeamId == 0 && t.LeaderId == 0 && t.TeamNum == 0 && t.CharIds.Count == 0 && t.Members.Count == 0;
 
         var sb = new System.Text.StringBuilder();
