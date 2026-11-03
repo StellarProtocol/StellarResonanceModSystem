@@ -25,7 +25,10 @@ public interface ICombatSnapshot
     /// <summary>Active buffs on the local player.</summary>
     IReadOnlyList<ActiveBuff> LocalBuffs { get; }
 
-    /// <summary>Latest server epoch (ms) seen on the SyncServerTime notify. Zero until first observation.</summary>
+    /// <summary>Server clock, Unix-epoch ms: the <c>server_milliseconds</c> field (field 2) of the latest
+    /// SyncServerTime notify, interpolated on a local monotonic clock between the ~5 s anchors. Zero until first
+    /// observation. Note that most <see cref="CombatEvent"/> <c>TimestampMs</c> values are stamped from the PC
+    /// clock (<see cref="DateTimeOffset.UtcNow"/>), so the two differ by the PC's clock error.</summary>
     long ServerNowMs { get; }
 
     /// <summary>The same interpolated server clock as <see cref="ServerNowMs"/> exposed as a wall-clock
