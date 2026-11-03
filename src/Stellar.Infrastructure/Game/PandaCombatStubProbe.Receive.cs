@@ -24,19 +24,10 @@ internal sealed partial class PandaCombatStubProbe
 {
     private void OnServerTime(ReadOnlySpan<byte> span)
     {
-        // SyncServerTime payload is a single int64 epoch_ms at field 1.
-        int pos = 0;
-        while (pos < span.Length)
-        {
-            if (!WireProtocol.TryReadTag(span, ref pos, out var field, out var wire)) break;
-            if (field == 1 && wire == 0)
-            {
-                if (!WireProtocol.TryReadVarint(span, ref pos, out var t)) break;
-                _sink.SetServerNowMs((long)t);
-                return;
-            }
-            if (!WireProtocol.SkipField(span, ref pos, wire)) break;
-        }
+        // SyncServerTime = { client_milliseconds = 1 (our own PC time echoed back), server_milliseconds = 2 }.
+        // Anchor on field 2 — field 1 made ServerNowMs the PC clock (KB Server-Clock-and-Ping-HUD.md).
+        if (SyncServerTimeReader.TryRead(span, out var t))
+            _sink.SetServerNowMs(t);
     }
 
     private void OnNearEntities(ReadOnlySpan<byte> span)
