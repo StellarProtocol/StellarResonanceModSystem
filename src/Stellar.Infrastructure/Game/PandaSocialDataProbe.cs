@@ -60,6 +60,7 @@ internal sealed partial class PandaSocialDataProbe
         LogAvatarUrlOneShot(snapshot);
         LogCollectPointsOneShot(snapshot);
         LogLocationProbe(snapshot);
+        LogTeamProbe(snapshot);
         _sink.Push(snapshot);
     }
 

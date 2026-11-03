@@ -9,11 +9,12 @@ namespace Stellar.Application.Services;
 /// <summary>Per-player cache of the latest social-data reply. No eviction (matches the inspector's
 /// sticky-skill policy — a snapshot stays valid until replaced by a fresher reply). Thread-safe push
 /// (decode runs on the wire thread); reads on the UI thread.
-/// <para>Last-reply-wins EXCEPT for <see cref="SocialSnapshot.Location"/>: only full-mask (ID-card) replies
+/// <para>Last-reply-wins EXCEPT for <see cref="SocialSnapshot.Location"/> and <see cref="SocialSnapshot.Party"/>: only full-mask (ID-card) replies
 /// carry <c>scene_data</c>, and the game re-fetches the same player with thin nameplate/avatar masks far more
 /// often (~60 thin vs ~17 full in one session) — a plain replace wiped a known location within seconds. A
 /// location-less reply therefore inherits the previous snapshot's location (its own
-/// <see cref="SocialLocation.ReceivedAtMs"/> stamp tells the consumer how old it is).</para></summary>
+/// <see cref="SocialLocation.ReceivedAtMs"/> stamp tells the consumer how old it is). A party-less reply likewise inherits the previous
+/// <see cref="SocialSnapshot.Party"/> (<c>team_data</c> is also full-mask-only; it carries no age stamp).</para></summary>
 public sealed class SocialDataCache : ISocialDataSink
 {
     private readonly ConcurrentDictionary<long, SocialSnapshot> _byChar = new();
@@ -24,7 +25,7 @@ public sealed class SocialDataCache : ISocialDataSink
     public SocialDataCache(Func<long>? serverNowMs = null) => _serverNowMs = serverNowMs ?? (static () => 0L);
 
     /// <summary>Store/replace the latest social snapshot for a player, keyed by charId. A fresh location is
-    /// stamped with the server clock; a missing one is carried forward from the cached snapshot.</summary>
+    /// stamped with the server clock; a missing one (or a missing party) is carried forward from the cached snapshot.</summary>
     public void Push(SocialSnapshot snapshot)
     {
         if (snapshot.Location is { } fresh)
@@ -33,9 +34,11 @@ public sealed class SocialDataCache : ISocialDataSink
         // AddOrUpdate so the carry-forward reads the value it replaces, even with two pushes racing.
         _byChar.AddOrUpdate(snapshot.CharId,
             static (_, incoming) => incoming,
-            static (_, old, incoming) => incoming.Location is null && old.Location is not null
-                ? incoming with { Location = old.Location }
-                : incoming,
+            static (_, old, incoming) => incoming with
+            {
+                Location = incoming.Location ?? old.Location,
+                Party    = incoming.Party    ?? old.Party,     // team_data is full-mask-only too — same carry-forward
+            },
             snapshot);
     }
 

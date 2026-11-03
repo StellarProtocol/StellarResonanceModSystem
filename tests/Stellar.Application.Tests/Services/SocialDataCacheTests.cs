@@ -99,6 +99,31 @@ public class SocialDataCacheTests
         Assert.Equal(0, cache.GetSocialSnapshot(Player(4242))!.Location!.Value.MapId);
     }
 
+    private static SocialParty Party(long teamId, int num) =>
+        new(teamId, 1, 0, num, 0, System.Array.Empty<long>(), System.Array.Empty<SocialPartyMember>());
+
+    [Fact]
+    public void Thin_reply_without_party_keeps_last_known_party()
+    {
+        // team_data is full-mask-only like scene_data — same carry-forward rule.
+        var cache = new SocialDataCache();
+        cache.Push(Snap(4242, "Full") with { Party = Party(77, 4) });
+        cache.Push(Snap(4242, "Thin"));
+
+        var got = cache.GetSocialSnapshot(Player(4242))!;
+        Assert.Equal("Thin", got.Name);
+        Assert.Equal(77, got.Party!.TeamId);
+    }
+
+    [Fact]
+    public void Fresh_party_replaces_old_one()
+    {
+        var cache = new SocialDataCache();
+        cache.Push(Snap(4242, "A") with { Party = Party(77, 4) });
+        cache.Push(Snap(4242, "B") with { Party = Party(0, 0) });   // present-but-empty = left the party
+        Assert.Equal(0, cache.GetSocialSnapshot(Player(4242))!.Party!.TeamId);
+    }
+
     [Fact]
     public void No_clock_stamps_zero()
     {

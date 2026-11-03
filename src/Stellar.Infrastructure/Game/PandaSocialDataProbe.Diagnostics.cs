@@ -62,6 +62,35 @@ internal sealed partial class PandaSocialDataProbe
             $"levelArea={l.LevelAreaId}");
     }
 
+    /// <summary>Party probe (fires regardless of the diagnostics toggle): one line per reply that carries
+    /// <c>SocialData.team_data</c>, so we can learn in-game whether the server sends the member list for players
+    /// OUTSIDE our party or only <c>team_num</c>. Not deduped like the location probe — team_data is
+    /// full-mask-only (ID-card opens), so it's already low-volume. A present-but-zeroed section logs <c>empty</c>.</summary>
+    private void LogTeamProbe(SocialSnapshot s)
+    {
+        if (s.Party is not { } t) return;
+        bool empty = t.TeamId == 0 && t.LeaderId == 0 && t.TeamNum == 0 && t.CharIds.Count == 0 && t.Members.Count == 0;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"[TeamDiag] char={s.CharId} name={s.Name} team={t.TeamId} leader={t.LeaderId} target={t.TeamTargetId} " +
+                  $"num={t.TeamNum} type={t.MemberType} charIds={t.CharIds.Count} members={t.Members.Count}");
+        if (empty) sb.Append(" empty");
+        if (t.Members.Count > 0)
+        {
+            sb.Append(" [");
+            int n = System.Math.Min(t.Members.Count, 20);   // raid parties cap at 20 — the bound is just defensive
+            for (int i = 0; i < n; i++)
+            {
+                var m = t.Members[i];
+                if (i > 0) sb.Append(' ');
+                sb.Append($"{m.Name}/{m.Level}/{m.ProfessionId}/{m.OnlineStatus}/{m.SceneId}");
+            }
+            if (t.Members.Count > n) sb.Append(" …");
+            sb.Append(']');
+        }
+        _log.Info(sb.ToString());
+    }
+
     private bool _collectPointsOneShot;
 
     /// <summary>One-shot (fires regardless of the diagnostics toggle) confirmation that a parsed

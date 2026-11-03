@@ -47,6 +47,7 @@ public class SocialDataReaderTests
         Assert.Equal(new GearSlotRef(200, 1001), snap.Gear[0]);
         Assert.Equal(new GearSlotRef(205, 1002), snap.Gear[1]);
         Assert.Equal(new SocialIdentity("Eroge", 5, 2868, 301, 9265, 42, 7), snap.Identity);
+        Assert.Equal(5, snap.Party!.TeamNum);                   // team_data also surfaces as the Party record
     }
 
     [Fact]
@@ -65,6 +66,7 @@ public class SocialDataReaderTests
         Assert.Equal(0, snap.Identity.FashionCollect);
         Assert.Equal(0, snap.Identity.RideCollect);
         Assert.Equal(0, snap.Identity.WeaponSkinCollect);
+        Assert.Null(snap.Party);                                // team_data absent → null, not a zeroed party
     }
 
     [Fact]
