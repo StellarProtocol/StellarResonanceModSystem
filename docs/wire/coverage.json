@@ -344,6 +344,20 @@
         }
       }
     },
+    "SyncServerTime": {
+      "fields": {
+        "1": {
+          "name": "client_milliseconds",
+          "status": "internal",
+          "note": "our own PC timestamp echoed back by the server; used only as a fallback when field 2 is missing"
+        },
+        "2": {
+          "name": "server_milliseconds",
+          "status": "exposed",
+          "exposedAs": "ICombatSnapshot.ServerNowMs (anchored on each sync, interpolated between)"
+        }
+      }
+    },
     "notice_update_team_info": {
       "fields": {
         "1": {
