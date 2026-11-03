@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.28.1] - 2026-11-03
+_**2.28.1** (patch) — PR #146. The framework's server clock now follows the real game server instead of your PC's clock, so mods that time things against the server stay correct on a PC whose clock is wrong. No API change, no plugin rebuild._
+### Fixed
+- Mods that rely on server time (band sync, countdowns, cooldown timers) now stay accurate even when your PC's clock is set wrong.
+### Developer notes
+- **Release scope.** PR #146.
+- **`ServerNowMs` was the PC clock.** World notify 43 `SyncServerTime` is `{client_milliseconds = 1 (our own PC time echoed back), server_milliseconds = 2}`; `PandaCombatStubProbe.OnServerTime` anchored on field 1. New `Stellar.Wire/SyncServerTimeReader.TryRead` parses the body in any field order and returns field 2, falling back to field 1 only when field 2 is missing or ≤ 0. `ICombatSnapshot` docs now state the source and that `CombatEvent.TimestampMs` is stamped from the PC clock (`UtcNow`), so the two differ by the PC's clock error.
+- **Effect.** On a synced PC `ServerNowMs` moves by about one ping (~20–30 ms). On a PC with a wrong clock it now matches the game's `Z.ServerTime`; consumers comparing it to PC-stamped event timestamps (CombatMeter settle/history/replay cap) shift by that error — optional plugin cleanup later.
+- **Validation (in-game, 2026-11-03).** PC clock deliberately 1.7 s slow: Maestro Link's logged `Z.ServerTime − ServerNowMs` went from `+1742ms` (2.28.0) to `-3ms`, and Link plays in sync. 6 new `SyncServerTimeReaderTests`.
+
 ## [2.28.0] - 2026-10-29
 _**2.28.0** (minor) — PRs #143, #144. Mod dropdowns can use the rounded pill look from the Stellar Design Language, and a mod can give one of its windows its own background opacity instead of the global Window Opacity setting. Adds `DropdownStyle` / `DropdownElement.Style` and `WindowSpec.FrameOpacity` (Abstractions 2.28.0); additive, no plugin rebuild._
 ### Added
