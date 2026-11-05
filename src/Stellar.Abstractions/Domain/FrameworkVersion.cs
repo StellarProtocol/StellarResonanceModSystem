@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.29.0 adds <c>DropdownElement.CornerRadius</c> (opt-in rounded Pill trigger), <c>VirtualListElement.OnReorder</c>
+    /// (opt-in drag-reorder for uniform-row virtual lists) and <c>SocialSnapshot.Party</c> (another player's party roster
+    /// from SocialData.team_data); a plugin that uses any of them needs ≥2.29.0.
     /// 2.28.1 is runtime-only (no API change): <c>ICombatSnapshot.ServerNowMs</c> anchors on SyncServerTime
     /// <c>server_milliseconds</c> (field 2) instead of our own echoed PC time (field 1), so it is real server time.
     /// 2.28.0 adds <c>DropdownStyle</c> + the <c>DropdownElement.Style</c> init property (opt-in Pill dropdown look) and
@@ -442,5 +445,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.28.1";
+    public const string Value = "2.29.0";
 }
