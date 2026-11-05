@@ -20,6 +20,9 @@ namespace Stellar.Infrastructure.Unity;
 //  • Esc while held, or a release outside the list's viewport / under a front window → cancel.
 // After a real drag, ReorderSuppressesClick swallows the click the EventSystem may still deliver on the release
 // (drop back on the source cell inside its own drag threshold) — WindowBuilder.ClickSuppressed reads it.
+// VirtualListElement.OnReorder runs the same machine over pooled slots: indices (_rlFrom, insertion, OnReorder) are
+// ITEM indices throughout; cells are reached via CellCount/ItemOfCell/CellOfItem (.ReorderVirtual.cs), which are the
+// identity for a ListElement, so its behaviour is unchanged.
 public sealed partial class WindowInteractionTicker
 {
     internal readonly List<WindowBuilder.ReorderListReg> ReorderLists = new();
@@ -42,6 +45,7 @@ public sealed partial class WindowInteractionTicker
     private Vector2 _rlGrab;                       // ghost pivot − press point, in _rlGhostParent local units
     private RectTransform? _rlBarRt;
     private CanvasGroup? _rlSrcGroup;
+    private RectTransform? _rlSrcCell;             // the cell currently dimmed (a virtual list's moves with its item)
     private float _rlSrcAlpha = 1f;
 
     // True while a reorder drag is held, and for the release frame + 1 (EventSystem/ticker Update order is undefined,
@@ -54,11 +58,13 @@ public sealed partial class WindowInteractionTicker
         if (_rl != null && _rl.List == null) EndReorder(commit: false);
     }
 
+    // Live ITEM count. A ListElement has one cell per item (clamped to its slots); a virtual list's items are the full
+    // Count() — far more than its pool (.ReorderVirtual.cs maps the pool slots onto them).
     private static int LiveCount(WindowBuilder.ReorderListReg reg)
     {
         int n;
         try { n = reg.Count(); } catch { return 0; }
-        return Mathf.Clamp(n, 0, reg.Cells.Length);
+        return reg.Virtual != null ? Mathf.Max(0, n) : Mathf.Clamp(n, 0, reg.Cells.Length);
     }
 
     // Mouse-down: claim the press if it lands on a live item of a reorderable list. Returns true when claimed.
@@ -68,18 +74,19 @@ public sealed partial class WindowInteractionTicker
         {
             var reg = ReorderLists[r];
             if (reg.List == null || !reg.List.gameObject.activeInHierarchy) continue;
-            var n = LiveCount(reg);
+            var n = CellCount(reg);
             for (var i = 0; i < n; i++)
             {
                 var cell = reg.Cells[i];
-                if (cell == null || !cell.gameObject.activeInHierarchy) continue;
+                var item = ItemOfCell(reg, i);   // == i for a ListElement
+                if (item < 0 || cell == null || !cell.gameObject.activeInHierarchy) continue;
                 if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
                 if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return false;   // a front window owns this press
                 var scroll = reg.List.GetComponentInParent<ScrollRect>();
                 var zone = scroll != null ? (scroll.viewport != null ? scroll.viewport : scroll.GetComponent<RectTransform>()) : reg.List;
                 // An item scrolled out of view is masked, not hidden — a press there belongs to whatever is visible.
                 if (!RectTransformUtility.RectangleContainsScreenPoint(zone, mp, null)) break;
-                _rl = reg; _rlFrom = i; _rlPress = mp; _rlDragging = false; _rlZone = zone;
+                _rl = reg; _rlFrom = item; _rlPress = mp; _rlDragging = false; _rlZone = zone;
                 LockScroll(scroll);
                 return true;
             }
@@ -98,8 +105,9 @@ public sealed partial class WindowInteractionTicker
         if (!_rlDragging)
         {
             if ((mp - _rlPress).sqrMagnitude < ReorderThresholdPx * ReorderThresholdPx) return;
-            StartReorderDrag(reg);
+            if (!StartReorderDrag(reg)) { EndReorder(commit: false); return; }
         }
+        if (reg.Virtual != null) { TickAutoScroll(reg, mp); SyncVirtualSource(reg); }   // .ReorderVirtual.cs
         PlaceGhost(mp);
         PlaceInsertionBar(reg, mp);
     }
@@ -111,11 +119,14 @@ public sealed partial class WindowInteractionTicker
         if (_rlSwallow) { _rlSwallow = false; _rlSuppressUntil = Time.frameCount + 1; }
     }
 
-    private void StartReorderDrag(WindowBuilder.ReorderListReg reg)
+    // False when the pressed item has no cell any more (a virtual list rebound under the press) → the caller cancels.
+    private bool StartReorderDrag(WindowBuilder.ReorderListReg reg)
     {
+        var srcIdx = CellOfItem(reg, _rlFrom);   // == _rlFrom for a ListElement
+        if (srcIdx < 0 || reg.Cells[srcIdx] == null) return false;
         _rlDragging = true;
         _rlSwallow = true;
-        var src = reg.Cells[_rlFrom];
+        var src = reg.Cells[srcIdx];
         var parent = src.GetComponentInParent<Canvas>()?.transform ?? src.root;
         // Ghost first (cloned before the source is dimmed), as a non-interactive top-sibling copy that ignores any
         // layout group on its parent (an IsolateCanvas window root is itself the nearest Canvas).
@@ -132,11 +143,7 @@ public sealed partial class WindowInteractionTicker
         var gcg = _rlGhost.GetComponent<CanvasGroup>();
         if (gcg == null) gcg = _rlGhost.AddComponent<CanvasGroup>();
         gcg.alpha = 0.75f; gcg.blocksRaycasts = false; gcg.interactable = false;
-        // Dim the source in place (CanvasGroup alpha: no layout change, restored on end).
-        _rlSrcGroup = src.GetComponent<CanvasGroup>();
-        if (_rlSrcGroup == null) _rlSrcGroup = src.gameObject.AddComponent<CanvasGroup>();
-        _rlSrcAlpha = _rlSrcGroup.alpha;
-        _rlSrcGroup.alpha = 0.35f;
+        DimSource(src);
         // Insertion bar: a plain accent Image, positioned per frame; never a raycast target.
         var barGo = UGuiPrimitives.NewChild("ReorderBar", parent);
         _rlBarRt = barGo.GetComponent<RectTransform>();
@@ -148,6 +155,18 @@ public sealed partial class WindowInteractionTicker
         barGo.SetActive(false);
         _rlBarRt.SetAsLastSibling();
         _rlGhostRt.SetAsLastSibling();   // ghost above the bar
+        return true;
+    }
+
+    // Dim the source in place (CanvasGroup alpha: no layout change, restored on end — or, for a virtual list, when its
+    // slot is recycled to another item: SyncVirtualSource).
+    private void DimSource(RectTransform src)
+    {
+        _rlSrcCell = src;
+        _rlSrcGroup = src.GetComponent<CanvasGroup>();
+        if (_rlSrcGroup == null) _rlSrcGroup = src.gameObject.AddComponent<CanvasGroup>();
+        _rlSrcAlpha = _rlSrcGroup.alpha;
+        _rlSrcGroup.alpha = 0.35f;
     }
 
     private static void IgnoreLayout(GameObject go)
@@ -214,13 +233,13 @@ public sealed partial class WindowInteractionTicker
         cellIdx = -1; after = false;
         if (_rlZone == null || !RectTransformUtility.RectangleContainsScreenPoint(_rlZone, mp, null)) return -1;
         if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return -1;
-        var n = LiveCount(reg);
+        var n = CellCount(reg);
         var bestD = float.MaxValue;
         var bestLp = Vector2.zero;
         for (var i = 0; i < n; i++)
         {
             var cell = reg.Cells[i];
-            if (cell == null || !cell.gameObject.activeInHierarchy) continue;
+            if (ItemOfCell(reg, i) < 0 || cell == null || !cell.gameObject.activeInHierarchy) continue;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(cell, mp, null, out var lp)) continue;
             var rc = cell.rect;
             var dx = Mathf.Max(0f, Mathf.Max(rc.xMin - lp.x, lp.x - rc.xMax));
@@ -231,7 +250,8 @@ public sealed partial class WindowInteractionTicker
         if (cellIdx < 0) return -1;
         var c = reg.Cells[cellIdx].rect.center;
         after = reg.Grid ? bestLp.x > c.x : bestLp.y < c.y;   // local y is up
-        return after ? cellIdx + 1 : cellIdx;
+        var item = ItemOfCell(reg, cellIdx);                 // insertion is in ITEM space (== cellIdx for a ListElement)
+        return after ? item + 1 : item;
     }
 
     private void PlaceInsertionBar(WindowBuilder.ReorderListReg reg, Vector2 mp)
@@ -267,21 +287,17 @@ public sealed partial class WindowInteractionTicker
         if (commit && reg != null && reg.List != null)
         {
             var ins = ReorderInsertion(reg, Input.mousePosition, out _, out _);
-            var n = LiveCount(reg);
-            if (ins >= 0 && _rlFrom >= 0 && _rlFrom < n)
+            var to = VirtualReorderMath.RemoveInsertTo(_rlFrom, ins, LiveCount(reg));   // remove-then-insert; -1 = no-op
+            if (to >= 0)
             {
-                var to = Mathf.Clamp(ins > _rlFrom ? ins - 1 : ins, 0, n - 1);   // remove-then-insert index
-                if (to != _rlFrom)
-                {
-                    try { reg.OnReorder(_rlFrom, to); }
-                    catch { if (_throwLogged++ == 0) Debug.LogWarning("[Window] reorder cb threw (rate-limited)"); }
-                }
+                try { reg.OnReorder(_rlFrom, to); }
+                catch { if (_throwLogged++ == 0) Debug.LogWarning("[Window] reorder cb threw (rate-limited)"); }
             }
         }
         if (_rlGhost != null) Object.Destroy(_rlGhost);
         if (_rlBarRt != null) Object.Destroy(_rlBarRt.gameObject);
         if (_rlSrcGroup != null) _rlSrcGroup.alpha = _rlSrcAlpha;
-        _rlGhost = null; _rlGhostRt = null; _rlGhostParent = null; _rlBarRt = null; _rlSrcGroup = null;
+        _rlGhost = null; _rlGhostRt = null; _rlGhostParent = null; _rlBarRt = null; _rlSrcGroup = null; _rlSrcCell = null;
         UnlockScroll();
         _rl = null; _rlFrom = -1; _rlDragging = false; _rlZone = null;
     }

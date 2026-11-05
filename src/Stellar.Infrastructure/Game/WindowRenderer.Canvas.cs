@@ -100,6 +100,7 @@ internal sealed partial class WindowRenderer
         _builder.RegisterReorderList = reg => _ticker!.ReorderLists.Add(reg);
         _builder.ClickSuppressed = () => _ticker != null && _ticker.ReorderSuppressesClick;
         _builder.RegisterDismissable = (root, dismiss) => _ticker!.Dismissables.Add((root, dismiss));
+        _ticker.ModalPopupLayer = () => _builder?.OpenDropdownLayer;   // open dropdown = modal for ticker hover
         _builder.RegisterRenderHost = (img, fn, drag, zoom, pan, resize) => _ticker!.RenderHosts.Add((img, fn, drag, zoom, pan, resize));
         _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
             new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });

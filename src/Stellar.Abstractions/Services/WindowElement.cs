@@ -227,6 +227,16 @@ public sealed record DropdownElement(
     /// the record stays source AND binary compatible with already-compiled plugins — see WindowBuilder-Patterns.md
     /// "Binary compatibility rules for HudElement records".</summary>
     public DropdownStyle Style { get; init; }
+
+    /// <summary>Corner radius in px of the <see cref="DropdownStyle.Pill"/> trigger. <c>0</c> (default) = the trigger
+    /// keeps its current look (the shared small chip rounding), so existing Pill dropdowns are unchanged; a positive
+    /// value draws the trigger's fill (rest and hover) at that radius. Any value ≥ <c>13</c> gives a full capsule that
+    /// matches the house pill buttons (so <c>14</c> is fine too): the framework caps the radius at height/2 − 1,
+    /// because the sliced fill's minimum size is 2r+2 and a radius of 14 would grow the 28 px trigger to 30 px. The
+    /// option list is not affected. Ignored by
+    /// <see cref="DropdownStyle.Classic"/>. An <c>init</c> property (NOT a primary-ctor parameter) so the record stays
+    /// source AND binary compatible with already-compiled plugins; a plugin that sets it needs framework ≥2.29.0.</summary>
+    public float CornerRadius { get; init; }
 }
 
 /// <summary>Render style for a <see cref="DropdownElement"/>.</summary>

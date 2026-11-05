@@ -161,6 +161,8 @@ internal sealed partial class WindowBuilder
 
     // ListElement.OnReorder registration payload (the ticker keeps these; see WindowInteractionTicker.Reorder.cs).
     // Cells are the list's Slot rects in index order — the first Count() of them are the live items.
+    // VirtualListElement.OnReorder reuses it with Virtual set: Cells are then the POOL slots, Count is the full item
+    // count, and slot k shows item Virtual.First + k (VirtualReorderMath) — the ticker maps between the two.
     internal sealed class ReorderListReg
     {
         public RectTransform List = null!;
@@ -169,5 +171,6 @@ internal sealed partial class WindowBuilder
         public bool Grid;   // multi-column → insertion is left/right of a cell; single column → above/below a row
         public Action<int, int> OnReorder = null!;
         public Color Accent;   // insertion-bar colour (the menu accent at build time)
+        public VirtualListBinding? Virtual;   // non-null = a uniform virtual list (pooled slots, auto-scroll)
     }
 }

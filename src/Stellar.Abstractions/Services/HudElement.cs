@@ -92,7 +92,9 @@ public sealed record BubbleElement(HudElement Child) : HudElement
 
     /// <summary>Corner radius in px. <c>0</c> (default) reuses the shared 3-radius rounded chip sprite (the
     /// <see cref="SelectableElement"/> chip); a positive value bakes a rounder sliced sprite at that radius (cached
-    /// per radius, theme-independent). Use ~8–12 for a softer game-style bubble.</summary>
+    /// per radius, theme-independent). Use ~8–12 for a softer game-style bubble. Note the sliced background's minimum
+    /// size is 2r+2, so for a perfectly round bubble (or capsule) of side S use r = S/2 − 1 (e.g. 13 for 28 px); a
+    /// larger r makes the bubble 2 px taller than its content. The value is used as given — it is not capped.</summary>
     public float CornerRadius { get; init; }
 
     /// <summary>Inner horizontal padding (each side) in px between the bubble edge and its child. Default 10.</summary>

@@ -37,6 +37,10 @@ internal sealed partial class WindowBuilder
     private GameObject? _openDropdownBlocker;
     private GameObject? _openDropdownPanel;
 
+    // The open popup's root layer (null when none is open). The ticker reads it so its geometric hover test treats the
+    // popup as modal: only the popup's own rows may hover while it is open (WindowInteractionTicker.HoverBlocked).
+    internal Transform? OpenDropdownLayer => _openDropdownLayer != null ? _openDropdownLayer.transform : null;
+
     // GameObject names for the popup parts. Exposed so the layout editor's press guard can detect a press over an
     // OPEN dropdown by hierarchy name (walking the hit's parents) rather than by sortingOrder — the popup now
     // lives on its own root canvas (DropdownPopupLayer) which parents these two, so the ancestor-name walk in

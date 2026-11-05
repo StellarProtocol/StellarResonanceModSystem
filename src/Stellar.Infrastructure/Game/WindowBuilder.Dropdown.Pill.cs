@@ -24,6 +24,11 @@ internal sealed partial class WindowBuilder
     private const float PillDdChevronW   = 8f;    // ▾ image size (canvas units) — ChatTools' composer chevron size
     private const float PillDdChevronH   = 5f;
     private const int   PillDdFontSize   = 13;    // bold 13 stays under the 28 px strut (house PillButton rule)
+    // Optical nudge of the caption, in px UP (negative = down; see LiftPillCaption). With the TMP line box centred the
+    // bold-13 cap-height band sits ~1 px HIGH of the pill's centre. Measured in-game at UI scale 1 with a +2 lift: caps
+    // (no descenders) spanned rows 6..15 of 28, i.e. ~3 px high, so the box-centred original was ~1 px high → −1.
+    // ⚠ Measure on a caption WITHOUT descenders: a 'y'/'g' tail drags the ink box down and reads as "too low".
+    private const float PillDdCaptionLift = -1f;
     private const int   PillDdPanelRadius = 8;
     private const int   PillDdPanelPad   = 4;
     private const int   PillDdItemRadius = 5;
@@ -38,6 +43,10 @@ internal sealed partial class WindowBuilder
     // all reuse the validated Bubble/Selectable/Text paths. Bare: no inset and no default hover wash (the hover is the
     // fill change below), so the 28 px strut IS the height. The click delivers the Selectable's screen rect (the whole
     // pill — Bare has no padding) so the popup anchors exactly under it, like Classic's OnClickWithRect.
+    // Corners: DropdownElement.CornerRadius 0 = Bubble's shared 3 px chip (the 2.28 look, kept for existing plugins);
+    // > 0 bakes the fill sprite at that radius, CAPPED at height/2 − 1 = 13: the sliced fill's min size is 2r+2, so
+    // r = 14 drew a 30 px pill (measured in-game). Any request ≥ 13 is the same exact 28 px capsule; 0 stays 0. The fill is the trigger's ONLY visual — the Bare
+    // Selectable paints clear in every state, there is no outline or press tint — so rounding it rounds rest AND hover.
     private void BuildPillDropdownTrigger(DropdownElement dd, Transform parent, WindowToken token)
     {
         var hovered = false;
@@ -68,9 +77,9 @@ internal sealed partial class WindowBuilder
         var inner = dd.Width > 0f ? Mathf.Max(0f, dd.Width - 2f * PillDdPadX) : 0f;
         var row = new RowElement(new HudElement[]
         {
-            new SpacerElement(PillDdPadX, PillDdHeight),
+            new SpacerElement(PillDdPadX, PillDdHeight - 2f * Mathf.Abs(PillDdCaptionLift)),   // + the nudge padding = 28
             inner > 0f ? new CellElement(group, Width: inner) : group,
-            new SpacerElement(PillDdPadX, PillDdHeight),
+            new SpacerElement(PillDdPadX, PillDdHeight - 2f * Mathf.Abs(PillDdCaptionLift)),
         }, Gap: 0.01f, Justify: RowJustify.Center);
 
         var pill = new BubbleElement(new SelectableElement(row, OnClick: () => { })
@@ -84,7 +93,7 @@ internal sealed partial class WindowBuilder
             },
         })
         {
-            FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f,
+            FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f, CornerRadius = BubbleGeometry.CapRadius(dd.CornerRadius, PillDdHeight),
         };
         BuildElement(pill, parent, token);
         AttachPillChevron(parent.GetChild(parent.childCount - 1), inner > 0f, token);
@@ -107,6 +116,22 @@ internal sealed partial class WindowBuilder
         img.sprite = PillChevronSprite(); img.raycastTarget = false;
         img.color = _assets.MenuMuted;
         token.ReskinActions.Add(() => { if (img != null) img.color = _assets.MenuMuted; });   // live theme switch
+        LiftPillCaption(Child(Child(bubble, 0), 0), go.GetComponent<RectTransform>());
+    }
+
+    // Optical centring: centre the caption's cap-height band, not its TMP line box. The outer Row's struts are
+    // 28 − 2·|lift| high and the Row gets 2·|lift| of padding (BOTTOM to move the content up, TOP to move it down), so
+    // the pill stays exactly 28 px while the Row centres its content |lift| px off-centre. The ▾ is pushed back the
+    // other way by the same amount (an ignoreLayout child, so the offset survives layout passes) and so stays on the
+    // pill's centre, level with the caps. Pill style only; Classic never reaches this file.
+    private static void LiftPillCaption(Transform? outerRow, RectTransform? chevron)
+    {
+        if (outerRow == null || outerRow.GetComponent<HorizontalLayoutGroup>() is not { } hlg) return;
+        var pad = Mathf.RoundToInt(2f * Mathf.Abs(PillDdCaptionLift));
+        hlg.padding = PillDdCaptionLift >= 0f ? new RectOffset(0, 0, 0, pad) : new RectOffset(0, 0, pad, 0);
+        if (chevron == null) return;
+        chevron.offsetMin -= new Vector2(0f, PillDdCaptionLift);
+        chevron.offsetMax -= new Vector2(0f, PillDdCaptionLift);
     }
 
     // 4× supersampled triangle (top edge full width → point at the bottom), white with AA coverage in alpha, bilinear.

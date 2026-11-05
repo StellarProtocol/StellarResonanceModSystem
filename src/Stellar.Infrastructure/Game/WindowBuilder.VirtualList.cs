@@ -76,11 +76,21 @@ internal sealed partial class WindowBuilder
             slots[i] = srt;
         }
 
-        token.VirtualLists.Add(new VirtualListBinding
+        var binding = new VirtualListBinding
         {
             Sr = scrollRect, Content = content, Viewport = viewport, Slots = slots,
             Count = v.Count, RowHeight = v.RowHeight, OnWindow = v.OnWindow, ResetScroll = v.ResetScroll,
-        });
+        };
+        token.VirtualLists.Add(binding);
+        // Opt-in drag-reorder (VirtualListElement.OnReorder): the ListElement machinery (ticker .Reorder.cs) over the
+        // pool slots, with the slot ↔ item mapping + edge auto-scroll in .ReorderVirtual.cs. Null = nothing registered,
+        // so a list without it is unchanged. (The variable-height path returned above: OnReorder is uniform-only.)
+        if (v.OnReorder != null && RegisterReorderList != null)
+            RegisterReorderList(new ReorderListReg
+            {
+                List = content, Cells = slots, Count = v.Count, Grid = false,
+                OnReorder = v.OnReorder, Accent = _assets.MenuAccent, Virtual = binding,
+            });
     }
 
     // Poll-diffed scroll-windowed list. Each Apply: reads the scroll offset, maps it to the first logical row
@@ -98,6 +108,9 @@ internal sealed partial class WindowBuilder
         public Func<bool>? ResetScroll;
         public RectTransform? Viewport;   // off-viewport cull (2.26.1): the visible band rows are tested against
         private int _lastFirst = -1, _lastCount = -1;
+        // First item index the pool slots are currently placed + bound for (slot k shows item First + k); -1 before the
+        // first apply. Read by the drag-reorder ticker to map slots ↔ items (VirtualReorderMath).
+        internal int First => _lastFirst;
         // Off-viewport cull (2.26.1) — same mechanism + reasoning as the variable list (WindowBuilder.VariableList.Cull.cs):
         // the pool is usually sized ~viewport + buffer and every in-window slot used to stay ACTIVE (clipped, but still
         // walked by RectMask2D.PerformClipping and batched every frame). A row wholly outside the viewport ± a margin
