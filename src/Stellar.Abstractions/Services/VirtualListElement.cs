@@ -100,4 +100,18 @@ public sealed record VirtualListElement(
     /// <see cref="VariableListMath.StableSlotRow"/>(first, k, Pool.Count) instead of <c>first + k</c>. Default
     /// <c>false</c> = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool StableSlots { get; init; }
+
+    /// <summary>Optional — turns on drag-and-drop REORDERING of the list's items, with the same gesture and semantics
+    /// as <see cref="ListElement.OnReorder"/>: a press on a row that moves past ~6 screen px starts a drag (the row
+    /// dims, a ghost follows the cursor, an accent bar marks the insertion point between rows); dropping fires
+    /// <c>OnReorder(from, to)</c> with REMOVE-THEN-INSERT semantics over the FULL item index space (<c>0..Count()-1</c>,
+    /// not pool-slot indices), so the consumer does <c>var x = list[from]; list.RemoveAt(from); list.Insert(to, x);</c>.
+    /// It never fires for a no-op drop. Esc, or a drop outside the list's viewport, cancels. A press released before
+    /// the threshold is an ordinary click; after a real drag the click is swallowed. Holding the drag near the top or
+    /// bottom edge of the viewport (within about one row) AUTO-SCROLLS the list, faster the closer to the edge, so an
+    /// item can be moved past the visible rows; the dragged item keeps its identity while its pool slot is recycled.
+    /// The list does not reflow mid-drag — the consumer reorders its data and the list re-pulls. Uniform rows only:
+    /// ignored when <see cref="VariableHeight"/> is set. Default null = not reorderable (the list behaves exactly as
+    /// before). An <c>init</c> property (binary-compatible); a plugin that sets it needs framework ≥2.29.0.</summary>
+    public Action<int, int>? OnReorder { get; init; }
 }
