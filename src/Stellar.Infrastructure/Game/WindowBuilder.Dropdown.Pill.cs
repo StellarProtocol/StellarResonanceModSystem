@@ -24,6 +24,9 @@ internal sealed partial class WindowBuilder
     private const float PillDdChevronW   = 8f;    // ▾ image size (canvas units) — ChatTools' composer chevron size
     private const float PillDdChevronH   = 5f;
     private const int   PillDdFontSize   = 13;    // bold 13 stays under the 28 px strut (house PillButton rule)
+    // The TMP bold face's ascent/descent asymmetry sits the caption's ink ~2 px LOW when its line box is centred
+    // (in-game at UI scale 1: ink rows 12..21 of 28). The content is lifted this much (see LiftPillCaption).
+    private const float PillDdCaptionLift = 2f;
     private const int   PillDdPanelRadius = 8;
     private const int   PillDdPanelPad   = 4;
     private const int   PillDdItemRadius = 5;
@@ -71,9 +74,9 @@ internal sealed partial class WindowBuilder
         var inner = dd.Width > 0f ? Mathf.Max(0f, dd.Width - 2f * PillDdPadX) : 0f;
         var row = new RowElement(new HudElement[]
         {
-            new SpacerElement(PillDdPadX, PillDdHeight),
+            new SpacerElement(PillDdPadX, PillDdHeight - 2f * PillDdCaptionLift),   // + the lift padding = 28
             inner > 0f ? new CellElement(group, Width: inner) : group,
-            new SpacerElement(PillDdPadX, PillDdHeight),
+            new SpacerElement(PillDdPadX, PillDdHeight - 2f * PillDdCaptionLift),
         }, Gap: 0.01f, Justify: RowJustify.Center);
 
         var pill = new BubbleElement(new SelectableElement(row, OnClick: () => { })
@@ -110,6 +113,21 @@ internal sealed partial class WindowBuilder
         img.sprite = PillChevronSprite(); img.raycastTarget = false;
         img.color = _assets.MenuMuted;
         token.ReskinActions.Add(() => { if (img != null) img.color = _assets.MenuMuted; });   // live theme switch
+        LiftPillCaption(Child(Child(bubble, 0), 0), go.GetComponent<RectTransform>());
+    }
+
+    // Optical centring: centre the caption's INK, not its TMP line box. The outer Row's struts are 28 − 2·lift high
+    // and the Row gets 2·lift of BOTTOM padding, so the pill stays exactly 28 px while the Row centres its content
+    // `lift` px higher. The ▾ was centred on the line box, so the lift would leave it high of the cap-height ink: it is
+    // pushed back down by the same amount (an ignoreLayout child, so the offset survives layout passes) and stays on
+    // the pill's centre, level with the lifted caption's cap height. Pill style only; Classic never reaches this file.
+    private static void LiftPillCaption(Transform? outerRow, RectTransform? chevron)
+    {
+        if (outerRow == null || outerRow.GetComponent<HorizontalLayoutGroup>() is not { } hlg) return;
+        hlg.padding = new RectOffset(0, 0, 0, Mathf.RoundToInt(2f * PillDdCaptionLift));
+        if (chevron == null) return;
+        chevron.offsetMin -= new Vector2(0f, PillDdCaptionLift);
+        chevron.offsetMax -= new Vector2(0f, PillDdCaptionLift);
     }
 
     // 4× supersampled triangle (top edge full width → point at the bottom), white with AA coverage in alpha, bilinear.
