@@ -44,7 +44,8 @@ internal sealed partial class WindowBuilder
     // fill change below), so the 28 px strut IS the height. The click delivers the Selectable's screen rect (the whole
     // pill — Bare has no padding) so the popup anchors exactly under it, like Classic's OnClickWithRect.
     // Corners: DropdownElement.CornerRadius 0 = Bubble's shared 3 px chip (the 2.28 look, kept for existing plugins);
-    // > 0 bakes the fill sprite at that radius (14 = capsule). The fill is the trigger's ONLY visual — the Bare
+    // > 0 bakes the fill sprite at that radius, CAPPED at height/2 − 1 = 13: the sliced fill's min size is 2r+2, so
+    // r = 14 drew a 30 px pill (measured in-game). Any request ≥ 13 is the same exact 28 px capsule; 0 stays 0. The fill is the trigger's ONLY visual — the Bare
     // Selectable paints clear in every state, there is no outline or press tint — so rounding it rounds rest AND hover.
     private void BuildPillDropdownTrigger(DropdownElement dd, Transform parent, WindowToken token)
     {
@@ -92,7 +93,7 @@ internal sealed partial class WindowBuilder
             },
         })
         {
-            FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f, CornerRadius = Mathf.Max(0f, dd.CornerRadius),
+            FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f, CornerRadius = BubbleGeometry.CapRadius(dd.CornerRadius, PillDdHeight),
         };
         BuildElement(pill, parent, token);
         AttachPillChevron(parent.GetChild(parent.childCount - 1), inner > 0f, token);
