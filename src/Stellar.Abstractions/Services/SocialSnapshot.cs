@@ -72,6 +72,13 @@ public sealed record SocialSnapshot(
     /// one — check <see cref="SocialLocation.ReceivedAtMs"/> for its age.
     /// Init-only (not a positional parameter) so existing compiled callers of the constructor stay binary-compatible.</summary>
     public SocialLocation? Location { get; init; }
+
+    /// <summary>The player's party from <c>SocialData.team_data</c> (field 12); null when the reply omitted that
+    /// section. Like <see cref="Location"/>, only full-mask (ID-card) replies carry it, so the framework cache keeps
+    /// the last known party when a later thin reply arrives without one. Unverified whether the server fills the
+    /// member list for players outside our own party (see <see cref="SocialParty"/>).
+    /// Init-only for the same binary-compatibility reason as <see cref="Location"/>.</summary>
+    public SocialParty? Party { get; init; }
 }
 
 /// <summary>A player's scene location as carried by <c>SocialData.scene_data</c> (<c>zproto.SceneData</c>).

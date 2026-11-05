@@ -14,6 +14,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Added
+- Mods can now see who is in another player's party (names, levels, classes, online status and current map) from their player card.
+### Developer notes
+- **`SocialSnapshot.Party`** (new init-only property, Abstractions; additive, binary-compatible): decodes `SocialData.team_data` (field 12, `CharTeam`) into `SocialParty { TeamId, LeaderId, TeamTargetId, TeamNum, MemberType, CharIds, Members }` and `SocialPartyMember { CharId, Name, Level, ProfessionId, TalentId, FightPoint, OnlineStatus, SceneId, EnterTime }`. New `Stellar.Wire/SocialTeamReader` (packed and unpacked `char_ids`; map-key fallback for member char id). `SocialIdentity.PartySize` is unchanged.
+- **Cache:** `SocialDataCache` keeps the last non-null `Party` when a thin (nameplate/avatar) reply follows, the same rule as `Location`.
+- **Diagnostics:** `[TeamDiag]` line per reply carrying field 12, only with `STELLAR_DIAGNOSTICS=1`.
+- **Validation (in-game, 2026-11-04):** the server sends the FULL roster for a player in a party you are NOT in (5/5 and 9/20 parties: every member's name/level/class/online/scene); solo players come back empty. Member order is random per reply (proto map) — consumers must sort. Used by EntityInspector's Party tab (local build, user-validated).
+
 ## [2.28.1] - 2026-11-03
 _**2.28.1** (patch) — PR #146. The framework's server clock now follows the real game server instead of your PC's clock, so mods that time things against the server stay correct on a PC whose clock is wrong. No API change, no plugin rebuild._
 ### Fixed

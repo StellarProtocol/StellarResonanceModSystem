@@ -33,6 +33,7 @@ public static class SocialDataReader
         var gear = new List<GearSlotRef>(11);
         IReadOnlyList<FashionEntry> fashion = Array.Empty<FashionEntry>();
         SocialLocation? location = null;
+        SocialParty? party = null;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -47,7 +48,7 @@ public static class SocialDataReader
                     case 7:  ReadEquip(inner, gear); break;
                     case 8:  fashion = AttrFashionDataReader.Read(inner); break;
                     case 11: fightPoint = ReadFirstVarintField(inner, 4); break;
-                    case 12: partySize = (int)ReadFirstVarintField(inner, 4); break;     // team_data.team_num
+                    case 12: party = SocialTeamReader.Read(inner); partySize = party.TeamNum; break; // team_data (team_num = PartySize)
                     case 13: guild = ReadFirstStringField(inner, 2); break;              // union_data.name
                     case 16: ReadPersonalZone(inner, out titleId, out fashionCollect, out rideCollect, out weaponSkinCollect); break; // personal_zone
                     case 22: masterScore = ReadMasterScore(inner); break;
@@ -65,7 +66,7 @@ public static class SocialDataReader
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return new SocialSnapshot(charId, name, level, fightPoint, professionId, gear, fashion,
             new SocialIdentity(guild, partySize, masterScore, titleId, fashionCollect, rideCollect, weaponSkinCollect),
-            profileUrl, halfBodyUrl) { Location = location };
+            profileUrl, halfBodyUrl) { Location = location, Party = party };
     }
 
     // scene_data (zproto.SceneData) { map_id = 1, pos = 3 Position, level_pos = 5 Position, level_map_id = 6,
@@ -156,7 +157,7 @@ public static class SocialDataReader
     private static int ReadMasterScore(ReadOnlySpan<byte> p)
         => ReadFirstVarintField(p, 2) != 0 ? 0 : (int)ReadFirstVarintField(p, 1);
 
-    private static void ReadBasic(ReadOnlySpan<byte> p, ref string name, ref int level)
+    internal static void ReadBasic(ReadOnlySpan<byte> p, ref string name, ref int level)
     {
         int pos = 0;
         while (pos < p.Length)
@@ -184,7 +185,7 @@ public static class SocialDataReader
 
     // fight_point is int64; profession_id is int32 — return long and cast at the call site so large
     // ability scores never truncate.
-    private static long ReadFirstVarintField(ReadOnlySpan<byte> p, int target)
+    internal static long ReadFirstVarintField(ReadOnlySpan<byte> p, int target)
     {
         int pos = 0;
         while (pos < p.Length)
