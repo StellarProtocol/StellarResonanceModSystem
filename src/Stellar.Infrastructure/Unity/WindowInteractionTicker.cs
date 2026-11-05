@@ -104,6 +104,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     private void TickHoversAndPulses()
     {
         var hp = Input.mousePosition;
+        var popup = ModalPopupLayer?.Invoke();   // open dropdown → modal for hover (HoverBlocked, .HitTest.cs)
         for (var i = 0; i < Hovers.Count; i++)
         {
             while (_hoverState.Count <= i) _hoverState.Add(false);
@@ -112,7 +113,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             if (!cell.gameObject.activeInHierarchy) { if (_hoverState[i]) { _hoverState[i] = false; try { set(false); } catch { } } continue; }
             var over = RectTransformUtility.RectangleContainsScreenPoint(cell, hp, null)
                        && !OutsideClip(cell, hp)   // the scrolled-off (clipped) part of a row is not hoverable
-                       && !FrontWindowBlocks(hp, FindWindowRoot(cell));
+                       && !HoverBlocked(hp, cell, popup);   // FrontWindowBlocks, or the open popup owns the pointer
             if (over != _hoverState[i]) { _hoverState[i] = over; try { set(over); } catch { } }
         }
 

@@ -1,3 +1,4 @@
+using System;
 using Stellar.Infrastructure.Game;
 using UnityEngine;
 
@@ -137,6 +138,24 @@ public sealed partial class WindowInteractionTicker
             if (RectTransformUtility.RectangleContainsScreenPoint(root, mp, null)) return true;
         }
         return false;
+    }
+
+    // The open dropdown popup's root layer (WindowBuilder.OpenDropdownLayer), or null. Wired by WindowRenderer.
+    internal Func<Transform?>? ModalPopupLayer;
+
+    // Hover owner test. No popup open → the usual z-order check (FrontWindowBlocks). While a dropdown is open, the
+    // popup owns the pointer: it sits on its own ROOT canvas above every window, behind a full-screen blocker, but the
+    // ticker's hover test is geometric and doesn't know that. Without this, hovering a list row ALSO lit up whatever
+    // window cell lay under the pointer — a row/Selectable beneath the card showed its wash around the card's edges,
+    // reading as "the list background highlights". So: popup rows hover, nothing else does. Popup rows skip
+    // FrontWindowBlocks — their FindWindowRoot is the popup panel, whose sibling index is in the LAYER canvas, so
+    // comparing it with the window canvas's sibling indices is meaningless (it could block a row over a window).
+    internal bool HoverBlocked(Vector2 mp, RectTransform cell, Transform? popup)
+    {
+        if (popup == null) return FrontWindowBlocks(mp, FindWindowRoot(cell));
+        for (Transform? t = cell; t != null; t = t.parent)   // parent walk (no IsChildOf: not used elsewhere on interop)
+            if (t == popup) return false;
+        return true;
     }
 
     // Walk up a cell's hierarchy to find its direct-canvas-child RectTransform (the window root).
