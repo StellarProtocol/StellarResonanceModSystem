@@ -17,8 +17,8 @@ internal sealed partial class PandaUGuiAdapter
     // (menu close) are pruned in TickGlow.
     private sealed class RailVisual
     {
-        public RawImage? Glow;     // accent halo (pulsed + brightened on hover); may be null
-        public RawImage? Star;     // crisp accent star (scaled on hover)
+        public RawImage? Glow;     // accent halo (pulsed + brightened on hover); null on plugin (unbranded) buttons
+        public RawImage? Star;     // the icon: accent Stellar star, or a plugin's untinted PNG (scaled on hover); null for glyph/label-only
         public Image Surface = null!;       // transparent click surface (kept for liveness check)
         public RectTransform Rect = null!;  // cell rect (hover hit-test)
         public Canvas? Canvas;              // owning canvas, resolved once at build (hover hit-test camera)
@@ -40,6 +40,12 @@ internal sealed partial class PandaUGuiAdapter
             _pendingGlow = AddRawImage(parent, glowTex, side * 1.8f, centerY, new Color(a.R, a.G, a.B, 0.3f));
         _pendingStar = AddRawImage(parent, iconTex, side, centerY, new Color(a.R, a.G, a.B, 1f));
     }
+
+    // A plugin's rail icon: the PNG as-is (white multiplier = untinted), no halo, so a game-style grey
+    // icon matches the native rail items. Same size/centre as the branded star, and it gets the same
+    // hover scale-up in TickGlow (Glow stays null, so there's no pulse).
+    private void AddPlainRailIcon(Transform parent, Texture iconTex, float side, float centerY)
+        => _pendingStar = AddRawImage(parent, iconTex, side, centerY, new Color(1f, 1f, 1f, 1f));
 
     // A square RawImage centred horizontally at normalised height <paramref name="centerY"/>.
     // RawImage takes the Texture2D directly (no Sprite); doesn't raycast.

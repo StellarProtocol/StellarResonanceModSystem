@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Fixed
+- Buttons that mods add to the Esc menu's side bar now line up one below another under the Stellar button, instead of sitting on top of it.
+- Mod buttons in the Esc menu's side bar now show their own icon in its original colours, like the game's own buttons; only the Stellar button keeps its glowing star.
+### Developer notes
+- **Rail stacking.** `PlaceBelowRail` measured only native template siblings, so every `MainMenuRail` `MenuButtonSpec` got the same y. `UGuiInjectionService` now passes an internal `UGuiInjectContext(RailSlot, Branded)` to `IUGuiCanvasAdapter.Inject`; slot N sits N+1 steps below the native top group. Slots come from the registration list (branded first, then registration order; removed registrations free their slot), not from which siblings exist at inject time, so re-injects can't swap or overlap. A Warning logs if a slot reaches the bottom Support/Unstuck/Exit group.
+- **Branded vs plain.** The framework's Stellar rail button registers through the internal `UGuiInjectionService.RegisterBranded`; it alone gets the accent tint + pulsing `stellar-glow` halo. Plugin buttons (public `INativeUiHost.Register`) draw `IconPng` untinted with no halo, and keep the hover scale-up. No public API change (`MenuButtonSpec` untouched); `LoginSidebar` unchanged.
+
 ## [2.29.0] - 2026-11-06
 _**2.29.0** (minor) — PRs #148, #149. The mod framework now supports fully rounded pill dropdowns, drag-to-reorder in long lists, and more player party data for mods to read. It also fixes dropdown hover highlighting the window behind and centres pill dropdown text. Adds `DropdownElement.CornerRadius`, `VirtualListElement.OnReorder` and `SocialSnapshot.Party` (Abstractions 2.29.0); additive, no plugin rebuild._
 ### Added
