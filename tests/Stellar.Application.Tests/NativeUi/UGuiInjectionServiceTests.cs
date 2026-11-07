@@ -132,13 +132,51 @@ public sealed class UGuiInjectionServiceTests
         Assert.Equal(0, adapter.InjectCount);
     }
 
+    // Rail buttons get stable slots from the registration list: branded (framework Stellar) first even when a
+    // plugin registered earlier, then plugins in registration order; non-rail anchors are always slot 0.
+    [Fact]
+    public void RailSlots_BrandedFirst_ThenRegistrationOrder()
+    {
+        var adapter = new FakeAdapter { Available = true };
+        var svc = new UGuiInjectionService(adapter, World());
+        var plugin1 = Btn(); var plugin2 = Btn(); var stellar = Btn(); var hud = Btn(NativeUiAnchor.HudTopRight);
+        svc.Register(plugin1);
+        svc.Register(hud);
+        svc.RegisterBranded(stellar);
+        svc.Register(plugin2);
+
+        svc.Tick(1f);
+        UGuiInjectContext Ctx(MenuButtonSpec s) => adapter.Injected.Find(x => ReferenceEquals(x.Spec, s)).Ctx;
+        Assert.Equal(new UGuiInjectContext(0, true), Ctx(stellar));
+        Assert.Equal(new UGuiInjectContext(1, false), Ctx(plugin1));
+        Assert.Equal(new UGuiInjectContext(2, false), Ctx(plugin2));
+        Assert.Equal(0, Ctx(hud).RailSlot);
+    }
+
+    [Fact]
+    public void RailSlots_RemovedButtonFreesItsSlot()
+    {
+        var adapter = new FakeAdapter { Available = true, AliveOverride = false }; // re-inject every tick
+        var svc = new UGuiInjectionService(adapter, World());
+        var stellar = Btn(); var plugin1 = Btn(); var plugin2 = Btn();
+        svc.RegisterBranded(stellar);
+        var h1 = svc.Register(plugin1);
+        svc.Register(plugin2);
+
+        h1.Remove();
+        adapter.Injected.Clear();
+        svc.Tick(1f);
+        Assert.Equal(1, adapter.Injected.Find(x => ReferenceEquals(x.Spec, plugin2)).Ctx.RailSlot);
+    }
+
     private sealed class FakeAdapter : IUGuiCanvasAdapter
     {
         public bool Available;
         public int InjectCount, DestroyCount, ApplyCount;
         public bool AliveOverride = true;
         public bool IsAnchorAvailable(NativeUiAnchor a) => Available;
-        public object? Inject(NativeUiElementSpec s) { if (!Available) return null; InjectCount++; return new object(); }
+        public readonly List<(NativeUiElementSpec Spec, UGuiInjectContext Ctx)> Injected = new();
+        public object? Inject(NativeUiElementSpec s, UGuiInjectContext c) { if (!Available) return null; InjectCount++; Injected.Add((s, c)); return new object(); }
         public bool IsAlive(object? r) => r != null && AliveOverride;
         public void ApplyContent(object? r, NativeUiElementSpec s) => ApplyCount++;
         public void Destroy(object? r) => DestroyCount++;

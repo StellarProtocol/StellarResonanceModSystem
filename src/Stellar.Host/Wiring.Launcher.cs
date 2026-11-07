@@ -37,7 +37,10 @@ public sealed partial class BootstrapPlugin
         // _windowService exists; _perfOverlay was constructed in Phase 8 alongside its hotkey.
         if (_perfOverlay != null) _perfOverlayControl = _windowService.Register(_perfOverlay.BuildRegistration());
 
-        _railButtonHandle = _uguiInjection!.Register(new MenuButtonSpec(
+        // BRANDED (internal path): accent star + pulsing halo, and always the first injected rail slot (directly
+        // under the native top group) — plugin rail buttons registered via the public Register stack below it
+        // and draw their icon untinted.
+        _railButtonHandle = _uguiInjection!.RegisterBranded(new MenuButtonSpec(
             NativeUiAnchor.MainMenuRail, "Stellar", IconKey: null,
             Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
             IconPng: LauncherIcons.Get("stellar")));
