@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.29.1 is runtime-only (no API change): plugin <c>MainMenuRail</c> buttons stack below the Stellar button and draw
+    /// their icon untinted; SquareHandle slider knobs are true circles; slider/hidden-window/Passive-window hit-test fixes.
     /// 2.29.0 adds <c>DropdownElement.CornerRadius</c> (opt-in rounded Pill trigger), <c>VirtualListElement.OnReorder</c>
     /// (opt-in drag-reorder for uniform-row virtual lists) and <c>SocialSnapshot.Party</c> (another player's party roster
     /// from SocialData.team_data); a plugin that uses any of them needs ≥2.29.0.
@@ -445,5 +447,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.29.0";
+    public const string Value = "2.29.1";
 }
