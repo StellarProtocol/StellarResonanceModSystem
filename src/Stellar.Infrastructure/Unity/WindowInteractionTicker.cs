@@ -38,6 +38,9 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     // All mounted window roots (popup + regular), for z-order-aware hit blocking. Sibling index is the draw order:
     // higher = in front. Populated by WindowRenderer.Mount/Destroy; pruned by Prune().
     internal readonly List<RectTransform> WindowRoots = new();
+    // Subset of WindowRoots whose WindowSpec.Passive is set (click-through) — FrontWindowBlocks lets them through outside
+    // layout edit mode. Populated by WindowRenderer.Mount/Destroy; pruned by Prune().
+    internal readonly List<RectTransform> PassiveRoots = new();
     // Dismissables list + TickDismissables/TickRightClick/PointerOverPopup live in WindowInteractionTicker.Dismiss.cs.
     // RenderHosts, IconHost, IconHosts, _activeRenderHost + all render/icon tick methods live in WindowInteractionTicker.RenderHosts.cs.
     // Scrollbar rects: drag-exclusion zones. The manual window-drag hit-test must yield to the uGUI
@@ -88,6 +91,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = RightClicks.Count - 1; i >= 0; i--) if (RightClicks[i].Cell == null) RightClicks.RemoveAt(i);
         for (var i = Dismissables.Count - 1; i >= 0; i--) if (Dismissables[i].Root == null) Dismissables.RemoveAt(i);
         for (var i = WindowRoots.Count - 1; i >= 0; i--) if (WindowRoots[i] == null) WindowRoots.RemoveAt(i);
+        for (var i = PassiveRoots.Count - 1; i >= 0; i--) if (PassiveRoots[i] == null) PassiveRoots.RemoveAt(i);
         for (var i = RenderHosts.Count - 1; i >= 0; i--) if (RenderHosts[i].Img == null) RenderHosts.RemoveAt(i);
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);

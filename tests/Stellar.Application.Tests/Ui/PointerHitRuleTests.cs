@@ -31,4 +31,26 @@ public sealed class PointerHitRuleTests
         Assert.False(PointerHitRule.AcceptsPress(alive: true, activeInHierarchy: true, containsPointer: false, frontWindowBlocks: () => false));
         Assert.False(PointerHitRule.AcceptsPress(alive: true, activeInHierarchy: true, containsPointer: true, frontWindowBlocks: () => true));
     }
+
+    /// <summary>Regression (2026-11-08): a slider scrolled out of a list's viewport is masked, not hidden, and its drag
+    /// exclusion zone ignored the mask — so it blocked window drags over the area below the list. The scrollbar/slider
+    /// exclusion now folds the clip test into containsPointer (contains AND NOT OutsideClip) before this rule.</summary>
+    [Fact]
+    public void ClippedOutSliderDoesNotClaimThePress()
+    {
+        const bool onBar = true, outsideClip = true;   // under the slider rect, but past the viewport mask
+        Assert.False(PointerHitRule.AcceptsPress(alive: true, activeInHierarchy: true, containsPointer: onBar && !outsideClip, frontWindowBlocks: () => false));
+    }
+
+    /// <summary>Regression (2026-11-08): a visible Passive (click-through) HUD in front — RaidManager's wide mechanic
+    /// alert banner — counted as covering, so windows behind it could not be dragged or hovered. In play it lets the
+    /// pointer through; in layout edit mode it is an ordinary editable window and still covers.</summary>
+    [Fact]
+    public void PassiveFrontWindowCoversOnlyInLayoutEditMode()
+    {
+        Assert.False(PointerHitRule.FrontWindowCovers(passive: true, layoutEditing: false));
+        Assert.True(PointerHitRule.FrontWindowCovers(passive: true, layoutEditing: true));
+        Assert.True(PointerHitRule.FrontWindowCovers(passive: false, layoutEditing: false));
+        Assert.True(PointerHitRule.FrontWindowCovers(passive: false, layoutEditing: true));
+    }
 }

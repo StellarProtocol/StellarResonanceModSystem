@@ -64,16 +64,25 @@ public sealed partial class WindowInteractionTicker
         for (var i = 0; i < ScrollbarRects.Count; i++)
         {
             var rt = ScrollbarRects[i];
-            if (rt == null || !rt.gameObject.activeInHierarchy) continue;
-            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, mp, null, out var lp)) continue;
-            var r = rt.rect;
-            if (lp.x < r.xMin - 6f || lp.x > r.xMax + 6f || lp.y < r.yMin || lp.y > r.yMax) continue;
-            // Only suppress the drag if the scrollbar's own window is the front window at this point —
-            // a scrollbar in a back window must not block dragging the front window's titlebar.
-            if (FrontWindowBlocks(mp, FindWindowRoot(rt))) continue;
+            if (rt == null) continue;
+            // Clip-aware like every other press hit-test: sliders register here too (BuildSlider, e048f00), and a slider
+            // scrolled out of a ScrollRect viewport is masked, not hidden — its rect still sat past the viewport edge,
+            // so without OutsideClip it claimed presses over whatever lay there and blocked window drags around it.
+            // Only suppress the drag if the scrollbar's own window is the front window at this point — a scrollbar in
+            // a back window must not block dragging the front window's titlebar.
+            if (!PointerHitRule.AcceptsPress(alive: true, rt.gameObject.activeInHierarchy,
+                    OnInflatedBar(rt, mp) && !OutsideClip(rt, mp),
+                    () => FrontWindowBlocks(mp, FindWindowRoot(rt)))) continue;
             return true;
         }
         return false;
+    }
+
+    private static bool OnInflatedBar(RectTransform rt, Vector3 mp)
+    {
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, mp, null, out var lp)) return false;
+        var r = rt.rect;
+        return lp.x >= r.xMin - 6f && lp.x <= r.xMax + 6f && lp.y >= r.yMin && lp.y <= r.yMax;
     }
 
     // Slot-drag exclusion (mirrors PointerOnScrollbar for the window-drag path): true when the pointer is over a
@@ -133,17 +142,31 @@ public sealed partial class WindowInteractionTicker
 
     // Returns true if any active window with a higher sibling index (= drawn in front) also covers the pointer.
     // Sibling index is set by ReorderWindows() to match ZOrder, so this is a z-order-aware block check.
+    // Passive (click-through) windows don't cover outside layout edit mode (PointerHitRule.FrontWindowCovers).
     internal bool FrontWindowBlocks(Vector2 mp, RectTransform? cellWindowRoot)
     {
         if (cellWindowRoot == null) return false;
         int selfSibling = cellWindowRoot.GetSiblingIndex();
+        var editing = LayoutEditGate.IsEditing;
         for (var i = 0; i < WindowRoots.Count; i++)
         {
             var root = WindowRoots[i];
             if (root == null || !root.gameObject.activeInHierarchy) continue;
             if (root.GetSiblingIndex() <= selfSibling) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(root, mp, null)) return true;
+            if (!RectTransformUtility.RectangleContainsScreenPoint(root, mp, null)) continue;
+            if (!PointerHitRule.FrontWindowCovers(IsPassiveRoot(root), editing)) continue;
+            return true;
         }
+        return false;
+    }
+
+    // Pointer compare, not ==/Contains: interop wrappers for the same native RectTransform aren't guaranteed to be the
+    // same managed object. The list is tiny (only Passive windows), and only consulted for a front window under the pointer.
+    private bool IsPassiveRoot(RectTransform root)
+    {
+        var p = root.Pointer;
+        for (var i = 0; i < PassiveRoots.Count; i++)
+            if (PassiveRoots[i] != null && PassiveRoots[i].Pointer == p) return true;
         return false;
     }
 

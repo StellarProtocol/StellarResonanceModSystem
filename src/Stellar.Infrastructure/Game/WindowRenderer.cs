@@ -130,6 +130,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             if (_ticker != null && token.Rect != null)
             {
                 _ticker.WindowRoots.Add(token.Rect);
+                if (reg.Spec.Passive) _ticker.PassiveRoots.Add(token.Rect);   // click-through: never covers windows behind it in play
                 // Sticky cursor engages only on interactive (non-HUD) windows — WindowCategory, not ZOrder, decides.
                 if (reg.Spec.Category != Stellar.Abstractions.Domain.WindowCategory.HUD) _ticker.InteractiveRoots.Add(token.Rect);
             }
@@ -363,7 +364,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 for (var i = 0; i < t.Pulses.Count; i++) _ticker.Pulses.Remove(t.Pulses[i]);
             }
             t.DisposeNativeTextures();   // ColorPicker SV/hue bakes (HideAndDontSave — not reclaimed by GO destroy)
-            if (_ticker != null && t.Rect != null) _ticker.WindowRoots.Remove(t.Rect);
+            if (_ticker != null && t.Rect != null) { _ticker.WindowRoots.Remove(t.Rect); _ticker.PassiveRoots.Remove(t.Rect); }
             if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed
