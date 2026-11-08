@@ -14,7 +14,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [Unreleased]
+## [2.29.1] - 2026-11-09
+_**2.29.1** (patch) — PR #151. Mod buttons in the Esc menu's side bar stack under the Stellar button with their own icons, and several mod-window drag and slider problems are fixed. No API change, no plugin rebuild._
 ### Fixed
 - Buttons that mods add to the Esc menu's side bar now line up one below another under the Stellar button, instead of sitting on top of it.
 - Mod buttons in the Esc menu's side bar now show their own icon in its original colours, like the game's own buttons; only the Stellar button keeps its glowing star.
