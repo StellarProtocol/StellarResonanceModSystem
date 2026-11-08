@@ -277,6 +277,9 @@ internal sealed partial class WindowBuilder
         hrt.sizeDelta = new Vector2(handle, s.SquareHandle ? 0f : handle);
         var himg = handleGo.AddComponent<Image>();
         himg.sprite = _assets.Capsule; himg.type = Image.Type.Sliced;
+        // SquareHandle = the round-knob opt-in: scale the capsule's fixed 7px corners to handle/2 so it is a circle
+        // at ANY HandleSize (unscaled, a 22px knob drew as a rounded square). The stretched default is untouched.
+        if (s.SquareHandle) himg.pixelsPerUnitMultiplier = CapsuleGeometry.CircleMultiplier(handle);
         himg.color = new Color(0.81f, 0.88f, 0.95f, 1f);
         return hrt;
     }

@@ -34,7 +34,7 @@ internal sealed class WindowThemeAssets
 
     // Toggle capsule: fully-rounded 15-tall pill (radius 7).
     private const int CapsuleTexSize = 16;
-    private const int CapsuleRadius = 7;
+    private const int CapsuleRadius = CapsuleGeometry.Radius;
 
     // Swatch: 3-radius rounded square (theme-editor colour chips). Slice border = radius + 1.
     private const int SwatchTexSize = 16;
@@ -358,4 +358,25 @@ internal static class OverlayFontFamilies
         "DejaVu Sans", "Liberation Sans", "Arial",
         "Noto Sans CJK KR", "Malgun Gothic",
     };
+}
+
+/// <summary>
+/// Unity-free geometry of the <see cref="WindowThemeAssets.Capsule"/> sprite — a separate class (like
+/// <see cref="OverlayFontFamilies"/>) so tests can call it without loading <c>UnityEngine.CoreModule</c>.
+/// </summary>
+internal static class CapsuleGeometry
+{
+    /// <summary>Corner radius (= 9-slice border) of the capsule sprite, in texels.</summary>
+    internal const int Radius = 7;
+
+    /// <summary>
+    /// <c>Image.pixelsPerUnitMultiplier</c> that makes the capsule sprite draw a full CIRCLE in a
+    /// <paramref name="side"/>-px square. Sprites are baked at <c>pixelsPerUnit: 100</c> and
+    /// <c>Canvas.referencePixelsPerUnit</c> is never set (default 100), so 1 texel = 1 canvas unit and a sliced
+    /// border draws at <c>border / multiplier</c> units → multiplier = <c>Radius / (side/2)</c> scales the
+    /// 7-texel corners to <c>side/2</c> each, so the arcs meet with no straight edge. Without it any knob larger
+    /// than <c>2 × Radius</c> (14 px) keeps 7 px corners = a rounded SQUARE (Dungeon Hub, 22 px).
+    /// </summary>
+    internal static float CircleMultiplier(float side) =>
+        side > 0f ? Radius / (side * 0.5f) : 1f;
 }

@@ -51,8 +51,8 @@ public sealed record SliderElement(
     public float HandleSize { get; init; }
 
     /// <summary>
-    /// Opt in to a knob that is exactly <see cref="HandleSize"/> square, instead of one stretched to the
-    /// height of its row.
+    /// Opt in to a round knob: a CIRCLE exactly <see cref="HandleSize"/> across (at any size), instead of a
+    /// capsule stretched to the height of its row.
     /// <para>Unity's <c>Slider.UpdateVisuals</c> drives the handle's anchors every frame — full stretch,
     /// with only the AXIS component pinned to the value — so on the cross axis <c>HandleSize</c> acts as an
     /// ADDITION to the row height, not as the knob's height. A 13px handle in a 16px row therefore draws a
