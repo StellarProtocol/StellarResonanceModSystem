@@ -101,11 +101,18 @@ public sealed partial class WindowInteractionTicker
             if (DragWindows[i].EditOnly && !LayoutEditGate.IsEditing) continue;
             // Per-plugin edit filter (same rule as the outline/select): an edit-only window drags only while it passes it.
             if (DragWindows[i].EditOnly && LayoutEditGate.EditableWindowFilter != null && !LayoutEditGate.EditableWindowFilter(DragWindows[i].WindowId)) continue;
-            if (DragWindows[i].Handle == null) continue;
-            if (!RectTransformUtility.RectangleContainsScreenPoint(DragWindows[i].Handle, mp, null)) continue;
-            // Don't start a window drag if a higher-Z window covers the pointer — the press belongs to that window.
-            if (FrontWindowBlocks(mp, DragWindows[i].Target)) continue;
-            return DragWindows[i].Target;
+            // activeInHierarchy is load-bearing: a hidden window is PARKED (root SetActive(false), registrations kept) or
+            // ShouldRender-suppressed, and its handle still hit-tests by its last geometry. Without the guard a press on a
+            // visible window's title bar that lay over a hidden Tools window's handle (Tools sorts above HUD, and no ACTIVE
+            // window is in front of the hidden one, so FrontWindowBlocks passes) grabbed the INVISIBLE window: the visible
+            // one never moved and the hidden one was silently dragged (2026-11-08, Magical Chat Alert title bar). Same rule
+            // as every other press hit-test (PointerHitRule); a front window still owns the press.
+            var handle = DragWindows[i].Handle;
+            var target = DragWindows[i].Target;
+            if (!PointerHitRule.AcceptsPress(alive: handle != null, handle != null && handle.gameObject.activeInHierarchy,
+                    handle != null && RectTransformUtility.RectangleContainsScreenPoint(handle, mp, null),
+                    () => FrontWindowBlocks(mp, target))) continue;
+            return target;
         }
         return null;
     }
