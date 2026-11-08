@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Abstractions;
 using Stellar.Infrastructure.UI;
 using TMPro;
 using UnityEngine;
@@ -25,24 +26,6 @@ internal sealed partial class PandaUGuiAdapter
     // icon slot (StatIconAtlas discipline: HideAndDontSave + self-heal).
     private readonly PluginIconCache _iconCache = new();
 
-    // Rail buttons we animate each frame: pulse the accent glow halo + apply a
-    // manual hover wash (the game's InputSystem EventSystem doesn't dispatch
-    // PointerEnter/Exit to our injected button, so uGUI ColorTint never fired —
-    // we poll the pointer against the cell rect instead). Destroyed entries
-    // (menu close) are pruned in TickGlow.
-    private sealed class RailVisual
-    {
-        public RawImage? Glow;     // accent halo (pulsed + brightened on hover); may be null
-        public RawImage? Star;     // crisp accent star (scaled on hover)
-        public Image Surface = null!;       // transparent click surface (kept for liveness check)
-        public RectTransform Rect = null!;  // cell rect (hover hit-test)
-        public Canvas? Canvas;              // owning canvas, resolved once at build (hover hit-test camera)
-        public float Scale = 1f;            // current hover scale (lerped)
-    }
-    private readonly System.Collections.Generic.List<RailVisual> _railVisuals = new();
-    private RawImage? _pendingGlow;   // set by AddGlowingRailIcon during a build, read into the RailVisual
-    private RawImage? _pendingStar;
-
     // Dedup for the transient "named rail template not live this tick" miss.
     // The injection service retries every tick while the menu is open, so the
     // miss self-corrects; without this guard it logged a Warning every 0.2 s on
@@ -60,7 +43,7 @@ internal sealed partial class PandaUGuiAdapter
         ["star"] = "★", ["menu"] = "☰", ["plus"] = "＋",
         ["chart"] = "≡", ["wrench"] = "⚒",
     };
-    private GameObject? BuildButton(NativeUiAnchor anchor, MenuButtonSpec spec)
+    private GameObject? BuildButton(NativeUiAnchor anchor, MenuButtonSpec spec, UGuiInjectContext context)
     {
         if (!UGuiAnchorAllowlist.TryGet(anchor, out var e) || e.TemplateChildName == null)
         { _log.Warning($"[uGUI] anchor {anchor} has no template anchor"); return null; }
@@ -105,12 +88,12 @@ internal sealed partial class PandaUGuiAdapter
             return BuildLoginSidebarButton(go, spec, size, template);
 
         _pendingGlow = null; _pendingStar = null;
-        var hasPng = AddRailButtonContent(go, spec, size, template);
-        AttachAndPlaceButton(go, spec, template, hasPng);
+        var hasPng = AddRailButtonContent(go, spec, size, template, context.Branded);
+        AttachAndPlaceButton(go, spec, template, hasPng, context);
         return go;
     }
 
-    private void AttachAndPlaceButton(GameObject go, MenuButtonSpec spec, Transform template, bool hasPng)
+    private void AttachAndPlaceButton(GameObject go, MenuButtonSpec spec, Transform template, bool hasPng, UGuiInjectContext context)
     {
         var rt = go.GetComponent<RectTransform>();
         var btn = go.AddComponent<Button>();
@@ -119,7 +102,8 @@ internal sealed partial class PandaUGuiAdapter
         // ColorTint never fires); None keeps the Button from any auto-tint.
         btn.transition = Selectable.Transition.None;
         btn.onClick.AddListener((UnityAction)(() => { SafeInvoke(spec.OnClick); ClearRailSelection(); }));
-        PlaceBelowRail(go, template.parent, template.name);
+        if (PlaceBelowRail(go, template.parent, template.name, context.RailSlot))
+            _log.Warning($"[uGUI] rail button '{spec.Label}' (slot {context.RailSlot}) reaches the bottom Support/Unstuck/Exit group — too many rail buttons for this rail");
         _railVisuals.Add(new RailVisual { Glow = _pendingGlow, Star = _pendingStar, Surface = go.GetComponent<Image>(), Rect = rt, Canvas = rt.GetComponentInParent<Canvas>() });
         _log.Info($"[uGUI] built rail button '{spec.Label}' under '{template.parent.name}' for {spec.Anchor}"
                   + (hasPng ? " (png icon)" : ""));
@@ -130,7 +114,7 @@ internal sealed partial class PandaUGuiAdapter
     // surface, an icon in the top area, label beneath. A real PNG sprite
     // (IconPng) is preferred — font glyphs tofu on the rail font; glyph is the
     // fallback, bare label the last resort. Returns true if a PNG icon was used.
-    private bool AddRailButtonContent(GameObject go, MenuButtonSpec spec, Vector2 size, Transform template)
+    private bool AddRailButtonContent(GameObject go, MenuButtonSpec spec, Vector2 size, Transform template, bool branded)
     {
         // Fully-transparent click surface — a 0-alpha Image still raycasts
         // (raycastTarget on, alpha-hit-test off), same as the Phase 0 blocker.
@@ -138,7 +122,11 @@ internal sealed partial class PandaUGuiAdapter
         var iconTex = _iconCache.Get(spec.IconPng);
         if (iconTex != null)
         {
-            AddGlowingRailIcon(go.transform, iconTex, Mathf.Min(size.x, size.y) * 0.55f, 0.66f);
+            // Only the framework's own Stellar button is branded (accent star + pulsing halo); a plugin's PNG
+            // is drawn as-is so a game-style grey icon reads like the native Mail/Camera items.
+            var side = Mathf.Min(size.x, size.y) * 0.55f;
+            if (branded) AddGlowingRailIcon(go.transform, iconTex, side, 0.66f);
+            else AddPlainRailIcon(go.transform, iconTex, side, 0.66f);
             AddRailLabel(go.transform, spec.Label, new Vector2(0f, 0f), new Vector2(1f, 0.34f), template);
             return true;
         }
@@ -159,10 +147,16 @@ internal sealed partial class PandaUGuiAdapter
     // group (after Notice). The rail has two groups — the top list and a
     // bottom-pinned Support/Unstuck/Exit cluster — separated by a big gap; we
     // stop at that gap so Stellar never lands among the bottom group.
-    private static void PlaceBelowRail(GameObject clone, Transform parent, string itemName)
+    // Further injected rail buttons stack one step each below that: slot N sits
+    // N+1 steps under the last top item. The slot comes from the injection
+    // service's registration order (Stellar = 0), NOT from our StellarBtn_*
+    // siblings — those are excluded by the template-name filter, and whichever
+    // of them exists at this instant depends on re-inject order. Returns true
+    // when the slot reaches into the bottom group (logged by the caller).
+    private static bool PlaceBelowRail(GameObject clone, Transform parent, string itemName, int slot)
     {
         var crt = clone.transform.TryCast<RectTransform>();
-        if (crt == null) return;
+        if (crt == null) return false;
 
         var ys = new List<float>();
         for (var i = 0; i < parent.childCount; i++)
@@ -172,7 +166,7 @@ internal sealed partial class PandaUGuiAdapter
             var r = c.TryCast<RectTransform>(); if (r == null) continue;
             ys.Add(r.anchoredPosition.y);
         }
-        if (ys.Count == 0) return;
+        if (ys.Count == 0) return false;
 
         ys.Sort();
         ys.Reverse();   // descending: top (largest y) → bottom (smallest y)
@@ -181,12 +175,15 @@ internal sealed partial class PandaUGuiAdapter
         if (step <= 0f) step = fallback;
 
         var lastTopY = ys[0];
+        float? bottomTopY = null;   // first item of the bottom-pinned group, if any
         for (var i = 1; i < ys.Count; i++)
         {
-            if (lastTopY - ys[i] > step * 1.6f) break;   // big gap → bottom group; stop
+            if (lastTopY - ys[i] > step * 1.6f) { bottomTopY = ys[i]; break; }   // big gap → bottom group; stop
             lastTopY = ys[i];
         }
-        crt.anchoredPosition = new Vector2(crt.anchoredPosition.x, lastTopY - step);
+        var y = lastTopY - step * (1 + Mathf.Max(0, slot));
+        crt.anchoredPosition = new Vector2(crt.anchoredPosition.x, y);
+        return bottomTopY is { } b && y - b < step;   // would overlap the bottom group's top cell
     }
 
     // Finds the first active descendant of <paramref name="parent"/> with the given
@@ -215,95 +212,6 @@ internal sealed partial class PandaUGuiAdapter
     // and it's active in the live scene.
     private static bool IsUsableTemplate(Transform? t, string name)
         => t != null && t.name == name && t.gameObject.activeInHierarchy && t.gameObject.scene.IsValid();
-
-    // The rail icon as a glowing, theme-accent star (matches the launcher menu
-    // logo): a soft accent halo (stellar-glow, pulsed each frame in TickGlow)
-    // behind an accent-tinted crisp star. Both centred at normalised height
-    // <paramref name="centerY"/>; neither raycasts (the cell surface owns the click).
-    private void AddGlowingRailIcon(Transform parent, Texture iconTex, float side, float centerY)
-    {
-        var a = _theme.Colors.MenuAccent;
-        var glowTex = _iconCache.Get(LauncherIcons.Get("stellar-glow"));
-        if (glowTex != null)
-            _pendingGlow = AddRawImage(parent, glowTex, side * 1.8f, centerY, new Color(a.R, a.G, a.B, 0.3f));
-        _pendingStar = AddRawImage(parent, iconTex, side, centerY, new Color(a.R, a.G, a.B, 1f));
-    }
-
-    // A square RawImage centred horizontally at normalised height <paramref name="centerY"/>.
-    // RawImage takes the Texture2D directly (no Sprite); doesn't raycast.
-    private static RawImage AddRawImage(Transform parent, Texture tex, float side, float centerY, Color color)
-    {
-        var go = new GameObject("Icon");
-        go.AddComponent<CanvasRenderer>();
-        var img = go.AddComponent<RawImage>();
-        img.texture = tex;
-        img.color = color;
-        img.raycastTarget = false;
-        go.transform.SetParent(parent, worldPositionStays: false);
-        var rt = go.GetComponent<RectTransform>();
-        // Anchor at (0.5, centerY) with a CENTRED pivot so the element's centre
-        // sits there — glow + star (different sizes) stay concentric.
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, centerY);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(side, side);
-        rt.localScale = Vector3.one;
-        return img;
-    }
-
-    /// <summary>
-    /// Per-frame (from Host.Update): pulse each rail glow halo in the theme accent,
-    /// and on hover ANIMATE THE ICON ONLY — the star + halo scale up and the halo
-    /// brightens (no background highlight). Hover is polled against the cell rect
-    /// because the InputSystem EventSystem doesn't send PointerEnter/Exit to our
-    /// injected uGUI button.
-    /// </summary>
-    public void TickGlow()
-    {
-        if (_railVisuals.Count == 0) return;
-        var a = _theme.Colors.MenuAccent;
-        float pulse = 0.5f + 0.5f * Mathf.Sin(Time.realtimeSinceStartup * 2.6f);
-
-        for (int i = _railVisuals.Count - 1; i >= 0; i--)
-        {
-            var v = _railVisuals[i];
-            if (v.Surface == null || v.Rect == null)   // Unity ==: destroyed on menu close
-            {
-                _railVisuals.RemoveAt(i);
-                continue;
-            }
-            bool hover = IsPointerOver(v.Rect, v.Canvas);
-            v.Scale = Mathf.Lerp(v.Scale, hover ? 1.22f : 1f, 0.25f);
-            float hoverProgress = Mathf.Clamp01((v.Scale - 1f) / 0.22f);
-            var scale = new Vector3(v.Scale, v.Scale, 1f);
-            if (v.Star != null) v.Star.rectTransform.localScale = scale;
-            if (v.Glow != null)
-            {
-                v.Glow.rectTransform.localScale = scale;
-                float alpha = Mathf.Clamp01((0.18f + 0.42f * pulse) + hoverProgress * 0.3f);
-                v.Glow.color = new Color(a.R, a.G, a.B, alpha);
-            }
-        }
-    }
-
-    // Canvas is resolved once at build (cached on RailVisual) — a per-frame
-    // GetComponentInParent<Canvas>() parent-walk + Il2CPP interop call is the one
-    // avoidable cost while the rail is on screen. worldCamera is read off the
-    // cached canvas each call (cheap) so a canvas camera swap is still honoured.
-    private static bool IsPointerOver(RectTransform rt, Canvas? canvas)
-    {
-        var cam = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
-        var p = Input.mousePosition;
-        return RectTransformUtility.RectangleContainsScreenPoint(rt, new Vector2(p.x, p.y), cam);
-    }
-
-    // Clear the EventSystem selection after our button is clicked, so the game's
-    // selected-item highlight (the dark box) doesn't linger on the Stellar cell.
-    private static void ClearRailSelection()
-    {
-        var es = UnityEngine.EventSystems.EventSystem.current;
-        if (es != null) es.SetSelectedGameObject(null);
-    }
 
     private GameObject BuildIndicator(Transform parent, IndicatorSpec spec)
     {

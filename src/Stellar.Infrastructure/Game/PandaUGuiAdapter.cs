@@ -33,13 +33,13 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
 
     public bool IsAnchorAvailable(NativeUiAnchor anchor) => ResolveParent(anchor) != null;
 
-    public object? Inject(NativeUiElementSpec spec)
+    public object? Inject(NativeUiElementSpec spec, UGuiInjectContext context)
     {
         var parent = ResolveParent(spec.Anchor);
         if (parent == null) return null;
         var go = spec switch
         {
-            MenuButtonSpec b => BuildButton(spec.Anchor, b),     // finds its own clone target
+            MenuButtonSpec b => BuildButton(spec.Anchor, b, context),     // finds its own clone target
             IndicatorSpec i  => BuildIndicator(parent, i),
             PanelSpec p      => BuildPanel(parent, p),
             _                => null,

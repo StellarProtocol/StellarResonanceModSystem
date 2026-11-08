@@ -14,6 +14,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Fixed
+- Buttons that mods add to the Esc menu's side bar now line up one below another under the Stellar button, instead of sitting on top of it.
+- Mod buttons in the Esc menu's side bar now show their own icon in its original colours, like the game's own buttons; only the Stellar button keeps its glowing star.
+- Large round slider knobs now look perfectly round, instead of like rounded squares.
+- Dragging a slider in a mod window that has no title bar now changes the slider, instead of moving the whole window.
+- Dragging a mod window by its title bar no longer sometimes does nothing when a closed mod window used to sit in the same spot.
+- A slider scrolled out of view in a mod list no longer stops you dragging the window around that spot.
+- Click-through mod overlays, such as a raid alert banner, no longer stop you dragging or hovering the mod windows underneath them.
+### Developer notes
+- **Clip-aware scrollbar/slider exclusion.** `PointerOnScrollbar` ignored RectMask2D/Mask clipping, so a slider registered via `RegisterScrollbar` (e048f00) that was scrolled out of a ScrollRect viewport still claimed presses past the viewport edge and suppressed window drags there. It now goes through `PointerHitRule.AcceptsPress` with `OnInflatedBar && !OutsideClip` (same rule as hover/HitTest/HitSlot); the 6 px horizontal inflation is unchanged.
+- **Passive windows no longer cover in `FrontWindowBlocks`.** A visible `WindowSpec.Passive` (click-through) window in front counted as covering, so e.g. RaidManager's wide `raidmanager.mech.alert` banner blocked drag + hover on windows behind it. `WindowRenderer.Mount` now records Passive roots in the ticker's `PassiveRoots`; `FrontWindowBlocks` skips them unless `LayoutEditGate.IsEditing` (`PointerHitRule.FrontWindowCovers`) — in edit mode they stay selectable/draggable and still cover. Internal only, no public API change.
+- **Hidden windows no longer steal title-bar drags.** `HitWindowHandle` was the one ticker press hit-test without an `activeInHierarchy` guard. A hidden window is parked (root `SetActive(false)`, drag registrations kept) or ShouldRender-suppressed, and its handle still hit-tests at its last geometry; a parked Tools window sorts above HUD and has no active window in front, so `FrontWindowBlocks` passed and the press dragged the INVISIBLE window (the visible one stayed put, the hidden one moved silently). Now routed through `PointerHitRule.AcceptsPress` like the other press hit-tests. Pre-existing since window parking (`62fd71b`, v2.16.0), not a regression of this branch.
+- **Slider drag-exclusion.** On a title-bar-less `Draggable` window the whole frame is the window-drag handle, and `WindowInteractionTicker` only exempted scrollbars, so a press on a `SliderElement` started a window drag. `BuildSlider` now registers its rect through the same `RegisterScrollbar` exclusion hook (FrontWindowBlocks-checked).
+- **Slider: the SquareHandle knob is now a true circle at any HandleSize.** The knob reused the `Capsule` 9-slice (fixed 7-texel corners), so anything over 14 px drew as a rounded square. The SquareHandle path now sets `Image.pixelsPerUnitMultiplier = 14 / HandleSize` (`CapsuleGeometry.CircleMultiplier`) so each corner is `HandleSize/2`. The default stretched knob is unchanged.
+- **Rail stacking.** `PlaceBelowRail` measured only native template siblings, so every `MainMenuRail` `MenuButtonSpec` got the same y. `UGuiInjectionService` now passes an internal `UGuiInjectContext(RailSlot, Branded)` to `IUGuiCanvasAdapter.Inject`; slot N sits N+1 steps below the native top group. Slots come from the registration list (branded first, then registration order; removed registrations free their slot), not from which siblings exist at inject time, so re-injects can't swap or overlap. A Warning logs if a slot reaches the bottom Support/Unstuck/Exit group.
+- **Branded vs plain.** The framework's Stellar rail button registers through the internal `UGuiInjectionService.RegisterBranded`; it alone gets the accent tint + pulsing `stellar-glow` halo. Plugin buttons (public `INativeUiHost.Register`) draw `IconPng` untinted with no halo, and keep the hover scale-up. No public API change (`MenuButtonSpec` untouched); `LoginSidebar` unchanged.
+
 ## [2.29.0] - 2026-11-06
 _**2.29.0** (minor) — PRs #148, #149. The mod framework now supports fully rounded pill dropdowns, drag-to-reorder in long lists, and more player party data for mods to read. It also fixes dropdown hover highlighting the window behind and centres pill dropdown text. Adds `DropdownElement.CornerRadius`, `VirtualListElement.OnReorder` and `SocialSnapshot.Party` (Abstractions 2.29.0); additive, no plugin rebuild._
 ### Added
