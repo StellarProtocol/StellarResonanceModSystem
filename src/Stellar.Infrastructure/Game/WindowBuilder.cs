@@ -94,6 +94,7 @@ internal sealed partial class WindowBuilder
 
     // Scrollbar drag-exclusion hook: the interaction ticker skips window-drag starts over these rects so
     // the uGUI Scrollbar receives the press (whole-frame-draggable Party windows hijacked it otherwise).
+    // Not scrollbar-only: any EventSystem drag control (Slider, chart zoom bar) registers here too.
     internal Action<RectTransform>? RegisterScrollbar { get; set; }
 
     // Scroll-view content-rect hook: the interaction ticker watches these content rects for per-frame motion so

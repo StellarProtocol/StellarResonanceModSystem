@@ -236,6 +236,11 @@ internal sealed partial class WindowBuilder
         var set = s.Set;
         slider.onValueChanged.AddListener((UnityAction<float>)(v => set(v)));
         token.Sliders.Add(new SliderBinding { S = slider, Get = s.Get, EnabledFn = s.Enabled });
+        // Drag-exclusion zone (same hook as the scrollbar): on a title-bar-less Draggable window the WHOLE frame is
+        // the ticker's drag handle, and the ticker polls the mouse itself — it never sees that the uGUI Slider took
+        // the press. Unregistered, dragging the knob moved the window (and the value barely changed, since the
+        // track slid along under the pointer). Its ±6px X inflation also covers a knob overhanging the track ends.
+        RegisterScrollbar?.Invoke(go.GetComponent<RectTransform>());
     }
 
     /// <summary>
