@@ -128,7 +128,7 @@ public sealed partial class BootstrapPlugin
         // resolved by the chrome when the hub is first shown (SettingsHubSpec), not here: this is pre-Game.Init.
         System.Func<bool> gate = () => (_clientState!.UiState & GameUIState.Loading) == 0;
         // A pre-warm mount is "shown" to the window service (mounted + Visible) but never on screen — mask it.
-        bool HubShown() => !_hubPrewarming && _settingsHubControl?.IsShown == true;
+        bool HubShown() => !_hubPrewarm.Warming && _settingsHubControl?.IsShown == true;
         var loc = _frameworkLocalization!;
         // The kit reads the live theme (colours + window opacity) and NO localization at construction.
         var style = new StellarStyle(_themeRenderer!.Colors, (IChromeStyle)_namedTheme!);
@@ -140,10 +140,10 @@ public sealed partial class BootstrapPlugin
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
         // Colour editor drag-release flush + the hub tick (help popover re-anchor, child window centring).
-        // Also pumps the one-shot hub pre-warm (Wiring.Settings.Prewarm.cs) — this poll runs right after WindowService.Tick.
-        _themeEditorPoll = () => { PrewarmSettingsHub(); panels.Themes.PollEditorUgui(); hub.Tick(); };
+        // Also pumps the one-shot launcher + hub pre-warms (Wiring.Prewarm.cs) — this poll runs right after WindowService.Tick.
+        _themeEditorPoll = () => { PumpWindowPrewarms(); panels.Themes.PollEditorUgui(); hub.Tick(); };
         // The pre-warm AND-s its own term onto the loading gate (never replaces it): suppressed while warming.
-        var spec = SettingsHubSpec.Create(loc, () => !_hubPrewarming && gate());
+        var spec = SettingsHubSpec.Create(loc, () => !_hubPrewarm.Warming && gate());
         _settingsHubControl = _windowService.Register(new WindowRegistration(spec, hub.BuildRoot(),
             OnClose: () => _settingsHubControl?.SetVisible(false)));
         help.Register(_windowService);
@@ -173,7 +173,7 @@ public sealed partial class BootstrapPlugin
     private void ShowSettingsHub()
     {
         if (_settingsHubControl == null) return;
-        EndHubPrewarmForRealOpen();   // a show mid-warm-up takes over (flag cleared BEFORE SetVisible)
+        _hubPrewarm.EndForRealOpen(_settingsHubControl);   // a show mid-warm-up takes over (flag cleared BEFORE SetVisible)
         _settingsHubControl.SetVisible(true);
         _settingsHubControl.BringToFront();
     }

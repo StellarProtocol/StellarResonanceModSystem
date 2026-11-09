@@ -66,7 +66,10 @@ public sealed partial class BootstrapPlugin
     {
         var c = _launcherControl;
         if (c == null) return;
-        if (c.IsShown) { c.SetVisible(false); return; }
+        // A pre-warm mount (Wiring.Prewarm.cs) is Visible to the window service but never on screen — that is "closed"
+        // for the toggle, so opening right away (e.g. the login-sidebar button) never hides it or flashes it.
+        if (c.IsShown && !_launcherPrewarm.Warming) { c.SetVisible(false); return; }
+        _launcherPrewarm.EndForRealOpen(c);   // a show mid-warm-up takes over (flag cleared BEFORE SetVisible)
         c.SetVisible(true);
         c.BringToFront();
     }
@@ -75,9 +78,10 @@ public sealed partial class BootstrapPlugin
         // GlassMenu frosted frame, NO chrome title bar — the launcher self-draws its header in the body (top in
         // Full/vertical, a LEFT strip in horizontal). AutoSizeWidth tracks the active mode. Keeps the
         // "settings.hub" id so the saved drag POSITION carries over. Draggable (whole frame); the body draws ✕.
-        // Framework chrome — shown in every phase (title/menus) EXCEPT hidden over the loading screen.
+        // Framework chrome — shown in every phase (title/menus) EXCEPT hidden over the loading screen. The pre-warm AND-s
+        // its own term onto that gate (never replaces it): suppressed while warming (Wiring.Prewarm.cs).
         => new WindowSpec("settings.hub", "", new WindowRect(2071, 1225, 420, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
+            { ShouldRender = () => !_launcherPrewarm.Warming && (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
 
     // Live "N failed to load" count for the launcher header: recounted only when a plugin's enabled/errored state
     // changes (IPluginInventory.StatusChanged), so the per-refresh read is a field load, not a List() snapshot.
