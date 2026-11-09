@@ -50,6 +50,9 @@ public sealed partial class BootstrapPlugin
         // Localized toolbar/outline text (heading, filter chips, reset/exit buttons, native-UI entry names) —
         // same façade every other Phase 9a panel uses.
         _layoutOverlay.SetLocalization(_frameworkLocalization!);
+        // House-style kit for the toolbar + its Reset-all confirm (live theme + window opacity). Before SetWindows:
+        // the toolbar registers (pre-warm or first edit-enter) only once both are bound.
+        _layoutOverlay.SetStyle(new StellarStyle(_themeRenderer.Colors, (IChromeStyle)_namedTheme));
 
         // uGUI window toolkit: bind layout storage + resolution provider (Tick from
         // RefreshPerTickServices; dispose from DisposePhase9).

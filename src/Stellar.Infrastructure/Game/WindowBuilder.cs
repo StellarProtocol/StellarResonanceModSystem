@@ -21,6 +21,8 @@ internal sealed partial class WindowBuilder
     // Well-known id of the layout-editor toolbar window — the one window whose controls stay clickable while
     // layout-edit mode is active (every other window's controls are suppressed; see SuppressClickInEditMode).
     internal const string LayoutToolbarWindowId = "framework.layout-toolbar";
+    /// <summary>The layout toolbar's "Reset all" confirm dialog — interactive in edit mode like the toolbar.</summary>
+    internal const string LayoutResetDialogWindowId = "framework.layout-reset-confirm";
 
     private readonly WindowThemeAssets _assets;
     // HUD sprite/colour set for SurfaceStyle.HudOverlay windows (rounded pill/bar 9-slice + shadowed HudText),
@@ -162,9 +164,10 @@ internal sealed partial class WindowBuilder
         token.Resizable = reg.Spec.Resizable;
         token.WindowId = reg.Spec.Id;
         token.SpecMinWidth = token.EffectiveMinWidth = reg.Spec.MinWidth; token.SpecMaxWidth = reg.Spec.MaxWidth;
-        // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
-        // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
-        token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
+        // Only the layout toolbar (and its Reset-all confirm dialog) stay interactive during edit mode (detected by
+        // their well-known ids so the public WindowRegistration API stays unchanged — adding a ctor param would break
+        // already-built plugins).
+        token.EditModeInteractive = reg.Spec.Id is LayoutToolbarWindowId or LayoutResetDialogWindowId;
         var hitchT = HitchProbe.Begin();   // [Hitch] build-phase buckets (diagnostics only)
         var (root, content) = BuildChrome(reg, parent, token);
         token.Root = root.gameObject; token.Rect = root;
