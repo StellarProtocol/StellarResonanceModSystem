@@ -20,7 +20,7 @@ public static class FrameworkVersion
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
     /// 2.30.0 adds <c>IThemeStatusColors</c> (<c>theme.Colors.Success</c>/<c>Danger</c>/<c>Caution</c>), <c>ThemePreset.Sakura</c>
-    /// and <c>TextElement.MaxLines</c> (all additive); a plugin that uses any of them needs ≥2.30.0.
+    /// <c>TextElement.MaxLines</c> and <c>TextElement.Height</c> (all additive); a plugin that uses any of them needs ≥2.30.0.
     /// 2.29.1 is runtime-only (no API change): plugin <c>MainMenuRail</c> buttons stack below the Stellar button and draw
     /// their icon untinted; SquareHandle slider knobs are true circles; slider/hidden-window/Passive-window hit-test fixes.
     /// 2.29.0 adds <c>DropdownElement.CornerRadius</c> (opt-in rounded Pill trigger), <c>VirtualListElement.OnReorder</c>
