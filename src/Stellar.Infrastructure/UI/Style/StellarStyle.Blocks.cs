@@ -8,7 +8,13 @@ namespace Stellar.Infrastructure.UI.Style;
 /// <summary>Inputs of <see cref="StellarStyle.ConfirmPanel"/> (a parameter object: the analyzer caps methods at 5
 /// parameters). All texts live.</summary>
 internal sealed record ConfirmSpec(Func<string> Question, Func<string> Consequence, Func<string> ConfirmLabel,
-    Action OnConfirm, Func<string> CancelLabel, Action OnCancel);
+    Action OnConfirm, Func<string> CancelLabel, Action OnCancel)
+{
+    /// <summary>The panel's OUTER width — the width available where it sits (e.g. a column's panel content width). The
+    /// panel never gets wider: its texts wrap inside it and the pills keep a fixed size. Required in practice: a confirm
+    /// inside another panel without it hugged its unwrapped sentence and overflowed the column (in-game 2026-11-09).</summary>
+    public float Width { get; init; }
+}
 
 // Layout blocks (SDL §2/§4): accent icon tiles, ToolHeader, SectionPanel (+ the separately-NAMED trailing variant),
 // raised list rows, the confirm panel, and the small text helpers.
@@ -156,13 +162,27 @@ internal sealed partial class StellarStyle
 
     // ── confirm panel ────────────────────────────────────────────────────────────────────────────────────────────
     /// <summary>The house confirmation (SDL §2): a panel with a bold question, a muted consequence line ("…can't be
-    /// undone."), then a Danger / Neutral (Cancel) pill pair of equal width.</summary>
+    /// undone."), then a Danger / Neutral (Cancel) pill pair of equal width.
+    /// Exactly <see cref="ConfirmSpec.Width"/> wide: the bubble is capped there and both texts get the fixed content
+    /// width, so they WRAP (a nested bubble otherwise hugs the text's one-line preferred width and pushes the parent
+    /// column wider — Settings › Themes delete confirm, 2026-11-09). The pills sit side by side at a fixed label width
+    /// (≤ <see cref="PillPairWidth"/>, smaller only if the panel is too narrow for two), never stretched by weighted
+    /// cells (that grew them to ~165 px each).</summary>
     public HudElement ConfirmPanel(ConfirmSpec spec)
-        => SectionPanel(null, null,
-            BoldText(spec.Question),
-            MutedLine(spec.Consequence),
-            PillPair(DangerButton(spec.ConfirmLabel, spec.OnConfirm, PillPairWidth),
-                     NeutralButton(spec.CancelLabel, spec.OnCancel, PillPairWidth)));
+    {
+        const float padX = 10f;   // SectionPanel PaddingX
+        var inner = spec.Width > 0f ? spec.Width - 2f * padX : 0f;
+        var label = inner > 0f ? MathF.Min(PillPairWidth, MathF.Floor((inner - 8f) / 2f - 2f * PillPadX)) : PillPairWidth;
+        var panel = SectionPanel(null, null,
+            new TextElement(spec.Question, Color: () => Text(), Width: inner) { Bold = true },
+            new TextElement(spec.Consequence, Color: () => Muted(), Width: inner),
+            new RowElement(new HudElement[]
+            {
+                DangerButton(spec.ConfirmLabel, spec.OnConfirm, label),
+                NeutralButton(spec.CancelLabel, spec.OnCancel, label),
+            }, Gap: 8f));
+        return inner > 0f && panel is BubbleElement b ? b with { MaxWidth = spec.Width } : panel;
+    }
 
     // ── text helpers ─────────────────────────────────────────────────────────────────────────────────────────────
     /// <summary>Bold-12 UPPERCASE muted caption (section captions).</summary>

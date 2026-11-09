@@ -298,6 +298,7 @@
   "themes.language.follow": "ゲームに合わせる",
   "themes.limitCard": "{1} 個中 {0} 個使用",
   "themes.limitNote": "カスタムテーマの上限に達しました。新しく作るには 1 つ削除してください。",
+  "themes.nameError.builtin": "組み込みテーマの名前です。別の名前を選んでください",
   "themes.nameError.empty": "名前は空にできず、スペースを含めることもできません",
   "themes.nameError.limit": "カスタムテーマは 12 個までです。新しく作るには 1 つ削除してください",
   "themes.nameError.taken": "その名前は既に使用されています",

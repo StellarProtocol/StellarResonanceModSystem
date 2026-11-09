@@ -298,6 +298,7 @@
   "themes.language.follow": "Ikuti bahasa game",
   "themes.limitCard": "{0} dari {1} terpakai",
   "themes.limitNote": "Batas tema kustom tercapai. Hapus satu untuk membuat yang baru.",
+  "themes.nameError.builtin": "Itu nama tema bawaan. Pilih nama lain",
   "themes.nameError.empty": "Nama tidak boleh kosong dan tidak boleh mengandung spasi",
   "themes.nameError.limit": "Kamu bisa punya hingga 12 tema kustom. Hapus satu untuk membuat yang baru",
   "themes.nameError.taken": "Nama itu sudah digunakan",

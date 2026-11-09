@@ -84,7 +84,20 @@ internal sealed class CustomThemeStore : ICustomThemeStore
         var trimmed = name.Trim();
         if (trimmed.IndexOf(' ') >= 0)
             throw new ArgumentException("theme name must not contain spaces", nameof(name));
+        if (IsBuiltInName(trimmed))
+            throw new ArgumentException($"theme name is a built-in theme: {trimmed}", nameof(name));
         return trimmed;
+    }
+
+    /// <summary>True when <paramref name="name"/> is a built-in theme's name (Default, Dark, Light, Crimson, Sakura — any
+    /// <see cref="ThemePreset"/>), ignoring case. A custom theme with that name read as a second "Default" next to the
+    /// built-in one (user report 2026-11-09), so new and renamed themes may not use it. An EXISTING one still loads and
+    /// keeps its name (user data is never dropped); only Create / Rename refuse it.</summary>
+    public static bool IsBuiltInName(string name)
+    {
+        foreach (var p in Enum.GetNames(typeof(ThemePreset)))
+            if (string.Equals(p, name?.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     private void Persist()

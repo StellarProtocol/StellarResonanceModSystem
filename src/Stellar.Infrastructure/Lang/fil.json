@@ -298,6 +298,7 @@
   "themes.language.follow": "Sundan ang wika ng laro",
   "themes.limitCard": "{0} sa {1} ang nagamit",
   "themes.limitNote": "Naabot na ang limit ng custom na tema. Magbura ng isa para makagawa ng bago.",
+  "themes.nameError.builtin": "Pangalan iyan ng isang built-in na tema. Pumili ng ibang pangalan",
   "themes.nameError.empty": "Hindi maaaring walang laman ang pangalan at hindi dapat may espasyo",
   "themes.nameError.limit": "Hanggang 12 custom na tema lang ang puwede. Magbura ng isa para gumawa ng bago",
   "themes.nameError.taken": "Nagamit na ang pangalang iyon",

@@ -51,12 +51,24 @@ internal sealed partial class ThemeEditorBody
         var name = (_nameBuffer ?? "").Trim();
         if (name == _renameTarget) { CancelNameMode(); return null; }
         if (name.Length == 0 || name.IndexOf(' ') >= 0) { _nameError = _text.T("themes.nameError.empty"); return null; }
+        if (IsBuiltInName(name)) { _nameError = _text.T("themes.nameError.builtin"); return null; }
         if (NameExists(name)) { _nameError = _text.T("themes.nameError.taken"); return null; }
         var basePreset = _store.BasePresetOf(_renameTarget);
         _store.Rename(_renameTarget, name);
         if (_namedTheme.ActiveCustomName == _renameTarget) _namedTheme.SetActiveCustom(name, basePreset);
         CancelNameMode();
         return name;
+    }
+
+    // A built-in theme's name — its stored name (the store refuses it too) or its name as shown in the current language
+    // ("Default", "デフォルト"…) — would read as a second built-in on the cards (user report 2026-11-09).
+    private bool IsBuiltInName(string name)
+    {
+        if (Stellar.Application.Services.CustomThemeStore.IsBuiltInName(name)) return true;
+        foreach (ThemePreset p in System.Enum.GetValues(typeof(ThemePreset)))
+            if (string.Equals(_text.T(ThemesPanel.PresetNameKey(p)), name, System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
     /// <summary>Deletes the active custom theme and falls back to its base preset; returns its name (null when a

@@ -42,7 +42,7 @@ internal sealed partial class GameUiPanel
         var rows = new List<HudElement>();
         foreach (var e in _nativeUi.Entries) rows.Add(EntryRow(e));
         var confirm = s.ConfirmPanel(new ConfirmSpec(kit.T("gameui.resetAll.q"), kit.T("gameui.resetAll.consequence"),
-            kit.T("common.resetAll"), ResetAll, kit.T("common.cancel"), () => _confirmReset = false));
+            kit.T("common.resetAll"), ResetAll, kit.T("common.cancel"), () => _confirmReset = false) { Width = SettingsHub.MainWidth - 20f });
         var bottom = new RowElement(new HudElement[]
         {
             new ConditionalElement(() => _layoutEditor.IsEditing,

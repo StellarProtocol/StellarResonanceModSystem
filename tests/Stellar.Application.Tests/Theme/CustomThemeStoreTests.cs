@@ -11,26 +11,26 @@ public sealed class CustomThemeStoreTests
     public void Create_AddsNamedTheme_WithBase()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("Sakura", ThemePreset.Crimson);
-        Assert.Contains("Sakura", s.Names);
-        Assert.Equal(ThemePreset.Crimson, s.BasePresetOf("Sakura"));
+        s.Create("Blossom", ThemePreset.Crimson);
+        Assert.Contains("Blossom", s.Names);
+        Assert.Equal(ThemePreset.Crimson, s.BasePresetOf("Blossom"));
     }
 
     [Fact]
     public void Create_DuplicateName_Throws()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("Sakura", ThemePreset.Crimson);
-        Assert.Throws<System.ArgumentException>(() => s.Create("Sakura", ThemePreset.Dark));
+        s.Create("Blossom", ThemePreset.Crimson);
+        Assert.Throws<System.ArgumentException>(() => s.Create("Blossom", ThemePreset.Dark));
     }
 
     [Fact]
     public void Rename_ChangesName_KeepsBase()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("Sakura", ThemePreset.Crimson);
-        s.Rename("Sakura", "Bloom");
-        Assert.DoesNotContain("Sakura", s.Names);
+        s.Create("Blossom", ThemePreset.Crimson);
+        s.Rename("Blossom", "Bloom");
+        Assert.DoesNotContain("Blossom", s.Names);
         Assert.Equal(ThemePreset.Crimson, s.BasePresetOf("Bloom"));
     }
 
@@ -38,8 +38,8 @@ public sealed class CustomThemeStoreTests
     public void Delete_Removes()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("Sakura", ThemePreset.Crimson);
-        s.Delete("Sakura");
+        s.Create("Blossom", ThemePreset.Crimson);
+        s.Delete("Blossom");
         Assert.Empty(s.Names);
     }
 
@@ -47,9 +47,9 @@ public sealed class CustomThemeStoreTests
     public void Themes_PersistAcrossReload()
     {
         var cfg = new InMemoryConfigSection();
-        new CustomThemeStore(cfg).Create("Sakura", ThemePreset.Crimson);
+        new CustomThemeStore(cfg).Create("Blossom", ThemePreset.Crimson);
         var reloaded = new CustomThemeStore(cfg);
-        Assert.Equal(ThemePreset.Crimson, reloaded.BasePresetOf("Sakura"));
+        Assert.Equal(ThemePreset.Crimson, reloaded.BasePresetOf("Blossom"));
     }
 
     [Theory]
@@ -66,8 +66,8 @@ public sealed class CustomThemeStoreTests
     public void Create_TrimsSurroundingWhitespace()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("  Sakura  ", ThemePreset.Crimson);
-        Assert.Contains("Sakura", s.Names);
+        s.Create("  Blossom  ", ThemePreset.Crimson);
+        Assert.Contains("Blossom", s.Names);
     }
 
     // 2.30.0: a theme whose saved base preset this build can't parse (a downgrade reading "Sakura", or any future
@@ -130,9 +130,34 @@ public sealed class CustomThemeStoreTests
     public void Rename_SameName_IsNoOp()
     {
         var s = new CustomThemeStore(new InMemoryConfigSection());
-        s.Create("Sakura", ThemePreset.Crimson);
-        s.Rename("Sakura", "Sakura"); // must not throw
-        Assert.Contains("Sakura", s.Names);
-        Assert.Equal(ThemePreset.Crimson, s.BasePresetOf("Sakura"));
+        s.Create("Blossom", ThemePreset.Crimson);
+        s.Rename("Blossom", "Blossom"); // must not throw
+        Assert.Contains("Blossom", s.Names);
+        Assert.Equal(ThemePreset.Crimson, s.BasePresetOf("Blossom"));
+    }
+
+    // 2.30.0: a custom theme named like a built-in ("Default" next to the built-in Default) is confusing — refused for
+    // new and renamed themes, any case; an existing one still loads (user data is never dropped).
+    [Theory]
+    [InlineData("Default")]
+    [InlineData("sakura")]
+    [InlineData(" LIGHT ")]
+    public void BuiltInName_IsRefused_ForCreateAndRename(string name)
+    {
+        var s = new CustomThemeStore(new InMemoryConfigSection());
+        Assert.Throws<System.ArgumentException>(() => s.Create(name, ThemePreset.Dark));
+        s.Create("Mine", ThemePreset.Dark);
+        Assert.Throws<System.ArgumentException>(() => s.Rename("Mine", name));
+        Assert.Contains("Mine", s.Names);
+    }
+
+    [Fact]
+    public void ExistingThemeWithBuiltInName_StillLoads()
+    {
+        var cfg = new InMemoryConfigSection();
+        cfg.Set("customThemes", new Dictionary<string, string> { ["Default"] = "Dark" });
+        var s = new CustomThemeStore(cfg);
+        Assert.Contains("Default", s.Names);
+        Assert.Equal(ThemePreset.Dark, s.BasePresetOf("Default"));
     }
 }

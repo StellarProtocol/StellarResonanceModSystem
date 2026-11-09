@@ -298,6 +298,7 @@
   "themes.language.follow": "Follow game client",
   "themes.limitCard": "{0} of {1} used",
   "themes.limitNote": "Custom theme limit reached. Delete one to make a new one.",
+  "themes.nameError.builtin": "That's the name of a built-in theme. Choose another name",
   "themes.nameError.empty": "Name must be non-empty and contain no spaces",
   "themes.nameError.limit": "You can have up to 12 custom themes. Delete one to make a new one",
   "themes.nameError.taken": "That name is taken",

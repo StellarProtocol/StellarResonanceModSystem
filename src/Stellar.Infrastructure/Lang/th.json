@@ -298,6 +298,7 @@
   "themes.language.follow": "ตามภาษาเกม",
   "themes.limitCard": "ใช้แล้ว {0} จาก {1}",
   "themes.limitNote": "ธีมกำหนดเองเต็มแล้ว ลบหนึ่งธีมเพื่อสร้างใหม่",
+  "themes.nameError.builtin": "ชื่อนี้เป็นชื่อของธีมในตัว โปรดเลือกชื่ออื่น",
   "themes.nameError.empty": "ชื่อต้องไม่ว่างและห้ามมีช่องว่าง",
   "themes.nameError.limit": "สร้างธีมกำหนดเองได้สูงสุด 12 ธีม ลบหนึ่งธีมเพื่อสร้างธีมใหม่",
   "themes.nameError.taken": "ชื่อนี้ถูกใช้ไปแล้ว",

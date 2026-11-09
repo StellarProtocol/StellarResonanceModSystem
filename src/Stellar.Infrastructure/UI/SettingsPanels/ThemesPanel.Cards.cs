@@ -42,7 +42,7 @@ internal sealed partial class ThemesPanel
         var confirm = s.ConfirmPanel(new ConfirmSpec(
             () => _text.TFormat("themes.delete.q", _namedTheme.ActiveCustomName ?? ""),
             _k.T("themes.delete.consequence"), _k.T("common.delete"), ConfirmDelete,
-            _k.T("common.cancel"), () => _confirmDelete = false));
+            _k.T("common.cancel"), () => _confirmDelete = false) { Width = LayoutPanel.ColumnWidth - 20f });
         var rename = new ColumnElement(new HudElement[]
         {
             SettingsKit.Row(

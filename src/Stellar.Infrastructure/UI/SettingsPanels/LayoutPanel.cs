@@ -70,7 +70,7 @@ internal sealed partial class LayoutPanel
             () => _loc.TFormat("layout.remove.q", NameAt(_confirmRemove)),
             _k.T("layout.remove.consequence"),
             _k.T("common.remove"), ConfirmRemove,
-            _k.T("common.cancel"), () => _confirmRemove = -1));
+            _k.T("common.cancel"), () => _confirmRemove = -1) { Width = ColumnWidth - 20f });
         var add = new RowElement(new HudElement[]
         {
             s.NeutralButton(_k.T("layout.addSlot"), AddSlot, enabled: () => _storage.SlotCount < MaxSlots),

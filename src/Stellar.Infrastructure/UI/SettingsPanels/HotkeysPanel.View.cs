@@ -28,7 +28,7 @@ internal sealed partial class HotkeysPanel
         var slots = new HudElement[MaxRows];
         for (var i = 0; i < MaxRows; i++) slots[i] = BuildHotkeySlot(i);
         var confirm = s.ConfirmPanel(new ConfirmSpec(kit.T("hotkeys.reset.q"), kit.T("hotkeys.reset.consequence"),
-            kit.T("common.resetAll"), ConfirmResetAll, kit.T("common.cancel"), () => _confirmReset = false));
+            kit.T("common.resetAll"), ConfirmResetAll, kit.T("common.cancel"), () => _confirmReset = false) { Width = SettingsHub.MainWidth - 20f });
         var chips = new RowElement(new HudElement[]
         {
             FilterChip("hotkeys.filter.all", Filter.All),

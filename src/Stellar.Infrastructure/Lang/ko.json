@@ -298,6 +298,7 @@
   "themes.language.follow": "게임 클라이언트 설정 따르기",
   "themes.limitCard": "{1}개 중 {0}개 사용",
   "themes.limitNote": "사용자 지정 테마 한도에 도달했습니다. 새로 만들려면 하나를 삭제하세요.",
+  "themes.nameError.builtin": "기본 제공 테마의 이름입니다. 다른 이름을 선택하세요",
   "themes.nameError.empty": "이름은 비워둘 수 없고 공백을 포함할 수 없습니다",
   "themes.nameError.limit": "사용자 테마는 최대 12개까지 만들 수 있습니다. 새로 만들려면 하나를 삭제하세요",
   "themes.nameError.taken": "이미 사용 중인 이름입니다",
