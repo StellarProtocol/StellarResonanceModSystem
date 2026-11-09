@@ -1,17 +1,18 @@
-using System.Collections.Generic;
+using Stellar.Infrastructure.Game;
 using UnityEngine;
 
 namespace Stellar.Infrastructure.Unity;
 
 public sealed partial class WindowInteractionTicker
 {
-    internal readonly List<RectTransform> ScrollContents = new();  // scroll-view content rects registered by the builder
-    private readonly List<float> _scrollPrevY = new();             // parallel: previous frame's content.anchoredPosition.y per entry (NaN = unknown/inactive)
-    private float _lastScrollMoveTime = -999f;                     // Time.unscaledTime of the last detected scroll motion
+    private float _lastScrollMoveTime = -999f;                     // Time.unscaledTime of the last USER scroll motion
     private const float ScrollSettleDelay = 0.15f;                 // keep pixelPerfect off this long after the last scroll motion (so it doesn't flicker on/off between discrete wheel steps)
     private RectTransform? _motionTarget;                          // the window being dragged / resized (null = none, or not seen yet)
     private Vector2 _motionPrevPos, _motionPrevSize;               // its anchoredPosition / sizeDelta last frame
     private float _lastWinMoveTime = -999f;                        // Time.unscaledTime of the last detected window move / resize
+    // [UiPerf] flip attribution only (read when pixelPerfect flips with diagnostics on): what moved last.
+    private ScrollView? _lastScrollView;
+    private bool _lastWinMoveWasResize;
 
     // Latch window drag / resize MOTION (like TickScrollActivity), so pixelPerfect drops only while the window really
     // moves: just holding the mouse on a drag handle used to turn it off and soften all text until release. The
@@ -32,27 +33,38 @@ public sealed partial class WindowInteractionTicker
         // 0.5 px threshold ignores sub-pixel jitter (a clamp re-applying the same spot); position covers top/left edges.
         if (Mathf.Abs(pos.x - _motionPrevPos.x) > 0.5f || Mathf.Abs(pos.y - _motionPrevPos.y) > 0.5f
             || Mathf.Abs(size.x - _motionPrevSize.x) > 0.5f || Mathf.Abs(size.y - _motionPrevSize.y) > 0.5f)
+        {
             _lastWinMoveTime = Time.unscaledTime;
+            _lastWinMoveWasResize = _activeWinDrag == null;
+        }
         _motionPrevPos = pos; _motionPrevSize = size;
     }
 
-    // Detect per-frame scroll motion. A ScrollRect's content rect moving between frames = the user is scrolling a
-    // list (e.g. the chat log). Like a window drag/resize, that re-snaps + rebatches the whole (isolated) canvas
-    // every frame while pixelPerfect is ON — the ~15ms chat-scroll FPS drop. Latch the last-motion time so
-    // SyncPixelPerfect keeps pixelPerfect OFF for ScrollSettleDelay after the last move (no flicker between
-    // discrete wheel steps). Called from Update() immediately before SyncPixelPerfect().
+    // Detect per-frame USER scroll motion. A ScrollRect's content rect moving between frames while the user drives that
+    // view (wheel / drag / fling — IsUserScrolling, .ScrollViews.cs) = the user is scrolling a list (e.g. the chat log).
+    // Like a window drag/resize, that re-snaps + rebatches the whole (isolated) canvas every frame while pixelPerfect is
+    // ON — the ~15ms chat-scroll FPS drop. Latch the last-motion time so SyncPixelPerfect keeps pixelPerfect OFF for
+    // ScrollSettleDelay after the last move (no flicker between discrete wheel steps). PROGRAMMATIC content moves (a chat
+    // re-pin to the bottom on a new message, a list growing/shrinking, a rebind) are NOT scrolling: one move is one
+    // ordinary rebuild, while flipping pixelPerfect for it cost two whole-canvas rebuilds (off + on, 30-50 ms each).
+    // Called from Update() immediately before SyncPixelPerfect().
     private void TickScrollActivity()
     {
-        for (var i = 0; i < ScrollContents.Count; i++)
+        var now = Time.unscaledTime;
+        for (var i = 0; i < ScrollViews.Count; i++)
         {
-            while (_scrollPrevY.Count <= i) _scrollPrevY.Add(float.NaN);   // mirror the _hoverState grow-loop
-            var c = ScrollContents[i];
+            var v = ScrollViews[i];
+            var c = v.Content;
             // A re-activated view must not register a spurious jump on its first frame back → seed NaN while inactive.
-            if (c == null || !c.gameObject.activeInHierarchy) { _scrollPrevY[i] = float.NaN; continue; }
+            if (c == null || v.Sr == null || !c.gameObject.activeInHierarchy) { v.PrevY = float.NaN; continue; }
             var y = c.anchoredPosition.y;
             // 0.5px threshold ignores sub-pixel jitter; NaN prev (first/re-activated frame) = no motion counted.
-            if (!float.IsNaN(_scrollPrevY[i]) && Mathf.Abs(y - _scrollPrevY[i]) > 0.5f) _lastScrollMoveTime = Time.unscaledTime;
-            _scrollPrevY[i] = y;
+            if (!float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f && IsUserScrolling(v, now))
+            {
+                _lastScrollMoveTime = now;
+                _lastScrollView = v;
+            }
+            v.PrevY = y;
         }
     }
 
@@ -74,6 +86,17 @@ public sealed partial class WindowInteractionTicker
         var winMoving = Time.unscaledTime - _lastWinMoveTime < ScrollSettleDelay;
         var moving = winMoving || scrolling;
         var want = !moving;
-        if (_canvasComp.pixelPerfect != want) _canvasComp.pixelPerfect = want;
+        if (_canvasComp.pixelPerfect == want) return;
+        // Every flip re-snaps + rebatches the whole canvas — [UiPerf] counts them with a reason and their cost.
+        var t0 = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+        _canvasComp.pixelPerfect = want;
+        if (t0 != 0L) UiPerfStats.PixelPerfectFlip(want, want ? "rest" : FlipReason(winMoving), t0);
+    }
+
+    private string FlipReason(bool winMoving)
+    {
+        if (winMoving)
+            return (_lastWinMoveWasResize ? "resize:" : "drag:") + WindowIdOf(_motionTarget);
+        return "scroll:" + WindowIdOf(_lastScrollView?.Content);
     }
 }
