@@ -66,6 +66,9 @@ internal sealed partial class ThemesPanel
     private readonly ILocalizationControl _loc;    // language setting (the dropdown)
     private readonly ILocalization _text;          // framework text lookup (labels)
     private readonly ThemeEditorBody _editor;
+    // Card swatches of INACTIVE custom themes: their own stored colours over their base preset (null in a test
+    // double that only implements IThemeOverrides → the preset table, the old look).
+    private readonly IThemeSwatchResolver? _swatches;
     private SettingsKit _k = null!;
     // Pending Font Scale while dragging — drives the knob + the "x" label. The value is ALSO applied LIVE during
     // the drag (ApplyFontScalePreview → NamedThemeService.SetFontScalePreview, an un-persisted ActiveChanged that
@@ -89,6 +92,7 @@ internal sealed partial class ThemesPanel
         _store = customThemes;
         _loc = loc;
         _text = text;
+        _swatches = overrides as IThemeSwatchResolver;
         // ThemeEditorBody owns relabeling the framework's editable colour-slot labels into the active
         // language (lazily, render-driven — see its ColorReg doc) since it is the class that actually reads
         // them (SlotAt/LabelAt).

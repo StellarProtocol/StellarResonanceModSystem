@@ -79,20 +79,32 @@ internal sealed partial class ThemesPanel
         var card = ThemeCard(new CardBinding(
             () => IsPreset() ? _text.T(PresetNameKey(Presets[idx])) : CustomName(),
             () => IsPreset() ? _text.T(SubKey(Presets[idx])) : _text.T("themes.sub.custom"),
-            BaseOf, Active, () => SelectCard(idx)));
+            BaseOf, Active, () => SelectCard(idx)) { Custom = () => IsCustom() ? CustomName() : null });
         return new ConditionalElement(() => IsPreset() || IsCustom(), card, AddCard());
     }
 
     private readonly record struct CardBinding(Func<string> Name, Func<string> Sub, Func<ThemePreset> Base,
-        Func<bool> Active, Action OnClick);
+        Func<bool> Active, Action OnClick)
+    {
+        /// <summary>The custom theme's name, null for a built-in preset card.</summary>
+        public Func<string?> Custom { get; init; } = () => null;
+    }
+
+    private ColorRgba CardColor(CardBinding b, string slotKey, int presetIndex)
+        => b.Custom() is { } name && _swatches != null
+            ? _swatches.ResolveFor(name, b.Base(), slotKey) with { A = 1f }
+            : PresetColor(b.Base(), presetIndex);
 
     private HudElement ThemeCard(CardBinding b)
     {
         var s = _k.S;
         var hover = new StellarStyle.HoverFlag();
-        // The active theme's swatch reads the LIVE colours (so a custom theme's edits show); others their preset table.
-        ColorRgba Bg() => b.Active() ? s.Background() : PresetColor(b.Base(), ThemePresets.MenuBackground);
-        ColorRgba Acc() => b.Active() ? s.Accent() : PresetColor(b.Base(), ThemePresets.MenuAccent);
+        // The active theme's swatch reads the LIVE colours. An inactive CUSTOM theme reads its own stored overrides over
+        // its base preset (it used to show the base preset's colours: "Pink" on Default looked teal, user report
+        // 2026-11-09); built-ins their preset table. Resolved per refresh: an allocation-free dictionary hit, so edits,
+        // rename, delete and duplicate show at once with no cache to invalidate.
+        ColorRgba Bg() => b.Active() ? s.Background() : CardColor(b, "Theme.MenuBackground", ThemePresets.MenuBackground);
+        ColorRgba Acc() => b.Active() ? s.Accent() : CardColor(b, "Theme.MenuAccent", ThemePresets.MenuAccent);
         // Explicit spacers in a zero-gap row: the old Gap 8 spent 5 × 8 = 40 of the ~131 px card on gaps, leaving the
         // name ~36 px ("Defa…", in-game 2026-11-09). Now the name + sub-label get everything after the swatch: 131 − 52 =
         // 79 px, or 63 on the active card, where the "✓" (+ 4 px) takes its slot only while shown.
