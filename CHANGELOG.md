@@ -14,6 +14,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.30.0] - Unreleased
+_**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (foundation). A new Sakura theme, more theme colours you can change in your own themes, and the groundwork for the redesigned Settings window and launcher. Adds `IThemeStatusColors`, `ThemePreset.Sakura` and `TextElement.MaxLines` (Abstractions 2.30.0); additive, no plugin rebuild._
+### Added
+- A new built-in theme, Sakura: rose-purple panels with a pink accent.
+- Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
+- Mods can now show text over a set number of lines, ending in "…" when it is longer.
+### Fixed
+- Your own themes based on a theme that this version doesn't know are now kept, instead of disappearing the next time settings are saved.
+- You can now have up to 12 of your own themes. Before, a 13th theme was saved but never shown, so you couldn't select, rename or delete it.
+### Developer notes
+- **`IThemeStatusColors`** (`Success`, `Danger`, `Caution`) is a new facet on `IThemeColors` (`IThemeMenuColors` stays at 5 members). Only the framework implements these interfaces, so this is additive. Dark presets return exactly the old hard-coded house values `#5FD38D` / `#FF4D4F` / `#FFCC73`; Light returns `#1E8A4C` / `#D13438` / `#A86A00`. Status indices 18..20 are appended to `ThemePresets.Tables`.
+- **Editable framework slots:** `Theme.MenuText`, `Theme.MenuMuted`, `Theme.Success`, `Theme.Danger`, `Theme.Caution` (labels `theme.color.*` in all six languages), so custom-theme overrides feed the `MenuText`/`MenuMuted`/status reads. Older frameworks keep but ignore these override entries (`ColorOverrideStore` never prunes unknown slots).
+- **`ThemePreset.Sakura = 4`** (appended). Menu `#2E2433` / `#E8DCEF` / `#9B8AA5` / accent `#C8508F`, gradient `#2E2433 → #291F2E → #30242F`, default window opacity 0.90. A plugin that registers per-preset colours without a Sakura entry gets its Default colours. `ColorRegistryService.Register(key, label, defaultAll)` now fills every enum value.
+- **`CustomThemeStore`:** an unparsable (or undefined numeric) base preset loads as Default and its original string is written back on save. `MaxCustomThemes = 12` + `CanCreate`; a 13th `Create` throws `ArgumentException`; existing configs with more load in full.
+- **`TextElement.MaxLines`** (`int`, `init`, default 0 = unlimited). Always wraps; the framework cuts the string itself (never TMP's Ellipsis mode): TMP counts lines with `ForceMeshUpdate` + `textInfo.lineCount`, plain `Text` with uGUI's layout `TextGenerator`. Re-fitted on a string, font-size or width change.
+- **Internal house-style kit** `Stellar.Infrastructure.UI.Style` (`StellarStyle`, `StellarHelpPopover`, `StellarFeedbackLine`) for the upcoming Settings hub and launcher redesign. No public API.
+- **Compatibility.** A plugin that reads the status colours, selects Sakura or sets `MaxLines` needs framework ≥ 2.30.0.
+
 ## [2.29.1] - 2026-11-09
 _**2.29.1** (patch) — PR #151. Mod buttons in the Esc menu's side bar stack under the Stellar button with their own icons, and several mod-window drag and slider problems are fixed. No API change, no plugin rebuild._
 ### Fixed
