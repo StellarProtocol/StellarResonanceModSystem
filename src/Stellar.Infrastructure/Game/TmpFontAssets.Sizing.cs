@@ -32,6 +32,7 @@ internal static partial class TmpFontAssets
     /// Null when no face could be created.</summary>
     internal static TMP_FontAsset? FaceFor(string? s, bool bold)
     {
+        PrepareThai(s);   // first Thai string: import Thai glyphs + mark records in one batch (TmpFontAssets.ThaiMarks.cs)
         var cjk = TextFacePick.For(s) == FaceScript.Cjk;
         return cjk && CjkBold != null
             ? (bold ? CjkBold : CjkRegular ?? CjkBold)

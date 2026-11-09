@@ -135,6 +135,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         text ??= string.Empty;
         if (_ph.text == text) return;
+        TmpFontAssets.PrepareThai(text);
         var cjk = TextFacePick.For(text) == FaceScript.Cjk;
         var face = cjk ? TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold : null;
         face ??= TmpFontAssets.UiRegular ?? TmpFontAssets.UiBold;
@@ -270,6 +271,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     // (returns true then, so a mid-composition swap can re-label).
     private bool PickFace(string s)
     {
+        TmpFontAssets.PrepareThai(s);   // typed Thai: seed the Thai glyphs + mark records before TMP rasterizes them
         var cjk = TextFacePick.For(s) == FaceScript.Cjk && (TmpFontAssets.CjkRegular ?? TmpFontAssets.CjkBold) != null;
         if (cjk == _cjk) return false;
         _cjk = cjk;
@@ -327,6 +329,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         var go = NewChild(name, parent);
         var t = go.AddComponent<TextMeshProUGUI>();
+        TmpFontAssets.EnableMarkPositioning(t);   // Thai stacked marks: GPOS positioning, no string change (caret-safe)
         t.font = face;
         t.fontSize = FontPx;
         t.color = Color.black;

@@ -143,6 +143,7 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         go.transform.SetParent(parent, false);
         go.transform.localScale = Vector3.one;
         var t = go.AddComponent<TextMeshProUGUI>();
+        TmpFontAssets.EnableMarkPositioning(t);   // Thai stacked marks (ั + ๊) need GPOS mark/mkmk on the text
         t.fontSize = spec.FontSize;
         t.color = spec.Color;
         t.raycastTarget = false;
