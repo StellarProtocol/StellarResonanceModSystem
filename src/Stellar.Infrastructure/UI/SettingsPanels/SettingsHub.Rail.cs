@@ -5,9 +5,10 @@ using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
-// The nav rail (a Panel bubble, r6, 8 / 6 padding): eight 34 px rows [24 px icon tile, label, (red dot)], the active
+// The nav rail (a Panel bubble, r6, 8 / 6 padding): one 34 px row per tab [24 px icon tile, label, (red dot)], the active
 // row on the accent wash with an accent tile and a bold accent label, the rest a Neutral tile + normal label with a
-// Tile hover; the muted "Stellar <version>" at the bottom. Plus the ONE status builder the header calls.
+// Tile hover (the Developer row only while developer mode is on); the muted "Stellar <version>[ · dev]" at the
+// bottom. Plus the ONE status builder the header calls.
 internal sealed partial class SettingsHub
 {
     private const float RailItemHeight = 34f;
@@ -19,7 +20,12 @@ internal sealed partial class SettingsHub
     private HudElement BuildRail()
     {
         var items = new List<HudElement>(Tabs.Length);
-        for (var i = 0; i < Tabs.Length; i++) items.Add(RailItem(i));
+        for (var i = 0; i < Tabs.Length; i++)
+        {
+            var idx = i;
+            // A hidden tab's row is wrapped in a live Conditional, so the rail updates the moment the flag flips.
+            items.Add(Tabs[i].Key == DeveloperKey ? new ConditionalElement(() => IsTabVisible(idx, DeveloperOn), RailItem(i)) : RailItem(i));
+        }
         return new CellElement(new BubbleElement(new ColumnElement(new HudElement[]
         {
             new ColumnElement(items, Gap: 2f),
@@ -27,7 +33,7 @@ internal sealed partial class SettingsHub
             new RowElement(new HudElement[]
             {
                 new SpacerElement(RailPadX, 1f),
-                new TextElement(() => "Stellar " + FrameworkVersion.Value, Color: () => _k.S.Muted(), NoWrap: true),
+                new TextElement(() => RailVersion(FrameworkVersion.Value, DeveloperOn), Color: () => _k.S.Muted(), NoWrap: true),
             }, Gap: 0.01f),
         }, Gap: 0.01f))
         {
@@ -43,7 +49,7 @@ internal sealed partial class SettingsHub
         var s = _k.S;
         HudElement Variant(bool active)
         {
-            var tile = s.FilledTile(new ImageElement(() => LauncherIcons.Get(Tabs[idx].Icon), (int)RailGlyph, (int)RailGlyph),
+            var tile = s.FilledTile(new ImageElement(() => TabIcon(idx), (int)RailGlyph, (int)RailGlyph),
                 active ? (System.Func<ColorRgba>)s.Accent : s.Neutral, RailIconSize, 6f);
             var label = new TextElement(() => _k.Loc.T(Tabs[idx].LabelKey),
                 Color: active ? (System.Func<ColorRgba?>)(() => s.Readable(s.Accent(), s.AccentWash())) : () => s.Text(), NoWrap: true)
@@ -88,6 +94,40 @@ internal sealed partial class SettingsHub
         "hotkeys"     => _p.Hotkeys.Status(_k),
         "gameui"      => _p.GameUi.Status(_k),
         "performance" => _p.Perf.Status(_k),
+        "developer"   => _p.Developer.Status(_k),
         _             => _p.About.Status(_k),
     };
+
+    // ── the hidden Developer tab (developer mode, 2026-11-09) ─────────────────────────────────────────────────────
+    internal const string DeveloperKey = "developer";
+    private const string IconFallback = "settings";
+    // A property, not a static field: field initializers across partial files run in no guaranteed order (Tabs may be null).
+    private static int AboutIndex => IndexOf("about");
+
+    private bool DeveloperOn => _p.Developer?.IsOn == true;
+
+    /// <summary>Whether tab <paramref name="idx"/> is in the rail: every tab except Developer, which needs developer mode.</summary>
+    internal static bool IsTabVisible(int idx, bool developerMode)
+        => idx >= 0 && idx < Tabs.Length && (developerMode || Tabs[idx].Key != DeveloperKey);
+
+    /// <summary>The rail's tab keys in order for a given developer-mode state (tests pin the hidden tab's placement).</summary>
+    internal static List<string> VisibleTabKeys(bool developerMode)
+    {
+        var keys = new List<string>(Tabs.Length);
+        for (var i = 0; i < Tabs.Length; i++) if (IsTabVisible(i, developerMode)) keys.Add(Tabs[i].Key);
+        return keys;
+    }
+
+    /// <summary>The rail's bottom line: "Stellar 2.30.0", plus " · dev" while developer mode is on.</summary>
+    internal static string RailVersion(string version, bool developerMode)
+        => developerMode ? "Stellar " + version + " · dev" : "Stellar " + version;
+
+    // A tab glyph that isn't embedded yet (developer.png is still being drawn) falls back to the gear, never a blank tile.
+    private static byte[]? TabIcon(int idx) => LauncherIcons.Get(Tabs[idx].Icon) ?? LauncherIcons.Get(IconFallback);
+
+    private static int IndexOf(string key)
+    {
+        for (var i = 0; i < Tabs.Length; i++) if (Tabs[i].Key == key) return i;
+        return 0;
+    }
 }

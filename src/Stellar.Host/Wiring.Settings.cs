@@ -61,7 +61,7 @@ public sealed partial class BootstrapPlugin
 
         // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
         // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
-        log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (8 tabs) registered");
+        log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (8 tabs + hidden Developer) registered");
     }
 
     // The 8 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
@@ -88,8 +88,10 @@ public sealed partial class BootstrapPlugin
             Layout  = new LayoutPanel(_layoutStorage!, _layoutEditor!, theme, loc),
             GameUi  = gameUi,
             Perf    = new PerformancePanel(_perfPrefs!, theme, registry, _scheduler!.EffectiveRateFor, loc) { DisplayNames = names },
-            // About → Diagnostics "Save HUD paths" runs the Game UI panel's recon walk (moved there from Game UI).
-            About   = new AboutPanel(theme, loc, () => registry.List().Count, gameUi.ReconWalk),
+            // About: 7 quick clicks on the version turn developer mode on. Developer (hidden tab): "Save paths" runs the
+            // Game UI panel's recon walk (was About → Diagnostics); its perf toggle drives the Shift+End overlay window.
+            About   = new AboutPanel(theme, loc, () => registry.List().Count, _developerMode),
+            Developer = new DeveloperPanel(loc, _developerMode!, gameUi.ReconWalk, PerfOverlayShown, SetPerfOverlayShown),
         };
     }
 
@@ -124,7 +126,8 @@ public sealed partial class BootstrapPlugin
         if (_windowService == null) return;
         // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<index> preselects the hub
         // tab at registration so a scenario can capture a specific panel. Index = SettingsHub.Tabs rail order:
-        // 0 General, 1 Plugins, 2 Layout, 3 Themes, 4 Hotkeys, 5 Game UI, 6 Performance, 7 About (General was added
+        // 0 General, 1 Plugins, 2 Layout, 3 Themes, 4 Hotkeys, 5 Game UI, 6 Performance, 7 About, 8 Developer (only
+        // while developer mode is on — otherwise the hub opens on About) (General was added
         // FIRST on 2026-11-09, so every older index shifted by +1 — e.g. Themes is now 3, not 2).
         var tab = 0;
         if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)

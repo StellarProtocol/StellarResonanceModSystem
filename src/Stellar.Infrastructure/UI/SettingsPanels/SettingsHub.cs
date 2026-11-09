@@ -6,7 +6,7 @@ using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
-/// <summary>The eight Settings drawers the hub shows (init properties: the analyzer caps constructors at 6 params).</summary>
+/// <summary>The Settings drawers the hub shows (init properties: the analyzer caps constructors at 6 params).</summary>
 internal sealed class SettingsHubPanels
 {
     public GeneralPanel     General { get; init; } = null!;
@@ -17,6 +17,8 @@ internal sealed class SettingsHubPanels
     public GameUiPanel      GameUi  { get; init; } = null!;
     public PerformancePanel Perf    { get; init; } = null!;
     public AboutPanel       About   { get; init; } = null!;
+    /// <summary>Hidden tab — only in the rail while developer mode is on.</summary>
+    public DeveloperPanel   Developer { get; init; } = null!;
 }
 
 /// <summary>
@@ -55,7 +57,8 @@ internal sealed partial class SettingsHub
 
     /// <summary>The tabs in rail order. <see cref="TabDef.Key"/> is the open-at-tab key
     /// (<see cref="SelectTab(string)"/>); the index is the STELLAR_SETTINGS_TAB test-hook value (0 = General …
-    /// 7 = About since General was added first, 2026-11-09). Code dispatches by KEY, never by index.
+    /// 7 = About since General was added first, 2026-11-09; 8 = the hidden Developer tab). Code dispatches by KEY, never
+    /// by index. Developer stays LAST so hiding it never shifts another tab's index.
     /// Every tab has its own glyph (icon set v2 "A", 2026-11-09): General = sliders, Performance = gauge; the gear stays
     /// reserved for the launcher's Settings action.</summary>
     internal static readonly TabDef[] Tabs =
@@ -68,6 +71,7 @@ internal sealed partial class SettingsHub
         new("gameui",      "tab.gameui",      "gameui",   "settings.foot.gameui"),
         new("performance", "tab.performance", "performance", "settings.foot.performance"),
         new("about",       "tab.about",       "about",    "settings.foot.about"),
+        new("developer",   "tab.developer",   "developer", "settings.foot.developer"),
     };
 
     private readonly SettingsKit _k;
@@ -79,6 +83,7 @@ internal sealed partial class SettingsHub
         _k = kit;
         _p = panels;
         _tab = Math.Clamp(initialTab, 0, Tabs.Length - 1);
+        if (!IsTabVisible(_tab, panels.Developer?.IsOn == true)) _tab = AboutIndex;
         kit.GoToTab = key => SelectTab(key);
     }
 
@@ -88,6 +93,7 @@ internal sealed partial class SettingsHub
     public void SelectTab(int index)
     {
         index = Math.Clamp(index, 0, Tabs.Length - 1);
+        if (!IsTabVisible(index, DeveloperOn)) return;   // the hidden Developer tab can't be selected while it's off
         if (index == _tab) return;
         _tab = index;
         _k.HelpPopover.Close();
@@ -95,12 +101,17 @@ internal sealed partial class SettingsHub
     }
 
     /// <summary>Selects a tab by key ("general", "plugins", "layout", "themes", "hotkeys", "gameui", "performance",
-    /// "about");
-    /// false (and no change) for an unknown key.</summary>
+    /// "about", "developer");
+    /// false (and no change) for an unknown key or the Developer tab while developer mode is off.</summary>
     public bool SelectTab(string key)
     {
         for (var i = 0; i < Tabs.Length; i++)
-            if (string.Equals(Tabs[i].Key, key, StringComparison.OrdinalIgnoreCase)) { SelectTab(i); return true; }
+            if (string.Equals(Tabs[i].Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!IsTabVisible(i, DeveloperOn)) return false;
+                SelectTab(i);
+                return true;
+            }
         return false;
     }
 
@@ -113,6 +124,8 @@ internal sealed partial class SettingsHub
         var shown = HubShown();
         if (_wasShown && !shown) { _k.HelpPopover.Close(); _k.RaiseTabChanged(); }
         _wasShown = shown;
+        // Developer mode turned off (Turn off pill, or the config file edited) while on its tab → About.
+        if (!IsTabVisible(_tab, DeveloperOn)) SelectTab(AboutIndex);
         _k.HelpPopover.Tick();
         _p.Themes.TickColoursWindow();
     }
@@ -155,6 +168,7 @@ internal sealed partial class SettingsHub
         "hotkeys"     => _p.Hotkeys.Describe(_k),
         "gameui"      => _p.GameUi.Describe(_k),
         "performance" => _p.Perf.Describe(_k),
+        "developer"   => _p.Developer.Describe(_k),
         _             => _p.About.Describe(_k),
     };
 
@@ -166,7 +180,7 @@ internal sealed partial class SettingsHub
         for (var i = 0; i < Tabs.Length; i++)
         {
             var idx = i;
-            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(Tabs[idx].Icon, StellarStyle.ToolIconSize)));
+            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx), StellarStyle.ToolIconSize)));
         }
         return new RowElement(new HudElement[]
         {
