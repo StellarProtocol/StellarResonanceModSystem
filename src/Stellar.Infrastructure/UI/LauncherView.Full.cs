@@ -47,7 +47,7 @@ internal sealed partial class LauncherView
             new TextElement(() => "Stellar", () => _s.Text(), NoWrap: true, FontSize: 17) { Bold = true },
             BuildStatusLine(),
         }, Gap: 2f), Weight: 1f),
-        _s.IconButton(() => Icon("mode_list"), () => SwitchMode(LauncherMode.Minimal)),
+        HeaderIconButton("mode_list", () => SwitchMode(LauncherMode.Minimal)),
         _s.CloseIconButton(_actions.Close, () => _s.Background()),
     }, Gap: 10f);
 

@@ -153,15 +153,21 @@ internal sealed partial class StellarStyle
     private const int IconButtonGlyph = 16;
 
     /// <summary>28×28 round icon-only button: transparent at rest, text @10 % circle on hover, a 16 px PNG glyph.
-    /// <paramref name="active"/> (optional) tints it with the accent wash while true (e.g. a toggled mode).</summary>
-    public HudElement IconButton(Func<byte[]?> icon, Action onClick, Func<bool>? active = null)
+    /// <paramref name="active"/> (optional) tints it with the accent wash while true (e.g. a toggled mode).
+    /// <paramref name="tint"/> / <paramref name="hoverTint"/> (optional) re-colour a flat WHITE glyph at rest / on hover
+    /// via <see cref="ImageElement.Tint"/> (hover falls back to the rest tint). Both null = no tint = the PNG's own
+    /// colours, so existing callers keep their look; the launcher passes Muted → Text (prototype icon buttons).</summary>
+    public HudElement IconButton(Func<byte[]?> icon, Action onClick, Func<bool>? active = null,
+        Func<ColorRgba>? tint = null, Func<ColorRgba>? hoverTint = null)
     {
         var hover = new HoverFlag();
         const float pad = (IconButtonSize - IconButtonGlyph) / 2f;
+        Func<ColorRgba?>? glyphTint = tint == null && hoverTint == null ? null
+            : () => hover.On && hoverTint != null ? hoverTint() : tint?.Invoke();
         return new CellElement(new BubbleElement(new SelectableElement(new RowElement(new HudElement[]
             {
                 new SpacerElement(pad, IconButtonSize),
-                new ImageElement(icon, IconButtonGlyph, IconButtonGlyph),
+                new ImageElement(icon, IconButtonGlyph, IconButtonGlyph) { Tint = glyphTint },
                 new SpacerElement(pad, IconButtonSize),
             }, Gap: 0.01f, Justify: RowJustify.Center),
             OnClick: onClick) { Bare = true, OnHover = over => hover.On = over })

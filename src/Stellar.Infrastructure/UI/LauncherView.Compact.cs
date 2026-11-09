@@ -42,8 +42,8 @@ internal sealed partial class LauncherView
         {
             Pair(_s.CloseIconButton(_actions.Close, () => _s.Background()), logoCell),
             Sep(),
-            Pair(_s.IconButton(() => Icon("mode_grid"), () => SwitchMode(LauncherMode.Full)),
-                 _s.IconButton(() => Icon("rotate"), () => _registry.MinimalHorizontal = !_registry.MinimalHorizontal)),
+            Pair(HeaderIconButton("mode_grid", () => SwitchMode(LauncherMode.Full)),
+                 HeaderIconButton("rotate", () => _registry.MinimalHorizontal = !_registry.MinimalHorizontal)),
             Sep(),
         };
         for (var i = 0; i < MaxFavorites; i++)

@@ -132,6 +132,11 @@ internal sealed partial class LauncherView
     private static ImageElement Glyph(Func<byte[]?> png, int size, Func<ColorRgba> tint, bool live = false)
         => new(png, size, size) { Live = live, Tint = () => tint() };
 
+    /// <summary>A header icon button (mode switch / rotate): the kit's 28 px round IconButton with its white glyph tinted
+    /// muted at rest, text colour on hover (prototype) — the kit's default is untinted white.</summary>
+    private HudElement HeaderIconButton(string icon, Action onClick)
+        => _s.IconButton(() => Icon(icon), onClick, tint: _s.Muted, hoverTint: _s.Text);
+
     /// <summary><paramref name="c"/> with its alpha multiplied by <paramref name="alpha"/> (the ghost fade).</summary>
     private static ColorRgba Faded(ColorRgba c, float alpha) => c with { A = c.A * alpha };
 }

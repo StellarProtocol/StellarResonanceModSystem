@@ -30,8 +30,7 @@ public sealed partial class BootstrapPlugin
     private void RegisterLauncher(BepInExPluginLog log)
     {
         var actions = new LauncherActions(
-            // TODO(merge): route the tab to the Settings hub's open-at-tab method (settings redesign branch); null = just open.
-            OpenSettings: _ => Toggle(_settingsHubControl),
+            OpenSettings: OpenSettingsFromLauncher,   // tab key → that tab; null → current tab (shown + fronted, never toggled)
             Close: () => _launcherControl?.SetVisible(false),
             ToggleLayoutEdit: () => _layoutEditor?.ToggleEditMode());   // = the Shift+` hotkey
         var style = new StellarStyle(_themeRenderer!.Colors, _namedTheme);
@@ -47,7 +46,7 @@ public sealed partial class BootstrapPlugin
         // and draw their icon untinted.
         _railButtonHandle = _uguiInjection!.RegisterBranded(new MenuButtonSpec(
             NativeUiAnchor.MainMenuRail, "Stellar", IconKey: null,
-            Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
+            Tooltip: "Open Stellar", OnClick: () => ToggleLauncher(),
             IconPng: LauncherIcons.Get("stellar")));
 
         // Same Stellar icon injected into the TITLE-SCREEN login sidebar (dark-circle styling applied by the
@@ -55,12 +54,22 @@ public sealed partial class BootstrapPlugin
         // ~5 Hz availability probe injects it there only and self-heals if the game destroys the view.
         _loginSidebarButtonHandle = _uguiInjection!.Register(new MenuButtonSpec(
             NativeUiAnchor.LoginSidebar, "Stellar", IconKey: null,
-            Tooltip: "Open Stellar", OnClick: () => Toggle(_launcherControl),
+            Tooltip: "Open Stellar", OnClick: () => ToggleLauncher(),
             IconPng: LauncherIcons.Get("stellar")));
         log.Info("[Launcher] uGUI launcher + Stellar rail button + login-sidebar button registered");
     }
 
-    private static void Toggle(IWindowControl? c) { if (c != null) c.SetVisible(!c.IsShown); }
+    // Rail button / login-sidebar button / Shift+Home. Opening FRONTS the launcher: the Settings hub is fronted on every
+    // open and ZFront is sticky across hide/show, so a plain re-open would land UNDER an open hub (CLAUDE.md Rule 5
+    // exception; WindowBuilder-Patterns.md "ZFront is STICKY").
+    private void ToggleLauncher()
+    {
+        var c = _launcherControl;
+        if (c == null) return;
+        if (c.IsShown) { c.SetVisible(false); return; }
+        c.SetVisible(true);
+        c.BringToFront();
+    }
 
     private WindowSpec LauncherSpec()
         // GlassMenu frosted frame, NO chrome title bar — the launcher self-draws its header in the body (top in

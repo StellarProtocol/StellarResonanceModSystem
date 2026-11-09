@@ -13,7 +13,7 @@ public sealed partial class BootstrapPlugin
 {
     private System.Action? _hotkeysCapturePoll;   // panels.Hotkeys.PollCaptureUgui (uGUI hub key capture)
     private System.Action? _themeEditorPoll;      // Themes drag-release flush + the hub's own tick (help popover, child window)
-    private IWindowControl? _settingsHubControl;   // the uGUI Settings hub (launcher ⚙ toggles it)
+    private IWindowControl? _settingsHubControl;   // the uGUI Settings hub (launcher ⚙ opens + fronts it)
     private SettingsHub? _settingsHub;
 
     /// <summary>
@@ -154,6 +154,21 @@ public sealed partial class BootstrapPlugin
     internal void OpenSettingsAt(string tabKey)
     {
         _settingsHub?.SelectTab(tabKey);
+        ShowSettingsHub();
+    }
+
+    /// <summary>The launcher's Settings callback: a tab key opens there (the red "N failed to load" status passes
+    /// "plugins"); null (Settings pill / compact Settings tile) opens on the current tab. Never toggles closed — an
+    /// already-open hub is just fronted (the launcher sits over it otherwise).</summary>
+    private void OpenSettingsFromLauncher(string? tabKey)
+    {
+        if (tabKey != null) OpenSettingsAt(tabKey);
+        else ShowSettingsHub();
+    }
+
+    // Every hub open goes through here so every open fronts it (sticky ZFront, Rule 5 exception).
+    private void ShowSettingsHub()
+    {
         if (_settingsHubControl == null) return;
         _settingsHubControl.SetVisible(true);
         _settingsHubControl.BringToFront();
@@ -167,7 +182,7 @@ public sealed partial class BootstrapPlugin
             // client-language read. HotkeysPanel relabels it render-driven (FrameworkHotkeyLabels).
             Description: "Toggle Stellar Settings",
             SuggestedDefault: new KeyBinding(StellarKeyCode.Home, ModifierKeys.Shift));
-        _hotkeyService!.DeclareAction(action, () => Toggle(_launcherControl));
+        _hotkeyService!.DeclareAction(action, () => ToggleLauncher());
         log.Info("[Settings] hotkey framework.settings-toggle declared (Shift+Home)");
     }
 }
