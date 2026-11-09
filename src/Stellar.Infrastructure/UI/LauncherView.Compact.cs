@@ -76,10 +76,11 @@ internal sealed partial class LauncherView
             () => Open(Entry()), () => Flashing(Entry()));
     }
 
-    // The Settings entry at the end of the bar: a Neutral icon tile with the settings glyph in the neutral label colour.
+    // The Settings entry at the end of the bar: the same accent tile + white glyph as the favorite tiles (the Neutral tile
+    // read near-black on dark themes; user 2026-11-09). Same shell, so the same hover fill and text-coloured name.
     private HudElement CompactSettingsTile()
     {
-        var icon = LiveIconTile(() => Icon("settings", TileGlyph), () => _s.Fill(_s.Neutral()), () => _s.NeutralLabel(), () => 1f);
+        var icon = LiveIconTile(() => Icon("settings", TileGlyph), () => _s.Fill(_s.Accent()), () => StellarStyle.White, () => 1f);
         return CompactTileShell(icon, () => T("launcher.settings"), () => _actions.OpenSettings(null), () => false);
     }
 
