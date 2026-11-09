@@ -75,8 +75,9 @@ internal sealed partial class AboutPanel
             k.Done(left == 1 ? _loc.T("developer.unlock.one") : _loc.TFormat("developer.unlock.more", left));
     }
 
+    // No HelpGap: About has no "?" anywhere, so reserving its column only left every pill 32 px short of the panel's
+    // right padding (where the caption hint ends). Fixed width keeps the three pills equal and right-aligned.
     private static HudElement GoRow(SettingsKit k, string labelKey, string tabLabelKey, string tabKey)
         => SettingsKit.Row(k.Label(k.T(labelKey)),
-            k.S.NeutralButton(k.T(tabLabelKey), () => k.GoToTab(tabKey), StellarStyle.PillPairWidth - 24f),
-            SettingsKit.HelpGap());
+            k.S.NeutralButton(k.T(tabLabelKey), () => k.GoToTab(tabKey), StellarStyle.PillPairWidth - 24f));
 }

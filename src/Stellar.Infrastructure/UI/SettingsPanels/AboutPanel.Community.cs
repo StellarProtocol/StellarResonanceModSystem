@@ -27,8 +27,9 @@ internal sealed partial class AboutPanel
         var tile = s.FilledTile(new ConditionalElement(() => DiscordIcon() != null,
             new ImageElement(() => DiscordIcon(CommunityTileGlyph), (int)CommunityTileGlyph, (int)CommunityTileGlyph) { Live = true }),
             () => Blurple, CommunityTileSize, 6f);
+        // No HelpGap (About has no "?" column): the pill ends flush with the panel padding, under the caption hint.
         return k.Panel("about.community", k.T("about.community.hint"),
-            SettingsKit.Row(tile, k.Label(k.T("about.discord.label")), DiscordPill(k), SettingsKit.HelpGap()));
+            SettingsKit.Row(tile, k.Label(k.T("about.discord.label")), DiscordPill(k)));
     }
 
     // A 28 px round pill in the brand fill: [16 px discord glyph] "Join Discord". Same shell as StellarStyle's pills
