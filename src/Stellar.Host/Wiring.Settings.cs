@@ -61,10 +61,10 @@ public sealed partial class BootstrapPlugin
 
         // NativeUiService.Tick is deliberately NOT subscribed here: _framework.Update is IsWorldActive-gated (frozen
         // through zone loads). It's ticked UN-gated from RunGlobalRateWork instead — see Wiring.ServiceTick.
-        log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (7 tabs) registered");
+        log.Info("[Launcher] uGUI launcher + rail button + uGUI Settings hub (8 tabs) registered");
     }
 
-    // The 7 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
+    // The 8 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
     // WirePhase9Ui null-checks every field before calling this, hence the `!`s.
     private SettingsHubPanels BuildSettingsPanels(BepInExPluginLog log)
     {
@@ -81,9 +81,10 @@ public sealed partial class BootstrapPlugin
         var gameUi = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc);
         return new SettingsHubPanels
         {
+            General = new GeneralPanel(_localizationEngine!, loc),
             Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },
             Hotkeys = new HotkeysPanel(hotkeys, hotkeys, registry, theme, PluginName, loc) { DisplayNames = names },   // registry = IPluginInventory (group-header fallback names); PluginName labels the framework's own group
-            Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
+            Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, loc),
             Layout  = new LayoutPanel(_layoutStorage!, _layoutEditor!, theme, loc),
             GameUi  = gameUi,
             Perf    = new PerformancePanel(_perfPrefs!, theme, registry, _scheduler!.EffectiveRateFor, loc) { DisplayNames = names },
@@ -121,11 +122,13 @@ public sealed partial class BootstrapPlugin
     private void RegisterSettingsHub(SettingsHubPanels panels)
     {
         if (_windowService == null) return;
-        // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<0..6> preselects
-        // the hub tab at registration so a scenario can capture a specific panel (e.g. 2 = Themes).
+        // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<index> preselects the hub
+        // tab at registration so a scenario can capture a specific panel. Index = SettingsHub.Tabs rail order:
+        // 0 General, 1 Plugins, 2 Layout, 3 Themes, 4 Hotkeys, 5 Game UI, 6 Performance, 7 About (General was added
+        // FIRST on 2026-11-09, so every older index shifted by +1 — e.g. Themes is now 3, not 2).
         var tab = 0;
         if (int.TryParse(System.Environment.GetEnvironmentVariable("STELLAR_SETTINGS_TAB"), out var tabEnv)
-            && tabEnv is >= 0 and <= 6)
+            && tabEnv >= 0 && tabEnv < SettingsHub.Tabs.Length)
             tab = tabEnv;
         // Framework chrome — usable at title/menus in every phase, but hide over the loading screen. The title is
         // resolved by the chrome when the hub is first shown (SettingsHubSpec), not here: this is pre-Game.Init.
@@ -154,7 +157,7 @@ public sealed partial class BootstrapPlugin
             _framework!);
     }
 
-    /// <summary>Opens the Settings hub on <paramref name="tabKey"/> ("plugins", "layout", "themes", "hotkeys",
+    /// <summary>Opens the Settings hub on <paramref name="tabKey"/> ("general", "plugins", "layout", "themes", "hotkeys",
     /// "gameui", "performance", "about"; an unknown key keeps the current tab) and brings it to the front — for the
     /// launcher's per-tab shortcuts. Fronts every time: the hub may already be visible (or mid pre-warm), where only an
     /// explicit front puts it on top (CLAUDE.md Rule 5 exception).</summary>

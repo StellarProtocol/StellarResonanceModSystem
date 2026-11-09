@@ -5,7 +5,7 @@ using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
-// The nav rail (a Panel bubble, r6, 8 / 6 padding): seven 34 px rows [24 px icon tile, label, (red dot)], the active
+// The nav rail (a Panel bubble, r6, 8 / 6 padding): eight 34 px rows [24 px icon tile, label, (red dot)], the active
 // row on the accent wash with an accent tile and a bold accent label, the rest a Neutral tile + normal label with a
 // Tile hover; the muted "Stellar <version>" at the bottom. Plus the ONE status builder the header calls.
 internal sealed partial class SettingsHub
@@ -54,7 +54,7 @@ internal sealed partial class SettingsHub
                 tile,
                 new CellElement(label, Weight: 1f),
             };
-            if (idx == 0) row.Add(new ConditionalElement(() => _p.Plugins.AnyFailed(), FailedDot()));
+            if (Tabs[idx].Key == "plugins") row.Add(new ConditionalElement(() => _p.Plugins.AnyFailed(), FailedDot()));
             row.Add(new SpacerElement(RailPadX, 1f));
             return new BubbleElement(new SelectableElement(new RowElement(row, Gap: 8f), OnClick: () => SelectTab(idx))
                 { Bare = true, OnHover = over => hover.On = over })
@@ -79,14 +79,15 @@ internal sealed partial class SettingsHub
 
     /// <summary>The live status line under the tab name — the ONE status builder (prototype <c>status()</c>), so every
     /// place that shows a tab's state reads the same text. Rich text: "on" in Success, failures in Danger.</summary>
-    public string Status() => _tab switch
+    public string Status() => Tabs[_tab].Key switch
     {
-        0 => _p.Plugins.Status(_k),
-        1 => _p.Layout.Status(_k),
-        2 => _p.Themes.Status(_k),
-        3 => _p.Hotkeys.Status(_k),
-        4 => _p.GameUi.Status(_k),
-        5 => _p.Perf.Status(_k),
-        _ => _p.About.Status(_k),
+        "general"     => _p.General.Status(_k),
+        "plugins"     => _p.Plugins.Status(_k),
+        "layout"      => _p.Layout.Status(_k),
+        "themes"      => _p.Themes.Status(_k),
+        "hotkeys"     => _p.Hotkeys.Status(_k),
+        "gameui"      => _p.GameUi.Status(_k),
+        "performance" => _p.Perf.Status(_k),
+        _             => _p.About.Status(_k),
     };
 }

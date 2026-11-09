@@ -15,7 +15,7 @@ internal sealed partial class ThemesPanel
     private const float CardHeight = 48f;
     private const float SwatchSize = 28f;
     private const float CornerSize = 12f;
-    private const int CardRows = 3;
+    private const int CardRows = 4;   // was 3; the Language panel's height moved to General (2026-11-09)
     // Left column 293 − panel padding 20 − the scroll viewport's 9 px bar lane = 264; two cells with the list's 2 px gap.
     private const float CardWidth = (LayoutPanel.ColumnWidth - 20f - 9f - 2f) / 2f;
 

@@ -8,8 +8,8 @@ using UnityEngine;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Settings → Themes, two columns. Left: "Theme" (theme cards 2 per row — built-ins then custom themes, 3 rows then
-/// scroll — "+ Duplicate", and the active custom theme's Edit colours / Rename / Delete), "Language", "Classic controls"
+/// Settings → Themes, two columns. Left: "Theme" (theme cards 2 per row — built-ins then custom themes, 4 rows then
+/// scroll — "+ Duplicate", and the active custom theme's Edit colours / Rename / Delete), "Classic controls"
 /// (button / scrollbar style of older plugin windows). Right: "Size & opacity" (font scale, UI scale, window opacity) and
 /// a live "Preview" — an example window drawn with the theme tokens. Edit colours opens the colour editor in its own
 /// child window (<c>ThemesPanel.Colours.cs</c> + <see cref="ThemeEditorBody"/>), whose rows open the colour picker in a
@@ -32,30 +32,6 @@ internal sealed partial class ThemesPanel
         _                   => "themes.preset.default",
     };
 
-    // Language dropdown: index 0 = "follow" (the only localized option); indices 1..N = UiLanguages, each shown
-    // in its own script in every locale.
-    private static readonly string[] LangCodes =
-        System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Prepend(UiLanguages.Codes, "follow"));
-    // Options cached + rebuilt only when the active language changes (the "follow" label localizes), so the
-    // per-frame dropdown poll doesn't allocate a fresh array.
-    private string[]? _langOptCache;
-    private string? _langOptLang;
-    private System.Collections.Generic.IReadOnlyList<string> LangOptions
-    {
-        get
-        {
-            if (_langOptCache == null || _langOptLang != _text.Language)
-            {
-                _langOptLang = _text.Language;
-                var opts = new string[UiLanguages.NativeNames.Count + 1];
-                opts[0] = _text.T("themes.language.follow");
-                for (var n = 0; n < UiLanguages.NativeNames.Count; n++) opts[n + 1] = UiLanguages.NativeNames[n];
-                _langOptCache = opts;
-            }
-            return _langOptCache;
-        }
-    }
-
     private const float ScaleLabelWidth = 100f;
     private const float ScaleValueWidth = 40f;
     private const float StyleChipWidth = 54f;
@@ -63,7 +39,6 @@ internal sealed partial class ThemesPanel
     private readonly INamedTheme _namedTheme;
     private readonly IChromeStyle _chromeStyle;
     private readonly ICustomThemeStore _store;
-    private readonly ILocalizationControl _loc;    // language setting (the dropdown)
     private readonly ILocalization _text;          // framework text lookup (labels)
     private readonly ThemeEditorBody _editor;
     // Card swatches of INACTIVE custom themes: their own stored colours over their base preset (null in a test
@@ -84,13 +59,13 @@ internal sealed partial class ThemesPanel
     // chromeStyle is the SAME object as namedTheme (NamedThemeService implements both) — derived here rather
     // than taken as a separate parameter so the two localization dependencies fit within the ctor-dep cap.
     // theme is no longer read (the house kit carries the live colours); the parameter stays for the wiring.
+    // Language moved to Settings › General (GeneralPanel, 2026-11-09).
     public ThemesPanel(INamedTheme namedTheme, ITheme theme, IThemeOverrides overrides,
-                       ICustomThemeStore customThemes, ILocalizationControl loc, ILocalization text)
+                       ICustomThemeStore customThemes, ILocalization text)
     {
         _namedTheme = namedTheme;
         _chromeStyle = (IChromeStyle)namedTheme;
         _store = customThemes;
-        _loc = loc;
         _text = text;
         _swatches = overrides as IThemeSwatchResolver;
         // ThemeEditorBody owns relabeling the framework's editable colour-slot labels into the active
@@ -107,7 +82,7 @@ internal sealed partial class ThemesPanel
         // centres a non-flexible child); the right column's Preview panel is the flexible one.
         return new RowElement(new HudElement[]
         {
-            new CellElement(StellarStyle.TopColumn(BuildThemePanel(), BuildLanguagePanel(), BuildControlsPanel()),
+            new CellElement(StellarStyle.TopColumn(BuildThemePanel(), BuildControlsPanel()),
                 Width: LayoutPanel.ColumnWidth),
             new CellElement(new ColumnElement(new HudElement[]
             {
@@ -116,26 +91,11 @@ internal sealed partial class ThemesPanel
         }, Gap: 8f);
     }
 
-    /// <summary>Header status: "Sakura · 90% opacity · Follow game client".</summary>
+    /// <summary>Header status: "Sakura · 90% opacity".</summary>
     public string Status(SettingsKit k)
-        => _text.TFormat("themes.status", ActiveThemeName(), Mathf.RoundToInt(_chromeStyle.WindowOpacity * 100f),
-            LangOptions[LangIndex()]);
+        => _text.TFormat("themes.status", ActiveThemeName(), Mathf.RoundToInt(_chromeStyle.WindowOpacity * 100f));
 
     private string ActiveThemeName() => _namedTheme.ActiveCustomName ?? _text.T(PresetNameKey(_namedTheme.Active));
-
-    private HudElement BuildLanguagePanel()
-        => _k.Panel("themes.language", null,
-            SettingsKit.Row(
-                SettingsKit.Dropdown(LangIndex, () => LangOptions, SetLanguage,
-                    LayoutPanel.ColumnWidth - 20f - StellarHelpPopover.ButtonSize - 8f - 1f),
-                _k.Help("themes.language", "themes.language", "help.themes.language", "tab.themes")));
-
-    private void SetLanguage(int i)
-    {
-        if (i < 0 || i >= LangCodes.Length) return;
-        _loc.SetLanguageSetting(LangCodes[i]);
-        _k.Done(_text.TFormat("themes.fb.language", LangOptions[i]));
-    }
 
     private HudElement BuildControlsPanel()
     {
@@ -174,12 +134,6 @@ internal sealed partial class ThemesPanel
             ScaleRow("themes.scale.opacity",
                 SettingsKit.Slider(() => _chromeStyle.WindowOpacity, v => _chromeStyle.SetWindowOpacity(v), 0.3f, 1f),
                 () => $"{Mathf.RoundToInt(_chromeStyle.WindowOpacity * 100f)}%", "themes.opacity"));
-    }
-
-    private int LangIndex()
-    {
-        var i = System.Array.IndexOf(LangCodes, _loc.LanguageSetting);
-        return i < 0 ? 0 : i;
     }
 
     /// <summary>Per-frame tick for the uGUI hub (Host TickOverlayServices) — coalesces drag edits to one

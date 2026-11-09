@@ -6,9 +6,10 @@ using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
-/// <summary>The seven Settings drawers the hub shows (init properties: the analyzer caps constructors at 6 params).</summary>
+/// <summary>The eight Settings drawers the hub shows (init properties: the analyzer caps constructors at 6 params).</summary>
 internal sealed class SettingsHubPanels
 {
+    public GeneralPanel     General { get; init; } = null!;
     public PluginsPanel     Plugins { get; init; } = null!;
     public LayoutPanel      Layout  { get; init; } = null!;
     public ThemesPanel      Themes  { get; init; } = null!;
@@ -53,9 +54,12 @@ internal sealed partial class SettingsHub
     }
 
     /// <summary>The tabs in rail order. <see cref="TabDef.Key"/> is the open-at-tab key
-    /// (<see cref="SelectTab(string)"/>); the index is the STELLAR_SETTINGS_TAB test-hook value.</summary>
+    /// (<see cref="SelectTab(string)"/>); the index is the STELLAR_SETTINGS_TAB test-hook value (0 = General …
+    /// 7 = About since General was added first, 2026-11-09). Code dispatches by KEY, never by index.
+    /// General reuses the "settings" glyph (Performance has it too): there is no other fitting framework icon.</summary>
     internal static readonly TabDef[] Tabs =
     {
+        new("general",     "tab.general",     "settings", "settings.foot.general"),
         new("plugins",     "tab.plugins",     "plugins",  "settings.foot.plugins"),
         new("layout",      "tab.layout",      "layout",   "settings.foot.layout"),
         new("themes",      "tab.themes",      "theme",    "settings.foot.themes"),
@@ -89,7 +93,8 @@ internal sealed partial class SettingsHub
         _k.RaiseTabChanged();
     }
 
-    /// <summary>Selects a tab by key ("plugins", "layout", "themes", "hotkeys", "gameui", "performance", "about");
+    /// <summary>Selects a tab by key ("general", "plugins", "layout", "themes", "hotkeys", "gameui", "performance",
+    /// "about");
     /// false (and no change) for an unknown key.</summary>
     public bool SelectTab(string key)
     {
@@ -140,15 +145,16 @@ internal sealed partial class SettingsHub
         }, Gap: MainGap), Weight: 1f);
     }
 
-    private HudElement DescribeTab(int idx) => idx switch
+    private HudElement DescribeTab(int idx) => Tabs[idx].Key switch
     {
-        0 => _p.Plugins.Describe(_k),
-        1 => _p.Layout.Describe(_k),
-        2 => _p.Themes.Describe(_k),
-        3 => _p.Hotkeys.Describe(_k),
-        4 => _p.GameUi.Describe(_k),
-        5 => _p.Perf.Describe(_k),
-        _ => _p.About.Describe(_k),
+        "general"     => _p.General.Describe(_k),
+        "plugins"     => _p.Plugins.Describe(_k),
+        "layout"      => _p.Layout.Describe(_k),
+        "themes"      => _p.Themes.Describe(_k),
+        "hotkeys"     => _p.Hotkeys.Describe(_k),
+        "gameui"      => _p.GameUi.Describe(_k),
+        "performance" => _p.Perf.Describe(_k),
+        _             => _p.About.Describe(_k),
     };
 
     // ToolHeader: 40 px accent tile with the tab's glyph (one Conditional per tab — an ImageElement loads its picture
