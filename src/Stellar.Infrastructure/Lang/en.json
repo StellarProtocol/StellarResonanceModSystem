@@ -120,6 +120,7 @@
   "themes.language": "Language",
   "themes.language.follow": "Follow game client",
   "themes.nameError.empty": "Name must be non-empty and contain no spaces",
+  "themes.nameError.limit": "You can have up to 12 custom themes. Delete one to make a new one",
   "themes.nameError.taken": "That name is taken",
   "themes.new": "+ New",
   "themes.newTheme": "New theme:",

@@ -120,6 +120,7 @@
   "themes.language": "Bahasa",
   "themes.language.follow": "Ikuti bahasa game",
   "themes.nameError.empty": "Nama tidak boleh kosong dan tidak boleh mengandung spasi",
+  "themes.nameError.limit": "Kamu bisa punya hingga 12 tema kustom. Hapus satu untuk membuat yang baru",
   "themes.nameError.taken": "Nama itu sudah digunakan",
   "themes.new": "+ Baru",
   "themes.newTheme": "Tema baru:",

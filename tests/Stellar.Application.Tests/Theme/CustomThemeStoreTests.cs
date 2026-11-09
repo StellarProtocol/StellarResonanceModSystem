@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Application.Services;
 using Xunit;
@@ -67,6 +68,62 @@ public sealed class CustomThemeStoreTests
         var s = new CustomThemeStore(new InMemoryConfigSection());
         s.Create("  Sakura  ", ThemePreset.Crimson);
         Assert.Contains("Sakura", s.Names);
+    }
+
+    // 2.30.0: a theme whose saved base preset this build can't parse (a downgrade reading "Sakura", or any future
+    // preset) is KEPT, based on Default — before, it was skipped at load and erased by the next save.
+    [Fact]
+    public void UnknownBasePreset_IsKept_BasedOnDefault()
+    {
+        var cfg = new InMemoryConfigSection();
+        cfg.Set("customThemes", new Dictionary<string, string> { ["Rose"] = "Nebula", ["Mint"] = "Dark", ["Odd"] = "7" });
+        var s = new CustomThemeStore(cfg);
+        Assert.Equal(new[] { "Rose", "Mint", "Odd" }, s.Names);
+        Assert.Equal(ThemePreset.Default, s.BasePresetOf("Rose"));
+        Assert.Equal(ThemePreset.Dark, s.BasePresetOf("Mint"));
+        Assert.Equal(ThemePreset.Default, s.BasePresetOf("Odd"));   // an undefined numeric value is unknown too
+    }
+
+    [Fact]
+    public void UnknownBasePreset_SurvivesASave_WithItsOriginalBaseString()
+    {
+        var cfg = new InMemoryConfigSection();
+        cfg.Set("customThemes", new Dictionary<string, string> { ["Rose"] = "Nebula" });
+        var s = new CustomThemeStore(cfg);
+        s.Create("Mint", ThemePreset.Dark);    // any write persists the whole map
+        s.Rename("Rose", "Bloom");             // the raw base follows a rename
+        var raw = cfg.Get<Dictionary<string, string>>("customThemes", null)!;
+        Assert.Equal("Nebula", raw["Bloom"]);
+        Assert.Equal("Dark", raw["Mint"]);
+        var reloaded = new CustomThemeStore(cfg);
+        Assert.Contains("Bloom", reloaded.Names);
+    }
+
+    [Fact]
+    public void Create_RefusesBeyondTheLimit()
+    {
+        var s = new CustomThemeStore(new InMemoryConfigSection());
+        for (var i = 0; i < CustomThemeStore.MaxCustomThemes; i++) s.Create("T" + i, ThemePreset.Default);
+        Assert.False(s.CanCreate);
+        Assert.Throws<System.ArgumentException>(() => s.Create("OneTooMany", ThemePreset.Default));
+        Assert.Equal(CustomThemeStore.MaxCustomThemes, s.Names.Count);
+        s.Delete("T0");
+        Assert.True(s.CanCreate);
+    }
+
+    [Fact]
+    public void ExistingConfigOverTheLimit_LoadsInFull_ButCreatesNothingMore()
+    {
+        var cfg = new InMemoryConfigSection();
+        var raw = new Dictionary<string, string>();
+        for (var i = 0; i < CustomThemeStore.MaxCustomThemes + 3; i++) raw["T" + i] = "Default";
+        cfg.Set("customThemes", raw);
+        var s = new CustomThemeStore(cfg);
+        Assert.Equal(CustomThemeStore.MaxCustomThemes + 3, s.Names.Count);   // never drops user data
+        Assert.False(s.CanCreate);
+        Assert.Throws<System.ArgumentException>(() => s.Create("New", ThemePreset.Default));
+        s.Rename("T0", "Renamed");                                            // existing themes stay editable
+        Assert.Contains("Renamed", s.Names);
     }
 
     [Fact]

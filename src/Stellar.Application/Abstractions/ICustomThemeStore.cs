@@ -10,6 +10,8 @@ internal interface ICustomThemeStore
 {
     IReadOnlyList<string> Names { get; }
     ThemePreset BasePresetOf(string name);
+    /// <summary>False when the custom-theme limit is reached; <see cref="Create"/> then throws.</summary>
+    bool CanCreate { get; }
     void Create(string name, ThemePreset basePreset);
     void Rename(string oldName, string newName);
     void Delete(string name);

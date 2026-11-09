@@ -141,6 +141,8 @@ internal sealed partial class ThemeEditorBody
         if (NameExists(name)) { _nameError = _text.T("themes.nameError.taken"); return; }
         if (_nameMode == NameMode.New)
         {
+            // The store refuses a 13th theme (CustomThemeStore.MaxCustomThemes) — say so instead of throwing.
+            if (!_store.CanCreate) { _nameError = _text.T("themes.nameError.limit"); return; }
             var basePreset = BaseFromActive();
             _store.Create(name, basePreset);
             _namedTheme.SetActiveCustom(name, basePreset);

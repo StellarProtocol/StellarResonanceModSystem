@@ -9,26 +9,52 @@ namespace Stellar.Application.Services;
 internal sealed class CustomThemeStore : ICustomThemeStore
 {
     private const string Key = "customThemes"; // Dictionary<name, presetName>
+
+    /// <summary>The most custom themes a player can CREATE. Settings shows a fixed 3-row grid (12 cards); before this
+    /// cap, theme 13+ was saved but never listed, so it could not be selected, renamed or deleted. A config that
+    /// already holds more is loaded in full (user data is never dropped) — only new ones are refused.</summary>
+    public const int MaxCustomThemes = 12;
+
     private readonly IConfigSection _config;
     private readonly Dictionary<string, ThemePreset> _themes = new(StringComparer.Ordinal);
     private readonly List<string> _order = new();
+    // Themes whose saved base preset this build doesn't know (e.g. "Sakura" read by a pre-2.30 framework, or a preset
+    // added after this one). They load based on Default, and the ORIGINAL base string is written back on save, so a
+    // later framework that knows the preset gets it back. Before 2.30 such themes were skipped at load and then
+    // erased by the next save (their colour overrides orphaned).
+    private readonly Dictionary<string, string> _unknownBase = new(StringComparer.Ordinal);
 
     public CustomThemeStore(IConfigSection config)
     {
         _config = config;
         var raw = config.Get<Dictionary<string, string>>(Key, null);
-        if (raw is not null)
-            foreach (var (name, presetName) in raw)
-                if (Enum.TryParse<ThemePreset>(presetName, out var p)) { _themes[name] = p; _order.Add(name); }
+        if (raw is null) return;
+        foreach (var (name, presetName) in raw)
+        {
+            // IsDefined too: Enum.TryParse accepts any integer string ("7") as an undefined enum value.
+            if (Enum.TryParse<ThemePreset>(presetName, out var p) && Enum.IsDefined(typeof(ThemePreset), p))
+                _themes[name] = p;
+            else
+            {
+                _themes[name] = ThemePreset.Default;
+                _unknownBase[name] = presetName ?? "";
+            }
+            _order.Add(name);
+        }
     }
 
     public IReadOnlyList<string> Names => _order;
     public ThemePreset BasePresetOf(string name) => _themes.TryGetValue(name, out var p) ? p : ThemePreset.Default;
 
+    /// <summary>False once <see cref="MaxCustomThemes"/> themes exist — the UI greys out "new / duplicate" on it.</summary>
+    public bool CanCreate => _order.Count < MaxCustomThemes;
+
     public void Create(string name, ThemePreset basePreset)
     {
         name = Validate(name);
         if (_themes.ContainsKey(name)) throw new ArgumentException($"theme exists: {name}", nameof(name));
+        if (!CanCreate)
+            throw new ArgumentException($"custom theme limit reached ({MaxCustomThemes}): {name}", nameof(name));
         _themes[name] = basePreset; _order.Add(name); Persist();
     }
 
@@ -38,12 +64,14 @@ internal sealed class CustomThemeStore : ICustomThemeStore
         if (!_themes.TryGetValue(oldName, out var p)) return;
         newName = Validate(newName);
         if (_themes.ContainsKey(newName)) throw new ArgumentException($"theme exists: {newName}", nameof(newName));
-        _themes.Remove(oldName); _order[_order.IndexOf(oldName)] = newName; _themes[newName] = p; Persist();
+        _themes.Remove(oldName); _order[_order.IndexOf(oldName)] = newName; _themes[newName] = p;
+        if (_unknownBase.Remove(oldName, out var rawBase)) _unknownBase[newName] = rawBase;
+        Persist();
     }
 
     public void Delete(string name)
     {
-        if (_themes.Remove(name)) { _order.Remove(name); Persist(); }
+        if (_themes.Remove(name)) { _order.Remove(name); _unknownBase.Remove(name); Persist(); }
     }
 
     // Theme names are user-supplied free text used as override-store key
@@ -62,7 +90,7 @@ internal sealed class CustomThemeStore : ICustomThemeStore
     private void Persist()
     {
         var raw = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var n in _order) raw[n] = _themes[n].ToString();
+        foreach (var n in _order) raw[n] = _unknownBase.TryGetValue(n, out var rawBase) ? rawBase : _themes[n].ToString();
         _config.Set(Key, raw); _config.Save();
     }
 }
