@@ -339,7 +339,7 @@ internal sealed partial class WindowBuilder
         var fillImg = AddStretchedImage(clipGo.transform, "Fill", Color.clear, ignoreLayout: false);
 
         // Sheen band (scrolled across the clipped fill) — built + driven in WindowBuilder.MeterRow.Sheen.cs.
-        BuildMeterSheen(clipRt, token);
+        BuildMeterSheen(clipRt, token, fillImg);
 
         // Shield overlay for the main bar in HP mode: a grey/white band from the LEFT edge drawn OVER the fill
         // (width = BarShieldFraction via anchorMax.x), the horizontal analogue of the spine's shield band. A

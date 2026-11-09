@@ -184,7 +184,7 @@ internal sealed partial class WindowBuilder
     }
 
     // Modern (BarStyle.Modern) window bar — the CombatMeter metric-bar look, REUSING the WindowBuilder.MeterRow
-    // primitives (MeterTrackBg / MeterBarH / SheenTexture / DriveSheen / AddOverlayText — nothing ported from
+    // primitives (MeterTrackBg / MeterBarH / SheenTexture / BuildMeterSheen / AddOverlayText — nothing ported from
     // HudElementBuilder.Meter.cs, no new pulse/animator/texture code). Visually mirrors the HUD BuildBarMeter
     // render. Honours Height/Width/FillWidth + Prefix (left caption); LabelInside is meaningless with dual
     // overlays (ignored, matching the HUD). Fill width driven by BarBinding; overlays by TextBinding.
@@ -196,7 +196,7 @@ internal sealed partial class WindowBuilder
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
-        if (b.Sheen) BuildModernSheen(clipRt, token);
+        if (b.Sheen) BuildModernSheen(clipRt, fill, token);
         if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
         var fillBind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 };
         // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
@@ -252,19 +252,9 @@ internal sealed partial class WindowBuilder
         return (track.transform, clipRt, fill);
     }
 
-    // Sheen: a soft white band scrolled left→right within the clipped fill (per-frame, ticker-driven via the
-    // pulse hook), REUSING the shared SheenTexture/DriveSheen. Registered exactly as MeterRow.cs:340-346.
-    private void BuildModernSheen(RectTransform clipRt, WindowToken token)
-    {
-        var sheenGo = UGuiPrimitives.NewChild("Sheen", clipRt.transform);
-        var sheenRt = sheenGo.GetComponent<RectTransform>();
-        sheenRt.anchorMin = new Vector2(0f, 0f); sheenRt.anchorMax = new Vector2(0f, 1f); sheenRt.pivot = new Vector2(0f, 0.5f);
-        sheenRt.sizeDelta = new Vector2(60f, 0f); sheenRt.anchoredPosition = Vector2.zero;
-        var sheen = sheenGo.AddComponent<RawImage>();
-        sheen.texture = SheenTexture(); sheen.raycastTarget = false; sheen.color = Color.white;
-        System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
-        token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
-    }
+    // Sheen: the shared meter-row band (WindowBuilder.MeterRow.Sheen.cs) — same nested-canvas isolation, width
+    // cache and visibility/cull skips as the CombatMeter rows; the fill doubles as the scroll-cull probe.
+    private void BuildModernSheen(RectTransform clipRt, Graphic fill, WindowToken token) => BuildMeterSheen(clipRt, token, fill);
 
     // Secondary "overlay" fill on the SAME Modern track (e.g. a monster shield on an HP bar). Builds a second
     // width-clipped fill (mirrors the main FillClip) and drives it via its OWN BarBinding from Overlay01. Draw
