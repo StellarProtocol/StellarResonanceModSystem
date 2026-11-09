@@ -22,6 +22,7 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
     // The last title each plugin's tile resolved to. A plugin disposes its tile when disabled, so this keeps its
     // Settings row on the localized name instead of reverting to the internal one; dropped on a language switch.
     private readonly Dictionary<string, string> _lastTitles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, byte[]> _lastIcons = new(StringComparer.Ordinal);   // see IconOf
 
     public PluginDisplayNames(ILauncherOwnedRegistrations launcher, IPluginLog log)
     {
@@ -49,6 +50,14 @@ internal sealed class PluginDisplayNames : IPluginDisplayNames
                 _log.Warning($"[Settings] plugin '{pluginId}' launcher TitleProvider threw; showing its internal name: {ex.Message}");
             return fallback;
         }
+    }
+
+    /// <summary>The icon of the plugin's first launcher entry. A disabled plugin disposes its tile, so the last icon seen is
+    /// remembered (kept across language switches: an icon is not localized).</summary>
+    public byte[]? IconOf(string pluginId)
+    {
+        if (_launcher.FirstEntryOwnedBy(pluginId)?.IconPng is { Length: > 0 } png) { _lastIcons[pluginId] = png; return png; }
+        return _lastIcons.TryGetValue(pluginId, out var last) ? last : null;
     }
 
     /// <summary>Forget every remembered title (wired to <c>LanguageChanged</c>): a disabled plugin's remembered

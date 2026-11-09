@@ -42,7 +42,11 @@ internal sealed partial class StellarStyle
         bool En() => enabled == null || enabled();
         var text = new TextElement(label, Color: () => En() ? PillLabel(kind) : Muted(),
             Width: width, Align: TextAlign.Center, NoWrap: true, FontSize: (int)PillLabelSize) { Bold = true };
-        return RoundPill(DropBold(text), () => PillFill(kind), onClick, enabled);
+        var pill = RoundPill(DropBold(text), () => PillFill(kind), onClick, enabled);
+        // A fixed label box gets an explicit MaxWidth too: a MaxWidth-0 bubble placed directly in a Conditional inside a
+        // Row caps itself at the 100 px default size (the Conditional takes its width FROM the bubble), so a wider pill
+        // was cut (WindowBuilder-Patterns, Bubble shrink-only ratchet). Equal to the natural width, so no visual change.
+        return width > 0f && pill is BubbleElement b ? b with { MaxWidth = width + 2f * PillPadX } : pill;
     }
 
     public HudElement PrimaryButton(Func<string> label, Action onClick, float width = 0f, Func<bool>? enabled = null)

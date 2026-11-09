@@ -10,4 +10,8 @@ internal interface IPluginDisplayNames
     /// <summary>The plugin's localized display name, or <paramref name="fallback"/> (its internal name) when the
     /// plugin registered no launcher entry or the entry's title provider fails.</summary>
     string Resolve(string pluginId, string fallback);
+
+    /// <summary>The plugin's launcher-tile icon PNG (the bytes its entry registered), or null when it registered none.
+    /// Display only, render-driven like <see cref="Resolve"/>. A default member, so test doubles keep compiling.</summary>
+    byte[]? IconOf(string pluginId) => null;
 }
