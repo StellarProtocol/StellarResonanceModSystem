@@ -21,6 +21,9 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
 - Mods can now show text over a set number of lines, ending in "…" when it is longer.
 - Drag your favorite plugins to put them in the order you like, in the Stellar menu's Favorites tab or on the compact bar. Both use the same order.
+- A General tab in Settings for the language and the font and UI size.
+- A Discord link on the About tab, to ask questions, report bugs and get news.
+- Save and Discard buttons when you edit a theme's colours. Changes still show right away; Discard puts everything back, and closing with unsaved changes asks first.
 ### Changed
 - The Stellar Settings window has a new look: tabs down the left side, a short status line at the top of each tab, and a message at the bottom confirming every change you make. It keeps one size, so it no longer grows or shrinks between tabs.
 - Every setting has a "?" button that explains what it does.
@@ -30,6 +33,12 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - Game UI shows which parts of the game HUD are moved or hidden, and each can be reset on its own.
 - Performance lets you pick each plugin's rate from a list.
 - The launcher shows bigger plugin icons, five plugins per row, and every tile is the same size whatever its name.
+- New, sharper icons throughout Settings and the launcher, drawn for each size they appear at.
+- Buttons you can't press now look sunken, so they are easy to tell apart from buttons you can.
+- The window opacity slider sits with your theme and is remembered per theme; font and UI size moved to the General tab.
+- The compact bar shows plugin names in normal white text, and its Settings tile matches the other tiles.
+- Dropdowns in Settings use the same colours as the other buttons.
+- Switching between Settings tabs, and opening or closing Settings and the launcher, is much smoother.
 ### Removed
 - The "Reset selected to default" and "Reset all in this slot" buttons on the Layout tab, which did nothing. The layout editor's own toolbar resets windows.
 ### Fixed
@@ -48,7 +57,12 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - Scrolling a mod window list with the mouse wheel no longer stutters on every step.
 - Dragging or scrolling the Stellar menu, Settings or chat no longer makes other mod windows stutter.
 - A mod window you open now always appears on top of the other mod windows, and the one you opened last stays on top. Before, a window opened from the Stellar launcher could open behind the launcher or Settings.
+- Thai text in mod windows now stacks tone marks above vowels correctly (for example ปลั๊กอิน), and all Thai text uses the same font.
+- Renaming one of your own themes keeps its colours, and Duplicate copies the selected theme's colours instead of starting from its base theme.
+- The Settings window stays the same height on every tab.
+- Highlight outlines on the first and last rows of Settings lists are no longer cut off.
 ### Developer notes
+- **Later 2.30.0 additions (this branch).** `ConditionalElement.Prebuild`/`PrebuildName` (time-sliced background build, 3 ms/frame), `ConditionalElement.KeepAlive` (parked branches keep their nested canvas, bindings gated; instant re-show) and `ConditionalElement.ContentRevision` (background refresh of a parked branch when its content changes). Settings hub: background warm off-screen until settled, soft park on hide (canvas off + off-screen instead of root `SetActive(false)`), hidden visible-tab refresh. Launcher re-warms in the background when its content signature changes while hidden (e.g. world entry). Per-size pixel-hinted framework icons (`Resources/icons/<12|16|24|32|64|128>/`, `LauncherIcons.Get(name, px)`; exact size draws 1:1, else next larger with mips). Thai: TMP `mark`/`mkmk` positioning + one-batch Thai glyph seeding + un-wrapped GPOS lookups in the shipped Thai fonts; legacy `Text` showing Thai renders through a TMP twin in the shipped face. Hidden Developer tab (`developer.developerMode` config key or 7 clicks on the About version; Shift+End perf overlay is developer-only). Theme store: `IColorOverrideStore.RenameTheme`/`CopyTheme`/`RemoveTheme`, `CustomThemeStore.Duplicate`; `ThemeOverrideSnapshot` for Save/Discard. All additive; measured in game at 2560×1440 (tab switch +10–15 ms, open/close one ~2× frame).
 - **`IThemeStatusColors`** (`Success`, `Danger`, `Caution`) is a new facet on `IThemeColors` (`IThemeMenuColors` stays at 5 members). Only the framework implements these interfaces, so this is additive. Dark presets return exactly the old hard-coded house values `#5FD38D` / `#FF4D4F` / `#FFCC73`; Light returns `#1E8A4C` / `#D13438` / `#A86A00`. Status indices 18..20 are appended to `ThemePresets.Tables`.
 - **Editable framework slots:** `Theme.MenuText`, `Theme.MenuMuted`, `Theme.Success`, `Theme.Danger`, `Theme.Caution` (labels `theme.color.*` in all six languages), so custom-theme overrides feed the `MenuText`/`MenuMuted`/status reads. Older frameworks keep but ignore these override entries (`ColorOverrideStore` never prunes unknown slots).
 - **`ThemePreset.Sakura = 4`** (appended). Menu `#2E2433` / `#E8DCEF` / `#9B8AA5` / accent `#C8508F`, gradient `#2E2433 → #291F2E → #30242F`, default window opacity 0.90. A plugin that registers per-preset colours without a Sakura entry gets its Default colours. `ColorRegistryService.Register(key, label, defaultAll)` now fills every enum value.
