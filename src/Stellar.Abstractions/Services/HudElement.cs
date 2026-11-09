@@ -308,7 +308,21 @@ public sealed record PillElement(Func<string> Text, Func<ColorRgba?>? Color = nu
 
 /// <summary>Escape hatch: plugin supplies its own PNG; framework displays it. Consistency is the
 /// plugin's responsibility here (the one unenforced spot).</summary>
-public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : HudElement;
+public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : HudElement
+{
+    /// <summary>Re-pull <see cref="Png"/> on every refresh and swap the picture when the returned array changes (a
+    /// REFERENCE compare, so return cached arrays — never a freshly read/allocated one per call). For an image whose
+    /// picture follows live data, e.g. a pooled grid slot that shows a different item's icon after a filter or a
+    /// scroll (framework 2.30.0). A transient null keeps the last picture. Default false = the picture is read ONCE
+    /// when the window is built, unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool Live { get; init; }
+
+    /// <summary>Per-refresh tint multiplied into the picture (alpha honoured), for a flat WHITE glyph PNG drawn in a
+    /// theme colour (an accent star, a muted icon) or faded with its row (framework 2.30.0). Poll-diffed: only a change
+    /// writes anything. Null Func (default) or a null result = untinted white, the picture's own colours, unchanged.
+    /// An <c>init</c> property (binary-compatible).</summary>
+    public Func<ColorRgba?>? Tint { get; init; }
+}
 
 /// <summary>React-style conditional. Both subtrees are built once; the renderer SetActive-toggles them
 /// each refresh from <paramref name="When"/> (no reconciliation). <paramref name="Else"/> may be null.
