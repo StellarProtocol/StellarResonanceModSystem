@@ -19,8 +19,15 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 // actions, and this only returns the player's own theme to how it was a moment ago.
 internal sealed partial class ThemeEditorBody
 {
-    private const float FooterPillLabel = 56f;       // "Discard" / "Save" and every translation (bold 13)
-    private const float KeepEditingLabel = 80f;      // "Keep editing" — the longest confirm label in any locale
+    // Pill label boxes = the LONGEST translation of each label (bold 13, measured with fontTools on the shipped Stellar UI
+    // Thai Bold / Yu Gothic UI Bold + Malgun Gothic Bold, 2026-11-09), so no locale ever resizes a pill (R10). They are
+    // per-label, not one shared width: the inner row is only 400 px (440 window − 2×12 body − 2×8 bubble), and the old
+    // shared 56/80 boxes left the bold question ~118 px — "Unsaved chan…" in English. Now the three confirm pills take
+    // 255 + 3×6 gaps, leaving the question 127 px (longest translation: en "Unsaved changes" 122); the normal row leaves
+    // the status 239 px (longest: fil "99 pagbabagong di pa naka-save" 218).
+    private const float SaveLabel = 49f;             // longest: id "Simpan" 48.5
+    private const float DiscardLabel = 52f;          // longest: ko "되돌리기" 52.0
+    private const float KeepEditingLabel = 82f;      // longest: en "Keep editing" 81.9
     private const float FooterPadY = 4f;
     private const float FooterPadX = 8f;
     private const float FeedbackSeconds = 3f;
@@ -177,15 +184,15 @@ internal sealed partial class ThemeEditorBody
         {
             new CellElement(new TextElement(FooterStatus, Color: FooterStatusColor, NoWrap: true) { Ellipsize = true },
                 Weight: 1f),
-            s.NeutralButton(_k.T("common.discard"), FooterDiscard, FooterPillLabel, En),
-            s.PrimaryButton(_k.T("common.save"), FooterSave, FooterPillLabel, En),
+            s.NeutralButton(_k.T("common.discard"), FooterDiscard, DiscardLabel, En),
+            s.PrimaryButton(_k.T("common.save"), FooterSave, SaveLabel, En),
         }, Gap: 6f), () => StellarStyle.Transparent);
         var confirm = FooterBubble(new RowElement(new HudElement[]
         {
             new CellElement(new TextElement(_k.T("colours.unsaved.q"), Color: () => s.Text(), NoWrap: true)
                 { Bold = true, Ellipsize = true }, Weight: 1f),
-            s.PrimaryButton(_k.T("common.save"), () => ResolveAsk(save: true), FooterPillLabel),
-            s.NeutralButton(_k.T("common.discard"), () => ResolveAsk(save: false), FooterPillLabel),
+            s.PrimaryButton(_k.T("common.save"), () => ResolveAsk(save: true), SaveLabel),
+            s.NeutralButton(_k.T("common.discard"), () => ResolveAsk(save: false), DiscardLabel),
             s.NeutralButton(_k.T("colours.keepEditing"), KeepEditing, KeepEditingLabel),
         }, Gap: 6f), () => s.Fill(s.Panel()));
         return new ConditionalElement(() => _askUnsaved, confirm, normal);
