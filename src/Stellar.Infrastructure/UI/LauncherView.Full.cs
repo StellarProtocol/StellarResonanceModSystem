@@ -11,17 +11,18 @@ namespace Stellar.Infrastructure.UI;
 internal sealed partial class LauncherView
 {
     // Geometry (prototype .full was 400 wide; widened 2026-11-09 for the 44 px launcher icon). The GlassMenu body
-    // padding is a fixed 12, so the window is 424 + 2 × 12 = 448 wide.
-    private const float FullContentWidth = 424f;
-    private const int Cols = 4;
-    private const int MaxRows = 8;            // tile pool: 8 × 4 = 32 plugins (the old launcher's capacity)
+    // padding is a fixed 12, so the window is 524 + 2 × 12 = 548 wide. 5 fixed columns (user-approved 2026-11-09): 4 rows
+    // × 5 = 20 plugins without scrolling.
+    private const float FullContentWidth = 524f;
+    private const int Cols = 5;
+    private const int MaxRows = 7;            // tile pool: 7 × 5 = 35 plugins (≥ the old launcher's 32)
     private const int ReservedRows = 4;       // the grid always takes 4 rows of height and scrolls beyond
     private const float GridGap = 6f;         // BOTH axes: the rows Column and each tile Row pass it explicitly
     // Tile 94 wide: the 44 px icon is centred with the 20 px star + 3 px inset beside it on the right and a 2 px gap
-    // ((94 − 44) / 2 = 25 ≥ 23). ScrollElement insets its viewport 9 px for the scrollbar: panel inner 404 − 9 = 395 ≥
-    // 4 × 94 + 3 × 6 = 394.
+    // ((94 − 44) / 2 = 25 ≥ 23). ScrollElement insets its viewport 9 px for the scrollbar: panel inner 504 − 9 = 495 ≥
+    // 5 × 94 + 4 × 6 = 494.
     private const float TileWidth = 94f;
-    private const float GridWidth = Cols * TileWidth + (Cols - 1) * GridGap;   // 394
+    private const float GridWidth = Cols * TileWidth + (Cols - 1) * GridGap;   // 494
     // 3 star inset + 7 + 44 icon + 4 gap + 38 name slot + 6 = 102; every part is a fixed height (LauncherView.Tile.cs).
     private const float TileHeight = 102f;
     // Exactly 4 full rows: 4 × 102 + 3 × 6 = 426 (the tiles' heights are pinned, so the row pitch is exactly 108).
@@ -39,7 +40,7 @@ internal sealed partial class LauncherView
             BuildBottomRow(),
             _feedback.Element(),
         };
-        // The fixed-width cell sets the content-sized window to exactly 448 (424 + 2 × 12) in every state.
+        // The fixed-width cell sets the content-sized window to exactly 548 (524 + 2 × 12) in every state.
         return new CellElement(new ColumnElement(body, Gap: 8f), Width: FullContentWidth);
     }
 
