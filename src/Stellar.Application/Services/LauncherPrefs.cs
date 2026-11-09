@@ -16,11 +16,13 @@ internal sealed class LauncherPrefs
     private const string PinnedKey = "pinned";
     private const string ModeKey = "mode";
     private const string HorizontalKey = "minimal_horizontal";
+    private const string TabKey = "tab";
 
     private readonly IConfigSection _config;
     private readonly HashSet<string> _pinned = new(StringComparer.Ordinal);
     private LauncherMode _mode;
     private bool _minimalHorizontal;
+    private LauncherTab _tab;
 
     public LauncherPrefs(IConfigSection config)
     {
@@ -38,6 +40,25 @@ internal sealed class LauncherPrefs
             : LauncherMode.Full;
 
         _minimalHorizontal = config.Get(HorizontalKey, false);
+
+        // Full-menu tab (2.30.0): a config written before tabs existed has no key → Favorites (the approved default).
+        var tabStr = config.Get<string>(TabKey, null);
+        _tab = tabStr is not null && Enum.TryParse<LauncherTab>(tabStr, out var t) && Enum.IsDefined(typeof(LauncherTab), t)
+            ? t
+            : LauncherTab.Favorites;
+    }
+
+    /// <summary>The Full menu's remembered tab (Favorites / All plugins). Default Favorites.</summary>
+    public LauncherTab Tab
+    {
+        get => _tab;
+        set
+        {
+            if (value == _tab) return;
+            _tab = value;
+            _config.Set(TabKey, value.ToString());
+            _config.Save();
+        }
     }
 
     /// <summary>Minimal-mode orientation: false = vertical column (default), true = horizontal row.</summary>
