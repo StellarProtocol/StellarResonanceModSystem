@@ -358,7 +358,7 @@
   "themes.rename": "เปลี่ยนชื่อ",
   "themes.renameLabel": "เปลี่ยนชื่อ:",
   "themes.scale.font": "ขนาดฟอนต์",
-  "themes.scale.opacity": "ความทึบของหน้าต่าง",
+  "themes.scale.opacity": "ความทึบหน้าต่าง",
   "themes.scale.ui": "ขนาด UI",
   "themes.scrollbar": "แถบเลื่อน",
   "themes.status": "{0} · ความทึบ {1}%",
