@@ -17,7 +17,8 @@ internal sealed partial class WindowBuilder
         var create = StyledTextFactory.CreateBold;
         if (create == null) return false;
         var size = StyledSize(t);
-        var h = create(parent, new StyledTextSpec(t.Text(), Scaled(size), _assets.MenuText, wrap: !t.NoWrap)
+        var capped = t.MaxLines > 0;   // MaxLines always wraps (NoWrap / Ellipsize ignored — see TextElement.MaxLines)
+        var h = create(parent, new StyledTextSpec(t.Text(), Scaled(size), _assets.MenuText, wrap: capped || !t.NoWrap)
         {
             Bold = t.Emphasis || t.Bold,
             Italic = t.Italic,
@@ -25,7 +26,8 @@ internal sealed partial class WindowBuilder
             Strikethrough = t.Strikethrough,
             Align = t.Align,
             RichEmoji = t.RichEmoji,   // <sprite=N> from the game's chat sprite asset (WindowBuilder.RichText.cs)
-            Ellipsis = t.Ellipsize,    // prefix + "…" cut to the slot (TmpStyledText.Ellipsis.cs; plain path: TextBinding.EllipsizeToRect)
+            Ellipsis = t.Ellipsize && !capped,   // prefix + "…" cut to the slot (TmpStyledText.Ellipsis.cs; plain path: TextBinding.EllipsizeToRect)
+            MaxLines = t.MaxLines,     // wrapped, cut to N lines + "…" (TmpStyledText.MaxLines.cs; plain path: TextBinding.MaxLines)
             CenterGlyphs = t.CenterGlyphs,   // Midline: centre the drawn quads, not the line box (lone sprite icons)
         });
         if (h?.Go == null) return false;
@@ -37,11 +39,23 @@ internal sealed partial class WindowBuilder
             le.flexibleWidth = 0f; le.minWidth = 0f;
             // Ellipsize: the handle owns preferredWidth = full string's natural width padded (never an exact fit, and
             // the shown cut can't shrink its own slot); LayoutElement's priority 1 beats TMP's own preferred width.
-            if (t.Ellipsize) h.PadPreferredWidth(le);
+            // MaxLines owns it the same way: the preferred width stays the FULL string's, so the cut never feeds back.
+            if (t.Ellipsize || capped) h.PadPreferredWidth(le);
         }
+        PinTextHeight(le, t.Height);
         token.StyledTexts.Add(new StyledTextBinding { H = h, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn });
         token.ReskinActions.Add(() => { h.SetFontSize(Scaled(size)); h.SetColor(_assets.MenuText); });
         return true;
+    }
+
+    // TextElement.Height: min == preferred == h on the text's own LayoutElement (priority 1 beats the Text / TMP
+    // preferred height), so the box never follows the font's line box — a two-line TMP name measured ~37 px and grew
+    // its 32 px launcher slot (in-game 2026-11-09). Both text alignments are vertically Middle, so lines centre in it.
+    private static void PinTextHeight(LayoutElement le, float h)
+    {
+        if (h <= 0f) return;
+        le.minHeight = le.preferredHeight = h;
+        le.flexibleHeight = 0f;
     }
 
     // Emphasis keeps the header 15px ("same size but bold" — weight, not size, carries the emphasis);

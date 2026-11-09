@@ -406,6 +406,14 @@ internal sealed partial class UGuiTextInput
 
     private static bool EnterHeld() => Input.GetKey(KeyCode.Return) || Input.GetKey(KeyCode.KeypadEnter);
 
+    /// <summary>End the edit if this field is focused and lives under <paramref name="root"/> — a KeepAlive branch being
+    /// parked (WindowBuilder.KeepAlive.cs) stays active, so nothing else would take the focus off its hidden field.</summary>
+    internal void DefocusIfUnder(Transform root)
+    {
+        if (_bg == null || !FieldFocused) return;
+        if (_bg.transform.IsChildOf(root)) Defocus();
+    }
+
     // DeactivateInputField fires onEndEdit — no listener is registered (submit is handled in onValueChanged /
     // onSubmit, and onSubmit does NOT fire on Esc), so this is safe; note the coupling if an onEndEdit listener is
     // ever added.

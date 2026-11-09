@@ -84,5 +84,11 @@ internal sealed partial class ThemeRenderer
         public ColorRgba MenuMuted      => Get(ThemePresets.MenuMuted,      _defaultsFallback.MenuMuted);
         public ColorRgba MenuAccent     => Get(ThemePresets.MenuAccent,     _defaultsFallback.MenuAccent);
         public ColorRgba MenuBorder     => Get(ThemePresets.MenuBorder,     _defaultsFallback.MenuBorder);
+
+        // 2.30.0 — status facet. Editable slots (FrameworkColorRegistration), so these resolve through the
+        // registry and a custom theme's override wins; the fallback only covers a table that lacks the index.
+        public ColorRgba Success        => Get(ThemePresets.Success,        _defaultsFallback.Success);
+        public ColorRgba Danger         => Get(ThemePresets.Danger,         _defaultsFallback.Danger);
+        public ColorRgba Caution        => Get(ThemePresets.Caution,        _defaultsFallback.Caution);
     }
 }

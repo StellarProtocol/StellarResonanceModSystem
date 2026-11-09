@@ -96,8 +96,8 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = IconHosts.Count - 1; i >= 0; i--) if (IconHosts[i].Img == null) IconHosts.RemoveAt(i);
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
-        // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
-        for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
+        PruneScrollViews();   // (.ScrollViews.cs) — one entry per view carries its content, motion + input state
+        PrunePixelPerfectTargets();   // (.PixelPerfect.cs) isolated window canvases whose window was destroyed
         PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
@@ -155,7 +155,9 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         var fieldFocused = Sticky != null && AnyFieldFocused();   // before the field ticks: an Esc that defocuses is the field's
         SyncUiScale();
-        TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
+        TickScrollInput();      // .ScrollViews.cs — wheel / press over a Stellar list: stop its fling, mark it user-driven
+        TickScrollActivity();   // .PixelPerfect.cs — latch USER list-scroll motion so SyncPixelPerfect covers it too
+        TickWindowMotion();     // .PixelPerfect.cs — latch window drag/resize MOTION (a held, still handle stays crisp)
         SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {

@@ -75,7 +75,7 @@ internal sealed partial class WindowBuilder
     // updates the bg/self-highlight, HP spine fill, crest (lazy atlas upload), name·spec·share texts, role bar
     // fill, per-second/total overlay, and offline scrim. Diffs the cheap scalar/string fields; structural
     // SetActive toggles are idempotent so re-applying is harmless.
-    internal sealed class MeterRowBinding
+    internal sealed class MeterRowBinding : GatedBinding
     {
         public Func<MeterRowData> Data = null!;
         public VerticalLayoutGroup ContentVlg = null!;   // bottom padding trimmed when imagine size is Large

@@ -210,6 +210,27 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and HUD-overlay text.
     /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool CenterGlyphs { get; init; }
+
+    /// <summary>Cap wrapped text at this many lines (framework 2.30.0). When the text wraps to more lines than this at
+    /// its laid-out width, it shows exactly <c>MaxLines</c> lines and the last one ends in "…" (a cut the framework
+    /// makes itself, re-fitted when the string, the font size or the width changes). The text always wraps when this
+    /// is set: <see cref="NoWrap"/> and <see cref="Ellipsize"/> are ignored (<c>MaxLines = 1</c> is the one-line cut).
+    /// Lines break only at spaces, after hyphens and between CJK characters — never inside a word: a single word wider
+    /// than the line is cut with "…" on its own line ("CombatMet…"), not split across two lines.
+    /// Give it a width-constrained slot — a fixed <see cref="Width"/> or a <see cref="CellElement"/> — since the cut
+    /// fits the width the layout hands it. Works with every <see cref="Align"/>, on plain and styled
+    /// (<see cref="Bold"/>/<see cref="Emphasis"/>/...) text; ignored on Shadow and HUD-overlay text. The element is
+    /// only as tall as the lines it shows (a one-line string stays one line tall). 0 (the default) = unlimited,
+    /// unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public int MaxLines { get; init; }
+
+    /// <summary>A hard-fixed text box height in px (framework 2.30.0): the element reports exactly this as its min and
+    /// preferred height, so it never grows (or shrinks) its row / column whatever its font's line box measures, and the
+    /// lines are drawn vertically centred in it (a one-line string sits in the middle of a two-line slot). Content
+    /// taller than the box overflows it rather than resizing it, so pair it with <see cref="MaxLines"/>. First user:
+    /// the launcher tile's two-line name slot, which grew a tile 4–5 px when a name wrapped. 0 (the default) = the
+    /// text's own height, unchanged. Window (Menu) text only. An <c>init</c> property (binary-compatible).</summary>
+    public float Height { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
@@ -297,14 +318,62 @@ public sealed record PillElement(Func<string> Text, Func<ColorRgba?>? Color = nu
 
 /// <summary>Escape hatch: plugin supplies its own PNG; framework displays it. Consistency is the
 /// plugin's responsibility here (the one unenforced spot).</summary>
-public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : HudElement;
+public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : HudElement
+{
+    /// <summary>Re-pull <see cref="Png"/> on every refresh and swap the picture when the returned array changes (a
+    /// REFERENCE compare, so return cached arrays — never a freshly read/allocated one per call). For an image whose
+    /// picture follows live data, e.g. a pooled grid slot that shows a different item's icon after a filter or a
+    /// scroll (framework 2.30.0). A transient null keeps the last picture. Default false = the picture is read ONCE
+    /// when the window is built, unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public bool Live { get; init; }
+
+    /// <summary>Per-refresh tint multiplied into the picture (alpha honoured), for a flat WHITE glyph PNG drawn in a
+    /// theme colour (an accent star, a muted icon) or faded with its row (framework 2.30.0). Poll-diffed: only a change
+    /// writes anything. Null Func (default) or a null result = untinted white, the picture's own colours, unchanged.
+    /// An <c>init</c> property (binary-compatible).</summary>
+    public Func<ColorRgba?>? Tint { get; init; }
+}
 
 /// <summary>React-style conditional. Both subtrees are built once; the renderer SetActive-toggles them
 /// each refresh from <paramref name="When"/> (no reconciliation). <paramref name="Else"/> may be null.
 /// <paramref name="Fill"/> = the active branch expands to fill leftover height in a fixed-size (Resizable)
 /// window (so e.g. a meter's list scroll grows with the window). Default false — no effect in content-sized
 /// windows.</summary>
-public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudElement? Else = null, bool Fill = false) : HudElement;
+public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudElement? Else = null, bool Fill = false) : HudElement
+{
+    /// <summary>Build the branch(es) not shown yet in the BACKGROUND after the window mounts (framework 2.30.0), a few ms
+    /// per frame, and lay them out off-screen while the window is on screen — so the first show of a big branch (a
+    /// settings tab) only re-activates it instead of building it in that frame. A branch shown before its background
+    /// build finished is completed synchronously first (never shown half-built). Values stay live: bindings refresh on
+    /// show as for any hidden branch. Ignored inside a variable-height VirtualList slot. Costs nothing once done (the
+    /// built branch stays inactive while hidden). Default false = built lazily on first show, unchanged.
+    /// An <c>init</c> property (binary-compatible).</summary>
+    public bool Prebuild { get; init; }
+
+    /// <summary>Diagnostics name for <see cref="Prebuild"/>: <c>[Hitch]</c> buckets <c>prebuild:&lt;name&gt;</c> and the
+    /// <c>[Prebuild]</c> summary log line (HITCH/diagnostics on). Null = an index-based name.</summary>
+    public string? PrebuildName { get; init; }
+
+    /// <summary>Keep the branch ALIVE once built: when hidden it is parked (its own canvas switched off, moved out of the
+    /// layout and off-screen, its bindings paused) instead of deactivated, so showing it again costs about a normal frame
+    /// instead of a full re-enable + re-layout (a set of tabs switched by click). For a set of sibling Conditionals that
+    /// share ONE fixed-size slot — put them alone in their own Column: the branch takes the slot's size (Fill is implied)
+    /// and does not report its own size to the window. Combine with <see cref="Prebuild"/> so every branch is built and laid
+    /// out in the background (and re-warmed after the window was hidden). No <see cref="ConditionalElement.Else"/>, not
+    /// inside a VirtualList slot (ignored there). Not for content with InputElement.AutoFocus or
+    /// RowElement.ConstrainsWindowMinWidth. Framework 2.30.0. Default false = SetActive toggling, unchanged.
+    /// An <c>init</c> property (binary-compatible); its name is <c>[UiPerf] tabshow</c>'s (via <see cref="PrebuildName"/>).</summary>
+    public bool KeepAlive { get; init; }
+
+    /// <summary><see cref="KeepAlive"/> only: a cheap revision of the data the branch shows (any int that changes when
+    /// that data changes — a hash of a few states, a counter). Bindings of a parked branch are paused, so data that changes
+    /// while it is hidden (e.g. game HUD pieces that only exist in the world) would otherwise all be re-pulled — rows
+    /// rebuilt, bubbles re-measured — in the frame it is shown again. With this, a parked branch whose revision moved is
+    /// refreshed in the background (bindings on, off-screen, measures budgeted) while its window is on screen, and a
+    /// re-warm after the window was hidden runs its bindings too. Polled about twice a second while parked. Framework
+    /// 2.30.0. Null (default) = re-pulled on show, unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Func<int>? ContentRevision { get; init; }
+}
 
 /// <summary>Variable-length list, bounded by Slots.Count. All slots built once; the first
 /// <paramref name="VisibleCount"/>() are SetActive-shown each refresh. <paramref name="Columns"/>&gt;1 grids them.
@@ -337,4 +406,21 @@ public sealed record ListElement(Func<int> VisibleCount, IReadOnlyList<HudElemen
     /// reorders its data and the list re-pulls. Default null = not reorderable. Init property, NOT a ctor param
     /// (binary compatibility).</summary>
     public Action<int, int>? OnReorder { get; init; }
+
+    /// <summary>Optional, with <see cref="OnReorder"/>: whether the item at index <c>i</c> can be PICKED UP right now
+    /// (polled on the press). False = a press on it is an ordinary click and never starts a drag; it is still a drop
+    /// target. Use it to lock items (a faded placeholder) or the whole list for a while (return false for every
+    /// index, e.g. while a filter makes the order ambiguous). Default null = every item can be dragged. Framework
+    /// 2.30.0; init property (binary compatibility).</summary>
+    public Func<int, bool>? CanReorder { get; init; }
+
+    /// <summary>Optional spacing between items, in canvas units (both axes for a grid). Default null = the framework's
+    /// 2-unit list spacing, unchanged. Framework 2.30.0; init property (binary compatibility).</summary>
+    public float? Gap { get; init; }
+
+    /// <summary>Lay the items out in ONE ROW (side by side, the list as wide as its visible items) instead of a column
+    /// or a grid; <see cref="Columns"/> / <see cref="CellWidth"/> / <see cref="CellHeight"/> are ignored. With
+    /// <see cref="OnReorder"/> the insertion bar sits left/right of an item. Default false = unchanged. Framework 2.30.0;
+    /// init property (binary compatibility).</summary>
+    public bool Horizontal { get; init; }
 }

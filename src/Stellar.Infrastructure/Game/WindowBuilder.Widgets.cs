@@ -97,6 +97,7 @@ internal sealed partial class WindowBuilder
         {
             B = btn, Label = label, LabelFn = b.Label, EnabledFn = b.Enabled,
             Img = img, Normal = normalSprite, Accent = _assets.ButtonAccentBg, ActiveFn = b.Active,
+            ThaiTmp = ThaiTmpCapable,
         };
         token.Buttons.Add(binding);
         RegisterTextReskin(token, label, 11);
@@ -110,7 +111,7 @@ internal sealed partial class WindowBuilder
     {
         var rt = go.GetComponent<RectTransform>();
         if (rt == null) return;
-        var sf = rt.GetComponentInParent<Canvas>()?.scaleFactor ?? 1f;
+        var sf = rt.GetComponentInParent<Canvas>()?.rootCanvas?.scaleFactor ?? 1f;   // root: IsolateCanvas windows have their own nested canvas
         if (sf <= 0f) sf = 1f;
         var pos = rt.position;
         var r   = rt.rect;
@@ -391,8 +392,12 @@ internal sealed partial class WindowBuilder
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         sr.viewport = viewport.GetComponent<RectTransform>(); sr.content = crt;
-        BuildElement(sc.Child, content.transform, token);
+        BuildChild(sc.Child, content.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
         BuildScrollbar(sr, go, token);
+        // crt moves while the user scrolls → the ticker drops canvas pixelPerfect until it settles (same as
+        // BuildScrollViewport). Without it a plain ScrollElement (launcher grid, Settings lists, every plugin scroll)
+        // re-snapped + rebatched the whole canvas each scrolling frame. Destroyed entries are pruned by the ticker.
+        RegisterScrollView?.Invoke(crt, sr);
     }
 
     // Visible themed vertical scrollbar — activates IChromeStyle.ScrollbarStyle (previously a no-op). A thin

@@ -31,9 +31,16 @@
     <EmbeddedResource Include="Resources/StellarUIThai-Regular.ttf">
       <LogicalName>Stellar.Infrastructure.Resources.StellarUIThai-Regular.ttf</LogicalName>
     </EmbeddedResource>
-    <!-- Launcher icon set (rasterised PNGs; never tofu). Logical names default to
-         Stellar.Infrastructure.icons.<name>.png — resolved by suffix in LauncherIcons. -->
+    <!-- Launcher icon set (rasterised PNGs; never tofu). Flat = the brand only (Stellar.Infrastructure.icons.<name>.png);
+         the v2 glyphs are PRE-DRAWN per size, Resources/icons/<size>/<name>.png → icons.<size>.<name>.png (LauncherIcons
+         picks the on-screen size). A new size needs a line here AND in LauncherIcons.PreDrawnSizes. -->
     <EmbeddedResource Include="Resources/icons/*.png" LogicalName="Stellar.Infrastructure.icons.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/12/*.png" LogicalName="Stellar.Infrastructure.icons.12.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/16/*.png" LogicalName="Stellar.Infrastructure.icons.16.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/24/*.png" LogicalName="Stellar.Infrastructure.icons.24.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/32/*.png" LogicalName="Stellar.Infrastructure.icons.32.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/64/*.png" LogicalName="Stellar.Infrastructure.icons.64.%(Filename).png" />
+    <EmbeddedResource Include="Resources/icons/128/*.png" LogicalName="Stellar.Infrastructure.icons.128.%(Filename).png" />
     <!-- Framework UI localization catalog (i18n). Logical names default to
          Stellar.Infrastructure.Lang.<code>.json — read by FrameworkCatalogs, matched by ResourceScan. -->
     <EmbeddedResource Include="Lang/*.json" LogicalName="Stellar.Infrastructure.Lang.%(Filename)%(Extension)" />

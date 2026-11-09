@@ -20,7 +20,7 @@ internal sealed partial class WindowBuilder
     private Func<Color> MenuTextColorFn => _menuTextColorFn ??= () => _assets.MenuText;
     private Func<Color> HudTextColorFn => _hudTextColorFn ??= () => HudTextColor;
 
-    internal sealed class SliderBinding
+    internal sealed class SliderBinding : GatedBinding
     {
         public Slider S = null!;
         public Func<float> Get = null!;
@@ -35,7 +35,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class TextBinding
+    internal sealed class TextBinding : GatedBinding
     {
         public Text C = null!;
         // HudOverlay (SurfaceStyle.HudOverlay) only: the offset-twin drop-shadow Text (UnityEngine.UI.Shadow is
@@ -55,6 +55,9 @@ internal sealed partial class WindowBuilder
         // TextElement.Ellipsize: single line fitted to the Text's OWN laid-out width, re-fitted when the string or that width
         // changes (a weighted cell resized with its window). -1 = not fitted yet.
         public bool EllipsizeToRect;
+        // TextElement.MaxLines (>0): wrapped, cut to that many lines + "..." at the Text's own laid-out width — re-fitted
+        // on the same triggers as EllipsizeToRect (string or width change). The builder never sets both.
+        public int MaxLines;
         private float _fittedW = -1f;
         // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
         // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
@@ -69,11 +72,17 @@ internal sealed partial class WindowBuilder
         // Innermost BubbleElement this text was built inside (null = none): a content change asks it to re-measure its
         // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
         public BubbleBinding? Owner;
+        // Menu text (no shadow twin / live HUD size): a Thai string is drawn by a lazily built TMP twin in the shipped
+        // Thai face (ThaiTmpTwin). False → this binding never looks at the script (HUD overlay, readability-outline text).
+        public bool ThaiTmp;
+        private ThaiTmpTwin? _thai;
         public void Apply()
         {
+            if (C == null) return;
+            if (_thai is { Showing: true }) { ApplyThai(); return; }
             // Skip hidden rows (Conditional/List SetActive=false) — avoids evaluating TextFn (which formats
             // labels/hex strings) for the dozens of off-screen slot rows in the theme editor every poll.
-            if (C == null || !C.gameObject.activeInHierarchy) return;
+            if (!C.gameObject.activeInHierarchy) return;
             // Live font size (HudOverlay) — mirrors HudElementBuilder.TextBinding: diff, then push to fg + twin.
             if (DynamicFontSizeFn != null)
             {
@@ -81,13 +90,20 @@ internal sealed partial class WindowBuilder
                 if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; Owner?.MarkDirty(); }
             }
             var s = TextFn();
+            if (ThaiTmp && s != _last && ShowThai(s)) return;
             // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
-            float rw = EllipsizeToRect ? C.rectTransform.rect.width : 0f;
-            if (s != _last || (EllipsizeToRect && Math.Abs(rw - _fittedW) > 0.5f))
+            var fitToRect = EllipsizeToRect || MaxLines > 0;
+            float rw = fitToRect ? C.rectTransform.rect.width : 0f;
+            if (s != _last || (fitToRect && Math.Abs(rw - _fittedW) > 0.5f))
             {
                 _last = s;
                 string text;
-                if (EllipsizeToRect)
+                if (MaxLines > 0)
+                {
+                    _fittedW = rw;
+                    text = rw > 1f ? UGuiPrimitives.CapLines(C, s, rw, MaxLines) : s;   // not laid out yet → full string
+                }
+                else if (EllipsizeToRect)
                 {
                     _fittedW = rw;
                     // Not laid out yet (width 0) → the full string; the first real width re-fits it.
@@ -112,6 +128,38 @@ internal sealed partial class WindowBuilder
             if (ColorFn != null) ApplyColor(ColorFn());
         }
 
+        // A Thai string → the TMP twin (built on first use). False = not Thai or no twin possible → the legacy path.
+        private bool ShowThai(string s)
+        {
+            if (!ThaiTmpTwin.Route(ref _thai, C, s, EllipsizeToRect || EllipsizeWidth > 0f, MaxLines))
+            {
+                if (_thai == null && GlyphScript.IsThai(s)) ThaiTmp = false;   // unbuildable: stop retrying per change
+                return false;
+            }
+            _last = s;
+            Owner?.MarkDirty();
+            if (ColorFn != null) ApplyColor(ColorFn());   // paints the hidden legacy Text; Sync mirrors it
+            _thai!.Sync();
+            return true;
+        }
+
+        // Twin showing: same poll-diff as the legacy path, but onto the twin. Colour (and the reskin's size) still land
+        // on the legacy Text and are mirrored by Sync. A non-Thai string swaps the legacy Text back in and re-applies.
+        private void ApplyThai()
+        {
+            if (!_thai!.ActiveInHierarchy) return;
+            var s = TextFn();
+            if (s != _last && !ShowThai(s))
+            {
+                _last = null; _fittedW = -1f;   // force the legacy write below
+                Owner?.MarkDirty();
+                Apply();
+                return;
+            }
+            if (ColorFn != null) ApplyColor(ColorFn());
+            _thai.Sync();
+        }
+
         private void ApplyColor(ColorRgba? v)
         {
             if (DefaultColor == null && _buildColor == null) _buildColor = C.color;
@@ -132,7 +180,7 @@ internal sealed partial class WindowBuilder
 
     // TMP real-bold emphasis header (built through StyledTextFactory; see TryBuildEmphasisText). Carries
     // no TMP types itself — the handle interface keeps this file sandbox-compilable.
-    internal sealed class StyledTextBinding
+    internal sealed class StyledTextBinding : GatedBinding
     {
         public IStyledTextHandle H = null!;
         public Func<string> TextFn = null!;
@@ -165,7 +213,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ButtonBinding
+    internal sealed class ButtonBinding : GatedBinding
     {
         public Button B = null!;
         public Text Label = null!;
@@ -175,6 +223,8 @@ internal sealed partial class WindowBuilder
         private string? _last;
         private bool _activeInit, _lastActive;
         public BubbleBinding? Owner;   // enclosing bubble to re-measure on a label change (see TextBinding.Owner)
+        public bool ThaiTmp;           // Thai label → TMP twin in the shipped Thai face (ThaiTmpTwin)
+        private ThaiTmpTwin? _thai;
         // Re-skin: re-assign the (style/theme-updated) sprite directly; reset the active-diff so Apply re-runs.
         public void Resprite()
         {
@@ -186,7 +236,13 @@ internal sealed partial class WindowBuilder
         {
             if (B == null || !B.gameObject.activeInHierarchy) return;
             var s = LabelFn();
-            if (s != _last) { Label.text = s; _last = s; Owner?.MarkDirty(); }
+            if (s != _last)
+            {
+                // The twin shows Thai; anything else (incl. the swap back) goes on the legacy label as before.
+                if (!(ThaiTmp && ThaiTmpTwin.Route(ref _thai, Label, s))) Label.text = s;
+                _last = s; Owner?.MarkDirty();
+            }
+            _thai?.Sync();   // label colour/size (reskin) mirrored onto a showing twin; no-op otherwise
             if (EnabledFn != null) B.interactable = EnabledFn();
             if (ActiveFn != null && Img != null)
             {
@@ -196,7 +252,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ToggleBinding
+    internal sealed class ToggleBinding : GatedBinding
     {
         public Image Track = null!;
         public Button Btn = null!;
@@ -228,7 +284,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class SwatchBinding
+    internal sealed class SwatchBinding : GatedBinding
     {
         public Image Img = null!;
         public Func<ColorRgba> Get = null!;
@@ -242,7 +298,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class BarBinding
+    internal sealed class BarBinding : GatedBinding
     {
         // Width via the clip rect's right anchor, NOT fillAmount (spriteless Image ignores it) — see BuildBarTrack.
         // For a HudOverlay Default bar FillRect is left null (the fill is an Image.Type.Filled smoothed by a pulse,
@@ -289,7 +345,7 @@ internal sealed partial class WindowBuilder
 
     // Live window-body opacity — sets the frame Image's alpha each poll from IChromeStyle.WindowOpacity, so
     // the opacity slider updates in real time WITHOUT rebaking the sprite or rebuilding the canvas (the flicker).
-    internal sealed class FrameOpacityBinding
+    internal sealed class FrameOpacityBinding : GatedBinding
     {
         public Image Img = null!;
         public Func<float> Opacity = null!;
@@ -306,17 +362,24 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class CondBinding
+    internal sealed class CondBinding : GatedBinding
     {
         public Func<bool> When = null!;
         public GameObject Then = null!;
         public GameObject? Else;
         public Action? BuildThen, BuildElse;   // pending lazy branch builds; cleared once run (WindowBuilder.Layout)
+        // What those builds would build — a ConditionalElement.Prebuild job claims a branch from here (nulls it and
+        // replaces BuildThen/BuildElse with its own finish step, WindowBuilder.Prebuild.cs).
+        public LazyBranch? ThenLazy, ElseLazy;
+        public bool PrebuildRoot; public string? PrebuildName;
         // Enclosing variable-list slot (null = not in one). While that slot is inactive — past the end, or held back
         // by the first-build cap — the Cond is idle: no When() poll, no lazy branch build. The vlist pass runs FIRST in
         // WindowToken.Apply, so a slot admitted this apply is already active when this runs: same-apply catch-up.
         public GameObject? Gate;
         public BubbleBinding? Owner;   // enclosing bubble: a branch flip changes its content → re-measure it
+        // ConditionalElement.KeepAlive: the branch is parked (canvas off, off-screen) instead of SetActive(false)
+        // (WindowBuilder.KeepAlive.cs). Null = the plain SetActive toggle.
+        public KeepAliveHost? Keep;
         private bool _init, _last;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
@@ -327,17 +390,24 @@ internal sealed partial class WindowBuilder
             var build = b ? BuildThen : BuildElse;
             if (b) BuildThen = null; else BuildElse = null;
             build?.Invoke();
-            if (Then != null) Then.SetActive(b);
-            if (Else != null) Else.SetActive(!b);
+            var structural = true;
+            // A kept-alive branch flips without a SetActive: no re-enable of its graphics, no whole-window re-layout (its
+            // own ignoreLayout change re-lays-out just its column) — only a cold activation counts as structural.
+            if (Keep != null) structural = Keep.Apply(b);
+            else
+            {
+                if (Then != null) Then.SetActive(b);
+                if (Else != null) Else.SetActive(!b);
+            }
             _last = b; _init = true;
             Owner?.MarkDirty();
-            return true;
+            return structural;
         }
     }
 
     // Poll-diffed dynamic atlas sub-rect: re-pulls UvFunc and re-sets RawImage.uvRect only when it changes, so a
     // recycled SpriteElement slot tracks its backing data's icon (mirrors MeterRowBinding's crest uvRect rebind).
-    internal sealed class SpriteBinding
+    internal sealed class SpriteBinding : GatedBinding
     {
         public RawImage Raw = null!;
         public Func<UvRect> Uv = null!;
@@ -353,7 +423,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ListBinding
+    internal sealed class ListBinding : GatedBinding
     {
         public Func<int> Count = null!;
         public GameObject[] Slots = System.Array.Empty<GameObject>();

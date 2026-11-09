@@ -10,7 +10,7 @@ namespace Stellar.Application.Services;
 /// <summary>Owns colour-slot descriptors + resolution. Implements the plugin
 /// registration surface and the read-side resolver (editor surfaces added in
 /// Task 4). Single source of truth so Settings stays plugin-agnostic.</summary>
-internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, IThemeOverrides
+internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, IThemeOverrides, IThemeSwatchResolver
 {
     public static readonly ColorRgba MissingSentinel = new(1f, 0f, 1f, 1f); // magenta
 
@@ -37,13 +37,10 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
 
     public IColorSlot Register(string key, string label, ColorRgba defaultAll)
     {
-        var allPresets = new Dictionary<ThemePreset, ColorRgba>
-        {
-            [ThemePreset.Default] = defaultAll,
-            [ThemePreset.Dark]    = defaultAll,
-            [ThemePreset.Light]   = defaultAll,
-            [ThemePreset.Crimson] = defaultAll,
-        };
+        // Every built-in preset, enumerated (not listed) so a preset appended later (Sakura, 2.30.0) gets the
+        // value too instead of silently falling back through Resolve's Default branch.
+        var allPresets = new Dictionary<ThemePreset, ColorRgba>();
+        foreach (var p in (ThemePreset[])Enum.GetValues(typeof(ThemePreset))) allPresets[p] = defaultAll;
         return Register(key, label, allPresets);
     }
 
@@ -77,12 +74,15 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
     /// alone misses a Relabel (the count doesn't change), so key the cache on this too.</summary>
     public int Revision => _revision;
 
-    public ColorRgba Resolve(string slotKey)
+    public ColorRgba Resolve(string slotKey) => ResolveFor(_namedTheme.ActiveCustomName, _namedTheme.Active, slotKey);
+
+    /// <summary>Read-only resolve for ANY theme, active or not (<see cref="IThemeSwatchResolver"/>): the custom theme's
+    /// stored override, else the slot's <paramref name="basePreset"/> default, else its Default-preset value — the exact
+    /// fallback the live theme uses (<see cref="Resolve"/> is this for the active theme). Never activates anything.</summary>
+    public ColorRgba ResolveFor(string? customName, ThemePreset basePreset, string slotKey)
     {
         if (!_slots.TryGetValue(slotKey, out var d)) return MissingSentinel;
-        if (_namedTheme.ActiveCustomName is { } themeName
-            && _overrides.TryGet(themeName, slotKey, out var ovr)) return ovr;
-        var basePreset = _namedTheme.Active;
+        if (customName is not null && _overrides.TryGet(customName, slotKey, out var ovr)) return ovr;
         if (d.Defaults.TryGetValue(basePreset, out var def)) return def;
         return d.Defaults.TryGetValue(ThemePreset.Default, out var fb) ? fb : MissingSentinel;
     }

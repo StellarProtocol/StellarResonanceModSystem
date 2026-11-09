@@ -104,11 +104,28 @@ internal sealed class LauncherRegistry : ILauncher, ILauncherOwnedRegistrations
         set => _prefs.MinimalHorizontal = value;
     }
 
+    /// <summary>The Full menu's remembered tab (Favorites / All plugins). Persisted; default Favorites.</summary>
+    public LauncherTab Tab
+    {
+        get => _prefs.Tab;
+        set => _prefs.Tab = value;
+    }
+
+    /// <summary>Pinned = a favorite: shown in the Full menu's Favorites tab AND the compact bar (one list).</summary>
     public bool IsPinned(LauncherEntry entry) => _prefs.IsPinned(entry.Title);
 
     public void SetPinned(LauncherEntry entry, bool pinned)
     {
         _prefs.SetPinned(entry.Title, pinned);
+        _revision++;
+    }
+
+    /// <summary>The saved favorite order (titles; empty = registration order) — <see cref="LauncherFavoriteOrder"/>.</summary>
+    public IReadOnlyList<string> FavoriteOrder => _prefs.FavoriteOrder;
+
+    public void SetFavoriteOrder(IReadOnlyList<string> order)
+    {
+        _prefs.SetFavoriteOrder(order);
         _revision++;
     }
 

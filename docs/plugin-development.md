@@ -236,6 +236,30 @@ private void BuildWindow()
 
 `IWindowControl` lets you manage the live window: `SetVisible(bool)`, `IsShown`, `MarkDirty()`, `SetRect(...)` / `Rect`, and `Remove()`. Wire `OnClose` to `SetVisible(false)` (as above) so the ✕ and any hotkey/rail toggle stay agreed about visibility. Canonical reference: `Stellar.ChatTools` — a multi-section window with a scrolling log, a channel selector, an input composer, and a conditional sub-panel.
 
+#### Stacking: which window is on top (2.30.0)
+
+Stellar windows stack by what the player used last, bottom to top:
+
+1. **HUD** windows (`WindowCategory.HUD`).
+2. **Tools / Debug** windows. A Tools/Debug window you show from hidden (`SetVisible(true)` / `SetVisiblePersist(true)`) goes on top of this layer automatically, as if it had just been opened. A HUD window you `BringToFront()` joins this layer (on top) until it is next hidden.
+3. **Topmost** windows (`WindowSpec.Topmost` or `control.SetTopmost(true)`).
+4. Click-away popups (`DismissOnOutsideClick`), the dropdown list, and the layout-edit toolbar.
+
+`WindowSpec.ZOrder` still overrides the layer for windows that set it, and `Topmost` beats `ZOrder`.
+
+`BringToFront()` is **not sticky**. It puts the window on top exactly like a fresh open, and any window opened or fronted later goes above it. You need it only for a window that is **already visible** (re-opening an open child from its parent, for example) or to lift a HUD window. Calling it on every open is harmless. Clicks follow the same order: a window in front blocks the ones behind it (unless it is `Passive`).
+
+**Always on top.** Pin a small overlay or alert above every normal window with `Topmost = true` on the spec, or at runtime:
+
+```csharp
+_alert.SetTopmost(true);          // extension on IWindowControl (Stellar.Abstractions.Services)
+bool pinned = _alert.IsTopmost();
+```
+
+Use it sparingly. A normal tool window should stack by use, not be pinned. Among topmost windows, the last one opened or fronted is on top; turning Topmost off drops the window back among normal windows. Needs framework ≥ 2.30.0. (`IWindowControl` is at its 8-member cap, so the switch lives on the separate `IWindowTopmost` interface that every framework window handle implements; the extensions do the cast.)
+
+Visibility restores don't bring a window to the top. These are the saved layout applied at startup, on a layout-slot switch, or by a layout reset. A window that has never been built is placed like any first open; one re-shown by a restore keeps its old place.
+
 ## Phases and window visibility
 
 Every `WindowSpec` carries a compiler-**`required`** `Func<bool> ShouldRender` — the single source of truth for whether the window draws (HUD overlays are windows too, so this covers them). The framework evaluates it each apply (~10 Hz) and enacts `hide = !ShouldRender()`; a hidden element skips its value pull entirely (zero `Func` cost while hidden). It is a **pull**, so it is always current — you do not push a visibility flag. Because it is `required`, omitting it **fails the build** (no default that would spam windows over the login screen).
@@ -366,7 +390,7 @@ Rules:
 
 The active theme is exposed via `IPluginServices.Theme`.
 
-- **Read a theme colour** when you want to match the framework's palette: `_services.Theme.Colors.Accent`, `.MenuMuted`, `.HudText`, `.TextMuted`, etc. (Base / HUD / Menu colour facets are all reachable through `Theme.Colors`.) Read these directly — do not register a slot for them.
+- **Read a theme colour** when you want to match the framework's palette: `_services.Theme.Colors.Accent`, `.MenuMuted`, `.HudText`, `.TextMuted`, etc. (Base / HUD / Menu / Status colour facets are all reachable through `Theme.Colors`; the status trio `.Success` / `.Danger` / `.Caution` needs framework 2.30.0+.) Read these directly — do not register a slot for them.
 - **Own a colour** that the user can customise in the theme editor: register it with `IColorRegistry`. The key is namespaced `Owner.Concept.Property` and must be unique. You supply a default per built-in preset (or one default for all):
 
 ```csharp
@@ -377,6 +401,7 @@ _hpSlot = _services.Theme.ColorRegistry.Register(
         [ThemePreset.Dark]    = ColorRgba.FromHex(0x52A35Effu),
         [ThemePreset.Light]   = ColorRgba.FromHex(0x46C85Effu),
         [ThemePreset.Crimson] = ColorRgba.FromHex(0xE04848ffu),
+        [ThemePreset.Sakura]  = ColorRgba.FromHex(0xD9558Cffu),   // 2.30.0+; omitted → the Default value
     });
 ```
 

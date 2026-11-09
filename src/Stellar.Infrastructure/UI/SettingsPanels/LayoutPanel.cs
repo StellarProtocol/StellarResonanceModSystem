@@ -1,116 +1,142 @@
+using System;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Services;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Settings → Layout panel. Combines slot management (rename / add / remove,
-/// switch active), snap config (enabled toggle + threshold slider), and a
-/// per-window inspector + reset buttons. Phase 8's floating top-center
-/// toolbar still exists but is now superseded by this panel — only the
-/// per-window outlines + drag input remain in LayoutEditorOverlay.
+/// Settings → Layout, two columns. Left: "Layout slots" — the slot list (5 rows reserved, then it scrolls): click a row
+/// to switch, the active one on the accent wash with an "Active" chip; "Rename" opens an inline field + Save / ✕; ✕
+/// removes (only while more than 2 slots exist) after a confirm; "+ Add slot" up to 8. Right: "Edit mode" (enter / exit
+/// layout editing), "Snap" (switch + threshold), "Cursor" (sticky cursor). The old "Reset selected to default" /
+/// "Reset all in this slot" buttons are gone: their bodies were empty (the layout editor's toolbar resets windows).
 /// </summary>
 internal sealed partial class LayoutPanel
 {
+    private const int MaxSlots = 8;
+    private const int VisibleSlotRows = 5;
+    internal const float ColumnWidth = (SettingsHub.MainWidth - 8f) / 2f;
+    private const float EditPillLabel = 146f;   // a 170 px pill: fits "Enter / Exit layout editing" in every locale
+
     private readonly LayoutStorage _storage;
     private readonly LayoutEditorService _editor;
-    private readonly ITheme _theme;
     private readonly ILocalization _loc;
+    private SettingsKit _k = null!;
+    private int _renaming = -1;         // slot whose inline rename field is open, -1 = none
     private string _renameBuffer = "";
-    private const int MaxSlots = 8;
+    private int _renameFocus;           // bumped on every rename open → InputElement.FocusRequest
+    private int _confirmRemove = -1;    // slot awaiting the remove confirmation, -1 = none
+    private readonly StellarStyle.HoverFlag[] _rowHover = NewFlags();
+    private readonly StellarStyle.HoverFlag[] _xHover = NewFlags();
 
-    // Live slot label (read each poll, never snapshotted): "Name *" for the active slot, else "Name".
-    private string SlotLabel(int idx)
-    {
-        var names = _storage.SlotNames;
-        if (idx >= names.Count) return "";
-        return idx == _storage.ActiveSlot ? names[idx] + " *" : names[idx];
-    }
-
+    // theme is no longer read (the house kit carries the live colours); the parameter stays for the wiring.
     public LayoutPanel(LayoutStorage storage, LayoutEditorService editor, ITheme theme, ILocalization loc)
     {
         _storage = storage;
         _editor = editor;
-        _theme = theme;
         _loc = loc;
-        _storage.SlotsChanged += OnSlotsChanged;
-        _renameBuffer = _storage.SlotNames.Count > 0 ? _storage.SlotNames[_storage.ActiveSlot] : "";
+        // A slot removed / added elsewhere (layout toolbar) invalidates an open rename / confirm on a moved index.
+        _storage.SlotsChanged += ResetTransient;
     }
 
-    /// <summary>uGUI element-tree form of <see cref="DrawBody"/> (SP1 Settings migration). Slot picker +
-    /// rename + snap toggle/slider + reset buttons, wired to the same LayoutStorage/editor/ui; built once.</summary>
-    public HudElement Describe()
+    public HudElement Describe(SettingsKit kit)
     {
-        var items = new System.Collections.Generic.List<HudElement>
+        _k = kit;
+        kit.TabChanged += ResetTransient;
+        // TopColumn: a Row centres a child vertically unless it is flexible, so each column ends in a filler that
+        // stretches it to the tab height with its panels at the top (prototype flex columns).
+        return new RowElement(new HudElement[]
         {
-            new TextElement(() => _loc.T("layout.slot"), Emphasis: true),
-        };
-        // Slot buttons: bounded at MaxSlots, each shown live (Conditional on idx < SlotCount) with its label
-        // read LIVE from _storage each poll — NOT snapshotted at build (a captured `SlotNames` list left the
-        // button stale after a rename, and add/remove never reflected). Active slot gets the accent + " *".
-        var slotRow = new System.Collections.Generic.List<HudElement>();
-        for (var i = 0; i < MaxSlots; i++)
-        {
-            var idx = i;
-            slotRow.Add(new ConditionalElement(() => idx < _storage.SlotCount,
-                new ButtonElement(() => SlotLabel(idx), () => SwitchSlot(idx), Active: () => idx == _storage.ActiveSlot)));
-        }
-        slotRow.Add(new ConditionalElement(() => _storage.SlotCount < MaxSlots,
-            new ButtonElement(() => "+", () => _storage.AddSlot())));
-        items.Add(new RowElement(slotRow));
-        items.Add(new RowElement(new HudElement[]
-        {
-            new TextElement(() => _loc.T("layout.rename")),
-            // OnChange keeps _renameBuffer live as you type, so the Apply button (which reads it) works even
-            // without pressing Enter first (InputElement.Submit only fires on Enter/blur).
-            new InputElement(() => _renameBuffer, s => _renameBuffer = s, 150f, OnChange: s => _renameBuffer = s),
-            new ButtonElement(() => _loc.T("common.apply"), () => _storage.RenameSlot(_storage.ActiveSlot, _renameBuffer)),
-        }));
-        items.Add(new ButtonElement(() => _loc.T("layout.removeSlot"),
-            () => { if (_storage.SlotCount > 2) _storage.RemoveSlot(_storage.ActiveSlot); }, () => _storage.SlotCount > 2));
-        items.Add(new TextElement(() => _loc.T("layout.snap"), Emphasis: true));
-        items.Add(new RowElement(new HudElement[] { new ToggleElement(() => "", () => _storage.SnapEnabled, v => _storage.SnapEnabled = v), new TextElement(() => _loc.T("common.enable")) }));
-        items.Add(new RowElement(new HudElement[]
-        {
-            new TextElement(() => _loc.T("layout.threshold")),
-            new SliderElement(() => _storage.SnapThresholdPx, v => _storage.SnapThresholdPx = v, 0f, 24f, () => _storage.SnapEnabled),
-            new TextElement(() => _loc.TFormat("layout.px", _storage.SnapThresholdPx)),
-        }));
-        // Sticky cursor (StickyCursorService): Alt+click an interactive window keeps the cursor free after Alt is released.
-        items.Add(new TextElement(() => _loc.T("layout.cursor"), Emphasis: true));
-        items.Add(new RowElement(new HudElement[] { new ToggleElement(() => "", () => _storage.StickyCursorEnabled, v => _storage.StickyCursorEnabled = v), new TextElement(() => _loc.T("layout.stickyCursor")) }));
-        items.Add(new TextElement(() => _loc.T("layout.stickyCursor.desc"), () => _theme.Colors.TextMuted));
-        items.Add(new TextElement(() => _loc.T("layout.windowControls"), Emphasis: true));
-        items.Add(new ButtonElement(() => _loc.T("layout.resetSelected"), () => ResetSelected()));
-        items.Add(new ButtonElement(() => _loc.T("layout.resetAllSlot"), () => ResetAllInSlot()));
-        items.Add(new SeparatorElement());
-        items.Add(new TextElement(() => _editor.IsEditing ? _loc.T("layout.editExit") : _loc.T("layout.editEnter"), () => _theme.Colors.TextMuted));
-        return new ColumnElement(items.ToArray());
+            new CellElement(StellarStyle.TopColumn(BuildSlotsPanel()), Width: ColumnWidth),
+            new CellElement(StellarStyle.TopColumn(BuildEditPanel(), BuildSnapPanel(), BuildCursorPanel()), Width: ColumnWidth),
+        }, Gap: 8f);
     }
 
-    private void OnSlotsChanged()
+    /// <summary>Header status: "Slot: Raid · Snap 8 px · Editing".</summary>
+    public string Status(SettingsKit k)
+    {
+        var snap = _storage.SnapEnabled ? _loc.TFormat("layout.px", _storage.SnapThresholdPx) : _loc.T("common.off");
+        var s = _loc.TFormat("layout.status", "<b>" + ActiveName() + "</b>", snap);
+        return _editor.IsEditing ? s + " · " + k.Good(_loc.T("layout.status.editing")) : s;
+    }
+
+    private HudElement BuildSlotsPanel()
+    {
+        var s = _k.S;
+        var rows = new HudElement[MaxSlots];
+        for (var i = 0; i < MaxSlots; i++) rows[i] = SlotRow(i);
+        var confirm = s.ConfirmPanel(new ConfirmSpec(
+            () => _loc.TFormat("layout.remove.q", NameAt(_confirmRemove)),
+            _k.T("layout.remove.consequence"),
+            _k.T("common.remove"), ConfirmRemove,
+            _k.T("common.cancel"), () => _confirmRemove = -1) { Width = ColumnWidth - 20f });
+        var add = new RowElement(new HudElement[]
+        {
+            s.NeutralButton(_k.T("layout.addSlot"), AddSlot, enabled: () => _storage.SlotCount < MaxSlots),
+        });
+        return _k.Panel("layout.slots", () => _loc.TFormat("layout.slots.hint", _storage.SlotCount, MaxSlots),
+            _k.Description("layout.slots.desc"),
+            new ScrollElement(new ListElement(() => Math.Min(_storage.SlotCount, MaxSlots), rows),
+                Height: StellarStyle.ListHeight(VisibleSlotRows)) { FixedHeight = true },
+            new ConditionalElement(() => _confirmRemove >= 0 && _confirmRemove < _storage.SlotCount, confirm, add));
+    }
+
+    private HudElement BuildEditPanel()
+    {
+        var s = _k.S;
+        return _k.Panel("layout.edit", () => "Shift+`",
+            _k.Description("layout.edit.desc"),
+            new RowElement(new HudElement[]
+            {
+                new ConditionalElement(() => _editor.IsEditing,
+                    s.CautionButton(_k.T("layout.edit.exit"), ToggleEdit, EditPillLabel),
+                    s.PrimaryButton(_k.T("layout.edit.enter"), ToggleEdit, EditPillLabel)),
+            }));
+    }
+
+    private HudElement BuildSnapPanel()
+        => _k.Panel("layout.snap", () => _storage.SnapEnabled ? _loc.T("layout.snap.hintOn") : _loc.T("common.off"),
+            SettingsKit.Row(_k.Label(_k.T("layout.snap.toggle")),
+                SettingsKit.Toggle(() => _storage.SnapEnabled, v => _storage.SnapEnabled = v),
+                _k.Help("layout.snap", "layout.snap.toggle", "help.layout.snap", "tab.layout")),
+            SettingsKit.Row(
+                new TextElement(_k.T("layout.threshold"), Color: () => _k.S.Text(), Width: 80f, NoWrap: true) { Ellipsize = true },
+                new CellElement(SettingsKit.Slider(() => _storage.SnapThresholdPx, v => _storage.SnapThresholdPx = MathF.Round(v),
+                    0f, 24f, () => _storage.SnapEnabled), Weight: 1f),
+                _k.Value(() => _loc.TFormat("layout.px", _storage.SnapThresholdPx), 44f),
+                _k.Help("layout.threshold", "layout.threshold.title", "help.layout.threshold", "tab.layout")));
+
+    private HudElement BuildCursorPanel()
+        => _k.Panel("layout.cursor", null,
+            SettingsKit.Row(_k.Label(_k.T("layout.stickyCursor")),
+                SettingsKit.Toggle(() => _storage.StickyCursorEnabled, v => _storage.StickyCursorEnabled = v),
+                _k.Help("layout.sticky", "layout.sticky.title", "help.layout.sticky", "tab.layout")));
+
+    private void ToggleEdit()
+    {
+        _editor.ToggleEditMode();
+        _k.Done(_loc.T(_editor.IsEditing ? "layout.fb.editOn" : "layout.fb.editOff"));
+    }
+
+    private string NameAt(int idx)
     {
         var names = _storage.SlotNames;
-        if (_storage.ActiveSlot >= 0 && _storage.ActiveSlot < names.Count)
-            _renameBuffer = names[_storage.ActiveSlot];
+        return idx >= 0 && idx < names.Count ? names[idx] : "";
     }
 
-    private void SwitchSlot(int index)
+    private string ActiveName() => NameAt(_storage.ActiveSlot);
+
+    private void ResetTransient()
     {
-        if (index == _storage.ActiveSlot) return;
-        _storage.SetActiveSlot(index);
-        OnSlotsChanged();
+        _renaming = -1;
+        _confirmRemove = -1;
     }
 
-    private void ResetSelected()
+    private static StellarStyle.HoverFlag[] NewFlags()
     {
-        // The legacy IMGUI windows this once reset are gone (uGUI HUDs/windows own their reset
-        // paths; native-game-UI is managed via the Game UI panel) — nothing left to reset here.
+        var a = new StellarStyle.HoverFlag[MaxSlots];
+        for (var i = 0; i < a.Length; i++) a[i] = new StellarStyle.HoverFlag();
+        return a;
     }
-
-    private void ResetAllInSlot()
-    {
-        // No legacy IMGUI windows remain to reset in the active slot.
-    }
-
 }

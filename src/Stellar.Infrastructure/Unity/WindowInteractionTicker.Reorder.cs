@@ -86,12 +86,21 @@ public sealed partial class WindowInteractionTicker
                 var zone = scroll != null ? (scroll.viewport != null ? scroll.viewport : scroll.GetComponent<RectTransform>()) : reg.List;
                 // An item scrolled out of view is masked, not hidden — a press there belongs to whatever is visible.
                 if (!RectTransformUtility.RectangleContainsScreenPoint(zone, mp, null)) break;
+                // ListElement.CanReorder: a locked item is not claimed — the press stays an ordinary click (and the
+                // scroll view is not locked, so the list can still be drag-scrolled from it).
+                if (reg.CanDrag != null && !SafeCanDrag(reg, item)) break;
                 _rl = reg; _rlFrom = item; _rlPress = mp; _rlDragging = false; _rlZone = zone;
                 LockScroll(scroll);
                 return true;
             }
         }
         return false;
+    }
+
+    // Consumer predicate — plugin code must never break the ticker: a throwing CanReorder locks the item.
+    private static bool SafeCanDrag(WindowBuilder.ReorderListReg reg, int item)
+    {
+        try { return reg.CanDrag!(item); } catch { return false; }
     }
 
     // Mouse-held while a reorder press is claimed.

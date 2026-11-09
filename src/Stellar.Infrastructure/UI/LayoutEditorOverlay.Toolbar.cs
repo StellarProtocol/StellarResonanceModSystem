@@ -6,11 +6,10 @@ using Stellar.Application.Services;
 namespace Stellar.Infrastructure.UI;
 
 /// <summary>
-/// Toolbar half of <see cref="LayoutEditorOverlay"/> — migrated to a native uGUI Borderless window
-/// (Stage C of the layout-editor uGUI migration). The bar is a single Row of framework elements
-/// (heading, filter chips, slot picker, selection readout, reset buttons, hint), registered on the
-/// framework <see cref="IWindowHost"/> and shown/hidden on the edit-mode edge. Behaviour (filter,
-/// slot switch, resets) is unchanged — only the rendering moved off IMGUI.
+/// Toolbar half of <see cref="LayoutEditorOverlay"/>: registration, pre-warm, show/hide and the BEHAVIOUR (filter,
+/// selection, slot switch, resets) of the uGUI layout toolbar, registered on the framework <see cref="IWindowHost"/>
+/// and shown/hidden on the edit-mode edge. The house-style view is <c>LayoutEditorOverlay.ToolbarView.cs</c>; the
+/// Reset-all confirm window is <c>LayoutEditorOverlay.ResetDialog.cs</c>.
 /// </summary>
 internal sealed partial class LayoutEditorOverlay
 {
@@ -31,11 +30,12 @@ internal sealed partial class LayoutEditorOverlay
     private int _prewarmPhase;   // 0 = pending, 1 = mounting, 2 = done
     private int _prewarmTicks;
 
-    // Edit-mode element filter (Phase 9a + per-plugin). All = Stellar windows + game UI; StellarOnly / GameUiOnly
-    // suppress the other category; Plugin restricts the Stellar side to ONE plugin's windows (no game UI). Read by
+    // Edit-mode element filter (Phase 9a + per-plugin). All = Stellar windows + game UI; GameUiOnly suppresses the
+    // Stellar side; Plugin restricts the Stellar side to ONE plugin's windows (no game UI). (The old "<< Stellar >>"
+    // all-mod-windows entry is gone from the redesigned SHOW dropdown — approved prototype.) Read by
     // ShouldOutlineStellar / ShouldOutlineGameUi for the category gate, and WindowOwnerMatchesFilter for the
     // per-plugin narrowing applied in both outlines (AddWindowServiceItems) and click-select (TrySelectWindow).
-    private enum EditFilter { All = 0, StellarOnly = 1, GameUiOnly = 2, Plugin = 3 }
+    private enum EditFilter { All = 0, GameUiOnly = 2, Plugin = 3 }
     private EditFilter _editFilter = EditFilter.All;
     private string? _filterPluginGuid;   // the selected plugin's guid while _editFilter == Plugin
     // Plugin mode still outlines Stellar windows (narrowed to the one plugin), so the Stellar side stays on unless
@@ -76,7 +76,7 @@ internal sealed partial class LayoutEditorOverlay
     // mount it without showing it — construction (the expensive spec/tree build at first mount) is the same either way.
     private void EnsureToolbarRegistered()
     {
-        if (_toolbarWindow == null && _windows != null)
+        if (_toolbarWindow == null && _windows != null && _s != null)
         {
             // GlassMenu chrome (ShowTitleBar=false) = frosted rounded panel, no title bar; with ShowTitleBar=false
             // + Draggable the WHOLE frame becomes the drag handle (BuildGlassChrome), so the user can reposition the
@@ -86,12 +86,8 @@ internal sealed partial class LayoutEditorOverlay
             // current resolution + UI scale, and WindowService persists any drag PER-RESOLUTION (PersistIfSettled)
             // and restores it on show (ApplySavedRect) — so no per-tick re-centre is needed or wanted (that would
             // clobber a user drag). OverrideSortingOrder lifts the bar above the edit chrome (see the const).
-            // Widened to seat the selection DROPDOWN (60px label + 280px dropdown + the 6px gap) that replaced the old
-            // 210px "Selected: <id>" text, the Show/Hide toggle button (acts on the selected element), and the extra
-            // "Reset filtered" button — without the flex-centred content block clipping against the glass panel edges
-            // (the content CLIPS at the panel edges if it overflows). Sized for the longest-locale labels (id/th reset
-            // captions run longer than English).
-            const float w = 1580f;
+            // Fixed width (ToolbarView): the house-style one-row bar, sized for the longest locale; never changes.
+            const float w = ToolbarWidth;
             var spec = new WindowSpec(Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId, "",
                 new WindowRect(0f, 12f, w, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
@@ -151,60 +147,7 @@ internal sealed partial class LayoutEditorOverlay
 
     // Also close any open toolbar dropdown: its popup is a scene-root canvas, not a child of the toolbar window,
     // so SetVisible(false) alone would leave a stray option list on screen (belt-and-suspenders, idempotent).
-    private void HideToolbar() { _windows?.CloseOpenPopups(); _toolbarWindow?.SetVisible(false); }
-
-    // The toolbar as a single Row of framework elements. Funcs re-pull live state (selection, active slot,
-    // filter) on the window's refresh; Buttons' OnClick call the unchanged behaviour below.
-    private HudElement BuildToolbarRoot()
-    {
-        // Text cells get explicit widths so they don't collapse/wrap inside the bar (window TextElements wrap
-        // at minWidth=0; buttons size to their own labels). Leading/trailing flexible Spacers centre the
-        // content block within the fixed-width panel.
-        // _text is always bound (SetLocalization, called before SetWindows below it in Wiring.Settings.cs)
-        // by the time a player can ever enter edit mode and reach this method — use it directly rather than
-        // keeping a second, driftable copy of the English text as a "??" fallback.
-        var items = new List<HudElement>
-        {
-            new SpacerElement(),
-            new TextElement(() => _text!.T("layout.toolbar.heading"), () => _theme.Colors.MenuAccent, Emphasis: true, Width: 132f),
-            new SpacerElement(10f),
-            // One dropdown replaces the 3 filter chips: << All >>, << Stellar >>, << Game UI >>, then one row per
-            // plugin that owns an editable window (friendly localized name). MaxVisibleRows caps + scrolls the list.
-            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: 150f) { MaxVisibleRows = 10 },
-            new SpacerElement(10f),
-            new TextElement(() => _text!.T("layout.toolbar.slot"), () => _theme.Colors.MenuMuted, Width: 34f),
-            // One dropdown replaces the per-slot buttons (switch-only — add/remove stays in Settings -> Layout).
-            // SlotNames is a live snapshot rebuilt on any add/remove/rename, so renames and count changes reflect.
-            // SwitchToSlot routes through SetActiveSlot, whose SlotsChanged reapply now moves BOTH native + mod
-            // windows. MaxVisibleRows == MaxSlotCount (8), so the list never actually scrolls — kept for parity
-            // with the filter dropdown. The popup self-elevates above the override-sorting toolbar (fw 1626025).
-            new DropdownElement(() => _storage.ActiveSlot, () => _storage.SlotNames, SwitchToSlot, Width: 140f) { MaxVisibleRows = 8 },
-        };
-        items.Add(new SpacerElement(10f));
-        items.Add(new TextElement(() => _text!.T("layout.toolbar.selectedLabel"), () => _theme.Colors.MenuMuted, Width: 60f));
-        items.Add(new DropdownElement(SelectionSelectedIndex, SelectionOptions, OnSelectionPicked, Width: 280f) { MaxVisibleRows = 12 });
-        items.Add(new SpacerElement(10f));
-        // Show/Hide toggle for the CURRENTLY-SELECTED element (reuses ToggleVisibility's native→HUD→window routing +
-        // persistence). Label reflects the live state — "Hide" when the selection is visible, "Show" when hidden.
-        // Disabled when nothing is selected or the selected element isn't hideable (SelectedVisibility().CanHide).
-        items.Add(new ButtonElement(
-            () => SelectedVisibility().Visible ? _text!.T("layout.toolbar.hide") : _text!.T("layout.toolbar.show"),
-            () => { if (_editor.SelectedWindowId is { } s) ToggleVisibility(s); },
-            Enabled: () => { var v = SelectedVisibility(); return v.Found && v.CanHide; }));
-        items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetSelected"),
-            () => { if (_editor.SelectedWindowId is { } s) ResetWindow(s); },
-            Enabled: () => _editor.SelectedWindowId != null));
-        // Logical order narrowest → filter-scoped → broadest: selected, then the active-filter set, then everything.
-        // Always enabled — when the filter is All it harmlessly equals Reset all (same resulting set), as expected.
-        items.Add(new ButtonElement(() => _text!.T("layout.toolbar.resetFiltered"), ResetFilteredWindows));
-        items.Add(new ButtonElement(() => _text!.T("common.resetAll"), ResetAllWindows));
-        items.Add(new SpacerElement(10f));
-        items.Add(new ButtonElement(() => _text!.T("common.exit"), () => _editor.ToggleEditMode()));
-        items.Add(new SpacerElement());
-        // Column wrap so the Row gets full panel width (childForceExpandWidth) → the flex spacers can centre.
-        return new ColumnElement(new HudElement[] { new RowElement(items.ToArray(), Gap: 6f) });
-    }
+    private void HideToolbar() { _windows?.CloseOpenPopups(); CloseResetDialog(); _toolbarWindow?.SetVisible(false); }
 
     // The currently-selectable layout objects, in a STABLE deterministic order (each group sorted by label, so the
     // dropdown's Options() and SelectionSelectedIndex() always agree frame-to-frame regardless of dictionary order).
@@ -228,9 +171,19 @@ internal sealed partial class LayoutEditorOverlay
             var g = new List<(string Id, string Label, bool Visible)>();
             // EditableElements (NOT EditableRects): EditableRects yields only VISIBLE windows, so a hidden window
             // would drop out of the dropdown and could never be re-shown from here. EditableElements is hidden-inclusive.
+            // Grouped by owning plugin (display-name order, then label), so one plugin's windows sit together — the
+            // Pill dropdown has no group-header rows, so the grouping is by order only.
+            var order = new Dictionary<string, int>(System.StringComparer.Ordinal);
+            var plugins = FilterPlugins();
+            for (var i = 0; i < plugins.Count; i++) order[plugins[i].Guid] = i;
+            var keyed = new List<(int Group, string Id, bool Visible)>();
             foreach (var el in _windows.EditableElements())
-                if (WindowOwnerMatchesFilter(el.Id)) g.Add((el.Id, el.Id, el.Visible));
-            g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
+                if (WindowOwnerMatchesFilter(el.Id))
+                    keyed.Add((_windows.OwnerOf(el.Id) is { } o && order.TryGetValue(o, out var gi) ? gi : int.MaxValue,
+                        el.Id, el.Visible));
+            keyed.Sort((a, b) => a.Group != b.Group ? a.Group.CompareTo(b.Group)
+                : string.Compare(a.Id, b.Id, System.StringComparison.CurrentCultureIgnoreCase));
+            foreach (var k in keyed) g.Add((k.Id, k.Id, k.Visible));
             list.AddRange(g);
         }
         return list;
@@ -240,7 +193,11 @@ internal sealed partial class LayoutEditorOverlay
     // "(hidden)" suffix so a hidden-but-still-listed element is visually distinct and can be picked + re-shown.
     private System.Collections.Generic.IReadOnlyList<string> SelectionOptions()
     {
-        var opts = new List<string> { _text!.T("common.none") };
+        // "None selected" muted italic via inline TMP tags (the Pill dropdown's caption and rows are TMP text). Short,
+        // so the trigger's ellipsis never cuts inside a tag.
+        var none = "<i>" + Style.StellarStyle.Colored(_text!.T("layout.toolbar.noneSelected"),
+            _s?.Muted() ?? Style.StellarStyle.White) + "</i>";
+        var opts = new List<string> { none };
         foreach (var (_, label, visible) in SelectableObjects())
             opts.Add(visible ? label : label + " " + _text!.T("layout.toolbar.hiddenSuffix"));
         return opts;
@@ -284,51 +241,49 @@ internal sealed partial class LayoutEditorOverlay
     private System.Collections.Generic.IReadOnlyList<(string Guid, string Name)> FilterPlugins()
         => _windows?.EditableWindowPlugins() ?? System.Array.Empty<(string, string)>();
 
-    // Dropdown options built live: 0 = << All >>, 1 = << Stellar >>, 2 = << Game UI >>, then one row per plugin.
-    // Only the 3 specials get the << … >> decoration; plugin captions are the plain (already-localized) name.
+    // Dropdown options built live (approved prototype): 0 = All windows, 1 = Game UI, then one row per plugin (its
+    // already-localized display name).
     private System.Collections.Generic.IReadOnlyList<string> FilterOptions()
     {
         var opts = new List<string>
         {
-            "<< " + _text!.T("hotkeys.filter.all") + " >>",
-            "<< Stellar >>",                               // brand name — kept English in every language
-            "<< " + _text!.T("tab.gameui") + " >>",
+            _text!.T("layout.toolbar.filterAll"),
+            _text!.T("tab.gameui"),
         };
         foreach (var (_, name) in FilterPlugins()) opts.Add(name);
         return opts;
     }
 
     // Current filter → selected dropdown index. A selected plugin that has since unloaded (not in the live list)
-    // falls back to index 1 (<< Stellar >> = all mod windows), the nearest still-valid meaning.
+    // shows as 0 (All windows); its filter then matches nothing until the player picks again.
     private int FilterSelectedIndex()
     {
         switch (_editFilter)
         {
             case EditFilter.All: return 0;
-            case EditFilter.StellarOnly: return 1;
-            case EditFilter.GameUiOnly: return 2;
+            case EditFilter.GameUiOnly: return 1;
             default:
                 var plugins = FilterPlugins();
                 for (int i = 0; i < plugins.Count; i++)
-                    if (plugins[i].Guid == _filterPluginGuid) return 3 + i;
-                return 1;
+                    if (plugins[i].Guid == _filterPluginGuid) return 2 + i;
+                return 0;
         }
     }
 
-    // Dropdown pick → filter state. 0/1/2 = the specials (clear the plugin guid); 3.. selects that plugin.
+    // Dropdown pick → filter state. 0/1 = the specials (clear the plugin guid); 2.. selects that plugin.
     private void OnFilterSelected(int index)
     {
         switch (index)
         {
             case 0: _editFilter = EditFilter.All; _filterPluginGuid = null; break;
-            case 1: _editFilter = EditFilter.StellarOnly; _filterPluginGuid = null; break;
-            case 2: _editFilter = EditFilter.GameUiOnly; _filterPluginGuid = null; break;
+            case 1: _editFilter = EditFilter.GameUiOnly; _filterPluginGuid = null; break;
             default:
                 var plugins = FilterPlugins();
-                var pi = index - 3;
+                var pi = index - 2;
                 if (pi >= 0 && pi < plugins.Count) { _editFilter = EditFilter.Plugin; _filterPluginGuid = plugins[pi].Guid; }
                 break;
         }
+        Feedback(_text!.TFormat("layout.toolbar.fb.filter", FilterName()));
     }
 
     private void SwitchToSlot(int slotIndex)
@@ -339,6 +294,7 @@ internal sealed partial class LayoutEditorOverlay
         // switch reapplies the whole screen arrangement from one place — no explicit per-call-site reapply here.
         _storage.SetActiveSlot(slotIndex);
         _log.Info($"[LayoutEditor] switched to slot {slotIndex} ({_storage.GetSlotName(slotIndex)})");
+        Feedback(_text!.TFormat("layout.toolbar.fb.slot", _storage.GetSlotName(slotIndex)));
     }
 
     // "Reset selected" — reset whichever element is selected, whatever its kind. The id namespaces don't
@@ -359,11 +315,7 @@ internal sealed partial class LayoutEditorOverlay
     // (Contrast ResetFilteredWindows, which honours the filter — the two buttons are deliberately separated.)
     private void ResetAllWindows()
     {
-        var ids = new List<string>();
-        if (_nativeUi is not null)
-            foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
-        if (_windows is not null)
-            foreach (var el in _windows.EditableElements()) ids.Add(el.Id);
+        var ids = AllResetIds();
         foreach (var id in ids) ResetWindow(id);
         _log.Info($"[LayoutEditor] reset all {ids.Count} elements to defaults");
     }
@@ -377,14 +329,32 @@ internal sealed partial class LayoutEditorOverlay
     // Ids are snapshotted before resetting so a reset never mutates a collection mid-enumeration.
     private void ResetFilteredWindows()
     {
+        var ids = FilteredResetIds();
+        foreach (var id in ids) ResetWindow(id);
+        _log.Info($"[LayoutEditor] reset filtered {ids.Count} elements to defaults");
+    }
+
+    // The ids "Reset all" touches: every resolved native entry + every editable mod window, hidden included. A fresh
+    // snapshot, so a reset never mutates a collection mid-enumeration; also the confirm dialog's count.
+    private List<string> AllResetIds()
+    {
+        var ids = new List<string>();
+        if (_nativeUi is not null)
+            foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
+        if (_windows is not null)
+            foreach (var el in _windows.EditableElements()) ids.Add(el.Id);
+        return ids;
+    }
+
+    // The ids "Reset shown" touches: what the active filter outlines (game UI only when ShouldOutlineGameUi, mod
+    // windows only when ShouldOutlineStellar AND the per-plugin filter matches), hidden included.
+    private List<string> FilteredResetIds()
+    {
         var ids = new List<string>();
         if (ShouldOutlineGameUi && _nativeUi is not null)
             foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
-        if (ShouldOutlineStellar)
-        {
-            if (_windows is not null) foreach (var el in _windows.EditableElements()) if (WindowOwnerMatchesFilter(el.Id)) ids.Add(el.Id);
-        }
-        foreach (var id in ids) ResetWindow(id);
-        _log.Info($"[LayoutEditor] reset filtered {ids.Count} elements to defaults");
+        if (ShouldOutlineStellar && _windows is not null)
+            foreach (var el in _windows.EditableElements()) if (WindowOwnerMatchesFilter(el.Id)) ids.Add(el.Id);
+        return ids;
     }
 }

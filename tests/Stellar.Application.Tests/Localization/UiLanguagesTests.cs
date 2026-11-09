@@ -38,13 +38,13 @@ public sealed class UiLanguagesTests
         var en = Values(Path.Combine(langDir, "en.json"));
         var ko = Values(Path.Combine(langDir, "ko.json"));
         var same = en.Keys.Where(k => en[k] == ko[k]).OrderBy(k => k, System.StringComparer.Ordinal).ToArray();
-        Assert.Equal(new[] { "layout.px", "perf.hz", "perf.ramp.hz" }, same);
+        Assert.Equal(new[] { "launcher.version", "layout.px", "layout.slots.hint", "perf.hz", "perf.ramp.hz" }, same);   // launcher.version = "v{0}"; layout.slots.hint = "{0} / {1}"
     }
 
     // Korean is the 2.21.0 feature; the exact current-version pin follows the latest release.
     [Fact]
     public void Framework_version_is_2_21_0()
-        => Assert.Equal("2.29.1", Stellar.Abstractions.Domain.FrameworkVersion.Value);
+        => Assert.Equal("2.30.0", Stellar.Abstractions.Domain.FrameworkVersion.Value);
 
     [Theory]
     [MemberData(nameof(AllCodes))]

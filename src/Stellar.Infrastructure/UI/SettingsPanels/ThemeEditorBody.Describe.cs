@@ -7,174 +7,37 @@ using Stellar.Application.Services;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// uGUI (declarative) form of the custom-theme colour editor — sibling to the IMGUI <c>Draw</c> path,
-/// wired to the SAME state + services. Built once; visibility/value all flow through the framework's
-/// poll-diff (Conditional/List/Func), so the IMGUI count-stability deferral hack (Layout-vs-Repaint:
-/// <c>_appliedFilter</c>/<c>_pendingOwnerToggle</c>/<c>_pendingRemoveKey</c>) is NOT needed here —
-/// retained uGUI just SetActives rows (spec refactor 9c). The slot rows are an index-based bounded List
-/// pulling <see cref="IThemeOverrides.Slots"/> live, so slots registered AFTER the window was built still
-/// appear (up to <see cref="MaxSlots"/>). One shared HSV ColorPicker is bound to the expanded slot.
+/// Index-based live accessors + immediate handlers of the custom-theme colour editor, shared by the house-style view
+/// (<c>ThemeEditorBody.Colours.cs</c>, the "Edit colours" child window). The slot rows pull
+/// <see cref="IThemeOverrides.Slots"/> live (no cap — the lists are virtual), so slots registered AFTER the window
+/// was built still appear. Retained uGUI applies at once, so none of the old IMGUI Layout-vs-Repaint deferral is needed.
 /// </summary>
 internal sealed partial class ThemeEditorBody
 {
-    private const int MaxNames = 12;   // bounded custom-theme name buttons
-    private const int MaxSlots = 64;   // bounded slot rows (system + plugin colours)
+    // Pooled rows of the two VIRTUAL colour lists (Other colours, Add-override picker). There is no cap on the slot
+    // count: the old 64-row eager pools (and a 64 cap in SlotRowCount) silently dropped every colour past the 64th
+    // registered one. The pool only has to cover the fixed viewports (166 / 132 px at a 28 px pitch) + margin.
+    private const int PoolRows = 9;
+
+    /// <summary>The framework slots the editor shows in its own "Base" and "Status" panels (in that order); every other
+    /// slot goes to "Other colours".</summary>
+    internal static readonly string[] BaseKeys =
+        { "Theme.MenuBackground", "Theme.MenuText", "Theme.MenuMuted", "Theme.MenuAccent", "Theme.MenuBorder" };
+    internal static readonly string[] StatusKeys = { "Theme.Success", "Theme.Danger", "Theme.Caution" };
 
     /// <summary>Per-frame tick from the uGUI hub (Host TickOverlayServices). Coalesces ColorPicker-drag
     /// edits to a single persist+rebake on mouse-release — the uGUI analog of the IMGUI per-Draw flush.</summary>
     public void TickUgui() => FlushEditsOnRelease();
 
-    public HudElement Describe()
-    {
-        var nameEntry = new RowElement(new HudElement[]
-        {
-            new TextElement(() => _nameMode == NameMode.New ? _text.T("themes.newTheme") : _text.T("themes.renameLabel")),
-            // OnChange syncs the buffer per-keystroke so clicking OK (mouse, no Enter) validates the typed
-            // text — without it, Submit only fired on Enter and a mouse-OK saw an empty buffer ("must be
-            // non-empty" on a clearly-typed name).
-            new InputElement(() => _nameBuffer, s => _nameBuffer = s ?? "", 160f, OnChange: s => _nameBuffer = s ?? ""),
-            new ButtonElement(() => _text.T("common.ok"), TryCommitName),
-            new ButtonElement(() => _text.T("common.cancel"), CancelNameMode),
-        });
+    // ---- index-based live accessors (slot set may grow after build; pull live) ----
 
-        return new ColumnElement(new HudElement[]
-        {
-            new TextElement(() => _text.T("themes.customThemes"), Emphasis: true),
-            new ConditionalElement(() => _nameMode == NameMode.None, BuildSelector(), nameEntry),
-            new ConditionalElement(() => _nameError != null, new TextElement(() => _nameError ?? "", () => _theme.Colors.Warning)),
-            new ConditionalElement(() => _namedTheme.ActiveCustomName != null && _nameMode == NameMode.None, BuildToolbar()),
-            new ConditionalElement(() => _namedTheme.ActiveCustomName != null, BuildEditorActive(), BuildReadOnly()),
-        });
-    }
-
-    private HudElement BuildSelector()
-    {
-        var nameSlots = new HudElement[MaxNames];
-        for (var i = 0; i < MaxNames; i++)
-        {
-            var idx = i;
-            nameSlots[i] = new ButtonElement(() => NameAt(idx), () => SelectCustomAt(idx),
-                Active: () => idx < _store.Names.Count && _namedTheme.ActiveCustomName == _store.Names[idx]);
-        }
-        return new ColumnElement(new HudElement[]
-        {
-            new ListElement(() => System.Math.Min(_store.Names.Count, MaxNames), nameSlots),
-            new ButtonElement(() => _text.T("themes.new"), () => EnterNameMode(NameMode.New, "")),
-            new ConditionalElement(() => _store.Names.Count == 0,
-                new TextElement(() => _text.T("themes.noCustom"), () => _theme.Colors.TextMuted)),
-        });
-    }
-
-    private HudElement BuildToolbar()
-        => new RowElement(new HudElement[]
-        {
-            new ButtonElement(() => _text.T("themes.duplicate"), () => EnterNameMode(NameMode.New, (_namedTheme.ActiveCustomName ?? "") + "_copy")),
-            new ButtonElement(() => _text.T("themes.rename"), BeginRename),
-            new ButtonElement(() => _confirmDelete ? _text.T("common.confirm") : _text.T("common.delete"), DeleteUgui),
-        });
-
-    private HudElement BuildReadOnly()
-        => new ColumnElement(new HudElement[]
-        {
-            new TextElement(() => _text.T("themes.presetReadonly")),
-            new ButtonElement(() => _text.T("themes.duplicateToCustomise"), () => EnterNameMode(NameMode.New, _namedTheme.Active + "_custom")),
-        });
-
-    // No fixed-height Scroll wrapper: a fixed Scroll reserved 320 px even for a short override list, leaving
-    // a big empty grey band at the window bottom. The list flows directly so the window content-sizes to its
-    // actual height (the whole window scrolls via the game-window chrome if it ever exceeds the screen).
-    private HudElement BuildEditorActive()
-        => new ColumnElement(new HudElement[]
-        {
-            BuildOverrideList(),
-            new ConditionalElement(() => _expandedSlotKey != null, BuildSharedPicker()),
-            BuildAddSection(),
-        });
-
-    private HudElement BuildOverrideList()
-    {
-        var slots = new HudElement[MaxSlots];
-        for (var i = 0; i < MaxSlots; i++)
-        {
-            var idx = i;
-            var row = new RowElement(new HudElement[]
-            {
-                new SwatchElement(() => ColorAt(idx), 15f),
-                new TextElement(() => LabelAt(idx)),
-                new SpacerElement(),
-                new TextElement(() => HexAt(idx), () => _theme.Colors.TextMuted),
-                new ButtonElement(() => _expandedSlotKey == KeyAt(idx) && KeyAt(idx).Length > 0 ? "▾" : _text.T("common.edit"), () => ToggleExpandAt(idx)),
-                new ButtonElement(() => IsSystemAt(idx) ? _text.T("common.reset") : _text.T("common.remove"), () => RemoveAt(idx), Enabled: () => HasOverrideAt(idx)),
-            });
-            slots[i] = new ConditionalElement(() => ShowInMainList(idx), row);
-        }
-        return new ListElement(() => SlotRowCount(), slots);
-    }
-
-    private HudElement BuildAddSection()
-    {
-        var pickerSlots = new HudElement[MaxSlots];
-        for (var i = 0; i < MaxSlots; i++)
-        {
-            var idx = i;
-            var row = new RowElement(new HudElement[]
-            {
-                new ToggleElement(() => "", () => _checkedSlots.Contains(KeyAt(idx)), on => SetCheckedAt(idx, on)),
-                new SwatchElement(() => ColorAt(idx), 15f),
-                new TextElement(() => LabelAt(idx)),
-                new SpacerElement(),
-                new TextElement(() => HexAt(idx), () => _theme.Colors.TextMuted),
-            });
-            pickerSlots[i] = new ConditionalElement(() => ShowInPicker(idx), row);
-        }
-        var body = new ColumnElement(new HudElement[]
-        {
-            new RowElement(new HudElement[]
-            {
-                new TextElement(() => _text.T("themes.filter")),
-                // Live as-you-type (OnChange) so the list reflows per keystroke — matches the IMGUI filter feel.
-                new InputElement(() => _pickerFilter, s => _pickerFilter = s ?? "", 180f, OnChange: s => _pickerFilter = s ?? ""),
-            }),
-            new ListElement(() => SlotRowCount(), pickerSlots),
-            new RowElement(new HudElement[]
-            {
-                new ButtonElement(() => _checkedSlots.Count > 0 ? _text.TFormat("themes.addSelectedN", _checkedSlots.Count) : _text.T("themes.addSelected"),
-                    CommitSelected, Enabled: () => _checkedSlots.Count > 0),
-                new ButtonElement(() => _text.T("common.cancel"), TogglePicker),
-            }),
-        });
-        return new ColumnElement(new HudElement[]
-        {
-            new ButtonElement(() => _pickerOpen ? _text.T("themes.addOverride.open") : _text.T("themes.addOverride.closed"), TogglePicker),
-            new ConditionalElement(() => _pickerOpen, body),
-        });
-    }
-
-    // One shared HSV picker, bound to whatever slot is currently expanded (the binding re-syncs the SV
-    // square + markers when _expandedSlotKey changes — see WindowBuilder.ColorPickerBinding).
-    private HudElement BuildSharedPicker()
-        => new ColorPickerElement(
-            () => _expandedSlotKey is { } k ? _overrides.Resolve(k) : new ColorRgba(0f, 0f, 0f, 1f),
-            c =>
-            {
-                if (_expandedSlotKey is not { } k) return;
-                _overrides.SetOverride(k, c); _hexBuffer = ToHex(c); _editDirty = true;
-                // Live recolour for chrome (Theme.*) slots so the window/HUD update in real time as you drag
-                // (the in-place re-skin makes this flicker-free). The swatch/preview already track live via the
-                // poll; persistence is still coalesced to mouse-release (FlushEditsOnRelease). Plugin colours
-                // don't touch the chrome, so they skip the rebake.
-                if (k.StartsWith(SystemOwner, System.StringComparison.Ordinal)) _namedTheme.NotifyColorsChanged();
-            });
-
-    // ---- index-based live accessors (slot set may grow after build; pull live, bounded by SlotRowCount) ----
-
-    private int SlotRowCount() => System.Math.Min(_overrides.SlotCount, MaxSlots);
+    private int SlotRowCount() => _overrides.SlotCount;
 
     // Cache the slot list — IThemeOverrides.Slots allocates a fresh List + a record per slot on every call,
     // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh when the registered count
     // changes (late plugin registration) OR Revision changes (a Relabel — e.g. a language switch — never
     // changes the count, so SlotCount alone would miss it), so the steady-state poll allocates nothing here.
-    private System.Collections.Generic.IReadOnlyList<ColorSlotInfo>? _slotCache;
+    private IReadOnlyList<ColorSlotInfo>? _slotCache;
     private int _slotCacheCount = -1;
     private int _slotCacheRevision = -1;
     private ColorSlotInfo? SlotAt(int i)
@@ -195,16 +58,19 @@ internal sealed partial class ThemeEditorBody
     }
     private string KeyAt(int i) => SlotAt(i)?.Key ?? "";
     private string LabelAt(int i) => SlotAt(i) is { } s ? $"{OwnerDisplay(s.Owner)} · {s.Label}" : "";
-    private string HexAt(int i) => KeyAt(i) is { Length: > 0 } k ? ToHex(_overrides.Resolve(k)) : "";
-    private ColorRgba ColorAt(int i) => KeyAt(i) is { Length: > 0 } k ? _overrides.Resolve(k) : new ColorRgba(0f, 0f, 0f, 0f);
-    private bool IsSystemAt(int i) => SlotAt(i)?.Owner == SystemOwner;
-    private bool HasOverrideAt(int i) => KeyAt(i) is { Length: > 0 } k && _overrides.HasOverride(k);
+    private string HexOf(string key) => key.Length > 0 ? ToHex(_overrides.Resolve(key)) : "";
+    private ColorRgba ColorOf(string key) => key.Length > 0 ? _overrides.Resolve(key) : new ColorRgba(0f, 0f, 0f, 0f);
+    private bool HasOverride(string key) => key.Length > 0 && _overrides.HasOverride(key);
 
-    // Main list: system slots always show (Reset-to-default); plugin slots only when overridden (sparse).
-    private bool ShowInMainList(int i) => SlotAt(i) is { } s && (s.Owner == SystemOwner || _overrides.HasOverride(s.Key));
+    // "Other colours": the remaining framework slots always (Reset-to-default), plugin slots only when overridden (sparse).
+    private bool ShowInOtherList(int i)
+        => SlotAt(i) is { } s && !IsBaseOrStatus(s.Key) && (s.Owner == SystemOwner || _overrides.HasOverride(s.Key));
     // Picker: addable plugin slots (not system, not already overridden) matching the live filter.
     private bool ShowInPicker(int i)
         => SlotAt(i) is { } s && s.Owner != SystemOwner && !_overrides.HasOverride(s.Key) && MatchesPickerFilter(s);
+
+    private static bool IsBaseOrStatus(string key)
+        => System.Array.IndexOf(BaseKeys, key) >= 0 || System.Array.IndexOf(StatusKeys, key) >= 0;
 
     private bool MatchesPickerFilter(ColorSlotInfo s)
     {
@@ -214,54 +80,27 @@ internal sealed partial class ThemeEditorBody
             || s.Owner.IndexOf(f, System.StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
+    /// <summary>How many colours the active custom theme overrides (the child header's "N colours changed").</summary>
+    private int ChangedCount()
+    {
+        var n = 0;
+        for (var i = 0; i < SlotRowCount(); i++) if (SlotAt(i) is { } s && _overrides.HasOverride(s.Key)) n++;
+        return n;
+    }
+
     // ---- uGUI immediate handlers (no Layout deferral — retained uGUI applies at once) ----
 
-    private string NameAt(int i) => i < _store.Names.Count ? _store.Names[i] : "";
-
-    private void SelectCustomAt(int i)
+    private void ToggleExpandKey(string key)
     {
-        if (i >= _store.Names.Count) return;
-        var name = _store.Names[i];
-        _namedTheme.SetActiveCustom(name, _store.BasePresetOf(name));
-        _confirmDelete = false;
-        _expandedSlotKey = null;
+        if (key.Length == 0) return;
+        ToggleExpand(key, _overrides.Resolve(key));
     }
 
-    private void BeginRename()
+    private void ResetKey(string key)
     {
-        var a = _namedTheme.ActiveCustomName;
-        if (a == null) return;
-        EnterNameMode(NameMode.Rename, a);
-        _renameTarget = a;
-    }
-
-    private void DeleteUgui()
-    {
-        var active = _namedTheme.ActiveCustomName;
-        if (active == null) return;
-        if (_confirmDelete)
-        {
-            var b = _store.BasePresetOf(active);
-            _store.Delete(active);
-            _namedTheme.SetActive(b);
-            _confirmDelete = false;
-        }
-        else _confirmDelete = true;
-    }
-
-    private void ToggleExpandAt(int i)
-    {
-        var k = KeyAt(i);
-        if (k.Length == 0) return;
-        ToggleExpand(k, _overrides.Resolve(k));
-    }
-
-    private void RemoveAt(int i)
-    {
-        var k = KeyAt(i);
-        if (k.Length == 0 || !_overrides.HasOverride(k)) return;
-        _overrides.ClearOverride(k);
-        if (_expandedSlotKey == k) _expandedSlotKey = null;
+        if (key.Length == 0 || !_overrides.HasOverride(key)) return;
+        _overrides.ClearOverride(key);
+        if (_expandedSlotKey == key) _expandedSlotKey = null;
         _overrides.Flush();
         _namedTheme.NotifyColorsChanged();
     }

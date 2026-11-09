@@ -3,68 +3,119 @@ using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using Stellar.Application.Services;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Settings → Performance panel. Global rate + frame-cap controls, wired to
-/// <see cref="PerfPrefs"/>. A per-plugin override section (implemented in the
-/// <c>PerformancePanel.PluginRates.cs</c> partial) lets users assign individual
-/// update rates or enable self-rate ramps per plugin.
+/// Settings → Performance: a top row of two panels — "Stellar update rate" (stepped slider over <see cref="RateStops"/>,
+/// value, tick labels, a description per range) and "Frame rate" (uncap switch + a status / caution line) — over the
+/// full-width "Per-plugin rate" list (the <c>PerformancePanel.PluginRates.cs</c> partial). Wired to
+/// <see cref="PerfPrefs"/>.
 /// </summary>
 internal sealed partial class PerformancePanel
 {
     // Meaningful slider stops for the global rate. Index 0..N-1 map to these Hz.
     private static readonly int[] RateStops = { 10, 15, PerfControls.DefaultUpdateRateHz, 60, 120, PerfControls.MaxUpdateRateHz };
+    private const float ValueWidth = 86f;
+    private const float TickFontSize = 11f;
+    private const float RangeDescHeight = 51f;   // three 14 px lines: the longest range description, so nothing moves
 
     private readonly PerfPrefs _prefs;
-    private readonly ITheme _theme;
     private readonly IPluginInventory _inventory;
-    private readonly Func<string, int> _effectiveRateFor;
     private readonly ILocalization _loc;
+    private SettingsKit _k = null!;
 
     /// <summary>Display-only plugin names (the plugin's own localized launcher-tile title). Set by the wiring as an
     /// init property, not a ctor arg (keeps the constructor under the dependency cap). Null → internal names.
     /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
     internal IPluginDisplayNames? DisplayNames { get; init; }
 
+    // theme and effectiveRateFor are no longer read (the house kit carries the live colours; the ramp read-out is
+    // gone with the per-plugin slider) — the parameters stay so the wiring is unchanged.
     public PerformancePanel(PerfPrefs prefs, ITheme theme, IPluginInventory inventory, Func<string, int> effectiveRateFor, ILocalization loc)
     {
         _prefs = prefs;
-        _theme = theme;
         _inventory = inventory;
-        _effectiveRateFor = effectiveRateFor;
         _loc = loc;
     }
 
-    public HudElement Describe()
+    // Both the top row (its two panels end in a VerticalFill, so they stretch to equal height with their content at the
+    // top) and the per-plugin list are flexible: the tab's slack is shared, and nothing overflows at a larger font scale.
+    public HudElement Describe(SettingsKit kit)
     {
-        var pluginSection = BuildPluginSection();
+        _k = kit;
         return new ColumnElement(new HudElement[]
         {
-            new TextElement(() => _loc.T("perf.updateRate"), Emphasis: true),
-            new TextElement(() => _loc.T("perf.updateRate.desc"), () => _theme.Colors.TextMuted),
             new RowElement(new HudElement[]
             {
-                new SliderElement(RateToSlider, SliderToRate, 0f, RateStops.Length - 1),
-                new TextElement(RateValueLabel, Width: 96f),
+                new CellElement(BuildRatePanel(), Width: LayoutPanel.ColumnWidth),
+                new CellElement(BuildFramePanel(), Width: LayoutPanel.ColumnWidth),
             }, Gap: 8f),
-            new TextElement(RateDescription, () => _theme.Colors.TextMuted),
+            BuildPluginSection(),
+        }, Gap: 8f);
+    }
 
-            new SeparatorElement(),
+    /// <summary>Header status: "30 Hz · frame cap on".</summary>
+    public string Status(SettingsKit k)
+        => _loc.TFormat("perf.status", RateValueLabel(), _prefs.Uncap ? k.Bad(_loc.T("perf.cap.off")) : _loc.T("perf.cap.on"));
 
-            new RowElement(new HudElement[]
-            {
-                new ToggleElement(() => "", () => _prefs.Uncap, v => _prefs.Uncap = v),
-                new TextElement(() => _loc.T("perf.uncap")),
-            }, Gap: 6f),
-            new TextElement(() => _loc.T("perf.uncap.desc"), () => _theme.Colors.TextMuted),
+    private HudElement BuildRatePanel()
+    {
+        var s = _k.S;
+        return _k.Panel("perf.rate", () => _prefs.UpdateRateHz == PerfControls.DefaultUpdateRateHz ? _loc.T("perf.recommended") : "",
+            _k.Description("perf.rate.desc"),
+            SettingsKit.Row(
+                new CellElement(SettingsKit.Slider(RateToSlider, SliderToRate, 0f, RateStops.Length - 1), Weight: 1f),
+                new TextElement(RateValueLabel, Color: () => s.Text(), Width: ValueWidth, NoWrap: true) { Bold = true },
+                _k.Help("perf.rate", "perf.rate", "help.perf.rate", "tab.performance")),
+            TickRow(),
+            StellarStyle.MinHeight(RangeDescHeight, s.MutedLine(RateDescription)),
+            StellarStyle.VerticalFill());
+    }
 
-            new SeparatorElement(),
-            new TextElement(() => _loc.T("perf.perPlugin"), Emphasis: true),
-            new TextElement(() => _loc.T("perf.perPlugin.desc"), () => _theme.Colors.TextMuted),
-            pluginSection,
-        });
+    private HudElement BuildFramePanel()
+    {
+        var s = _k.S;
+        return _k.Panel("perf.frame", null,
+            SettingsKit.Row(_k.Label(_k.T("perf.uncap.label")),
+                SettingsKit.Toggle(() => _prefs.Uncap, SetUncap),
+                _k.Help("perf.uncap", "perf.uncap.label", "help.perf.uncap", "tab.performance")),
+            StellarStyle.MinHeight(RangeDescHeight, new ConditionalElement(() => _prefs.Uncap,
+                new TextElement(_k.T("perf.uncap.warn"), Color: () => s.Readable(s.Caution(), s.Panel())),
+                s.MutedLine(_k.T("perf.uncap.capped")))),
+            StellarStyle.VerticalFill());
+    }
+
+    // The stop labels under the slider, spread edge to edge (flexible spacers between them = space-between), the current
+    // one in the accent. All bold-11 (only the styled path honours a font size; bold can't toggle live, so the current
+    // one differs by colour only).
+    private HudElement TickRow()
+    {
+        var s = _k.S;
+        var items = new System.Collections.Generic.List<HudElement>();
+        for (var i = 0; i < RateStops.Length; i++)
+        {
+            var idx = i;
+            if (i > 0) items.Add(new SpacerElement());
+            items.Add(new TextElement(() => TickLabel(idx),
+                Color: () => (int)RateToSlider() == idx ? s.Readable(s.Accent(), s.Panel()) : s.Muted(),
+                NoWrap: true, FontSize: (int)TickFontSize) { Bold = true });
+        }
+        return new RowElement(new HudElement[]
+        {
+            new CellElement(new RowElement(items, Gap: 0.01f), Weight: 1f),
+            // Same width as [value, "?"] + their gaps in the slider row, so the labels span the slider track only.
+            new SpacerElement(ValueWidth + StellarHelpPopover.ButtonSize + 16f, 1f),
+        }, Gap: 8f);
+    }
+
+    private string TickLabel(int i) => RateStops[i] >= PerfControls.MaxUpdateRateHz ? _loc.T("perf.tick.max") : RateStops[i].ToString();
+
+    private void SetUncap(bool on)
+    {
+        _prefs.Uncap = on;
+        _k.Done(_loc.T(on ? "perf.fb.uncapped" : "perf.fb.capped"));
     }
 
     // --- slider <-> rate mapping (snap to the nearest meaningful stop) ---
@@ -99,9 +150,9 @@ internal sealed partial class PerformancePanel
     private string RateDescription()
     {
         var hz = _prefs.UpdateRateHz;
-        if (hz <= 15) return _loc.T("perf.rateDesc.low");
-        if (hz >= PerfControls.MaxUpdateRateHz) return _loc.T("perf.rateDesc.max");
-        if (hz <= PerfControls.DefaultUpdateRateHz) return _loc.T("perf.rateDesc.default");
-        return _loc.T("perf.rateDesc.high");
+        if (hz <= 15) return _loc.T("perf.range.low");
+        if (hz >= PerfControls.MaxUpdateRateHz) return _loc.T("perf.range.max");
+        if (hz <= PerfControls.DefaultUpdateRateHz) return _loc.T("perf.range.default");
+        return _loc.T("perf.range.high");
     }
 }

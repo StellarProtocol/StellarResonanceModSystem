@@ -64,6 +64,10 @@ internal sealed partial class ClientLanguageLatch : IClientLanguageProbe, IClien
         }
     }
 
+    /// <summary>True once a game signal has latched the client language. Unlike <see cref="CurrentLanguageIndex"/>
+    /// it does not count as a provisional read, so a per-tick "wait until known" poll stays out of the diagnostics.</summary>
+    internal bool IsKnown => _index != Unknown;
+
     /// <summary>
     /// True when the KNOWN client language is the design language (Simplified/Traditional Chinese) — the language
     /// the table authors wrote <c>NameDesign</c> in. False while unknown: never decided from the uninitialised 0.

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Stellar.Abstractions.Domain;
 using UnityEngine;
 using UnityEngine.UI;
@@ -11,7 +12,7 @@ internal sealed partial class WindowBuilder
 {
     // Poll-diffed backdrop for an AccentRowElement: a faint share-fraction wash (width via anchorMax.x) + a
     // role-coloured left stripe. Idle rows (unchanged share/colour) write nothing.
-    internal sealed class AccentRowBinding
+    internal sealed class AccentRowBinding : GatedBinding
     {
         public RectTransform ShareRect = null!;
         public Image ShareImg = null!;
@@ -38,14 +39,14 @@ internal sealed partial class WindowBuilder
 
     // Per-apply poll for a tile's pin-star state (texture/colour). The hover VISUAL (icon grow + brighten) is
     // driven separately by the renderer's interaction ticker; this only refreshes externally-changed state.
-    internal sealed class HoverBinding { public Action? Poll; }
+    internal sealed class HoverBinding : GatedBinding { public Action? Poll; }
 
     // Re-syncs a text field from its Get() when the backing value changes EXTERNALLY (e.g. a chat composer
     // cleared after send, or DataInspector's ID set by a recent-lookup restore). Diffs on Get() (not the
     // field text), so it never fights live typing: while the user types, Get() either tracks the field (via
     // OnChange) or stays unchanged (no OnChange) — both leave Get()==Last so no SetText fires. The field.Text
     // guard also avoids a redundant SetText (cursor jump) when OnChange already updated the field.
-    internal sealed class FieldBinding
+    internal sealed class FieldBinding : GatedBinding
     {
         public UGuiTextInput Field = null!;
         public Func<string> Get = null!;
@@ -106,10 +107,13 @@ internal sealed partial class WindowBuilder
     // → a narrow bubble; a long child → the bubble fixes at the cap and its wrapping Text flows to >1 line (the
     // vertical ContentSizeFitter then grows the height). Diffs on the resolved width so an unchanged bubble writes
     // nothing. Setting preferredWidth marks the layout dirty, so Unity rebuilds it on the next render frame.
-    internal sealed class BubbleBinding
+    internal sealed class BubbleBinding : GatedBinding
     {
         public LayoutElement Le = null!;       // on the bubble GO (the width driver)
         public RectTransform Child = null!;    // the single content child (measured)
+        // Time-sliced build (BuildOwnedChild under a prebuild slicer): the child is built by a LATER work item, so it is
+        // found under this host on the first apply after it exists (ResolveChild). Null = Child was set at build.
+        public Transform? PendingHost;
         public RectTransform? Parent;          // bubble's parent (its width = the cap when MaxWidth == 0)
         public float MaxWidth;                  // 0 = clamp to Parent's current width
         public float PadX;                      // total horizontal padding (left + right)
@@ -143,9 +147,26 @@ internal sealed partial class WindowBuilder
         /// re-skin): re-measure its natural width on its next apply.</summary>
         internal void MarkDirty() => _dirty = true;
 
+        // Background measure budget, shared by all bubbles of ONE window apply (WindowToken.ApplyValues opens it). A
+        // bubble in a branch warming off screen (GatedBinding.InBackground) measures only while the budget lasts and stays
+        // dirty otherwise: a tab's first warm measured all ~50 of its bubbles in one apply (a 53.7 ms apply measured
+        // 11-09). Visible bubbles are never deferred. Main thread only, like every apply.
+        private const double BackgroundBudgetMs = 3.0;
+        private static long _bgDeadline;
+        internal static int BackgroundPending;   // background bubbles still owing a measure after the current apply
+        // The WHOLE window is warming off screen this apply (WindowRenderer.BackgroundWarm.cs): every bubble is background.
+        // A launcher re-warm after world entry otherwise measured ~42 newly shown tile bubbles in one ~100 ms apply.
+        internal static bool WindowInBackground;
+
+        internal static void BeginApplyBudget()
+        {
+            _bgDeadline = Stopwatch.GetTimestamp() + (long)(BackgroundBudgetMs * Stopwatch.Frequency / 1000.0);
+            BackgroundPending = 0;
+        }
+
         public void Apply()
         {
-            if (Le == null || Child == null) return;
+            if (Le == null || (Child == null && !ResolveChild())) return;
             // Fill colour is polled BEFORE the width-diff early-return below, so a live re-tint lands even on a
             // tick where the hugged width is unchanged (the common case for a fixed-width segmented tab).
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
@@ -153,9 +174,9 @@ internal sealed partial class WindowBuilder
             // Inactive (a hidden branch, a parked/over-budget list slot, a hidden window) → keep the last pinned width,
             // never collapse; becoming active again re-measures (its layout may be stale and its content may have changed
             // while every value binding inside it skipped the inactive leaves).
-            if (!Child.gameObject.activeInHierarchy) { _wasActive = false; return; }
+            if (!Child!.gameObject.activeInHierarchy) { _wasActive = false; return; }   // (set: checked/resolved above)
             if (!_wasActive) { _wasActive = true; _dirty = true; }
-            if (_dirty || _settle > 0) Measure();
+            if (_dirty || _settle > 0) MeasureOrDefer();
             if (_natural <= 0f) return;   // nothing measurable yet → keep the last pinned width, never collapse
             // Cap: an explicit MaxWidth, else the parent's laid-out width. Before the parent is sized (first seed)
             // fall back to the natural width — the bubble hugs this pass and corrects once the parent lays out. The cap
@@ -168,6 +189,29 @@ internal sealed partial class WindowBuilder
             Le.minWidth = Le.preferredWidth = w; Le.flexibleWidth = 0f;
             _last = w;
             Owner?.MarkDirty();   // a nested bubble resized → the enclosing bubble's content width changed
+        }
+
+        private void MeasureOrDefer()
+        {
+            var bg = WindowInBackground || InBackground(this);
+            if (!bg || Stopwatch.GetTimestamp() < _bgDeadline) Measure();
+            if (bg && (_dirty || _settle > 0)) BackgroundPending++;   // the prebuild reveal waits for these (.PrebuildStage.cs)
+        }
+
+        // The content child of a time-sliced bubble: the one child of its host that isn't the outline ring. The ring was
+        // added before the child existed, so it is moved back on top (it draws over the content, as on the inline path).
+        private bool ResolveChild()
+        {
+            if (PendingHost == null) return false;
+            for (var i = 0; i < PendingHost.childCount; i++)
+            {
+                var c = PendingHost.GetChild(i);
+                if (Outline == null || c != Outline.transform) { Child = c.GetComponent<RectTransform>(); break; }
+            }
+            if (Child == null) return false;   // not built yet
+            if (Outline != null) Outline.transform.SetAsLastSibling();
+            PendingHost = null;
+            return true;
         }
 
         // Re-measure the content's natural width. ONLY on a content change (MarkDirty), an activation, and the
@@ -217,7 +261,7 @@ internal sealed partial class WindowBuilder
     // redundant canvas rebatch) every Apply for every idle row. HoverState is pushed by the ticker hover hook;
     // Selected() is polled. ForceRepaint() (resets the diff) is used by the hover hook, the initial paint, and
     // the theme-reskin (which recomputes Rest/Hover/On).
-    internal sealed class SelectableBinding
+    internal sealed class SelectableBinding : GatedBinding
     {
         public Image Bg = null!;
         public Image? Bar;            // optional "active tab" accent underline (SelectableElement.SelectedBar); null = none

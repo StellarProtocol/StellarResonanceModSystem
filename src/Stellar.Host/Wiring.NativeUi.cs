@@ -21,6 +21,7 @@ public sealed partial class BootstrapPlugin
         _perfPrefs = new PerfPrefs(_pluginConfigService!.GetSection("perf"));
         _perfPrefs.OnGlobalRateChanged = hz => _scheduler?.SetGlobalRate(hz);
         _perfPrefs.OnPluginConfigChanged = (guid, rate, allow, sustained) => _scheduler?.ConfigurePlugin(guid, rate, allow, sustained);
+        BuildDeveloperMode();   // hidden developer mode (Wiring.Developer.cs) — gates the Developer tab + Shift+End
 
         // Native UI: adapter + service. Allowlist projected from Infrastructure
         // to Application's descriptor type.

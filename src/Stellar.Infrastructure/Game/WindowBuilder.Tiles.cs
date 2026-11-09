@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 using UnityEngine.Events;
@@ -27,6 +28,10 @@ internal sealed partial class WindowBuilder
     // builder is sandbox-pure so it can't reference it). Null in the sandbox → those glyphs render blank.
     internal Func<string, byte[]?>? IconResolver;
 
+    // "Draw these bytes 1:1" test (LauncherIcons.IsPixelExact — a pre-drawn glyph picked for its exact on-screen size).
+    // Set by the renderer like IconResolver; null (sandbox) = every icon takes the mipmapped path.
+    internal Func<byte[], bool>? PixelExact;
+
     // Smooth icon load — high-res PNGs downscaled to 16–30px alias/pixelate WITHOUT mipmaps + trilinear (the
     // exact lesson from the IMGUI PluginIconCache). mipChain + Trilinear + Apply(updateMipmaps) = smooth.
     //
@@ -41,15 +46,18 @@ internal sealed partial class WindowBuilder
     {
         if (png is not { Length: > 0 }) return null;
         if (token.AtlasCache.TryGetValue(png, out var cached)) return cached;
-        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: true)
+        // A pixel-hinted glyph picked for its exact on-screen size is drawn 1:1: no mip chain (nothing to blend toward)
+        // and Bilinear, which at 1:1 on whole pixels samples each texel as-is. Everything else keeps mips + Trilinear.
+        var exact = PixelExact?.Invoke(png) == true;
+        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: !exact)
         {
-            filterMode = FilterMode.Trilinear,
+            filterMode = exact ? FilterMode.Bilinear : FilterMode.Trilinear,
             wrapMode = TextureWrapMode.Clamp,
             hideFlags = HideFlags.HideAndDontSave,
         };
         try { if (!ImageConversion.LoadImage(tex, png)) { UnityEngine.Object.Destroy(tex); return null; } }
         catch { UnityEngine.Object.Destroy(tex); return null; }
-        tex.Apply(updateMipmaps: true, makeNoLongerReadable: false);
+        tex.Apply(updateMipmaps: !exact, makeNoLongerReadable: false);
         token.IconTextures.Add(tex);
         token.AtlasCache[png] = tex;
         return tex;
@@ -60,8 +68,39 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("Image", parent);
         UGuiPrimitives.SetPreferred(go, im.Width, im.Height);
         var raw = go.AddComponent<RawImage>(); raw.raycastTarget = false;
-        var tex = LoadIcon(im.Png(), token);
-        if (tex != null) raw.texture = tex;
+        if (im.Live)
+        {
+            // ImageElement.Live: the same poll-diffed IconBinding the launcher TileElement uses (byte[]-ref compare,
+            // decode deduped by LoadIcon) — a pooled slot's picture follows the item it currently shows.
+            var binding = new IconBinding { Raw = raw, Bytes = im.Png, Load = png => LoadIcon(png, token) };
+            binding.Apply();
+            token.Icons.Add(binding);
+        }
+        else
+        {
+            var tex = LoadIcon(im.Png(), token);
+            if (tex != null) raw.texture = tex;
+        }
+        if (im.Tint is { } tintFn) BindImageTint(raw, tintFn, token);
+    }
+
+    // ImageElement.Tint: poll-diffed RawImage.color (null = white = the picture's own colours). Rides the per-apply
+    // Hovers poll list like the pin star; skips hidden pool slots, and re-paints when one shows again (init reset).
+    private static void BindImageTint(RawImage raw, Func<ColorRgba?> tintFn, WindowToken token)
+    {
+        var init = false; var last = default(ColorRgba);
+        Apply();
+        token.Hovers.Add(new HoverBinding { Poll = Apply });
+
+        void Apply()
+        {
+            if (raw == null) return;
+            if (!raw.gameObject.activeInHierarchy) { init = false; return; }
+            var c = tintFn() ?? new ColorRgba(1f, 1f, 1f, 1f);
+            if (init && c.Equals(last)) return;
+            raw.color = new Color(c.R, c.G, c.B, c.A);
+            last = c; init = true;
+        }
     }
 
     // Atlas sub-sprite: a fixed-size RawImage whose uvRect selects one sub-region of a packed atlas PNG (the
@@ -155,7 +194,7 @@ internal sealed partial class WindowBuilder
         // the neighbouring tile.
         label.horizontalOverflow = HorizontalWrapMode.Overflow; label.verticalOverflow = VerticalWrapMode.Overflow;
         label.color = TileRest();
-        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w });   // non-null (hasLabel guards)
+        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w, ThaiTmp = ThaiTmpCapable });   // non-null (hasLabel guards); Thai → TMP twin
         // NOTE: deliberately NOT RegisterTextReskin (that forces alpha 1.0); the tile reskin closure in BuildTile
         // re-applies the dim rest tint + scaled size so the label keeps its 0.62 rest alpha after a theme change.
         return label;

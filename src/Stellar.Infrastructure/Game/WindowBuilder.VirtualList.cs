@@ -44,7 +44,7 @@ internal sealed partial class WindowBuilder
         var viewport = viewportGo.GetComponent<RectTransform>();
         sr.viewport = viewport; sr.content = crt;
         BuildScrollbar(sr, go, token);   // thin themed scrollbar (registers a reskin closure on token)
-        RegisterScrollView?.Invoke(crt);   // crt moves during scroll → ticker drops pixelPerfect while it's moving
+        RegisterScrollView?.Invoke(crt, sr);   // crt moves during scroll → ticker drops pixelPerfect while it's moving
         return (viewport, crt, sr);
     }
 
@@ -60,6 +60,8 @@ internal sealed partial class WindowBuilder
         if (v.VariableHeight) { BuildVariableList(v, parent, token); return; }
 
         var (viewport, content, scrollRect) = BuildScrollViewport(parent, v.Height, token);
+        if (v.FixedHeight && viewport.parent.GetComponent<LayoutElement>() is { } fixedLe)
+        { fixedLe.minHeight = v.Height; fixedLe.flexibleHeight = 0f; }   // VirtualListElement.FixedHeight
         content.anchorMin = new Vector2(0f, 1f); content.anchorMax = new Vector2(1f, 1f);
         content.pivot = new Vector2(0.5f, 1f); content.anchoredPosition = Vector2.zero;
 
@@ -72,7 +74,7 @@ internal sealed partial class WindowBuilder
             srt.pivot = new Vector2(0.5f, 1f);
             srt.sizeDelta = new Vector2(0f, v.RowHeight);
             UGuiPrimitives.AddLayout(slot, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(slot);
-            BuildElement(v.Pool[i], slot.transform, token);
+            BuildChild(v.Pool[i], slot.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
             slots[i] = srt;
         }
 
@@ -97,7 +99,7 @@ internal sealed partial class WindowBuilder
     // (VirtualListMath), pushes that to the plugin via OnWindow (so slot Funcs resolve snapshot[first+i] THIS
     // poll), sizes the content spacer to Count*RowHeight, and repositions + activates the K pooled slots over
     // the visible window. Returns true when the visible set changed. Runs BEFORE Conds/Texts (WindowToken.Apply).
-    internal sealed class VirtualListBinding : IVirtualListBinding
+    internal sealed class VirtualListBinding : GatedBinding, IVirtualListBinding
     {
         public ScrollRect Sr = null!;
         public RectTransform Content = null!;

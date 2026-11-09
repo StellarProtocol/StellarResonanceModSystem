@@ -138,7 +138,7 @@ internal sealed partial class WindowBuilder
     // rebuilds the cumulative offsets when the model changed, chooses a stable scroll position, then repositions +
     // activates the pooled slots over the visible window. Returns true only when Count changed (the content extent
     // moved) — offset-driven repositioning is absolute and needs no window-level layout rebuild.
-    internal sealed partial class VariableListBinding : IVirtualListBinding
+    internal sealed partial class VariableListBinding : GatedBinding, IVirtualListBinding
     {
         public ScrollRect Sr = null!;
         public RectTransform Content = null!;

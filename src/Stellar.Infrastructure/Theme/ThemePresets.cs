@@ -4,9 +4,10 @@ using Stellar.Abstractions.Domain;
 namespace Stellar.Infrastructure.Theme;
 
 /// <summary>
-/// Per-preset palette tables — 8 colours each, indexed in the order of
-/// <see cref="Stellar.Abstractions.Services.IThemeColors"/>: Accent, Gold,
-/// HpFill, MpFill, Stamina, TextPrimary, TextMuted, Warning.
+/// Per-preset palette tables, indexed in the order of
+/// <see cref="Stellar.Abstractions.Services.IThemeColors"/>: the 8 base colours (Accent, Gold,
+/// HpFill, MpFill, Stamina, TextPrimary, TextMuted, Warning), then the HUD facet (8..12), the
+/// menu facet (13..17) and the status facet (18..20). New tokens are only ever APPENDED.
 /// </summary>
 internal static class ThemePresets
 {
@@ -32,6 +33,18 @@ internal static class ThemePresets
     public const int MenuMuted      = 15;
     public const int MenuAccent     = 16;
     public const int MenuBorder     = 17;
+
+    // 2.30.0 — IThemeStatusColors, appended at the tail. The dark presets carry exactly the colours the house
+    // style hard-coded before (Stellar-Design-Language §3: #5FD38D / #FF4D4F / #FFCC73), so adopting them is a
+    // visual no-op there; Light darkens them so they keep contrast on its light panels.
+    public const int Success        = 18;
+    public const int Danger         = 19;
+    public const int Caution        = 20;
+
+    // The shared dark-theme status trio (Default / Dark / Crimson / Sakura).
+    private static readonly ColorRgba StatusSuccess = Rgb(0x5F, 0xD3, 0x8D);
+    private static readonly ColorRgba StatusDanger  = Rgb(0xFF, 0x4D, 0x4F);
+    private static readonly ColorRgba StatusCaution = Rgb(0xFF, 0xCC, 0x73);
 
     public static readonly IReadOnlyDictionary<ThemePreset, ColorRgba[]> Tables = new Dictionary<ThemePreset, ColorRgba[]>
     {
@@ -60,6 +73,8 @@ internal static class ThemePresets
             Rgb(0x7E, 0x8A, 0x8E),
             Rgb(0x5F, 0xB8, 0xC4),
             new(95f / 255f, 184f / 255f, 196f / 255f, 0.22f),
+            // 2.30.0 — status facet (Success / Danger / Caution)
+            StatusSuccess, StatusDanger, StatusCaution,
         },
         // Dark: cooler accent, slightly desaturated text.
         [ThemePreset.Dark] = new[]
@@ -84,6 +99,8 @@ internal static class ThemePresets
             Rgb(0x7A, 0x7A, 0x8A),
             Rgb(0x7F, 0xC8, 0xA9),
             new(127f / 255f, 200f / 255f, 169f / 255f, 0.30f),
+            // 2.30.0 — status facet
+            StatusSuccess, StatusDanger, StatusCaution,
         },
         // Light: light-accent theme for floating overlays — transparent over
         // the world like the others, just a blue accent (no light panels).
@@ -115,6 +132,10 @@ internal static class ThemePresets
             Rgb(0x88, 0x88, 0x88),
             Rgb(0x5A, 0x88, 0x70),
             new(90f / 255f, 136f / 255f, 112f / 255f, 0.45f),
+            // 2.30.0 — status facet, darkened for the light panels (the dark-theme trio washes out on #F5F5FF)
+            Rgb(0x1E, 0x8A, 0x4C),
+            Rgb(0xD1, 0x34, 0x38),
+            Rgb(0xA8, 0x6A, 0x00),
         },
         // Crimson: warm-accent variant.
         [ThemePreset.Crimson] = new[]
@@ -139,6 +160,36 @@ internal static class ThemePresets
             Rgb(0x8A, 0x6A, 0x70),
             Rgb(0xC8, 0x48, 0x60),
             new(220f / 255f, 70f / 255f, 90f / 255f, 0.12f),
+            // 2.30.0 — status facet
+            StatusSuccess, StatusDanger, StatusCaution,
+        },
+        // Sakura (2.30.0): rose-purple glass + pink accent — the approved "Midnight Rose" look as a built-in preset
+        // (settings-launcher redesign, colours.md). Modelled on Crimson: pink-tuned base colours, the theme-invariant
+        // HUD facet (only HudAccent varies), the dark-theme status trio.
+        [ThemePreset.Sakura] = new[]
+        {
+            Rgb(0xF2, 0x7F, 0xB8),   // Accent — a lighter pink than the menu accent, for accent text on any surface
+            Rgb(0xF5, 0xC2, 0x6B),
+            Rgb(0xD9, 0x55, 0x8C),   // HpFill — rose
+            Rgb(0xB4, 0x8C, 0xE0),   // MpFill — lavender
+            Rgb(0xFF, 0xB3, 0x8A),   // Stamina — peach
+            Rgb(0xFF, 0xFF, 0xFF),
+            Rgb(0xD8, 0xC4, 0xDF),
+            Rgb(0xFF, 0xD6, 0x6B),
+            // HUD facet (theme-invariant; only HudAccent varies)
+            Rgb(0xE5, 0xE1, 0xD6),
+            new(0f, 0f, 0f, 0.85f),
+            Rgb(0xC8, 0x50, 0x8F),
+            new(16f / 255f, 20f / 255f, 26f / 255f, 0.72f),
+            new(44f / 255f, 48f / 255f, 56f / 255f, 0.85f),
+            // menu facet
+            Rgb(0x2E, 0x24, 0x33),
+            Rgb(0xE8, 0xDC, 0xEF),
+            Rgb(0x9B, 0x8A, 0xA5),
+            Rgb(0xC8, 0x50, 0x8F),
+            new(200f / 255f, 80f / 255f, 143f / 255f, 0.22f),   // MenuBorder = the accent @0.22, like Default
+            // status facet
+            StatusSuccess, StatusDanger, StatusCaution,
         },
     };
 
@@ -154,6 +205,7 @@ internal static class ThemePresets
         [ThemePreset.Dark]    = new[] { Rgb(0x1C, 0x1F, 0x2E), Rgb(0x18, 0x1A, 0x26), Rgb(0x1F, 0x1C, 0x2E) },
         [ThemePreset.Light]   = new[] { Rgb(0xF5, 0xF5, 0xFF), Rgb(0xE8, 0xEF, 0xFA), Rgb(0xED, 0xE8, 0xFA) },
         [ThemePreset.Crimson] = new[] { Rgb(0x2A, 0x1A, 0x1D), Rgb(0x25, 0x16, 0x18), Rgb(0x2A, 0x18, 0x1B) },
+        [ThemePreset.Sakura]  = new[] { Rgb(0x2E, 0x24, 0x33), Rgb(0x29, 0x1F, 0x2E), Rgb(0x30, 0x24, 0x2F) },
     };
 
     private static ColorRgba Rgb(byte r, byte g, byte b)

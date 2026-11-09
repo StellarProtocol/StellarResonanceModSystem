@@ -21,6 +21,8 @@ internal sealed partial class WindowBuilder
     // Well-known id of the layout-editor toolbar window — the one window whose controls stay clickable while
     // layout-edit mode is active (every other window's controls are suppressed; see SuppressClickInEditMode).
     internal const string LayoutToolbarWindowId = "framework.layout-toolbar";
+    /// <summary>The layout toolbar's "Reset all" confirm dialog — interactive in edit mode like the toolbar.</summary>
+    internal const string LayoutResetDialogWindowId = "framework.layout-reset-confirm";
 
     private readonly WindowThemeAssets _assets;
     // HUD sprite/colour set for SurfaceStyle.HudOverlay windows (rounded pill/bar 9-slice + shadowed HudText),
@@ -99,8 +101,9 @@ internal sealed partial class WindowBuilder
 
     // Scroll-view content-rect hook: the interaction ticker watches these content rects for per-frame motion so
     // SyncPixelPerfect can drop pixelPerfect while a list is being scrolled (same per-frame re-snap/rebatch cost
-    // as a window drag — this is the chat-log scroll FPS fix). Null in the sandbox → a no-op.
-    internal Action<RectTransform>? RegisterScrollView { get; set; }
+    // as a window drag — this is the chat-log scroll FPS fix). The ScrollRect itself lets the ticker stop a coasting
+    // list on wheel / press (WindowInteractionTicker.ScrollInertia.cs). Null in the sandbox → a no-op.
+    internal Action<RectTransform, ScrollRect>? RegisterScrollView { get; set; }
 
     // Slot-drag exclusion hook for a clickable meter-row voice icon: (cell rect, excluded) → the ticker
     // adds/removes it from VoiceClickRects so a press on the icon reaches its EventSystem Button (cycle voice)
@@ -161,9 +164,10 @@ internal sealed partial class WindowBuilder
         token.Resizable = reg.Spec.Resizable;
         token.WindowId = reg.Spec.Id;
         token.SpecMinWidth = token.EffectiveMinWidth = reg.Spec.MinWidth; token.SpecMaxWidth = reg.Spec.MaxWidth;
-        // Only the layout toolbar stays interactive during edit mode (detected by its well-known id so the
-        // public WindowRegistration API stays unchanged — adding a ctor param would break already-built plugins).
-        token.EditModeInteractive = reg.Spec.Id == LayoutToolbarWindowId;
+        // Only the layout toolbar (and its Reset-all confirm dialog) stay interactive during edit mode (detected by
+        // their well-known ids so the public WindowRegistration API stays unchanged — adding a ctor param would break
+        // already-built plugins).
+        token.EditModeInteractive = reg.Spec.Id is LayoutToolbarWindowId or LayoutResetDialogWindowId;
         var hitchT = HitchProbe.Begin();   // [Hitch] build-phase buckets (diagnostics only)
         var (root, content) = BuildChrome(reg, parent, token);
         token.Root = root.gameObject; token.Rect = root;
@@ -238,7 +242,7 @@ internal sealed partial class WindowBuilder
         // HudElementBuilder keeps the shared AddLayout default — this override is window-only.
         if (columns == UGuiPrimitives.ColumnMode && go.GetComponent<VerticalLayoutGroup>() is { } vlg)
             vlg.childForceExpandWidth = true;
-        foreach (var child in children) BuildElement(child, go.transform, token);
+        foreach (var child in children) BuildChild(child, go.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
     }
 
     private void BuildColumn(ColumnElement c, Transform parent, WindowToken token)
@@ -276,7 +280,10 @@ internal sealed partial class WindowBuilder
         // window panels have long labels/descriptions that must wrap, not spill past the frame). NoWrap keeps
         // the text on a single line — a long label (e.g. a map name in a fixed-width pane) overflows/clips at
         // the cell edge rather than wrapping into a multi-line block.
-        txt.horizontalOverflow = t.NoWrap || t.Ellipsize ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;   // Ellipsize = one line too
+        // MaxLines: the framework breaks the lines itself at word boundaries (TextBinding.MaxLines → UGuiPrimitives.CapLines
+        // → WordWrapCap) and joins them with newlines, so uGUI's own wrap stays OFF — it splits an over-long word mid-word.
+        var oneLine = t.MaxLines > 0 || t.NoWrap || t.Ellipsize;
+        txt.horizontalOverflow = oneLine ? HorizontalWrapMode.Overflow : HorizontalWrapMode.Wrap;   // Ellipsize = one line too
         txt.color = _assets.MenuText;
         // minWidth=0 lets a Row shrink the Text below its single-line preferred width (Wrap then engages
         // instead of overflowing the RectMask2D); flexibleWidth=0 so the Text does NOT grow to fill the row —
@@ -286,9 +293,10 @@ internal sealed partial class WindowBuilder
         var le = go.AddComponent<LayoutElement>();
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }   // fixed column cell
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
+        PinTextHeight(le, t.Height);
         // Clip a fixed-width single line to its column so a long label truncates instead of spilling onto neighbours.
         // Ellipsize clips too: between a resize and the next apply's re-fit the old cut may be a few px too wide.
-        if ((t.Width > 0f && t.NoWrap) || t.Ellipsize) go.AddComponent<RectMask2D>();
+        if (t.MaxLines <= 0 && ((t.Width > 0f && t.NoWrap) || t.Ellipsize)) go.AddComponent<RectMask2D>();
         // Readability outline for chrome-less overlays — the shared recipe (also the meter bar values).
         if (t.Shadow) UGuiPrimitives.AddReadabilityOutline(go);
         token.Texts.Add(BuildTextBinding(t, txt));
@@ -301,11 +309,15 @@ internal sealed partial class WindowBuilder
     // both the editor sandbox and the IL2CPP player) — see WindowThemeAssets.MenuFont. No-op when null.
     private void ApplyMenuFont(Text t) { if (_assets.MenuFont != null) t.font = _assets.MenuFont; }
 
+    // Menu-surface legacy Text may hand Thai strings to a TMP twin (ThaiTmpTwin): game build with the factory only.
+    private bool ThaiTmpCapable => _surface != SurfaceStyle.HudOverlay && StyledTextFactory.CreateBold != null;
+
     // The text binding. Emphasis here is the LEGACY fallback only (sandbox / no TMP face): it carries the
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
-        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize };
+        var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize && t.MaxLines <= 0, MaxLines = t.MaxLines };
+        b.ThaiTmp = ThaiTmpCapable && !t.Shadow;   // Thai → shipped Thai face via TMP (ThaiTmpTwin); the outline look stays legacy
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }

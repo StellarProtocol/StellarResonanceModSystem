@@ -15,7 +15,7 @@ namespace Stellar.Infrastructure.Game;
 // PREVIOUS item's icon (or vice versa), producing a visible wrong-icon blink during scroll.
 internal sealed partial class WindowBuilder
 {
-    internal sealed class GameTextureBinding
+    internal sealed class GameTextureBinding : GatedBinding
     {
         public RawImage Raw = null!;
         public Func<object?> Texture = null!;

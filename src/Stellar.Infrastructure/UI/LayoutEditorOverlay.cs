@@ -123,6 +123,7 @@ internal sealed partial class LayoutEditorOverlay
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
             ProcessInput();
             TickNudge();    // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
+            TickResetDialog();   // keep a freshly-opened Reset-all confirm centred under the toolbar
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
         else if (_wasEditing)
@@ -228,7 +229,9 @@ internal sealed partial class LayoutEditorOverlay
             var go = _uiRaycastScratch[i].gameObject;
             if (go == null) continue;
             for (var t = go.transform; t != null; t = t.parent)
-                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId) return true;
+                // The Reset-all confirm dialog is toolbar UI too (its own override canvas, same reasons).
+                if (t.name == Stellar.Infrastructure.Game.WindowBuilder.LayoutToolbarWindowId ||
+                    t.name == Stellar.Infrastructure.Game.WindowBuilder.LayoutResetDialogWindowId) return true;
         }
         return false;
     }

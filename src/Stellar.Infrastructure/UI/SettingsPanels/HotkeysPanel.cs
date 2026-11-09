@@ -57,9 +57,6 @@ internal sealed partial class HotkeysPanel
     /// Read only from row Funcs (render-driven), never from a per-tick path.</summary>
     internal IPluginDisplayNames? DisplayNames { get; init; }
 
-    private HudElement FilterChip(string key, Filter f)
-        => new ButtonElement(() => _loc.T(key), () => { _filter = f; }, null, null, Active: () => _filter == f);
-
     public HotkeysPanel(IHotkeyDirectory directory, IHotkeyBlockDirectory blockDirectory, IPluginInventory inventory,
                         ITheme theme, string frameworkGroupLabel, ILocalization loc)
     {
@@ -97,21 +94,12 @@ internal sealed partial class HotkeysPanel
 
     public bool IsCapturing => _capturingActionId is not null;
 
-    private const int MaxRows = 64;
-    // Fixed width for the action-row label. Rows show the plugin-authored HotkeyAction.Description,
-    // which runs to ~40 chars ("Cycle CombatMeter metric (DPS/HPS/Taken)") and WRAPPED to two lines,
-    // making row heights uneven inside the 260f scroll. Width + NoWrap clips instead (a fixed-width
-    // NoWrap TextElement gets its own RectMask2D, so it truncates inside its own cell rather than
-    // spilling onto the binding cell) — see WindowBuilder-Patterns.md.
-    //
-    // 315f is the HARD ceiling, measured not guessed: 567f usable row width (600f hub − 24f GlassMenu
-    // body padding − 9f scroll viewport inset for the scrollbar) − 18f indent − 210f binding cell −
-    // 3 × 8f row gaps. Two traps in that sum: RowElement's gap DEFAULTS to 8f (the builder maps
-    // Gap: 0f → RowGap, so a zero gap is not expressible), and a Width > 0 TextElement is pinned
-    // (minWidth == preferredWidth, flexibleWidth 0) so it CANNOT be squeezed — go over 315f and the
-    // summed minWidths overflow the viewport and the mask clips the binding cell instead.
-    // 300f leaves ~15f of visible spacer so the row still reads label-left / cell-right.
-    private const float RowLabelWidth = 300f;
+    // Pooled rows of the VIRTUAL list (Hotkeys tab). Was a 64-row eager ListElement: with ~65 actions + a header per
+    // plugin (~80 rows) everything past row 64 silently vanished (user report 2026-11-09). The virtual list has no
+    // item cap; the pool only has to cover the tallest viewport — the 478 px tab body / 28 px pitch ≈ 17, + margin.
+    private const int PoolRows = 20;
+    // First logical display row shown by the pool (VirtualListElement.OnWindow, set before any slot Func is pulled).
+    private int _first;
     // Flattened display list rebuilt once per apply (in the list's outer Conditional When, which runs before the
     // slot Funcs): one HEADER row per plugin group + an action row per binding (omitted when the group is
     // collapsed). Lets the list track hotkeys DECLARED AFTER the hub is built (plugins load post-wiring) AND
@@ -154,36 +142,6 @@ internal sealed partial class HotkeysPanel
         foreach (var p in _inventory.List())
             if (!string.IsNullOrWhiteSpace(p.DisplayName)) _pluginNames[p.Id] = p.DisplayName;
         return _pluginNames;
-    }
-
-    /// <summary>Settings → Hotkeys, GROUPED by plugin with collapsible headers (a LIVE list — the hub is built
-    /// before plugins load, so it can't be a build-time snapshot): <see cref="MaxRows"/> slots over a flattened
-    /// header/row list rebuilt each apply. A header toggles its group's collapse and shows the plugin's own
-    /// declared name; an action row shows its Description + binding cell. Click a cell to capture; Del clears / Esc cancels
-    /// (<see cref="PollCaptureUgui"/>). Filter chips drive <see cref="_filter"/>.</summary>
-    public HudElement Describe()
-    {
-        var slots = new HudElement[MaxRows];
-        for (var i = 0; i < MaxRows; i++) slots[i] = BuildHotkeySlot(i);
-        var list = new ListElement(() => _display.Count, slots);
-        return new ColumnElement(new HudElement[]
-        {
-            new RowElement(new HudElement[]
-            {
-                new ToggleElement(() => "", Get: () => _blockDirectory.GetBlockAllFromGame(), Set: v => _blockDirectory.SetBlockAllFromGame(v)),
-                // Direction-first wording: the mod hotkey does NOT pass through to the game (so one press
-                // doesn't fire both). (Suppression is exact-match on key+modifiers — a blocked Ctrl+F1 leaves
-                // bare F1 alone.)
-                new TextElement(() => _loc.T("hotkeys.passthrough")),
-            }, Gap: 6f),
-            new SeparatorElement(),
-            new RowElement(new HudElement[] { FilterChip("hotkeys.filter.all", Filter.All), FilterChip("hotkeys.filter.plugins", Filter.Plugins), FilterChip("hotkeys.filter.framework", Filter.Framework) }),
-            new ConditionalElement(
-                () => { RebuildDisplay(); return _display.Count > 0; },
-                new ScrollElement(list, Height: 260f),
-                new TextElement(() => _loc.T("hotkeys.none"), () => _theme.Colors.TextMuted)),
-            new ButtonElement(() => _loc.T("hotkeys.resetAll"), () => ResetAllToDefaults()),
-        });
     }
 
     // Rebuild the flattened header/row list from the live (sorted + filtered) actions. OrderedActions sorts by
@@ -269,50 +227,17 @@ internal sealed partial class HotkeysPanel
         return string.IsNullOrWhiteSpace(a.Description) ? ShortName(a.Id) : a.Description;
     }
 
-    private HudElement BuildHotkeySlot(int idx)
-    {
-        HkRow Row() => idx < _display.Count ? _display[idx] : default;
-        return new ColumnElement(new HudElement[]
-        {
-            // Plugin header — a clickable row (arrow + bold name + count), NOT a button chip, matching the
-            // StatInspector category style. Click anywhere on the row to expand/collapse the group.
-            new ConditionalElement(() => idx < _display.Count && _display[idx].IsHeader,
-                new SelectableElement(
-                    new RowElement(new HudElement[]
-                    {
-                        new TextElement(() => _collapsed.Contains(Row().GroupKey) ? "▶" : "▼", () => _theme.Colors.Accent, Width: 16f),
-                        new TextElement(() => HeaderText(Row()), Emphasis: true),
-                        new SpacerElement(),
-                        new TextElement(() => $"({Row().Count})", () => _theme.Colors.TextMuted, Align: TextAlign.Right),
-                    }),
-                    // Collapse state keys on GroupKey — the label is display-only and mutates.
-                    OnClick: () => ToggleGroup(Row().GroupKey))),
-            // Action row — indented description (clipped to one line) + binding cell.
-            new ConditionalElement(() => idx < _display.Count && !_display[idx].IsHeader,
-                new RowElement(new HudElement[]
-                {
-                    new SpacerElement(Width: 18f),
-                    new TextElement(() => RowLabel(Row().Action), Width: RowLabelWidth, NoWrap: true),
-                    new SpacerElement(),
-                    new ButtonElement(
-                        // While capturing, the cell hints the keys: Del clears the binding (unbind), Esc cancels.
-                        () => { var a = Row().Action; return a is null ? "" : (_capturingActionId == a.Id ? "[ press a key · Del clears ]" : GetOrBuildBindingLabel(a)); },
-                        () => { var a = Row().Action; if (a is not null) ToggleCapture(a.Id); },
-                        Width: 210f),   // fixed-width cell — never overflows the row (clip fix)
-                })),
-        });
-    }
-
     private static string GroupOf(string id) { var i = id.IndexOf('.'); return i < 0 ? id : id.Substring(0, i); }
     private static string ShortName(string? id) { if (id is null) return ""; var i = id.IndexOf('.'); return i < 0 ? id : id.Substring(i + 1); }
     private void ToggleGroup(string group) { if (string.IsNullOrEmpty(group)) return; if (!_collapsed.Remove(group)) _collapsed.Add(group); _collapseVersion++; }
 
     // Unbind an action (no hotkey). Rebind(null) persists the explicit-unbound state and fires BindingChanged,
-    // which drops the cached "[ key ]" label so the cell re-renders as "unbound".
+    // which drops the cached key label so the pill re-renders as "Not set". Flashes the row "Cleared" (R13).
     private void Unbind(string actionId)
     {
         if (_capturingActionId == actionId) CancelCapture();   // clearing the cell we're capturing → stop capture
         _directory.Rebind(actionId, null);
+        Confirm(actionId, "hotkeys.flash.cleared", "hotkeys.fb.cleared", null);
     }
 
     private List<IHotkeyAction> OrderedActions()
@@ -364,8 +289,9 @@ internal sealed partial class HotkeysPanel
     private string GetOrBuildBindingLabel(IHotkeyAction action)
     {
         if (_bindingLabelCache.TryGetValue(action.Id, out var cached)) return cached;
-        var inner = action.CurrentBinding is { } b ? b.ToString() : _loc.T("hotkeys.unbound");
-        var label = $"[ {inner} ]";
+        // The key pill shows the bare combination ("Shift+Home"); an unbound action shows the italic "Not set" pill
+        // instead, so it never reaches here with a binding of null.
+        var label = action.CurrentBinding is { } b ? b.ToString() : "";
         _bindingLabelCache[action.Id] = label;
         return label;
     }

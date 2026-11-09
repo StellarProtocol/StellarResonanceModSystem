@@ -284,7 +284,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
                 Id: FrameworkHotkeyIds.PerfToggle,
                 Description: "Toggle Perf overlay",   // English; relabelled in Settings → Hotkeys (FrameworkHotkeyLabels)
                 SuggestedDefault: new KeyBinding(StellarKeyCode.End, ModifierKeys.Shift)),
-            callback: () => { if (_perfOverlayControl != null) _perfOverlayControl.SetVisible(!_perfOverlayControl.IsShown); });
+            callback: TogglePerfOverlay);   // no-op unless developer mode is on (Wiring.Developer.cs)
     }
 
     private void ApplyLifecyclePatches(

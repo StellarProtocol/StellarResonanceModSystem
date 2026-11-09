@@ -18,7 +18,7 @@ internal sealed partial class WindowBuilder
     // field), so a reference compare is O(1) and never churns. Texture decode is deduped inside Load
     // (WindowBuilder.LoadIcon owns the token's byte[]-keyed cache — ONE dedup site for every icon leaf).
     // A transient null keeps the last texture rather than blanking.
-    internal sealed class IconBinding
+    internal sealed class IconBinding : GatedBinding
     {
         public RawImage Raw = null!;
         public Func<byte[]?> Bytes = null!;

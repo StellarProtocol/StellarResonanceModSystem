@@ -39,7 +39,8 @@ public sealed partial class BootstrapPlugin
         _namedTheme = new NamedThemeService(themeSection, log);
         var overrideStore = new ColorOverrideStore(overridesSection);
         _colorRegistry = new ColorRegistryService(_namedTheme, overrideStore);
-        _customThemes  = new CustomThemeStore(customSection);
+        // The store moves a renamed theme's overrides (keyed by theme name) — same config file, so one write.
+        _customThemes  = new CustomThemeStore(customSection, overrideStore);
         FrameworkColorRegistration.RegisterAll(_colorRegistry);
         _themeRenderer = new ThemeRenderer(_assetProvider!, log, _namedTheme, _colorRegistry, _colorRegistry, _namedTheme);
     }

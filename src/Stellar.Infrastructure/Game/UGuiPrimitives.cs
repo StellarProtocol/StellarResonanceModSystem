@@ -123,6 +123,19 @@ internal static class UGuiPrimitives
         return best;
     }
 
+    // TextElement.MaxLines on a plain Text: the lines are broken at word boundaries only (WordWrapCap — uGUI, like TMP,
+    // splits an over-long word mid-word), cut to maxLines with "..." and joined with newlines; the builder keeps the Text
+    // in horizontal Overflow so uGUI never re-wraps them. Widths are single-line Text.preferredWidth reads; called only on
+    // a string or width change (TextBinding). Same ASCII "..." as EllipsizeFit (the "…" glyph tofus in-world on the menu
+    // font).
+    public static string CapLines(Text t, string s, float maxW, int maxLines)
+    {
+        if (string.IsNullOrEmpty(s) || maxLines <= 0) return s;
+        t.text = s;
+        if (t.preferredWidth <= maxW) return s;
+        return WordWrapCap.Cap(s, x => { t.text = x; return t.preferredWidth; }, maxW, maxLines, "...");
+    }
+
     /// <summary>The string a drop-shadow TWIN (HudOverlay <c>MakeShadowedTextHud</c>, toast <c>MakeShadowedText</c>) shows
     /// for foreground <paramref name="s"/>: identical except every uGUI <c>&lt;color=…&gt;</c>/<c>&lt;/color&gt;</c> tag is
     /// removed. A colour tag OVERRIDES the twin's dark <c>Text.color</c>, so mirroring the string verbatim drew the

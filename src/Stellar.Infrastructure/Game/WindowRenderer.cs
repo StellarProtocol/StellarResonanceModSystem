@@ -3,6 +3,7 @@ using Il2CppInterop.Runtime.Injection;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 using Stellar.Infrastructure.Unity;
 using UnityEngine;
 using UnityEngine.UI;
@@ -50,8 +51,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private bool _fontRebuildHooked;
     private Action<Font>? _onFontRebuilt;   // cached delegate so subscribe/unsubscribe match (IL2CPP event)
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
-    private int _zseq;    // monotonic mount counter — drives ZSeq (stable tiebreak within same ZFront tier)
-    private int _zfront;  // monotonic BringToFront counter — drives ZFront (overrides ZCat/ZSeq when non-zero)
+    private int _zact;    // ONE global activation counter (mount / real show / BringToFront / Topmost on) → token.ZAct
     private int _canvasGeneration;         // bumps on every canvas (re)create — Host fires a settled reapply on change
     private int _canvasCreatedFrame = -1;  // Time.frameCount at the last (re)create; scale settles a FRAME later
 
@@ -108,8 +108,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder = null;
         _ticker = null;
         _tokens.Clear();   // canvas + all window GOs gone; WindowService self-heal re-mounts (re-adds tokens)
-        _zseq = 0;
-        _zfront = 0;
+        _zact = 0;   // every token is gone; remounts re-activate in mount order
     }
 
     public bool IsCanvasAvailable() => EnsureCanvas();
@@ -134,14 +133,15 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 // Sticky cursor engages only on interactive (non-HUD) windows — WindowCategory, not ZOrder, decides.
                 if (reg.Spec.Category != Stellar.Abstractions.Domain.WindowCategory.HUD) _ticker.InteractiveRoots.Add(token.Rect);
             }
-            // Deterministic stacking so draw order doesn't depend on plugin load / mount order. The plugin sets
-            // ZOrder to control its own placement; Category is the default tiebreak (HUD behind Tools behind
-            // Debug); click-away popups always sit on top. Without this, whichever window mounted last drew on
-            // top — so e.g. the combat meter jumped above other plugins' panels after a redeploy shifted order.
+            // Deterministic stacking (WindowStacking): popups on top, then Topmost, then the plugin's ZOrder, then the
+            // layer (HUD below Tools/Debug), then activation. Without it whichever window mounted last drew on top —
+            // so e.g. the combat meter jumped above other plugins' panels after a redeploy shifted order. A first
+            // mount IS an activation (fresh ZAct), so a newly opened window lands on top of its layer.
             token.ZOrder = reg.Spec.ZOrder;
-            token.ZCat = (int)reg.Spec.Category;
+            token.ZCat = reg.Spec.Category;
             token.ZPopup = reg.Spec.DismissOnOutsideClick;
-            token.ZSeq = _zseq++;
+            token.ZTopmost = reg.Spec.Topmost;
+            token.ZAct = ++_zact;
             ReorderWindows();
             ApplyContentMinWidth(token, force: true);   // before ApplySavedRect, so the restore clamps to it (.ContentMinWidth.cs)
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
@@ -163,10 +163,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     //     unchanged, and no other window's z is perturbed.
     // Either way the nested Canvas needs its OWN GraphicRaycaster or its widgets become un-hittable (the parent
     // raycaster skips a child canvas) — the override toolbar's buttons/drag AND chat's buttons/scroll rely on it.
-    private static void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
+    // pixelPerfect: a nested canvas normally INHERITS the root's, so a drag/scroll inside it flipped the whole root (every
+    // window rebuilt, 25-45 ms). overridePixelPerfect makes it own the flag: ON at rest (looks exactly as before), and the
+    // ticker flips only THIS canvas while this window moves/scrolls (WindowInteractionTicker.PixelPerfect.cs).
+    private void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
     {
         if (token.Root == null || (spec.OverrideSortingOrder is null && !spec.IsolateCanvas)) return;
         var oc = token.Root.AddComponent<Canvas>();
+        oc.overridePixelPerfect = true;
+        oc.pixelPerfect = true;
+        if (_ticker != null && token.Rect != null) _ticker.AddLocalPixelPerfect(token.Rect, oc, spec.Id);
         if (spec.OverrideSortingOrder is { } so)
         {
             oc.overrideSorting = true;   // absolute order; opts out of sibling-order z (override path only)
@@ -174,28 +180,21 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         }
         // IsolateCanvas-only path: overrideSorting stays at its default (false) → batching boundary that still
         // sorts by sibling index within the shared parent canvas (z unchanged).
-        token.Root.AddComponent<GraphicRaycaster>();
+        token.OwnRaycaster = token.Root.AddComponent<GraphicRaycaster>();
+        token.OwnCanvas = oc;   // a soft park switches these off instead of deactivating the root (.SoftPark.cs)
     }
 
-    private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
     private readonly System.Collections.Generic.List<WindowToken> _zsort = new();
+    private static readonly Comparison<WindowToken> ZCompare = (a, b) => WindowStacking.Compare(a.StackKey, b.StackKey);
 
-    // Re-assign sibling indices so draw order follows: popups → ZOrder → ZFront (explicit front, beats category)
-    // → ZCat → ZSeq. ZFront=0 means never explicitly fronted; non-zero overrides ZCat so BringToFront works
-    // cross-category (e.g. an HUD window can surface above a Tools window that normally wins on ZCat).
+    // Re-assign sibling indices to the WindowStacking order (popups → Topmost → ZOrder → layer → activation). The
+    // sibling index IS the draw order on the shared canvas, and FrontWindowBlocks / every ticker hit-test read it, so
+    // input follows the same order as drawing.
     private void ReorderWindows()
     {
         _zsort.Clear();
         for (var i = 0; i < _tokens.Count; i++) if (_tokens[i].Rect != null) _zsort.Add(_tokens[i]);
-        _zsort.Sort((a, b) =>
-        {
-            var pa = a.ZPopup ? PopupOrder : a.ZOrder;
-            var pb = b.ZPopup ? PopupOrder : b.ZOrder;
-            if (pa != pb) return pa - pb;
-            if (a.ZFront != b.ZFront) return a.ZFront - b.ZFront;   // explicit front overrides category
-            if (a.ZCat != b.ZCat) return a.ZCat - b.ZCat;
-            return a.ZSeq - b.ZSeq;
-        });
+        _zsort.Sort(ZCompare);
         for (var i = 0; i < _zsort.Count; i++) _zsort[i].Rect.SetSiblingIndex(i);
     }
 
@@ -203,25 +202,50 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     // IWindowParking: a SetVisible(false) window keeps its built tree, deactivated (the ticker skips every
     // !activeInHierarchy drag/hover/dismiss/field entry, exactly as for a ShouldRender-hidden window). The next
-    // ApplyValues re-activates it (and re-arms its first layout via ResetLayout).
+    // ApplyValues re-activates it (and re-arms its first layout via ResetLayout). A window with its own canvas and
+    // KeepAlive branches is SOFT-parked instead: root left active, canvas off, off-screen (.SoftPark.cs).
+    // Hiding also ends a HUD window's BringToFront lift: it drops back to the HUD layer (the lift is NOT sticky).
     public void Park(object? token)
     {
-        if (token is WindowToken t && t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+        if (token is not WindowToken t) return;
+        var hideT = HitchProbe.Begin();
+        var soft = TrySoftPark(t);
+        if (!soft)
+        {
+            if (t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+            if (t.BgShifted) ShiftBack(t);   // a background warm ends parked: home again, moved while inactive (no dirt)
+        }
+        t.ZLifted = false;
+        NoteHide(t, hideT, soft);
     }
 
-    // A fresh mount used to land on top of its stacking tier (new ZSeq); a re-shown parked window does the same.
-    public void Unpark(object? token)
+    // Re-show of a parked window. Its order changes only through Activate (WindowService calls it for a REAL show from
+    // hidden) — a layout/slot/startup visibility restore un-parks without re-activating, so it never reshuffles z.
+    public void Unpark(object? token) { }
+
+    // IWindowOrder. Activate = "as if just opened": newest activation → top of its layer.
+    public void Activate(object? token)
     {
         if (token is not WindowToken t) return;
-        t.ZSeq = _zseq++;
+        t.ZAct = ++_zact;
         ReorderWindows();
     }
 
+    // Activate + lift a HUD window into the normal layer (above Tools/Debug opened before it) until it is hidden.
     public void BringToFront(object? token)
     {
         if (token is not WindowToken t) return;
-        t.ZFront = ++_zfront;
-        ReorderWindows();
+        if (t.ZCat == WindowCategory.HUD) t.ZLifted = true;
+        Activate(t);
+    }
+
+    // Turning Topmost ON also activates (it lands above the other topmost windows). OFF keeps its activation, so it
+    // drops back into its normal layer at the place its last activation gives it.
+    public void SetTopmost(object? token, bool topmost)
+    {
+        if (token is not WindowToken t || t.ZTopmost == topmost) return;
+        t.ZTopmost = topmost;
+        if (topmost) Activate(t); else ReorderWindows();
     }
 
     public void ApplyValues(object? token, WindowRegistration reg, bool hide)
@@ -244,18 +268,18 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // manages via WindowService.EditableElements). Free-drag Tools dialogs (e.g. the login-screen switcher,
         // Settings, History) are not edit-managed, so they stay gated by their own ShouldRender even in edit mode —
         // otherwise they'd render with no outline/handle: visible but not arrangeable.
-        var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
+        // A background warm (.BackgroundWarm.cs) is never hidden: kept active off-screen and applied like a shown window.
+        var bg = InBackgroundWarm(t);
+        var hideAll = !bg && (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
                       && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
-        var wasHidden = !t.Root.activeSelf;
-        if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
-        // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
-        // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
-        // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
-        if (!hideAll && wasHidden) t.ResetLayout();
+        var showT = SetShown(t, hideAll, bg);   // (de)activate the root (.BackgroundWarm.cs)
         if (hideAll) return;
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
-        t.Apply(); ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        WindowBuilder.BubbleBinding.WindowInBackground = bg;   // off-screen warm: every bubble measure is budgeted
+        try { t.Apply(); } finally { WindowBuilder.BubbleBinding.WindowInBackground = false; }
+        ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
         UiPerfStats.AddApply(reg.Spec.Id, perfT);
+        if (showT != 0L) NoteShow(t, showT, perfT);
     }
 
     public void SetRect(object? token, WindowRect rect)
@@ -277,7 +301,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             rect = KeepWidenedOnScreen(new WindowRect(rect.X, rect.Y, size.x, size.y), rect.Width);
         }
         var clamped = ClampToScreen(t, rect);
-        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
+        t.Rect.anchoredPosition = new Vector2(clamped.X + ShiftX(t), -clamped.Y);   // still off-screen while warming
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
@@ -336,7 +360,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         if (token is not WindowToken t || t.Rect == null) return default;
         var p = t.Rect.anchoredPosition;
         var size = t.Rect.rect;
-        return new WindowRect(p.x, -p.y, size.width, size.height);
+        return new WindowRect(p.x - ShiftX(t), -p.y, size.width, size.height);   // the real place, never the warm shift
     }
 
     public bool HasFocusedField(object? token) => token is WindowToken t && t.AnyFieldFocused;
@@ -364,7 +388,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 for (var i = 0; i < t.Pulses.Count; i++) _ticker.Pulses.Remove(t.Pulses[i]);
             }
             t.DisposeNativeTextures();   // ColorPicker SV/hue bakes (HideAndDontSave — not reclaimed by GO destroy)
-            if (_ticker != null && t.Rect != null) { _ticker.WindowRoots.Remove(t.Rect); _ticker.PassiveRoots.Remove(t.Rect); }
+            if (_ticker != null && t.Rect != null)
+            { _ticker.WindowRoots.Remove(t.Rect); _ticker.PassiveRoots.Remove(t.Rect); _ticker.BackgroundRoots.Remove(t.Rect); }
             if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed

@@ -34,10 +34,11 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
     private bool _hasTag;
     private int _spriteGen;
 
-    private TmpStyledText(TextMeshProUGUI t, bool bold, bool rich, bool ellipsis,
+    // The per-element style constants come straight from the spec (bold face, RichEmoji, Ellipsis, MaxLines).
+    private TmpStyledText(TextMeshProUGUI t, StyledTextSpec spec,
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
-        _t = t; _bold = bold; _rich = rich; _ellipsis = ellipsis;
+        _t = t; _bold = spec.Bold; _rich = spec.RichEmoji; _ellipsis = spec.Ellipsis; _maxLines = spec.MaxLines;
         _ul = underline.Rt; _ulImg = underline.Img;
         _st = strike.Rt; _stImg = strike.Img;
     }
@@ -53,7 +54,8 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
         if (_rich) ApplySpriteAsset(s);
-        if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
+        if (_maxLines > 0) SetLineCapped(s);   // word-wrapped by the framework, cut to N lines + "…" (TmpStyledText.MaxLines.cs)
+        else if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
         else _t.text = s;
         FitDecorations();
     }
@@ -74,7 +76,8 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
     public void SetFontSize(int px)
     {
         _t.fontSize = px;
-        if (_ellipsis) MeasureAndFit();   // natural width scales with the size → re-pad + re-cut
+        if (_maxLines > 0) MeasureAndCapLines();   // line breaks move with the size → re-pad + re-cut
+        else if (_ellipsis) MeasureAndFit();   // natural width scales with the size → re-pad + re-cut
         FitDecorations();
     }
 
@@ -140,6 +143,7 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         go.transform.SetParent(parent, false);
         go.transform.localScale = Vector3.one;
         var t = go.AddComponent<TextMeshProUGUI>();
+        TmpFontAssets.EnableMarkPositioning(t);   // Thai stacked marks (ั + ๊) need GPOS mark/mkmk on the text
         t.fontSize = spec.FontSize;
         t.color = spec.Color;
         t.raycastTarget = false;
@@ -147,6 +151,9 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         // TextElement.Ellipsize: one line, overflowMode left at Overflow — the framework cuts the string itself, because
         // TMP's Ellipsis mode wiped a whole single-word line in-game (see TmpStyledText.Ellipsis.cs).
         if (spec.Ellipsis) t.enableWordWrapping = false;
+        // TextElement.MaxLines: the framework breaks the lines itself (word boundaries only, WordWrapCap) and joins them
+        // with newlines, so TMP's own wrap is OFF — it would split an over-long word mid-word ("CombatMete" / "r").
+        if (spec.MaxLines > 0) t.enableWordWrapping = false;
         // CenterGlyphs → TMP's Midline row: it centres the MESH extents (what is drawn) in the rect, where the default
         // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
         // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes
@@ -164,7 +171,7 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         if (spec.RichEmoji) t.richText = true;   // TMP's default, made explicit: <sprite=N> parsing depends on it
         var ul = spec.Underline ? BuildLine(go.transform, "Underline", spec.Color) : (null, null);
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
-        var handle = new TmpStyledText(t, spec.Bold, spec.RichEmoji, spec.Ellipsis, ul, st);
+        var handle = new TmpStyledText(t, spec, ul, st);
         handle.SetText(spec.Text);
         return handle;
     }

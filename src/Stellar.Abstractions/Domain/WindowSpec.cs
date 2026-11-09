@@ -83,11 +83,21 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     public bool DismissOnOutsideClick { get; init; }
 
     /// <summary>Explicit draw-order among Stellar windows: HIGHER draws on top. Default 0. The framework stacks
-    /// windows by (ZOrder, then <see cref="Category"/> as a tiebreak — HUD&lt;Tools&lt;Debug — then Id), so a plugin
-    /// that sets this fully controls where its window sits relative to others regardless of load/mount order; one
-    /// that leaves it 0 falls back to the category default. Click-away (<see cref="DismissOnOutsideClick"/>)
-    /// popups always render above all of these.</summary>
+    /// windows (bottom → top) by: <see cref="Topmost"/> windows above all others, then ZOrder, then the layer (HUD
+    /// windows below Tools/Debug windows; a HUD window brought to the front joins the upper layer until it is hidden),
+    /// then the most recently opened / brought-to-front window on top. So a plugin that sets this controls where its
+    /// window sits relative to others regardless of load/mount order; one that leaves it 0 stacks by use. Click-away
+    /// (<see cref="DismissOnOutsideClick"/>) popups always render above all of these.</summary>
     public int ZOrder { get; init; }
+
+    /// <summary>Pin the window "always on top": it draws above every non-topmost Stellar window, whatever was opened
+    /// or brought to the front later (only click-away popups, the dropdown list and the layout-edit toolbar sit higher).
+    /// Among topmost windows the last opened / fronted is on top. Meant for SMALL pinned overlays and alerts — not for
+    /// normal tool windows, which should simply stack by what the user used last. Hit-testing follows the draw order, so
+    /// a topmost window blocks clicks to windows behind it (unless it is <see cref="Passive"/>), and
+    /// <see cref="ShouldRender"/> still hides it. Default false. Toggle it at runtime with
+    /// <see cref="Stellar.Abstractions.Services.IWindowTopmost"/> (<c>control.SetTopmost(bool)</c>). Added in 2.30.0.</summary>
+    public bool Topmost { get; init; }
 
     /// <summary>When true the chrome draws a resize grip; dragging it changes the window size (clamped to Min/Max bounds).</summary>
     public bool Resizable { get; init; }
@@ -160,6 +170,14 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// not part of any saved player arrangement. Null/false (default) = normal per-slot layout. Init-only →
     /// binary-safe (no plugin rebuild).</summary>
     public bool SlotIndependentLayout { get; init; }
+
+    /// <summary>Pin the window HEIGHT to <see cref="DefaultRect"/>.Height instead of fitting it to the content
+    /// (GlassMenu chrome; ignored when <see cref="Resizable"/>, which already fixes the size). The vertical
+    /// ContentSizeFitter is off, so a body whose preferred height exceeds the pinned height can never grow the window:
+    /// uGUI squeezes the body toward its MIN height instead (a VirtualList / ScrollElement viewport has min 0, so lists
+    /// give way first). For a tabbed window that must keep one size on every tab (the Settings hub). Default false =
+    /// content-fit, as before. Init-only → binary-safe (no plugin rebuild).</summary>
+    public bool FixedHeight { get; init; }
 
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
     /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window

@@ -72,8 +72,11 @@ public interface IWindowControl
     /// new rect is persisted by the framework. Used by plugins that remember their own per-mode geometry.</summary>
     void SetRect(WindowRect rect);
 
-    /// <summary>Bring this window in front of all other windows at the same <see cref="WindowSpec.ZOrder"/> and
-    /// <see cref="WindowSpec.Category"/>. Call this when a plugin programmatically opens another plugin's window
-    /// (e.g. CombatMeter opening EntityInspector) so the opened window is not obscured by the caller.</summary>
+    /// <summary>Put this window on top, exactly as if it had just been opened: any window opened or brought to the front
+    /// LATER goes above it again (not sticky). A HUD window is also lifted above Tools/Debug windows until it is next
+    /// hidden. Never raises a window above <see cref="WindowSpec.Topmost"/> windows or a higher
+    /// <see cref="WindowSpec.ZOrder"/>. A Tools/Debug window shown from hidden is already put on top automatically, so
+    /// this is needed mainly for an ALREADY VISIBLE window (e.g. re-opening an open child from its parent) or a HUD
+    /// window. Safe on a not-yet-mounted window (applied when it mounts).</summary>
     void BringToFront();
 }

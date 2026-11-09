@@ -55,7 +55,7 @@ internal sealed partial class WindowRenderer
             // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
             _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
             _ticker.HitchLog = _log.Info;   // per-render-frame [Hitch] attribution sink (diagnostics only)
-            _ticker.PerFrame = TmpGlyphPrewarm.Tick;   // IWindowHost.PrewarmText: a few queued glyphs per rendered frame
+            _ticker.PerFrame = TickPerFrameWork;   // glyph prewarm + Conditional prebuilds, a few ms per rendered frame (.Prewarm.cs)
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
             _canvasComp = canvas;
@@ -90,8 +90,13 @@ internal sealed partial class WindowRenderer
         // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
         TmpStyledText.Register(_log.Info);
         _ticker!.Sticky = _stickyCursor;   // sticky cursor (.StickyCursor.cs) — every new ticker gets the long-lived hooks
-        _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        // Chrome glyphs for TileElement: its only consumer is the 14 px pin star (WindowBuilder.BuildPinStar).
+        _builder!.IconResolver = name => Stellar.Infrastructure.UI.LauncherIcons.Glyph(name, 14f);
+        _builder.PixelExact = Stellar.Infrastructure.UI.LauncherIcons.IsPixelExact;   // pre-drawn exact-size glyph → 1:1, no mips
+        // Framework glyphs pick their pre-drawn size from the LIVE canvas scaleFactor (resolution × UI scale).
+        Stellar.Infrastructure.UI.LauncherIcons.ScaleSource = () => CanvasScale;
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
+        _builder.Log = _log.Info;          // [Prebuild] per-branch summary (HITCH/diagnostics only)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));
@@ -105,7 +110,8 @@ internal sealed partial class WindowRenderer
         _builder.RegisterGameTexture = (img, fn, uv, boxW, boxH) => _ticker!.IconHosts.Add(
             new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
         _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
-        _builder.RegisterScrollView = rt => _ticker!.ScrollContents.Add(rt);
+        _builder.RegisterScrollView = (rt, sr) => _ticker!.AddScrollView(rt, sr);
+        _builder.RegisterLocalCanvas = (rt, c, id) => _ticker!.AddLocalPixelPerfect(rt, c, id, follower: true);   // KeepAlive hosts
         _builder.SetVoiceClickExcluded = (rt, on) =>
         {
             if (_ticker == null || rt == null) return;

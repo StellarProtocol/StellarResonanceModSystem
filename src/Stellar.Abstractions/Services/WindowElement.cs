@@ -237,6 +237,21 @@ public sealed record DropdownElement(
     /// <see cref="DropdownStyle.Classic"/>. An <c>init</c> property (NOT a primary-ctor parameter) so the record stays
     /// source AND binary compatible with already-compiled plugins; a plugin that sets it needs framework ≥2.29.0.</summary>
     public float CornerRadius { get; init; }
+
+    /// <summary>Optional <see cref="DropdownStyle.Pill"/> trigger fill at rest, polled every refresh (final colour —
+    /// apply any window-opacity fade yourself). <c>null</c> (default) = the built-in neutral pill fill, so existing
+    /// dropdowns are unchanged. Ignored by <see cref="DropdownStyle.Classic"/>; the option list is not affected.
+    /// <c>init</c> → binary-safe; a plugin that sets it needs framework ≥2.30.0.</summary>
+    public Func<ColorRgba>? FillColorFn { get; init; }
+
+    /// <summary>Optional Pill trigger fill while hovered, polled every refresh. <c>null</c> = the built-in hover wash
+    /// (text colour at 8 %) over the rest fill — <see cref="FillColorFn"/> when set. Same rules as
+    /// <see cref="FillColorFn"/>.</summary>
+    public Func<ColorRgba>? HoverFillColorFn { get; init; }
+
+    /// <summary>Optional Pill caption colour, polled every refresh; the ▾ follows it. <c>null</c> = the built-in caption
+    /// (theme text, contrast-checked against the fill) and the muted ▾. Same rules as <see cref="FillColorFn"/>.</summary>
+    public Func<ColorRgba>? LabelColorFn { get; init; }
 }
 
 /// <summary>Render style for a <see cref="DropdownElement"/>.</summary>

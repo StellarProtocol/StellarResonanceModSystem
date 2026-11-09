@@ -35,7 +35,9 @@ internal sealed partial class TmpStyledText
 
     public void FitToRect()
     {
-        if (!_ellipsis || _t == null) return;
+        if (_t == null) return;
+        if (_maxLines > 0) { CapLinesToRect(); return; }   // TextElement.MaxLines (TmpStyledText.MaxLines.cs)
+        if (!_ellipsis) return;
         var w = _t.rectTransform.rect.width;
         if (Mathf.Abs(w - _fitW) <= 0.5f) return;
         _fitW = w;

@@ -70,7 +70,6 @@ internal sealed partial class ThemeEditorBody
     private string? _nameError;
     private string? _expandedSlotKey;
     private string _hexBuffer = "";
-    private bool _confirmDelete;
     // Set when an override is edited; flushed (→ texture rebuild) on mouse-release
     // so a slider drag triggers one rebuild instead of one per frame.
     private bool _editDirty;
@@ -120,7 +119,6 @@ internal sealed partial class ThemeEditorBody
         _nameMode = mode;
         _nameBuffer = seed;
         _nameError = null;
-        _confirmDelete = false;
     }
 
     private void CancelNameMode()
@@ -128,30 +126,6 @@ internal sealed partial class ThemeEditorBody
         _nameMode = NameMode.None;
         _nameBuffer = "";
         _nameError = null;
-    }
-
-    private void TryCommitName()
-    {
-        var name = (_nameBuffer ?? "").Trim();
-        if (string.IsNullOrEmpty(name) || name.IndexOf(' ') >= 0)
-        {
-            _nameError = _text.T("themes.nameError.empty");
-            return;
-        }
-        if (NameExists(name)) { _nameError = _text.T("themes.nameError.taken"); return; }
-        if (_nameMode == NameMode.New)
-        {
-            var basePreset = BaseFromActive();
-            _store.Create(name, basePreset);
-            _namedTheme.SetActiveCustom(name, basePreset);
-        }
-        else
-        {
-            var basePreset = _store.BasePresetOf(_renameTarget);
-            _store.Rename(_renameTarget, name);
-            if (_namedTheme.ActiveCustomName == _renameTarget) _namedTheme.SetActiveCustom(name, basePreset);
-        }
-        CancelNameMode();
     }
 
     private bool NameExists(string name)

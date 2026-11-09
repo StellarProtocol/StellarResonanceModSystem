@@ -11,4 +11,7 @@ internal sealed class NullOverrideStore : IColorOverrideStore
     public void Clear(string themeName, string slotKey) { }
     public bool Has(string themeName, string slotKey) => false;
     public void Flush() { }
+    public bool RenameTheme(string oldName, string newName) => false;
+    public bool RemoveTheme(string themeName) => false;
+    public bool CopyTheme(string fromName, string toName) => false;
 }
