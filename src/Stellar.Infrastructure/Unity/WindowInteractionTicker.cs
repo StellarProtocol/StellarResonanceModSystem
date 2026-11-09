@@ -156,6 +156,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         var fieldFocused = Sticky != null && AnyFieldFocused();   // before the field ticks: an Esc that defocuses is the field's
         SyncUiScale();
         TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
+        TickWindowMotion();     // .PixelPerfect.cs — latch window drag/resize MOTION (a held, still handle stays crisp)
         SyncPixelPerfect();
         for (var i = 0; i < Fields.Count; i++)
         {
