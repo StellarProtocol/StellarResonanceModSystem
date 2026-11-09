@@ -74,7 +74,7 @@ internal sealed partial class WindowBuilder
             srt.pivot = new Vector2(0.5f, 1f);
             srt.sizeDelta = new Vector2(0f, v.RowHeight);
             UGuiPrimitives.AddLayout(slot, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(slot);
-            BuildElement(v.Pool[i], slot.transform, token);
+            BuildChild(v.Pool[i], slot.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
             slots[i] = srt;
         }
 

@@ -151,8 +151,11 @@ internal sealed partial class SettingsHub
         {
             var idx = i;
             // Fill: the active tab's Conditional takes the column's slack height and stretches the tab body to it, so
-            // a tab's growing list panel fills down to the footer. Built lazily on the tab's first show.
-            bodies.Add(new ConditionalElement(() => _tab == idx, DescribeTab(idx), Fill: true));
+            // a tab's growing list panel fills down to the footer. Prebuild: every other tab is built (and, while the
+            // hub is open, laid out off-screen) in the background after mount, a few ms per frame — a tab's first
+            // visit cost 65-78 ms when it was built lazily on that click (measured 11-09).
+            bodies.Add(new ConditionalElement(() => _tab == idx, DescribeTab(idx), Fill: true)
+                { Prebuild = true, PrebuildName = "settings." + Tabs[idx].Key });
         }
         return new CellElement(new ColumnElement(new HudElement[]
         {
@@ -186,7 +189,9 @@ internal sealed partial class SettingsHub
         for (var i = 0; i < Tabs.Length; i++)
         {
             var idx = i;
-            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx, HeaderGlyph), StellarStyle.ToolIconSize, live: true)));
+            // Prebuild too: each tile decodes + uploads its glyph PNG, part of a tab's first-visit cost.
+            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx, HeaderGlyph), StellarStyle.ToolIconSize, live: true))
+                { Prebuild = true, PrebuildName = "settings.icon." + Tabs[idx].Key });
         }
         return new RowElement(new HudElement[]
         {

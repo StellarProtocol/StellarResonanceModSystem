@@ -94,6 +94,10 @@ internal sealed partial class WindowBuilder
         internal UGuiTextInput? AutoFocusField;
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
+        // ConditionalElement.Prebuild background build of hidden branches (null = none / done; WindowBuilder.Prebuild.cs).
+        // ApplyCount/LastApplyFrame let it wait for an apply to fill a staged branch's texts before putting it away.
+        internal PrebuildState? Prebuild;
+        internal int ApplyCount, LastApplyFrame = -1;
         internal readonly List<ListBinding> Lists = new();
         // Holds both the uniform VirtualListBinding and the measured VariableListBinding (WindowBuilder.VariableList.cs)
         // behind IVirtualListBinding — Apply() runs them FIRST (see Apply below) so slot Funcs resolve the fresh window.
@@ -149,6 +153,7 @@ internal sealed partial class WindowBuilder
             // VirtualLists FIRST: each sets its plugin's window-offset via OnWindow(first) and repositions/
             // activates its pooled rows. Must precede Conds + Texts so slot Funcs (which index snapshot[first+i])
             // and the polymorphic header/picker Conditionals inside each slot read the fresh offset this poll.
+            ApplyCount++; LastApplyFrame = Time.frameCount;
             var structuralChange = false;
             for (var i = 0; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
             // Visibility (Conds/Lists) next so SetActive is settled before value pulls — matches HudElementBuilder.

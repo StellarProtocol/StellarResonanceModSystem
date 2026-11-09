@@ -339,7 +339,21 @@ public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : Hu
 /// <paramref name="Fill"/> = the active branch expands to fill leftover height in a fixed-size (Resizable)
 /// window (so e.g. a meter's list scroll grows with the window). Default false — no effect in content-sized
 /// windows.</summary>
-public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudElement? Else = null, bool Fill = false) : HudElement;
+public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudElement? Else = null, bool Fill = false) : HudElement
+{
+    /// <summary>Build the branch(es) not shown yet in the BACKGROUND after the window mounts (framework 2.30.0), a few ms
+    /// per frame, and lay them out off-screen while the window is on screen — so the first show of a big branch (a
+    /// settings tab) only re-activates it instead of building it in that frame. A branch shown before its background
+    /// build finished is completed synchronously first (never shown half-built). Values stay live: bindings refresh on
+    /// show as for any hidden branch. Ignored inside a variable-height VirtualList slot. Costs nothing once done (the
+    /// built branch stays inactive while hidden). Default false = built lazily on first show, unchanged.
+    /// An <c>init</c> property (binary-compatible).</summary>
+    public bool Prebuild { get; init; }
+
+    /// <summary>Diagnostics name for <see cref="Prebuild"/>: <c>[Hitch]</c> buckets <c>prebuild:&lt;name&gt;</c> and the
+    /// <c>[Prebuild]</c> summary log line (HITCH/diagnostics on). Null = an index-based name.</summary>
+    public string? PrebuildName { get; init; }
+}
 
 /// <summary>Variable-length list, bounded by Slots.Count. All slots built once; the first
 /// <paramref name="VisibleCount"/>() are SetActive-shown each refresh. <paramref name="Columns"/>&gt;1 grids them.

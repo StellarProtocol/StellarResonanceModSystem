@@ -242,7 +242,7 @@ internal sealed partial class WindowBuilder
         // HudElementBuilder keeps the shared AddLayout default — this override is window-only.
         if (columns == UGuiPrimitives.ColumnMode && go.GetComponent<VerticalLayoutGroup>() is { } vlg)
             vlg.childForceExpandWidth = true;
-        foreach (var child in children) BuildElement(child, go.transform, token);
+        foreach (var child in children) BuildChild(child, go.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
     }
 
     private void BuildColumn(ColumnElement c, Transform parent, WindowToken token)

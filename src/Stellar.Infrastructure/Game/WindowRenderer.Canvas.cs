@@ -55,7 +55,7 @@ internal sealed partial class WindowRenderer
             // Live UI scale: the ticker polls this each frame and applies it to the CanvasScaler (no rebake).
             _ticker.UiScaleProvider = () => (_chrome as Stellar.Application.Services.NamedThemeService)?.UiScale ?? 1f;
             _ticker.HitchLog = _log.Info;   // per-render-frame [Hitch] attribution sink (diagnostics only)
-            _ticker.PerFrame = TmpGlyphPrewarm.Tick;   // IWindowHost.PrewarmText: a few queued glyphs per rendered frame
+            _ticker.PerFrame = TickPerFrameWork;   // glyph prewarm + Conditional prebuilds, a few ms per rendered frame (.Prewarm.cs)
             if (!_fontRebuildHooked) { _onFontRebuilt = OnFontTextureRebuilt; Font.textureRebuilt += _onFontRebuilt; _fontRebuildHooked = true; }
             _canvas = go;
             _canvasComp = canvas;
@@ -96,6 +96,7 @@ internal sealed partial class WindowRenderer
         // Framework glyphs pick their pre-drawn size from the LIVE canvas scaleFactor (resolution × UI scale).
         Stellar.Infrastructure.UI.LauncherIcons.ScaleSource = () => CanvasScale;
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
+        _builder.Log = _log.Info;          // [Prebuild] per-branch summary (HITCH/diagnostics only)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));
         _builder.RegisterDragSlot = (cell, key, canDrag, hover) => _ticker!.DragSlots.Add((cell, key, canDrag, hover));

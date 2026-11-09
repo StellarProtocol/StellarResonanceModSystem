@@ -23,6 +23,44 @@ internal sealed partial class WindowBuilder
     // The Settings tab strip uses this (one Conditional per tab, When = isActiveTab).
     private void BuildConditional(ConditionalElement cond, Transform parent, WindowToken token)
     {
+        var go = NewCondContainer(parent, cond.Fill);
+        var thenGo = NewCondArm("Then", go, cond.Fill);
+        // Branch CONTENT is built lazily — the first time its branch becomes active (CondBinding.Apply), not at
+        // mount. A never-shown branch costs nothing: the CombatMeter main window eagerly built its list view AND
+        // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
+        // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
+        var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
+        var scope = CaptureScope();
+        // The lazy build's inputs are kept on the binding too, so a Prebuild job can claim and slice them (.Prebuild.cs).
+        var thenLazy = new LazyBranch(cond.Then, thenGo.transform, scope);
+        Action buildThen = () => BuildDeferred(thenLazy.El, thenLazy.Parent, token, thenLazy.Scope);
+        Action? buildElse = null;
+        LazyBranch? elseLazy = null;
+        GameObject? elseGo = null;
+        if (cond.Else != null)
+        {
+            elseGo = NewCondArm("Else", go, cond.Fill);
+            var el = elseLazy = new LazyBranch(cond.Else, elseGo.transform, scope);
+            buildElse = () => BuildDeferred(el.El, el.Parent, token, el.Scope);
+        }
+        // With NO else-branch, toggle the WHOLE Cond container (not just its inner Then). Otherwise the
+        // container stays an active 0-height child and the parent column still adds section-spacing around it —
+        // 5 collapsed tab-Conditionals = a big empty gap above the active tab's content. Collapsing the
+        // container removes it from the layout entirely. (With an else-branch the container must stay active to
+        // show one of the two arms, so we keep toggling Then/Else.)
+        var binding = new CondBinding
+        {
+            When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse,
+            Gate = gate, ThenLazy = thenLazy, ElseLazy = elseLazy,
+        };
+        token.Conds.Add(binding);
+        // Prebuild: hidden branches build in the background after mount. Not inside a variable-list slot — its
+        // first-build cap decides when slot content builds.
+        if (cond.Prebuild && gate == null) RegisterPrebuild(token, binding, cond.PrebuildName);
+    }
+
+    private static GameObject NewCondContainer(Transform parent, bool fill)
+    {
         var go = UGuiPrimitives.NewChild("Cond", parent);
         UGuiPrimitives.AddLayout(go, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(go);
         // Clamp horizontal flex to 0 so the Cond go does NOT expand when placed inside a Row HLG.
@@ -34,39 +72,21 @@ internal sealed partial class WindowBuilder
         var condLe = go.AddComponent<LayoutElement>(); condLe.flexibleWidth = 0f;
         // Fill: the active branch grows to fill leftover height in a fixed-size window (the Cond grabs the slack
         // via flexibleHeight; childForceExpandHeight stretches the branch + its content to fill it).
-        if (cond.Fill)
+        if (fill)
         {
             condLe.flexibleHeight = 1f;
             if (go.GetComponent<VerticalLayoutGroup>() is { } gv) gv.childForceExpandHeight = true;
         }
-        var thenGo = UGuiPrimitives.NewChild("Then", go.transform);
-        UGuiPrimitives.AddLayout(thenGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(thenGo);
-        if (cond.Fill && thenGo.GetComponent<VerticalLayoutGroup>() is { } tv) tv.childForceExpandHeight = true;
-        // Branch CONTENT is built lazily — the first time its branch becomes active (CondBinding.Apply), not at
-        // mount. A never-shown branch costs nothing: the CombatMeter main window eagerly built its list view AND
-        // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
-        // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
-        var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
-        var scope = CaptureScope();
-        var then = cond.Then;
-        Action buildThen = () => BuildDeferred(then, thenGo.transform, token, scope);
-        Action? buildElse = null;
-        GameObject? elseGo = null;
-        if (cond.Else != null)
-        {
-            elseGo = UGuiPrimitives.NewChild("Else", go.transform);
-            UGuiPrimitives.AddLayout(elseGo, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(elseGo);
-            if (cond.Fill && elseGo.GetComponent<VerticalLayoutGroup>() is { } ev) ev.childForceExpandHeight = true;
-            var elseEl = cond.Else; var elseT = elseGo.transform;
-            buildElse = () => BuildDeferred(elseEl, elseT, token, scope);
-        }
-        // With NO else-branch, toggle the WHOLE Cond container (not just its inner Then). Otherwise the
-        // container stays an active 0-height child and the parent column still adds section-spacing around it —
-        // 5 collapsed tab-Conditionals = a big empty gap above the active tab's content. Collapsing the
-        // container removes it from the layout entirely. (With an else-branch the container must stay active to
-        // show one of the two arms, so we keep toggling Then/Else.)
-        token.Conds.Add(new CondBinding
-            { When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse, Gate = gate });
+        return go;
+    }
+
+    // One arm ("Then"/"Else") of a Conditional: a column host its branch content builds into.
+    private static GameObject NewCondArm(string name, GameObject cond, bool fill)
+    {
+        var arm = UGuiPrimitives.NewChild(name, cond.transform);
+        UGuiPrimitives.AddLayout(arm, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(arm);
+        if (fill && arm.GetComponent<VerticalLayoutGroup>() is { } v) v.childForceExpandHeight = true;
+        return arm;
     }
 
     // A deferred branch build runs later, from the window's Apply — restore the per-window surface the shared
@@ -83,8 +103,9 @@ internal sealed partial class WindowBuilder
         if (scope.BubbleOwner is { } owner) { TagBubbleOwner(token, marks, owner); owner.MarkDirty(); }
     }
 
-    // The builder state a lazily-built branch must see exactly as it was when its window was built.
-    private readonly struct BuildScope
+    // The builder state a lazily-built branch must see exactly as it was when its window was built (also carried by
+    // every time-sliced prebuild item, .Prebuild.cs).
+    internal readonly struct BuildScope
     {
         public readonly SurfaceStyle Surface; public readonly GameObject? Gate; public readonly int WidthRowDepth;
         public readonly BubbleBinding? BubbleOwner;   // innermost enclosing BubbleElement (.BubbleOwner.cs)
@@ -146,7 +167,7 @@ internal sealed partial class WindowBuilder
         {
             var slot = UGuiPrimitives.NewChild("Slot", go.transform);
             UGuiPrimitives.AddLayout(slot, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(slot);
-            BuildElement(list.Slots[i], slot.transform, token);
+            BuildChild(list.Slots[i], slot.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
             slots[i] = slot;
         }
         token.Lists.Add(new ListBinding { Count = list.VisibleCount, Slots = slots });

@@ -392,7 +392,7 @@ internal sealed partial class WindowBuilder
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         sr.viewport = viewport.GetComponent<RectTransform>(); sr.content = crt;
-        BuildElement(sc.Child, content.transform, token);
+        BuildChild(sc.Child, content.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
         BuildScrollbar(sr, go, token);
         // crt moves while the user scrolls → the ticker drops canvas pixelPerfect until it settles (same as
         // BuildScrollViewport). Without it a plain ScrollElement (launcher grid, Settings lists, every plugin scroll)

@@ -42,7 +42,7 @@ internal sealed partial class WindowBuilder
         token.ReskinActions.Add(() => { if (bg != null) bg.color = PanelBgColor(); });
 
         // Child added LAST so it renders on top of the border/background siblings.
-        BuildElement(p.Child, panel.transform, token);
+        BuildChild(p.Child, panel.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
     }
 
     // Panel body: the theme menu background, forced opaque and lifted ~6% toward white so a dark popup separates

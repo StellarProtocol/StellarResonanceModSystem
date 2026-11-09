@@ -368,6 +368,10 @@ internal sealed partial class WindowBuilder
         public GameObject Then = null!;
         public GameObject? Else;
         public Action? BuildThen, BuildElse;   // pending lazy branch builds; cleared once run (WindowBuilder.Layout)
+        // What those builds would build — a ConditionalElement.Prebuild job claims a branch from here (nulls it and
+        // replaces BuildThen/BuildElse with its own finish step, WindowBuilder.Prebuild.cs).
+        public LazyBranch? ThenLazy, ElseLazy;
+        public bool PrebuildRoot; public string? PrebuildName;
         // Enclosing variable-list slot (null = not in one). While that slot is inactive — past the end, or held back
         // by the first-build cap — the Cond is idle: no When() poll, no lazy branch build. The vlist pass runs FIRST in
         // WindowToken.Apply, so a slot admitted this apply is already active when this runs: same-apply catch-up.

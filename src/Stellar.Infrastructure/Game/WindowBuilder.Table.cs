@@ -26,7 +26,7 @@ internal sealed partial class WindowBuilder
         if (cell.Width > 0f) { le.preferredWidth = le.minWidth = cell.Width; le.flexibleWidth = 0f; }
         else if (cell.Weight > 0f) { le.flexibleWidth = cell.Weight; le.minWidth = 0f; }
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }   // natural content size
-        BuildElement(cell.Child, go.transform, token);
+        BuildChild(cell.Child, go.transform, token);   // inline, or a prebuild item (.Prebuild.cs)
     }
 
     // Selectable row: a full-width background Image (raycast target, the rounded SwatchBg chip) + a Button for
