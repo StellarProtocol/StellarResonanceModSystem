@@ -31,6 +31,7 @@ internal sealed partial class ThemesPanel
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
             {
                 ShouldRender = gate, Closable = true, Draggable = true, StartVisible = false,
+                IsolateCanvas = true,   // own batching canvas: its picker list scroll / drag re-snaps only this window
                 TitleProvider = () => _text.T("colours.window.title"),
             },
             _editor.DescribeColours(kit, CloseColours),

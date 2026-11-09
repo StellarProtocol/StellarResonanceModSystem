@@ -97,6 +97,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = ScrollbarRects.Count - 1; i >= 0; i--) if (ScrollbarRects[i] == null) ScrollbarRects.RemoveAt(i);
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         PruneScrollViews();   // (.ScrollViews.cs) — one entry per view carries its content, motion + input state
+        PrunePixelPerfectTargets();   // (.PixelPerfect.cs) isolated window canvases whose window was destroyed
         PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);

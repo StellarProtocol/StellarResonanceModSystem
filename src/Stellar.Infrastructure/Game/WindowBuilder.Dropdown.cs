@@ -296,7 +296,7 @@ internal sealed partial class WindowBuilder
     private static void PositionDropdown(RectTransform prt, WindowRect anchor)
     {
         LayoutRebuilder.ForceRebuildLayoutImmediate(prt);
-        var sf = prt.GetComponentInParent<Canvas>()?.scaleFactor ?? 1f;
+        var sf = prt.GetComponentInParent<Canvas>()?.rootCanvas?.scaleFactor ?? 1f;   // root: a nested window canvas may be nearest
         if (sf <= 0f) sf = 1f;
         var size = prt.rect.size * sf;   // canvas units → screen px, to match anchor/Screen space
         var left = Mathf.Clamp(anchor.X, 0f, Mathf.Max(0f, Screen.width - size.x));

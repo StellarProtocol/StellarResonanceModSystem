@@ -81,7 +81,8 @@ public sealed partial class BootstrapPlugin
         // Framework chrome — shown in every phase (title/menus) EXCEPT hidden over the loading screen. The pre-warm AND-s
         // its own term onto that gate (never replaces it): suppressed while warming (Wiring.Prewarm.cs).
         => new WindowSpec("settings.hub", "", new WindowRect(2071, 1225, 420, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { ShouldRender = () => !_launcherPrewarm.Warming && (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
+            { ShouldRender = () => !_launcherPrewarm.Warming && (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false,
+              IsolateCanvas = true };   // own batching canvas: grid scroll / drag re-snaps only the launcher (local pixelPerfect)
 
     // Live "N failed to load" count for the launcher header: recounted only when a plugin's enabled/errored state
     // changes (IPluginInventory.StatusChanged), so the per-refresh read is a field load, not a List() snapshot.

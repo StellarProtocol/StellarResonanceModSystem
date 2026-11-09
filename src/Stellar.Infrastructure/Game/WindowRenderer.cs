@@ -163,10 +163,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     //     unchanged, and no other window's z is perturbed.
     // Either way the nested Canvas needs its OWN GraphicRaycaster or its widgets become un-hittable (the parent
     // raycaster skips a child canvas) — the override toolbar's buttons/drag AND chat's buttons/scroll rely on it.
-    private static void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
+    // pixelPerfect: a nested canvas normally INHERITS the root's, so a drag/scroll inside it flipped the whole root (every
+    // window rebuilt, 25-45 ms). overridePixelPerfect makes it own the flag: ON at rest (looks exactly as before), and the
+    // ticker flips only THIS canvas while this window moves/scrolls (WindowInteractionTicker.PixelPerfect.cs).
+    private void AttachNestedCanvas(WindowToken token, Stellar.Abstractions.Domain.WindowSpec spec)
     {
         if (token.Root == null || (spec.OverrideSortingOrder is null && !spec.IsolateCanvas)) return;
         var oc = token.Root.AddComponent<Canvas>();
+        oc.overridePixelPerfect = true;
+        oc.pixelPerfect = true;
+        if (_ticker != null && token.Rect != null) _ticker.AddLocalPixelPerfect(token.Rect, oc, spec.Id);
         if (spec.OverrideSortingOrder is { } so)
         {
             oc.overrideSorting = true;   // absolute order; opts out of sibling-order z (override path only)

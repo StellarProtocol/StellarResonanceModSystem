@@ -110,7 +110,7 @@ internal sealed partial class WindowBuilder
     {
         var rt = go.GetComponent<RectTransform>();
         if (rt == null) return;
-        var sf = rt.GetComponentInParent<Canvas>()?.scaleFactor ?? 1f;
+        var sf = rt.GetComponentInParent<Canvas>()?.rootCanvas?.scaleFactor ?? 1f;   // root: IsolateCanvas windows have their own nested canvas
         if (sf <= 0f) sf = 1f;
         var pos = rt.position;
         var r   = rt.rect;

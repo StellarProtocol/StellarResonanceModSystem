@@ -22,6 +22,8 @@ internal static class SettingsHubSpec
             new WindowRect(880f, 414f, SettingsHub.WindowWidth, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // fixed 800 wide; the content pins the height (612)
         {
             ShouldRender = shouldRender, Closable = true, Draggable = true, StartVisible = false,
+            // Own batching canvas: tab scroll / drag re-snaps only the hub (local pixelPerfect), not every Stellar window.
+            IsolateCanvas = true,
             TitleProvider = () => loc.T(TitleKey),
         };
 }

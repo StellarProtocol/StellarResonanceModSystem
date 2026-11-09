@@ -45,7 +45,7 @@ internal static class UiPerfStats
     // (ticker Update) until the NEXT frame's OnFrame, by which time that frame's canvas rebuild and length are known.
     private const double FlipLogEverySec = 2.0;
     private static int _ppFlips;                       // this summary window
-    private static bool _flipPending, _flipOn; private static string _flipReason = ""; private static long _flipWriteTicks;
+    private static bool _flipPending, _flipOn; private static string _flipReason = "", _flipCanvas = "root"; private static long _flipWriteTicks;
     private static long _flipCanvasTicks = -1;         // the flip frame's canvas rebuild (-1 = not measured yet)
     private static long _lastFlipLog; private static int _flipsNotLogged;
 
@@ -89,18 +89,20 @@ internal static class UiPerfStats
         if (_flipPending && _flipCanvasTicks < 0) _flipCanvasTicks = d;   // the flip frame's rebuild
     }
 
-    /// <summary>canvas.pixelPerfect was just set to <paramref name="on"/> (the write began at <paramref name="startTicks"/>)
-    /// because of <paramref name="reason"/> (<c>drag:&lt;window&gt;</c> / <c>resize:&lt;window&gt;</c> /
-    /// <c>scroll:&lt;window&gt;</c> / <c>rest</c>). Counted on the [Hitch] line (<c>ui:ppFlip</c>) and in the summary;
-    /// logged (throttled) on the next frame with the flip frame's canvas rebuild.</summary>
-    public static void PixelPerfectFlip(bool on, string reason, long startTicks)
+    /// <summary><paramref name="canvas"/>'s pixelPerfect (<c>root</c> = the shared window canvas, else the window id of
+    /// an isolated window's own canvas) was just set to <paramref name="on"/> (the write began at
+    /// <paramref name="startTicks"/>) because of <paramref name="reason"/> (<c>drag:&lt;window&gt;</c> /
+    /// <c>resize:&lt;window&gt;</c> / <c>scroll:&lt;window&gt;</c> / <c>rest</c>). Counted on the [Hitch] line
+    /// (<c>ui:ppFlip</c>) and in the summary; logged (throttled) on the next frame with the flip frame's canvas rebuild
+    /// (which covers nested canvases too — the probe times Unity's whole canvas update).</summary>
+    public static void PixelPerfectFlip(bool on, string canvas, string reason, long startTicks)
     {
         if (startTicks == 0L) return;
         var d = Stopwatch.GetTimestamp() - startTicks;
         HitchProbe.Count("ui:ppFlip", 1);
         _ppFlips++;
         if (_flipPending) _flipsNotLogged++;   // two flips before the next frame: keep the latest
-        _flipPending = true; _flipOn = on; _flipReason = reason; _flipWriteTicks = d; _flipCanvasTicks = -1;
+        _flipPending = true; _flipOn = on; _flipCanvas = canvas; _flipReason = reason; _flipWriteTicks = d; _flipCanvasTicks = -1;
     }
 
     // Next frame: the flip frame's canvas rebuild is in (or the hook is unavailable). One line per FlipLogEverySec at most.
@@ -111,7 +113,7 @@ internal static class UiPerfStats
         if (_lastFlipLog != 0L && (now - _lastFlipLog) / (double)Stopwatch.Frequency < FlipLogEverySec) { _flipsNotLogged++; return; }
         _lastFlipLog = now;
         var sb = _sb.Clear();
-        sb.Append("[UiPerf] pixelPerfect ").Append(_flipOn ? "ON" : "OFF").Append(" reason=").Append(_flipReason)
+        sb.Append("[UiPerf] pixelPerfect ").Append(_flipOn ? "ON" : "OFF").Append(" canvas=").Append(_flipCanvas).Append(" reason=").Append(_flipReason)
           .Append(" write=").Append(Ms(_flipWriteTicks, 1).ToString("0.0")).Append("ms canvasRebuild=");
         if (_flipCanvasTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_flipCanvasTicks, 1).ToString("0.0")).Append("ms");
         sb.Append(" frame=").Append(frameMs.ToString("0.0")).Append("ms");
