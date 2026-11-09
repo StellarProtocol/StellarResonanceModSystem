@@ -32,7 +32,10 @@ internal sealed class PluginsPanel
     /// property. Read only from row Funcs (render-driven), never from a per-tick path.</summary>
     internal IPluginDisplayNames? DisplayNames { get; init; }
 
-    private const int MaxRows = 64;
+    // Pooled rows of the VIRTUAL list: no cap on the plugin count (the old 64-row eager pool silently dropped plugin
+    // 65+). The pool only covers the tallest viewport (478 px tab body / 28 px pitch ≈ 17, + margin).
+    private const int PoolRows = 20;
+    private int _first;   // first logical row in the pool (VirtualListElement.OnWindow, set before slot Funcs run)
     private const float IconSize = 18f;
     private const int IconGlyph = 12;       // (18 − 12) / 2 = 3 px padding: whole pixels, centred on the tile
     private const float TrailWidth = 62f;   // version / flash label / switch column
@@ -43,12 +46,13 @@ internal sealed class PluginsPanel
     public HudElement Describe(SettingsKit kit)
     {
         _k = kit;
-        var slots = new HudElement[MaxRows];
-        for (var i = 0; i < MaxRows; i++) slots[i] = BuildRow(i);
+        var slots = new HudElement[PoolRows];
+        for (var i = 0; i < PoolRows; i++) { var slot = i; slots[i] = StellarStyle.ListSlot(BuildRow(() => _first + slot)); }
         var list = new ConditionalElement(
             () => { _cache = _inventory.List(); return _cache.Count > 0; },
-            // Not FixedHeight: the scroll takes the panel's slack, so the list fills the tab down to the footer.
-            new ScrollElement(new ListElement(() => System.Math.Min(_cache.Count, MaxRows), slots), Height: 120f),
+            // Virtual + flexible viewport: takes the panel's slack, so the list fills the tab down to the footer.
+            new VirtualListElement(() => _cache.Count, StellarStyle.ListRowPitch, slots, first => _first = first,
+                Height: 120f),
             kit.S.MutedLine(kit.T("common.noPlugins")));
         return kit.Panel("plugins.installed", () => _loc.TFormat("plugins.found", _cache.Count), list);
     }
@@ -74,9 +78,9 @@ internal sealed class PluginsPanel
         return false;
     }
 
-    private HudElement BuildRow(int idx)
+    private HudElement BuildRow(System.Func<int> idx)
     {
-        PluginInfo? At() => idx < _cache.Count ? _cache[idx] : null;
+        PluginInfo? At() => idx() < _cache.Count ? _cache[idx()] : null;
         string Key() => At()?.Id ?? "";
         var s = _k.S;
         var normal = s.ListTile(StellarStyle.TileRow(
@@ -106,21 +110,20 @@ internal sealed class PluginsPanel
     }
 
     // Every row gets the same 18 px accent tile (prototype .lrow .pi, radius 5): the plugin's own launcher glyph tinted
-    // white on it when it registered one (as the launcher draws it), else its initial. An ImageElement loads its picture
-    // ONCE (at its lazy branch build), so the image branch remembers which plugin it was built for and falls back to the
-    // initial tile if this slot ever shows a different plugin.
-    private HudElement Icon(int idx)
+    // white on it when it registered one (as the launcher draws it), else its initial. The rows are a POOLED virtual
+    // list (a slot shows another plugin after a scroll), so the image is Live: it re-pulls each refresh and swaps
+    // when the PNG array changes (ImageElement.Live, 2.30.0).
+    private HudElement Icon(System.Func<int> idx)
     {
-        PluginInfo? At() => idx < _cache.Count ? _cache[idx] : null;
-        string? builtFor = null;
+        PluginInfo? At() => idx() < _cache.Count ? _cache[idx()] : null;
         var image = _k.S.FilledTile(
-            new ImageElement(() => { var p = At(); builtFor = p?.Id; return p == null ? null : DisplayNames?.IconOf(p.Id); },
-                IconGlyph, IconGlyph) { Tint = () => StellarStyle.White },
+            new ImageElement(() => At() is { } p ? DisplayNames?.IconOf(p.Id) : null, IconGlyph, IconGlyph)
+                { Tint = () => StellarStyle.White, Live = true },
             _k.S.Accent, IconSize, 5f);
         var initial = _k.S.FilledTile(new TextElement(() => Initial(At()), Color: () => StellarStyle.White, Width: IconSize,
             Align: TextAlign.Center, NoWrap: true, FontSize: 10) { Bold = true }, _k.S.Accent, IconSize, 5f);
         return new CellElement(new ConditionalElement(
-            () => At() is { } p && DisplayNames?.IconOf(p.Id) != null && (builtFor == null || builtFor == p.Id),
+            () => At() is { } p && DisplayNames?.IconOf(p.Id) != null,
             image, initial), Width: IconSize);
     }
 

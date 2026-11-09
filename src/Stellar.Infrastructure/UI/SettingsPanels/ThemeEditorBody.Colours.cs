@@ -39,6 +39,7 @@ internal sealed partial class ThemeEditorBody
     // Conditional When — a hidden row must not keep its list slot (each slot adds the list's 2 px gap).
     private readonly List<int> _otherIdx = new();
     private readonly List<int> _pickIdx = new();
+    private int _otherFirst, _pickFirst;   // first logical row in each virtual list's pool (OnWindow)
 
     public HudElement DescribeColours(SettingsKit kit, Action close)
     {
@@ -90,15 +91,17 @@ internal sealed partial class ThemeEditorBody
 
     private HudElement OtherList()
     {
-        var slots = new HudElement[MaxSlots];
-        for (var i = 0; i < MaxSlots; i++)
+        var slots = new HudElement[PoolRows];
+        for (var i = 0; i < PoolRows; i++)
         {
-            var idx = i;
-            string Key() => idx < _otherIdx.Count ? KeyAt(_otherIdx[idx]) : "";
-            slots[i] = ColourRow(Key, () => idx < _otherIdx.Count ? LabelAt(_otherIdx[idx]) : "");
+            var slot = i;
+            int Idx() => _otherFirst + slot;   // pool slot → its current logical row
+            string Key() => Idx() < _otherIdx.Count ? KeyAt(_otherIdx[Idx()]) : "";
+            slots[i] = StellarStyle.ListSlot(ColourRow(Key, () => Idx() < _otherIdx.Count ? LabelAt(_otherIdx[Idx()]) : ""));
         }
         return new ConditionalElement(() => { Refresh(_otherIdx, ShowInOtherList); return true; },
-            new ScrollElement(new ListElement(() => _otherIdx.Count, slots), Height: OtherListHeight) { FixedHeight = true });
+            new VirtualListElement(() => _otherIdx.Count, StellarStyle.ListRowPitch, slots, first => _otherFirst = first,
+                Height: OtherListHeight) { FixedHeight = true });
     }
 
     private void Refresh(List<int> into, Func<int, bool> show)
@@ -153,17 +156,18 @@ internal sealed partial class ThemeEditorBody
     private HudElement BuildAddSection()
     {
         var s = _k.S;
-        var slots = new HudElement[MaxSlots];
-        for (var i = 0; i < MaxSlots; i++)
+        var slots = new HudElement[PoolRows];
+        for (var i = 0; i < PoolRows; i++)
         {
-            var idx = i;
-            int Slot() => idx < _pickIdx.Count ? _pickIdx[idx] : -1;
+            var slot = i;
+            int Slot() => _pickFirst + slot < _pickIdx.Count ? _pickIdx[_pickFirst + slot] : -1;
             string Key() => Slot() >= 0 ? KeyAt(Slot()) : "";
             slots[i] = s.ListTile(StellarStyle.TileRow(
                 SettingsKit.Toggle(() => _checkedSlots.Contains(Key()), on => { if (Slot() >= 0) SetCheckedAt(Slot(), on); }),
                 new SwatchElement(() => ColorOf(Key()), 18f),
                 _k.LineLabel(() => Slot() >= 0 ? LabelAt(Slot()) : ""),
                 new TextElement(() => HexOf(Key()), Color: () => s.Muted(), Width: HexWidth, NoWrap: true)));
+            slots[i] = StellarStyle.ListSlot(slots[i]);
         }
         var body = new ColumnElement(new HudElement[]
         {
@@ -172,7 +176,8 @@ internal sealed partial class ThemeEditorBody
                 new CellElement(new InputElement(() => _pickerFilter, v => _pickerFilter = v ?? "", 180f,
                     OnChange: v => _pickerFilter = v ?? "") { SingleLine = true }, Weight: 1f)),
             new ConditionalElement(() => { Refresh(_pickIdx, ShowInPicker); return true; },
-                new ScrollElement(new ListElement(() => _pickIdx.Count, slots), Height: PickerListHeight) { FixedHeight = true }),
+                new VirtualListElement(() => _pickIdx.Count, StellarStyle.ListRowPitch, slots, first => _pickFirst = first,
+                    Height: PickerListHeight) { FixedHeight = true }),
             new RowElement(new HudElement[]
             {
                 s.PrimaryButton(() => _checkedSlots.Count > 0 ? _text.TFormat("themes.addSelectedN", _checkedSlots.Count)

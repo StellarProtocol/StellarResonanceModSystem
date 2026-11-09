@@ -9,12 +9,15 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 /// <summary>
 /// Index-based live accessors + immediate handlers of the custom-theme colour editor, shared by the house-style view
 /// (<c>ThemeEditorBody.Colours.cs</c>, the "Edit colours" child window). The slot rows pull
-/// <see cref="IThemeOverrides.Slots"/> live (bounded by <see cref="MaxSlots"/>), so slots registered AFTER the window
+/// <see cref="IThemeOverrides.Slots"/> live (no cap — the lists are virtual), so slots registered AFTER the window
 /// was built still appear. Retained uGUI applies at once, so none of the old IMGUI Layout-vs-Repaint deferral is needed.
 /// </summary>
 internal sealed partial class ThemeEditorBody
 {
-    private const int MaxSlots = 64;   // bounded slot rows (system + plugin colours)
+    // Pooled rows of the two VIRTUAL colour lists (Other colours, Add-override picker). There is no cap on the slot
+    // count: the old 64-row eager pools (and a 64 cap in SlotRowCount) silently dropped every colour past the 64th
+    // registered one. The pool only has to cover the fixed viewports (166 / 132 px at a 28 px pitch) + margin.
+    private const int PoolRows = 9;
 
     /// <summary>The framework slots the editor shows in its own "Base" and "Status" panels (in that order); every other
     /// slot goes to "Other colours".</summary>
@@ -26,9 +29,9 @@ internal sealed partial class ThemeEditorBody
     /// edits to a single persist+rebake on mouse-release — the uGUI analog of the IMGUI per-Draw flush.</summary>
     public void TickUgui() => FlushEditsOnRelease();
 
-    // ---- index-based live accessors (slot set may grow after build; pull live, bounded by SlotRowCount) ----
+    // ---- index-based live accessors (slot set may grow after build; pull live) ----
 
-    private int SlotRowCount() => System.Math.Min(_overrides.SlotCount, MaxSlots);
+    private int SlotRowCount() => _overrides.SlotCount;
 
     // Cache the slot list — IThemeOverrides.Slots allocates a fresh List + a record per slot on every call,
     // and the editor's row Funcs hit SlotAt() dozens of times per poll. Refresh when the registered count

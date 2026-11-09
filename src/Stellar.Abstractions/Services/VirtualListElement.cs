@@ -114,4 +114,10 @@ public sealed record VirtualListElement(
     /// ignored when <see cref="VariableHeight"/> is set. Default null = not reorderable (the list behaves exactly as
     /// before). An <c>init</c> property (binary-compatible); a plugin that sets it needs framework ≥2.29.0.</summary>
     public Action<int, int>? OnReorder { get; init; }
+
+    /// <summary>Optional — pin the viewport to exactly <see cref="VirtualListElement.Height"/> (like
+    /// <see cref="ScrollElement.FixedHeight"/>). By default the viewport is FLEXIBLE: it starts at Height and takes a
+    /// share of any spare height in its column. Set this for a list that must keep its size inside a fixed-size layout.
+    /// Default <c>false</c> = unchanged. An <c>init</c> property (binary-compatible); needs framework ≥2.30.0.</summary>
+    public bool FixedHeight { get; init; }
 }

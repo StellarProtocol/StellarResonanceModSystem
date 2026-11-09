@@ -94,7 +94,12 @@ internal sealed partial class HotkeysPanel
 
     public bool IsCapturing => _capturingActionId is not null;
 
-    private const int MaxRows = 64;
+    // Pooled rows of the VIRTUAL list (Hotkeys tab). Was a 64-row eager ListElement: with ~65 actions + a header per
+    // plugin (~80 rows) everything past row 64 silently vanished (user report 2026-11-09). The virtual list has no
+    // item cap; the pool only has to cover the tallest viewport — the 478 px tab body / 28 px pitch ≈ 17, + margin.
+    private const int PoolRows = 20;
+    // First logical display row shown by the pool (VirtualListElement.OnWindow, set before any slot Func is pulled).
+    private int _first;
     // Flattened display list rebuilt once per apply (in the list's outer Conditional When, which runs before the
     // slot Funcs): one HEADER row per plugin group + an action row per binding (omitted when the group is
     // collapsed). Lets the list track hotkeys DECLARED AFTER the hub is built (plugins load post-wiring) AND

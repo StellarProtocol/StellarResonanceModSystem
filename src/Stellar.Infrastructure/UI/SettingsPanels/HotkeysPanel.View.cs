@@ -25,8 +25,8 @@ internal sealed partial class HotkeysPanel
         _k = kit;
         kit.TabChanged += () => { _confirmReset = false; if (_capturingActionId != null) CancelCapture(); };
         var s = kit.S;
-        var slots = new HudElement[MaxRows];
-        for (var i = 0; i < MaxRows; i++) slots[i] = BuildHotkeySlot(i);
+        var slots = new HudElement[PoolRows];
+        for (var i = 0; i < PoolRows; i++) slots[i] = StellarStyle.ListSlot(BuildHotkeySlot(i));
         var confirm = s.ConfirmPanel(new ConfirmSpec(kit.T("hotkeys.reset.q"), kit.T("hotkeys.reset.consequence"),
             kit.T("common.resetAll"), ConfirmResetAll, kit.T("common.cancel"), () => _confirmReset = false) { Width = SettingsHub.MainWidth - 20f });
         var chips = new RowElement(new HudElement[]
@@ -39,8 +39,11 @@ internal sealed partial class HotkeysPanel
         }, Gap: 6f);
         var list = new ConditionalElement(
             () => { RebuildDisplay(); return _display.Count > 0; },
-            // Not FixedHeight: the scroll takes the panel's slack down to the footer.
-            new ScrollElement(new ListElement(() => Math.Min(_display.Count, MaxRows), slots), Height: 120f),
+            // Virtual: no row cap (the old 64-row pool dropped everything after row 64). Its viewport is flexible
+            // (LayoutElement flexibleHeight 1), so like the old ScrollElement it takes the panel's slack down to the
+            // footer and shrinks while the Reset-all confirm is open. Pitch = the 26 px tile + 2 px gap (ListSlot).
+            new VirtualListElement(() => _display.Count, StellarStyle.ListRowPitch, slots, first => _first = first,
+                Height: 120f),
             s.MutedLine(kit.T("hotkeys.none")));
         return new ColumnElement(new HudElement[]
         {
@@ -63,17 +66,20 @@ internal sealed partial class HotkeysPanel
     private HudElement FilterChip(string key, Filter f)
         => _k!.S.Chip(_k.T(key), () => _filter == f, () => _filter = f, FilterChipWidth, _k.S.Accent);
 
-    private HudElement BuildHotkeySlot(int idx)
+    // Pool slot → its CURRENT logical row (_first + slot): every row Func resolves through it, so a slot shows
+    // whatever item the scroll window puts under it.
+    private HudElement BuildHotkeySlot(int slot)
     {
-        bool IsHeader() => idx < _display.Count && _display[idx].IsHeader;
-        return new ConditionalElement(IsHeader, HeaderRow(idx), ActionRow(idx));
+        int Idx() => _first + slot;
+        bool IsHeader() => Idx() < _display.Count && _display[Idx()].IsHeader;
+        return new ConditionalElement(IsHeader, HeaderRow(Idx), ActionRow(Idx));
     }
 
     // A group header: a transparent row (Tile on hover) — chevron, bold name, muted count. Click toggles the group.
-    private HudElement HeaderRow(int idx)
+    private HudElement HeaderRow(Func<int> idx)
     {
         var s = _k!.S;
-        HkRow Row() => idx < _display.Count ? _display[idx] : default;
+        HkRow Row() => idx() < _display.Count ? _display[idx()] : default;
         var hover = new StellarStyle.HoverFlag();
         var row = StellarStyle.TileRow(
             // "▼"/"▶" in PLAIN text draw today (the bold TMP face lacks "▾"; see SDL §6) — one element, text swaps.
@@ -90,10 +96,10 @@ internal sealed partial class HotkeysPanel
         };
     }
 
-    private HudElement ActionRow(int idx)
+    private HudElement ActionRow(Func<int> idx)
     {
         var s = _k!.S;
-        IHotkeyAction? A() => idx < _display.Count ? _display[idx].Action : null;
+        IHotkeyAction? A() => idx() < _display.Count ? _display[idx()].Action : null;
         string Id() => A()?.Id ?? "";
         bool Capturing() => A() is { } a && _capturingActionId == a.Id;
         bool Bound() => A()?.CurrentBinding != null;

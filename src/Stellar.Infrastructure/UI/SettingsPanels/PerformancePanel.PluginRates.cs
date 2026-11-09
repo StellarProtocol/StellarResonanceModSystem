@@ -21,7 +21,10 @@ internal sealed partial class PerformancePanel
         0, 10, 15, PerfControls.DefaultUpdateRateHz, 60, 120, PerfControls.MaxUpdateRateHz,
     };
 
-    private const int MaxPluginRows = 64;
+    // Pooled rows of the VIRTUAL per-plugin list: no cap on the plugin count (the old 64-row eager pool silently
+    // dropped plugin 65+). The flexible viewport starts at 7 rows; the pool covers a viewport up to ~16 rows tall.
+    private const int PluginPoolRows = 18;
+    private int _pluginFirst;   // first logical row in the pool (VirtualListElement.OnWindow)
     private const int ReservedPluginRows = 7;
     // A Pill dropdown trigger is a fixed 28 px, so these rows are 28 tall (pitch 30) instead of the 26 + 2 tiles.
     private const float PluginRowPitch = 30f;
@@ -37,11 +40,20 @@ internal sealed partial class PerformancePanel
 
     internal HudElement BuildPluginSection()
     {
-        var slots = new HudElement[MaxPluginRows];
-        for (var i = 0; i < MaxPluginRows; i++) slots[i] = BuildPluginRow(i);
+        var slots = new HudElement[PluginPoolRows];
+        for (var i = 0; i < PluginPoolRows; i++)
+        {
+            var slot = i;
+            // A virtual-list slot stretches its child to the pitch, so the 2 px gap is a spacer in the slot (R15).
+            slots[i] = new ColumnElement(new HudElement[]
+            {
+                BuildPluginRow(() => _pluginFirst + slot),
+                new SpacerElement(0f, PluginRowPitch - 28f),
+            }, Gap: 0.01f);
+        }
         var list = new ConditionalElement(
             () => { RefreshPlugins(); return _pluginCache.Count > 0; },
-            new ScrollElement(new ListElement(() => Math.Min(_pluginCache.Count, MaxPluginRows), slots),
+            new VirtualListElement(() => _pluginCache.Count, PluginRowPitch, slots, first => _pluginFirst = first,
                 Height: ReservedPluginRows * PluginRowPitch - 2f),
             _k.S.MutedLine(_k.T("common.noPlugins")));
         return _k.S.SectionPanelWithTrailing(_k.T("perf.perPlugin.title"), null,
@@ -79,9 +91,9 @@ internal sealed partial class PerformancePanel
     private string NameOf(PluginInfo? p)
         => p is null ? "" : DisplayNames?.Resolve(p.Id, p.DisplayName) ?? p.DisplayName;
 
-    private HudElement BuildPluginRow(int idx)
+    private HudElement BuildPluginRow(Func<int> idx)
     {
-        PluginInfo? At() => idx < _pluginCache.Count ? _pluginCache[idx] : null;
+        PluginInfo? At() => idx() < _pluginCache.Count ? _pluginCache[idx()] : null;
         string Id() => At()?.Id ?? "";
         var s = _k.S;
         return s.ListTile(StellarStyle.TileRow(

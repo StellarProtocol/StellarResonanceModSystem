@@ -60,6 +60,8 @@ internal sealed partial class WindowBuilder
         if (v.VariableHeight) { BuildVariableList(v, parent, token); return; }
 
         var (viewport, content, scrollRect) = BuildScrollViewport(parent, v.Height, token);
+        if (v.FixedHeight && viewport.parent.GetComponent<LayoutElement>() is { } fixedLe)
+        { fixedLe.minHeight = v.Height; fixedLe.flexibleHeight = 0f; }   // VirtualListElement.FixedHeight
         content.anchorMin = new Vector2(0f, 1f); content.anchorMax = new Vector2(1f, 1f);
         content.pivot = new Vector2(0.5f, 1f); content.anchoredPosition = Vector2.zero;
 
