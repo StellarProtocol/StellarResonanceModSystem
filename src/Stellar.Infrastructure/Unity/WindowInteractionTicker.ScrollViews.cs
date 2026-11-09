@@ -12,9 +12,12 @@ namespace Stellar.Infrastructure.Unity;
 //    game-wide detour on a hot uGUI method, and the game's own ScrollRects are never touched. Order vs the EventSystem
 //    doesn't matter — inertia is applied in ScrollRect.LateUpdate, after every Update.
 //  • TickScrollActivity (.PixelPerfect.cs) counts content motion as "scrolling" ONLY while the user is driving that view
-//    (IsUserScrolling). Counting every content move flipped canvas.pixelPerfect on PROGRAMMATIC moves (chat re-pinning to
-//    the bottom on a new message, a list growing/shrinking, a rebind) — each flip re-snaps + rebatches the whole canvas,
-//    2 × 30-50 ms canvas rebuilds while idle in town (fw 69a41c4 log: 88 [Hitch] lines in ~10 min).
+//    CONTINUOUSLY (IsUserScrolling). Counting every content move flipped canvas.pixelPerfect on PROGRAMMATIC moves (chat
+//    re-pinning to the bottom on a new message, a list growing/shrinking, a rebind) — each flip re-snaps + rebatches the
+//    whole canvas, 2 × 30-50 ms canvas rebuilds while idle in town (fw 69a41c4 log: 88 [Hitch] lines in ~10 min).
+//    The WHEEL is not continuous motion either: a wheel tick moves the content once, which is one ordinary re-snap with
+//    pixelPerfect ON, whereas flipping it cost OFF + ON ≈ 2 × 25-30 ms per tick (cfc2599 log: `pixelPerfect OFF
+//    reason=scroll:settings.hub canvasRebuild=25.0ms`, back ON 0.3 s later). So a wheel only stops a glide here.
 public sealed partial class WindowInteractionTicker
 {
     internal sealed class ScrollView
@@ -23,15 +26,11 @@ public sealed partial class WindowInteractionTicker
         public RectTransform Content = null!;   // moves while scrolling (motion source for the pixelPerfect latch)
         public RectTransform Hit = null!;       // the ScrollRect's own rect: viewport AND its scrollbar
         public float PrevY = float.NaN;         // previous frame's Content.anchoredPosition.y (NaN = unknown/inactive)
-        public float WheelTime = -999f;         // Time.unscaledTime of the last wheel input over this view
         public bool Pressed;                    // left button went down over this view and is still held (drag / scrollbar)
     }
 
     internal readonly List<ScrollView> ScrollViews = new();
     private bool _anyScrollPressed;
-    // Wheel steps are discrete: OnScroll may land this frame or next, then the content settles — keep the view
-    // "user-driven" this long after a wheel tick so the motion it causes is attributed to the user.
-    private const float UserWheelWindow = 0.3f;
 
     internal void AddScrollView(RectTransform content, ScrollRect sr)
         => ScrollViews.Add(new ScrollView { Sr = sr, Content = content, Hit = sr.GetComponent<RectTransform>() });
@@ -45,13 +44,17 @@ public sealed partial class WindowInteractionTicker
         }
     }
 
-    /// <summary>True while the user drives this view: a wheel tick over it just now, the left button held since a press on
-    /// it (content drag or scrollbar drag), or fling inertia (ScrollRect builds velocity only from a user drag and zeroes
-    /// it below 1 px/s; programmatic content moves never set it).</summary>
-    private static bool IsUserScrolling(ScrollView v, float now)
-        => now - v.WheelTime < UserWheelWindow || v.Pressed || v.Sr.velocity.sqrMagnitude > 1f;
+    /// <summary>True while the user moves this view CONTINUOUSLY: the left button held since a press on it (content drag or
+    /// scrollbar drag), or the glide after such a drag (ScrollRect builds velocity only from a user drag and zeroes it below
+    /// 1 px/s; programmatic content moves never set it; our views are Clamped, so no elastic spring-back velocity either).
+    /// A wheel tick is deliberately NOT counted (see the file header): it moves the content once, and a wheel during a glide
+    /// has already zeroed the velocity via StopMovement (TickScrollInput runs first), so pixelPerfect re-crisps after the
+    /// normal settle.</summary>
+    private static bool IsUserScrolling(ScrollView v)
+        => v.Pressed || v.Sr.velocity.sqrMagnitude > 1f;
 
-    // Per frame, before TickScrollActivity: latch wheel / press on the views under the pointer and stop their inertia.
+    // Per frame, before TickScrollActivity: latch a press on the views under the pointer, and stop their inertia on a
+    // wheel tick or any press (7dec5fb, user-validated — keep).
     private void TickScrollInput()
     {
         if (_anyScrollPressed && !Input.GetMouseButton(0))
@@ -65,7 +68,6 @@ public sealed partial class WindowInteractionTicker
         if (!wheeled && !leftDown && !Input.GetMouseButtonDown(1) && !Input.GetMouseButtonDown(2)) return;   // the common frame
         var mp = (Vector2)Input.mousePosition;
         var popup = ModalPopupLayer?.Invoke();
-        var now = Time.unscaledTime;
         for (var i = 0; i < ScrollViews.Count; i++)
         {
             var v = ScrollViews[i];
@@ -74,7 +76,6 @@ public sealed partial class WindowInteractionTicker
             // Same owner rule as hover: a window in front of this list (FrontWindowBlocks), or an open dropdown popup
             // that isn't this list, owns the pointer — its wheel/press is not meant for the list underneath.
             if (HoverBlocked(mp, v.Hit, popup)) continue;
-            if (wheeled) v.WheelTime = now;
             if (leftDown) { v.Pressed = true; _anyScrollPressed = true; }
             if (v.Sr.velocity != Vector2.zero) v.Sr.StopMovement();   // kill the coast; the wheel step still applies
         }

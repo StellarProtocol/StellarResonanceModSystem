@@ -6,7 +6,7 @@ namespace Stellar.Infrastructure.Unity;
 public sealed partial class WindowInteractionTicker
 {
     private float _lastScrollMoveTime = -999f;                     // Time.unscaledTime of the last USER scroll motion
-    private const float ScrollSettleDelay = 0.15f;                 // keep pixelPerfect off this long after the last scroll motion (so it doesn't flicker on/off between discrete wheel steps)
+    private const float ScrollSettleDelay = 0.15f;                 // keep pixelPerfect off this long after the last drag/glide/window motion (no flicker on a momentary pause)
     private RectTransform? _motionTarget;                          // the window being dragged / resized (null = none, or not seen yet)
     private Vector2 _motionPrevPos, _motionPrevSize;               // its anchoredPosition / sizeDelta last frame
     private float _lastWinMoveTime = -999f;                        // Time.unscaledTime of the last detected window move / resize
@@ -40,13 +40,14 @@ public sealed partial class WindowInteractionTicker
         _motionPrevPos = pos; _motionPrevSize = size;
     }
 
-    // Detect per-frame USER scroll motion. A ScrollRect's content rect moving between frames while the user drives that
-    // view (wheel / drag / fling — IsUserScrolling, .ScrollViews.cs) = the user is scrolling a list (e.g. the chat log).
-    // Like a window drag/resize, that re-snaps + rebatches the whole (isolated) canvas every frame while pixelPerfect is
-    // ON — the ~15ms chat-scroll FPS drop. Latch the last-motion time so SyncPixelPerfect keeps pixelPerfect OFF for
-    // ScrollSettleDelay after the last move (no flicker between discrete wheel steps). PROGRAMMATIC content moves (a chat
-    // re-pin to the bottom on a new message, a list growing/shrinking, a rebind) are NOT scrolling: one move is one
-    // ordinary rebuild, while flipping pixelPerfect for it cost two whole-canvas rebuilds (off + on, 30-50 ms each).
+    // Detect per-frame CONTINUOUS user scroll motion. A ScrollRect's content rect moving between frames while the user
+    // drags that view or it glides after the drag (IsUserScrolling, .ScrollViews.cs) = the user is scrolling a list (e.g.
+    // the chat log). Like a window drag/resize, that re-snaps + rebatches the whole (isolated) canvas every frame while
+    // pixelPerfect is ON — the ~15ms chat-scroll FPS drop. Latch the last-motion time so SyncPixelPerfect keeps
+    // pixelPerfect OFF for ScrollSettleDelay after the last move. One-shot moves are NOT scrolling, because one move is
+    // one ordinary rebuild while flipping pixelPerfect for it costs two whole-canvas rebuilds (off + on, 25-50 ms each):
+    // PROGRAMMATIC moves (a chat re-pin to the bottom on a new message, a list growing/shrinking, a rebind) and WHEEL
+    // ticks (each tick moves the content once — measured 2 flips ≈ 60 ms per tick when the wheel counted).
     // Called from Update() immediately before SyncPixelPerfect().
     private void TickScrollActivity()
     {
@@ -59,7 +60,7 @@ public sealed partial class WindowInteractionTicker
             if (c == null || v.Sr == null || !c.gameObject.activeInHierarchy) { v.PrevY = float.NaN; continue; }
             var y = c.anchoredPosition.y;
             // 0.5px threshold ignores sub-pixel jitter; NaN prev (first/re-activated frame) = no motion counted.
-            if (!float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f && IsUserScrolling(v, now))
+            if (!float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f && IsUserScrolling(v))
             {
                 _lastScrollMoveTime = now;
                 _lastScrollView = v;
@@ -70,7 +71,7 @@ public sealed partial class WindowInteractionTicker
 
     // pixelPerfect snaps graphics to the physical pixel grid (crisp text), but it re-snaps every frame — so a
     // MOVING window's contents step by whole pixels instead of gliding. Turn it off while a window is being
-    // dragged or resized, OR while a list is being scrolled (TickScrollActivity), back on otherwise so static UI
+    // dragged or resized, OR while a list is being drag-scrolled / gliding (TickScrollActivity), back on otherwise so static UI
     // stays crisp. Guarded so the canvas rebuild only happens when the state actually flips.
     private void SyncPixelPerfect()
     {
