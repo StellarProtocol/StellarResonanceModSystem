@@ -35,6 +35,7 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - Your own themes based on a theme that this version doesn't know are now kept, instead of disappearing the next time settings are saved.
 - You can now have up to 12 of your own themes. Before, a 13th theme was saved but never shown, so you couldn't select, rename or delete it.
 - Plugin names in the launcher no longer break in the middle of a word; a name too long for its tile ends in "…".
+- The favorite star on launcher tiles is easier to see, and lights up when you point at it.
 - Scrolling lists in mod windows is smoother.
 - Text in mod windows stays sharp when you just click a window or a list without moving it, and moving, resizing or drag-scrolling slowly no longer flickers between sharp and soft.
 - The Stellar Settings window and the Stellar launcher open instantly the first time, instead of freezing the game for a moment.
