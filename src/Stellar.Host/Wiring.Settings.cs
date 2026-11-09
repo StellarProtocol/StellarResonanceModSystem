@@ -81,7 +81,7 @@ public sealed partial class BootstrapPlugin
         var gameUi = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc);
         return new SettingsHubPanels
         {
-            General = new GeneralPanel(_localizationEngine!, loc),
+            General = new GeneralPanel(_localizationEngine!, loc, _namedTheme!),
             Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },
             Hotkeys = new HotkeysPanel(hotkeys, hotkeys, registry, theme, PluginName, loc) { DisplayNames = names },   // registry = IPluginInventory (group-header fallback names); PluginName labels the framework's own group
             Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, loc),
@@ -145,9 +145,9 @@ public sealed partial class BootstrapPlugin
         hub = _settingsHub = new SettingsHub(kit, panels, tab) { HubShown = HubShown };
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
-        // Colour editor drag-release flush + the hub tick (help popover re-anchor, child window centring).
+        // Colour editor + Font/UI Scale drag-release flushes + the hub tick (help popover re-anchor, child window centring).
         // Also pumps the one-shot launcher + hub pre-warms (Wiring.Prewarm.cs) — this poll runs right after WindowService.Tick.
-        _themeEditorPoll = () => { PumpWindowPrewarms(); panels.Themes.PollEditorUgui(); hub.Tick(); };
+        _themeEditorPoll = () => { PumpWindowPrewarms(); panels.Themes.PollEditorUgui(); panels.General.PollScaleUgui(); hub.Tick(); };
         // The pre-warm AND-s its own term onto the loading gate (never replaces it): suppressed while warming.
         var spec = SettingsHubSpec.Create(loc, () => !_hubPrewarm.Warming && gate());
         _settingsHubControl = _windowService.Register(new WindowRegistration(spec, hub.BuildRoot(),

@@ -7,8 +7,9 @@ using Stellar.Infrastructure.UI.Style;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 // The "Theme" panel: a 2-column grid of 48 px theme cards (built-ins, then custom themes, then "+ Duplicate" — or
-// "12 of 12 used" at the limit), 3 rows reserved then it scrolls; under it the active theme's actions (built-in → a
-// note; custom → Edit colours / Rename / Delete with an inline rename field and a delete confirm).
+// "12 of 12 used" at the limit), 4 rows reserved then it scrolls; under it the active theme's actions (built-in → a
+// note; custom → Edit colours / Rename / Delete with an inline rename field and a delete confirm), then the per-theme
+// Window opacity row (ThemesPanel.cs BuildOpacityRow).
 internal sealed partial class ThemesPanel
 {
     private const int MaxCardSlots = 5 + 24 + 1;   // presets + custom themes (a legacy config may hold more than 12) + the add card
@@ -29,7 +30,7 @@ internal sealed partial class ThemesPanel
             Columns: 2, CellWidth: CardWidth, CellHeight: CardHeight), Height: CardRows * CardHeight + (CardRows - 1) * 2f)
             { FixedHeight = true };
         return _k.Panel("themes.theme", () => _text.TFormat("themes.customCount", _store.Names.Count, CustomThemeLimit),
-            grid, BuildThemeActions());
+            grid, BuildThemeActions(), BuildOpacityRow());
     }
 
     private const int CustomThemeLimit = 12;   // == CustomThemeStore.MaxCustomThemes (Application; the store enforces it)
