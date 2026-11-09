@@ -309,11 +309,15 @@ internal sealed partial class WindowBuilder
     // both the editor sandbox and the IL2CPP player) — see WindowThemeAssets.MenuFont. No-op when null.
     private void ApplyMenuFont(Text t) { if (_assets.MenuFont != null) t.font = _assets.MenuFont; }
 
+    // Menu-surface legacy Text may hand Thai strings to a TMP twin (ThaiTmpTwin): game build with the factory only.
+    private bool ThaiTmpCapable => _surface != SurfaceStyle.HudOverlay && StyledTextFactory.CreateBold != null;
+
     // The text binding. Emphasis here is the LEGACY fallback only (sandbox / no TMP face): it carries the
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
         var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize && t.MaxLines <= 0, MaxLines = t.MaxLines };
+        b.ThaiTmp = ThaiTmpCapable && !t.Shadow;   // Thai → shipped Thai face via TMP (ThaiTmpTwin); the outline look stays legacy
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }

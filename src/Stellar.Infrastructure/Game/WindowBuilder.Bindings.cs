@@ -72,11 +72,17 @@ internal sealed partial class WindowBuilder
         // Innermost BubbleElement this text was built inside (null = none): a content change asks it to re-measure its
         // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
         public BubbleBinding? Owner;
+        // Menu text (no shadow twin / live HUD size): a Thai string is drawn by a lazily built TMP twin in the shipped
+        // Thai face (ThaiTmpTwin). False → this binding never looks at the script (HUD overlay, readability-outline text).
+        public bool ThaiTmp;
+        private ThaiTmpTwin? _thai;
         public void Apply()
         {
+            if (C == null) return;
+            if (_thai is { Showing: true }) { ApplyThai(); return; }
             // Skip hidden rows (Conditional/List SetActive=false) — avoids evaluating TextFn (which formats
             // labels/hex strings) for the dozens of off-screen slot rows in the theme editor every poll.
-            if (C == null || !C.gameObject.activeInHierarchy) return;
+            if (!C.gameObject.activeInHierarchy) return;
             // Live font size (HudOverlay) — mirrors HudElementBuilder.TextBinding: diff, then push to fg + twin.
             if (DynamicFontSizeFn != null)
             {
@@ -84,6 +90,7 @@ internal sealed partial class WindowBuilder
                 if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; Owner?.MarkDirty(); }
             }
             var s = TextFn();
+            if (ThaiTmp && s != _last && ShowThai(s)) return;
             // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
             var fitToRect = EllipsizeToRect || MaxLines > 0;
             float rw = fitToRect ? C.rectTransform.rect.width : 0f;
@@ -119,6 +126,38 @@ internal sealed partial class WindowBuilder
                 }
             }
             if (ColorFn != null) ApplyColor(ColorFn());
+        }
+
+        // A Thai string → the TMP twin (built on first use). False = not Thai or no twin possible → the legacy path.
+        private bool ShowThai(string s)
+        {
+            if (!ThaiTmpTwin.Route(ref _thai, C, s, EllipsizeToRect || EllipsizeWidth > 0f, MaxLines))
+            {
+                if (_thai == null && GlyphScript.IsThai(s)) ThaiTmp = false;   // unbuildable: stop retrying per change
+                return false;
+            }
+            _last = s;
+            Owner?.MarkDirty();
+            if (ColorFn != null) ApplyColor(ColorFn());   // paints the hidden legacy Text; Sync mirrors it
+            _thai!.Sync();
+            return true;
+        }
+
+        // Twin showing: same poll-diff as the legacy path, but onto the twin. Colour (and the reskin's size) still land
+        // on the legacy Text and are mirrored by Sync. A non-Thai string swaps the legacy Text back in and re-applies.
+        private void ApplyThai()
+        {
+            if (!_thai!.ActiveInHierarchy) return;
+            var s = TextFn();
+            if (s != _last && !ShowThai(s))
+            {
+                _last = null; _fittedW = -1f;   // force the legacy write below
+                Owner?.MarkDirty();
+                Apply();
+                return;
+            }
+            if (ColorFn != null) ApplyColor(ColorFn());
+            _thai.Sync();
         }
 
         private void ApplyColor(ColorRgba? v)
@@ -184,6 +223,8 @@ internal sealed partial class WindowBuilder
         private string? _last;
         private bool _activeInit, _lastActive;
         public BubbleBinding? Owner;   // enclosing bubble to re-measure on a label change (see TextBinding.Owner)
+        public bool ThaiTmp;           // Thai label → TMP twin in the shipped Thai face (ThaiTmpTwin)
+        private ThaiTmpTwin? _thai;
         // Re-skin: re-assign the (style/theme-updated) sprite directly; reset the active-diff so Apply re-runs.
         public void Resprite()
         {
@@ -195,7 +236,13 @@ internal sealed partial class WindowBuilder
         {
             if (B == null || !B.gameObject.activeInHierarchy) return;
             var s = LabelFn();
-            if (s != _last) { Label.text = s; _last = s; Owner?.MarkDirty(); }
+            if (s != _last)
+            {
+                // The twin shows Thai; anything else (incl. the swap back) goes on the legacy label as before.
+                if (!(ThaiTmp && ThaiTmpTwin.Route(ref _thai, Label, s))) Label.text = s;
+                _last = s; Owner?.MarkDirty();
+            }
+            _thai?.Sync();   // label colour/size (reskin) mirrored onto a showing twin; no-op otherwise
             if (EnabledFn != null) B.interactable = EnabledFn();
             if (ActiveFn != null && Img != null)
             {

@@ -97,6 +97,7 @@ internal sealed partial class WindowBuilder
         {
             B = btn, Label = label, LabelFn = b.Label, EnabledFn = b.Enabled,
             Img = img, Normal = normalSprite, Accent = _assets.ButtonAccentBg, ActiveFn = b.Active,
+            ThaiTmp = ThaiTmpCapable,
         };
         token.Buttons.Add(binding);
         RegisterTextReskin(token, label, 11);

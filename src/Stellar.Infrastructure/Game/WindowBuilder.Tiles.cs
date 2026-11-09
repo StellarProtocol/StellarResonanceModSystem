@@ -187,7 +187,7 @@ internal sealed partial class WindowBuilder
         // the neighbouring tile.
         label.horizontalOverflow = HorizontalWrapMode.Overflow; label.verticalOverflow = VerticalWrapMode.Overflow;
         label.color = TileRest();
-        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w });   // non-null (hasLabel guards)
+        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w, ThaiTmp = ThaiTmpCapable });   // non-null (hasLabel guards); Thai → TMP twin
         // NOTE: deliberately NOT RegisterTextReskin (that forces alpha 1.0); the tile reskin closure in BuildTile
         // re-applies the dim rest tint + scaled size so the label keeps its 0.62 rest alpha after a theme change.
         return label;

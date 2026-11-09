@@ -288,6 +288,7 @@ internal sealed partial class WindowBuilder
         var label = labelGo.AddComponent<Text>();
         UGuiPrimitives.ConfigureText(label, Scaled(11), TextAnchor.MiddleLeft, bold: false);
         label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText; label.text = text;
+        if (ThaiTmpCapable) ThaiTmpTwin.RouteStatic(label, text);   // Thai item → shipped Thai face (TMP twin)
     }
 
     // Place the panel's top-left just under the trigger (open upward if it would overflow the screen bottom),
