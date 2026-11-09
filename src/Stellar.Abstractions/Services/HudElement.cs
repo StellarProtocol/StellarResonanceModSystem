@@ -210,6 +210,17 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and HUD-overlay text.
     /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool CenterGlyphs { get; init; }
+
+    /// <summary>Cap wrapped text at this many lines (framework 2.30.0). When the text wraps to more lines than this at
+    /// its laid-out width, it shows exactly <c>MaxLines</c> lines and the last one ends in "…" (a cut the framework
+    /// makes itself, re-fitted when the string, the font size or the width changes). The text always wraps when this
+    /// is set: <see cref="NoWrap"/> and <see cref="Ellipsize"/> are ignored (<c>MaxLines = 1</c> is the one-line cut).
+    /// Give it a width-constrained slot — a fixed <see cref="Width"/> or a <see cref="CellElement"/> — since the cut
+    /// fits the width the layout hands it. Works with every <see cref="Align"/>, on plain and styled
+    /// (<see cref="Bold"/>/<see cref="Emphasis"/>/...) text; ignored on Shadow and HUD-overlay text. The element is
+    /// only as tall as the lines it shows (a one-line string stays one line tall). 0 (the default) = unlimited,
+    /// unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public int MaxLines { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's

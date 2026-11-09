@@ -123,6 +123,33 @@ internal static class UGuiPrimitives
         return best;
     }
 
+    // TextElement.MaxLines on a plain Text: the longest prefix + "..." that wraps into maxLines lines at width maxW (the
+    // Text's laid-out width). Lines are counted by uGUI's own layout generator with the same settings Text.preferredHeight
+    // uses (GetGenerationSettings(width, 0) + vertical Overflow), so the count matches what is drawn. Binary search over
+    // the cut length; called only on a string or width change (TextBinding). Same ASCII "..." as EllipsizeFit (the "…"
+    // glyph tofus in-world on the menu font) and the same surrogate-safe cut.
+    public static string CapLines(Text t, string s, float maxW, int maxLines)
+    {
+        if (string.IsNullOrEmpty(s) || maxLines <= 0) return s;
+        var settings = t.GetGenerationSettings(new Vector2(maxW, 0f));
+        settings.horizontalOverflow = HorizontalWrapMode.Wrap;
+        settings.verticalOverflow = VerticalWrapMode.Overflow;
+        var gen = t.cachedTextGeneratorForLayout;
+        int Lines(string x) { gen.Populate(x, settings); return gen.lineCount; }
+        if (Lines(s) <= maxLines) return s;
+        string best = Lines("...") <= maxLines ? "..." : "";
+        int lo = 1, hi = s.Length - 1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            int len = mid > 0 && char.IsHighSurrogate(s[mid - 1]) ? mid - 1 : mid;
+            var cand = s.Substring(0, len).TrimEnd() + "...";
+            if (Lines(cand) <= maxLines) { best = cand; lo = mid + 1; }
+            else hi = mid - 1;
+        }
+        return best;
+    }
+
     /// <summary>The string a drop-shadow TWIN (HudOverlay <c>MakeShadowedTextHud</c>, toast <c>MakeShadowedText</c>) shows
     /// for foreground <paramref name="s"/>: identical except every uGUI <c>&lt;color=…&gt;</c>/<c>&lt;/color&gt;</c> tag is
     /// removed. A colour tag OVERRIDES the twin's dark <c>Text.color</c>, so mirroring the string verbatim drew the

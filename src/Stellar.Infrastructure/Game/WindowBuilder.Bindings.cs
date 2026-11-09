@@ -55,6 +55,9 @@ internal sealed partial class WindowBuilder
         // TextElement.Ellipsize: single line fitted to the Text's OWN laid-out width, re-fitted when the string or that width
         // changes (a weighted cell resized with its window). -1 = not fitted yet.
         public bool EllipsizeToRect;
+        // TextElement.MaxLines (>0): wrapped, cut to that many lines + "..." at the Text's own laid-out width — re-fitted
+        // on the same triggers as EllipsizeToRect (string or width change). The builder never sets both.
+        public int MaxLines;
         private float _fittedW = -1f;
         // Emphasis here is the LEGACY FALLBACK only (Mono sandbox / TMP face unavailable): weight stays
         // CRISP per script — Latin real bold, complex scripts regular (synthetic bold blurs them; see
@@ -82,12 +85,18 @@ internal sealed partial class WindowBuilder
             }
             var s = TextFn();
             // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
-            float rw = EllipsizeToRect ? C.rectTransform.rect.width : 0f;
-            if (s != _last || (EllipsizeToRect && Math.Abs(rw - _fittedW) > 0.5f))
+            var fitToRect = EllipsizeToRect || MaxLines > 0;
+            float rw = fitToRect ? C.rectTransform.rect.width : 0f;
+            if (s != _last || (fitToRect && Math.Abs(rw - _fittedW) > 0.5f))
             {
                 _last = s;
                 string text;
-                if (EllipsizeToRect)
+                if (MaxLines > 0)
+                {
+                    _fittedW = rw;
+                    text = rw > 1f ? UGuiPrimitives.CapLines(C, s, rw, MaxLines) : s;   // not laid out yet → full string
+                }
+                else if (EllipsizeToRect)
                 {
                     _fittedW = rw;
                     // Not laid out yet (width 0) → the full string; the first real width re-fits it.
