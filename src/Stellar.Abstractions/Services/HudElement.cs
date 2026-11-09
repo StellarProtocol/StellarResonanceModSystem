@@ -353,6 +353,17 @@ public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudEle
     /// <summary>Diagnostics name for <see cref="Prebuild"/>: <c>[Hitch]</c> buckets <c>prebuild:&lt;name&gt;</c> and the
     /// <c>[Prebuild]</c> summary log line (HITCH/diagnostics on). Null = an index-based name.</summary>
     public string? PrebuildName { get; init; }
+
+    /// <summary>Keep the branch ALIVE once built: when hidden it is parked (its own canvas switched off, moved out of the
+    /// layout and off-screen, its bindings paused) instead of deactivated, so showing it again costs about a normal frame
+    /// instead of a full re-enable + re-layout (a set of tabs switched by click). For a set of sibling Conditionals that
+    /// share ONE fixed-size slot — put them alone in their own Column: the branch takes the slot's size (Fill is implied)
+    /// and does not report its own size to the window. Combine with <see cref="Prebuild"/> so every branch is built and laid
+    /// out in the background (and re-warmed after the window was hidden). No <see cref="ConditionalElement.Else"/>, not
+    /// inside a VirtualList slot (ignored there). Not for content with InputElement.AutoFocus or
+    /// RowElement.ConstrainsWindowMinWidth. Framework 2.30.0. Default false = SetActive toggling, unchanged.
+    /// An <c>init</c> property (binary-compatible); its name is <c>[UiPerf] tabshow</c>'s (via <see cref="PrebuildName"/>).</summary>
+    public bool KeepAlive { get; init; }
 }
 
 /// <summary>Variable-length list, bounded by Slots.Count. All slots built once; the first

@@ -108,7 +108,7 @@ internal sealed partial class WindowBuilder
     }
 
     // Poll-diffed per Apply: texture/uv, accent (outline+fill+caption), fill width, seconds, ★, charge badge.
-    internal sealed class CooldownTileBinding
+    internal sealed class CooldownTileBinding : GatedBinding
     {
         public CooldownTileElement El = null!;
         public Image Outline = null!;

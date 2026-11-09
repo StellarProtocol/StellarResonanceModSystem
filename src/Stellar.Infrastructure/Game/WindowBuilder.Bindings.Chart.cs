@@ -15,7 +15,7 @@ internal sealed partial class WindowBuilder
     // laid-out width actually changed. Archived chart data is static, so steady-state polls are a reference
     // compare + a tuple compare + a float compare and do NO mesh work. Remesh() maps points via ChartGeometry
     // and calls ChartGraphic.SetData (→ dirties mesh).
-    internal sealed class ChartBinding
+    internal sealed class ChartBinding : GatedBinding
     {
         public Func<IReadOnlyList<ChartSeries>> Series = null!;
         public Func<(float Min, float Max)> Range = null!;

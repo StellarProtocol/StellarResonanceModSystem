@@ -12,7 +12,7 @@ internal sealed partial class WindowBuilder
 {
     // ---- token + bindings (captured at build; Apply re-pulls dynamic leaves) ----
 
-    public sealed class WindowToken
+    public sealed partial class WindowToken   // KeepAlive branches: WindowBuilder.KeepAlive.cs
     {
         public GameObject Root = null!;
         public RectTransform Rect = null!;
@@ -145,6 +145,7 @@ internal sealed partial class WindowBuilder
             // rows could collapse (the "all sliders vanish after a font-scale drag; a tab switch brings them
             // back" bug — the tab switch was forcing this rebuild). Force it now.
             if (Rect != null) try { LayoutRebuilder.ForceRebuildLayoutImmediate(Rect); } catch { }
+            RelayoutKeepAlives();   // a kept-alive branch is its own layout root — the window rebuild above stops at it
             _minWidthDue = 1;   // layout is current NOW (forced) → a font-scale/theme growth is measured next apply
         }
 
@@ -154,17 +155,18 @@ internal sealed partial class WindowBuilder
             // activates its pooled rows. Must precede Conds + Texts so slot Funcs (which index snapshot[first+i])
             // and the polymorphic header/picker Conditionals inside each slot read the fresh offset this poll.
             ApplyCount++; LastApplyFrame = Time.frameCount;
+            // Every binding built inside a parked KeepAlive branch is skipped (GatedBinding.Runs; null gate = always runs).
             var structuralChange = false;
-            for (var i = 0; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
+            for (var i = 0; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) structuralChange |= VirtualLists[i].Apply();
             // Visibility (Conds/Lists) next so SetActive is settled before value pulls — matches HudElementBuilder.
             // A SetActive that changes which branch/rows are shown also changes the content's preferred size, but
             // uGUI does NOT auto-rebuild a ContentSizeFitter-sized window on a descendant SetActive — so a
             // content-sized window (AutoSizeWidth launcher: Full↔Minimal↔horizontal) would keep its old size and
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
             var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
-            for (var i = 0; i < Conds.Count; i++) structuralChange |= Conds[i].Apply();
-            for (var i = vlBuilt; i < VirtualLists.Count; i++) structuralChange |= VirtualLists[i].Apply();
-            for (var i = 0; i < Lists.Count; i++) structuralChange |= Lists[i].Apply();
+            for (var i = 0; i < Conds.Count; i++) if (GatedBinding.Runs(Conds[i])) structuralChange |= Conds[i].Apply();
+            for (var i = vlBuilt; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) structuralChange |= VirtualLists[i].Apply();
+            for (var i = 0; i < Lists.Count; i++) if (GatedBinding.Runs(Lists[i])) structuralChange |= Lists[i].Apply();
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
             // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
@@ -191,27 +193,27 @@ internal sealed partial class WindowBuilder
 
         private void ApplyValues()
         {
-            for (var i = 0; i < Texts.Count; i++) Texts[i].Apply();
-            for (var i = 0; i < StyledTexts.Count; i++) StyledTexts[i].Apply();
-            for (var i = 0; i < Sprites.Count; i++) Sprites[i].Apply();
-            for (var i = 0; i < Icons.Count; i++) Icons[i].Apply();
-            for (var i = 0; i < GameTextures.Count; i++) GameTextures[i].Apply();
-            for (var i = 0; i < Buttons.Count; i++) Buttons[i].Apply();
-            for (var i = 0; i < Toggles.Count; i++) Toggles[i].Apply();
-            for (var i = 0; i < Sliders.Count; i++) Sliders[i].Apply();
-            for (var i = 0; i < XYPads.Count; i++) XYPads[i].Apply();
-            for (var i = 0; i < Swatches.Count; i++) Swatches[i].Apply();
-            for (var i = 0; i < Bars.Count; i++) Bars[i].Apply();
-            for (var i = 0; i < Pickers.Count; i++) Pickers[i].Apply();
-            for (var i = 0; i < FrameOpacities.Count; i++) FrameOpacities[i].Apply();
-            for (var i = 0; i < Hovers.Count; i++) Hovers[i].Poll?.Invoke();
-            for (var i = 0; i < Selectables.Count; i++) Selectables[i].Apply();
-            for (var i = 0; i < Bubbles.Count; i++) Bubbles[i].Apply();
-            for (var i = 0; i < MeterRows.Count; i++) MeterRows[i].Apply();
-            for (var i = 0; i < AccentRows.Count; i++) AccentRows[i].Apply();
-            for (var i = 0; i < CooldownTiles.Count; i++) CooldownTiles[i].Apply();
-            for (var i = 0; i < Charts.Count; i++) Charts[i].Apply();
-            for (var i = 0; i < FieldSyncs.Count; i++) FieldSyncs[i].Apply();
+            for (var i = 0; i < Texts.Count; i++) if (GatedBinding.Runs(Texts[i])) Texts[i].Apply();
+            for (var i = 0; i < StyledTexts.Count; i++) if (GatedBinding.Runs(StyledTexts[i])) StyledTexts[i].Apply();
+            for (var i = 0; i < Sprites.Count; i++) if (GatedBinding.Runs(Sprites[i])) Sprites[i].Apply();
+            for (var i = 0; i < Icons.Count; i++) if (GatedBinding.Runs(Icons[i])) Icons[i].Apply();
+            for (var i = 0; i < GameTextures.Count; i++) if (GatedBinding.Runs(GameTextures[i])) GameTextures[i].Apply();
+            for (var i = 0; i < Buttons.Count; i++) if (GatedBinding.Runs(Buttons[i])) Buttons[i].Apply();
+            for (var i = 0; i < Toggles.Count; i++) if (GatedBinding.Runs(Toggles[i])) Toggles[i].Apply();
+            for (var i = 0; i < Sliders.Count; i++) if (GatedBinding.Runs(Sliders[i])) Sliders[i].Apply();
+            for (var i = 0; i < XYPads.Count; i++) if (GatedBinding.Runs(XYPads[i])) XYPads[i].Apply();
+            for (var i = 0; i < Swatches.Count; i++) if (GatedBinding.Runs(Swatches[i])) Swatches[i].Apply();
+            for (var i = 0; i < Bars.Count; i++) if (GatedBinding.Runs(Bars[i])) Bars[i].Apply();
+            for (var i = 0; i < Pickers.Count; i++) if (GatedBinding.Runs(Pickers[i])) Pickers[i].Apply();
+            for (var i = 0; i < FrameOpacities.Count; i++) if (GatedBinding.Runs(FrameOpacities[i])) FrameOpacities[i].Apply();
+            for (var i = 0; i < Hovers.Count; i++) if (GatedBinding.Runs(Hovers[i])) Hovers[i].Poll?.Invoke();
+            for (var i = 0; i < Selectables.Count; i++) if (GatedBinding.Runs(Selectables[i])) Selectables[i].Apply();
+            for (var i = 0; i < Bubbles.Count; i++) if (GatedBinding.Runs(Bubbles[i])) Bubbles[i].Apply();
+            for (var i = 0; i < MeterRows.Count; i++) if (GatedBinding.Runs(MeterRows[i])) MeterRows[i].Apply();
+            for (var i = 0; i < AccentRows.Count; i++) if (GatedBinding.Runs(AccentRows[i])) AccentRows[i].Apply();
+            for (var i = 0; i < CooldownTiles.Count; i++) if (GatedBinding.Runs(CooldownTiles[i])) CooldownTiles[i].Apply();
+            for (var i = 0; i < Charts.Count; i++) if (GatedBinding.Runs(Charts[i])) Charts[i].Apply();
+            for (var i = 0; i < FieldSyncs.Count; i++) if (GatedBinding.Runs(FieldSyncs[i])) FieldSyncs[i].Apply();
         }
 
         /// <summary>Re-issue glyph UVs for every Text in the window after the dynamic font's atlas rebuilt.

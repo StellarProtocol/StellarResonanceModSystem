@@ -153,9 +153,12 @@ internal sealed partial class SettingsHub
             // Fill: the active tab's Conditional takes the column's slack height and stretches the tab body to it, so
             // a tab's growing list panel fills down to the footer. Prebuild: every other tab is built (and, while the
             // hub is open, laid out off-screen) in the background after mount, a few ms per frame — a tab's first
-            // visit cost 65-78 ms when it was built lazily on that click (measured 11-09).
+            // visit cost 65-78 ms when it was built lazily on that click (measured 11-09). KeepAlive: a built tab is
+            // parked (own canvas off, off-screen, bindings paused) instead of deactivated — with Prebuild alone every
+            // switch still cost 45-65 ms re-enabling + re-laying-out the tab (measured 11-09). The bodies column holds
+            // only these 9 Conditionals: a KeepAlive set must be alone in its slot (WindowBuilder.KeepAlive.cs).
             bodies.Add(new ConditionalElement(() => _tab == idx, DescribeTab(idx), Fill: true)
-                { Prebuild = true, PrebuildName = "settings." + Tabs[idx].Key });
+                { Prebuild = true, KeepAlive = true, PrebuildName = "settings." + Tabs[idx].Key });
         }
         return new CellElement(new ColumnElement(new HudElement[]
         {
@@ -178,24 +181,17 @@ internal sealed partial class SettingsHub
         _             => _p.About.Describe(_k),
     };
 
-    // ToolHeader: 40 px accent tile with the tab's glyph (one Conditional per tab — an ImageElement loads its picture
-    // once, so a changing icon is a set of pre-built tiles), bold tab name, the live status line. Each tile's image is
-    // Live only so its pre-drawn glyph size follows the canvas scale (24 units → 24 px at 1440p, 18 → 24 mipped at 1080p).
+    // ToolHeader: 40 px accent tile with the tab's glyph, bold tab name, the live status line. ONE Live tile whose picture
+    // follows the tab (ImageElement.Live swaps the texture when the cached glyph array changes — and re-picks the
+    // pre-drawn size on a canvas-scale change: 24 units → 24 px at 1440p, 18 → 24 mipped at 1080p). It was one
+    // Conditional tile per tab: each switch flipped two of them = a structural whole-window re-layout (11-09).
     private static readonly float HeaderGlyph = StellarStyle.IconTileGlyph(StellarStyle.ToolIconSize);
 
     private HudElement BuildHeader()
     {
-        var icons = new List<HudElement>(Tabs.Length);
-        for (var i = 0; i < Tabs.Length; i++)
-        {
-            var idx = i;
-            // Prebuild too: each tile decodes + uploads its glyph PNG, part of a tab's first-visit cost.
-            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx, HeaderGlyph), StellarStyle.ToolIconSize, live: true))
-                { Prebuild = true, PrebuildName = "settings.icon." + Tabs[idx].Key });
-        }
         return new RowElement(new HudElement[]
         {
-            new CellElement(new ColumnElement(icons, Gap: 0.01f), Width: StellarStyle.ToolIconSize),
+            _k.S.IconTile(() => TabIcon(_tab, HeaderGlyph), StellarStyle.ToolIconSize, live: true),
             new CellElement(new ColumnElement(new HudElement[]
             {
                 new TextElement(() => _k.Loc.T(Tabs[_tab].LabelKey), Color: () => _k.S.Text(), NoWrap: true, FontSize: 17)

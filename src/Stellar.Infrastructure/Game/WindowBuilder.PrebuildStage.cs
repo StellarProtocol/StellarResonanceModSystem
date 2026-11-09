@@ -46,16 +46,19 @@ internal sealed partial class WindowBuilder
         public readonly string Name, BuildLabel, RevealLabel, FinishLabel;   // stable [Hitch] bucket names
         public readonly SlicedWorkStack<BuildItem> Work = new();
         public readonly List<GameObject> Units = new();
+        // The units still to re-activate, in order: Units itself for the first layout; a KeepAlive re-warm swaps in the
+        // subset it deactivated (KeepAliveRules.RewarmPlan). Revealed indexes this list.
+        public List<GameObject> Reveal;
         public Action Finish = null!;   // installed as the Conditional's BuildThen/BuildElse while this branch is pending
-        public int CondScan, Revealed, Items, Slices, RevealFrames, ApplyMark = -1;
+        public int CondScan, Revealed, Items, Slices, RevealFrames, ApplyMark = -1, Rewarms;
         public double TotalMs, MaxSliceMs, FinishMs = -1;
-        public bool Done, Staged;
+        public bool Done, Staged, Started;
         public GameObject? Stage; public Transform? Home; public int HomeIndex;
         public Vector2 AnchorMin, AnchorMax, Pivot, Pos, Size;
 
         public PrebuildBranch(CondBinding cond, bool then, GameObject go, string name, int condScan)
         {
-            Cond = cond; Then = then; Go = go; Name = name; CondScan = condScan;
+            Cond = cond; Then = then; Go = go; Name = name; CondScan = condScan; Reveal = Units;
             BuildLabel = "prebuild:" + name; RevealLabel = "prebuild-layout:" + name; FinishLabel = "prebuild-finish:" + name;
         }
 
@@ -68,7 +71,8 @@ internal sealed partial class WindowBuilder
 
         public string Summary(string how) =>
             $"[Prebuild] {Name}: {how} — built {Items} items in {Slices} slices ({TotalMs:0.0} ms, max slice {MaxSliceMs:0.0} ms), "
-            + $"laid out {Revealed}/{Units.Count} units over {RevealFrames} frames"
+            + $"laid out {Revealed}/{Reveal.Count} units over {RevealFrames} frames"
+            + (Rewarms > 0 ? $", re-warm #{Rewarms} of {Units.Count} units" : "")
             + (FinishMs >= 0 ? $", finished on show in {FinishMs:0.0} ms" : "");
     }
 
@@ -83,12 +87,12 @@ internal sealed partial class WindowBuilder
             st.Built.RemoveAt(0);
         }
         if (br.Go == null) { MarkDone(t, br, "destroyed"); return true; }
-        if (br.Revealed < br.Units.Count) { RevealSlice(t, br, deadline); return true; }
+        if (br.Revealed < br.Reveal.Count) { RevealSlice(t, br, deadline); return true; }
         // Every unit active: wait for an apply to fill the texts (TextBinding skips inactive text), then for the canvas
-        // update after it (end of that frame), then put the branch back home, inactive.
+        // update after it (end of that frame), then put the branch back home, inactive (a KeepAlive one: parked, active).
         if (t.ApplyCount == br.ApplyMark || Time.frameCount <= t.LastApplyFrame) return false;
         Unstage(br);
-        MarkDone(t, br, "prebuilt");
+        MarkDone(t, br, br.Rewarms > 0 ? "rewarmed" : "prebuilt");
         return true;
     }
 
@@ -97,20 +101,23 @@ internal sealed partial class WindowBuilder
         var hT = HitchProbe.Begin();
         if (!br.Staged) Stage(br);
         var allow = new FrameAllowance(deadline, RevealUnitsPerFrame);
-        while (br.Revealed < br.Units.Count && allow.TryTake(Stopwatch.GetTimestamp()))
+        while (br.Revealed < br.Reveal.Count && allow.TryTake(Stopwatch.GetTimestamp()))
         {
-            var u = br.Units[br.Revealed++];
+            var u = br.Reveal[br.Revealed++];
             if (u != null) u.SetActive(true);
         }
         br.RevealFrames++;
-        if (br.Revealed >= br.Units.Count) br.ApplyMark = t.ApplyCount;
+        if (br.Revealed >= br.Reveal.Count) br.ApplyMark = t.ApplyCount;
         HitchProbe.End(br.RevealLabel, hT);
     }
 
     // Move the (inactive) branch into a fresh stage that covers its home slot, shifted off-screen, invisible and
-    // click-through, then activate it — cheap: every unit under it is still inactive.
+    // click-through, then activate it — cheap: every unit under it is still inactive. A KeepAlive branch needs no stage:
+    // its own parked placement already is one (off-screen, canvas off, its own layout root) — and it must never be
+    // reparented, which would re-dirty every graphic in it.
     private static void Stage(PrebuildBranch br)
     {
+        if (br.Cond.Keep is { } keep) { keep.BeginWarm(); br.Staged = true; return; }
         var tr = br.Go.transform;
         var rt = br.Go.GetComponent<RectTransform>();
         br.Home = tr.parent; br.HomeIndex = tr.GetSiblingIndex();
@@ -133,6 +140,7 @@ internal sealed partial class WindowBuilder
     // the home layout group re-sizes it on its next show anyway.
     private static void Unstage(PrebuildBranch br)
     {
+        if (br.Cond.Keep is { } keep) { keep.EndWarm(); br.Staged = false; return; }   // stays active, parked
         if (br.Go != null && br.Home != null)
         {
             br.Go.SetActive(false);

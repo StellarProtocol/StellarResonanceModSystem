@@ -262,6 +262,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
                       && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
         var wasHidden = !t.Root.activeSelf;
+        // Still inactive: parked KeepAlive branches drop back to background re-warming, or the re-activation below would
+        // re-enable (re-mesh + re-layout) every one of them in this frame (WindowBuilder.KeepAlive.cs).
+        if (!hideAll && wasHidden) t.PrepareReshow();
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
         // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears

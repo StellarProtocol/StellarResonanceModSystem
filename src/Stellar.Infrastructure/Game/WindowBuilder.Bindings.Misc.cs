@@ -11,7 +11,7 @@ internal sealed partial class WindowBuilder
 {
     // Poll-diffed backdrop for an AccentRowElement: a faint share-fraction wash (width via anchorMax.x) + a
     // role-coloured left stripe. Idle rows (unchanged share/colour) write nothing.
-    internal sealed class AccentRowBinding
+    internal sealed class AccentRowBinding : GatedBinding
     {
         public RectTransform ShareRect = null!;
         public Image ShareImg = null!;
@@ -38,14 +38,14 @@ internal sealed partial class WindowBuilder
 
     // Per-apply poll for a tile's pin-star state (texture/colour). The hover VISUAL (icon grow + brighten) is
     // driven separately by the renderer's interaction ticker; this only refreshes externally-changed state.
-    internal sealed class HoverBinding { public Action? Poll; }
+    internal sealed class HoverBinding : GatedBinding { public Action? Poll; }
 
     // Re-syncs a text field from its Get() when the backing value changes EXTERNALLY (e.g. a chat composer
     // cleared after send, or DataInspector's ID set by a recent-lookup restore). Diffs on Get() (not the
     // field text), so it never fights live typing: while the user types, Get() either tracks the field (via
     // OnChange) or stays unchanged (no OnChange) — both leave Get()==Last so no SetText fires. The field.Text
     // guard also avoids a redundant SetText (cursor jump) when OnChange already updated the field.
-    internal sealed class FieldBinding
+    internal sealed class FieldBinding : GatedBinding
     {
         public UGuiTextInput Field = null!;
         public Func<string> Get = null!;
@@ -106,7 +106,7 @@ internal sealed partial class WindowBuilder
     // → a narrow bubble; a long child → the bubble fixes at the cap and its wrapping Text flows to >1 line (the
     // vertical ContentSizeFitter then grows the height). Diffs on the resolved width so an unchanged bubble writes
     // nothing. Setting preferredWidth marks the layout dirty, so Unity rebuilds it on the next render frame.
-    internal sealed class BubbleBinding
+    internal sealed class BubbleBinding : GatedBinding
     {
         public LayoutElement Le = null!;       // on the bubble GO (the width driver)
         public RectTransform Child = null!;    // the single content child (measured)
@@ -217,7 +217,7 @@ internal sealed partial class WindowBuilder
     // redundant canvas rebatch) every Apply for every idle row. HoverState is pushed by the ticker hover hook;
     // Selected() is polled. ForceRepaint() (resets the diff) is used by the hover hook, the initial paint, and
     // the theme-reskin (which recomputes Rest/Hover/On).
-    internal sealed class SelectableBinding
+    internal sealed class SelectableBinding : GatedBinding
     {
         public Image Bg = null!;
         public Image? Bar;            // optional "active tab" accent underline (SelectableElement.SelectedBar); null = none

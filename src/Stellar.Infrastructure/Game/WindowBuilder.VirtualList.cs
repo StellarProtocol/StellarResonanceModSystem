@@ -99,7 +99,7 @@ internal sealed partial class WindowBuilder
     // (VirtualListMath), pushes that to the plugin via OnWindow (so slot Funcs resolve snapshot[first+i] THIS
     // poll), sizes the content spacer to Count*RowHeight, and repositions + activates the K pooled slots over
     // the visible window. Returns true when the visible set changed. Runs BEFORE Conds/Texts (WindowToken.Apply).
-    internal sealed class VirtualListBinding : IVirtualListBinding
+    internal sealed class VirtualListBinding : GatedBinding, IVirtualListBinding
     {
         public ScrollRect Sr = null!;
         public RectTransform Content = null!;

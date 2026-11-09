@@ -64,7 +64,7 @@ internal sealed partial class WindowBuilder
     }
 
     // Re-syncs the shared picker to the bound colour on external change; owns the per-hue SV texture.
-    internal sealed class ColorPickerBinding
+    internal sealed class ColorPickerBinding : GatedBinding
     {
         public WindowBuilder Builder = null!;
         public Func<ColorRgba> Get = null!;

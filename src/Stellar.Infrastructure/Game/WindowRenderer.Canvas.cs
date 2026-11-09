@@ -111,6 +111,7 @@ internal sealed partial class WindowRenderer
             new WindowInteractionTicker.IconHost { Img = img, Texture = fn, Uv = uv, BoxW = boxW, BoxH = boxH });
         _builder.RegisterScrollbar = rt => _ticker!.ScrollbarRects.Add(rt);
         _builder.RegisterScrollView = (rt, sr) => _ticker!.AddScrollView(rt, sr);
+        _builder.RegisterLocalCanvas = (rt, c, id) => _ticker!.AddLocalPixelPerfect(rt, c, id, follower: true);   // KeepAlive hosts
         _builder.SetVoiceClickExcluded = (rt, on) =>
         {
             if (_ticker == null || rt == null) return;

@@ -73,12 +73,15 @@ internal sealed partial class WindowBuilder
         || el is VirtualListElement { VariableHeight: false };
 
     // BuildConditional: a Prebuild Conditional outside a variable-list slot joins the window's prebuild queue.
-    private static void RegisterPrebuild(WindowToken token, CondBinding c, string? name)
+    // A KeepAlive one is claimed NOW, so even the branch the first apply shows is built item by item (FinishBranch) and
+    // records its units — what lets it be re-warmed in the background after the window was hidden (.KeepAlive.cs).
+    private void RegisterPrebuild(WindowToken token, CondBinding c, string? name)
     {
         var st = token.Prebuild ??= new PrebuildState { StartFrame = Time.frameCount + PrebuildStartDelayFrames };
         c.PrebuildRoot = true;
         c.PrebuildName = name ?? token.WindowId + ".cond" + st.Roots.Count;
         st.Roots.Enqueue(c);
+        if (c.Keep != null) c.Keep.Branch = ClaimRoot(token, c, then: true);
     }
 
     /// <summary>Per rendered frame (window ticker): advance every window's prebuild inside ONE shared budget.</summary>
@@ -117,11 +120,20 @@ internal sealed partial class WindowBuilder
         while (st.Roots.Count > 0)
         {
             var c = st.Roots.Peek();
-            var br = ClaimRoot(t, c, then: true) ?? ClaimRoot(t, c, then: false);
-            if (br != null) { st.Building = br; return true; }
+            // A KeepAlive root was claimed at registration; it still needs building unless shown (finished) meanwhile.
+            var br = c.Keep?.Branch is { Started: false, Done: false } pre ? pre : ClaimRoot(t, c, then: true) ?? ClaimRoot(t, c, then: false);
+            if (br != null) { StartBranch(t, br); st.Building = br; return true; }
             st.Roots.Dequeue();
         }
         return false;
+    }
+
+    // From here on, Conditionals registered on the token come from this branch's own build (ClaimNested scans them).
+    private static void StartBranch(WindowToken t, PrebuildBranch br)
+    {
+        if (br.Started) return;
+        br.Started = true;
+        br.CondScan = t.Conds.Count;
     }
 
     private PrebuildBranch? ClaimRoot(WindowToken t, CondBinding c, bool then)
@@ -157,9 +169,11 @@ internal sealed partial class WindowBuilder
         {
             var prev = CaptureScope();
             RestoreScope(item.Scope);
+            var alive = AliveMarks(t, item.Scope.Alive);
             _slicer = IsSliceable(item.El) ? br.Work : null;
             try { BuildElement(item.El, item.Parent, t); }
             finally { _slicer = null; RestoreScope(prev); }
+            TagAlive(t, alive, item.Scope.Alive);   // a KeepAlive branch's bindings are gated (.KeepAlive.cs)
         }
         // A Conditional's own GameObjects are toggled by its CondBinding (never a unit); a bubble's content is measured
         // by its BubbleBinding (left active).
@@ -208,6 +222,7 @@ internal sealed partial class WindowBuilder
         if (br.Done) return;
         var hT = HitchProbe.Begin();
         var t0 = Stopwatch.GetTimestamp();
+        StartBranch(t, br);   // a pre-claimed KeepAlive branch shown before the background reached it
         try { br.Items += br.Work.RunAll(item => BuildStep(t, br, item)); }
         catch (Exception ex) { AbortBranch(t, br, ex); return; }
         RevealAll(br);
@@ -229,8 +244,8 @@ internal sealed partial class WindowBuilder
 
     private static void RevealAll(PrebuildBranch br)
     {
-        for (; br.Revealed < br.Units.Count; br.Revealed++)
-            if (br.Units[br.Revealed] != null) br.Units[br.Revealed].SetActive(true);
+        for (; br.Revealed < br.Reveal.Count; br.Revealed++)
+            if (br.Reveal[br.Revealed] != null) br.Reveal[br.Revealed].SetActive(true);
     }
 
     private void MarkDone(WindowToken t, PrebuildBranch br, string how)

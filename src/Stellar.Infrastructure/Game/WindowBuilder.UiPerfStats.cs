@@ -48,8 +48,35 @@ internal static class UiPerfStats
     private static bool _flipPending, _flipOn; private static string _flipReason = "", _flipCanvas = "root"; private static long _flipWriteTicks;
     private static long _flipCanvasTicks = -1;         // the flip frame's canvas rebuild (-1 = not measured yet)
     private static long _lastFlipLog; private static int _flipsNotLogged;
+    // A KeepAlive branch shown (tab switch): pending from its apply until the next frame's OnFrame, like a flip, so the
+    // line carries that frame's window apply + canvas rebuild + length. Sub-60 ms switches never reach [Hitch].
+    private static bool _tabPending; private static string _tabName = "", _tabFrom = "";
+    private static long _tabShowTicks, _tabApplyTicks = -1, _tabCanvasTicks = -1;
 
     public static bool On => HitchProbe.IsEnabled;
+
+    /// <summary>KeepAlive branch <paramref name="name"/> was shown from state <paramref name="from"/> (cold / warming /
+    /// parked); its show step began at <paramref name="startTicks"/>. Logged next frame as <c>[UiPerf] tabshow …</c>.</summary>
+    public static void TabShow(string name, string from, long startTicks)
+    {
+        if (startTicks == 0L) return;
+        _tabPending = true; _tabName = name; _tabFrom = from;
+        _tabShowTicks = Stopwatch.GetTimestamp() - startTicks; _tabApplyTicks = -1; _tabCanvasTicks = -1;
+    }
+
+    private static void LogPendingTab(double frameMs, Action<string> log)
+    {
+        if (!_tabPending) return;
+        _tabPending = false;
+        var sb = _sb.Clear();
+        sb.Append("[UiPerf] tabshow ").Append(_tabName).Append(" from=").Append(_tabFrom)
+          .Append(" show=").Append(Ms(_tabShowTicks, 1).ToString("0.0")).Append("ms apply=");
+        if (_tabApplyTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_tabApplyTicks, 1).ToString("0.0")).Append("ms");
+        sb.Append(" canvasRebuild=");
+        if (_tabCanvasTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_tabCanvasTicks, 1).ToString("0.0")).Append("ms");
+        sb.Append(" frame=").Append(frameMs.ToString("0.0")).Append("ms");
+        log(sb.ToString());
+    }
 
     /// <summary>Count one (or <paramref name="n"/>) toolkit event, on the hitch line and in the summary.</summary>
     public static void Count(UiCounter c, int n = 1)
@@ -65,6 +92,7 @@ internal static class UiPerfStats
     {
         if (startTicks == 0L) return;
         var d = Stopwatch.GetTimestamp() - startTicks;
+        if (_tabPending && _tabApplyTicks < 0) _tabApplyTicks = d;   // the apply that showed the tab (it ends first)
         _applies++; _applyTicks += d;
         if (d > _applyMax) { _applyMax = d; _applyMaxId = windowId; }
     }
@@ -87,6 +115,7 @@ internal static class UiPerfStats
         HitchProbe.End("ui:canvasRebuild", startTicks);
         _canvasN++; _canvasTicks += d; if (d > _canvasMax) _canvasMax = d;
         if (_flipPending && _flipCanvasTicks < 0) _flipCanvasTicks = d;   // the flip frame's rebuild
+        if (_tabPending && _tabCanvasTicks < 0) _tabCanvasTicks = d;      // the switch frame's rebuild
     }
 
     /// <summary><paramref name="canvas"/>'s pixelPerfect (<c>root</c> = the shared window canvas, else the window id of
@@ -128,6 +157,7 @@ internal static class UiPerfStats
         if (!HitchProbe.IsEnabled) return;
         var now = Stopwatch.GetTimestamp();
         LogPendingFlip(frameMs, now, log);
+        LogPendingTab(frameMs, log);
         if (_windowStart == 0L) { _windowStart = now; return; }   // the first frame only opens the window
         _frames++; _frameSum += frameMs; if (frameMs > _frameMax) _frameMax = frameMs;
         var sec = (now - _windowStart) / (double)Stopwatch.Frequency;

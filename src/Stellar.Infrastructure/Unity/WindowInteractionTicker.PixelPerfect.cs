@@ -11,7 +11,11 @@ namespace Stellar.Infrastructure.Unity;
 //  • a window with its OWN nested canvas (IsolateCanvas / OverrideSortingOrder: overridePixelPerfect, set at attach in
 //    WindowRenderer.AttachNestedCanvas) flips ONLY that canvas for motion inside it — the root and every other window are
 //    not rebuilt;
-//  • motion in any other window flips the shared ROOT canvas, as before.
+//  • motion in any other window flips the shared ROOT canvas, as before;
+//  • a FOLLOWER canvas (a ConditionalElement.KeepAlive tab's own canvas, overridePixelPerfect, WindowBuilder.KeepAlive.cs)
+//    flips for motion inside it (a list scrolled in that tab: only the tab re-snaps) AND whenever its enclosing canvas
+//    flips (the window being dragged), so while shown it looks exactly like content of its window. A DISABLED follower
+//    (a parked tab) is never flipped: re-snapping it would rebuild a tab nobody sees; it catches up when shown.
 // Each canvas settles independently (ScrollSettleDelay after ITS last motion).
 public sealed partial class WindowInteractionTicker
 {
@@ -27,6 +31,9 @@ public sealed partial class WindowInteractionTicker
         public float LastMove = -999f;   // Time.unscaledTime of this canvas's last USER motion
         public byte Kind;                // 0 scroll, 1 drag, 2 resize
         public Transform? Src;
+        public bool Follower;            // also off while its enclosing canvas is (Outer chain)
+        public PpTarget? Outer;          // follower only: the innermost canvas target enclosing it (resolved lazily)
+        public bool OuterKnown;
     }
 
     private readonly PpTarget _ppRoot = new();
@@ -38,25 +45,54 @@ public sealed partial class WindowInteractionTicker
 
     /// <summary>WindowRenderer: <paramref name="root"/>'s window has its own <paramref name="canvas"/> with
     /// overridePixelPerfect on — motion inside it flips only that canvas.</summary>
-    internal void AddLocalPixelPerfect(RectTransform root, Canvas canvas, string windowId)
-        => _ppLocal.Add(new PpTarget { Canvas = canvas, Root = root, Id = windowId });
+    internal void AddLocalPixelPerfect(RectTransform root, Canvas canvas, string windowId, bool follower = false)
+    {
+        _ppLocal.Add(new PpTarget { Canvas = canvas, Root = root, Id = windowId, Follower = follower });
+        ForgetOuters();   // a window registers its canvas AFTER its tabs' (mount order): re-resolve every chain
+    }
 
     private void PrunePixelPerfectTargets()
     {
+        var removed = false;
         for (var i = _ppLocal.Count - 1; i >= 0; i--)
-            if (_ppLocal[i].Root == null || _ppLocal[i].Canvas == null) _ppLocal.RemoveAt(i);
+            if (_ppLocal[i].Root == null || _ppLocal[i].Canvas == null) { _ppLocal.RemoveAt(i); removed = true; }
+        if (removed) ForgetOuters();
     }
 
-    // The canvas that owns a motion source: the innermost registered window canvas it lives under, else the root.
-    // Called only on frames with motion; a handful of entries.
-    private PpTarget TargetOf(Transform src)
+    private void ForgetOuters()
     {
+        for (var i = 0; i < _ppLocal.Count; i++) { _ppLocal[i].OuterKnown = false; _ppLocal[i].Outer = null; }
+    }
+
+    // The canvas that owns a motion source: the INNERMOST registered canvas it lives under, else the root.
+    // Called only on frames with motion; a handful of entries.
+    private PpTarget TargetOf(Transform src) => Innermost(src, null) ?? _ppRoot;
+
+    // Innermost local target whose root contains t (excluding `self`); null = none.
+    private PpTarget? Innermost(Transform t, PpTarget? self)
+    {
+        PpTarget? best = null;
         for (var i = 0; i < _ppLocal.Count; i++)
         {
-            var root = _ppLocal[i].Root;
-            if (root != null && src.IsChildOf(root)) return _ppLocal[i];
+            var p = _ppLocal[i];
+            if (p == self || p.Root == null || !t.IsChildOf(p.Root)) continue;
+            if (self?.Root != null && p.Root == self.Root) continue;
+            if (best == null || p.Root.IsChildOf(best.Root!)) best = p;
         }
-        return _ppRoot;
+        return best;
+    }
+
+    // Latest motion that keeps t's canvas off: its own, plus (follower) every enclosing canvas's.
+    private float LastMoveOf(PpTarget t)
+    {
+        var last = t.LastMove;
+        for (var o = t; o.Follower;)
+        {
+            if (!o.OuterKnown) { o.Outer = o.Root != null ? Innermost(o.Root, o) ?? _ppRoot : _ppRoot; o.OuterKnown = true; }
+            o = o.Outer!;
+            if (o.LastMove > last) last = o.LastMove;
+        }
+        return last;
     }
 
     private void MarkMotion(Transform src, byte kind, float now)
@@ -133,11 +169,12 @@ public sealed partial class WindowInteractionTicker
         for (var i = 0; i < _ppLocal.Count; i++) Sync(_ppLocal[i], now);
     }
 
-    private static void Sync(PpTarget t, float now)
+    private void Sync(PpTarget t, float now)
     {
         var c = t.Canvas;
         if (c == null) return;
-        var want = now - t.LastMove >= ScrollSettleDelay;
+        if (t.Follower && !c.enabled) return;   // a parked KeepAlive tab: never re-snapped while nobody sees it
+        var want = now - (t.Follower ? LastMoveOf(t) : t.LastMove) >= ScrollSettleDelay;
         if (c.pixelPerfect == want) return;
         // Every flip re-snaps + rebatches that canvas — [UiPerf] counts them with the canvas, a reason and their cost.
         var t0 = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;

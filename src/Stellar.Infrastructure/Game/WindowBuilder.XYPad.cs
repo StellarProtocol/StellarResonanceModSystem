@@ -114,7 +114,7 @@ internal sealed partial class WindowBuilder
 
     /// <summary>Per-apply: the dot follows <c>Get</c> (value-diffed), the enabled dim, and the square sizing. Pointer
     /// input arrives from the interaction ticker through <see cref="OnPointer"/>.</summary>
-    internal sealed class XYPadBinding
+    internal sealed class XYPadBinding : GatedBinding
     {
         public RectTransform Cell = null!, Pad = null!, Dot = null!;
         public LayoutElement Layout = null!;

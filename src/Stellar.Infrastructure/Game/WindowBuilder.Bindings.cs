@@ -20,7 +20,7 @@ internal sealed partial class WindowBuilder
     private Func<Color> MenuTextColorFn => _menuTextColorFn ??= () => _assets.MenuText;
     private Func<Color> HudTextColorFn => _hudTextColorFn ??= () => HudTextColor;
 
-    internal sealed class SliderBinding
+    internal sealed class SliderBinding : GatedBinding
     {
         public Slider S = null!;
         public Func<float> Get = null!;
@@ -35,7 +35,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class TextBinding
+    internal sealed class TextBinding : GatedBinding
     {
         public Text C = null!;
         // HudOverlay (SurfaceStyle.HudOverlay) only: the offset-twin drop-shadow Text (UnityEngine.UI.Shadow is
@@ -180,7 +180,7 @@ internal sealed partial class WindowBuilder
 
     // TMP real-bold emphasis header (built through StyledTextFactory; see TryBuildEmphasisText). Carries
     // no TMP types itself — the handle interface keeps this file sandbox-compilable.
-    internal sealed class StyledTextBinding
+    internal sealed class StyledTextBinding : GatedBinding
     {
         public IStyledTextHandle H = null!;
         public Func<string> TextFn = null!;
@@ -213,7 +213,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ButtonBinding
+    internal sealed class ButtonBinding : GatedBinding
     {
         public Button B = null!;
         public Text Label = null!;
@@ -252,7 +252,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ToggleBinding
+    internal sealed class ToggleBinding : GatedBinding
     {
         public Image Track = null!;
         public Button Btn = null!;
@@ -284,7 +284,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class SwatchBinding
+    internal sealed class SwatchBinding : GatedBinding
     {
         public Image Img = null!;
         public Func<ColorRgba> Get = null!;
@@ -298,7 +298,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class BarBinding
+    internal sealed class BarBinding : GatedBinding
     {
         // Width via the clip rect's right anchor, NOT fillAmount (spriteless Image ignores it) — see BuildBarTrack.
         // For a HudOverlay Default bar FillRect is left null (the fill is an Image.Type.Filled smoothed by a pulse,
@@ -345,7 +345,7 @@ internal sealed partial class WindowBuilder
 
     // Live window-body opacity — sets the frame Image's alpha each poll from IChromeStyle.WindowOpacity, so
     // the opacity slider updates in real time WITHOUT rebaking the sprite or rebuilding the canvas (the flicker).
-    internal sealed class FrameOpacityBinding
+    internal sealed class FrameOpacityBinding : GatedBinding
     {
         public Image Img = null!;
         public Func<float> Opacity = null!;
@@ -362,7 +362,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class CondBinding
+    internal sealed class CondBinding : GatedBinding
     {
         public Func<bool> When = null!;
         public GameObject Then = null!;
@@ -377,6 +377,9 @@ internal sealed partial class WindowBuilder
         // WindowToken.Apply, so a slot admitted this apply is already active when this runs: same-apply catch-up.
         public GameObject? Gate;
         public BubbleBinding? Owner;   // enclosing bubble: a branch flip changes its content → re-measure it
+        // ConditionalElement.KeepAlive: the branch is parked (canvas off, off-screen) instead of SetActive(false)
+        // (WindowBuilder.KeepAlive.cs). Null = the plain SetActive toggle.
+        public KeepAliveHost? Keep;
         private bool _init, _last;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
@@ -387,17 +390,24 @@ internal sealed partial class WindowBuilder
             var build = b ? BuildThen : BuildElse;
             if (b) BuildThen = null; else BuildElse = null;
             build?.Invoke();
-            if (Then != null) Then.SetActive(b);
-            if (Else != null) Else.SetActive(!b);
+            var structural = true;
+            // A kept-alive branch flips without a SetActive: no re-enable of its graphics, no whole-window re-layout (its
+            // own ignoreLayout change re-lays-out just its column) — only a cold activation counts as structural.
+            if (Keep != null) structural = Keep.Apply(b);
+            else
+            {
+                if (Then != null) Then.SetActive(b);
+                if (Else != null) Else.SetActive(!b);
+            }
             _last = b; _init = true;
             Owner?.MarkDirty();
-            return true;
+            return structural;
         }
     }
 
     // Poll-diffed dynamic atlas sub-rect: re-pulls UvFunc and re-sets RawImage.uvRect only when it changes, so a
     // recycled SpriteElement slot tracks its backing data's icon (mirrors MeterRowBinding's crest uvRect rebind).
-    internal sealed class SpriteBinding
+    internal sealed class SpriteBinding : GatedBinding
     {
         public RawImage Raw = null!;
         public Func<UvRect> Uv = null!;
@@ -413,7 +423,7 @@ internal sealed partial class WindowBuilder
         }
     }
 
-    internal sealed class ListBinding
+    internal sealed class ListBinding : GatedBinding
     {
         public Func<int> Count = null!;
         public GameObject[] Slots = System.Array.Empty<GameObject>();

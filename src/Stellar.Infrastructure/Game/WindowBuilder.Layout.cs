@@ -24,13 +24,16 @@ internal sealed partial class WindowBuilder
     private void BuildConditional(ConditionalElement cond, Transform parent, WindowToken token)
     {
         var go = NewCondContainer(parent, cond.Fill);
-        var thenGo = NewCondArm("Then", go, cond.Fill);
+        var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
+        // KeepAlive (no Else, not in a list slot): the arm sits under a canvas host and the branch's bindings are gated
+        // (WindowBuilder.KeepAlive.cs); the lazy build's scope carries the gate so everything built in it is tagged.
+        var keep = cond.KeepAlive && cond.Else == null && gate == null ? NewKeepAliveHost(go, cond, token) : null;
+        var thenGo = keep != null ? keep.Arm.gameObject : NewCondArm("Then", go, cond.Fill);
         // Branch CONTENT is built lazily — the first time its branch becomes active (CondBinding.Apply), not at
         // mount. A never-shown branch costs nothing: the CombatMeter main window eagerly built its list view AND
         // both party layouts (49 meter rows, ~5k GameObjects via IL2CPP) to show one of them — a 350-476 ms mount
         // (owner report 2026-09-30, [Hitch] measured). The active branch still builds inside the first paint.
-        var gate = _condGate;   // enclosing variable-list slot (null = none); a lazy branch build restores it too
-        var scope = CaptureScope();
+        var scope = keep != null ? CaptureScope().WithAlive(keep.Gate) : CaptureScope();
         // The lazy build's inputs are kept on the binding too, so a Prebuild job can claim and slice them (.Prebuild.cs).
         var thenLazy = new LazyBranch(cond.Then, thenGo.transform, scope);
         Action buildThen = () => BuildDeferred(thenLazy.El, thenLazy.Parent, token, thenLazy.Scope);
@@ -51,7 +54,7 @@ internal sealed partial class WindowBuilder
         var binding = new CondBinding
         {
             When = cond.When, Then = elseGo == null ? go : thenGo, Else = elseGo, BuildThen = buildThen, BuildElse = buildElse,
-            Gate = gate, ThenLazy = thenLazy, ElseLazy = elseLazy,
+            Gate = gate, ThenLazy = thenLazy, ElseLazy = elseLazy, Keep = keep,
         };
         token.Conds.Add(binding);
         // Prebuild: hidden branches build in the background after mount. Not inside a variable-list slot — its
@@ -98,8 +101,10 @@ internal sealed partial class WindowBuilder
         var prev = CaptureScope();
         RestoreScope(scope);
         var marks = new BindingMarks(token);
+        var alive = AliveMarks(token, scope.Alive);
         try { BuildElement(el, parent, token); }
         finally { RestoreScope(prev); }
+        TagAlive(token, alive, scope.Alive);   // inside a KeepAlive branch: gate every binding just built (.KeepAlive.cs)
         if (scope.BubbleOwner is { } owner) { TagBubbleOwner(token, marks, owner); owner.MarkDirty(); }
     }
 
@@ -109,12 +114,14 @@ internal sealed partial class WindowBuilder
     {
         public readonly SurfaceStyle Surface; public readonly GameObject? Gate; public readonly int WidthRowDepth;
         public readonly BubbleBinding? BubbleOwner;   // innermost enclosing BubbleElement (.BubbleOwner.cs)
-        public BuildScope(SurfaceStyle surface, GameObject? gate, int widthRowDepth, BubbleBinding? bubbleOwner)
-        { Surface = surface; Gate = gate; WidthRowDepth = widthRowDepth; BubbleOwner = bubbleOwner; }
+        public readonly AliveGate? Alive;             // innermost enclosing KeepAlive branch (.KeepAlive.cs)
+        public BuildScope(SurfaceStyle surface, GameObject? gate, int widthRowDepth, BubbleBinding? bubbleOwner, AliveGate? alive)
+        { Surface = surface; Gate = gate; WidthRowDepth = widthRowDepth; BubbleOwner = bubbleOwner; Alive = alive; }
+        public BuildScope WithAlive(AliveGate alive) => new(Surface, Gate, WidthRowDepth, BubbleOwner, alive);
     }
-    private BuildScope CaptureScope() => new(_surface, _condGate, _widthRowDepth, _bubbleOwner);
+    private BuildScope CaptureScope() => new(_surface, _condGate, _widthRowDepth, _bubbleOwner, _alive);
     private void RestoreScope(BuildScope s)
-    { _surface = s.Surface; _condGate = s.Gate; _widthRowDepth = s.WidthRowDepth; _bubbleOwner = s.BubbleOwner; }
+    { _surface = s.Surface; _condGate = s.Gate; _widthRowDepth = s.WidthRowDepth; _bubbleOwner = s.BubbleOwner; _alive = s.Alive; }
 
     // RowElement: an HLG row (Gap 0 = the default RowGap), optionally justified. A ConstrainsWindowMinWidth row is
     // also recorded on the token so the renderer can derive the window's minimum width from its natural width
