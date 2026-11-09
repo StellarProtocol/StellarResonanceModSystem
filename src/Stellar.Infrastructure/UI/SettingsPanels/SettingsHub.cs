@@ -30,7 +30,10 @@ internal sealed class SettingsHubPanels
 /// the rail and the main column each hold a <see cref="StellarStyle.VerticalFill"/> (flexibleHeight 1), so the Row
 /// stretches both to the strut (a Row stretches a child whose flexibleHeight &gt; 0) and the slack lands in the
 /// filler / the tab's growing list — the footer and the rail's version line sit at the bottom. Every tab body is
-/// budgeted to fit <see cref="TabBodyHeight"/>; one that did not would grow the window.</para>
+/// budgeted to fit <see cref="TabBodyHeight"/> at its PREFERRED height. The window itself is pinned too
+/// (<see cref="WindowSpec.FixedHeight"/> in <see cref="SettingsHubSpec"/>): a body that runs over budget (a larger
+/// font scale, a long locale) is squeezed toward its min — its list viewport gives way — and never grows the hub
+/// (the Performance tab used to, 2026-11-09).</para>
 /// </summary>
 internal sealed partial class SettingsHub
 {

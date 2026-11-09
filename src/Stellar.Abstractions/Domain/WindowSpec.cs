@@ -171,6 +171,14 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// binary-safe (no plugin rebuild).</summary>
     public bool SlotIndependentLayout { get; init; }
 
+    /// <summary>Pin the window HEIGHT to <see cref="DefaultRect"/>.Height instead of fitting it to the content
+    /// (GlassMenu chrome; ignored when <see cref="Resizable"/>, which already fixes the size). The vertical
+    /// ContentSizeFitter is off, so a body whose preferred height exceeds the pinned height can never grow the window:
+    /// uGUI squeezes the body toward its MIN height instead (a VirtualList / ScrollElement viewport has min 0, so lists
+    /// give way first). For a tabbed window that must keep one size on every tab (the Settings hub). Default false =
+    /// content-fit, as before. Init-only → binary-safe (no plugin rebuild).</summary>
+    public bool FixedHeight { get; init; }
+
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
     /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window
     /// is being drawn.</summary>

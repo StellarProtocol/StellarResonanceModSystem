@@ -166,7 +166,14 @@ internal sealed partial class WindowBuilder
             root.sizeDelta = new Vector2(width, root.sizeDelta.y);
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         }
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        if (spec.FixedHeight && !spec.Resizable && spec.DefaultRect.Height > 0)
+        {
+            // WindowSpec.FixedHeight: the height is the spec's, never the content's — a tab whose body runs taller
+            // is squeezed toward its min (lists give way) instead of growing the window. Resizable fixes it itself.
+            root.sizeDelta = new Vector2(root.sizeDelta.x, spec.DefaultRect.Height);
+            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+        }
+        else fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         var vlg = root.gameObject.AddComponent<VerticalLayoutGroup>();
         vlg.spacing = 0f; vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;

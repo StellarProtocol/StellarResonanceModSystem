@@ -22,10 +22,13 @@ internal sealed partial class PerformancePanel
     };
 
     // Pooled rows of the VIRTUAL per-plugin list: no cap on the plugin count (the old 64-row eager pool silently
-    // dropped plugin 65+). The flexible viewport starts at 7 rows; the pool covers a viewport up to ~16 rows tall.
+    // dropped plugin 65+). The flexible viewport starts at 5 rows; the pool covers a viewport up to ~16 rows tall.
     private const int PluginPoolRows = 18;
     private int _pluginFirst;   // first logical row in the pool (VirtualListElement.OnWindow)
-    private const int ReservedPluginRows = 7;
+    // 5, not 7: at 7 the tab's PREFERRED height (two top panels ~190-205 + this section ~276) ran past the hub's
+    // 478 px tab budget, so the Performance tab grew the window. 5 rows (148 px) keeps it under budget at font scale
+    // 1.25 too; any slack still flows into the viewport (it is flexible), so more rows show when there is room.
+    private const int ReservedPluginRows = 5;
     // A Pill dropdown trigger is a fixed 28 px, so these rows are 28 tall (pitch 30) instead of the 26 + 2 tiles.
     private const float PluginRowPitch = 30f;
     // Trigger caption = width − 38 (12 + 12 insets, 6 gap, 8 chevron). Rate 156 → 118 px: "Follow global" (~88 px bold

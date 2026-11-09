@@ -19,9 +19,13 @@ internal static class SettingsHubSpec
 
     public static WindowSpec Create(ILocalization loc, Func<bool> shouldRender)
         => new(Id, FallbackTitle,
-            new WindowRect(880f, 414f, SettingsHub.WindowWidth, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // fixed 800 wide; the content pins the height (612)
+            new WindowRect(880f, 414f, SettingsHub.WindowWidth, SettingsHub.WindowHeight), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
         {
             ShouldRender = shouldRender, Closable = true, Draggable = true, StartVisible = false,
+            // Fixed 800 × 612 on EVERY tab: the body strut (SettingsHub.BodyHeight) fills it exactly, and a tab whose
+            // content runs taller (Performance at a larger font scale / a long locale) squeezes its list instead of
+            // growing the window. Before, the height was content-fit, so one over-budget tab resized the hub.
+            FixedHeight = true,
             // Own batching canvas: tab scroll / drag re-snaps only the hub (local pixelPerfect), not every Stellar window.
             IsolateCanvas = true,
             TitleProvider = () => loc.T(TitleKey),
