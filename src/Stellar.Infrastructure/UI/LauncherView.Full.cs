@@ -84,25 +84,28 @@ internal sealed partial class LauncherView
         Placeholder = () => T("launcher.find.placeholder"),
     };
 
-    // ── grid: empty states + a pool of 8 rows × 4 tiles, 4 rows tall, scrolling beyond ───────────────────────────
+    // ── grid: empty states + a pool of 7 rows × 5 tiles, 4 rows tall, scrolling beyond ───────────────────────────
+    // One 5-column ListElement grid (94 × 102 cells, 6 px both ways — the same geometry as the old rows of 5), so the
+    // Favorites tab can be drag-reordered (ListElement.OnReorder; the framework locks the scroll for the press, so a
+    // reorder drag never scrolls the grid or counts as list motion for pixelPerfect). CanReorder keeps it off in All
+    // plugins, while Find narrows the grid, and on faded ghost tiles. Hidden when empty, so the empty-state box isn't
+    // followed by a stray gap.
     private HudElement BuildGrid()
     {
-        var rows = new List<HudElement>(MaxRows + 2)
+        var tiles = new HudElement[MaxRows * Cols];
+        for (var i = 0; i < tiles.Length; i++) tiles[i] = BuildGridTile(i);
+        var grid = new ListElement(() => Math.Min(_model.ShownCount, tiles.Length), tiles, Cols, TileWidth, TileHeight)
+        {
+            Gap = GridGap,
+            OnReorder = MoveGridTile,
+            CanReorder = _model.CanReorderShown,
+        };
+        var rows = new List<HudElement>
         {
             new ConditionalElement(() => _model.NoMatch, NoMatchBox()),
             new ConditionalElement(() => _model.FavoritesEmpty, FavoritesEmptyBox()),
+            new ConditionalElement(() => _model.ShownCount > 0, grid),
         };
-        for (var r = 0; r < MaxRows; r++)
-        {
-            var start = r * Cols;
-            var tiles = new HudElement[Cols];
-            for (var c = 0; c < Cols; c++)
-            {
-                var i = start + c;
-                tiles[c] = new ConditionalElement(() => i < _model.ShownCount, BuildGridTile(i));
-            }
-            rows.Add(new ConditionalElement(() => start < _model.ShownCount, new RowElement(tiles, Gap: GridGap)));
-        }
         return new ScrollElement(new ColumnElement(rows, Gap: GridGap), Height: GridHeight) { FixedHeight = true };
     }
 

@@ -120,10 +120,13 @@ internal sealed partial class WindowBuilder
     private void BuildList(ListElement list, Transform parent, WindowToken token)
     {
         var go = UGuiPrimitives.NewChild("List", parent);
-        UGuiPrimitives.AddLayout(go, gap: 2f, columns: list.Columns); ExpandColumnWidth(go);
+        // Horizontal = one HLG row sized to its ACTIVE items (a GridLayoutGroup with a fixed column count would reserve
+        // every pooled column's width even while hidden). Gap null = the historical 2-unit spacing.
+        var columns = list.Horizontal ? UGuiPrimitives.RowMode : list.Columns;
+        UGuiPrimitives.AddLayout(go, gap: list.Gap ?? 2f, columns: columns); ExpandColumnWidth(go);
         // Multi-column cell-size override (else the GridLayoutGroup uses the framework default 120×34, too narrow
         // for an icon+label+value row — StatInspector mini-HUD).
-        if (list.Columns > 1 && list.CellWidth > 0f && go.GetComponent<UnityEngine.UI.GridLayoutGroup>() is { } grid)
+        if (columns > 1 && list.CellWidth > 0f && go.GetComponent<UnityEngine.UI.GridLayoutGroup>() is { } grid)
         {
             grid.cellSize = new Vector2(list.CellWidth, list.CellHeight > 0f ? list.CellHeight : grid.cellSize.y);
             // FillWidth: flow to fill the container width instead of a fixed column count. Flexible packs as many
@@ -154,7 +157,8 @@ internal sealed partial class WindowBuilder
             RegisterReorderList(new ReorderListReg
             {
                 List = go.GetComponent<RectTransform>(), Cells = cells, Count = list.VisibleCount,
-                Grid = list.Columns > 1, OnReorder = list.OnReorder, Accent = _assets.MenuAccent,
+                Grid = columns > 1 || list.Horizontal, OnReorder = list.OnReorder, Accent = _assets.MenuAccent,
+                CanDrag = list.CanReorder,
             });
         }
     }
@@ -168,7 +172,8 @@ internal sealed partial class WindowBuilder
         public RectTransform List = null!;
         public RectTransform[] Cells = null!;
         public Func<int> Count = null!;
-        public bool Grid;   // multi-column → insertion is left/right of a cell; single column → above/below a row
+        public bool Grid;   // multi-column / one row → insertion is left/right of a cell; single column → above/below a row
+        public Func<int, bool>? CanDrag;   // ListElement.CanReorder: item may be picked up (null = all); polled per press
         public Action<int, int> OnReorder = null!;
         public Color Accent;   // insertion-bar colour (the menu accent at build time)
         public VirtualListBinding? Virtual;   // non-null = a uniform virtual list (pooled slots, auto-scroll)

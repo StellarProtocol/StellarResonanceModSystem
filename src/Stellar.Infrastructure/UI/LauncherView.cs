@@ -63,7 +63,10 @@ internal sealed partial class LauncherView
         _text = text;
         _s = style;
         _failedCount = failedCount;
-        _feedback = new StellarFeedbackLine(style, () => T("launcher.hint.idle"));
+        // Idle hint: the Favorites tab says it can be reordered (only when it actually can: no Find text).
+        _feedback = new StellarFeedbackLine(style, () => T(
+            _model.Tab == LauncherTab.Favorites && _model.FavoriteCount > 1 && !_model.QueryActive
+                ? "launcher.hint.idle_favorites" : "launcher.hint.idle"));
     }
 
     private bool Full => _registry.Mode == LauncherMode.Full;
@@ -110,6 +113,20 @@ internal sealed partial class LauncherView
         _flashUntil = Now() + FlashSeconds;
         _feedback.Show(F("launcher.feedback.opened", LauncherMenuModel.NameOf(e)));
         try { e.OnOpen(); } catch { /* never break the launcher */ }
+    }
+
+    // Drag-reorder drops (Full Favorites grid / compact bar): the model writes the shared favorite order; the dropped
+    // tile flashes (R13) and the footer confirms the new position (the compact bar has no footer — the flash says it).
+    private void MoveGridTile(int from, int to) => Moved(_model.MoveShown(from, to));
+
+    private void MoveCompactTile(int from, int to) => Moved(_model.MoveFavorite(from, to));
+
+    private void Moved((LauncherEntry Entry, int Position)? result)
+    {
+        if (result is not { } r) return;
+        _flashEntry = r.Entry;
+        _flashUntil = Now() + FlashSeconds;
+        _feedback.Show(F("launcher.feedback.moved", LauncherMenuModel.NameOf(r.Entry), r.Position));
     }
 
     private void ToggleFavorite(LauncherEntry? e)

@@ -372,4 +372,21 @@ public sealed record ListElement(Func<int> VisibleCount, IReadOnlyList<HudElemen
     /// reorders its data and the list re-pulls. Default null = not reorderable. Init property, NOT a ctor param
     /// (binary compatibility).</summary>
     public Action<int, int>? OnReorder { get; init; }
+
+    /// <summary>Optional, with <see cref="OnReorder"/>: whether the item at index <c>i</c> can be PICKED UP right now
+    /// (polled on the press). False = a press on it is an ordinary click and never starts a drag; it is still a drop
+    /// target. Use it to lock items (a faded placeholder) or the whole list for a while (return false for every
+    /// index, e.g. while a filter makes the order ambiguous). Default null = every item can be dragged. Framework
+    /// 2.30.0; init property (binary compatibility).</summary>
+    public Func<int, bool>? CanReorder { get; init; }
+
+    /// <summary>Optional spacing between items, in canvas units (both axes for a grid). Default null = the framework's
+    /// 2-unit list spacing, unchanged. Framework 2.30.0; init property (binary compatibility).</summary>
+    public float? Gap { get; init; }
+
+    /// <summary>Lay the items out in ONE ROW (side by side, the list as wide as its visible items) instead of a column
+    /// or a grid; <see cref="Columns"/> / <see cref="CellWidth"/> / <see cref="CellHeight"/> are ignored. With
+    /// <see cref="OnReorder"/> the insertion bar sits left/right of an item. Default false = unchanged. Framework 2.30.0;
+    /// init property (binary compatibility).</summary>
+    public bool Horizontal { get; init; }
 }

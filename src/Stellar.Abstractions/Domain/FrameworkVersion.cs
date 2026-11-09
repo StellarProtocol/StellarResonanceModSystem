@@ -21,7 +21,8 @@ public static class FrameworkVersion
     /// BepInEx chainloader happy.
     /// 2.30.0 adds <c>IThemeStatusColors</c> (<c>theme.Colors.Success</c>/<c>Danger</c>/<c>Caution</c>), <c>ThemePreset.Sakura</c>
     /// <c>TextElement.MaxLines</c> and <c>TextElement.Height</c>, plus <c>WindowSpec.Topmost</c> and <c>IWindowTopmost</c>
-    /// (<c>control.SetTopmost(bool)</c> / <c>control.IsTopmost()</c> via <c>WindowTopmostExtensions</c>) (all additive); a
+    /// (<c>control.SetTopmost(bool)</c> / <c>control.IsTopmost()</c> via <c>WindowTopmostExtensions</c>), and
+    /// <c>ListElement.Gap</c> / <c>Horizontal</c> / <c>CanReorder</c> (all additive); a
     /// plugin that uses any of them needs ≥2.30.0. Runtime: window stacking is no longer sticky — <c>BringToFront</c> acts
     /// like a fresh open, a window shown from hidden goes on top of its layer, a fronted HUD rises above Tools/Debug only
     /// until it is hidden.

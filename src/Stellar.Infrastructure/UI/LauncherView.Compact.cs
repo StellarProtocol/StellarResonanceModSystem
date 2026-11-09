@@ -48,11 +48,16 @@ internal sealed partial class LauncherView
                  HeaderIconButton("rotate", () => _registry.MinimalHorizontal = !_registry.MinimalHorizontal)),
             Sep(),
         };
-        for (var i = 0; i < MaxFavorites; i++)
-        {
-            var idx = i;
-            items.Add(new ConditionalElement(() => idx < _model.FavoriteCount, CompactFavoriteTile(idx)));
-        }
+        // The favorites as ONE drag-reorderable list (1 column / 1 row, 6 px like the bar), writing the same saved order
+        // as the Full menu's Favorites tab. Settings sits outside it, so it is never dragged nor a drop target. Hidden
+        // when empty (the hint shows instead) so it adds no stray gap.
+        var tiles = new HudElement[MaxFavorites];
+        for (var i = 0; i < MaxFavorites; i++) tiles[i] = CompactFavoriteTile(i);
+        items.Add(new ConditionalElement(() => _model.FavoriteCount > 0,
+            new ListElement(() => Math.Min(_model.FavoriteCount, MaxFavorites), tiles)
+            {
+                Gap = 6f, Horizontal = horizontal, OnReorder = MoveCompactTile,
+            }));
         items.Add(new ConditionalElement(() => _model.FavoriteCount == 0, new CellElement(
             Small(() => T("launcher.compact.empty"), () => _s.Muted(), CompactHintFont, TextAlign.Center,
                 maxLines: horizontal ? 3 : 8),

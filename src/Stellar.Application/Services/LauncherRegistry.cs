@@ -120,6 +120,15 @@ internal sealed class LauncherRegistry : ILauncher, ILauncherOwnedRegistrations
         _revision++;
     }
 
+    /// <summary>The saved favorite order (titles; empty = registration order) — <see cref="LauncherFavoriteOrder"/>.</summary>
+    public IReadOnlyList<string> FavoriteOrder => _prefs.FavoriteOrder;
+
+    public void SetFavoriteOrder(IReadOnlyList<string> order)
+    {
+        _prefs.SetFavoriteOrder(order);
+        _revision++;
+    }
+
     private void Remove(LauncherEntry entry)
     {
         // By REFERENCE: LauncherEntry is a record, so List.Remove would match a value-equal entry another
