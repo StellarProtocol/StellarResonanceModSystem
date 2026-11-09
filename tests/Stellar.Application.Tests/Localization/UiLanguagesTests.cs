@@ -38,7 +38,7 @@ public sealed class UiLanguagesTests
         var en = Values(Path.Combine(langDir, "en.json"));
         var ko = Values(Path.Combine(langDir, "ko.json"));
         var same = en.Keys.Where(k => en[k] == ko[k]).OrderBy(k => k, System.StringComparer.Ordinal).ToArray();
-        Assert.Equal(new[] { "layout.px", "perf.hz", "perf.ramp.hz" }, same);
+        Assert.Equal(new[] { "layout.px", "layout.slots.hint", "perf.hz", "perf.ramp.hz" }, same);
     }
 
     // Korean is the 2.21.0 feature; the exact current-version pin follows the latest release.

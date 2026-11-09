@@ -19,7 +19,7 @@ internal static class SettingsHubSpec
 
     public static WindowSpec Create(ILocalization loc, Func<bool> shouldRender)
         => new(Id, FallbackTitle,
-            new WindowRect(1591f, 722f, 600f, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // wide enough for Hotkeys rows
+            new WindowRect(880f, 414f, SettingsHub.WindowWidth, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)   // fixed 800 wide; the content pins the height (612)
         {
             ShouldRender = shouldRender, Closable = true, Draggable = true, StartVisible = false,
             TitleProvider = () => loc.T(TitleKey),

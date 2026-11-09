@@ -20,6 +20,16 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - A new built-in theme, Sakura: rose-purple panels with a pink accent.
 - Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
 - Mods can now show text over a set number of lines, ending in "…" when it is longer.
+### Changed
+- The Stellar Settings window has a new look: tabs down the left side, a short status line at the top of each tab, and a message at the bottom confirming every change you make. It keeps one size, so it no longer grows or shrinks between tabs.
+- Every setting has a "?" button that explains what it does.
+- Plugins show their own icons, and a plugin that failed to start is marked red with a Retry button.
+- Themes are picked from cards, with a live preview window that follows your theme, opacity and classic button style. Custom theme colours open in their own window.
+- Hotkeys are grouped by plugin, show "Not set" when unassigned, and ask before resetting everything.
+- Game UI shows which parts of the game HUD are moved or hidden, and each can be reset on its own.
+- Performance lets you pick each plugin's rate from a list.
+### Removed
+- The "Reset selected to default" and "Reset all in this slot" buttons on the Layout tab, which did nothing. The layout editor's own toolbar resets windows.
 ### Fixed
 - Your own themes based on a theme that this version doesn't know are now kept, instead of disappearing the next time settings are saved.
 - You can now have up to 12 of your own themes. Before, a 13th theme was saved but never shown, so you couldn't select, rename or delete it.
@@ -31,6 +41,7 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - **`TextElement.MaxLines`** (`int`, `init`, default 0 = unlimited). Always wraps; the framework cuts the string itself (never TMP's Ellipsis mode): TMP counts lines with `ForceMeshUpdate` + `textInfo.lineCount`, plain `Text` with uGUI's layout `TextGenerator`. Re-fitted on a string, font-size or width change.
 - **Internal house-style kit** `Stellar.Infrastructure.UI.Style` (`StellarStyle`, `StellarHelpPopover`, `StellarFeedbackLine`) for the upcoming Settings hub and launcher redesign. No public API.
 - **Compatibility.** A plugin that reads the status colours, selects Sakura or sets `MaxLines` needs framework ≥ 2.30.0.
+- **Settings hub redesign (phase 2).** `SettingsHub` (+ `.Rail`) builds the fixed 800 × 612 window (1 px height strut + `VerticalFill` flex fillers; tabs lazily built per `Conditional`), `SettingsKit` hands every panel the kit, help popover, footer feedback line and `StellarRowFlash`; each panel exposes `Describe(SettingsKit)` + `Status(SettingsKit)` (the one status builder). "Edit colours" is a child window (`stellar.settings.colours`, opened centred on the hub and fronted); help popover window `stellar.settings.help`. Recon walk moved to About → "Save HUD paths". Internal `BootstrapPlugin.OpenSettingsAt(string tabKey)` (keys `plugins` / `layout` / `themes` / `hotkeys` / `gameui` / `performance` / `about`) for the launcher. `IPluginDisplayNames.IconOf` (default member) feeds plugin launcher icons to the list. Kit additions: `SmallPill` (22 px), `SmallCloseButton` (24 px), `FilledTile`, `VerticalFill`, `TopColumn`, `MinHeight`, `Border()`; fixed-width pills now set `MaxWidth`. All new strings in the six framework languages (additive keys only; superseded keys are left in place).
 
 ## [2.29.1] - 2026-11-09
 _**2.29.1** (patch) — PR #151. Mod buttons in the Esc menu's side bar stack under the Stellar button with their own icons, and several mod-window drag and slider problems are fixed. No API change, no plugin rebuild._

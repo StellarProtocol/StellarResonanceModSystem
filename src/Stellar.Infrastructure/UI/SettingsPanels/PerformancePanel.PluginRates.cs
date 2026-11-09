@@ -3,95 +3,95 @@ using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
-using Stellar.Application.Services;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Per-plugin update-rate controls for the Settings → Performance panel.
-/// Each plugin row has: name label, a wide rate slider with a small knob (snap stops, 0 =
-/// follow global) that fills the row, a one-line value readout (shows the live ramp rate in
-/// accent while ramping), and a self-documenting "Self-rate" cycle button (Off → Boost →
-/// Self-managed).
+/// "Per-plugin rate" for Settings → Performance: a column header (Plugin / Rate / Self-rate) over one row per loaded
+/// plugin — name (muted while the plugin is off), a Rate Pill dropdown (Follow global, 10–120 Hz, Every frame) mapped
+/// onto the per-plugin override, and a Self-rate Pill dropdown (Off / Boost / Self-managed). The old slider + "→ 60 Hz"
+/// ramp read-out is gone (the game font draws "→" blank); the dropdown shows the configured rate.
 /// </summary>
 internal sealed partial class PerformancePanel
 {
-    // Snap stops for the per-plugin rate cycle button. Index 0 = "Follow global" (stored as 0).
+    // Per-plugin rate options. Index 0 = "Follow global" (stored as 0); the rest are exact stored Hz values.
     private static readonly int[] PluginStops =
     {
         0, 10, 15, PerfControls.DefaultUpdateRateHz, 60, 120, PerfControls.MaxUpdateRateHz,
     };
 
     private const int MaxPluginRows = 64;
-    // Fixed column widths. The slider is pinned small; the middle gap is a Weight:1 CellElement that
-    // absorbs all leftover row width, so the self-rate button right-aligns regardless of viewport width.
-    private const float PluginNameWidth = 140f;
-    private const float PluginSliderHandle = 7f;        // small knob (renderer default is 13)
-    private const float PluginRateLabelWidth = 96f;     // value readout — fits "Follow global" on one line
-    private const float PluginModeButtonWidth = 115f;
+    private const int ReservedPluginRows = 7;
+    // A Pill dropdown trigger is a fixed 28 px, so these rows are 28 tall (pitch 30) instead of the 26 + 2 tiles.
+    private const float PluginRowPitch = 30f;
+    private const float RateDropWidth = 118f;
+    private const float SelfDropWidth = 112f;
 
-    // Refreshed each frame by the outer ConditionalElement's When predicate.
-    private IReadOnlyList<PluginInfo> _pluginCache = Array.Empty<PluginInfo>();
+    // Refreshed each apply by the list's Conditional When: loaded plugins only (a plugin that failed to start has no
+    // rate to set; it lives on the Plugins tab with its Retry).
+    private readonly List<PluginInfo> _pluginCache = new();
 
     internal HudElement BuildPluginSection()
     {
         var slots = new HudElement[MaxPluginRows];
         for (var i = 0; i < MaxPluginRows; i++) slots[i] = BuildPluginRow(i);
-        var list = new ListElement(() => _pluginCache.Count, slots);
-        return new ConditionalElement(
-            () => { _pluginCache = _inventory.List(); return _pluginCache.Count > 0; },
-            new ScrollElement(list, Height: 220f),
-            new TextElement(() => _loc.T("common.noPlugins"), () => _theme.Colors.TextMuted));
+        var list = new ConditionalElement(
+            () => { RefreshPlugins(); return _pluginCache.Count > 0; },
+            new ScrollElement(new ListElement(() => Math.Min(_pluginCache.Count, MaxPluginRows), slots),
+                Height: ReservedPluginRows * PluginRowPitch - 2f),
+            _k.S.MutedLine(_k.T("common.noPlugins")));
+        return _k.S.SectionPanelWithTrailing(_k.T("perf.perPlugin.title"), null,
+            _k.Help("perf.perPlugin", "perf.perPlugin.title", "help.perf.perPlugin", "tab.performance"),
+            ColumnHeader(), list);
     }
 
-    // Drop the redundant "Stellar." prefix every plugin shares, so names fit the column and don't spill onto the slider.
-    private static string ShortName(string? displayName)
+    private void RefreshPlugins()
     {
-        var n = displayName ?? "";
-        return n.StartsWith("Stellar.", StringComparison.Ordinal) ? n.Substring("Stellar.".Length) : n;
+        _pluginCache.Clear();
+        foreach (var p in _inventory.List()) if (!p.IsErrored) _pluginCache.Add(p);
+    }
+
+    // Plugin / Rate / Self-rate, aligned over the row columns (tile inset 6, and the scroll viewport's 9 px bar lane).
+    private HudElement ColumnHeader()
+    {
+        var s = _k.S;
+        HudElement H(string key, float width) => new TextElement(_k.T(key), Color: () => s.Muted(), Width: width,
+            NoWrap: true, FontSize: 11) { Bold = true, Ellipsize = true };
+        return new RowElement(new HudElement[]
+        {
+            new SpacerElement(StellarStyle.TilePadX, 16f),
+            new CellElement(new RowElement(new HudElement[]
+            {
+                new CellElement(new TextElement(_k.T("perf.col.plugin"), Color: () => s.Muted(), NoWrap: true, FontSize: 11)
+                    { Bold = true }, Weight: 1f),
+                H("perf.col.rate", RateDropWidth),
+                H("perf.col.self", SelfDropWidth),
+            }, Gap: 8f), Weight: 1f),
+            new SpacerElement(StellarStyle.TilePadX + 9f, 1f),
+        }, Gap: 0.01f);
     }
 
     // Display only: the rate prefs, ramp state and list order stay keyed on the plugin Id.
-    private string? NameOf(PluginInfo? p)
-        => p is null ? null : DisplayNames?.Resolve(p.Id, p.DisplayName) ?? p.DisplayName;
+    private string NameOf(PluginInfo? p)
+        => p is null ? "" : DisplayNames?.Resolve(p.Id, p.DisplayName) ?? p.DisplayName;
 
     private HudElement BuildPluginRow(int idx)
     {
         PluginInfo? At() => idx < _pluginCache.Count ? _pluginCache[idx] : null;
         string Id() => At()?.Id ?? "";
-
-        return new RowElement(new HudElement[]
-        {
-            new TextElement(() => ShortName(NameOf(At())),
-                () => At()?.IsEnabled == true ? null : _theme.Colors.TextMuted,
-                Width: PluginNameWidth, NoWrap: true),                                    // name (fixed; "Stellar." stripped)
-
-            new SliderElement(() => GetPluginSliderIndex(Id()), v => SetPluginSliderIndex(Id(), v),
-                0f, PluginStops.Length - 1) { HandleSize = PluginSliderHandle },  // elastic track (fills the row) + small knob
-
-            // Value readout (one line): the configured rate, or the live ramp rate (accent) while ramping.
-            new TextElement(() => PluginRateOrRampLabel(Id()),
-                () => IsRamping(Id()) ? _theme.Colors.Accent : (ColorRgba?)null,
-                Width: PluginRateLabelWidth, NoWrap: true),
-
-            new DropdownElement(() => SelfRateIndex(Id()), () => SelfRateOptions,
-                i => SetSelfRate(Id(), i), Width: PluginModeButtonWidth),                 // self-rate: Off/Boost/Self-managed
-        }, Gap: 10f);
+        var s = _k.S;
+        return s.ListTile(StellarStyle.TileRow(
+            _k.LineLabel(() => NameOf(At()), () => At()?.IsEnabled == true ? s.Text() : s.Muted()),
+            SettingsKit.Dropdown(() => RateIndex(Id()), () => RateOptions, i => SetRate(At(), i), RateDropWidth),
+            SettingsKit.Dropdown(() => SelfRateIndex(Id()), () => SelfRateOptions, i => SetSelfRate(At(), i), SelfDropWidth)));
     }
 
-    // Value readout: the live ramp rate (while a Boost/Self-managed ramp is raising it) else the configured rate.
-    private string PluginRateOrRampLabel(string id)
-    {
-        if (!IsRamping(id)) return PluginRateLabel(id);
-        var eff = _effectiveRateFor(id);
-        return eff >= PerfControls.MaxUpdateRateHz ? _loc.T("perf.ramp.everyFrame") : _loc.TFormat("perf.ramp.hz", eff);
-    }
-
-    // --- rate slider <-> stored Hz (snap to the nearest PluginStops entry; index 0 = follow global) ---
-    private float GetPluginSliderIndex(string id)
+    // --- rate dropdown <-> stored Hz (index 0 = follow global; a non-stop stored value maps to the nearest stop) ---
+    private int RateIndex(string id)
     {
         var hz = _prefs.GetPluginRate(id);            // 0 = follow global
-        if (hz <= 0) return 0f;
+        if (hz <= 0) return 0;
         var best = 1; var bestDist = int.MaxValue;
         for (var i = 1; i < PluginStops.Length; i++)
         {
@@ -101,20 +101,39 @@ internal sealed partial class PerformancePanel
         return best;
     }
 
-    private void SetPluginSliderIndex(string id, float v)
+    private void SetRate(PluginInfo? p, int index)
     {
-        var i = (int)Math.Round(v);
-        if (i < 0) i = 0; else if (i >= PluginStops.Length) i = PluginStops.Length - 1;
-        _prefs.SetPluginRate(id, PluginStops[i]);
+        if (p == null) return;
+        index = Math.Clamp(index, 0, PluginStops.Length - 1);
+        _prefs.SetPluginRate(p.Id, PluginStops[index]);
+        _k.Done(_loc.TFormat("perf.fb.rate", NameOf(p), RateOptions[index]));
     }
 
-    // --- Self-rate dropdown: one self-documenting control replacing the old Self/Hold toggles ---
-    // The three modes (indices 0/1/2) map onto the two backing bools (Sustained requires Self-control):
+    // Cached so the per-frame dropdown poll doesn't allocate; rebuilt only when the active language changes.
+    private string[]? _rateCache;
+    private string? _rateLang;
+    private IReadOnlyList<string> RateOptions
+    {
+        get
+        {
+            if (_rateCache == null || _rateLang != _loc.Language)
+            {
+                _rateLang = _loc.Language;
+                var opts = new string[PluginStops.Length];
+                opts[0] = _loc.T("perf.followGlobal");
+                for (var i = 1; i < PluginStops.Length; i++)
+                    opts[i] = PluginStops[i] >= PerfControls.MaxUpdateRateHz ? _loc.T("perf.everyFrame") : _loc.TFormat("perf.hz", PluginStops[i]);
+                _rateCache = opts;
+            }
+            return _rateCache;
+        }
+    }
+
+    // --- Self-rate dropdown: the three modes (indices 0/1/2) map onto the two backing bools (Sustained requires
+    // Self-control):
     //   Off (0)          = (selfControl=false, sustained=false)  — follows the global / per-plugin rate
     //   Boost (1)        = (selfControl=true,  sustained=false)  — may ramp up, released after a 10 s safety cap
     //   Self-managed (2) = (selfControl=true,  sustained=true)   — plugin fully controls + holds its rate, no cap
-    // Cached so the per-frame dropdown poll doesn't allocate a fresh array every frame per row; rebuilt only
-    // when the active language changes (localized labels).
     private string[]? _selfRateCache;
     private string? _selfRateLang;
     private IReadOnlyList<string> SelfRateOptions
@@ -136,28 +155,16 @@ internal sealed partial class PerformancePanel
         return _prefs.GetPluginSustained(id) ? 2 : 1;           // Self-managed : Boost
     }
 
-    private void SetSelfRate(string id, int index)
+    private void SetSelfRate(PluginInfo? p, int index)
     {
+        if (p == null) return;
+        var id = p.Id;
         switch (index)
         {
             case 1:  _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, false); break; // Boost
             case 2:  _prefs.SetPluginSelfControl(id, true);  _prefs.SetPluginSustained(id, true);  break; // Self-managed
-            default: _prefs.SetPluginSelfControl(id, false); _prefs.SetPluginSustained(id, false); break; // Off
+            default: _prefs.SetPluginSelfControl(id, false); _prefs.SetPluginSustained(id, false); index = 0; break; // Off
         }
-    }
-
-    private string PluginRateLabel(string id)
-    {
-        var hz = _prefs.GetPluginRate(id);
-        if (hz <= 0) return _loc.T("perf.followGlobal");
-        if (hz >= PerfControls.MaxUpdateRateHz) return _loc.T("perf.everyFrame");
-        return _loc.TFormat("perf.hz", hz);
-    }
-
-    private bool IsRamping(string id)
-    {
-        if (!_prefs.GetPluginSelfControl(id)) return false;
-        var baseHz = _prefs.GetPluginRate(id) > 0 ? _prefs.GetPluginRate(id) : PerfControls.UpdateRateHz;
-        return _effectiveRateFor(id) > baseHz;
+        _k.Done(_loc.TFormat("perf.fb.self", NameOf(p), SelfRateOptions[index]));
     }
 }

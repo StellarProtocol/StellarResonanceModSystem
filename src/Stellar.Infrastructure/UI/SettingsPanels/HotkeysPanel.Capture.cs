@@ -60,6 +60,9 @@ internal sealed partial class HotkeysPanel
         ResetCapturePoll();
         _capturingActionId = null;        // stop the UI capture — the cell now shows the new binding
         _drainReleaseKey = pressed;       // but keep dispatch gated (no EndCapture yet) until the key is released
+        // Row "Saved" flash + footer line. This per-tick path only gets here after the player clicked a key pill in the
+        // SHOWN hub (a capture can't start otherwise), so the T() inside is long past the boot-time language latch.
+        Confirm(actionId, "hotkeys.flash.saved", "hotkeys.fb.set", newBinding.ToString());
     }
 
     // Non-modifier capturable keys, computed once (Enum.GetValues allocates — don't do it per poll).

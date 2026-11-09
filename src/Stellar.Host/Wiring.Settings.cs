@@ -5,17 +5,19 @@ using Stellar.Application.Services;
 using Stellar.Infrastructure.BepInExAdapters;
 using Stellar.Infrastructure.UI;
 using Stellar.Infrastructure.UI.SettingsPanels;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Host;
 
 public sealed partial class BootstrapPlugin
 {
     private System.Action? _hotkeysCapturePoll;   // panels.Hotkeys.PollCaptureUgui (uGUI hub key capture)
-    private System.Action? _themeEditorPoll;      // panels.Themes.PollEditorUgui (colour-edit drag-release flush)
-    private IWindowControl? _settingsHubControl;   // the uGUI multi-tab Settings hub (launcher ⚙ toggles it)
+    private System.Action? _themeEditorPoll;      // Themes drag-release flush + the hub's own tick (help popover, child window)
+    private IWindowControl? _settingsHubControl;   // the uGUI Settings hub (launcher ⚙ toggles it)
+    private SettingsHub? _settingsHub;
 
     /// <summary>
-    /// Wires the Phase 9a UI: instantiates the 7 settings windows, declares
+    /// Wires the Phase 9a UI: instantiates the settings drawers, declares
     /// framework.settings-toggle (Shift+Home), runs the lockout safety net,
     /// and auto-shows settings.layout on Shift+`. Called from
     /// <c>OnHotUpdateReady</c> after SetupPerfOverlay; all Stellar surfaces are
@@ -42,12 +44,6 @@ public sealed partial class BootstrapPlugin
         DeclareSettingsHotkey(log);
         ((HotkeyService)_hotkeyService!).RestoreSettingsHotkeyIfLocked();
 
-        // Phase 9a visual redo: settings windows are drag-by-title-bar in
-        // normal mode (via GUI.DragWindow in the SettingsDialog chrome) so
-        // they no longer need to be auto-shown on Shift+` entry. The Layout
-        // panel still hosts the slot picker + inspector — the user opens it
-        // explicitly via the hub icon when they want to use it.
-
         // Hand the native UI service to the overlay so Shift+` outlines + drags
         // game HUD elements alongside Stellar windows.
         _layoutOverlay.SetNativeUi(_nativeUi);
@@ -67,26 +63,29 @@ public sealed partial class BootstrapPlugin
 
     // The 7 Settings drawers, wired to their services (extracted from WirePhase9Ui for the STELLAR0002 gate).
     // WirePhase9Ui null-checks every field before calling this, hence the `!`s.
-    private SettingsPanelSet BuildSettingsPanels(BepInExPluginLog log)
+    private SettingsHubPanels BuildSettingsPanels(BepInExPluginLog log)
     {
         var loc = _frameworkLocalization!;
         var registry = _pluginRegistry!;
         var theme = _themeRenderer!;
         var hotkeys = _hotkeyService!;
-        // Display-only plugin names = each plugin's own (localized) launcher tile title, else its internal name.
+        // Display-only plugin names (and launcher icons) = each plugin's own (localized) launcher tile, else its
+        // internal name.
         var names = new PluginDisplayNames(_launcher!, log);
         if (_localizationEngine != null) _localizationEngine.LanguageChanged += names.ForgetRemembered;
         // The layout editor's per-plugin filter captions each plugin by this same (localized) name.
         _windowService?.SetDisplayNames(names);
-        return new SettingsPanelSet
+        var gameUi = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc);
+        return new SettingsHubPanels
         {
             Plugins = new PluginsPanel(registry, theme, registry.SetEnabled, loc) { DisplayNames = names },
             Hotkeys = new HotkeysPanel(hotkeys, hotkeys, registry, theme, PluginName, loc) { DisplayNames = names },   // registry = IPluginInventory (group-header fallback names); PluginName labels the framework's own group
             Themes  = new ThemesPanel(_namedTheme!, theme, _colorRegistry!, _customThemes!, _localizationEngine!, loc),
             Layout  = new LayoutPanel(_layoutStorage!, _layoutEditor!, theme, loc),
-            GameUi  = new GameUiPanel(_nativeUi!, theme, log, _layoutEditor!, loc),
+            GameUi  = gameUi,
             Perf    = new PerformancePanel(_perfPrefs!, theme, registry, _scheduler!.EffectiveRateFor, loc) { DisplayNames = names },
-            About   = new AboutPanel(theme, loc),
+            // About → Diagnostics "Save HUD paths" runs the Game UI panel's recon walk (moved there from Game UI).
+            About   = new AboutPanel(theme, loc, () => registry.List().Count, gameUi.ReconWalk),
         };
     }
 
@@ -113,10 +112,10 @@ public sealed partial class BootstrapPlugin
         => _nativeUi?.ReapplyForActiveSlot(_inputGateway?.CurrentResolution ?? new Resolution(1920, 1080),
                                            applyVisibility: true);
 
-    // The native-uGUI multi-tab Settings hub: a GlassMenu window with an icon+label tab strip + a Conditional
-    // body showing each panel's Describe() tree, wired to the SAME services as the (now-retired) IMGUI panels.
-    // Opened by the launcher's ⚙ Settings entry (the control is held in _settingsHubControl). Hidden at boot.
-    private void RegisterSettingsHub(SettingsPanelSet panels)
+    // The house-style Settings hub (SettingsHub: side rail + ToolHeader + tab body + footer feedback, fixed 800 × 612),
+    // its shared "?" help popover and the "Edit colours" child window, wired to the same services as before. Opened by
+    // the launcher's ⚙ Settings entry (the control is held in _settingsHubControl) or OpenSettingsAt. Hidden at boot.
+    private void RegisterSettingsHub(SettingsHubPanels panels)
     {
         if (_windowService == null) return;
         // Test hook (visual scenarios, mirrors STELLAR_AUTO_OPEN): STELLAR_SETTINGS_TAB=<0..6> preselects
@@ -127,45 +126,37 @@ public sealed partial class BootstrapPlugin
             tab = tabEnv;
         // Framework chrome — usable at title/menus in every phase, but hide over the loading screen. The title is
         // resolved by the chrome when the hub is first shown (SettingsHubSpec), not here: this is pre-Game.Init.
-        var spec = SettingsHubSpec.Create(_frameworkLocalization!, () => (_clientState!.UiState & GameUIState.Loading) == 0);
+        System.Func<bool> gate = () => (_clientState!.UiState & GameUIState.Loading) == 0;
+        bool HubShown() => _settingsHubControl?.IsShown == true;
+        var loc = _frameworkLocalization!;
+        // The kit reads the live theme (colours + window opacity) and NO localization at construction.
+        var style = new StellarStyle(_themeRenderer!.Colors, (IChromeStyle)_namedTheme!);
+        var help = new StellarHelpPopover(style, loc, _framework!, SettingsHub.HelpWindowId, () => gate() && HubShown());
+        SettingsHub? hub = null;
+        var kit = new SettingsKit(style, help, new StellarFeedbackLine(style, () => hub?.FooterHint() ?? ""),
+            new StellarRowFlash(), loc);
+        hub = _settingsHub = new SettingsHub(kit, panels, tab) { HubShown = HubShown };
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
-        // Colour editor: coalesce ColorPicker-drag edits to one persist+rebake on mouse-release.
-        _themeEditorPoll = panels.Themes.PollEditorUgui;
-        var root = new ColumnElement(new HudElement[]
-        {
-            new RowElement(BuildHubTabs(() => tab, i => tab = i), Gap: 6f),
-            new SeparatorElement(),
-            new ConditionalElement(() => tab == 0, panels.Plugins.Describe()),
-            new ConditionalElement(() => tab == 1, panels.Layout.Describe()),
-            new ConditionalElement(() => tab == 2, panels.Themes.Describe()),
-            new ConditionalElement(() => tab == 3, panels.Hotkeys.Describe()),
-            new ConditionalElement(() => tab == 4, panels.GameUi.Describe()),
-            new ConditionalElement(() => tab == 5, panels.Perf.Describe()),
-            new ConditionalElement(() => tab == 6, panels.About.Describe()),
-        });
-        _settingsHubControl = _windowService.Register(new WindowRegistration(spec, root,
+        // Colour editor drag-release flush + the hub tick (help popover re-anchor, child window centring).
+        _themeEditorPoll = () => { panels.Themes.PollEditorUgui(); hub.Tick(); };
+        var spec = SettingsHubSpec.Create(loc, gate);
+        _settingsHubControl = _windowService.Register(new WindowRegistration(spec, hub.BuildRoot(),
             OnClose: () => _settingsHubControl?.SetVisible(false)));
+        help.Register(_windowService);
+        panels.Themes.RegisterColoursWindow(_windowService, kit, () => gate() && HubShown(), () => _settingsHubControl);
     }
 
-    // Icon + label tabs (each: the panel's launcher icon + a localized label Button highlighted when active).
-    private HudElement[] BuildHubTabs(System.Func<int> getTab, System.Action<int> setTab)
+    /// <summary>Opens the Settings hub on <paramref name="tabKey"/> ("plugins", "layout", "themes", "hotkeys",
+    /// "gameui", "performance", "about"; an unknown key keeps the current tab) and brings it to the front — for the
+    /// launcher's per-tab shortcuts. Fronts every time: ZFront is sticky once anything is fronted (CLAUDE.md Rule 5
+    /// exception), and the hub may already be visible.</summary>
+    internal void OpenSettingsAt(string tabKey)
     {
-        var loc = _frameworkLocalization!;
-        var tabs = new (string Key, string Icon)[]
-        {
-            ("tab.plugins", "plugins"), ("tab.layout", "layout"), ("tab.themes", "theme"),
-            ("tab.hotkeys", "hotkeys"), ("tab.gameui", "gameui"), ("tab.performance", "settings"), ("tab.about", "about"),
-        };
-        var els = new HudElement[tabs.Length];
-        for (var i = 0; i < tabs.Length; i++)
-        {
-            var idx = i; var (key, icon) = tabs[i];
-            // Icon INSIDE the button → co-centred with the label by the button layout (font-robust alignment).
-            els[i] = new ButtonElement(() => loc.T(key), () => setTab(idx), Active: () => getTab() == idx,
-                Icon: () => LauncherIcons.Get(icon));
-        }
-        return els;
+        _settingsHub?.SelectTab(tabKey);
+        if (_settingsHubControl == null) return;
+        _settingsHubControl.SetVisible(true);
+        _settingsHubControl.BringToFront();
     }
 
     private void DeclareSettingsHotkey(BepInExPluginLog log)
@@ -178,17 +169,5 @@ public sealed partial class BootstrapPlugin
             SuggestedDefault: new KeyBinding(StellarKeyCode.Home, ModifierKeys.Shift));
         _hotkeyService!.DeclareAction(action, () => Toggle(_launcherControl));
         log.Info("[Settings] hotkey framework.settings-toggle declared (Shift+Home)");
-    }
-
-    /// <summary>Bag of the 7 settings drawers, consumed by the uGUI hub via each panel's Describe().</summary>
-    private sealed class SettingsPanelSet
-    {
-        public PluginsPanel      Plugins { get; init; } = null!;
-        public HotkeysPanel      Hotkeys { get; init; } = null!;
-        public ThemesPanel       Themes  { get; init; } = null!;
-        public LayoutPanel       Layout  { get; init; } = null!;
-        public GameUiPanel       GameUi  { get; init; } = null!;
-        public PerformancePanel  Perf    { get; init; } = null!;
-        public AboutPanel        About   { get; init; } = null!;
     }
 }
