@@ -27,6 +27,7 @@ public sealed partial class WindowInteractionTicker
         public RectTransform Hit = null!;       // the ScrollRect's own rect: viewport AND its scrollbar
         public float PrevY = float.NaN;         // previous frame's Content.anchoredPosition.y (NaN = unknown/inactive)
         public bool Pressed;                    // left button went down over this view and is still held (drag / scrollbar)
+        public bool Engaged;                    // this hold has moved the content: counts as motion until release (HeldMotionRule)
     }
 
     internal readonly List<ScrollView> ScrollViews = new();
@@ -44,14 +45,15 @@ public sealed partial class WindowInteractionTicker
         }
     }
 
-    /// <summary>True while the user moves this view CONTINUOUSLY: the left button held since a press on it (content drag or
-    /// scrollbar drag), or the glide after such a drag (ScrollRect builds velocity only from a user drag and zeroes it below
-    /// 1 px/s; programmatic content moves never set it; our views are Clamped, so no elastic spring-back velocity either).
-    /// A wheel tick is deliberately NOT counted (see the file header): it moves the content once, and a wheel during a glide
-    /// has already zeroed the velocity via StopMovement (TickScrollInput runs first), so pixelPerfect re-crisps after the
-    /// normal settle.</summary>
-    private static bool IsUserScrolling(ScrollView v)
-        => v.Pressed || v.Sr.velocity.sqrMagnitude > 1f;
+    /// <summary>Does this frame count as the user moving this view (HeldMotionRule)? While the left button is held since a
+    /// press on it (content or scrollbar drag): from the hold's first real move until release, pauses included — a slow
+    /// drag no longer re-crisps between steps. After release: only the glide (ScrollRect builds velocity only from a user
+    /// drag and zeroes it below 1 px/s; programmatic content moves never set it; our views are Clamped, so no elastic
+    /// spring-back velocity either). A wheel tick is deliberately NOT counted (see the file header): it moves the content
+    /// once, and a wheel during a glide has already zeroed the velocity via StopMovement (TickScrollInput runs first), so
+    /// pixelPerfect re-crisps after the normal settle.</summary>
+    private static bool IsUserScrolling(ScrollView v, bool moved)
+        => HeldMotionRule.CountsAsMotion(v.Pressed, moved, v.Sr.velocity.sqrMagnitude > 1f, ref v.Engaged);
 
     // Per frame, before TickScrollActivity: latch a press on the views under the pointer, and stop their inertia on a
     // wheel tick or any press (7dec5fb, user-validated — keep).

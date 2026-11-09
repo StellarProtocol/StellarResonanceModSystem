@@ -34,6 +34,7 @@ public sealed partial class WindowInteractionTicker
 
     private RectTransform? _motionTarget;              // the window being dragged / resized (null = none, or not seen yet)
     private Vector2 _motionPrevPos, _motionPrevSize;   // its anchoredPosition / sizeDelta last frame
+    private bool _motionEngaged;                       // this drag/resize hold has moved: counts as motion until release
 
     /// <summary>WindowRenderer: <paramref name="root"/>'s window has its own <paramref name="canvas"/> with
     /// overridePixelPerfect on — motion inside it flips only that canvas.</summary>
@@ -64,25 +65,30 @@ public sealed partial class WindowInteractionTicker
         t.LastMove = now; t.Kind = kind; t.Src = src;
     }
 
-    // Latch window drag / resize MOTION (like TickScrollActivity), so pixelPerfect drops only while the window really
-    // moves: just holding the mouse on a drag handle used to turn it off and soften all text until release. The
-    // target's position and size are seeded the first frame it is seen (the press frame's drag tick hasn't run yet,
-    // so no motion is counted for the press) and forgotten when the drag ends. Allocation-free.
+    // Latch window drag / resize MOTION with the same held-gesture rule as a list drag-scroll (HeldMotionRule): a press on
+    // a drag handle / resize grip flips nothing (holding a handle used to turn pixelPerfect off and soften all text until
+    // release); the FIRST real move turns it off, and it stays off for the rest of the hold, pauses included, until
+    // release — then back on after the settle. (The previous rule re-crisped 0.15 s after the window held still
+    // mid-drag, so a slow drag with pauses flipped OFF/ON at every step.) The target's position and size are seeded the
+    // first frame it is seen (the press frame's drag tick hasn't run yet, so no motion is counted for the press) and
+    // forgotten, with the hold, when the drag ends. Allocation-free.
     private void TickWindowMotion()
     {
         RectTransform? t = _activeWinDrag;
         if (t == null && _activeResize >= 0 && _activeResize < DragResizers.Count) t = DragResizers[_activeResize].Target;
-        if (t == null) { _motionTarget = null; return; }
+        if (t == null) { _motionTarget = null; _motionEngaged = false; return; }
         var pos = t.anchoredPosition;
         var size = t.sizeDelta;
         if (_motionTarget == null || _motionTarget != t)
         {
-            _motionTarget = t; _motionPrevPos = pos; _motionPrevSize = size;
+            _motionTarget = t; _motionPrevPos = pos; _motionPrevSize = size; _motionEngaged = false;
             return;
         }
         // 0.5 px threshold ignores sub-pixel jitter (a clamp re-applying the same spot); position covers top/left edges.
-        if (Mathf.Abs(pos.x - _motionPrevPos.x) > 0.5f || Mathf.Abs(pos.y - _motionPrevPos.y) > 0.5f
-            || Mathf.Abs(size.x - _motionPrevSize.x) > 0.5f || Mathf.Abs(size.y - _motionPrevSize.y) > 0.5f)
+        var moved = Mathf.Abs(pos.x - _motionPrevPos.x) > 0.5f || Mathf.Abs(pos.y - _motionPrevPos.y) > 0.5f
+            || Mathf.Abs(size.x - _motionPrevSize.x) > 0.5f || Mathf.Abs(size.y - _motionPrevSize.y) > 0.5f;
+        // Windows never glide; the drag/resize state itself is the "held" signal (cleared by the ticker on release).
+        if (HeldMotionRule.CountsAsMotion(pressed: true, moved, gliding: false, ref _motionEngaged))
             MarkMotion(t, _activeWinDrag == null ? (byte)2 : (byte)1, Time.unscaledTime);
         _motionPrevPos = pos; _motionPrevSize = size;
     }
@@ -106,15 +112,17 @@ public sealed partial class WindowInteractionTicker
             // A re-activated view must not register a spurious jump on its first frame back → seed NaN while inactive.
             if (c == null || v.Sr == null || !c.gameObject.activeInHierarchy) { v.PrevY = float.NaN; continue; }
             var y = c.anchoredPosition.y;
-            // 0.5px threshold ignores sub-pixel jitter; NaN prev (first/re-activated frame) = no motion counted.
-            if (!float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f && IsUserScrolling(v)) MarkMotion(c, 0, now);
+            // 0.5px threshold ignores sub-pixel jitter; NaN prev (first/re-activated frame) = no move this frame. An engaged
+            // hold still counts on still frames, so one slow drag-scroll is exactly one OFF and one ON (after release).
+            var moved = !float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f;
+            if (IsUserScrolling(v, moved)) MarkMotion(c, 0, now);
             v.PrevY = y;
         }
     }
 
     // Per canvas: OFF while its own content moves (drag / resize / drag-scroll / glide), ON otherwise so static UI stays
-    // crisp. Drag / resize count only while the window actually MOVES (TickWindowMotion): holding still on a handle
-    // re-crisps after the settle. Guarded so a canvas rebuild only happens when that canvas's state actually flips.
+    // crisp. Drag / resize / drag-scroll count from the gesture's first real move until release (HeldMotionRule): a press
+    // without movement never flips, and pauses mid-gesture don't re-crisp. Guarded so a canvas rebuild only happens when that canvas's state actually flips.
     private void SyncPixelPerfect()
     {
         if (_canvasComp == null) _canvasComp = GetComponent<Canvas>();
