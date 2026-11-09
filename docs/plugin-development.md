@@ -366,7 +366,7 @@ Rules:
 
 The active theme is exposed via `IPluginServices.Theme`.
 
-- **Read a theme colour** when you want to match the framework's palette: `_services.Theme.Colors.Accent`, `.MenuMuted`, `.HudText`, `.TextMuted`, etc. (Base / HUD / Menu colour facets are all reachable through `Theme.Colors`.) Read these directly — do not register a slot for them.
+- **Read a theme colour** when you want to match the framework's palette: `_services.Theme.Colors.Accent`, `.MenuMuted`, `.HudText`, `.TextMuted`, etc. (Base / HUD / Menu / Status colour facets are all reachable through `Theme.Colors`; the status trio `.Success` / `.Danger` / `.Caution` needs framework 2.30.0+.) Read these directly — do not register a slot for them.
 - **Own a colour** that the user can customise in the theme editor: register it with `IColorRegistry`. The key is namespaced `Owner.Concept.Property` and must be unique. You supply a default per built-in preset (or one default for all):
 
 ```csharp
@@ -377,6 +377,7 @@ _hpSlot = _services.Theme.ColorRegistry.Register(
         [ThemePreset.Dark]    = ColorRgba.FromHex(0x52A35Effu),
         [ThemePreset.Light]   = ColorRgba.FromHex(0x46C85Effu),
         [ThemePreset.Crimson] = ColorRgba.FromHex(0xE04848ffu),
+        [ThemePreset.Sakura]  = ColorRgba.FromHex(0xD9558Cffu),   // 2.30.0+; omitted → the Default value
     });
 ```
 

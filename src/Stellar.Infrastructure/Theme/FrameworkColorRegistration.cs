@@ -71,7 +71,7 @@ internal static class FrameworkColorRegistration
     };
 
     private static readonly ThemePreset[] AllPresets =
-        { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
+        { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson, ThemePreset.Sakura };
 
     public static void RegisterAll(IColorRegistry registry)
     {

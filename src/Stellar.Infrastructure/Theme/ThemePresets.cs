@@ -163,6 +163,34 @@ internal static class ThemePresets
             // 2.30.0 — status facet
             StatusSuccess, StatusDanger, StatusCaution,
         },
+        // Sakura (2.30.0): rose-purple glass + pink accent — the approved "Midnight Rose" look as a built-in preset
+        // (settings-launcher redesign, colours.md). Modelled on Crimson: pink-tuned base colours, the theme-invariant
+        // HUD facet (only HudAccent varies), the dark-theme status trio.
+        [ThemePreset.Sakura] = new[]
+        {
+            Rgb(0xF2, 0x7F, 0xB8),   // Accent — a lighter pink than the menu accent, for accent text on any surface
+            Rgb(0xF5, 0xC2, 0x6B),
+            Rgb(0xD9, 0x55, 0x8C),   // HpFill — rose
+            Rgb(0xB4, 0x8C, 0xE0),   // MpFill — lavender
+            Rgb(0xFF, 0xB3, 0x8A),   // Stamina — peach
+            Rgb(0xFF, 0xFF, 0xFF),
+            Rgb(0xD8, 0xC4, 0xDF),
+            Rgb(0xFF, 0xD6, 0x6B),
+            // HUD facet (theme-invariant; only HudAccent varies)
+            Rgb(0xE5, 0xE1, 0xD6),
+            new(0f, 0f, 0f, 0.85f),
+            Rgb(0xC8, 0x50, 0x8F),
+            new(16f / 255f, 20f / 255f, 26f / 255f, 0.72f),
+            new(44f / 255f, 48f / 255f, 56f / 255f, 0.85f),
+            // menu facet
+            Rgb(0x2E, 0x24, 0x33),
+            Rgb(0xE8, 0xDC, 0xEF),
+            Rgb(0x9B, 0x8A, 0xA5),
+            Rgb(0xC8, 0x50, 0x8F),
+            new(200f / 255f, 80f / 255f, 143f / 255f, 0.22f),   // MenuBorder = the accent @0.22, like Default
+            // status facet
+            StatusSuccess, StatusDanger, StatusCaution,
+        },
     };
 
     /// <summary>
@@ -177,6 +205,7 @@ internal static class ThemePresets
         [ThemePreset.Dark]    = new[] { Rgb(0x1C, 0x1F, 0x2E), Rgb(0x18, 0x1A, 0x26), Rgb(0x1F, 0x1C, 0x2E) },
         [ThemePreset.Light]   = new[] { Rgb(0xF5, 0xF5, 0xFF), Rgb(0xE8, 0xEF, 0xFA), Rgb(0xED, 0xE8, 0xFA) },
         [ThemePreset.Crimson] = new[] { Rgb(0x2A, 0x1A, 0x1D), Rgb(0x25, 0x16, 0x18), Rgb(0x2A, 0x18, 0x1B) },
+        [ThemePreset.Sakura]  = new[] { Rgb(0x2E, 0x24, 0x33), Rgb(0x29, 0x1F, 0x2E), Rgb(0x30, 0x24, 0x2F) },
     };
 
     private static ColorRgba Rgb(byte r, byte g, byte b)

@@ -11,4 +11,8 @@ public enum ThemePreset
     Light   = 2,
     /// <summary>Crimson accent theme for a distinctive red-tinted appearance.</summary>
     Crimson = 3,
+    /// <summary>Sakura: rose-purple panels with a pink accent (framework 2.30.0). Appended last so the
+    /// existing values never move. A plugin that registers its own per-preset colours without a Sakura
+    /// entry gets its <see cref="Default"/> colours under it.</summary>
+    Sakura  = 4,
 }

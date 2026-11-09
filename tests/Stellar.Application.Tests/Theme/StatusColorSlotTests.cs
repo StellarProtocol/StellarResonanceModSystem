@@ -30,6 +30,7 @@ public sealed class StatusColorSlotTests
     [InlineData(ThemePreset.Default)]
     [InlineData(ThemePreset.Dark)]
     [InlineData(ThemePreset.Crimson)]
+    [InlineData(ThemePreset.Sakura)]
     public void DarkPresets_KeepTheHouseStyleStatusColours(ThemePreset preset)
     {
         var svc = Registry(new FakeNamedTheme(preset));
@@ -56,6 +57,18 @@ public sealed class StatusColorSlotTests
             foreach (var (key, index) in FrameworkColorRegistration.EditableTokens)
                 Assert.Equal(ThemePresets.Tables[preset][index], svc.Resolve(key));
         }
+    }
+
+    [Fact]
+    public void Sakura_IsABuiltInPreset_WithTheApprovedMenuColours()
+    {
+        var svc = Registry(new FakeNamedTheme(ThemePreset.Sakura));
+        Assert.Equal(Hex(0x2E2433), svc.Resolve("Theme.MenuBackground"));
+        Assert.Equal(Hex(0xE8DCEF), svc.Resolve("Theme.MenuText"));
+        Assert.Equal(Hex(0x9B8AA5), svc.Resolve("Theme.MenuMuted"));
+        Assert.Equal(Hex(0xC8508F), svc.Resolve("Theme.MenuAccent"));
+        Assert.True(ThemePresets.GlassMenuGradients.ContainsKey(ThemePreset.Sakura));
+        Assert.Equal(4, (int)ThemePreset.Sakura);   // appended: existing persisted values never move
     }
 
     [Fact]

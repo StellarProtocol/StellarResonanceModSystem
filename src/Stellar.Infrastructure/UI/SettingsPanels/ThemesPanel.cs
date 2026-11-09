@@ -14,7 +14,7 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 internal sealed class ThemesPanel
 {
     private static readonly ThemePreset[] Presets =
-        { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson };
+        { ThemePreset.Default, ThemePreset.Dark, ThemePreset.Light, ThemePreset.Crimson, ThemePreset.Sakura };
 
     // DISPLAYED name only — never the persisted value: SetActive(pp) below always takes the enum itself, and
     // NamedThemeService stores the enum (name), never this localized string.
@@ -23,6 +23,7 @@ internal sealed class ThemesPanel
         ThemePreset.Dark    => "themes.preset.dark",
         ThemePreset.Light   => "themes.preset.light",
         ThemePreset.Crimson => "themes.preset.crimson",
+        ThemePreset.Sakura  => "themes.preset.sakura",
         _                   => "themes.preset.default",
     };
 

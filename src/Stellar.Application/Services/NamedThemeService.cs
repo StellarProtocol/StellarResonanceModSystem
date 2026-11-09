@@ -50,7 +50,7 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
 
     /// <summary>
     /// Resolve the initial preset with env-var override precedence:
-    /// <c>STELLAR_THEME=&lt;Default|Dark|Light|Crimson&gt;</c> overrides the
+    /// <c>STELLAR_THEME=&lt;Default|Dark|Light|Crimson|Sakura&gt;</c> overrides the
     /// persisted preset for this session only. Visual capture scenarios use
     /// this to pre-select theme without driving the Settings UI. Read once at
     /// boot — changing the env var mid-run has no effect; restart the game to
@@ -190,7 +190,7 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
 
     // Per-preset window-chrome opacity. Keyed by the ACTIVE preset (a custom theme inherits its base
     // preset's value). Sensible defaults: Default stays translucent/frosted; Dark/Light read near-opaque
-    // over bright in-world scenes; Crimson sits between. The user can override per preset via the slider.
+    // over bright in-world scenes; Crimson and Sakura sit between. The user can override per preset via the slider.
     public float WindowOpacity => ClampOpacity(_config.Get(OpacityKey(_active), DefaultOpacity(_active)));
 
     public void SetWindowOpacity(float opacity)
@@ -209,6 +209,7 @@ internal sealed class NamedThemeService : INamedTheme, IChromeStyle
     {
         ThemePreset.Default => 0.62f,   // translucent frosted glass (the design intent for Default)
         ThemePreset.Crimson => 0.90f,
+        ThemePreset.Sakura  => 0.90f,   // same frosted-but-readable middle as Crimson
         _                   => 0.96f,   // Dark / Light: effectively opaque, legibility-first
     };
 }
