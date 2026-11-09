@@ -37,13 +37,10 @@ internal sealed class ColorRegistryService : IColorRegistry, IColorResolver, ITh
 
     public IColorSlot Register(string key, string label, ColorRgba defaultAll)
     {
-        var allPresets = new Dictionary<ThemePreset, ColorRgba>
-        {
-            [ThemePreset.Default] = defaultAll,
-            [ThemePreset.Dark]    = defaultAll,
-            [ThemePreset.Light]   = defaultAll,
-            [ThemePreset.Crimson] = defaultAll,
-        };
+        // Every built-in preset, enumerated (not listed) so a preset appended later (Sakura, 2.30.0) gets the
+        // value too instead of silently falling back through Resolve's Default branch.
+        var allPresets = new Dictionary<ThemePreset, ColorRgba>();
+        foreach (var p in (ThemePreset[])Enum.GetValues(typeof(ThemePreset))) allPresets[p] = defaultAll;
         return Register(key, label, allPresets);
     }
 

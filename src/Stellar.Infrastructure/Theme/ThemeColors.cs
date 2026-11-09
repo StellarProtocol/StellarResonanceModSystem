@@ -28,4 +28,9 @@ internal sealed class ThemeColors : IThemeColors
     public ColorRgba MenuMuted      { get; } = ColorRgba.FromHex(0x8A8070ffu);
     public ColorRgba MenuAccent     { get; } = ColorRgba.FromHex(0xC9A046ffu);
     public ColorRgba MenuBorder     { get; } = new(201f / 255f, 160f / 255f, 70f / 255f, 0.15f);
+
+    // --- IThemeStatusColors (2.30.0) — the house-style status trio (Stellar-Design-Language §3) ---
+    public ColorRgba Success        { get; } = ColorRgba.FromHex(0x5FD38Dffu);
+    public ColorRgba Danger         { get; } = ColorRgba.FromHex(0xFF4D4Fffu);
+    public ColorRgba Caution        { get; } = ColorRgba.FromHex(0xFFCC73ffu);
 }

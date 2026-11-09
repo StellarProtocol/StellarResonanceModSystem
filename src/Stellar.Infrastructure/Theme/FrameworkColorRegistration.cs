@@ -26,6 +26,12 @@ internal static class FrameworkColorRegistration
         ["Theme.MenuBorder"]     = ThemePresets.MenuBorder,
         ["Theme.Warning"]        = ThemePresets.Warning,
         ["Theme.HudAccent"]      = ThemePresets.HudAccent,
+        // 2.30.0 — menu Text / Muted (already per-preset tokens, now editable) + the status trio.
+        ["Theme.MenuText"]       = ThemePresets.MenuText,
+        ["Theme.MenuMuted"]      = ThemePresets.MenuMuted,
+        ["Theme.Success"]        = ThemePresets.Success,
+        ["Theme.Danger"]         = ThemePresets.Danger,
+        ["Theme.Caution"]        = ThemePresets.Caution,
     };
 
     // English fallback labels, used ONLY at RegisterAll time (Load(), before the hot-update assemblies — and
@@ -38,6 +44,11 @@ internal static class FrameworkColorRegistration
         ["Theme.MenuBorder"]     = "Panel border",
         ["Theme.Warning"]        = "Warning",
         ["Theme.HudAccent"]      = "HUD accent",
+        ["Theme.MenuText"]       = "Text",
+        ["Theme.MenuMuted"]      = "Muted text",
+        ["Theme.Success"]        = "Success",
+        ["Theme.Danger"]         = "Danger",
+        ["Theme.Caution"]        = "Caution",
     };
 
     // Localization keys for the same slots, resolved by RelabelAll once the real client language is known
@@ -52,6 +63,11 @@ internal static class FrameworkColorRegistration
         ["Theme.MenuBorder"]     = "theme.color.menuBorder",
         ["Theme.Warning"]        = "theme.color.warning",
         ["Theme.HudAccent"]      = "theme.color.hudAccent",
+        ["Theme.MenuText"]       = "theme.color.menuText",
+        ["Theme.MenuMuted"]      = "theme.color.menuMuted",
+        ["Theme.Success"]        = "theme.color.success",
+        ["Theme.Danger"]         = "theme.color.danger",
+        ["Theme.Caution"]        = "theme.color.caution",
     };
 
     private static readonly ThemePreset[] AllPresets =
