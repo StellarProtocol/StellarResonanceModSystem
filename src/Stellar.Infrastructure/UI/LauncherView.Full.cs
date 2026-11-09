@@ -113,7 +113,7 @@ internal sealed partial class LauncherView
     private HudElement BuildBottomRow() => new RowElement(new HudElement[]
     {
         IconPill("settings", () => T("launcher.settings"), () => _actions.OpenSettings(null)),
-        IconPill("layout", () => T("launcher.edit_layout"), _actions.ToggleLayoutEdit),
+        IconPill("edit_layout", () => T("launcher.edit_layout"), _actions.ToggleLayoutEdit),
         new SpacerElement(0f),   // flexible: pushes the version to the right edge
         Small(() => F("launcher.version", FrameworkVersion.Value), () => _s.Muted(), 12),
     }, Gap: 6f);

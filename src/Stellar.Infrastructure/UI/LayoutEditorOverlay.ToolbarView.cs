@@ -76,11 +76,12 @@ internal sealed partial class LayoutEditorOverlay
         return new ColumnElement(new HudElement[] { row });
     }
 
-    // [28 px accent tile with the layout glyph] [bold "Layout Editor" over the live status / feedback line].
+    // [28 px accent tile with the edit_layout glyph] [bold "Layout Editor" over the live status / feedback line]. The
+    // move-arrows glyph names the arrange MODE (the launcher's "Edit layout" pill uses it too); "layout" is the Settings tab.
     private HudElement ToolbarHeader(StellarStyle s) => new RowElement(new HudElement[]
     {
         new SpacerElement(2f, GroupHeight),
-        s.IconTile("layout", HeaderIconSize),
+        s.IconTile("edit_layout", HeaderIconSize),
         new CellElement(new ColumnElement(new HudElement[]
         {
             new TextElement(() => _text!.T("layout.toolbar.heading"), Color: () => s.Text(), NoWrap: true, FontSize: 14)

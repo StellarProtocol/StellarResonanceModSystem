@@ -56,16 +56,17 @@ internal sealed partial class SettingsHub
     /// <summary>The tabs in rail order. <see cref="TabDef.Key"/> is the open-at-tab key
     /// (<see cref="SelectTab(string)"/>); the index is the STELLAR_SETTINGS_TAB test-hook value (0 = General …
     /// 7 = About since General was added first, 2026-11-09). Code dispatches by KEY, never by index.
-    /// General reuses the "settings" glyph (Performance has it too): there is no other fitting framework icon.</summary>
+    /// Every tab has its own glyph (icon set v2 "A", 2026-11-09): General = sliders, Performance = gauge; the gear stays
+    /// reserved for the launcher's Settings action.</summary>
     internal static readonly TabDef[] Tabs =
     {
-        new("general",     "tab.general",     "settings", "settings.foot.general"),
+        new("general",     "tab.general",     "general",  "settings.foot.general"),
         new("plugins",     "tab.plugins",     "plugins",  "settings.foot.plugins"),
         new("layout",      "tab.layout",      "layout",   "settings.foot.layout"),
         new("themes",      "tab.themes",      "theme",    "settings.foot.themes"),
         new("hotkeys",     "tab.hotkeys",     "hotkeys",  "settings.foot.hotkeys"),
         new("gameui",      "tab.gameui",      "gameui",   "settings.foot.gameui"),
-        new("performance", "tab.performance", "settings", "settings.foot.performance"),
+        new("performance", "tab.performance", "performance", "settings.foot.performance"),
         new("about",       "tab.about",       "about",    "settings.foot.about"),
     };
 
