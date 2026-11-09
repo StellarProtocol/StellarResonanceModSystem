@@ -12,13 +12,15 @@ namespace Stellar.Infrastructure.UI;
 internal sealed partial class LauncherView
 {
     private const int MaxFavorites = 16;        // compact-bar tile pool (unchanged capacity)
-    private const float CompactTileWidth = 56f;
-    private const float CompactTileHeight = 68f;
+    // 64 × 88 (prototype .ctile was 56 × 68; grown 2026-11-09 for the 44 px launcher icon tile): (64 − 44) / 2 = 10 px
+    // either side of the icon; 6 + 44 + 3 + 32 + 3 = 88. Every part is a fixed height, so every tile is the same size.
+    private const float CompactTileWidth = 64f;
+    private const float CompactTileHeight = 88f;
     private const float CompactTileTop = 6f;
     private const float CompactNameGap = 3f;
-    // Name slot 26 (prototype 24) + 1 below (prototype 3): same 68 px tile, but two TMP lines can't outgrow the slot
-    // (see NameSlot in .Tile.cs).
-    private const float CompactNameSlot = 26f;
+    // Name slot: a HARD 32 px box (TextElement.Height — two 10 px TMP lines measure ~31) so a wrapped name can't grow
+    // its tile (see NameSlot in .Tile.cs).
+    private const float CompactNameSlot = 32f;
     private const int CompactNameFont = 10;     // prototype 10.5 (FontSize is whole pixels)
     private const float CompactLogo = 24f;
     private const float CompactLogoCell = 32f;
@@ -76,8 +78,8 @@ internal sealed partial class LauncherView
         return CompactTileShell(icon, () => T("launcher.settings"), () => _actions.OpenSettings(null), () => false);
     }
 
-    // 56 × 68 (prototype .ctile): transparent at rest, Tile fill + text-coloured name on hover, Success wash on the
-    // click flash; 32 px icon tile at the top, the name in a fixed two-line slot (10 px, muted).
+    // 64 × 88 (prototype .ctile, enlarged): transparent at rest, Tile fill + text-coloured name on hover, Success wash on
+    // the click flash; 44 px icon tile at the top, the name in a fixed two-line slot (10 px, muted).
     private HudElement CompactTileShell(HudElement iconTile, Func<string> label, Action onClick, Func<bool> flashing)
     {
         var hover = new StellarStyle.HoverFlag();
@@ -85,7 +87,7 @@ internal sealed partial class LauncherView
         {
             new SpacerElement(2f, CompactNameSlot),
             new CellElement(Small(label, () => hover.On ? _s.Text() : _s.Muted(), CompactNameFont, TextAlign.Center,
-                maxLines: 2), Weight: 1f),
+                maxLines: 2) with { Height = CompactNameSlot }, Weight: 1f),
             new SpacerElement(2f, 1f),
         }, Gap: 0.01f);
         var body = new ColumnElement(new HudElement[]

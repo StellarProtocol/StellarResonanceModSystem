@@ -54,7 +54,7 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
         if (_rich) ApplySpriteAsset(s);
-        if (_maxLines > 0) SetLineCapped(s);   // wrapped, cut to N lines + "…" (TmpStyledText.MaxLines.cs)
+        if (_maxLines > 0) SetLineCapped(s);   // word-wrapped by the framework, cut to N lines + "…" (TmpStyledText.MaxLines.cs)
         else if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
         else _t.text = s;
         FitDecorations();
@@ -150,8 +150,9 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         // TextElement.Ellipsize: one line, overflowMode left at Overflow — the framework cuts the string itself, because
         // TMP's Ellipsis mode wiped a whole single-word line in-game (see TmpStyledText.Ellipsis.cs).
         if (spec.Ellipsis) t.enableWordWrapping = false;
-        // TextElement.MaxLines: always wraps (wins over Ellipsis / NoWrap); the N-line cut is the framework's own too.
-        if (spec.MaxLines > 0) t.enableWordWrapping = true;
+        // TextElement.MaxLines: the framework breaks the lines itself (word boundaries only, WordWrapCap) and joins them
+        // with newlines, so TMP's own wrap is OFF — it would split an over-long word mid-word ("CombatMete" / "r").
+        if (spec.MaxLines > 0) t.enableWordWrapping = false;
         // CenterGlyphs → TMP's Midline row: it centres the MESH extents (what is drawn) in the rect, where the default
         // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
         // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes

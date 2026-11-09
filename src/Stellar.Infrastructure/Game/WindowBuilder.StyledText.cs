@@ -42,9 +42,20 @@ internal sealed partial class WindowBuilder
             // MaxLines owns it the same way: the preferred width stays the FULL string's, so the cut never feeds back.
             if (t.Ellipsize || capped) h.PadPreferredWidth(le);
         }
+        PinTextHeight(le, t.Height);
         token.StyledTexts.Add(new StyledTextBinding { H = h, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn });
         token.ReskinActions.Add(() => { h.SetFontSize(Scaled(size)); h.SetColor(_assets.MenuText); });
         return true;
+    }
+
+    // TextElement.Height: min == preferred == h on the text's own LayoutElement (priority 1 beats the Text / TMP
+    // preferred height), so the box never follows the font's line box — a two-line TMP name measured ~37 px and grew
+    // its 32 px launcher slot (in-game 2026-11-09). Both text alignments are vertically Middle, so lines centre in it.
+    private static void PinTextHeight(LayoutElement le, float h)
+    {
+        if (h <= 0f) return;
+        le.minHeight = le.preferredHeight = h;
+        le.flexibleHeight = 0f;
     }
 
     // Emphasis keeps the header 15px ("same size but bold" — weight, not size, carries the emphasis);

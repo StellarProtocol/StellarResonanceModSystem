@@ -215,12 +215,22 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// its laid-out width, it shows exactly <c>MaxLines</c> lines and the last one ends in "…" (a cut the framework
     /// makes itself, re-fitted when the string, the font size or the width changes). The text always wraps when this
     /// is set: <see cref="NoWrap"/> and <see cref="Ellipsize"/> are ignored (<c>MaxLines = 1</c> is the one-line cut).
+    /// Lines break only at spaces, after hyphens and between CJK characters — never inside a word: a single word wider
+    /// than the line is cut with "…" on its own line ("CombatMet…"), not split across two lines.
     /// Give it a width-constrained slot — a fixed <see cref="Width"/> or a <see cref="CellElement"/> — since the cut
     /// fits the width the layout hands it. Works with every <see cref="Align"/>, on plain and styled
     /// (<see cref="Bold"/>/<see cref="Emphasis"/>/...) text; ignored on Shadow and HUD-overlay text. The element is
     /// only as tall as the lines it shows (a one-line string stays one line tall). 0 (the default) = unlimited,
     /// unchanged. An <c>init</c> property (binary-compatible).</summary>
     public int MaxLines { get; init; }
+
+    /// <summary>A hard-fixed text box height in px (framework 2.30.0): the element reports exactly this as its min and
+    /// preferred height, so it never grows (or shrinks) its row / column whatever its font's line box measures, and the
+    /// lines are drawn vertically centred in it (a one-line string sits in the middle of a two-line slot). Content
+    /// taller than the box overflows it rather than resizing it, so pair it with <see cref="MaxLines"/>. First user:
+    /// the launcher tile's two-line name slot, which grew a tile 4–5 px when a name wrapped. 0 (the default) = the
+    /// text's own height, unchanged. Window (Menu) text only. An <c>init</c> property (binary-compatible).</summary>
+    public float Height { get; init; }
 }
 
 /// <summary>Graphical fill bar (0..1). Chrome framework-themed; <paramref name="Fill"/> is the plugin's
