@@ -227,6 +227,10 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         _activeWinDrag = _activeSlotDrag < 0 && _activeDrag < 0 && _activeResize < 0
             && !PointerOnScrollbar(Input.mousePosition) && !EditDragArbiter.EditorDragActive
             ? HitWindowHandle(Input.mousePosition) : null;
+        // Title-bar-less windows drag from the whole frame, so a drag in a list (or on a button) moved the window instead of
+        // scrolling/pressing: outside layout edit mode, a press on an interactive control or a scrolling list never starts a
+        // window drag (.DragRule.cs).
+        if (_activeWinDrag != null && !WindowDragAllowed(Input.mousePosition, _activeWinDrag)) _activeWinDrag = null;
         EditDragArbiter.WindowDragActive = _activeWinDrag != null || _activeSlotDrag >= 0 || _activeResize >= 0;
         _lastMouse = Input.mousePosition;
     }
