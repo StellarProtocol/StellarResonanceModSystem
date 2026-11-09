@@ -25,8 +25,11 @@ internal sealed partial class PerformancePanel
     private const int ReservedPluginRows = 7;
     // A Pill dropdown trigger is a fixed 28 px, so these rows are 28 tall (pitch 30) instead of the 26 + 2 tiles.
     private const float PluginRowPitch = 30f;
-    private const float RateDropWidth = 118f;
-    private const float SelfDropWidth = 112f;
+    // Trigger caption = width − 38 (12 + 12 insets, 6 gap, 8 chevron). Rate 156 → 118 px: "Follow global" (~88 px bold
+    // 13) fits with room, the longest locale ("Sundan ang global", fil) about fits and otherwise ellipsizes. Self-rate
+    // 128 → 90 px: "Self-managed" / "Kelola sendiri". The header cells reuse these widths, so the columns stay aligned.
+    private const float RateDropWidth = 156f;
+    private const float SelfDropWidth = 128f;
 
     // Refreshed each apply by the list's Conditional When: loaded plugins only (a plugin that failed to start has no
     // rate to set; it lives on the Plugins tab with its Retry).

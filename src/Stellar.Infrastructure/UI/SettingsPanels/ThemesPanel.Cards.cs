@@ -93,19 +93,27 @@ internal sealed partial class ThemesPanel
         // The active theme's swatch reads the LIVE colours (so a custom theme's edits show); others their preset table.
         ColorRgba Bg() => b.Active() ? s.Background() : PresetColor(b.Base(), ThemePresets.MenuBackground);
         ColorRgba Acc() => b.Active() ? s.Accent() : PresetColor(b.Base(), ThemePresets.MenuAccent);
+        // Explicit spacers in a zero-gap row: the old Gap 8 spent 5 × 8 = 40 of the ~131 px card on gaps, leaving the
+        // name ~36 px ("Defa…", in-game 2026-11-09). Now the name + sub-label get everything after the swatch: 131 − 52 =
+        // 79 px, or 63 on the active card, where the "✓" (+ 4 px) takes its slot only while shown.
         var row = new RowElement(new HudElement[]
         {
             new SpacerElement(8f, CardHeight),
             Swatch(Bg, Acc),
+            new SpacerElement(8f, 1f),
             new CellElement(new ColumnElement(new HudElement[]
             {
                 new TextElement(b.Name, Color: () => s.Text(), NoWrap: true, FontSize: 13) { Bold = true, Ellipsize = true },
                 new TextElement(b.Sub, Color: () => s.Muted(), NoWrap: true, FontSize: 11) { Bold = true, Ellipsize = true },
             }, Gap: 1f), Weight: 1f),
-            // "✓" in plain text (bold ✓ is untrusted, SDL §6); an empty string keeps the column when not active.
-            new TextElement(() => b.Active() ? "✓" : "", Color: () => s.Readable(s.Accent(), s.AccentWash()), Width: 12f, NoWrap: true),
-            new SpacerElement(6f, 1f),
-        }, Gap: 8f);
+            // "✓" in plain text (bold ✓ is untrusted, SDL §6).
+            new ConditionalElement(b.Active, new RowElement(new HudElement[]
+            {
+                new SpacerElement(4f, 1f),
+                new TextElement(() => "✓", Color: () => s.Readable(s.Accent(), s.AccentWash()), Width: 12f, NoWrap: true),
+            }, Gap: 0.01f)),
+            new SpacerElement(8f, 1f),
+        }, Gap: 0.01f);
         return new BubbleElement(new SelectableElement(row, OnClick: b.OnClick) { Bare = true, OnHover = over => hover.On = over })
         {
             FillColorFn = () => s.Fill(b.Active() ? s.AccentWash(s.Tile()) : hover.On ? s.NeutralHover() : s.Tile()),

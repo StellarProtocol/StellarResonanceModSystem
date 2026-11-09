@@ -34,6 +34,7 @@ internal sealed class PluginsPanel
 
     private const int MaxRows = 64;
     private const float IconSize = 18f;
+    private const int IconGlyph = 12;       // (18 − 12) / 2 = 3 px padding: whole pixels, centred on the tile
     private const float TrailWidth = 62f;   // version / flash label / switch column
     // Live snapshot of the inventory, refreshed once per apply by the list's Conditional When (Conds run before the
     // row Funcs), so the list tracks plugins discovered AFTER the hub was built.
@@ -104,18 +105,18 @@ internal sealed class PluginsPanel
         return new ConditionalElement(() => At()?.IsErrored ?? false, failed, normal);
     }
 
-    // The plugin's own launcher icon (full-colour PNG) when it registered one, else a small accent tile with its
-    // initial. An ImageElement loads its picture ONCE (at its lazy branch build), so the image branch remembers which
-    // plugin it was built for and falls back to the initial tile if this slot ever shows a different plugin.
+    // Every row gets the same 18 px accent tile (prototype .lrow .pi, radius 5): the plugin's own launcher glyph tinted
+    // white on it when it registered one (as the launcher draws it), else its initial. An ImageElement loads its picture
+    // ONCE (at its lazy branch build), so the image branch remembers which plugin it was built for and falls back to the
+    // initial tile if this slot ever shows a different plugin.
     private HudElement Icon(int idx)
     {
         PluginInfo? At() => idx < _cache.Count ? _cache[idx] : null;
         string? builtFor = null;
-        var image = new RowElement(new HudElement[]
-        {
+        var image = _k.S.FilledTile(
             new ImageElement(() => { var p = At(); builtFor = p?.Id; return p == null ? null : DisplayNames?.IconOf(p.Id); },
-                (int)IconSize, (int)IconSize),
-        }, Gap: 0.01f, Justify: RowJustify.Center);
+                IconGlyph, IconGlyph) { Tint = () => StellarStyle.White },
+            _k.S.Accent, IconSize, 5f);
         var initial = _k.S.FilledTile(new TextElement(() => Initial(At()), Color: () => StellarStyle.White, Width: IconSize,
             Align: TextAlign.Center, NoWrap: true, FontSize: 10) { Bold = true }, _k.S.Accent, IconSize, 5f);
         return new CellElement(new ConditionalElement(

@@ -10,7 +10,8 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 internal sealed partial class LayoutPanel
 {
     private const float RenamePillLabel = 58f;   // "Rename" / "Save" in a 78 px row pill (fits "Ganti nama", "เปลี่ยนชื่อ")
-    private const float ActiveChipWidth = 56f;
+    private const float ActiveChipWidth = 56f;    // fits "Active" / "Aktibo" / "使用中" / "ใช้อยู่" in bold 12
+    private const float ActiveChipHeight = 20f;
 
     private HudElement SlotRow(int idx)
         => new ConditionalElement(() => _renaming == idx, RenameRow(idx), NormalRow(idx));
@@ -25,7 +26,9 @@ internal sealed partial class LayoutPanel
             new TextElement(() => NameAt(idx), Color: () => s.Text(), NoWrap: true) { Ellipsize = true });
         var row = StellarStyle.TileRow(
             new CellElement(name, Weight: 1f),
-            new ConditionalElement(Active, s.Chip(_k.T("layout.active"), () => true, onClick: null, ActiveChipWidth, s.Accent)),
+            // Fixed 56-wide slot on EVERY row (an empty spacer when not active), so Rename / ✕ never shift.
+            new CellElement(new ConditionalElement(Active, ActiveChip(), new SpacerElement(ActiveChipWidth, 1f)),
+                Width: ActiveChipWidth),
             s.SmallPill(_k.T("layout.renameSlot"), PillKind.Neutral, () => BeginRename(idx), RenamePillLabel),
             new ConditionalElement(() => _storage.SlotCount > 2,
                 s.SmallCloseButton(() => { _confirmRemove = idx; _renaming = -1; }, hover: _xHover[idx]),
@@ -35,6 +38,25 @@ internal sealed partial class LayoutPanel
         {
             FillColorFn = () => s.Fill(Active() ? s.AccentWash() : hover.On ? s.Hover(s.Tile()) : s.Tile()),
             CornerRadius = StellarStyle.TileRadius, PaddingX = 0f, PaddingY = 0f,
+        };
+    }
+
+    // "Active" chip (prototype .chip.on, 56 × 20): bold accent label on an accent wash. The kit's Chip paints its on-fill
+    // as the same 22 % wash the active ROW already has, so on that row it vanished and read as plain bold text (in-game
+    // 2026-11-09); here the wash is laid over the row's wash (as the prototype's chip-on-wash composites), so it shows.
+    private HudElement ActiveChip()
+    {
+        var s = _k.S;
+        ColorRgba Fill() => StellarStyle.Over(s.Accent() with { A = 0.22f }, s.AccentWash());
+        return new BubbleElement(new RowElement(new HudElement[]
+            {
+                new SpacerElement(0f, ActiveChipHeight),   // height strut
+                new TextElement(_k.T("layout.active"), Color: () => s.Readable(s.Accent(), Fill()), Align: TextAlign.Center,
+                    Width: ActiveChipWidth - 8f, NoWrap: true, FontSize: 12) { Bold = true },   // fixed: the chip is exactly 56
+            }, Gap: 0.01f, Justify: RowJustify.Center))
+        {
+            FillColorFn = () => s.Fill(Fill()), CornerRadius = StellarStyle.RoundRadius(ActiveChipHeight),
+            PaddingX = 4f, PaddingY = 0f, MaxWidth = ActiveChipWidth,
         };
     }
 
