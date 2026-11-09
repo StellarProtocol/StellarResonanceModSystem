@@ -83,6 +83,24 @@ internal sealed class CustomThemeStore : ICustomThemeStore
         Persist();
     }
 
+    /// <summary>Creates <paramref name="newName"/> as a copy of the custom theme <paramref name="source"/>: its base
+    /// preset (and an unknown-base string) and every colour override, which are keyed by theme NAME — before this,
+    /// "Duplicate" created the copy from the base preset alone and "Pink_copy" came out plain Default (user report
+    /// 2026-11-09). Stale overrides orphaned under <paramref name="newName"/> are dropped, not merged; the source is
+    /// untouched. One config write (list + overrides). The ACTIVE-theme pointer is the caller's.</summary>
+    public void Duplicate(string source, string newName)
+    {
+        if (!_themes.TryGetValue(source, out var p)) throw new ArgumentException($"no such theme: {source}", nameof(source));
+        newName = Validate(newName);
+        if (_themes.ContainsKey(newName)) throw new ArgumentException($"theme exists: {newName}", nameof(newName));
+        if (!CanCreate)
+            throw new ArgumentException($"custom theme limit reached ({MaxCustomThemes}): {newName}", nameof(newName));
+        _themes[newName] = p; _order.Add(newName);
+        if (_unknownBase.TryGetValue(source, out var rawBase)) _unknownBase[newName] = rawBase;
+        _overrides?.CopyTheme(source, newName);   // staged; the Persist below writes list + overrides together
+        Persist();
+    }
+
     public void Delete(string name)
     {
         if (_themes.Remove(name)) { _order.Remove(name); _unknownBase.Remove(name); Persist(); }

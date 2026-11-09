@@ -69,6 +69,18 @@ internal sealed class ColorOverrideStore : IColorOverrideStore
 
     public bool RemoveTheme(string themeName) => RemoveTheme(themeName, stage: true);
 
+    public bool CopyTheme(string fromName, string toName)
+    {
+        if (string.Equals(fromName, toName, StringComparison.Ordinal)) return false;
+        var changed = RemoveTheme(toName, stage: false);
+        var copied = new List<KeyValuePair<(string Theme, string Slot), ColorRgba>>();
+        foreach (var kv in _map) if (string.Equals(kv.Key.Theme, fromName, StringComparison.Ordinal)) copied.Add(kv);
+        foreach (var kv in copied) _map[(toName, kv.Key.Slot)] = kv.Value;   // collected first: no add while enumerating
+        if (copied.Count == 0 && !changed) return false;
+        Stage();
+        return true;
+    }
+
     private bool RemoveTheme(string themeName, bool stage)
     {
         var drop = new List<(string Theme, string Slot)>();

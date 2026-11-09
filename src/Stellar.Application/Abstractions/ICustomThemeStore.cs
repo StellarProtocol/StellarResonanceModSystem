@@ -14,5 +14,8 @@ internal interface ICustomThemeStore
     bool CanCreate { get; }
     void Create(string name, ThemePreset basePreset);
     void Rename(string oldName, string newName);
+    /// <summary>Creates <paramref name="newName"/> as a copy of the custom theme <paramref name="source"/>: same base
+    /// preset and every colour override. One config write.</summary>
+    void Duplicate(string source, string newName);
     void Delete(string name);
 }

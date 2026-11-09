@@ -18,9 +18,10 @@ internal sealed partial class ThemeEditorBody
         CancelNameMode();
     }
 
-    /// <summary>Creates a new custom theme on the active theme's base preset (colour overrides are not copied — the
-    /// store creates a theme from its base, as the old "Duplicate" did) under "&lt;name&gt;_copy" (then _copy2, _copy3, …) and makes it
-    /// active. Null when the 12-theme limit is reached.</summary>
+    /// <summary>Copies the active theme under "&lt;name&gt;_copy" (then _copy2, _copy3, …) and makes the copy active. A
+    /// custom theme is copied whole — base preset AND every colour override (it once got only the base, so "Pink_copy"
+    /// came out plain Default); a built-in preset gives a fresh custom theme on that preset with no overrides. Null
+    /// when the 12-theme limit is reached.</summary>
     internal string? DuplicateActive()
     {
         if (!_store.CanCreate) return null;
@@ -28,6 +29,12 @@ internal sealed partial class ThemeEditorBody
         var seed = _namedTheme.ActiveCustomName ?? _namedTheme.Active.ToString();
         var name = seed + "_copy";
         for (var n = 2; NameExists(name); n++) name = seed + "_copy" + n;
+        if (_namedTheme.ActiveCustomName is { } source)
+        {
+            _store.Duplicate(source, name);
+            _namedTheme.SetActiveCustom(name, _store.BasePresetOf(name));
+            return name;
+        }
         var basePreset = BaseFromActive();
         _store.Create(name, basePreset);
         _namedTheme.SetActiveCustom(name, basePreset);

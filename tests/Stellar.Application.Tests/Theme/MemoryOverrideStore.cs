@@ -22,6 +22,13 @@ internal sealed class MemoryOverrideStore : IColorOverrideStore
             if (key.Item1 == oldName) { _m[(newName, key.Item2)] = _m[key]; _m.Remove(key); changed = true; }
         return changed;
     }
+    public bool CopyTheme(string from, string to)
+    {
+        var changed = RemoveTheme(to);
+        foreach (var key in new List<(string,string)>(_m.Keys))
+            if (key.Item1 == from) { _m[(to, key.Item2)] = _m[key]; changed = true; }
+        return changed;
+    }
     public bool RemoveTheme(string t)
     {
         var any = false;

@@ -30,4 +30,11 @@ public interface IColorOverrideStore
     /// <summary>Drops every override stored under <paramref name="themeName"/>; staged like <see cref="RenameTheme"/>.
     /// Returns whether anything was removed.</summary>
     bool RemoveTheme(string themeName);
+
+    /// <summary>A custom theme was duplicated: copies every override of <paramref name="fromName"/> to
+    /// <paramref name="toName"/>, leaving the source as it is. Stale entries already under <paramref name="toName"/> are
+    /// DROPPED first (like <see cref="RenameTheme"/>), so the copy carries exactly the source's colours. Staged, not
+    /// saved — the caller's Save writes it (see <see cref="CustomThemeStore.Duplicate"/>). Returns whether anything
+    /// changed.</summary>
+    bool CopyTheme(string fromName, string toName);
 }
