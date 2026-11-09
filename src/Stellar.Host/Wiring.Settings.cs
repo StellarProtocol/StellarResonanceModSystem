@@ -153,8 +153,10 @@ public sealed partial class BootstrapPlugin
         _themeEditorPoll = () => { PumpWindowPrewarms(); panels.Themes.PollEditorUgui(); panels.General.PollScaleUgui(); hub.Tick(); };
         // The pre-warm AND-s its own term onto the loading gate (never replaces it): suppressed while warming.
         var spec = SettingsHubSpec.Create(loc, () => !_hubPrewarm.Warming && gate());
+        // The hub's ✕ asks first while the Edit colours child holds unsaved changes (ThemesPanel.GuardUnsaved): the hub
+        // stays open, the child shows its "Unsaved changes" confirm, and Save / Discard then close the hub.
         _settingsHubControl = _windowService.Register(new WindowRegistration(spec, hub.BuildRoot(),
-            OnClose: () => _settingsHubControl?.SetVisible(false)));
+            OnClose: () => panels.Themes.GuardUnsaved(() => _settingsHubControl?.SetVisible(false))));
         help.Register(_windowService);
         panels.Themes.RegisterColoursWindow(_windowService, kit, () => gate() && HubShown(), () => _settingsHubControl,
             _framework!);

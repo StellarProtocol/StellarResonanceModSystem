@@ -23,7 +23,7 @@ internal sealed partial class ThemeEditorBody
     /// the picker once per bump.</summary>
     internal int EditSeq { get; private set; }
 
-    /// <summary>Stops editing (the picker's ✕, the row's Close, Done / closing Edit colours).</summary>
+    /// <summary>Stops editing (the picker's ✕, the row's Close, closing Edit colours).</summary>
     internal void CloseExpanded() => _expandedSlotKey = null;
 
     // A row's Edit / Close pill: toggles that row (Close = same row), remembering the pill's rect for the docking.

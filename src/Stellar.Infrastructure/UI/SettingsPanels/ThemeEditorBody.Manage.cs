@@ -55,6 +55,7 @@ internal sealed partial class ThemeEditorBody
         if (NameExists(name)) { _nameError = _text.T("themes.nameError.taken"); return null; }
         var basePreset = _store.BasePresetOf(_renameTarget);
         _store.Rename(_renameTarget, name);
+        RenameSession(_renameTarget, name);   // same overrides, new name: the open Edit colours baseline follows
         if (_namedTheme.ActiveCustomName == _renameTarget) _namedTheme.SetActiveCustom(name, basePreset);
         CancelNameMode();
         return name;

@@ -13,7 +13,7 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 //  • Edit on another row re-targets the SAME window: docked → realigned with the new row; undocked → stays put. Fronted
 //    explicitly then (it is already visible, and Edit colours may have been activated since — Rule 5 exception). A
 //    show from hidden lands on top by itself (non-sticky WindowStacking).
-//  • Closes with: the row's Close pill, its own ✕, Edit colours' Done / ✕, or the hub closing (CloseColours). Never
+//  • Closes with: the row's Close pill, its own ✕, Edit colours closing (its ✕ / a resolved confirm), or the hub closing (CloseColours). Never
 //    left orphaned: the tick closes it whenever no row is being edited or Edit colours is not open.
 // IsolateCanvas: dragging the SV square / hue bar / opacity slider flips pixelPerfect on this canvas only.
 internal sealed partial class ThemesPanel

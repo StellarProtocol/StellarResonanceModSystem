@@ -9,7 +9,7 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 // The house-style "Edit colours" child window (Stellar Settings: Edit colours): a ToolHeader (theme name, "Based on X ·
 // N colours changed"), "Base" (window background, text, muted text, accent, border), "Status" (success, danger,
 // caution), "Other colours" (the remaining framework colours + every
-// plugin colour this theme overrides, and the "+ Add colour override" picker), then Done. A row = swatch, name, hex,
+// plugin colour this theme overrides, and the "+ Add colour override" picker), then the Save / Discard footer. A row = swatch, name, hex,
 // Edit (opens the picker), ✕ (back to the theme default; only while overridden).
 internal sealed partial class ThemeEditorBody
 {
@@ -41,10 +41,9 @@ internal sealed partial class ThemeEditorBody
     private readonly List<int> _pickIdx = new();
     private int _otherFirst, _pickFirst;   // first logical row in each virtual list's pool (OnWindow)
 
-    public HudElement DescribeColours(SettingsKit kit, Action close)
+    public HudElement DescribeColours(SettingsKit kit)
     {
         _k = kit;
-        var s = kit.S;
         return new ColumnElement(new HudElement[]
         {
             ColoursHeader(),
@@ -53,11 +52,9 @@ internal sealed partial class ThemeEditorBody
             // The picker for the row being edited lives in its own docked child window (DescribePicker,
             // ThemesPanel.Picker.cs) — inline it split the list and resized this window on every open/close.
             kit.Panel("colours.other", kit.T("colours.other.hint"), BuildAddSection()),
-            new RowElement(new HudElement[]
-            {
-                new SpacerElement(),
-                s.PrimaryButton(kit.T("common.done"), close, StellarStyle.PillPairWidth - 24f),
-            }),
+            // Status + Discard / Save, or the "Unsaved changes" confirm in the same height (ThemeEditorBody.Session.cs).
+            // Replaces the old Done pill: closing is the title-bar ✕, which asks first when something is unsaved.
+            BuildFooter(),
         }, Gap: 8f);
     }
 
