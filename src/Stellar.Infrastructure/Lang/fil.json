@@ -22,6 +22,7 @@
   "colours.basedOn.one": "Batay sa {0} · {1} kulay ang binago",
   "colours.other": "Iba pang kulay",
   "colours.other.hint": "Mga kulay ng HUD at plugin",
+  "colours.picker.title": "Mga Setting ng Stellar: Pagpili ng kulay",
   "colours.slot.accent": "Accent",
   "colours.slot.background": "Background ng window",
   "colours.slot.border": "Border",

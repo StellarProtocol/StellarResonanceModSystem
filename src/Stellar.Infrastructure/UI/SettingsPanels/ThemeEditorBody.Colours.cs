@@ -8,14 +8,18 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 // The house-style "Edit colours" child window (Stellar Settings: Edit colours): a ToolHeader (theme name, "Based on X ·
 // N colours changed"), "Base" (window background, text, muted text, accent, border), "Status" (success, danger,
-// caution), the shared HSV picker for the row being edited, "Other colours" (the remaining framework colours + every
+// caution), "Other colours" (the remaining framework colours + every
 // plugin colour this theme overrides, and the "+ Add colour override" picker), then Done. A row = swatch, name, hex,
 // Edit (opens the picker), ✕ (back to the theme default; only while overridden).
 internal sealed partial class ThemeEditorBody
 {
     private const float HexWidth = 72f;
     private const float EditPillLabel = 44f;
-    private const float PickerListHeight = 140f;
+    // FIXED window height (house rule: windows never change size): "Other colours" scrolls in a fixed 6-row area, and
+    // the open "+ Add colour override" section REPLACES it in the same height — closed = list + 6 + the 28 px add pill;
+    // open = filter row 28 + 6 + its list + 6 + the 28 px buttons. (Was: the list and the add section both grew it.)
+    private const float OtherListHeight = 6 * StellarStyle.ListRowPitch - StellarStyle.ListRowGap;   // 166
+    private const float PickerListHeight = OtherListHeight + 6f + 28f - (28f + 6f + 6f + 28f);       // 132
 
     // Display names for the Base / Status rows (the registry labels stay for "Other colours" and plugins).
     private static readonly Dictionary<string, string> NamedRowKeys = new(StringComparer.Ordinal)
@@ -45,9 +49,9 @@ internal sealed partial class ThemeEditorBody
             ColoursHeader(),
             kit.Panel("colours.base", kit.T("colours.base.hint"), NamedRows(BaseKeys)),
             kit.Panel("colours.status", kit.T("colours.status.hint"), NamedRows(StatusKeys)),
-            new ConditionalElement(() => _expandedSlotKey != null,
-                s.SectionPanel(() => _expandedSlotKey is { } k ? DisplayLabel(k) : "", null, BuildSharedPicker())),
-            kit.Panel("colours.other", kit.T("colours.other.hint"), OtherList(), BuildAddSection()),
+            // The picker for the row being edited lives in its own docked child window (DescribePicker,
+            // ThemesPanel.Picker.cs) — inline it split the list and resized this window on every open/close.
+            kit.Panel("colours.other", kit.T("colours.other.hint"), BuildAddSection()),
             new RowElement(new HudElement[]
             {
                 new SpacerElement(),
@@ -94,7 +98,7 @@ internal sealed partial class ThemeEditorBody
             slots[i] = ColourRow(Key, () => idx < _otherIdx.Count ? LabelAt(_otherIdx[idx]) : "");
         }
         return new ConditionalElement(() => { Refresh(_otherIdx, ShowInOtherList); return true; },
-            new ListElement(() => _otherIdx.Count, slots));
+            new ScrollElement(new ListElement(() => _otherIdx.Count, slots), Height: OtherListHeight) { FixedHeight = true });
     }
 
     private void Refresh(List<int> into, Func<int, bool> show)
@@ -113,8 +117,11 @@ internal sealed partial class ThemeEditorBody
                 new SwatchElement(() => ColorOf(key()), 18f),
                 _k.LineLabel(label),
                 new TextElement(() => HexOf(key()), Color: () => s.Muted(), Width: HexWidth, NoWrap: true),
-                s.SmallPill(() => _text.T(Open() ? "common.close" : "common.edit"), PillKind.Neutral, () => ToggleExpandKey(key()),
-                    EditPillLabel),
+                // Click work happens in the rect callback: the picker window docks beside this row (EditAnchor).
+                StellarStyle.WithClickRect(
+                    s.SmallPill(() => _text.T(Open() ? "common.close" : "common.edit"), PillKind.Neutral, () => { },
+                        EditPillLabel),
+                    r => EditRow(key(), r)),
                 new ConditionalElement(() => HasOverride(key()),
                     s.SmallCloseButton(() => ResetKey(key()), hover: hover), SettingsKit.HelpGap())),
             selected: Open);
@@ -173,7 +180,10 @@ internal sealed partial class ThemeEditorBody
                 s.NeutralButton(_k.T("common.cancel"), TogglePicker),
             }, Gap: 6f),
         }, Gap: 6f);
-        return new ConditionalElement(() => _pickerOpen, body,
-            new RowElement(new HudElement[] { s.NeutralButton(_k.T("themes.addOverride.closed"), TogglePicker) }));
+        return new ConditionalElement(() => _pickerOpen, body, new ColumnElement(new HudElement[]
+        {
+            OtherList(),
+            new RowElement(new HudElement[] { s.NeutralButton(_k.T("themes.addOverride.closed"), TogglePicker) }),
+        }, Gap: 6f));
     }
 }

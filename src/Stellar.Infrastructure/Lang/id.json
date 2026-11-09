@@ -22,6 +22,7 @@
   "colours.basedOn.one": "Berdasarkan {0} · {1} warna diubah",
   "colours.other": "Warna lain",
   "colours.other.hint": "Warna HUD dan plugin",
+  "colours.picker.title": "Pengaturan Stellar: Pemilih warna",
   "colours.slot.accent": "Aksen",
   "colours.slot.background": "Latar jendela",
   "colours.slot.border": "Garis tepi",

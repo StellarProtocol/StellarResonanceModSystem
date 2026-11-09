@@ -43,6 +43,14 @@ internal sealed partial class StellarStyle
         };
     }
 
+    /// <summary>Adds an on-click SCREEN-pixel rect callback (<see cref="SelectableElement.OnClickWithRect"/>, fired right
+    /// after OnClick) to a pill built by <see cref="SmallPill"/> / <see cref="PillButton"/> — for anchoring a child
+    /// window to the clicked control. Any other element is returned unchanged.</summary>
+    public static HudElement WithClickRect(HudElement pill, Action<WindowRect> onClickWithRect)
+        => pill is BubbleElement b && b.Child is SelectableElement sel
+            ? b with { Child = sel with { OnClickWithRect = onClickWithRect } }
+            : pill;
+
     /// <summary>24×24 icon-only ✕ for list rows: muted at rest, red glyph on the soft red round wash on hover (the house
     /// remove-hover). Pass <paramref name="hover"/> to own the flag (a pooled row resets it when its slot rebinds).</summary>
     public HudElement SmallCloseButton(Action onClick, Func<ColorRgba>? surface = null, HoverFlag? hover = null)

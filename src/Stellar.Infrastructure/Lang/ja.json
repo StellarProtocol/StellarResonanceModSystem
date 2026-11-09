@@ -22,6 +22,7 @@
   "colours.basedOn.one": "ベース: {0} · {1} 色を変更",
   "colours.other": "その他の色",
   "colours.other.hint": "HUD とプラグインの色",
+  "colours.picker.title": "Stellar 設定: カラーピッカー",
   "colours.slot.accent": "アクセント",
   "colours.slot.background": "ウィンドウ背景",
   "colours.slot.border": "枠線",

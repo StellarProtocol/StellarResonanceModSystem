@@ -21,11 +21,14 @@ internal sealed partial class ThemesPanel
     private int _centreTicks;
     private int _renameFocus;
 
-    /// <summary>Registers the (hidden) colour-editor child window. Call once after the hub (<paramref name="hub"/>) is
-    /// registered; <paramref name="gate"/> = the hub's own render gate.</summary>
-    public IWindowControl RegisterColoursWindow(IWindowHost windows, SettingsKit kit, Func<bool> gate, Func<IWindowControl?> hub)
+    /// <summary>Registers the (hidden) colour-editor child window and its colour-picker child window. Call once after
+    /// the hub (<paramref name="hub"/>) is registered; <paramref name="gate"/> = the hub's own render gate;
+    /// <paramref name="framework"/> = screen/canvas size for docking the picker.</summary>
+    public IWindowControl RegisterColoursWindow(IWindowHost windows, SettingsKit kit, Func<bool> gate, Func<IWindowControl?> hub,
+        IFramework framework)
     {
         _hub = hub;
+        _fw = framework;
         _colours = windows.Register(new WindowRegistration(
             new WindowSpec(ColoursWindowId, "Stellar Settings: Edit colours", new WindowRect(700f, 220f, ColoursWidth, 0f),
                 WindowCategory.Tools, WindowPanelStyle.GlassMenu)
@@ -36,6 +39,7 @@ internal sealed partial class ThemesPanel
             },
             _editor.DescribeColours(kit, CloseColours),
             OnClose: CloseColours));
+        RegisterPickerWindow(windows, kit, gate);
         return _colours;
     }
 
@@ -50,6 +54,7 @@ internal sealed partial class ThemesPanel
 
     private void CloseColours()
     {
+        ClosePicker();   // never left orphaned (ThemesPanel.Picker.cs)
         _coloursOpen = false;
         _centreTicks = 0;
         _colours?.SetVisible(false);
@@ -62,6 +67,7 @@ internal sealed partial class ThemesPanel
         if (!_coloursOpen || _colours == null) return;
         var hub = _hub();
         if (hub == null || !hub.IsShown || !IsCustomActive) { CloseColours(); return; }
+        TickPicker();   // open / re-target / follow / close the docked picker (ThemesPanel.Picker.cs)
         if (_centreTicks <= 0) return;
         var c = _colours.Rect;
         if (!_colours.IsShown || c.Width <= 1f || c.Height <= 1f) return;   // not built / laid out yet

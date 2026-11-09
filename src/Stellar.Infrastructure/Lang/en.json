@@ -22,6 +22,7 @@
   "colours.basedOn.one": "Based on {0} · {1} colour changed",
   "colours.other": "Other colours",
   "colours.other.hint": "HUD and plugin colours",
+  "colours.picker.title": "Stellar Settings: Colour picker",
   "colours.slot.accent": "Accent",
   "colours.slot.background": "Window background",
   "colours.slot.border": "Border",

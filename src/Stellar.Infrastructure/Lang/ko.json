@@ -22,6 +22,7 @@
   "colours.basedOn.one": "기반: {0} · {1}개 색 변경됨",
   "colours.other": "기타 색상",
   "colours.other.hint": "HUD 및 플러그인 색상",
+  "colours.picker.title": "Stellar 설정: 색상 선택기",
   "colours.slot.accent": "강조색",
   "colours.slot.background": "창 배경",
   "colours.slot.border": "테두리",

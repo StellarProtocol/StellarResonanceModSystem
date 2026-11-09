@@ -147,7 +147,8 @@ public sealed partial class BootstrapPlugin
         _settingsHubControl = _windowService.Register(new WindowRegistration(spec, hub.BuildRoot(),
             OnClose: () => _settingsHubControl?.SetVisible(false)));
         help.Register(_windowService);
-        panels.Themes.RegisterColoursWindow(_windowService, kit, () => gate() && HubShown(), () => _settingsHubControl);
+        panels.Themes.RegisterColoursWindow(_windowService, kit, () => gate() && HubShown(), () => _settingsHubControl,
+            _framework!);
     }
 
     /// <summary>Opens the Settings hub on <paramref name="tabKey"/> ("plugins", "layout", "themes", "hotkeys",

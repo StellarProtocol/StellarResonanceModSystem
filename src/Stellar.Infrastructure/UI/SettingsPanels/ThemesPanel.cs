@@ -12,7 +12,8 @@ namespace Stellar.Infrastructure.UI.SettingsPanels;
 /// scroll — "+ Duplicate", and the active custom theme's Edit colours / Rename / Delete), "Language", "Classic controls"
 /// (button / scrollbar style of older plugin windows). Right: "Size & opacity" (font scale, UI scale, window opacity) and
 /// a live "Preview" — an example window drawn with the theme tokens. Edit colours opens the colour editor in its own
-/// child window (<c>ThemesPanel.Colours.cs</c> + <see cref="ThemeEditorBody"/>). Partials: <c>.Cards.cs</c> (cards +
+/// child window (<c>ThemesPanel.Colours.cs</c> + <see cref="ThemeEditorBody"/>), whose rows open the colour picker in a
+/// second, docked child window (<c>ThemesPanel.Picker.cs</c>). Partials: <c>.Cards.cs</c> (cards +
 /// theme actions), <c>.Preview.cs</c>, <c>.Colours.cs</c>.
 /// </summary>
 internal sealed partial class ThemesPanel

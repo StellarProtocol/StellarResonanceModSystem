@@ -22,6 +22,7 @@
   "colours.basedOn.one": "อิงจาก {0} · เปลี่ยน {1} สี",
   "colours.other": "สีอื่น ๆ",
   "colours.other.hint": "สี HUD และปลั๊กอิน",
+  "colours.picker.title": "การตั้งค่า Stellar: ตัวเลือกสี",
   "colours.slot.accent": "สีเน้น",
   "colours.slot.background": "พื้นหลังหน้าต่าง",
   "colours.slot.border": "ขอบ",
