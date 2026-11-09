@@ -18,6 +18,8 @@ namespace Stellar.Infrastructure.Game;
 // the pointer, so every ticker hit-test misses it), applied like a shown window, until BackgroundWarmRules.IsDone —
 // every prebuilt branch built, laid out and parked, every bubble settled. Then it parks as before, and the first real
 // open is a plain re-show of a fully warm window (its parked tabs re-warm with their bindings off, .KeepAlive.cs).
+// A window with KeepAlive tabs and its own canvas SOFT-parks instead (.SoftPark.cs): it stays active right here
+// off-screen with its canvas off, so its first open is a canvas enable and nothing re-warms.
 //
 // The shift is invisible to everyone else: GetRect/SetRect speak the window's REAL position (so WindowService never
 // persists or clamps the shifted one), and the sticky cursor ignores the root (WindowInteractionTicker.BackgroundRoots —
@@ -54,20 +56,25 @@ internal sealed partial class WindowRenderer : IWindowBackgroundWarm
     // frame on screen.
     private long SetShown(WindowToken t, bool hideAll, bool bg)
     {
-        var wasHidden = !t.Root.activeSelf;
+        // Soft-parked (.SoftPark.cs): hidden by its gate stays parked as it is; shown = canvas on, nothing re-enabled.
+        var plan = SoftParkRules.PlanShow(t.SoftParked, t.Root.activeSelf, hideAll);
+        if (plan.StaySoftParked) return 0L;
         if (bg && !t.BgShifted) ShiftOff(t);
-        var realShow = !hideAll && !bg && (wasHidden || !t.EverShown);
+        else if (bg && plan.SoftUnpark) RestartWarmCount(t);   // a re-warm of a soft-parked window: already off-screen
+        var realShow = !hideAll && !bg && (plan.WasHidden || !t.EverShown);
         var showT = realShow ? HitchProbe.Begin() : 0L;
         if (realShow) { t.ShowIsFirst = !t.EverShown; t.EverShown = true; }
+        if (plan.SoftUnpark) SoftUnpark(t);
         // Still inactive: parked KeepAlive branches drop back to background re-warming, or the re-activation below would
         // re-enable (re-mesh + re-layout) every one of them in this frame (WindowBuilder.KeepAlive.cs).
-        if (!hideAll && wasHidden) t.PrepareReshow();
+        if (plan.PrepareReshow) t.PrepareReshow();
         if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
-        if (!bg && t.BgShifted) ShiftBack(t);   // warm over: back home (a real show — mid-warm open — or about to park)
-        // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
+        if (!bg && t.BgShifted) ShiftBack(t);   // warm / soft park over: back home (a real show, or about to park)
+        // A window re-shown after being deactivated re-arms its immediate first-layout, so a content-sized popup
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
         // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
-        if (!hideAll && wasHidden) t.ResetLayout();
+        // A soft-parked window stayed laid out: no forced whole-window rebuild on its open.
+        if (plan.ResetLayout) t.ResetLayout();
         return showT;
     }
 
@@ -80,9 +87,11 @@ internal sealed partial class WindowRenderer : IWindowBackgroundWarm
         UiPerfStats.WindowShow(t.WindowId, t.ShowIsFirst, applyT - showT, now - applyT);
     }
 
+    private static void RestartWarmCount(WindowToken t) { t.BgWarmStartApply = t.ApplyCount; t.BgWarmStartFrame = Time.frameCount; }
+
     private void ShiftOff(WindowToken t)
     {
-        t.BgShifted = true; t.BgWarmStartApply = t.ApplyCount; t.BgWarmStartFrame = Time.frameCount;
+        t.BgShifted = true; RestartWarmCount(t);
         t.Rect.anchoredPosition += new Vector2(BackgroundOffset, 0f);
         _ticker?.BackgroundRoots.Add(t.Rect);
     }

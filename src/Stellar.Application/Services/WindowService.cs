@@ -17,6 +17,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private readonly IWindowOrder? _order;
     private readonly IWindowParking? _parking;   // hide = deactivate the built tree, not destroy it (see IWindowParking)
     private readonly IWindowAutoFocus? _autofocus;   // optional: focus a window's AutoFocus field on a user-show (see IWindowAutoFocus)
+    private readonly IWindowParkedRefresh? _parkedRefresh;   // optional: keep a soft-parked hidden window current
     private readonly IPluginLog _log;
     private readonly LayoutEditorService? _layoutEditor;   // authoritative Application-side edit-mode source (may be null in tests)
     private readonly Dictionary<string, Entry> _windows = new();
@@ -26,7 +27,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _log = log; _layoutEditor = layoutEditor; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _parkedRefresh = renderer as IWindowParkedRefresh; _log = log; _layoutEditor = layoutEditor; }
 
     /// <summary>Late-bind the plugin display-name resolver (composition root, after the launcher exists) so the
     /// layout editor's plugin filter can caption each plugin by its own localized tile title.</summary>
@@ -181,7 +182,12 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     {
         // Hidden: park and drop any pending auto-focus (a user-show armed it, then hid before it ever activated —
         // don't let it fire on some later unrelated activation). It's re-armed on the next SetVisible rising edge.
-        if (!e.Visible) { e.AutoFocusPending = false; e.ActivateOnShow = false; ParkOrDestroy(e); return; }
+        if (!e.Visible)
+        {
+            e.AutoFocusPending = false; e.ActivateOnShow = false; ParkOrDestroy(e);
+            if (applyNow) RefreshParked(e);
+            return;
+        }
         if (e.Token is null || !_renderer.IsAlive(e.Token))
         {
             e.Parked = false;
@@ -261,8 +267,24 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     {
         if (e.Token is null || e.Parked) return;
         if (_parking is null) { DestroyIfMounted(e); return; }
-        _parking.Park(e.Token);
+        _parking.Park(e.Token);   // [Hitch] winhide:<id> (renderer)
         e.Parked = true;
+    }
+
+    // A renderer that parks a window with its root still active (a soft park: canvas off, off-screen) re-applies it in the
+    // background while hidden, so its next open has nothing stale to re-pull (IWindowParkedRefresh). The renderer decides
+    // cadence first (no plugin code runs for any other hidden window); the window's own ShouldRender gate still applies.
+    private void RefreshParked(Entry e)
+    {
+        if (_parkedRefresh is null || e.Token is null || !e.Parked || !_parkedRefresh.WantsParkedRefresh(e.Token)) return;
+        bool hide;
+        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
+        catch { hide = true; }   // SafeApply warns on a throwing ShouldRender when the window is shown
+        if (hide) return;
+        var hitchT = HitchProbe.Begin();
+        try { _parkedRefresh.RefreshParked(e.Token); }
+        catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] background apply: {ex.Message}"); }
+        finally { if (hitchT != 0L) HitchProbe.End(e.HitchKey(3), hitchT); }
     }
 
     private void DestroyIfMounted(Entry e)
@@ -306,10 +328,10 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         public bool ApplyPending; public bool PendingApplyVisibility = true;
         public WindowRect LastRect, LastSavedRect;   // drag/resize-persist tracking (WindowService.Layout)
         public Entry Init(bool startVisible) { Visible = startVisible; return this; }
-        // [Hitch] bucket names (mount/apply/destroy), built once per window on first use — diagnostics only.
+        // [Hitch] bucket names (mount/apply/destroy/hidden background apply), built once per window on first use.
         private string[]? _hitchKeys;
         public string HitchKey(int kind)
-            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id })[kind];
+            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id, "bgapply:" + Reg.Spec.Id })[kind];
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
         public void SetVisible(bool visible)

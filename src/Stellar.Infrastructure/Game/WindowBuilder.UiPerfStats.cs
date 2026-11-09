@@ -50,7 +50,7 @@ internal static class UiPerfStats
     private static long _lastFlipLog; private static int _flipsNotLogged;
     // A KeepAlive branch shown (tab switch): pending from its apply until the next frame's OnFrame, like a flip, so the
     // line carries that frame's window apply + canvas rebuild + length. Sub-60 ms switches never reach [Hitch].
-    private static bool _tabPending; private static string _tabName = "", _tabFrom = "", _tabKind = "tabshow";
+    private static bool _tabPending; private static string _tabName = "", _tabFrom = "", _tabKind = "tabshow", _tabStep = "show";
     private static long _tabShowTicks, _tabApplyTicks = -1, _tabCanvasTicks = -1;
 
     public static bool On => HitchProbe.IsEnabled;
@@ -60,7 +60,7 @@ internal static class UiPerfStats
     public static void TabShow(string name, string from, long startTicks)
     {
         if (startTicks == 0L) return;
-        _tabPending = true; _tabName = name; _tabFrom = from; _tabKind = "tabshow";
+        _tabPending = true; _tabName = name; _tabFrom = from; _tabKind = "tabshow"; _tabStep = "show";
         _tabShowTicks = Stopwatch.GetTimestamp() - startTicks; _tabApplyTicks = -1; _tabCanvasTicks = -1;
     }
 
@@ -70,8 +70,17 @@ internal static class UiPerfStats
     /// Overrides a tabshow pending from the same apply (the window line covers it).</summary>
     public static void WindowShow(string id, bool first, long showTicks, long applyTicks)
     {
-        _tabPending = true; _tabName = id; _tabFrom = first ? "first" : "hidden"; _tabKind = "winshow";
+        _tabPending = true; _tabName = id; _tabFrom = first ? "first" : "hidden"; _tabKind = "winshow"; _tabStep = "show";
         _tabShowTicks = showTicks; _tabApplyTicks = applyTicks; _tabCanvasTicks = -1;
+    }
+
+    /// <summary>Window <paramref name="id"/> was hidden (closed) — <paramref name="soft"/> = soft-parked (canvas off, root
+    /// active), else its root deactivated; <paramref name="parkTicks"/> the park itself. Logged next frame with that
+    /// frame's canvas rebuild as <c>[UiPerf] winhide &lt;id&gt; from=soft|deactivate park=… apply=n/a …</c>.</summary>
+    public static void WindowHide(string id, bool soft, long parkTicks)
+    {
+        _tabPending = true; _tabName = id; _tabFrom = soft ? "soft" : "deactivate"; _tabKind = "winhide"; _tabStep = "park";
+        _tabShowTicks = parkTicks; _tabApplyTicks = -2; _tabCanvasTicks = -1;
     }
 
     private static void LogPendingTab(double frameMs, Action<string> log)
@@ -80,7 +89,7 @@ internal static class UiPerfStats
         _tabPending = false;
         var sb = _sb.Clear();
         sb.Append("[UiPerf] ").Append(_tabKind).Append(' ').Append(_tabName).Append(" from=").Append(_tabFrom)
-          .Append(" show=").Append(Ms(_tabShowTicks, 1).ToString("0.0")).Append("ms apply=");
+          .Append(' ').Append(_tabStep).Append('=').Append(Ms(_tabShowTicks, 1).ToString("0.0")).Append("ms apply=");
         if (_tabApplyTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_tabApplyTicks, 1).ToString("0.0")).Append("ms");
         sb.Append(" canvasRebuild=");
         if (_tabCanvasTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_tabCanvasTicks, 1).ToString("0.0")).Append("ms");
@@ -102,7 +111,7 @@ internal static class UiPerfStats
     {
         if (startTicks == 0L) return;
         var d = Stopwatch.GetTimestamp() - startTicks;
-        if (_tabPending && _tabApplyTicks < 0) _tabApplyTicks = d;   // the apply that showed the tab (it ends first)
+        if (_tabPending && _tabApplyTicks == -1) _tabApplyTicks = d;   // the apply that showed the tab (-2 = a hide: none)
         _applies++; _applyTicks += d;
         if (d > _applyMax) { _applyMax = d; _applyMaxId = windowId; }
     }

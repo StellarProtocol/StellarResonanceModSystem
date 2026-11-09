@@ -180,7 +180,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         }
         // IsolateCanvas-only path: overrideSorting stays at its default (false) → batching boundary that still
         // sorts by sibling index within the shared parent canvas (z unchanged).
-        token.Root.AddComponent<GraphicRaycaster>();
+        token.OwnRaycaster = token.Root.AddComponent<GraphicRaycaster>();
+        token.OwnCanvas = oc;   // a soft park switches these off instead of deactivating the root (.SoftPark.cs)
     }
 
     private readonly System.Collections.Generic.List<WindowToken> _zsort = new();
@@ -201,14 +202,21 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     // IWindowParking: a SetVisible(false) window keeps its built tree, deactivated (the ticker skips every
     // !activeInHierarchy drag/hover/dismiss/field entry, exactly as for a ShouldRender-hidden window). The next
-    // ApplyValues re-activates it (and re-arms its first layout via ResetLayout).
+    // ApplyValues re-activates it (and re-arms its first layout via ResetLayout). A window with its own canvas and
+    // KeepAlive branches is SOFT-parked instead: root left active, canvas off, off-screen (.SoftPark.cs).
     // Hiding also ends a HUD window's BringToFront lift: it drops back to the HUD layer (the lift is NOT sticky).
     public void Park(object? token)
     {
         if (token is not WindowToken t) return;
-        if (t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
-        if (t.BgShifted) ShiftBack(t);   // a background warm ends parked: home again, moved while inactive (no dirt)
+        var hideT = HitchProbe.Begin();
+        var soft = TrySoftPark(t);
+        if (!soft)
+        {
+            if (t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+            if (t.BgShifted) ShiftBack(t);   // a background warm ends parked: home again, moved while inactive (no dirt)
+        }
         t.ZLifted = false;
+        NoteHide(t, hideT, soft);
     }
 
     // Re-show of a parked window. Its order changes only through Activate (WindowService calls it for a REAL show from
