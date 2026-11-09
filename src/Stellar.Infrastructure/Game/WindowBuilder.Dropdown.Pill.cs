@@ -50,14 +50,12 @@ internal sealed partial class WindowBuilder
     private void BuildPillDropdownTrigger(DropdownElement dd, Transform parent, WindowToken token)
     {
         var hovered = false;
-        ColorRgba Fill() => hovered ? Over(WithA(_assets.MenuText, 0.08f), PillNeutral()) : PillNeutral();
+        // DropdownElement.FillColorFn / HoverFillColorFn / LabelColorFn (2.30.0, opt-in): null = the built-in look.
+        ColorRgba Rest() => dd.FillColorFn?.Invoke() ?? PillNeutral();
+        ColorRgba Fill() => !hovered ? Rest() : dd.HoverFillColorFn?.Invoke() ?? Over(WithA(_assets.MenuText, 0.08f), Rest());
+        ColorRgba Label() => dd.LabelColorFn?.Invoke() ?? EnsureContrast(ToRgba(_assets.MenuText), Fill(), 4.5f);
 
-        string Caption()
-        {
-            var opts = dd.Options();
-            var i = dd.Selected();
-            return opts != null && i >= 0 && i < opts.Count ? opts[i] : "";
-        }
+        string Caption() => PillDdCaption(dd);
 
         // The caption + ▾ GROUP is centred in the pill (house PillButton: Row(Center)). The caption hugs its text.
         // The ▾ is an IMAGE, not a glyph: the TMP bold face has no "▾" — in-game a TMP "▾" reported a ZERO preferred
@@ -67,7 +65,7 @@ internal sealed partial class WindowBuilder
         // 0.01 gaps = a real zero gap (Gap 0 means the default 8).
         var group = new RowElement(new HudElement[]
         {
-            new TextElement(Caption, Color: () => EnsureContrast(ToRgba(_assets.MenuText), Fill(), 4.5f),
+            new TextElement(Caption, Color: () => Label(),
                 NoWrap: true, FontSize: PillDdFontSize) { Bold = true, Ellipsize = dd.Width > 0f },
             new SpacerElement(PillDdChevronGap, 0f),
             new SpacerElement(PillDdChevronW, PillDdChevronH),   // ▾ slot (index 2) — see AttachPillChevron
@@ -96,13 +94,22 @@ internal sealed partial class WindowBuilder
             FillColorFn = () => Fill(), PaddingX = 0f, PaddingY = 0f, CornerRadius = BubbleGeometry.CapRadius(dd.CornerRadius, PillDdHeight),
         };
         BuildElement(pill, parent, token);
-        AttachPillChevron(parent.GetChild(parent.childCount - 1), inner > 0f, token);
+        AttachPillChevron(parent.GetChild(parent.childCount - 1), inner > 0f, token, dd.LabelColorFn);
+    }
+
+    private static string PillDdCaption(DropdownElement dd)
+    {
+        var opts = dd.Options();
+        var i = dd.Selected();
+        return opts != null && i >= 0 && i < opts.Count ? opts[i] : "";
     }
 
     // Find the ▾ placeholder in the tree just built and hang the chevron image on it. The path is fixed by the
     // composition above: Bubble → [0] Selectable → [0] Row → [1] (Cell → [0])? group Row → [2] slot Spacer (Bubble adds
     // its content as child 0 and no outline here; a Bare Selectable adds no bar). Guarded: a mismatch just omits the ▾.
-    private void AttachPillChevron(Transform bubble, bool hasInnerCell, WindowToken token)
+    // A custom caption colour (DropdownElement.LabelColorFn) also tints the ▾, polled per refresh through a diffed
+    // SwatchBinding (writes only on change); otherwise it stays MenuMuted, re-tinted on a theme switch.
+    private void AttachPillChevron(Transform bubble, bool hasInnerCell, WindowToken token, Func<ColorRgba>? labelColor)
     {
         static Transform? Child(Transform? t, int i) => t != null && t.childCount > i ? t.GetChild(i) : null;
         var group = Child(Child(Child(bubble, 0), 0), 1);
@@ -115,7 +122,8 @@ internal sealed partial class WindowBuilder
         var img = go.AddComponent<Image>();
         img.sprite = PillChevronSprite(); img.raycastTarget = false;
         img.color = _assets.MenuMuted;
-        token.ReskinActions.Add(() => { if (img != null) img.color = _assets.MenuMuted; });   // live theme switch
+        if (labelColor != null) token.Swatches.Add(new SwatchBinding { Img = img, Get = labelColor });
+        else token.ReskinActions.Add(() => { if (img != null) img.color = _assets.MenuMuted; });   // live theme switch
         LiftPillCaption(Child(Child(bubble, 0), 0), go.GetComponent<RectTransform>());
     }
 

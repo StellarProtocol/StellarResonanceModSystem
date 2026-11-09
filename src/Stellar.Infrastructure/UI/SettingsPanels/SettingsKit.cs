@@ -94,10 +94,18 @@ internal sealed class SettingsKit
     public HudElement Value(Func<string> text, float width)
         => new TextElement(text, Color: () => S.Muted(), Width: width, Align: TextAlign.Right, NoWrap: true);
 
-    /// <summary>The house Pill dropdown (28 px, round).</summary>
-    public static HudElement Dropdown(Func<int> selected, Func<System.Collections.Generic.IReadOnlyList<string>> options,
+    /// <summary>The house Pill dropdown (28 px, round), in the same Neutral fill / hover / label as the other settings
+    /// pills (the Hotkeys key pill): the built-in Pill trigger colours read off-tone next to them (user, 2026-11-09).
+    /// The option list keeps the built-in Pill panel.</summary>
+    public HudElement Dropdown(Func<int> selected, Func<System.Collections.Generic.IReadOnlyList<string>> options,
         Action<int> onSelect, float width)
-        => new DropdownElement(selected, options, onSelect, Width: width) { Style = DropdownStyle.Pill, CornerRadius = 13f };
+        => new DropdownElement(selected, options, onSelect, Width: width)
+        {
+            Style = DropdownStyle.Pill, CornerRadius = 13f,
+            FillColorFn = () => S.Fill(S.Neutral()),
+            HoverFillColorFn = () => S.Fill(S.Hover(S.Neutral())),
+            LabelColorFn = () => S.NeutralLabel(),
+        };
 
     /// <summary>Rich-text colour helpers for status lines (readable on the window background).</summary>
     public string Good(string text) => StellarStyle.Colored(text, S.Readable(S.Success(), S.Background()));

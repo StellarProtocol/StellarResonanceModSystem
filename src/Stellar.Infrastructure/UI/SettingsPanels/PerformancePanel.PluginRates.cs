@@ -101,8 +101,8 @@ internal sealed partial class PerformancePanel
         var s = _k.S;
         return s.ListTile(StellarStyle.TileRow(
             _k.LineLabel(() => NameOf(At()), () => At()?.IsEnabled == true ? s.Text() : s.Muted()),
-            SettingsKit.Dropdown(() => RateIndex(Id()), () => RateOptions, i => SetRate(At(), i), RateDropWidth),
-            SettingsKit.Dropdown(() => SelfRateIndex(Id()), () => SelfRateOptions, i => SetSelfRate(At(), i), SelfDropWidth)));
+            _k.Dropdown(() => RateIndex(Id()), () => RateOptions, i => SetRate(At(), i), RateDropWidth),
+            _k.Dropdown(() => SelfRateIndex(Id()), () => SelfRateOptions, i => SetSelfRate(At(), i), SelfDropWidth)));
     }
 
     // --- rate dropdown <-> stored Hz (index 0 = follow global; a non-stop stored value maps to the nearest stop) ---

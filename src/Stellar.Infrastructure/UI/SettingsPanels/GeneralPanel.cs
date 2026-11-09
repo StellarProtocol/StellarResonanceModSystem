@@ -55,7 +55,7 @@ internal sealed class GeneralPanel
         return StellarStyle.TopColumn(
             _k.Panel("themes.language", null,
                 SettingsKit.Row(
-                    SettingsKit.Dropdown(LangIndex, () => LangOptions, SetLanguage,
+                    _k.Dropdown(LangIndex, () => LangOptions, SetLanguage,
                         SettingsHub.MainWidth - 20f - StellarHelpPopover.ButtonSize - 8f - 1f),
                     _k.Help("general.language", "themes.language", "help.themes.language", "tab.general"))),
             BuildDisplayPanel());

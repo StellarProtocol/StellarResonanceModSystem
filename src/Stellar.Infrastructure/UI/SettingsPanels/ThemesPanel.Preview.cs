@@ -125,7 +125,7 @@ internal sealed partial class ThemesPanel
             s.Chip(_k.T("themes.pv.chip.party"), () => _pvChips[0], () => _pvChips[0] = !_pvChips[0], 58f, s.Accent),
             s.Chip(_k.T("themes.pv.chip.guild"), () => _pvChips[1], () => _pvChips[1] = !_pvChips[1], 58f, s.Accent),
             new SpacerElement(),
-            SettingsKit.Dropdown(() => _pvDrop, () => PreviewDropOptions, i => _pvDrop = i, 108f),
+            _k.Dropdown(() => _pvDrop, () => PreviewDropOptions, i => _pvDrop = i, 108f),
         }, Gap: 6f);
     }
 
