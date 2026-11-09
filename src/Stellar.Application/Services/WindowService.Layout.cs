@@ -92,7 +92,7 @@ internal sealed partial class WindowService
     public void ResetRect(string id)
     {
         if (!_windows.TryGetValue(id, out var e)) return;
-        e.SetVisible(true);                          // reset restores default visibility (shown)
+        e.SetVisibleRestore(true);                          // reset restores default visibility (shown); a restore, so no z reshuffle
         if (_storage != null) StorageRemove(e.Reg.Spec);
         if (e.Token != null) ApplySavedRect(e);      // re-place if mounted; a hidden one mounts+places next tick
     }
@@ -248,7 +248,7 @@ internal sealed partial class WindowService
         // popup the moment its first mount of the session landed: a one-frame flash at the old spot, then gone, with
         // the plugin still believing it open (ChatTools channel picker, 2026-10-24). A slot switch must not pop a
         // context menu open either, so the skip holds for every applyVisibility caller.
-        if (applyVisibility && !e.Reg.Spec.DismissOnOutsideClick) e.SetVisible(visible);   // TickEntry mounts/destroys next tick to match
+        if (applyVisibility && !e.Reg.Spec.DismissOnOutsideClick) e.SetVisibleRestore(visible);   // TickEntry mounts/destroys next tick to match
     }
 
     // Persist once after a drag settles: the rect is unchanged since last tick (drag stopped) AND differs

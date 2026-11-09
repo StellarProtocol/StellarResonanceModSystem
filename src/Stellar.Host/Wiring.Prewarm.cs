@@ -12,10 +12,11 @@ namespace Stellar.Host;
 // the title screen from the login-sidebar button), the hub only once the launcher's warm-up has settled. Each mount
 // therefore lands on its own tick, never two ~150-230 ms builds in one frame.
 //
-// Z-order is untouched: the warm-up never calls BringToFront (ZFront stays 0, as for a never-opened window). The mount
-// only hands the window a ZSeq, and a parked root is inactive, so FrontWindowBlocks and the raycaster skip it. The first
-// real open still goes through ToggleLauncher / ShowSettingsHub: the un-park takes a fresh ZSeq and BringToFront takes the
-// newest ZFront, exactly as on a cold mount (where BringToFrontPending does the same at mount).
+// Z-order of visible windows is untouched: the warm-up never calls BringToFront. Its mount activates only the (hidden,
+// never-activated) window itself, and a parked root is inactive, so FrontWindowBlocks and the raycaster skip it. The
+// first real open still goes through ToggleLauncher / ShowSettingsHub: the un-park re-activates it (WindowStacking: on
+// top, as if just opened) and BringToFront does the same for an open that lands mid-warm-up (already Visible, so no
+// hidden→shown edge), exactly as on a cold mount.
 //
 // What gets built is what the window would open on: the launcher's Full vs compact body and its Favorites/All tab are
 // Conditionals on the persisted LauncherRegistry mode/tab, the hub's start tab on its remembered tab — none depends on

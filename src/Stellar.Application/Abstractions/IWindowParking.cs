@@ -10,6 +10,7 @@ internal interface IWindowParking
     /// <summary>Deactivate a mounted window (no per-frame cost, no input, no raycasts) without destroying it.</summary>
     void Park(object? token);
 
-    /// <summary>Re-show a parked window at the top of its stacking tier, as a fresh mount would be.</summary>
+    /// <summary>Re-show a parked window. Does NOT change its stacking: a real show from hidden is followed by
+    /// <see cref="IWindowOrder.Activate"/>, a layout / slot / startup visibility restore is not.</summary>
     void Unpark(object? token);
 }

@@ -3,6 +3,7 @@ using Il2CppInterop.Runtime.Injection;
 using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 using Stellar.Infrastructure.Unity;
 using UnityEngine;
 using UnityEngine.UI;
@@ -50,8 +51,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     private bool _fontRebuildHooked;
     private Action<Font>? _onFontRebuilt;   // cached delegate so subscribe/unsubscribe match (IL2CPP event)
     private readonly System.Collections.Generic.List<WindowToken> _tokens = new();   // live windows, for in-place re-skin
-    private int _zseq;    // monotonic mount counter — drives ZSeq (stable tiebreak within same ZFront tier)
-    private int _zfront;  // monotonic BringToFront counter — drives ZFront (overrides ZCat/ZSeq when non-zero)
+    private int _zact;    // ONE global activation counter (mount / real show / BringToFront / Topmost on) → token.ZAct
     private int _canvasGeneration;         // bumps on every canvas (re)create — Host fires a settled reapply on change
     private int _canvasCreatedFrame = -1;  // Time.frameCount at the last (re)create; scale settles a FRAME later
 
@@ -108,8 +108,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         _builder = null;
         _ticker = null;
         _tokens.Clear();   // canvas + all window GOs gone; WindowService self-heal re-mounts (re-adds tokens)
-        _zseq = 0;
-        _zfront = 0;
+        _zact = 0;   // every token is gone; remounts re-activate in mount order
     }
 
     public bool IsCanvasAvailable() => EnsureCanvas();
@@ -134,14 +133,15 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 // Sticky cursor engages only on interactive (non-HUD) windows — WindowCategory, not ZOrder, decides.
                 if (reg.Spec.Category != Stellar.Abstractions.Domain.WindowCategory.HUD) _ticker.InteractiveRoots.Add(token.Rect);
             }
-            // Deterministic stacking so draw order doesn't depend on plugin load / mount order. The plugin sets
-            // ZOrder to control its own placement; Category is the default tiebreak (HUD behind Tools behind
-            // Debug); click-away popups always sit on top. Without this, whichever window mounted last drew on
-            // top — so e.g. the combat meter jumped above other plugins' panels after a redeploy shifted order.
+            // Deterministic stacking (WindowStacking): popups on top, then Topmost, then the plugin's ZOrder, then the
+            // layer (HUD below Tools/Debug), then activation. Without it whichever window mounted last drew on top —
+            // so e.g. the combat meter jumped above other plugins' panels after a redeploy shifted order. A first
+            // mount IS an activation (fresh ZAct), so a newly opened window lands on top of its layer.
             token.ZOrder = reg.Spec.ZOrder;
-            token.ZCat = (int)reg.Spec.Category;
+            token.ZCat = reg.Spec.Category;
             token.ZPopup = reg.Spec.DismissOnOutsideClick;
-            token.ZSeq = _zseq++;
+            token.ZTopmost = reg.Spec.Topmost;
+            token.ZAct = ++_zact;
             ReorderWindows();
             ApplyContentMinWidth(token, force: true);   // before ApplySavedRect, so the restore clamps to it (.ContentMinWidth.cs)
             DumpRects(token, reg.Spec.Id);   // .Diagnostics.cs — self-gated on STELLAR_DIAGNOSTICS, else no-op
@@ -177,25 +177,17 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         token.Root.AddComponent<GraphicRaycaster>();
     }
 
-    private const int PopupOrder = 1_000_000;   // click-away popups draw above any plugin ZOrder
     private readonly System.Collections.Generic.List<WindowToken> _zsort = new();
+    private static readonly Comparison<WindowToken> ZCompare = (a, b) => WindowStacking.Compare(a.StackKey, b.StackKey);
 
-    // Re-assign sibling indices so draw order follows: popups → ZOrder → ZFront (explicit front, beats category)
-    // → ZCat → ZSeq. ZFront=0 means never explicitly fronted; non-zero overrides ZCat so BringToFront works
-    // cross-category (e.g. an HUD window can surface above a Tools window that normally wins on ZCat).
+    // Re-assign sibling indices to the WindowStacking order (popups → Topmost → ZOrder → layer → activation). The
+    // sibling index IS the draw order on the shared canvas, and FrontWindowBlocks / every ticker hit-test read it, so
+    // input follows the same order as drawing.
     private void ReorderWindows()
     {
         _zsort.Clear();
         for (var i = 0; i < _tokens.Count; i++) if (_tokens[i].Rect != null) _zsort.Add(_tokens[i]);
-        _zsort.Sort((a, b) =>
-        {
-            var pa = a.ZPopup ? PopupOrder : a.ZOrder;
-            var pb = b.ZPopup ? PopupOrder : b.ZOrder;
-            if (pa != pb) return pa - pb;
-            if (a.ZFront != b.ZFront) return a.ZFront - b.ZFront;   // explicit front overrides category
-            if (a.ZCat != b.ZCat) return a.ZCat - b.ZCat;
-            return a.ZSeq - b.ZSeq;
-        });
+        _zsort.Sort(ZCompare);
         for (var i = 0; i < _zsort.Count; i++) _zsort[i].Rect.SetSiblingIndex(i);
     }
 
@@ -204,24 +196,41 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     // IWindowParking: a SetVisible(false) window keeps its built tree, deactivated (the ticker skips every
     // !activeInHierarchy drag/hover/dismiss/field entry, exactly as for a ShouldRender-hidden window). The next
     // ApplyValues re-activates it (and re-arms its first layout via ResetLayout).
+    // Hiding also ends a HUD window's BringToFront lift: it drops back to the HUD layer (the lift is NOT sticky).
     public void Park(object? token)
     {
-        if (token is WindowToken t && t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+        if (token is not WindowToken t) return;
+        if (t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+        t.ZLifted = false;
     }
 
-    // A fresh mount used to land on top of its stacking tier (new ZSeq); a re-shown parked window does the same.
-    public void Unpark(object? token)
+    // Re-show of a parked window. Its order changes only through Activate (WindowService calls it for a REAL show from
+    // hidden) — a layout/slot/startup visibility restore un-parks without re-activating, so it never reshuffles z.
+    public void Unpark(object? token) { }
+
+    // IWindowOrder. Activate = "as if just opened": newest activation → top of its layer.
+    public void Activate(object? token)
     {
         if (token is not WindowToken t) return;
-        t.ZSeq = _zseq++;
+        t.ZAct = ++_zact;
         ReorderWindows();
     }
 
+    // Activate + lift a HUD window into the normal layer (above Tools/Debug opened before it) until it is hidden.
     public void BringToFront(object? token)
     {
         if (token is not WindowToken t) return;
-        t.ZFront = ++_zfront;
-        ReorderWindows();
+        if (t.ZCat == WindowCategory.HUD) t.ZLifted = true;
+        Activate(t);
+    }
+
+    // Turning Topmost ON also activates (it lands above the other topmost windows). OFF keeps its activation, so it
+    // drops back into its normal layer at the place its last activation gives it.
+    public void SetTopmost(object? token, bool topmost)
+    {
+        if (token is not WindowToken t || t.ZTopmost == topmost) return;
+        t.ZTopmost = topmost;
+        if (topmost) Activate(t); else ReorderWindows();
     }
 
     public void ApplyValues(object? token, WindowRegistration reg, bool hide)

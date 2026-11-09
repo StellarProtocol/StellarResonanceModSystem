@@ -181,13 +181,17 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     {
         // Hidden: park and drop any pending auto-focus (a user-show armed it, then hid before it ever activated —
         // don't let it fire on some later unrelated activation). It's re-armed on the next SetVisible rising edge.
-        if (!e.Visible) { e.AutoFocusPending = false; ParkOrDestroy(e); return; }
+        if (!e.Visible) { e.AutoFocusPending = false; e.ActivateOnShow = false; ParkOrDestroy(e); return; }
         if (e.Token is null || !_renderer.IsAlive(e.Token))
         {
             e.Parked = false;
             if (!_renderer.IsCanvasAvailable()) { e.Token = null; return; }
             e.Token = SafeMount(e);
             if (e.Token is null) return;
+            // The mount itself is an activation (fresh order value → top of its layer), so a pending show-activation is
+            // spent. A runtime SetTopmost made before the mount (or a remount after a scene change) is re-applied here.
+            e.ActivateOnShow = false;
+            if (e.Topmost != e.Reg.Spec.Topmost) _order?.SetTopmost(e.Token, e.Topmost);
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
             ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
             // A click-away popup placed BEFORE its first mount (Entry.SetRect while Token was null): apply that rect now,
@@ -197,7 +201,14 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             TryAutoFocus(e);     // fresh mount after a user-show: SafeApply activated the tree, so focus now
             e.Dirty = false; return;
         }
-        if (e.Parked) { _parking!.Unpark(e.Token); e.Parked = false; e.Dirty = true; }   // re-show: paint this tick
+        if (e.Parked)   // re-show: paint this tick
+        {
+            _parking!.Unpark(e.Token); e.Parked = false; e.Dirty = true;
+            // A REAL show from hidden goes on top as if just opened (non-sticky stacking, WindowStacking); a restore
+            // (SetVisibleRestore: layout/slot/startup visibility) keeps the window's old place.
+            if (e.ActivateOnShow) _order?.Activate(e.Token);
+        }
+        e.ActivateOnShow = false;   // visible + mounted: a hide→show within one tick never actually hid it
         // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
         // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
         // that scale is live so the saved rect clamps against the correct canvas-unit bound.
@@ -273,9 +284,9 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     public void DisposeAll() { foreach (var e in _windows.Values) DestroyIfMounted(e); _windows.Clear(); }
 
-    private sealed class Entry : IWindowControl
+    private sealed class Entry : IWindowControl, IWindowTopmost
     {
-        public Entry(WindowRegistration reg) { Reg = reg; }
+        public Entry(WindowRegistration reg) { Reg = reg; Topmost = reg.Spec.Topmost; }
         public WindowRegistration Reg { get; }
         public WindowService Owner = null!;
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
@@ -286,6 +297,10 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // TickEntry focuses that field once the window mounts/activates, then clears it. NOT set by Init (start-
         // visible) or by a ShouldRender re-mount — only a real false→true user show (see Entry.SetVisible).
         public bool AutoFocusPending;
+        // Armed by a REAL show from hidden (SetVisible / SetVisiblePersist rising edge, not SetVisibleRestore); consumed
+        // by TickEntry: an un-park then re-activates the window (on top, as if just opened), a mount activates anyway.
+        public bool ActivateOnShow;
+        public bool Topmost;   // live Topmost state (spec default, then IWindowTopmost.SetTopmost); survives remounts
         // Layout apply parked because the CanvasScaler hadn't settled at mount (boot / scene-change recreate);
         // TickEntry re-applies once CanvasScaleReady. PendingApplyVisibility carries the deferred call's flag.
         public bool ApplyPending; public bool PendingApplyVisibility = true;
@@ -303,7 +318,14 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             // SetVisiblePersist→here, close-button reopen). Arm the window's AutoFocus field (if any) to take
             // keyboard focus once it mounts/activates. A ShouldRender re-mount never touches Visible, so it is never
             // armed that way — chat won't grab the keyboard on a world load. See InputElement.AutoFocus.
-            if (visible && !Visible) AutoFocusPending = true;
+            if (visible && !Visible) { AutoFocusPending = true; ActivateOnShow = true; }
+            Visible = visible;
+        }
+        // Framework-internal visibility RESTORE (ApplySavedRect's persisted show/hide on mount / slot switch / reset):
+        // same as SetVisible, but many windows restore at once, so it must not reshuffle the stacking — no activation.
+        public void SetVisibleRestore(bool visible)
+        {
+            if (visible && !Visible) AutoFocusPending = true;   // unchanged from before (restores always armed it)
             Visible = visible;
         }
         // Persist via the owner's slot-aware path (same one the layout-editor eye-toggle uses), so a plugin
@@ -315,6 +337,12 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         {
             if (Token != null) Owner._order?.BringToFront(Token);
             else BringToFrontPending = true;   // window not yet mounted — apply on next mount
+        }
+        public bool IsTopmost => Topmost;
+        public void SetTopmost(bool topmost)
+        {
+            Topmost = topmost;
+            if (Token != null) Owner._order?.SetTopmost(Token, topmost);   // unmounted: TickEntry applies it at mount
         }
         public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Owner.ResolveAnchoredDefault(Reg.Spec);
         // Click-away popups only: a SetRect issued before the window has mounted, applied by TickEntry right after the

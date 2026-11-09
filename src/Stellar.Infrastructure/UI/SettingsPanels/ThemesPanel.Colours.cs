@@ -5,9 +5,9 @@ using Stellar.Abstractions.Services;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 // Theme actions (select a card, duplicate, rename, delete) and the "Edit colours" CHILD window: a house-style GlassMenu
-// window (ThemeEditorBody.Colours.cs) opened centred on the hub and in front. Front ALWAYS on open: ZFront is sticky
-// (once the hub or the help popover has been fronted, a never-fronted child opening from hidden can land under them —
-// CLAUDE.md Rule 5 exception, WindowBuilder-Patterns "ZFront is STICKY"). The first SetRect after a show is ignored
+// window (ThemeEditorBody.Colours.cs) opened centred on the hub and in front. Front ALWAYS on open: a show from hidden
+// lands on top by itself (non-sticky WindowStacking), but "Edit colours" pressed while the child is ALREADY open (and
+// the hub was activated since) needs the explicit front (CLAUDE.md Rule 5 exception). The first SetRect after a show is ignored
 // until the window is built (it restores its saved position), so the centring is re-applied for a short burst.
 internal sealed partial class ThemesPanel
 {

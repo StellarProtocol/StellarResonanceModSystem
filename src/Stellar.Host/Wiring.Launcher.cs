@@ -59,9 +59,9 @@ public sealed partial class BootstrapPlugin
         log.Info("[Launcher] uGUI launcher + Stellar rail button + login-sidebar button registered");
     }
 
-    // Rail button / login-sidebar button / Shift+Home. Opening FRONTS the launcher: the Settings hub is fronted on every
-    // open and ZFront is sticky across hide/show, so a plain re-open would land UNDER an open hub (CLAUDE.md Rule 5
-    // exception; WindowBuilder-Patterns.md "ZFront is STICKY").
+    // Rail button / login-sidebar button / Shift+Home. A show from hidden already lands on top (non-sticky
+    // WindowStacking); the explicit front covers the one open that is NOT a hidden→shown edge: a real open during the
+    // pre-warm, when the launcher is already Visible (mounted, suppressed) and so wouldn't be re-activated otherwise.
     private void ToggleLauncher()
     {
         var c = _launcherControl;

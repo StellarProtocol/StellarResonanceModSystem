@@ -152,8 +152,8 @@ public sealed partial class BootstrapPlugin
 
     /// <summary>Opens the Settings hub on <paramref name="tabKey"/> ("plugins", "layout", "themes", "hotkeys",
     /// "gameui", "performance", "about"; an unknown key keeps the current tab) and brings it to the front — for the
-    /// launcher's per-tab shortcuts. Fronts every time: ZFront is sticky once anything is fronted (CLAUDE.md Rule 5
-    /// exception), and the hub may already be visible.</summary>
+    /// launcher's per-tab shortcuts. Fronts every time: the hub may already be visible (or mid pre-warm), where only an
+    /// explicit front puts it on top (CLAUDE.md Rule 5 exception).</summary>
     internal void OpenSettingsAt(string tabKey)
     {
         _settingsHub?.SelectTab(tabKey);
@@ -169,7 +169,7 @@ public sealed partial class BootstrapPlugin
         else ShowSettingsHub();
     }
 
-    // Every hub open goes through here so every open fronts it (sticky ZFront, Rule 5 exception).
+    // Every hub open goes through here so every open fronts it (already-visible / mid-pre-warm opens; Rule 5 exception).
     private void ShowSettingsHub()
     {
         if (_settingsHubControl == null) return;

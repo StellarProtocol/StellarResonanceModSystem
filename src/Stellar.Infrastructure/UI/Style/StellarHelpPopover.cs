@@ -137,9 +137,9 @@ internal sealed class StellarHelpPopover
         _rect = new WindowRect(x, y, PopoverWidth, 0f);
         _window.SetVisible(true);
         _window.SetRect(_rect);
-        // Always front: switching between "?"s finds the popover already VISIBLE (no remount → no fresh ZSeq), and ZFront
-        // is sticky — once the owning window has been fronted (OpenCentred), a never-fronted popover would sort under it
-        // forever (CLAUDE.md Rule 5 exception; WindowBuilder-Patterns.md "ZFront is STICKY").
+        // Always front: switching between "?"s finds the popover already VISIBLE, and only a show FROM HIDDEN re-activates
+        // a window automatically — the owner may have been fronted/clicked since, so front it explicitly (non-sticky
+        // WindowStacking; CLAUDE.md Rule 5 already-visible-child exception).
         _window.BringToFront();
         _window.MarkDirty();   // re-pull title/body for the new key this frame
         _repositionTicks = RepositionFrames;

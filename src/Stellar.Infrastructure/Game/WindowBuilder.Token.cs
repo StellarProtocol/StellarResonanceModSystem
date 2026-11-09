@@ -18,11 +18,14 @@ internal sealed partial class WindowBuilder
         public RectTransform Rect = null!;
         public bool Resizable;   // window's root is fixed-size (grip-resizable) rather than content-height-fit
         internal bool EditModeInteractive;   // window's controls stay clickable during layout-edit mode (toolbar only)
-        internal int ZOrder;     // plugin-set explicit draw order (higher = on top); primary stacking key
-        internal int ZCat;       // WindowCategory as int (HUD=0<Tools=1<Debug=2) — tiebreak when no explicit front
-        internal bool ZPopup;    // click-away popup → always stacked above every Category
-        internal int ZSeq;       // mount sequence — final tiebreak within same ZFront tier
-        internal int ZFront;     // BringToFront counter — non-zero overrides ZCat/ZSeq; higher = more recently fronted
+        // Stacking inputs. The rule itself is Stellar.Application.Services.WindowStacking (non-sticky, unit-tested).
+        internal int ZOrder;     // plugin-set explicit draw order (higher = on top)
+        internal Stellar.Abstractions.Domain.WindowCategory ZCat;   // HUD = lower layer; Tools/Debug = normal layer
+        internal bool ZPopup;    // click-away popup → always stacked above everything else
+        internal bool ZTopmost;  // WindowSpec.Topmost / IWindowTopmost.SetTopmost → above every non-topmost window
+        internal bool ZLifted;   // HUD window explicitly fronted → normal layer until hidden (Park clears it)
+        internal int ZAct;       // global activation counter at the LAST activation (mount, real show, front): newer on top
+        internal Stellar.Application.Services.WindowStackKey StackKey => new(ZPopup, ZTopmost, ZOrder, ZCat, ZLifted, ZAct);
         private bool _laidOut;   // first structural layout done? (mount = immediate; later per-tick = deferred)
 
         /// <summary>Re-arm the immediate first-layout path when a hidden window is re-shown, so a content-sized popup
