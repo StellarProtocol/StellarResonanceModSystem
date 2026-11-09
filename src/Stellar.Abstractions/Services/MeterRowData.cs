@@ -171,6 +171,11 @@ public struct MeterRowData
     /// bar fill — relevant when the fill is a bright class colour. <c>default</c> = <see cref="MeterLabelStyle.Plain"/>
     /// (the pre-2.8 look), so plugins built before this field existed render unchanged.</summary>
     public MeterLabelStyle LabelStyle;
+    /// <summary>When <c>true</c>, the animated soft-white sheen that sweeps across the metric bar's fill is hidden
+    /// and not animated (a per-row opt-out, e.g. a "bar shine" player setting for low-end machines). Toggling it
+    /// at runtime works both ways. <c>false</c> (the default) keeps the sheen, so plugins built before this field
+    /// existed render unchanged.</summary>
+    public bool HideSheen;
 }
 
 /// <summary>Treatment of the value labels drawn on a meter row's bar (<see cref="MeterRowData.LabelStyle"/>).

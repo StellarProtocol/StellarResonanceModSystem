@@ -101,6 +101,7 @@ internal sealed partial class WindowBuilder
         public GameObject ShareGo = null!;
         public GameObject LeaderGo = null!;
         public RawImage VoiceImg = null!;           // name-line status icon (team-voice); plugin-supplied texture
+        public GameObject? SheenGo;                 // animated bar sheen band (hidden by HideSheen; inactive = not driven)
         public Action<bool>? SetVoiceExcluded;      // add/remove this row's voice cell in the ticker slot-drag exclusion
         private object? _lastVoiceTex; private Color _lastVoiceTint = new(-2f, -2f, -2f, -2f); private int _lastVoiceVis = -1, _lastVoiceClickable = -1;
         public GameObject TalkBorderGo = null!;     // plugin-tinted box border (e.g. green while talking)
@@ -133,7 +134,7 @@ internal sealed partial class WindowBuilder
         // rebuilds / Image vertex-dirty rebatches every poll.
         private bool _selfInit, _lastSelf;
         private ColorRgba _lastSelfAccent;
-        private int _lastLeader = -1;
+        private int _lastLeader = -1, _lastSheenVis = -1;
         private float _lastHp = -1f, _lastBar = -1f, _lastSpineW = -1f, _lastShield = -1f, _lastBarShield = -1f;
         private int _lastShieldVis = -1, _lastBarShieldVis = -1;
         private ColorRgba _lastHpCol, _lastRoleCol;
@@ -267,6 +268,7 @@ internal sealed partial class WindowBuilder
             if (PrimaryGo != null && _lastPrimaryVis != (d.ShowPrimary ? 1 : 0)) { PrimaryGo.SetActive(d.ShowPrimary); _lastPrimaryVis = d.ShowPrimary ? 1 : 0; }
             var showLeader = d.IsLeader && d.ShowLeaderFlag;
             if (LeaderGo != null && _lastLeader != (showLeader ? 1 : 0)) { LeaderGo.SetActive(showLeader); _lastLeader = showLeader ? 1 : 0; }
+            if (SheenGo != null && _lastSheenVis != (d.HideSheen ? 0 : 1)) { SheenGo.SetActive(!d.HideSheen); _lastSheenVis = d.HideSheen ? 0 : 1; }
             ApplyVoiceIcon(d);
             ApplyRowBorder(d);
 

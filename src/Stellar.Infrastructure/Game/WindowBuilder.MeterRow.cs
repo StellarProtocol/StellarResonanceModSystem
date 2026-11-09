@@ -101,7 +101,7 @@ internal sealed partial class WindowBuilder
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.MiddleLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, barShield, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, barShield, primary, secondary, fadeL, fadeR, sheenGo) = BuildMeterBar(content.transform, token);
 
         // Right-edge hosts: the imagine right-column + the far-right 2×2 debuff block (both ignore-layout,
         // full height). Extracted to keep BuildMeterRow under the 50-LoC cap (STELLAR0002).
@@ -121,7 +121,7 @@ internal sealed partial class WindowBuilder
             BarFillRect = fillRect, BarFillImg = fillImg, BarShieldImg = barShield, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
-            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le,
+            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo,
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });
@@ -322,7 +322,7 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Image barShield, Text primary, Text secondary, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Image barShield, Text primary, Text secondary, RawImage fadeL, RawImage fadeR, GameObject sheenGo) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
@@ -339,7 +339,7 @@ internal sealed partial class WindowBuilder
         var fillImg = AddStretchedImage(clipGo.transform, "Fill", Color.clear, ignoreLayout: false);
 
         // Sheen band (scrolled across the clipped fill) — built + driven in WindowBuilder.MeterRow.Sheen.cs.
-        BuildMeterSheen(clipRt, token, fillImg);
+        var sheenGo = BuildMeterSheen(clipRt, token, fillImg);   // hidden per row by MeterRowData.HideSheen (binding)
 
         // Shield overlay for the main bar in HP mode: a grey/white band from the LEFT edge drawn OVER the fill
         // (width = BarShieldFraction via anchorMax.x), the horizontal analogue of the spine's shield band. A
@@ -358,7 +358,7 @@ internal sealed partial class WindowBuilder
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, barShield, primary, secondary, fadeL, fadeR);
+        return (clipRt, fillImg, barShield, primary, secondary, fadeL, fadeR, sheenGo);
     }
 
     private Text AddOverlayText(WindowToken token, Transform parent, string nm, TextAnchor anchor, int baseSize = 10)
