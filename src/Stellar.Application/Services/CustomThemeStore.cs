@@ -23,10 +23,15 @@ internal sealed class CustomThemeStore : ICustomThemeStore
     // later framework that knows the preset gets it back. Before 2.30 such themes were skipped at load and then
     // erased by the next save (their colour overrides orphaned).
     private readonly Dictionary<string, string> _unknownBase = new(StringComparer.Ordinal);
+    // The colour overrides are keyed by theme NAME, so a rename must move them (it once didn't: the renamed
+    // theme showed no colours and the old entries were orphaned). Null = no override store (unit tests of the list).
+    // Must live in the SAME config file as this store's section: it stages its map and our Save writes both at once.
+    private readonly IColorOverrideStore? _overrides;
 
-    public CustomThemeStore(IConfigSection config)
+    public CustomThemeStore(IConfigSection config, IColorOverrideStore? overrides = null)
     {
         _config = config;
+        _overrides = overrides;
         var raw = config.Get<Dictionary<string, string>>(Key, null);
         if (raw is null) return;
         foreach (var (name, presetName) in raw)
@@ -55,9 +60,17 @@ internal sealed class CustomThemeStore : ICustomThemeStore
         if (_themes.ContainsKey(name)) throw new ArgumentException($"theme exists: {name}", nameof(name));
         if (!CanCreate)
             throw new ArgumentException($"custom theme limit reached ({MaxCustomThemes}): {name}", nameof(name));
-        _themes[name] = basePreset; _order.Add(name); Persist();
+        _themes[name] = basePreset; _order.Add(name);
+        // A new theme starts from its base preset: drop overrides orphaned under this name by a theme deleted earlier
+        // (Delete keeps them), or "Duplicate" after a delete would bring the old theme's colours back.
+        _overrides?.RemoveTheme(name);
+        Persist();
     }
 
+    /// <summary>Renames a custom theme and moves everything keyed by its name with it: the base preset (and an
+    /// unknown-base string) and every colour override — any stale overrides already under <paramref name="newName"/>
+    /// are dropped, not merged. One config write. Case-only renames ("Blue" → "blue") are real renames (ordinal).
+    /// The ACTIVE-theme pointer (<see cref="INamedTheme.ActiveCustomName"/>) is the caller's: re-point it after.</summary>
     public void Rename(string oldName, string newName)
     {
         if (string.Equals(oldName, newName, StringComparison.Ordinal)) return; // no-op
@@ -66,6 +79,7 @@ internal sealed class CustomThemeStore : ICustomThemeStore
         if (_themes.ContainsKey(newName)) throw new ArgumentException($"theme exists: {newName}", nameof(newName));
         _themes.Remove(oldName); _order[_order.IndexOf(oldName)] = newName; _themes[newName] = p;
         if (_unknownBase.Remove(oldName, out var rawBase)) _unknownBase[newName] = rawBase;
+        _overrides?.RenameTheme(oldName, newName);   // staged; the Persist below writes list + overrides together
         Persist();
     }
 

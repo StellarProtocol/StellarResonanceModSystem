@@ -15,4 +15,17 @@ internal sealed class MemoryOverrideStore : IColorOverrideStore
     public bool Has(string t, string k) => _m.ContainsKey((t,k));
     public int FlushCount { get; private set; }
     public void Flush() => FlushCount++;
+    public bool RenameTheme(string oldName, string newName)
+    {
+        var changed = RemoveTheme(newName);
+        foreach (var key in new List<(string,string)>(_m.Keys))
+            if (key.Item1 == oldName) { _m[(newName, key.Item2)] = _m[key]; _m.Remove(key); changed = true; }
+        return changed;
+    }
+    public bool RemoveTheme(string t)
+    {
+        var any = false;
+        foreach (var key in new List<(string,string)>(_m.Keys)) if (key.Item1 == t) { _m.Remove(key); any = true; }
+        return any;
+    }
 }

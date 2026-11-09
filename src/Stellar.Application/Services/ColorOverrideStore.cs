@@ -50,10 +50,42 @@ internal sealed class ColorOverrideStore : IColorOverrideStore
     public void Flush()
     {
         if (!_dirty) return;
+        Stage();
+        _config.Save();
+    }
+
+    public bool RenameTheme(string oldName, string newName)
+    {
+        // Ordinal throughout (the map's tuple key compares ordinally), so a case-only rename ("Blue" → "blue") is a
+        // real move: the drop below never touches the old name's entries.
+        var changed = RemoveTheme(newName, stage: false);
+        var moved = new List<KeyValuePair<(string Theme, string Slot), ColorRgba>>();
+        foreach (var kv in _map) if (string.Equals(kv.Key.Theme, oldName, StringComparison.Ordinal)) moved.Add(kv);
+        foreach (var kv in moved) { _map.Remove(kv.Key); _map[(newName, kv.Key.Slot)] = kv.Value; }
+        if (moved.Count == 0 && !changed) return false;
+        Stage();
+        return true;
+    }
+
+    public bool RemoveTheme(string themeName) => RemoveTheme(themeName, stage: true);
+
+    private bool RemoveTheme(string themeName, bool stage)
+    {
+        var drop = new List<(string Theme, string Slot)>();
+        foreach (var k in _map.Keys) if (string.Equals(k.Theme, themeName, StringComparison.Ordinal)) drop.Add(k);
+        foreach (var k in drop) _map.Remove(k);
+        if (drop.Count > 0 && stage) Stage();
+        return drop.Count > 0;
+    }
+
+    // Writes the whole map into the config tree WITHOUT saving. Every framework section lives in one config file
+    // (PluginConfigService.Save writes the whole tree), so the next Save of ANY section — CustomThemeStore's, on a
+    // rename — writes it in the same write as the theme list: the rename lands on disk atomically. Staged = clean.
+    private void Stage()
+    {
         var raw = new Dictionary<string, string>(_map.Count, StringComparer.Ordinal);
         foreach (var kv in _map) raw[kv.Key.Theme + Sep + kv.Key.Slot] = ToHex(kv.Value);
         _config.Set(MapKey, raw);
-        _config.Save();
         _dirty = false;
     }
 
