@@ -50,7 +50,7 @@ internal static class UiPerfStats
     private static long _lastFlipLog; private static int _flipsNotLogged;
     // A KeepAlive branch shown (tab switch): pending from its apply until the next frame's OnFrame, like a flip, so the
     // line carries that frame's window apply + canvas rebuild + length. Sub-60 ms switches never reach [Hitch].
-    private static bool _tabPending; private static string _tabName = "", _tabFrom = "";
+    private static bool _tabPending; private static string _tabName = "", _tabFrom = "", _tabKind = "tabshow";
     private static long _tabShowTicks, _tabApplyTicks = -1, _tabCanvasTicks = -1;
 
     public static bool On => HitchProbe.IsEnabled;
@@ -60,8 +60,18 @@ internal static class UiPerfStats
     public static void TabShow(string name, string from, long startTicks)
     {
         if (startTicks == 0L) return;
-        _tabPending = true; _tabName = name; _tabFrom = from;
+        _tabPending = true; _tabName = name; _tabFrom = from; _tabKind = "tabshow";
         _tabShowTicks = Stopwatch.GetTimestamp() - startTicks; _tabApplyTicks = -1; _tabCanvasTicks = -1;
+    }
+
+    /// <summary>Window <paramref name="id"/> was really shown (from hidden; <paramref name="first"/> = its first show ever):
+    /// <paramref name="showTicks"/> re-activating the root, <paramref name="applyTicks"/> its apply. Logged next frame
+    /// with that frame's canvas rebuild as <c>[UiPerf] winshow &lt;id&gt; from=first|hidden …</c> (WindowRenderer.NoteShow).
+    /// Overrides a tabshow pending from the same apply (the window line covers it).</summary>
+    public static void WindowShow(string id, bool first, long showTicks, long applyTicks)
+    {
+        _tabPending = true; _tabName = id; _tabFrom = first ? "first" : "hidden"; _tabKind = "winshow";
+        _tabShowTicks = showTicks; _tabApplyTicks = applyTicks; _tabCanvasTicks = -1;
     }
 
     private static void LogPendingTab(double frameMs, Action<string> log)
@@ -69,7 +79,7 @@ internal static class UiPerfStats
         if (!_tabPending) return;
         _tabPending = false;
         var sb = _sb.Clear();
-        sb.Append("[UiPerf] tabshow ").Append(_tabName).Append(" from=").Append(_tabFrom)
+        sb.Append("[UiPerf] ").Append(_tabKind).Append(' ').Append(_tabName).Append(" from=").Append(_tabFrom)
           .Append(" show=").Append(Ms(_tabShowTicks, 1).ToString("0.0")).Append("ms apply=");
         if (_tabApplyTicks < 0) sb.Append("n/a"); else sb.Append(Ms(_tabApplyTicks, 1).ToString("0.0")).Append("ms");
         sb.Append(" canvasRebuild=");

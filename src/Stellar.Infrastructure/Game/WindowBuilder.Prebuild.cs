@@ -15,7 +15,7 @@ namespace Stellar.Infrastructure.Game;
 // BUILD (any time after mount, also while the window is parked/hidden): the branch is built item by item from a
 // SlicedWorkStack under a 3 ms per-frame budget shared by all windows (TickPrebuilds, pumped by the window ticker's
 // per-frame hook). An item is one element: a SLICEABLE container (Row/Column/Cell/Panel/Scroll/List/uniform
-// VirtualList/Conditional — whose builder does nothing after its children that depends on them) builds only its own
+// VirtualList/Conditional/Bubble — whose builder does nothing after its children that depends on them) builds only its own
 // GameObject and pushes its children (BuildChild); anything else builds atomically, nested content included (_slicer
 // is null while it builds, so a Column inside a Bubble still builds inline). Every item restores the BuildScope its
 // lazy build would have had, so bindings are exactly the lazy path's. A nested Conditional met on the way gets its
@@ -48,7 +48,7 @@ internal sealed partial class WindowBuilder
     internal readonly struct BuildItem
     {
         public readonly HudElement El; public readonly Transform Parent; public readonly BuildScope Scope;
-        public readonly bool Owned;   // inside a bubble: one atomic BuildDeferred (owner tagging), never split
+        public readonly bool Owned;   // inside a bubble: bindings tagged as its own, new GameObjects stay active (soft units)
         public BuildItem(HudElement el, Transform parent, BuildScope scope, bool owned)
         { El = el; Parent = parent; Scope = scope; Owned = owned; }
     }
@@ -63,13 +63,15 @@ internal sealed partial class WindowBuilder
     // A child of a sliceable container: pushed onto the prebuild stack while one is slicing, else built now.
     private void BuildChild(HudElement child, Transform parent, WindowToken token)
     {
-        if (_slicer != null) _slicer.Push(new BuildItem(child, parent, CaptureScope(), owned: false));
+        if (_slicer != null) _slicer.Push(new BuildItem(child, parent, CaptureScope(), owned: _bubbleOwner != null));
         else BuildElement(child, parent, token);
     }
 
-    // Containers whose builder only builds its children (via BuildChild) and reads none of them afterwards.
+    // Containers whose builder only builds its children (via BuildChild) and reads none of them afterwards. A Bubble reads
+    // its child, but finds it lazily on its first apply when it was queued (BuildOwnedChild, BubbleBinding.PendingHost).
     private static bool IsSliceable(HudElement el) =>
         el is RowElement or ColumnElement or CellElement or PanelElement or ScrollElement or ListElement or ConditionalElement
+            or BubbleElement
         || el is VirtualListElement { VariableHeight: false };
 
     // BuildConditional: a Prebuild Conditional outside a variable-list slot joins the window's prebuild queue.
@@ -159,35 +161,36 @@ internal sealed partial class WindowBuilder
     }
 
     // One item: build it with its captured scope (sliceable = own GameObject only), hide its new GameObjects as reveal
-    // units, then claim the current branch of every nested Conditional it registered.
+    // units, then claim the current branch of every nested Conditional it registered. An item inside a bubble ("owned")
+    // gets exactly the lazy path's BuildDeferred treatment — its bindings tagged as that bubble's, the bubble re-dirtied —
+    // but per item, so a bubble's content can be sliced too.
     private void BuildStep(WindowToken t, PrebuildBranch br, BuildItem item)
     {
         if (item.Parent == null) return;   // parent destroyed under us
         var before = item.Parent.childCount;
-        if (item.Owned) BuildDeferred(item.El, item.Parent, t, item.Scope);   // exactly the lazy path, owner tagging included
-        else
-        {
-            var prev = CaptureScope();
-            RestoreScope(item.Scope);
-            var alive = AliveMarks(t, item.Scope.Alive);
-            _slicer = IsSliceable(item.El) ? br.Work : null;
-            try { BuildElement(item.El, item.Parent, t); }
-            finally { _slicer = null; RestoreScope(prev); }
-            TagAlive(t, alive, item.Scope.Alive);   // a KeepAlive branch's bindings are gated (.KeepAlive.cs)
-        }
-        // A Conditional's own GameObjects are toggled by its CondBinding (never a unit); a bubble's content is measured
-        // by its BubbleBinding (left active).
-        if (!item.Owned && item.El is not ConditionalElement) HideUnits(br, item.Parent, before);
+        var prev = CaptureScope();
+        RestoreScope(item.Scope);
+        var marks = new BindingMarks(t);
+        var alive = AliveMarks(t, item.Scope.Alive);
+        _slicer = IsSliceable(item.El) ? br.Work : null;
+        try { BuildElement(item.El, item.Parent, t); }
+        finally { _slicer = null; RestoreScope(prev); }
+        TagAlive(t, alive, item.Scope.Alive);   // a KeepAlive branch's bindings are gated (.KeepAlive.cs)
+        if (item.Scope.BubbleOwner is { } owner) { TagBubbleOwner(t, marks, owner); owner.MarkDirty(); }
+        // A Conditional's own GameObjects are toggled by its CondBinding (never a unit). A bubble's content is measured by
+        // its BubbleBinding, so it stays active through the first layout — recorded as SOFT units, which only a re-warm
+        // (no bindings run, nothing measured: KeepAliveRules.RunBindingsWhileRewarming) turns off and back on.
+        if (item.El is not ConditionalElement) RecordUnits(br, item.Parent, before, hide: !item.Owned);
         ClaimNested(t, br);
     }
 
-    private static void HideUnits(PrebuildBranch br, Transform parent, int from)
+    private static void RecordUnits(PrebuildBranch br, Transform parent, int from, bool hide)
     {
         for (var k = from; k < parent.childCount; k++)
         {
             var go = parent.GetChild(k).gameObject;
             if (!go.activeSelf) continue;   // built inactive on purpose (its binding shows it) — not ours to toggle
-            go.SetActive(false);
+            if (hide) go.SetActive(false); else br.Soft.Add(go);
             br.Units.Add(go);
         }
     }
@@ -245,7 +248,7 @@ internal sealed partial class WindowBuilder
     private static void RevealAll(PrebuildBranch br)
     {
         for (; br.Revealed < br.Reveal.Count; br.Revealed++)
-            if (br.Reveal[br.Revealed] != null) br.Reveal[br.Revealed].SetActive(true);
+            if (br.Revealable(br.Reveal[br.Revealed])) br.Reveal[br.Revealed].SetActive(true);
     }
 
     private void MarkDone(WindowToken t, PrebuildBranch br, string how)

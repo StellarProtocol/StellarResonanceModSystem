@@ -30,6 +30,8 @@ internal sealed partial class WindowBuilder
     // log: [UiPerf] canvasRebuild while a "[Prebuild] … revealed" line is pending.
     private const int RevealUnitsPerFrame = 12;
     private const float StageOffset = 100000f;   // canvas units to the right of the slot: never under the pointer
+    // A revealed branch waits at most this many applies (~10 Hz) for its budgeted bubble measures before it is put away.
+    private const int MaxMeasureWaitApplies = 60;
 
     internal sealed class PrebuildState
     {
@@ -46,6 +48,9 @@ internal sealed partial class WindowBuilder
         public readonly string Name, BuildLabel, RevealLabel, FinishLabel;   // stable [Hitch] bucket names
         public readonly SlicedWorkStack<BuildItem> Work = new();
         public readonly List<GameObject> Units = new();
+        // Units inside a bubble, left ACTIVE by the build (their bubble measures them): the first layout skips them, only a
+        // re-warm turns them off and on (.Prebuild.cs RecordUnits). Same wrapper instances as in Units.
+        public readonly HashSet<GameObject> Soft = new(ReferenceEqualityComparer.Instance);
         // The units still to re-activate, in order: Units itself for the first layout; a KeepAlive re-warm swaps in the
         // subset it deactivated (KeepAliveRules.RewarmPlan). Revealed indexes this list.
         public List<GameObject> Reveal;
@@ -61,6 +66,10 @@ internal sealed partial class WindowBuilder
             Cond = cond; Then = then; Go = go; Name = name; CondScan = condScan; Reveal = Units;
             BuildLabel = "prebuild:" + name; RevealLabel = "prebuild-layout:" + name; FinishLabel = "prebuild-finish:" + name;
         }
+
+        /// <summary>A unit the reveal turns on: not destroyed, and not a soft unit on the first layout (it is already
+        /// active, or a binding hid it — e.g. a list slot past the end — which a reveal must never undo).</summary>
+        public bool Revealable(GameObject? u) => u != null && (Rewarms > 0 || !Soft.Contains(u));
 
         public void NoteSlice(long ticks)
         {
@@ -88,9 +97,11 @@ internal sealed partial class WindowBuilder
         }
         if (br.Go == null) { MarkDone(t, br, "destroyed"); return true; }
         if (br.Revealed < br.Reveal.Count) { RevealSlice(t, br, deadline); return true; }
-        // Every unit active: wait for an apply to fill the texts (TextBinding skips inactive text), then for the canvas
-        // update after it (end of that frame), then put the branch back home, inactive (a KeepAlive one: parked, active).
-        if (t.ApplyCount == br.ApplyMark || Time.frameCount <= t.LastApplyFrame) return false;
+        // Every unit active: wait for an apply to fill the texts (TextBinding skips inactive text) and for its bubbles'
+        // budgeted background measures (BubbleBinding.MeasureOrDefer), then for the canvas update after the last apply
+        // (end of that frame), then put the branch back home, inactive (a KeepAlive one: parked, active).
+        if (!BackgroundWarmRules.RevealSettled(t.ApplyCount - br.ApplyMark, t.BackgroundMeasurePending, MaxMeasureWaitApplies)
+            || Time.frameCount <= t.LastApplyFrame) return false;
         Unstage(br);
         MarkDone(t, br, br.Rewarms > 0 ? "rewarmed" : "prebuilt");
         return true;
@@ -101,10 +112,13 @@ internal sealed partial class WindowBuilder
         var hT = HitchProbe.Begin();
         if (!br.Staged) Stage(br);
         var allow = new FrameAllowance(deadline, RevealUnitsPerFrame);
-        while (br.Revealed < br.Reveal.Count && allow.TryTake(Stopwatch.GetTimestamp()))
+        while (br.Revealed < br.Reveal.Count)
         {
-            var u = br.Reveal[br.Revealed++];
-            if (u != null) u.SetActive(true);
+            var u = br.Reveal[br.Revealed];
+            if (!br.Revealable(u)) { br.Revealed++; continue; }   // costs nothing: doesn't spend the frame's allowance
+            if (!allow.TryTake(Stopwatch.GetTimestamp())) break;
+            br.Revealed++;
+            u.SetActive(true);
         }
         br.RevealFrames++;
         if (br.Revealed >= br.Reveal.Count) br.ApplyMark = t.ApplyCount;

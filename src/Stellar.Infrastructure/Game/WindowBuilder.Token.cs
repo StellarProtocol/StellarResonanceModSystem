@@ -157,16 +157,18 @@ internal sealed partial class WindowBuilder
             ApplyCount++; LastApplyFrame = Time.frameCount;
             // Every binding built inside a parked KeepAlive branch is skipped (GatedBinding.Runs; null gate = always runs).
             var structuralChange = false;
-            for (var i = 0; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) structuralChange |= VirtualLists[i].Apply();
+            _bgStructural = false;
+            for (var i = 0; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) Note(ref structuralChange, VirtualLists[i] as GatedBinding, VirtualLists[i].Apply());
             // Visibility (Conds/Lists) next so SetActive is settled before value pulls — matches HudElementBuilder.
             // A SetActive that changes which branch/rows are shown also changes the content's preferred size, but
             // uGUI does NOT auto-rebuild a ContentSizeFitter-sized window on a descendant SetActive — so a
             // content-sized window (AutoSizeWidth launcher: Full↔Minimal↔horizontal) would keep its old size and
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
             var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
-            for (var i = 0; i < Conds.Count; i++) if (GatedBinding.Runs(Conds[i])) structuralChange |= Conds[i].Apply();
-            for (var i = vlBuilt; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) structuralChange |= VirtualLists[i].Apply();
-            for (var i = 0; i < Lists.Count; i++) if (GatedBinding.Runs(Lists[i])) structuralChange |= Lists[i].Apply();
+            for (var i = 0; i < Conds.Count; i++) if (GatedBinding.Runs(Conds[i])) Note(ref structuralChange, Conds[i], Conds[i].Apply());
+            for (var i = vlBuilt; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) Note(ref structuralChange, VirtualLists[i] as GatedBinding, VirtualLists[i].Apply());
+            for (var i = 0; i < Lists.Count; i++) if (GatedBinding.Runs(Lists[i])) Note(ref structuralChange, Lists[i], Lists[i].Apply());
+            if (_bgStructural) RelayoutWarmingKeepAlives();
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
             // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
@@ -191,7 +193,29 @@ internal sealed partial class WindowBuilder
             ApplyValues();
         }
 
+        // A structural change inside a branch warming off screen (a nested Conditional's / list's first apply there) only
+        // re-lays-out that branch: its KeepAlive host is a layout boundary, so the whole-window rebuild a visible change
+        // gets would re-lay-out the visible tab for nothing (the `ui:structural` + 14-16 ms canvas rebuilds measured on
+        // every background tab layout, 11-09).
+        private bool _bgStructural;
+        private void Note(ref bool structural, GatedBinding? b, bool changed)
+        {
+            if (!changed) return;
+            if (GatedBinding.InBackground(b)) _bgStructural = true; else structural = true;
+        }
+
+        /// <summary>Background (warming, off-screen) bubbles that still owed a width measure after the last apply
+        /// (BubbleBinding's per-apply budget) — a prebuild reveal waits for 0 before it parks the branch.</summary>
+        internal int BackgroundMeasurePending;
+
         private void ApplyValues()
+        {
+            BubbleBinding.BeginApplyBudget();
+            ApplyLeafValues();
+            BackgroundMeasurePending = BubbleBinding.BackgroundPending;
+        }
+
+        private void ApplyLeafValues()
         {
             for (var i = 0; i < Texts.Count; i++) if (GatedBinding.Runs(Texts[i])) Texts[i].Apply();
             for (var i = 0; i < StyledTexts.Count; i++) if (GatedBinding.Runs(StyledTexts[i])) StyledTexts[i].Apply();

@@ -55,6 +55,13 @@ internal static class KeepAliveRules
         _                                                             => (s, KeepAliveAction.None),
     };
 
+    /// <summary>Do the branch's bindings run while it re-warms (its gate counts as live)? Only when it was never filled:
+    /// a branch that already went through an apply with every unit active (it was shown, or its first warm finished) keeps
+    /// its texts and widths, so a re-warm is pure re-activation. Running its bindings would see every unit inactive first,
+    /// and each BubbleElement re-measures on its inactive→active edge — the ~50 measures per tab (≈50 ms applies) right
+    /// after every window open. A first warm that was cut short still needs them to fill its texts before it parks.</summary>
+    public static bool RunBindingsWhileRewarming(bool filled) => !filled;
+
     /// <summary>The units to re-activate when re-warming, in build order: every unit still waiting from an interrupted warm
     /// (inactive, ours) plus every unit active now (the caller deactivates those). A unit inactive for another reason (a
     /// binding hid it) is left alone, so re-warming never shows what a binding hid.</summary>
@@ -80,6 +87,13 @@ internal sealed class AliveGate
     public bool Shown;
     public bool Warming;
     public bool Live => (Shown || Warming) && (Parent == null || Parent.Live);
+
+    /// <summary>Visible: shown, and every enclosing branch shown too.</summary>
+    public bool Visible => Shown && (Parent == null || Parent.Visible);
+
+    /// <summary>Live but not on screen — a branch warming in the background. Its bindings may spread their work over
+    /// several applies (BubbleBinding's measure budget) and a structural change re-lays-out only its own branch.</summary>
+    public bool Background => Live && !Visible;
 }
 
 /// <summary>Base of every per-apply binding: the KeepAlive gate it was built under (null = not in a KeepAlive branch,
@@ -90,4 +104,7 @@ internal abstract class GatedBinding
 
     /// <summary>Apply this binding now? (null-safe for the interface-typed variable-list bindings).</summary>
     public static bool Runs(GatedBinding? b) => b?.Alive == null || b.Alive.Live;
+
+    /// <summary>Built inside a branch that is warming off screen (<see cref="AliveGate.Background"/>).</summary>
+    public static bool InBackground(GatedBinding? b) => b?.Alive is { Background: true };
 }

@@ -207,6 +207,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     {
         if (token is not WindowToken t) return;
         if (t.Root != null && t.Root.activeSelf) t.Root.SetActive(false);
+        if (t.BgShifted) ShiftBack(t);   // a background warm ends parked: home again, moved while inactive (no dirt)
         t.ZLifted = false;
     }
 
@@ -259,21 +260,16 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // manages via WindowService.EditableElements). Free-drag Tools dialogs (e.g. the login-screen switcher,
         // Settings, History) are not edit-managed, so they stay gated by their own ShouldRender even in edit mode —
         // otherwise they'd render with no outline/handle: visible but not arrangeable.
-        var hideAll = (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
+        // A background warm (.BackgroundWarm.cs) is never hidden: kept active off-screen and applied like a shown window.
+        var bg = InBackgroundWarm(t);
+        var hideAll = !bg && (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
                       && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
-        var wasHidden = !t.Root.activeSelf;
-        // Still inactive: parked KeepAlive branches drop back to background re-warming, or the re-activation below would
-        // re-enable (re-mesh + re-layout) every one of them in this frame (WindowBuilder.KeepAlive.cs).
-        if (!hideAll && wasHidden) t.PrepareReshow();
-        if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
-        // A window re-shown after being hidden re-arms its immediate first-layout, so a content-sized popup
-        // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
-        // — otherwise it shows one frame at the previous open's size, which mis-clamps its on-screen position.
-        if (!hideAll && wasHidden) t.ResetLayout();
+        var showT = SetShown(t, hideAll, bg);   // (de)activate the root (.BackgroundWarm.cs)
         if (hideAll) return;
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
         t.Apply(); ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
         UiPerfStats.AddApply(reg.Spec.Id, perfT);
+        if (showT != 0L) NoteShow(t, showT, perfT);
     }
 
     public void SetRect(object? token, WindowRect rect)
@@ -295,7 +291,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             rect = KeepWidenedOnScreen(new WindowRect(rect.X, rect.Y, size.x, size.y), rect.Width);
         }
         var clamped = ClampToScreen(t, rect);
-        t.Rect.anchoredPosition = new Vector2(clamped.X, -clamped.Y);
+        t.Rect.anchoredPosition = new Vector2(clamped.X + ShiftX(t), -clamped.Y);   // still off-screen while warming
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
@@ -354,7 +350,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         if (token is not WindowToken t || t.Rect == null) return default;
         var p = t.Rect.anchoredPosition;
         var size = t.Rect.rect;
-        return new WindowRect(p.x, -p.y, size.width, size.height);
+        return new WindowRect(p.x - ShiftX(t), -p.y, size.width, size.height);   // the real place, never the warm shift
     }
 
     public bool HasFocusedField(object? token) => token is WindowToken t && t.AnyFieldFocused;
@@ -382,7 +378,8 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
                 for (var i = 0; i < t.Pulses.Count; i++) _ticker.Pulses.Remove(t.Pulses[i]);
             }
             t.DisposeNativeTextures();   // ColorPicker SV/hue bakes (HideAndDontSave — not reclaimed by GO destroy)
-            if (_ticker != null && t.Rect != null) { _ticker.WindowRoots.Remove(t.Rect); _ticker.PassiveRoots.Remove(t.Rect); }
+            if (_ticker != null && t.Rect != null)
+            { _ticker.WindowRoots.Remove(t.Rect); _ticker.PassiveRoots.Remove(t.Rect); _ticker.BackgroundRoots.Remove(t.Rect); }
             if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed

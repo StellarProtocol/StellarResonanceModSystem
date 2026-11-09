@@ -26,11 +26,15 @@ public sealed partial class WindowInteractionTicker
     internal StickyHooks? Sticky;
     // Roots of non-HUD windows (WindowCategory Tools/Debug), registered by WindowRenderer.Mount next to WindowRoots.
     internal readonly List<RectTransform> InteractiveRoots = new();
+    // Roots kept ACTIVE off-screen by a background warm (WindowRenderer.BackgroundWarm.cs): not "a window is open".
+    // Pointer hit-tests need no check — the root is 100000 units off-screen; only the "any visible" scan would see it.
+    internal readonly List<RectTransform> BackgroundRoots = new();
     private bool _stickyModuleLogged;
 
     private void PruneSticky()
     {
         for (var i = InteractiveRoots.Count - 1; i >= 0; i--) if (InteractiveRoots[i] == null) InteractiveRoots.RemoveAt(i);
+        for (var i = BackgroundRoots.Count - 1; i >= 0; i--) if (BackgroundRoots[i] == null) BackgroundRoots.RemoveAt(i);
     }
 
     private bool AnyFieldFocused()
@@ -96,7 +100,10 @@ public sealed partial class WindowInteractionTicker
     private bool AnyInteractiveRootVisible()
     {
         for (var i = 0; i < InteractiveRoots.Count; i++)
-            if (InteractiveRoots[i] != null && InteractiveRoots[i].gameObject.activeInHierarchy) return true;
+        {
+            var r = InteractiveRoots[i];
+            if (r != null && r.gameObject.activeInHierarchy && (BackgroundRoots.Count == 0 || !BackgroundRoots.Contains(r))) return true;
+        }
         return false;
     }
 

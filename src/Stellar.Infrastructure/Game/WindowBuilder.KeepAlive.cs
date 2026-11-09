@@ -90,7 +90,8 @@ internal sealed partial class WindowBuilder
     {
         var br = h.Branch!;
         var pending = new HashSet<GameObject>(ReferenceEqualityComparer.Instance);   // an interrupted warm's leftovers
-        for (var i = br.Revealed; i < br.Reveal.Count; i++) if (br.Reveal[i] != null) pending.Add(br.Reveal[i]);
+        // (Revealable: a soft unit still waiting in a FIRST layout was never turned off by us — inactive = a binding hid it.)
+        for (var i = br.Revealed; i < br.Reveal.Count; i++) if (br.Revealable(br.Reveal[i])) pending.Add(br.Reveal[i]);
         var plan = KeepAliveRules.RewarmPlan(br.Units, pending, u => u != null && u.activeSelf);
         if (plan.Count == 0) return false;
         for (var i = 0; i < plan.Count; i++) if (plan[i] != null && plan[i].activeSelf) plan[i].SetActive(false);
@@ -148,6 +149,7 @@ internal sealed partial class WindowBuilder
         public string Name = "", ShowLabel = "";
         public KeepAliveState State;
         public PrebuildBranch? Branch;               // its prebuild record (units) — null without Prebuild
+        public bool Filled;                          // an apply has run with it complete (shown, or first warm finished)
         public Action<KeepAliveHost>? FinishWarm;    // shown mid re-warm (WindowBuilder.FinishWarmNow)
 
         /// <summary>CondBinding flip. True only for a SetActive (cold show / cold hide) — the old structural case.</summary>
@@ -176,6 +178,7 @@ internal sealed partial class WindowBuilder
             if (!Canvas.enabled) Canvas.enabled = true;
             if (!Raycaster.enabled) Raycaster.enabled = true;
             Gate.Shown = true; Gate.Warming = false;
+            Filled = true;   // its bindings run on this very apply, before it can be hidden again
         }
 
         private void Park()
@@ -210,6 +213,7 @@ internal sealed partial class WindowBuilder
         public void EndWarm()
         {
             Gate.Warming = false;
+            Filled = true;   // TickReveal ends a warm only after an apply with every unit active
             if (State == KeepAliveState.Warming) State = KeepAliveState.Parked;
         }
     }
@@ -229,7 +233,20 @@ internal sealed partial class WindowBuilder
                 if (act == KeepAliveAction.Rewarm && !QueueRewarm(this, h)) next = KeepAliveState.Parked;
                 else if (act == KeepAliveAction.Deactivate) h.Container.SetActive(false);
                 h.State = next;
-                h.Gate.Warming = next == KeepAliveState.Warming;
+                // A filled branch re-warms with its bindings OFF: no inactive→active bubble re-measures after the open.
+                h.Gate.Warming = next == KeepAliveState.Warming && KeepAliveRules.RunBindingsWhileRewarming(h.Filled);
+            }
+        }
+
+        // A structural change inside a background (warming) branch: re-lay-out just the warming branches' arms (each is
+        // its own layout root under its boundary host), never the whole window (WindowToken.Note).
+        private void RelayoutWarmingKeepAlives()
+        {
+            for (var i = 0; i < KeepAlives.Count; i++)
+            {
+                var h = KeepAlives[i];
+                if (h.State != KeepAliveState.Warming || h.Arm == null) continue;
+                try { LayoutRebuilder.MarkLayoutForRebuild(h.Arm); } catch { /* a destroyed arm: skip */ }
             }
         }
 

@@ -99,4 +99,42 @@ public sealed class KeepAliveRulesTests
     [Fact]
     public void RewarmPlanIsEmptyWhenNothingIsActiveOrPending() =>
         Assert.Empty(KeepAliveRules.RewarmPlan(new[] { "a", "b" }, new HashSet<string>(), _ => false));
+
+    // First open after the 11-09 pre-warm fix: every tab is parked and re-warms; with its bindings running each bubble
+    // re-measured on its inactive→active edge (~50 measures per tab in one apply).
+    [Fact]
+    public void AFilledBranchRewarmsWithItsBindingsOff() => Assert.False(KeepAliveRules.RunBindingsWhileRewarming(filled: true));
+
+    [Fact]
+    public void ACutShortFirstWarmStillRunsItsBindingsToFillItsTexts() => Assert.True(KeepAliveRules.RunBindingsWhileRewarming(filled: false));
+
+    [Fact]
+    public void BackgroundMeansLiveButNotVisible()
+    {
+        var g = new AliveGate();
+        Assert.False(g.Background);                      // parked: not live at all
+        g.Warming = true; Assert.True(g.Background);     // warming off screen
+        g.Warming = false; g.Shown = true; Assert.False(g.Background);
+    }
+
+    [Fact]
+    public void AShownBranchInsideAWarmingOneIsStillBackground()
+    {
+        var outer = new AliveGate { Warming = true };
+        var inner = new AliveGate { Parent = outer, Shown = true };
+        Assert.True(inner.Background);   // live through the warming outer branch, but not on screen
+        outer.Warming = false; outer.Shown = true;
+        Assert.False(inner.Background);
+    }
+
+    [Fact]
+    public void OnlyBindingsInAWarmingBranchAreInBackground()
+    {
+        Assert.False(GatedBinding.InBackground(null));
+        Assert.False(GatedBinding.InBackground(new Probe()));   // outside any KeepAlive branch: always visible-path
+        var b = new Probe { Alive = new AliveGate { Warming = true } };
+        Assert.True(GatedBinding.InBackground(b));
+        b.Alive!.Shown = true;
+        Assert.False(GatedBinding.InBackground(b));
+    }
 }

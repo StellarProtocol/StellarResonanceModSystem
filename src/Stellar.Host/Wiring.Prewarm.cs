@@ -6,14 +6,18 @@ namespace Stellar.Host;
 // lazily-built window"). Left lazy, each first open built its whole tree inside that frame, measured at 2560×1440:
 //   • launcher (settings.hub)       [Hitch] frame=193ms (mount 149 ms, build:firstApply 149 ms)
 //   • Settings hub (settings.ugui)  [Hitch] frame=316ms (mount 235 ms, build:firstApply 230 ms)
-// We mount each once in the background instead, with ShouldRender forced false so the built root is never activated.
+// We mount each once in the background instead, with ShouldRender forced false so the built root is never activated
+// ON SCREEN: the renderer keeps it active 100000 units off-screen until its background work is done (time-sliced tab
+// builds laid out + parked, bubbles settled), then it parks. Parked right after the mount, that work landed just after the
+// hub's first open instead (79.6 / 89.5 / 64.4 ms frames, 11-09; WindowRenderer.BackgroundWarm.cs).
 //
 // ONE WINDOW AT A TIME: the launcher first (it is opened first — the hub is reached from it — and it is also usable at
 // the title screen from the login-sidebar button), the hub only once the launcher's warm-up has settled. Each mount
 // therefore lands on its own tick, never two ~150-230 ms builds in one frame.
 //
 // Z-order of visible windows is untouched: the warm-up never calls BringToFront. Its mount activates only the (hidden,
-// never-activated) window itself, and a parked root is inactive, so FrontWindowBlocks and the raycaster skip it. The
+// off-screen) window itself — no pointer ever falls inside it, so FrontWindowBlocks and the raycaster never pick it, and
+// the sticky cursor ignores it (BackgroundRoots) — and a parked root is inactive. The
 // first real open still goes through ToggleLauncher / ShowSettingsHub: the un-park re-activates it (WindowStacking: on
 // top, as if just opened) and BringToFront does the same for an open that lands mid-warm-up (already Visible, so no
 // hidden→shown edge), exactly as on a cold mount.
@@ -34,8 +38,9 @@ public sealed partial class BootstrapPlugin
         if (_windowService == null) return;
         // Launcher first; while it is pending or mounting, the hub waits (stagger). A launcher that never registered
         // (null control) doesn't hold the hub back.
-        if (_launcherControl != null && !_launcherPrewarm.Settled) { _launcherPrewarm.Tick(_launcherControl, CanStartPrewarm); return; }
-        _hubPrewarm.Tick(_settingsHubControl, CanStartPrewarm);
+        // The renderer keeps each one active off-screen until its background work is done (WindowPrewarm).
+        if (_launcherControl != null && !_launcherPrewarm.Settled) { _launcherPrewarm.Tick(_launcherControl, CanStartPrewarm, _windowRenderer); return; }
+        _hubPrewarm.Tick(_settingsHubControl, CanStartPrewarm, _windowRenderer);
     }
 
     // The environment gate shared by both warm-ups (each also skips itself when already shown / auto-opened).

@@ -60,6 +60,7 @@ internal sealed partial class WindowBuilder
             NoCap = _widthRowDepth > 0,                      // inside a min-width row: hug natural (see BuildRow)
         };
         binding.Child = BuildOwnedChild(bubble.Child, go.transform, token, binding)!;
+        if (binding.Child == null) binding.PendingHost = go.transform;   // sliced: the child is a later prebuild item
         // Per-refresh fill colour (BubbleElement.FillColorFn, mirroring BarElement.FillColorFn): attach the override
         // ONLY when set, so a bubble that leaves it null keeps the static fill painted above with no machinery.
         if (bubble.FillColorFn != null) { binding.FillGraphic = bg; binding.FillColorFn = bubble.FillColorFn; }
@@ -70,11 +71,21 @@ internal sealed partial class WindowBuilder
 
     // Build the bubble's single content child with `owner` as the current bubble (captured by any Conditional inside for
     // its lazy branch build), then claim every content binding the child added (.BubbleOwner.cs). Returns the child.
+    // Inside a time-sliced prebuild (a bubble is a sliceable container, .Prebuild.cs) the child is only QUEUED, with
+    // `owner` in its captured scope: each later item tags its own bindings (BuildStep) and the binding finds the child on
+    // its first apply (BubbleBinding.PendingHost). A SettingsKit section panel is a bubble, so before this the whole
+    // per-plugin rate panel (18 rows × 2 Pill dropdowns) was ONE atomic 32 ms item. Returns null when queued.
     private RectTransform? BuildOwnedChild(HudElement child, Transform host, WindowToken token, BubbleBinding owner)
     {
-        var marks = new BindingMarks(token);
         var prevOwner = _bubbleOwner;
         _bubbleOwner = owner;
+        if (_slicer != null)
+        {
+            try { BuildChild(child, host, token); }
+            finally { _bubbleOwner = prevOwner; }
+            return null;
+        }
+        var marks = new BindingMarks(token);
         var childIdx = host.childCount;            // the single content child BuildElement is about to add
         try { BuildElement(child, host, token); }
         finally { _bubbleOwner = prevOwner; }

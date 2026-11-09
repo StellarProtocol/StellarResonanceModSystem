@@ -1,0 +1,39 @@
+namespace Stellar.Infrastructure.Game;
+
+/// <summary>Renderer capability behind the Host's window PRE-WARM (WindowPrewarm): keep a pre-warmed window ACTIVE but
+/// off-screen after its mount, applied like a shown window, until its background work is done — so its first real open
+/// is a plain re-show (WindowRenderer.BackgroundWarm.cs).</summary>
+internal interface IWindowBackgroundWarm
+{
+    /// <summary>Start/stop the background warm of window <paramref name="windowId"/>. May be called before the window is
+    /// mounted (the mount then lands off-screen). Stopping moves it back to its real place on its next apply / park.</summary>
+    void SetBackgroundWarm(string windowId, bool on);
+
+    /// <summary>Its background work is finished: every prebuilt branch built, laid out and parked, and the bubbles settled.</summary>
+    bool IsBackgroundWarmDone(string windowId);
+}
+
+/// <summary>The Unity-free decisions of the background warm (pure, unit-tested).</summary>
+internal static class BackgroundWarmRules
+{
+    /// <summary>Applies a warm must see before it may end. A BubbleElement measures once on its first apply and owes two
+    /// "settle" measures after that (BubbleBinding.SettleApplies); a window parked right after its mount apply paid those
+    /// two on its first real open (the 24 bubble measures of the measured 68.9 ms open frame).</summary>
+    public const int SettleApplies = 3;
+
+    /// <summary>A pre-warm parks its window once the background warm is done, or after <paramref name="maxTicks"/> (a
+    /// warm that never finishes — a canvas drop, a live-updating bubble — must not keep a hidden window active forever).
+    /// Never before <paramref name="mountTicks"/>, so the mount and its first apply always land.</summary>
+    public static bool ShouldPark(int ticks, int mountTicks, int maxTicks, bool done)
+        => ticks >= mountTicks && (done || ticks >= maxTicks);
+
+    /// <summary>The window's own background work is finished.</summary>
+    public static bool IsDone(bool prebuildIdle, int appliesSinceStart, int pendingMeasures)
+        => prebuildIdle && appliesSinceStart >= SettleApplies && pendingMeasures == 0;
+
+    /// <summary>A revealed (all units active) prebuild branch may be put away: an apply has run since the reveal ended
+    /// (texts filled), and its background bubble measures are done — or it waited <paramref name="maxWait"/> applies
+    /// (a bubble whose content changes every apply would otherwise hold it forever).</summary>
+    public static bool RevealSettled(int appliesSinceReveal, int pendingMeasures, int maxWait)
+        => appliesSinceReveal >= 1 && (pendingMeasures == 0 || appliesSinceReveal >= maxWait);
+}
