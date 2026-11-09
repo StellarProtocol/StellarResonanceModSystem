@@ -22,7 +22,6 @@ internal sealed partial class LauncherView
     private const float StarSize = 20f;           // round star toggle, 3 px from the top-right corner
     private const float StarInset = 3f;
     private const int StarGlyph = 14;             // even, so the glyph sits whole-pixel centred (3 px each side) in the slot
-    private const float StarIdleAlpha = 0.7f;     // un-favorited outline: Text at 70 % over the hovered tile (contrast-floored)
     private const float NameGap = 4f;
     // The name slot is a HARD 38 px (TextElement.Height): two 12 px TMP lines measure ~37 (in-game 2026-11-09, a 32 px
     // strut slot grew wrapped-name tiles to 88–89 while one-line tiles stayed 84, so the icons in a row sat at different
@@ -66,12 +65,14 @@ internal sealed partial class LauncherView
         }, Width: TileWidth);
     }
 
-    // The 20 px round star (prototype .pin): a 14 px outline while the tile is hovered, filled accent star whenever the
+    // The 20 px round star (prototype .pin): a 14 px muted star while the tile is hovered, filled accent star whenever the
     // plugin is a favorite; invisible otherwise (alpha 0, so nothing moves). Its own click toggles the favorite and
     // never opens the plugin (the inner Selectable takes the click; the tile's is its parent).
     // The outline was Muted at 13 px and nearly invisible on the hovered card (user report 2026-11-09): it is now Text at
     // 70 % composited over the HOVERED tile fill and floored to 3:1 against it (holds for Light / Sakura too); with the
     // pointer on the star itself it goes full Text on the accent-wash bubble, so it reads as a button.
+    // The thin OUTLINE glyph was still hard to notice (user, 2026-11-09): the un-favorited star is now the same FILLED
+    // glyph in muted grey (3:1 against the hovered tile) — the shape reads; colour alone says favorited (accent) or not.
     private HudElement StarToggle(Func<LauncherEntry?> entry, StellarStyle.HoverFlag tileHover, Func<float> alpha)
     {
         var hover = new StellarStyle.HoverFlag();
@@ -84,9 +85,7 @@ internal sealed partial class LauncherView
             else if (hover.On) c = StellarStyle.EnsureContrast(_s.Text(), Wash(), StellarStyle.SolidMinContrast);
             else if (tileHover.On)
             {
-                var under = _s.NeutralHover();
-                c = StellarStyle.EnsureContrast(StellarStyle.Over(_s.Text() with { A = StarIdleAlpha }, under), under,
-                    StellarStyle.SolidMinContrast);
+                c = StellarStyle.EnsureContrast(_s.Muted(), _s.NeutralHover(), StellarStyle.SolidMinContrast);
             }
             else c = StellarStyle.Transparent;
             return Faded(c, alpha());
@@ -95,7 +94,7 @@ internal sealed partial class LauncherView
         return new CellElement(new BubbleElement(new SelectableElement(new RowElement(new HudElement[]
             {
                 new SpacerElement(pad, StarSize),
-                Glyph(() => Icon(Fav() ? "star" : "star_outline"), StarGlyph, Tint, live: true),
+                Glyph(() => Icon("star"), StarGlyph, Tint),
                 new SpacerElement(pad, StarSize),
             }, Gap: 0.01f, Justify: RowJustify.Center),
             OnClick: () => ToggleFavorite(entry())) { Bare = true, OnHover = over => hover.On = over })
