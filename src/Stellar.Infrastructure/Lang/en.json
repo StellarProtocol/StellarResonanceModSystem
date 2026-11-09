@@ -1,4 +1,9 @@
 {
+  "about.community": "Community",
+  "about.community.hint": "opens in your browser",
+  "about.discord.button": "Join Discord",
+  "about.discord.done": "Opened Discord in your browser",
+  "about.discord.label": "Questions, bug reports and news",
   "about.find": "Where to find things",
   "about.find.hotkeys": "Change or clear keys",
   "about.find.layout": "Move windows and the game HUD",

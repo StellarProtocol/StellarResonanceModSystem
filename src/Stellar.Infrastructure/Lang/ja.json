@@ -1,4 +1,9 @@
 {
+  "about.community": "コミュニティ",
+  "about.community.hint": "ブラウザで開きます",
+  "about.discord.button": "Discord に参加",
+  "about.discord.done": "ブラウザで Discord を開きました",
+  "about.discord.label": "質問・バグ報告・お知らせ",
   "about.find": "各設定の場所",
   "about.find.hotkeys": "キーを変更・解除する",
   "about.find.layout": "ウィンドウとゲーム HUD を移動する",

@@ -1,4 +1,9 @@
 {
+  "about.community": "Komunidad",
+  "about.community.hint": "bubukas sa browser mo",
+  "about.discord.button": "Sumali sa Discord",
+  "about.discord.done": "Nabuksan ang Discord sa browser mo",
+  "about.discord.label": "Mga tanong, bug report at balita",
   "about.find": "Saan makikita ang mga setting",
   "about.find.hotkeys": "Palitan o alisin ang mga key",
   "about.find.layout": "Ilipat ang mga window at ang HUD ng laro",

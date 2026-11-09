@@ -1,4 +1,9 @@
 {
+  "about.community": "Komunitas",
+  "about.community.hint": "dibuka di browser",
+  "about.discord.button": "Gabung Discord",
+  "about.discord.done": "Discord dibuka di browser",
+  "about.discord.label": "Pertanyaan, laporan bug, dan berita",
   "about.find": "Letak pengaturan",
   "about.find.hotkeys": "Ubah atau hapus tombol",
   "about.find.layout": "Pindahkan jendela dan HUD game",

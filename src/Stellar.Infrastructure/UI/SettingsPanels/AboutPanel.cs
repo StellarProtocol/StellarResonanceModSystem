@@ -7,13 +7,14 @@ using Stellar.Infrastructure.UI.Style;
 namespace Stellar.Infrastructure.UI.SettingsPanels;
 
 /// <summary>
-/// Settings → About: the version card and "Where to find things" shortcut pills that switch the hub tab. The developer
+/// Settings → About: the version card, the COMMUNITY Discord link (AboutPanel.Community.cs) and "Where to find
+/// things" shortcut pills that switch the hub tab. The developer
 /// tools (Save HUD paths) moved to the hidden Developer tab (2026-11-09): clicking the version line 7 times in quick
 /// succession turns developer mode on (<see cref="DeveloperUnlockCounter"/>), counting down in the footer from the 4th
 /// click. The framework version comes from <see cref="FrameworkVersion.Value"/> so this panel and the BepInEx manifest
 /// stay in lockstep.
 /// </summary>
-internal sealed class AboutPanel
+internal sealed partial class AboutPanel
 {
     private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
 
@@ -21,6 +22,8 @@ internal sealed class AboutPanel
     private readonly Func<int> _pluginCount;
     private readonly DeveloperModePrefs? _dev;
     private readonly DeveloperUnlockCounter _unlock = new();
+    // Opens the Discord invite (AboutPanel.Community.cs); Application.OpenURL in the game, swappable for a test.
+    internal Action<string> OpenUrl { get; set; } = OpenInBrowser;
 
     // theme is no longer read (the house kit carries the live colours); the parameter stays for the wiring.
     public AboutPanel(ITheme theme, ILocalization loc, Func<int>? pluginCount = null, DeveloperModePrefs? developerMode = null)
@@ -47,6 +50,7 @@ internal sealed class AboutPanel
                     s.MutedLine(k.T("about.tagline.short")),
                 }, Gap: 2f), Weight: 1f),
             }, Gap: 10f)),
+            BuildCommunity(k),
             k.Panel("about.find", null,
                 GoRow(k, "about.find.plugins", "tab.plugins", "plugins"),
                 GoRow(k, "about.find.hotkeys", "tab.hotkeys", "hotkeys"),

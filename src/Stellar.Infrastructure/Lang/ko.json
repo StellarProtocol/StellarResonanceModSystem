@@ -1,4 +1,9 @@
 {
+  "about.community": "커뮤니티",
+  "about.community.hint": "브라우저에서 열립니다",
+  "about.discord.button": "Discord 참여",
+  "about.discord.done": "브라우저에서 Discord를 열었습니다",
+  "about.discord.label": "질문, 버그 제보, 소식",
   "about.find": "설정 위치 안내",
   "about.find.hotkeys": "키 변경 또는 해제",
   "about.find.layout": "창과 게임 HUD 이동",

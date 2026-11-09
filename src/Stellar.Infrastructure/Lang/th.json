@@ -1,4 +1,9 @@
 {
+  "about.community": "ชุมชน",
+  "about.community.hint": "เปิดในเบราว์เซอร์",
+  "about.discord.button": "เข้าร่วม Discord",
+  "about.discord.done": "เปิด Discord ในเบราว์เซอร์แล้ว",
+  "about.discord.label": "ถามคำถาม แจ้งบั๊ก และติดตามข่าวสาร",
   "about.find": "หาสิ่งต่าง ๆ ได้ที่ไหน",
   "about.find.hotkeys": "เปลี่ยนหรือล้างปุ่ม",
   "about.find.layout": "ย้ายหน้าต่างและ HUD ของเกม",
