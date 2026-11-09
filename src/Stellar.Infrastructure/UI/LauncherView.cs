@@ -1,179 +1,137 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Services;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI;
 
+/// <summary>What the launcher's buttons do outside the view (a parameter object: the analyzer caps constructors at
+/// 6 parameters). <paramref name="OpenSettings"/> takes the Settings tab to open at — null = just open the hub,
+/// "plugins" = the Plugins tab (the header's "N failed to load" link).</summary>
+internal sealed record LauncherActions(Action<string?> OpenSettings, Action Close, Action ToggleLayoutEdit);
+
 /// <summary>
-/// Declarative (uGUI) launcher — wired to <see cref="LauncherRegistry"/>/<see cref="LauncherPrefs"/>. ONE GlassMenu frame with NO
-/// chrome title bar (<see cref="WindowSpec.ShowTitleBar"/> = false); the launcher self-draws its header inside
-/// the body so the controls can sit on TOP (Full / Minimal-vertical) or in a LEFT strip (Minimal-horizontal),
-/// matching the pinned mockup. The body switches via live Conditionals on the registry mode; content-sized width
-/// tracks the active mode. Settings collapses to one ⚙ entry that opens the multi-tab uGUI Settings hub.
+/// The Stellar launcher (the side-rail "Stellar" menu) in the house style — Stellar Design Language, 2.30.0 redesign,
+/// built from the approved prototype <c>_scratch/prototypes/launcher.html</c>. ONE GlassMenu frame with NO chrome
+/// title bar; the body switches between the Full menu and the compact bar (vertical or horizontal) via live
+/// Conditionals on the registry mode, and the content-sized window re-fits.
+/// <para>Full menu (fixed 400 wide, fixed height): header (brand logo, "Stellar", live status with a red "failed to
+/// load" link, compact-mode and ✕ buttons) · a Find field above 16 plugins · a panel with the Favorites / All plugins
+/// tabs over a 4-column tile grid that reserves 4 rows and scrolls beyond · Settings / Edit layout pills + version ·
+/// the feedback line. Compact bar: ✕ + logo, Full / rotate buttons, the favorite tiles, Settings.</para>
+/// <para>Partials (500-LoC cap): this file = state, root, shared bits · <c>.Full.cs</c> the Full menu ·
+/// <c>.Tabs.cs</c> tab chips + empty states · <c>.Tile.cs</c> the grid tile and its star · <c>.Compact.cs</c> the
+/// compact bar. The list logic (tabs, Find, the Favorites ghost) is <see cref="LauncherMenuModel"/>.</para>
 /// </summary>
 /// <remarks>
-/// Built ONCE; structural changes (mode, pin) are Conditionals re-evaluated each apply (a visibility change
-/// forces a layout rebuild so the content-sized window re-fits). Each Minimal plugin tile is
-/// <c>Conditional(IsPinned)</c> so pinning in Full reflects live without a rebuild.
+/// Built ONCE; everything that changes is a live Func or a Conditional re-evaluated on each refresh. Tiles are a fixed
+/// pool read by index from the model's revision-cached lists, so plugins that register after the launcher is built
+/// (most do) still appear. Every fill goes through <see cref="StellarStyle.Fill"/> (window opacity) and every colour
+/// is read from the live theme.
 /// </remarks>
-internal sealed class LauncherView
+internal sealed partial class LauncherView
 {
-    private const int Cols = 4;
-    private const int MaxRows = 8;          // Full grid pool: 8×4 = 32 plugin tiles
-    private const int MaxPinned = 16;       // Minimal pool: up to 16 pinned tiles
-    private const float CloseWidth = 24f;   // ✕ tile width (also the left balancer width for true logo centring)
-    private static readonly ColorRgba SectionMuted = new(0.52f, 0.58f, 0.66f, 0.9f);
+    private const float FlashSeconds = 1f;   // clicked-tile "done" wash (SDL R13)
+
+    private static readonly Stopwatch Clock = Stopwatch.StartNew();
 
     private readonly LauncherRegistry _registry;
-    private readonly Action _openSettings;
-    private readonly Action _close;
-    private readonly ILocalization _text;   // framework text lookup (labels) — same pattern as the Settings panels
+    private readonly LauncherMenuModel _model;
+    private readonly LauncherActions _actions;
+    private readonly ILocalization _text;
+    private readonly StellarStyle _s;
+    private readonly Func<int> _failedCount;
+    private readonly StellarFeedbackLine _feedback;
 
-    // LIVE plugin lists, rebuilt only when the registry revision changes (plugin register/unregister or a pin
-    // toggle bump it). The tile pools below read these by index so plugins that register AFTER the launcher is
-    // built (most do — they load asynchronously) still appear, and the pinned count stays consistent with the
-    // visible tiles (the build-time snapshot was why a late-pinned plugin left a stray separator + no tile).
-    private readonly List<LauncherEntry> _all = new();
-    private readonly List<LauncherEntry> _pinned = new();
-    private int _rev = -1;
+    // R13 flash: keyed by the entry INSTANCE + time, so a re-filter / scroll keeps it on the right tile.
+    private LauncherEntry? _flashEntry;
+    private double _flashUntil;
 
-    public LauncherView(LauncherRegistry registry, Action openSettings, Action close, ILocalization text)
-    { _registry = registry; _openSettings = openSettings; _close = close; _text = text; }
-
-    private void Refresh()
+    /// <param name="registry">Entries, pins, mode, orientation, tab.</param>
+    /// <param name="actions">Settings / close / layout-edit callbacks.</param>
+    /// <param name="text">Framework text lookup (the <c>launcher.*</c> keys).</param>
+    /// <param name="style">The house-style kit over the live theme.</param>
+    /// <param name="failedCount">Live number of plugins that failed to load (0 hides the header link).</param>
+    public LauncherView(LauncherRegistry registry, LauncherActions actions, ILocalization text, StellarStyle style,
+        Func<int> failedCount)
     {
-        if (_rev == _registry.Revision) return;
-        _rev = _registry.Revision;
-        _all.Clear(); _pinned.Clear();
-        foreach (var e in _registry.Entries)
-            if (e.Group == LauncherGroup.Plugin) { _all.Add(e); if (_registry.IsPinned(e)) _pinned.Add(e); }
-    }
-    // Visible = registry snapshot (revision-cached in _all/_pinned) filtered by each entry's live ShouldShow
-    // predicate. The filter is evaluated on every read (each apply, ~10 Hz) — NOT cached in Refresh — so a
-    // phase-gated tile (ShouldShow = () => Phase == World) appears/disappears on the phase change without a
-    // registry-revision bump. Lists are tiny (≤32), so the per-apply scan is negligible.
-    private static bool Shows(LauncherEntry e) => e.ShouldShow?.Invoke() ?? true;
-
-    private int VisibleCount(List<LauncherEntry> list)
-    {
-        Refresh();
-        var n = 0;
-        for (var i = 0; i < list.Count; i++) if (Shows(list[i])) n++;
-        return n;
+        _registry = registry;
+        _model = new LauncherMenuModel(registry);
+        _actions = actions;
+        _text = text;
+        _s = style;
+        _failedCount = failedCount;
+        _feedback = new StellarFeedbackLine(style, () => T("launcher.hint.idle"));
     }
 
-    // The idx-th entry that passes ShouldShow (null when out of range) — keeps the tile pool's "read by index"
-    // contract while skipping hidden entries so there are no gaps in the grid/column.
-    private LauncherEntry? VisibleAt(List<LauncherEntry> list, int idx)
-    {
-        Refresh();
-        for (var i = 0; i < list.Count; i++)
-        {
-            if (!Shows(list[i])) continue;
-            if (idx == 0) return list[i];
-            idx--;
-        }
-        return null;
-    }
-
-    private int AllCount() => VisibleCount(_all);
-    private int PinnedCount() => VisibleCount(_pinned);
-
-    private static byte[]? Icon(string name) => LauncherIcons.Get(name);
     private bool Full => _registry.Mode == LauncherMode.Full;
     private bool Minimal => _registry.Mode == LauncherMode.Minimal;
 
-    /// <summary>Body: the three mode layouts (each with its own header), only the active one shown.</summary>
+    /// <summary>Body: the Full menu or one of the two compact-bar orientations, only the active one shown.</summary>
     public HudElement Root => new ColumnElement(new HudElement[]
     {
         new ConditionalElement(() => Full, BuildFull()),
-        new ConditionalElement(() => Minimal && !_registry.MinimalHorizontal, BuildMinimalVertical()),
-        new ConditionalElement(() => Minimal && _registry.MinimalHorizontal, BuildMinimalHorizontal()),
-    });
+        new ConditionalElement(() => Minimal && !_registry.MinimalHorizontal, BuildCompact(horizontal: false)),
+        new ConditionalElement(() => Minimal && _registry.MinimalHorizontal, BuildCompact(horizontal: true)),
+    }, Gap: 0.01f);
 
-    // ── header pieces (each call builds a fresh element; one set per mode body) ──
-    private HudElement Logo => new BrandLogoElement(() => Icon("stellar"), () => Icon("stellar-glow"), Size: 22f);
-    private HudElement ModeToggle => new TileElement(
-        () => Icon(Full ? "mode_list" : "mode_grid"), null,   // icon-only
-        () => _registry.Mode = Full ? LauncherMode.Minimal : LauncherMode.Full, Width: 26f, IconSize: 16f);
-    private HudElement RotateToggle => new TileElement(
-        () => Icon("rotate"), null, () => _registry.MinimalHorizontal = !_registry.MinimalHorizontal,   // icon-only
-        Width: 26f, IconSize: 16f);
-    private HudElement CloseBtn => new TileElement(() => null, () => "✕", _close, Width: CloseWidth, IconSize: 14f);
+    // ── shared helpers ───────────────────────────────────────────────────────────────────────────────────────────
+    private string T(string key) => _text.T(key);
 
-    private HudElement SettingsTile(float width) => new TileElement(
-        () => Icon("settings"), () => _text.T("launcher.settings"), _openSettings, Width: width);
-
-    // A live plugin tile reading the idx-th entry of the all/pinned list each apply (null when out of range).
-    private HudElement LivePluginTile(int idx, bool pinnedOnly)
+    // A translated template with arguments; a bad template (translation typo) falls back to the raw text.
+    private string F(string key, params object[] args)
     {
-        LauncherEntry? At() => VisibleAt(pinnedOnly ? _pinned : _all, idx);
-        return new TileElement(
-            () => At()?.IconPng ?? Icon("plugins"), () => At()?.DisplayTitle ?? "",
-            () => { var e = At(); if (e != null) SafeOpen(e); },
-            Pinned: () => { var e = At(); return e != null && _registry.IsPinned(e); },
-            OnTogglePin: () => { var e = At(); if (e != null) _registry.SetPinned(e, !_registry.IsPinned(e)); });
+        var template = T(key);
+        try { return string.Format(template, args); }
+        catch (FormatException) { return template; }
     }
 
-    // Full: top header, a "PLUGINS" label + grid (only when plugins exist), a separator, then ⚙ Settings. The
-    // grid is a fixed pool of 8 rows × 4 live tiles; each row/tile shows only while its index < the live count.
-    private HudElement BuildFull()
+    private static byte[]? Icon(string name) => LauncherIcons.Get(name);
+
+    private static byte[]? EntryIcon(LauncherEntry? e) => e?.IconPng ?? Icon("plugins");
+
+    private static double Now() => Clock.Elapsed.TotalSeconds;
+
+    private bool Flashing(LauncherEntry? e) => e != null && ReferenceEquals(e, _flashEntry) && Now() < _flashUntil;
+
+    private void SwitchMode(LauncherMode mode)
     {
-        var body = new List<HudElement>
-        {
-            new RowElement(new HudElement[] { Logo, new TextElement(() => "Stellar", null, Emphasis: true), new SpacerElement(), ModeToggle, CloseBtn }, Gap: 6f),
-            new ConditionalElement(() => AllCount() > 0, new TextElement(() => _text.T("launcher.plugins"), () => SectionMuted, Emphasis: true)),
-        };
-        for (var r = 0; r < MaxRows; r++)
-        {
-            var start = r * Cols;
-            var rowTiles = new HudElement[Cols];
-            for (var c = 0; c < Cols; c++) { var i = start + c; rowTiles[c] = new ConditionalElement(() => i < AllCount(), LivePluginTile(i, false)); }
-            body.Add(new ConditionalElement(() => start < AllCount(), new RowElement(rowTiles, Gap: 12f)));
-        }
-        body.Add(new ConditionalElement(() => AllCount() > 0, new SeparatorElement()));
-        body.Add(SettingsTile(120f));
-        return new ColumnElement(body.ToArray(), Gap: 10f);
+        _model.ClearGhosts();
+        _registry.Mode = mode;
     }
 
-    // Minimal vertical (per the user's layout spec):
-    //   [ logo · ✕ ] ─── [ expand · rotate ] ─[only if pinned]─ [ pinned tiles ] ─── [ ⚙ Settings ]
-    private HudElement BuildMinimalVertical()
+    // Open a plugin: flash its tile, confirm in the footer. Plugin code must never break the launcher.
+    private void Open(LauncherEntry? e)
     {
-        var items = new List<HudElement>
-        {
-            // logo TRULY centred: fixed left spacer = ✕ width balances the right-aligned ✕ (Gap 0 = exact centre).
-            new RowElement(new HudElement[] { new SpacerElement(CloseWidth), new SpacerElement(), Logo, new SpacerElement(), CloseBtn }, Gap: 0f),
-            new SeparatorElement(),
-            new RowElement(new HudElement[] { new SpacerElement(), ModeToggle, RotateToggle, new SpacerElement() }, Gap: 8f),
-            // The plugins rule shows only when a pinned tile actually renders (count>0) — no stray double line.
-            new ConditionalElement(() => PinnedCount() > 0, new SeparatorElement()),
-        };
-        for (var i = 0; i < MaxPinned; i++) { var idx = i; items.Add(new ConditionalElement(() => idx < PinnedCount(), LivePluginTile(idx, true))); }
-        items.Add(new SeparatorElement());
-        items.Add(SettingsTile(88f));
-        return new ColumnElement(items.ToArray(), Gap: 6f);
+        if (e == null) return;
+        _flashEntry = e;
+        _flashUntil = Now() + FlashSeconds;
+        _feedback.Show(F("launcher.feedback.opened", LauncherMenuModel.NameOf(e)));
+        try { e.OnOpen(); } catch { /* never break the launcher */ }
     }
 
-    // Minimal horizontal (per the user's layout spec):
-    //   [ ✕ / logo ] | [ expand / rotate ] | [ pinned tiles ] |[only if pinned] [ ⚙ Settings ]
-    private HudElement BuildMinimalHorizontal()
+    private void ToggleFavorite(LauncherEntry? e)
     {
-        var chromePane = new ColumnElement(new HudElement[] { CloseBtn, Logo }, Gap: 4f);
-        var togglePane = new ColumnElement(new HudElement[] { ModeToggle, RotateToggle }, Gap: 4f);
-        var tiles = new HudElement[MaxPinned];
-        for (var i = 0; i < MaxPinned; i++) { var idx = i; tiles[i] = new ConditionalElement(() => idx < PinnedCount(), LivePluginTile(idx, true)); }
-        return new RowElement(new HudElement[]
-        {
-            chromePane, new SeparatorElement(Vertical: true),
-            togglePane, new SeparatorElement(Vertical: true),
-            new RowElement(tiles, Gap: 8f),
-            new ConditionalElement(() => PinnedCount() > 0, new SeparatorElement(Vertical: true)),
-            SettingsTile(88f),
-        }, Gap: 8f);
+        if (e == null) return;
+        var name = LauncherMenuModel.NameOf(e);
+        _feedback.Show(_model.ToggleFavorite(e)
+            ? F("launcher.feedback.fav_added", name, _model.FavoriteCount)
+            : F("launcher.feedback.fav_removed", name));
     }
 
-    private static void SafeOpen(LauncherEntry e) { try { e.OnOpen(); } catch { /* never break the launcher */ } }
+    /// <summary>Text in the regular-weight TMP face at a custom size (plain window text is a fixed 14 px; RichEmoji
+    /// switches to the TMP face, which honours FontSize — SDL §6).</summary>
+    private static TextElement Small(Func<string> text, Func<ColorRgba?> color, int size,
+        TextAlign align = TextAlign.Left, int maxLines = 0)
+        => new(text, color, Align: align, FontSize: size, NoWrap: maxLines == 0)
+        { RichEmoji = true, MaxLines = maxLines };
+
+    /// <summary>A flat white glyph PNG drawn in a live colour (<see cref="ImageElement.Tint"/>), optionally live.</summary>
+    private static ImageElement Glyph(Func<byte[]?> png, int size, Func<ColorRgba> tint, bool live = false)
+        => new(png, size, size) { Live = live, Tint = () => tint() };
+
+    /// <summary><paramref name="c"/> with its alpha multiplied by <paramref name="alpha"/> (the ghost fade).</summary>
+    private static ColorRgba Faded(ColorRgba c, float alpha) => c with { A = c.A * alpha };
 }

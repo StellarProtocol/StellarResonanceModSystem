@@ -1,9 +1,11 @@
+using System;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Services;
 using Stellar.Infrastructure.BepInExAdapters;
 using Stellar.Infrastructure.Game;
 using Stellar.Infrastructure.UI;
+using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Host;
 
@@ -22,15 +24,18 @@ public sealed partial class BootstrapPlugin
         _launcher = new LauncherRegistry(new LauncherPrefs(_pluginConfigService!.GetSection("launcher")), log);
     }
 
-    // Registers the native uGUI launcher (the redesigned hub — both modes via LauncherView) on the window
-    // service, and the native "Stellar" rail button that toggles it. The launcher's ⚙ Settings entry opens the
-    // multi-tab uGUI Settings hub (no more per-panel SETTINGS tiles).
+    // Registers the native uGUI launcher (the house-style redesign — Full menu + compact bar via LauncherView) on the
+    // window service, and the native "Stellar" rail button that toggles it. The launcher's Settings entries open the
+    // multi-tab uGUI Settings hub; its "N failed to load" header link asks for the Plugins tab.
     private void RegisterLauncher(BepInExPluginLog log)
     {
-        _launcherView = new LauncherView(_launcher!,
-            openSettings: () => Toggle(_settingsHubControl),
-            close: () => _launcherControl?.SetVisible(false),
-            text: _frameworkLocalization!);
+        var actions = new LauncherActions(
+            // TODO(merge): route the tab to the Settings hub's open-at-tab method (settings redesign branch); null = just open.
+            OpenSettings: _ => Toggle(_settingsHubControl),
+            Close: () => _launcherControl?.SetVisible(false),
+            ToggleLayoutEdit: () => _layoutEditor?.ToggleEditMode());   // = the Shift+` hotkey
+        var style = new StellarStyle(_themeRenderer!.Colors, _namedTheme);
+        _launcherView = new LauncherView(_launcher!, actions, _frameworkLocalization!, style, FailedPluginCount());
         _launcherControl = _windowService!.Register(new WindowRegistration(LauncherSpec(), _launcherView.Root));
 
         // Perf overlay (Shift+End, dev-only) is a uGUI window now (Phase E — no IMGUI). Registered here where
@@ -64,4 +69,22 @@ public sealed partial class BootstrapPlugin
         // Framework chrome — shown in every phase (title/menus) EXCEPT hidden over the loading screen.
         => new WindowSpec("settings.hub", "", new WindowRect(2071, 1225, 420, 0f), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
             { ShouldRender = () => (_clientState!.UiState & GameUIState.Loading) == 0, StartVisible = false, Draggable = true, Closable = false, AutoSizeWidth = true, ShowTitleBar = false };
+
+    // Live "N failed to load" count for the launcher header: recounted only when a plugin's enabled/errored state
+    // changes (IPluginInventory.StatusChanged), so the per-refresh read is a field load, not a List() snapshot.
+    private Func<int> FailedPluginCount()
+    {
+        var inventory = _pluginRegistry;
+        if (inventory == null) return () => 0;
+        var failed = 0;
+        void Recount()
+        {
+            var n = 0;
+            foreach (var p in inventory.List()) if (p.IsErrored) n++;
+            failed = n;
+        }
+        Recount();
+        inventory.StatusChanged += _ => Recount();
+        return () => failed;
+    }
 }

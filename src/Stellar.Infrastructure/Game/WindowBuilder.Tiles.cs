@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 using UnityEngine.Events;
@@ -60,8 +61,39 @@ internal sealed partial class WindowBuilder
         var go = UGuiPrimitives.NewChild("Image", parent);
         UGuiPrimitives.SetPreferred(go, im.Width, im.Height);
         var raw = go.AddComponent<RawImage>(); raw.raycastTarget = false;
-        var tex = LoadIcon(im.Png(), token);
-        if (tex != null) raw.texture = tex;
+        if (im.Live)
+        {
+            // ImageElement.Live: the same poll-diffed IconBinding the launcher TileElement uses (byte[]-ref compare,
+            // decode deduped by LoadIcon) — a pooled slot's picture follows the item it currently shows.
+            var binding = new IconBinding { Raw = raw, Bytes = im.Png, Load = png => LoadIcon(png, token) };
+            binding.Apply();
+            token.Icons.Add(binding);
+        }
+        else
+        {
+            var tex = LoadIcon(im.Png(), token);
+            if (tex != null) raw.texture = tex;
+        }
+        if (im.Tint is { } tintFn) BindImageTint(raw, tintFn, token);
+    }
+
+    // ImageElement.Tint: poll-diffed RawImage.color (null = white = the picture's own colours). Rides the per-apply
+    // Hovers poll list like the pin star; skips hidden pool slots, and re-paints when one shows again (init reset).
+    private static void BindImageTint(RawImage raw, Func<ColorRgba?> tintFn, WindowToken token)
+    {
+        var init = false; var last = default(ColorRgba);
+        Apply();
+        token.Hovers.Add(new HoverBinding { Poll = Apply });
+
+        void Apply()
+        {
+            if (raw == null) return;
+            if (!raw.gameObject.activeInHierarchy) { init = false; return; }
+            var c = tintFn() ?? new ColorRgba(1f, 1f, 1f, 1f);
+            if (init && c.Equals(last)) return;
+            raw.color = new Color(c.R, c.G, c.B, c.A);
+            last = c; init = true;
+        }
     }
 
     // Atlas sub-sprite: a fixed-size RawImage whose uvRect selects one sub-region of a packed atlas PNG (the
