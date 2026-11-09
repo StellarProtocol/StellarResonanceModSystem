@@ -25,7 +25,8 @@ internal sealed partial class AboutPanel
         var s = k.S;
         // The glyph art may not be embedded yet: a missing PNG leaves the tile an empty blurple square (no crash).
         var tile = s.FilledTile(new ConditionalElement(() => DiscordIcon() != null,
-            new ImageElement(DiscordIcon, (int)CommunityTileGlyph, (int)CommunityTileGlyph)), () => Blurple, CommunityTileSize, 6f);
+            new ImageElement(() => DiscordIcon(CommunityTileGlyph), (int)CommunityTileGlyph, (int)CommunityTileGlyph) { Live = true }),
+            () => Blurple, CommunityTileSize, 6f);
         return k.Panel("about.community", k.T("about.community.hint"),
             SettingsKit.Row(tile, k.Label(k.T("about.discord.label")), DiscordPill(k), SettingsKit.HelpGap()));
     }
@@ -40,7 +41,7 @@ internal sealed partial class AboutPanel
             FontSize: 13) { Bold = true };
         var glyph = new ConditionalElement(() => DiscordIcon() != null, new RowElement(new HudElement[]
         {
-            new ImageElement(DiscordIcon, (int)PillGlyph, (int)PillGlyph),
+            new ImageElement(() => DiscordIcon(PillGlyph), (int)PillGlyph, (int)PillGlyph) { Live = true },
             new SpacerElement(6f, 1f),
         }, Gap: 0.01f));
         return new BubbleElement(new SelectableElement(new RowElement(new HudElement[]
@@ -65,6 +66,10 @@ internal sealed partial class AboutPanel
     }
 
     private static byte[]? DiscordIcon() => LauncherIcons.Get("discord");
+
+    // The glyph pre-drawn for a <paramref name="glyph"/>-unit image at the live canvas scale (Live images re-pick on a
+    // resolution / UI-scale change).
+    private static byte[]? DiscordIcon(float glyph) => LauncherIcons.Glyph("discord", glyph);
 
     private static void OpenInBrowser(string url) => UnityEngine.Application.OpenURL(url);
 }

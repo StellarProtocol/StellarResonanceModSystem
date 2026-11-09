@@ -90,7 +90,11 @@ internal sealed partial class WindowRenderer
         // (game-only — the Mono sandbox leaves it null and renders the legacy crisp fallback).
         TmpStyledText.Register(_log.Info);
         _ticker!.Sticky = _stickyCursor;   // sticky cursor (.StickyCursor.cs) — every new ticker gets the long-lived hooks
-        _builder!.IconResolver = Stellar.Infrastructure.UI.LauncherIcons.Get;   // chrome glyphs (star/…) for tiles
+        // Chrome glyphs for TileElement: its only consumer is the 14 px pin star (WindowBuilder.BuildPinStar).
+        _builder!.IconResolver = name => Stellar.Infrastructure.UI.LauncherIcons.Glyph(name, 14f);
+        _builder.PixelExact = Stellar.Infrastructure.UI.LauncherIcons.IsPixelExact;   // pre-drawn exact-size glyph → 1:1, no mips
+        // Framework glyphs pick their pre-drawn size from the LIVE canvas scaleFactor (resolution × UI scale).
+        Stellar.Infrastructure.UI.LauncherIcons.ScaleSource = () => CanvasScale;
         _builder.Warn = _log.Warning;      // e.g. a throwing WindowSpec.TitleProvider (logged once per window id)
         _builder.HudAssets = _hudAssets;   // HudOverlay leaf sprites/colours (stable object; rebaked in place on theme change)
         _builder.RegisterResize = (grip, target, min, max, windowId, editOnly) => _ticker!.DragResizers.Add((grip, target, min, max, windowId, editOnly));

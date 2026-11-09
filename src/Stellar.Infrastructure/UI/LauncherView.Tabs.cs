@@ -48,7 +48,7 @@ internal sealed partial class LauncherView
     private HudElement TabContent(HudElement label, Func<ColorRgba>? starTint, Func<int> count)
     {
         var items = new System.Collections.Generic.List<HudElement>(5) { new SpacerElement(TabPadX - 5f, TabHeight) };
-        if (starTint != null) items.Add(Glyph(() => Icon("star"), 12, starTint));
+        if (starTint != null) items.Add(Glyph("star", 12, starTint));
         items.Add(label);
         items.Add(CountBadge(count));
         items.Add(new SpacerElement(TabPadX - 5f, TabHeight));

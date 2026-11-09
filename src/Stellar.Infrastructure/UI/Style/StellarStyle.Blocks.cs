@@ -30,12 +30,28 @@ internal sealed partial class StellarStyle
     /// (9 at 40 px, 7 at 32 px). The padding IS the tile margin, so the tile is exactly <paramref name="size"/> square;
     /// the fixed Cell + inner Row stop the icon-squish (Cell/Selectable force-expand a child's width).
     /// ⚠️ A white glyph on a very light accent reads poorly (accepted).</summary>
-    public HudElement IconTile(Func<byte[]?> png, float size = ToolIconSize)
+    public HudElement IconTile(Func<byte[]?> png, float size = ToolIconSize) => IconTile(png, size, live: false);
+
+    /// <summary>The glyph side inside a <paramref name="size"/> icon tile: ~62 % snapped DOWN to a pre-drawn icon size
+    /// (icon art rule — 40 → 24, 32 → 16, 28 → 16), so a framework glyph lands on its own hinted bitmap. Even sizes
+    /// keep the padding whole pixels.</summary>
+    public static int IconTileGlyph(float size)
     {
-        var glyph = (int)MathF.Round(size * IconGlyphShare);
+        var want = MathF.Round(size * IconGlyphShare);
+        var glyph = LauncherIcons.PreDrawnSizes[0];
+        foreach (var s in LauncherIcons.PreDrawnSizes) if (s <= want) glyph = s;
+        return glyph;
+    }
+
+    /// <summary><see cref="IconTile(Func{byte[]}, float)"/> whose image is <paramref name="live"/> (re-pulls its PNG each
+    /// refresh): pass a <see cref="LauncherIcons.Glyph"/> lookup for <see cref="IconTileGlyph"/> so a canvas-scale change
+    /// re-picks the pre-drawn bitmap.</summary>
+    public HudElement IconTile(Func<byte[]?> png, float size, bool live)
+    {
+        var glyph = IconTileGlyph(size);
         var pad = (size - glyph) / 2f;
         return new CellElement(new BubbleElement(
-            new RowElement(new HudElement[] { new ImageElement(png, glyph, glyph) }, Gap: 0.01f, Justify: RowJustify.Center))
+            new RowElement(new HudElement[] { new ImageElement(png, glyph, glyph) { Live = live } }, Gap: 0.01f, Justify: RowJustify.Center))
         {
             FillColorFn = () => Fill(Accent()), CornerRadius = MathF.Round(size * 0.22f), PaddingX = pad, PaddingY = pad,
             MaxWidth = size,
@@ -45,7 +61,10 @@ internal sealed partial class StellarStyle
     /// <summary><see cref="IconTile(Func{byte[]}, float)"/> for one of the framework's embedded white glyphs
     /// (<see cref="LauncherIcons"/> key, e.g. "settings", "theme", "plugins").</summary>
     public HudElement IconTile(string launcherIcon, float size = ToolIconSize)
-        => IconTile(() => LauncherIcons.Get(launcherIcon), size);
+    {
+        var glyph = IconTileGlyph(size);
+        return IconTile(() => LauncherIcons.Glyph(launcherIcon, glyph), size, live: true);
+    }
 
     // ── tool header ──────────────────────────────────────────────────────────────────────────────────────────────
     /// <summary>Window title block: 40 px accent icon tile + bold title over a live status line, and an optional

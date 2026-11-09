@@ -13,7 +13,7 @@ internal sealed partial class SettingsHub
 {
     private const float RailItemHeight = 34f;
     private const float RailIconSize = 24f;
-    private const float RailGlyph = 15f;
+    private const float RailGlyph = 16f;   // a pre-drawn size (icon art rule): (24 − 16) / 2 = 4 px, whole pixels
     private const float RailPadX = 6f;
     private const float DotSize = 8f;
 
@@ -49,7 +49,7 @@ internal sealed partial class SettingsHub
         var s = _k.S;
         HudElement Variant(bool active)
         {
-            var tile = s.FilledTile(new ImageElement(() => TabIcon(idx), (int)RailGlyph, (int)RailGlyph),
+            var tile = s.FilledTile(new ImageElement(() => TabIcon(idx, RailGlyph), (int)RailGlyph, (int)RailGlyph) { Live = true },
                 active ? (System.Func<ColorRgba>)s.Accent : s.Neutral, RailIconSize, 6f);
             var label = new TextElement(() => _k.Loc.T(Tabs[idx].LabelKey),
                 Color: active ? (System.Func<ColorRgba?>)(() => s.Readable(s.Accent(), s.AccentWash())) : () => s.Text(), NoWrap: true)
@@ -122,8 +122,10 @@ internal sealed partial class SettingsHub
     internal static string RailVersion(string version, bool developerMode)
         => developerMode ? "Stellar " + version + " · dev" : "Stellar " + version;
 
-    // A tab glyph that isn't embedded yet (developer.png is still being drawn) falls back to the gear, never a blank tile.
-    private static byte[]? TabIcon(int idx) => LauncherIcons.Get(Tabs[idx].Icon) ?? LauncherIcons.Get(IconFallback);
+    // The tab glyph pre-drawn for a <paramref name="glyph"/>-unit image at the live canvas scale (Live images re-pick on a
+    // resolution / UI-scale change). A tab glyph that isn't embedded falls back to the gear, never a blank tile.
+    private static byte[]? TabIcon(int idx, float glyph)
+        => LauncherIcons.Glyph(Tabs[idx].Icon, glyph) ?? LauncherIcons.Glyph(IconFallback, glyph);
 
     private static int IndexOf(string key)
     {

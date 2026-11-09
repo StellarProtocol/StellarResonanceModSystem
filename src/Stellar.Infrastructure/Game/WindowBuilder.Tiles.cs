@@ -28,6 +28,10 @@ internal sealed partial class WindowBuilder
     // builder is sandbox-pure so it can't reference it). Null in the sandbox → those glyphs render blank.
     internal Func<string, byte[]?>? IconResolver;
 
+    // "Draw these bytes 1:1" test (LauncherIcons.IsPixelExact — a pre-drawn glyph picked for its exact on-screen size).
+    // Set by the renderer like IconResolver; null (sandbox) = every icon takes the mipmapped path.
+    internal Func<byte[], bool>? PixelExact;
+
     // Smooth icon load — high-res PNGs downscaled to 16–30px alias/pixelate WITHOUT mipmaps + trilinear (the
     // exact lesson from the IMGUI PluginIconCache). mipChain + Trilinear + Apply(updateMipmaps) = smooth.
     //
@@ -42,15 +46,18 @@ internal sealed partial class WindowBuilder
     {
         if (png is not { Length: > 0 }) return null;
         if (token.AtlasCache.TryGetValue(png, out var cached)) return cached;
-        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: true)
+        // A pixel-hinted glyph picked for its exact on-screen size is drawn 1:1: no mip chain (nothing to blend toward)
+        // and Bilinear, which at 1:1 on whole pixels samples each texel as-is. Everything else keeps mips + Trilinear.
+        var exact = PixelExact?.Invoke(png) == true;
+        var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: !exact)
         {
-            filterMode = FilterMode.Trilinear,
+            filterMode = exact ? FilterMode.Bilinear : FilterMode.Trilinear,
             wrapMode = TextureWrapMode.Clamp,
             hideFlags = HideFlags.HideAndDontSave,
         };
         try { if (!ImageConversion.LoadImage(tex, png)) { UnityEngine.Object.Destroy(tex); return null; } }
         catch { UnityEngine.Object.Destroy(tex); return null; }
-        tex.Apply(updateMipmaps: true, makeNoLongerReadable: false);
+        tex.Apply(updateMipmaps: !exact, makeNoLongerReadable: false);
         token.IconTextures.Add(tex);
         token.AtlasCache[png] = tex;
         return tex;

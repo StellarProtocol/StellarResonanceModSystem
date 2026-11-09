@@ -157,7 +157,9 @@ internal sealed partial class StellarStyle
     /// <paramref name="active"/> (optional) tints it with the accent wash while true (e.g. a toggled mode).
     /// <paramref name="tint"/> / <paramref name="hoverTint"/> (optional) re-colour a flat WHITE glyph at rest / on hover
     /// via <see cref="ImageElement.Tint"/> (hover falls back to the rest tint). Both null = no tint = the PNG's own
-    /// colours, so existing callers keep their look; the launcher passes Muted → Text (prototype icon buttons).</summary>
+    /// colours, so existing callers keep their look; the launcher passes Muted → Text (prototype icon buttons).
+    /// The image is Live (re-pulls <paramref name="icon"/> each refresh, swaps on a new array) — free for a stable
+    /// array, and what lets the string overload's size pick follow the canvas scale.</summary>
     public HudElement IconButton(Func<byte[]?> icon, Action onClick, Func<bool>? active = null,
         Func<ColorRgba>? tint = null, Func<ColorRgba>? hoverTint = null)
     {
@@ -168,7 +170,7 @@ internal sealed partial class StellarStyle
         return new CellElement(new BubbleElement(new SelectableElement(new RowElement(new HudElement[]
             {
                 new SpacerElement(pad, IconButtonSize),
-                new ImageElement(icon, IconButtonGlyph, IconButtonGlyph) { Tint = glyphTint },
+                new ImageElement(icon, IconButtonGlyph, IconButtonGlyph) { Tint = glyphTint, Live = true },
                 new SpacerElement(pad, IconButtonSize),
             }, Gap: 0.01f, Justify: RowJustify.Center),
             OnClick: onClick) { Bare = true, OnHover = over => hover.On = over })
@@ -178,6 +180,13 @@ internal sealed partial class StellarStyle
             CornerRadius = RoundRadius(IconButtonSize), PaddingX = 0f, PaddingY = 0f, MaxWidth = IconButtonSize,
         }, Width: IconButtonSize);
     }
+
+    /// <summary><see cref="IconButton(Func{byte[]}, Action, Func{bool}, Func{ColorRgba}, Func{ColorRgba})"/> for a
+    /// framework v2 glyph (<see cref="LauncherIcons"/> key): the bitmap pre-drawn for the 16 px glyph at the live canvas
+    /// scale, re-picked when the scale changes.</summary>
+    public HudElement IconButton(string launcherIcon, Action onClick, Func<bool>? active = null,
+        Func<ColorRgba>? tint = null, Func<ColorRgba>? hoverTint = null)
+        => IconButton(() => LauncherIcons.Glyph(launcherIcon, IconButtonGlyph), onClick, active, tint, hoverTint);
 
     /// <summary>28×28 icon-only ✕ (remove / close): muted glyph at rest; on hover a red glyph on the soft red round wash
     /// (house "Remove hover"). <paramref name="surface"/> = what it sits on (default the tile), for the glyph contrast.

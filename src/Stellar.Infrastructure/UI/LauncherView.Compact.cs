@@ -79,7 +79,7 @@ internal sealed partial class LauncherView
     // The Settings entry at the end of the bar: a Neutral icon tile with the settings glyph in the neutral label colour.
     private HudElement CompactSettingsTile()
     {
-        var icon = LiveIconTile(() => Icon("settings"), () => _s.Fill(_s.Neutral()), () => _s.NeutralLabel(), () => 1f);
+        var icon = LiveIconTile(() => Icon("settings", TileGlyph), () => _s.Fill(_s.Neutral()), () => _s.NeutralLabel(), () => 1f);
         return CompactTileShell(icon, () => T("launcher.settings"), () => _actions.OpenSettings(null), () => false);
     }
 

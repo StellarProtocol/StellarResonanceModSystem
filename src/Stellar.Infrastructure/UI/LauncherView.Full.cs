@@ -28,7 +28,7 @@ internal sealed partial class LauncherView
     // Exactly 4 full rows: 4 × 102 + 3 × 6 = 426 (the tiles' heights are pinned, so the row pitch is exactly 108).
     private const float GridHeight = ReservedRows * TileHeight + (ReservedRows - 1) * GridGap;
     private const float HeaderLogo = 34f;
-    private const float PillIcon = 15f;
+    private const float PillIcon = 16f;   // a pre-drawn size (icon art rule)
 
     private HudElement BuildFull()
     {
@@ -118,7 +118,7 @@ internal sealed partial class LauncherView
         Small(() => F("launcher.version", FrameworkVersion.Value), () => _s.Muted(), 12),
     }, Gap: 6f);
 
-    // A Neutral 28 px pill with a 15 px glyph before its bold label (prototype .pill.neu with an icon). Built like the
+    // A Neutral 28 px pill with a 16 px glyph before its bold label (prototype .pill.neu with an icon). Built like the
     // kit's PillButton (Bubble → Bare Selectable → Row with 28 px struts; hover = the pill's own round fill, R2).
     private HudElement IconPill(string icon, Func<string> label, Action onClick)
     {
@@ -126,7 +126,7 @@ internal sealed partial class LauncherView
         return new BubbleElement(new SelectableElement(new RowElement(new HudElement[]
             {
                 new SpacerElement(StellarStyle.PillPadX - 6f, StellarStyle.PillHeight),   // + the 6 gap = 12 inset
-                Glyph(() => Icon(icon), (int)PillIcon, () => _s.NeutralLabel()),
+                Glyph(icon, (int)PillIcon, () => _s.NeutralLabel()),
                 StellarStyle.DropBold(new TextElement(label, () => _s.NeutralLabel(), NoWrap: true, FontSize: 13) { Bold = true }),
                 new SpacerElement(StellarStyle.PillPadX - 6f, StellarStyle.PillHeight),
             }, Gap: 6f, Justify: RowJustify.Center),

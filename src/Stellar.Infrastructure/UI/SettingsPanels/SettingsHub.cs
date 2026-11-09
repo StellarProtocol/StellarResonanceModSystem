@@ -173,14 +173,17 @@ internal sealed partial class SettingsHub
     };
 
     // ToolHeader: 40 px accent tile with the tab's glyph (one Conditional per tab — an ImageElement loads its picture
-    // once, so a changing icon is a set of pre-built tiles), bold tab name, the live status line.
+    // once, so a changing icon is a set of pre-built tiles), bold tab name, the live status line. Each tile's image is
+    // Live only so its pre-drawn glyph size follows the canvas scale (24 units → 24 px at 1440p, 18 → 24 mipped at 1080p).
+    private static readonly float HeaderGlyph = StellarStyle.IconTileGlyph(StellarStyle.ToolIconSize);
+
     private HudElement BuildHeader()
     {
         var icons = new List<HudElement>(Tabs.Length);
         for (var i = 0; i < Tabs.Length; i++)
         {
             var idx = i;
-            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx), StellarStyle.ToolIconSize)));
+            icons.Add(new ConditionalElement(() => _tab == idx, _k.S.IconTile(() => TabIcon(idx, HeaderGlyph), StellarStyle.ToolIconSize, live: true)));
         }
         return new RowElement(new HudElement[]
         {
