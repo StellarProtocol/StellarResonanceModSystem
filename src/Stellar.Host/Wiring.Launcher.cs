@@ -36,6 +36,9 @@ public sealed partial class BootstrapPlugin
         var style = new StellarStyle(_themeRenderer!.Colors, _namedTheme);
         _launcherView = new LauncherView(_launcher!, actions, _frameworkLocalization!, style, FailedPluginCount());
         _launcherControl = _windowService!.Register(new WindowRegistration(LauncherSpec(), _launcherView.Root));
+        // Warmed at the title screen, but world-only plugin tiles appear after world entry: re-warm (off-screen) whenever
+        // what it shows changed while hidden, so its first open in the world is a plain re-show (WindowPrewarm).
+        _launcherPrewarm.WatchContent(_launcherView.ContentSignature, _launcherView.ContentSummary, log.Info);
 
         // Perf overlay (Shift+End, dev-only) is a uGUI window now (Phase E — no IMGUI). Registered here where
         // _windowService exists; _perfOverlay was constructed in Phase 8 alongside its hotkey.

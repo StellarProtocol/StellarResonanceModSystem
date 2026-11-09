@@ -154,6 +154,9 @@ internal sealed partial class WindowBuilder
         private const double BackgroundBudgetMs = 3.0;
         private static long _bgDeadline;
         internal static int BackgroundPending;   // background bubbles still owing a measure after the current apply
+        // The WHOLE window is warming off screen this apply (WindowRenderer.BackgroundWarm.cs): every bubble is background.
+        // A launcher re-warm after world entry otherwise measured ~42 newly shown tile bubbles in one ~100 ms apply.
+        internal static bool WindowInBackground;
 
         internal static void BeginApplyBudget()
         {
@@ -190,7 +193,7 @@ internal sealed partial class WindowBuilder
 
         private void MeasureOrDefer()
         {
-            var bg = InBackground(this);
+            var bg = WindowInBackground || InBackground(this);
             if (!bg || Stopwatch.GetTimestamp() < _bgDeadline) Measure();
             if (bg && (_dirty || _settle > 0)) BackgroundPending++;   // the prebuild reveal waits for these (.PrebuildStage.cs)
         }

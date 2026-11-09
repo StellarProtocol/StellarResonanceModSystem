@@ -83,6 +83,33 @@ internal sealed partial class LauncherView
     // ── shared helpers ───────────────────────────────────────────────────────────────────────────────────────────
     private string T(string key) => _text.T(key);
 
+    // ── content signature (the Host's re-warm watch, WindowPrewarm.WatchContent) ─────────────────────────────────
+    /// <summary>A cheap hash of everything the launcher shows that can change while it is hidden: mode / orientation /
+    /// tab, the registry revision (register, unregister, pin, order), the LIVE tile lists — which plugins pass their
+    /// ShouldShow (world-only plugins appear only after world entry) and their shown names — the failed-to-load count
+    /// and the UI language. Sampled ~twice a second while the launcher is idle.</summary>
+    public int ContentSignature()
+    {
+        var h = new HashCode();
+        h.Add(_registry.Mode); h.Add(_registry.MinimalHorizontal); h.Add(_model.Tab); h.Add(_registry.Revision);
+        h.Add(_failedCount()); h.Add(T("launcher.tab.all")); h.Add(_model.Query);
+        AddEntries(ref h, _model.ShownCount, _model.ShownAt);
+        AddEntries(ref h, _model.FavoriteCount, _model.FavoriteAt);
+        h.Add(_model.AllCount);
+        return h.ToHashCode();
+    }
+
+    private static void AddEntries(ref HashCode h, int count, Func<int, LauncherEntry?> at)
+    {
+        h.Add(count);
+        for (var i = 0; i < count; i++)
+            if (at(i) is { } e) { h.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(e)); h.Add(LauncherMenuModel.NameOf(e)); }
+    }
+
+    /// <summary>The re-warm log's reason: "26 plugins, 8 favorites, 8 shown, 0 failed".</summary>
+    public string ContentSummary()
+        => $"{_model.AllCount} plugins, {_model.FavoriteCount} favorites, {_model.ShownCount} shown, {_failedCount()} failed";
+
     // A translated template with arguments; a bad template (translation typo) falls back to the raw text.
     private string F(string key, params object[] args)
     {

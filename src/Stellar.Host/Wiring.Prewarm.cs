@@ -39,7 +39,13 @@ public sealed partial class BootstrapPlugin
         // Launcher first; while it is pending or mounting, the hub waits (stagger). A launcher that never registered
         // (null control) doesn't hold the hub back.
         // The renderer keeps each one active off-screen until its background work is done (WindowPrewarm).
-        if (_launcherControl != null && !_launcherPrewarm.Settled) { _launcherPrewarm.Tick(_launcherControl, CanStartPrewarm, _windowRenderer); return; }
+        // The launcher is pumped for good: after its first warm it watches its content and re-warms when that changed
+        // while hidden (world-only tiles appear after world entry — Wiring.Launcher.cs WatchContent).
+        if (_launcherControl != null)
+        {
+            _launcherPrewarm.Tick(_launcherControl, CanStartPrewarm, _windowRenderer);
+            if (!_launcherPrewarm.Settled) return;
+        }
         _hubPrewarm.Tick(_settingsHubControl, CanStartPrewarm, _windowRenderer);
     }
 

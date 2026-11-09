@@ -267,7 +267,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         var showT = SetShown(t, hideAll, bg);   // (de)activate the root (.BackgroundWarm.cs)
         if (hideAll) return;
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
-        t.Apply(); ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        WindowBuilder.BubbleBinding.WindowInBackground = bg;   // off-screen warm: every bubble measure is budgeted
+        try { t.Apply(); } finally { WindowBuilder.BubbleBinding.WindowInBackground = false; }
+        ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
         UiPerfStats.AddApply(reg.Spec.Id, perfT);
         if (showT != 0L) NoteShow(t, showT, perfT);
     }

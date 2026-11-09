@@ -108,6 +108,41 @@ public sealed class KeepAliveRulesTests
     [Fact]
     public void ACutShortFirstWarmStillRunsItsBindingsToFillItsTexts() => Assert.True(KeepAliveRules.RunBindingsWhileRewarming(filled: false));
 
+    // Game UI tab, 11-09: filled at the title screen, its HUD rows resolve only in the world — re-pulled on show (42 ms).
+    [Theory]
+    [InlineData(true, false, false)]   // filled, data unchanged: pure re-activation
+    [InlineData(true, true, true)]     // filled, data changed while hidden: pull it in the background
+    [InlineData(false, false, true)]   // never filled: always
+    public void ARewarmRunsBindingsWhenUnfilledOrItsContentChanged(bool filled, bool changed, bool expected) =>
+        Assert.Equal(expected, KeepAliveRules.RunBindingsWhileRewarming(filled, changed));
+
+    [Theory]
+    [InlineData((int)KeepAliveState.Parked, false, true, true)]
+    [InlineData((int)KeepAliveState.Parked, false, false, false)]   // nothing changed
+    [InlineData((int)KeepAliveState.Parked, true, true, false)]     // already refreshing
+    [InlineData((int)KeepAliveState.Shown, false, true, false)]     // its bindings run anyway
+    [InlineData((int)KeepAliveState.Warming, false, true, false)]
+    [InlineData((int)KeepAliveState.Cold, false, true, false)]      // built/filled on its first show
+    public void OnlyAParkedBranchWithChangedContentStartsARefresh(int s, bool refreshing, bool changed, bool expected) =>
+        Assert.Equal(expected, KeepAliveRules.ShouldStartRefresh((KeepAliveState)s, refreshing, changed));
+
+    [Theory]
+    [InlineData(2, 0, false)]    // bubbles still owe settle measures
+    [InlineData(3, 4, false)]    // budgeted measures pending
+    [InlineData(3, 0, true)]
+    [InlineData(60, 4, true)]    // the cap
+    public void ARefreshEndsAfterTheSettleAppliesAndItsMeasures(int applies, int pending, bool expected) =>
+        Assert.Equal(expected, KeepAliveRules.RefreshSettled(applies, pending, maxWait: 60));
+
+    [Fact]
+    public void ARefreshingParkedBranchIsLiveInTheBackground()
+    {
+        var g = new AliveGate { Refreshing = true };
+        Assert.True(g.Live);
+        Assert.True(g.Background);   // budgeted measures, branch-only re-layout
+        Assert.False(g.Visible);
+    }
+
     [Fact]
     public void BackgroundMeansLiveButNotVisible()
     {

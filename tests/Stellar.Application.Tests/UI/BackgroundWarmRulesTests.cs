@@ -39,4 +39,28 @@ public sealed class BackgroundWarmRulesTests
     [InlineData(60, 5, true)]    // waited the cap: put it away anyway
     public void RevealSettlesAfterAnApplyAndItsMeasures(int applies, int pending, bool expected) =>
         Assert.Equal(expected, BackgroundWarmRules.RevealSettled(applies, pending, maxWait: 60));
+
+    // Launcher re-warm (11-09): warmed at the title screen, its tiles change after world entry while it is hidden.
+    [Fact]
+    public void TheFirstSampleIsOnlyABaseline() => Assert.False(new ContentWatch().Changed(5, shown: false));
+
+    [Fact]
+    public void AChangeWhileHiddenIsReportedOnce()
+    {
+        var w = new ContentWatch();
+        w.Reset(1);
+        Assert.False(w.Changed(1, shown: false));
+        Assert.True(w.Changed(2, shown: false));
+        Assert.False(w.Changed(2, shown: false));   // the baseline moved: one re-warm per change
+    }
+
+    [Fact]
+    public void AChangeWhileShownIsNoReason()
+    {
+        var w = new ContentWatch();
+        w.Reset(1);
+        Assert.False(w.Changed(2, shown: true));    // its bindings pulled it in
+        Assert.False(w.Changed(2, shown: false));   // ...so hiding it again needs no re-warm
+        Assert.Equal(2, w.Baseline);
+    }
 }

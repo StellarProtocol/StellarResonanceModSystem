@@ -37,3 +37,28 @@ internal static class BackgroundWarmRules
     public static bool RevealSettled(int appliesSinceReveal, int pendingMeasures, int maxWait)
         => appliesSinceReveal >= 1 && (pendingMeasures == 0 || appliesSinceReveal >= maxWait);
 }
+
+/// <summary>Did a pre-warmed window's content change while it was hidden (→ re-run its background warm, so its next open
+/// is still a plain re-show)? Fed a cheap content signature from time to time. While the window is SHOWN its bindings keep
+/// it current, so the signature just becomes the new baseline; while hidden, a signature different from the baseline is a
+/// change (reported once — the baseline moves to it). The first sample is only a baseline. Pure, unit-tested.</summary>
+internal sealed class ContentWatch
+{
+    private int _baseline;
+    private bool _has;
+
+    /// <summary>The signature the window's content was last applied with (meaningless before the first sample).</summary>
+    public int Baseline => _baseline;
+
+    /// <summary>Record <paramref name="signature"/> as what the window now shows (a warm just applied it).</summary>
+    public void Reset(int signature) { _baseline = signature; _has = true; }
+
+    /// <summary>One sample. True = the content changed while hidden: re-warm.</summary>
+    public bool Changed(int signature, bool shown)
+    {
+        if (!_has || shown) { Reset(signature); return false; }
+        if (signature == _baseline) return false;
+        _baseline = signature;
+        return true;
+    }
+}

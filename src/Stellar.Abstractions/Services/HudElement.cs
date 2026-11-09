@@ -364,6 +364,15 @@ public sealed record ConditionalElement(Func<bool> When, HudElement Then, HudEle
     /// RowElement.ConstrainsWindowMinWidth. Framework 2.30.0. Default false = SetActive toggling, unchanged.
     /// An <c>init</c> property (binary-compatible); its name is <c>[UiPerf] tabshow</c>'s (via <see cref="PrebuildName"/>).</summary>
     public bool KeepAlive { get; init; }
+
+    /// <summary><see cref="KeepAlive"/> only: a cheap revision of the data the branch shows (any int that changes when
+    /// that data changes — a hash of a few states, a counter). Bindings of a parked branch are paused, so data that changes
+    /// while it is hidden (e.g. game HUD pieces that only exist in the world) would otherwise all be re-pulled — rows
+    /// rebuilt, bubbles re-measured — in the frame it is shown again. With this, a parked branch whose revision moved is
+    /// refreshed in the background (bindings on, off-screen, measures budgeted) while its window is on screen, and a
+    /// re-warm after the window was hidden runs its bindings too. Polled about twice a second while parked. Framework
+    /// 2.30.0. Null (default) = re-pulled on show, unchanged. An <c>init</c> property (binary-compatible).</summary>
+    public Func<int>? ContentRevision { get; init; }
 }
 
 /// <summary>Variable-length list, bounded by Slots.Count. All slots built once; the first

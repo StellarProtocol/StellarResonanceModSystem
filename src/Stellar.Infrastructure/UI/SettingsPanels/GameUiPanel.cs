@@ -70,6 +70,18 @@ internal sealed partial class GameUiPanel
         return _loc.TFormat("gameui.status", hidden, moved);
     }
 
+    /// <summary>The tab's ConditionalElement.ContentRevision: per entry, the three states its row reads (in this scene /
+    /// moved / shown). Entries resolve only in the world, so at the title screen every row is "Not in this scene"; after
+    /// world entry most flip to the live row — built and measured in the frame the parked tab was shown (a 42 ms apply,
+    /// 11-09) until this let the hub refresh it in the background.</summary>
+    public int ContentRevision()
+    {
+        var h = 17;
+        foreach (var e in _nativeUi.Entries)
+            h = h * 31 + (e.IsResolved ? 1 : 0) + (e.IsModified ? 2 : 0) + (e.Visible ? 4 : 0);
+        return h;
+    }
+
     // One entry's row. Resolution is read LIVE through the Conditional (entries only resolve in-world, long after the
     // hub is built — a build-time IsResolved check once baked "(not present)" forever).
     private HudElement EntryRow(NativeUiService.EntryState e)

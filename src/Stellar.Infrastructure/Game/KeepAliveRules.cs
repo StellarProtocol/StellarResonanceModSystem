@@ -62,6 +62,21 @@ internal static class KeepAliveRules
     /// after every window open. A first warm that was cut short still needs them to fill its texts before it parks.</summary>
     public static bool RunBindingsWhileRewarming(bool filled) => !filled;
 
+    /// <summary>Same, for a branch that declares a ConditionalElement.ContentRevision: a filled branch whose data changed
+    /// since its bindings last ran (filled at the title screen; the world's data differs) runs them while it re-warms, so
+    /// the change is pulled in the background, not in the frame it is shown (the Game UI tab's 42 ms show, 11-09).</summary>
+    public static bool RunBindingsWhileRewarming(bool filled, bool contentChanged) => !filled || contentChanged;
+
+    /// <summary>A parked branch whose data changed starts a background refresh (bindings on, off-screen). Not while it is
+    /// already refreshing, and never for a warming / shown / cold branch (those run their bindings, or will on show).</summary>
+    public static bool ShouldStartRefresh(KeepAliveState s, bool refreshing, bool contentChanged)
+        => s == KeepAliveState.Parked && !refreshing && contentChanged;
+
+    /// <summary>A background refresh may end (bindings back off): it has seen the bubbles' settle applies and its deferred
+    /// measures are done — or it waited <paramref name="maxWait"/> applies (a value changing every apply would hold it).</summary>
+    public static bool RefreshSettled(int appliesSince, int pendingMeasures, int maxWait)
+        => appliesSince >= BackgroundWarmRules.SettleApplies && (pendingMeasures == 0 || appliesSince >= maxWait);
+
     /// <summary>The units to re-activate when re-warming, in build order: every unit still waiting from an interrupted warm
     /// (inactive, ours) plus every unit active now (the caller deactivates those). A unit inactive for another reason (a
     /// binding hid it) is left alone, so re-warming never shows what a binding hid.</summary>
@@ -79,14 +94,15 @@ internal static class KeepAliveRules
 
 /// <summary>One per KeepAlive branch: whether its bindings run this apply. Every binding built inside the branch is tagged
 /// with it (WindowBuilder.TagAlive); WindowToken.Apply skips a tagged binding while its gate is not live — a parked tab
-/// costs no binding work. Live while shown or warming (warming fills its texts before it parks), and only while every
-/// enclosing KeepAlive branch is live too.</summary>
+/// costs no binding work. Live while shown, warming (warming fills its texts before it parks) or refreshing changed data
+/// in the background, and only while every enclosing KeepAlive branch is live too.</summary>
 internal sealed class AliveGate
 {
     public AliveGate? Parent;
     public bool Shown;
     public bool Warming;
-    public bool Live => (Shown || Warming) && (Parent == null || Parent.Live);
+    public bool Refreshing;   // parked, but its data changed: bindings on for a few background applies (ContentRevision)
+    public bool Live => (Shown || Warming || Refreshing) && (Parent == null || Parent.Live);
 
     /// <summary>Visible: shown, and every enclosing branch shown too.</summary>
     public bool Visible => Shown && (Parent == null || Parent.Visible);

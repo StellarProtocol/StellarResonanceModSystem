@@ -66,6 +66,7 @@ internal sealed partial class WindowBuilder
         {
             Gate = new AliveGate { Parent = _alive }, Container = container, ContainerRt = container.GetComponent<RectTransform>(),
             Le = le, Canvas = canvas, Raycaster = raycaster, Arm = arm, Token = token, Name = name, ShowLabel = "tabshow:" + name,
+            RevisionFn = cond.ContentRevision, Log = Log,
         };
         host.FinishWarm = h => FinishWarmNow(token, h);
         token.KeepAlives.Add(host);
@@ -151,6 +152,56 @@ internal sealed partial class WindowBuilder
         public PrebuildBranch? Branch;               // its prebuild record (units) — null without Prebuild
         public bool Filled;                          // an apply has run with it complete (shown, or first warm finished)
         public Action<KeepAliveHost>? FinishWarm;    // shown mid re-warm (WindowBuilder.FinishWarmNow)
+        public Func<int>? RevisionFn;                // ConditionalElement.ContentRevision (null = none: re-pulled on show)
+        public Action<string>? Log;                  // the builder's [Prebuild] log
+        private int _syncedRevision, _refreshStart;  // revision its bindings last ran against; apply the refresh began
+        private bool _hasSynced;
+
+        /// <summary>Its data changed since its bindings last ran over it (false without a ContentRevision, or before its
+        /// bindings ever ran — a first warm runs them anyway).</summary>
+        public bool ContentChanged() => _hasSynced && Revision() is { } r && r != _syncedRevision;
+
+        // The branch's bindings ran over all of it this apply: what it shows matches the current revision.
+        private void SyncRevision()
+        {
+            if (Revision() is not { } r) return;
+            _syncedRevision = r; _hasSynced = true;
+        }
+
+        // Plugin/panel code: a throwing revision never breaks the window, it just disables the refresh for that poll.
+        private int? Revision()
+        {
+            if (RevisionFn == null) return null;
+            try { return RevisionFn(); } catch { return null; }
+        }
+
+        /// <summary>Parked with changed data: bindings on for a few background applies (off-screen, canvas off, measures
+        /// budgeted — AliveGate.Background), so the next show is a plain un-park (ConditionalElement.ContentRevision).</summary>
+        public void BeginRefresh(int apply)
+        {
+            Gate.Refreshing = true;
+            _refreshStart = apply;
+            Log?.Invoke($"[Prebuild] {Name}: background refresh — content changed while parked (revision {_syncedRevision} → {Revision()})");
+        }
+
+        /// <summary>Per apply while refreshing: end once its bubbles settled (or the cap), and remember the revision.</summary>
+        public void TickRefresh(int apply, int pendingMeasures, int maxWait)
+        {
+            var since = apply - _refreshStart;
+            if (!KeepAliveRules.RefreshSettled(since, pendingMeasures, maxWait)) return;
+            EndRefresh();
+            if (HitchProbe.IsEnabled) Log?.Invoke($"[Prebuild] {Name}: background refresh done — {since} applies");
+        }
+
+        private void EndRefresh()
+        {
+            if (!Gate.Refreshing) return;
+            Gate.Refreshing = false;
+            SyncRevision();
+        }
+
+        /// <summary>The window was hidden mid-refresh: drop it unsynced (the window re-show's re-warm runs the bindings).</summary>
+        public void CancelRefresh() => Gate.Refreshing = false;
 
         /// <summary>CondBinding flip. True only for a SetActive (cold show / cold hide) — the old structural case.</summary>
         public bool Apply(bool show)
@@ -177,13 +228,15 @@ internal sealed partial class WindowBuilder
             Le.ignoreLayout = false;
             if (!Canvas.enabled) Canvas.enabled = true;
             if (!Raycaster.enabled) Raycaster.enabled = true;
-            Gate.Shown = true; Gate.Warming = false;
+            Gate.Shown = true; Gate.Warming = false; Gate.Refreshing = false;
             Filled = true;   // its bindings run on this very apply, before it can be hidden again
+            SyncRevision();  // ...against the data as it is now
         }
 
         private void Park()
         {
             Token.DefocusFieldsUnder(Container.transform);   // SetActive(false) used to end a focused field's edit
+            SyncRevision();  // its bindings ran while it was shown: it shows the current data
             Gate.Shown = false;
             Canvas.enabled = false; Raycaster.enabled = false;
             PlaceOffscreen();
@@ -212,6 +265,7 @@ internal sealed partial class WindowBuilder
         /// <summary>Prebuild layout done (WindowBuilder.Unstage): stays active and parked.</summary>
         public void EndWarm()
         {
+            if (Gate.Warming) SyncRevision();   // only a warm that ran its bindings is current (a filled re-warm ran none)
             Gate.Warming = false;
             Filled = true;   // TickReveal ends a warm only after an apply with every unit active
             if (State == KeepAliveState.Warming) State = KeepAliveState.Parked;
@@ -229,23 +283,44 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < KeepAlives.Count; i++)
             {
                 var h = KeepAlives[i];
+                h.CancelRefresh();
                 var (next, act) = KeepAliveRules.OnWindowReshow(h.State, h.Branch is { Units.Count: > 0 });
                 if (act == KeepAliveAction.Rewarm && !QueueRewarm(this, h)) next = KeepAliveState.Parked;
                 else if (act == KeepAliveAction.Deactivate) h.Container.SetActive(false);
                 h.State = next;
-                // A filled branch re-warms with its bindings OFF: no inactive→active bubble re-measures after the open.
-                h.Gate.Warming = next == KeepAliveState.Warming && KeepAliveRules.RunBindingsWhileRewarming(h.Filled);
+                // A filled branch re-warms with its bindings OFF: no inactive→active bubble re-measures after the open —
+                // unless its data changed while hidden (ContentRevision): then they run now, in the background.
+                var changed = next == KeepAliveState.Warming && h.ContentChanged();
+                h.Gate.Warming = next == KeepAliveState.Warming && KeepAliveRules.RunBindingsWhileRewarming(h.Filled, changed);
+                if (changed && h.Filled) h.Log?.Invoke($"[Prebuild] {h.Name}: re-warm runs its bindings — content changed while hidden");
             }
         }
 
-        // A structural change inside a background (warming) branch: re-lay-out just the warming branches' arms (each is
-        // its own layout root under its boundary host), never the whole window (WindowToken.Note).
+        private const int RefreshPollApplies = 5;   // ~0.5 s at the 10 Hz apply
+        private const int RefreshMaxApplies = 60;   // a refresh whose bubbles never settle still ends (~6 s)
+
+        // Every apply of an active window (shown, or warming off-screen), before the bindings: start / end the background
+        // refresh of parked branches whose ConditionalElement.ContentRevision moved. Without a revision: nothing.
+        private void TickKeepAliveRefresh()
+        {
+            for (var i = 0; i < KeepAlives.Count; i++)
+            {
+                var h = KeepAlives[i];
+                if (h.RevisionFn == null) continue;
+                if (h.Gate.Refreshing) { h.TickRefresh(ApplyCount, BackgroundMeasurePending, RefreshMaxApplies); continue; }
+                if (ApplyCount % RefreshPollApplies != 0) continue;
+                if (KeepAliveRules.ShouldStartRefresh(h.State, refreshing: false, h.ContentChanged())) h.BeginRefresh(ApplyCount);
+            }
+        }
+
+        // A structural change inside a background (warming / refreshing) branch: re-lay-out just those branches' arms (each
+        // is its own layout root under its boundary host), never the whole window (WindowToken.Note).
         private void RelayoutWarmingKeepAlives()
         {
             for (var i = 0; i < KeepAlives.Count; i++)
             {
                 var h = KeepAlives[i];
-                if (h.State != KeepAliveState.Warming || h.Arm == null) continue;
+                if ((h.State != KeepAliveState.Warming && !h.Gate.Refreshing) || h.Arm == null) continue;
                 try { LayoutRebuilder.MarkLayoutForRebuild(h.Arm); } catch { /* a destroyed arm: skip */ }
             }
         }

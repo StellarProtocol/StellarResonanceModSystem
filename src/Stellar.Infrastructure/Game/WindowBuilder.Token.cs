@@ -155,6 +155,7 @@ internal sealed partial class WindowBuilder
             // activates its pooled rows. Must precede Conds + Texts so slot Funcs (which index snapshot[first+i])
             // and the polymorphic header/picker Conditionals inside each slot read the fresh offset this poll.
             ApplyCount++; LastApplyFrame = Time.frameCount;
+            if (KeepAlives.Count > 0) TickKeepAliveRefresh();   // a parked branch whose data changed refreshes in the background
             // Every binding built inside a parked KeepAlive branch is skipped (GatedBinding.Runs; null gate = always runs).
             var structuralChange = false;
             _bgStructural = false;

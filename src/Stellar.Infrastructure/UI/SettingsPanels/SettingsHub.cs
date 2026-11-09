@@ -157,8 +157,10 @@ internal sealed partial class SettingsHub
             // parked (own canvas off, off-screen, bindings paused) instead of deactivated — with Prebuild alone every
             // switch still cost 45-65 ms re-enabling + re-laying-out the tab (measured 11-09). The bodies column holds
             // only these 9 Conditionals: a KeepAlive set must be alone in its slot (WindowBuilder.KeepAlive.cs).
+            // ContentRevision: a parked tab whose data changes while parked is refreshed in the background (Game UI: its
+            // HUD rows resolve only after world entry).
             bodies.Add(new ConditionalElement(() => _tab == idx, DescribeTab(idx), Fill: true)
-                { Prebuild = true, KeepAlive = true, PrebuildName = "settings." + Tabs[idx].Key });
+                { Prebuild = true, KeepAlive = true, PrebuildName = "settings." + Tabs[idx].Key, ContentRevision = TabRevision(idx) });
         }
         return new CellElement(new ColumnElement(new HudElement[]
         {
@@ -167,6 +169,9 @@ internal sealed partial class SettingsHub
             _k.Feedback.Element(),
         }, Gap: MainGap), Weight: 1f);
     }
+
+    // A tab's ConditionalElement.ContentRevision (null = its data doesn't change while parked in a way worth a refresh).
+    private Func<int>? TabRevision(int idx) => Tabs[idx].Key == "gameui" ? _p.GameUi.ContentRevision : null;
 
     private HudElement DescribeTab(int idx) => Tabs[idx].Key switch
     {
