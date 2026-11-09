@@ -60,8 +60,8 @@ internal sealed partial class LayoutEditorOverlay
             Group(s, "layout.toolbar.capWindow",
                 new DropdownElement(SelectionSelectedIndex, SelectionOptions, OnSelectionPicked, Width: WindowDropWidth)
                     { Style = DropdownStyle.Pill, CornerRadius = 13f, MaxVisibleRows = 12 },
-                // Hide/Show + Reset act on the selection; with nothing selected they are DISABLED (no fill — the house
-                // rule: pressable and disabled never look alike).
+                // Hide/Show + Reset act on the selection; with nothing selected they are DISABLED (a sunken fill — the
+                // house rule: pressable and disabled never look alike).
                 s.NeutralButton(() => _text!.T(SelectedVisibility().Visible ? "layout.toolbar.hide" : "layout.toolbar.show"),
                     ToggleSelectedVisibility, VisLabelWidth, () => { var v = SelectedVisibility(); return v.Found && v.CanHide; }),
                 s.NeutralButton(() => _text!.T("layout.toolbar.reset"), ResetSelected, ResetLabelWidth,

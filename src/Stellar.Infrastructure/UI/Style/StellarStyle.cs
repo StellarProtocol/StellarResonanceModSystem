@@ -98,17 +98,30 @@ internal sealed partial class StellarStyle
     public ColorRgba Readable(ColorRgba color, ColorRgba surface) => EnsureContrast(color, surface, TintedMinContrast);
     /// <summary>Hover over any fill: text @10 % composited on it (lighter on dark themes, darker on Light).</summary>
     public ColorRgba Hover(ColorRgba fill) => Over(Text() with { A = HoverMix }, fill);
-    // House rule (user, 2026-11-09): pressable and disabled must never look alike. Every pressable control has a FILL;
-    // a disabled one has NONE — transparent, a 1 px muted ring (same radius, so no size/shape change), a faded muted
-    // label. The old "fill halfway back to the panel" still read as a (dull) button.
-    private const float DisabledLabelAlpha = 0.55f;
+    // House rule (user, 2026-11-09): pressable and disabled must never look alike. A pressable control is a RAISED
+    // fill (lighter than its surface); a disabled one is RECESSED — a sunken fill DARKER than the surface it sits on
+    // (black @28 % over it), same size/radius, with a faint label. User-approved option A "Recessed" (2026-11-09),
+    // replacing the transparent + 1 px muted ring look (8df7f29): the ring was the only hard stroke in a fill-based
+    // design. The old "fill halfway back to the panel" still read as a (dull) button.
+    private static readonly ColorRgba DisabledShade = new(0f, 0f, 0f, 0.28f);
+    private const float DisabledLabelAlpha = 0.32f;      // text @32 % — faint, but still legible as a word …
+    private const float DisabledLabelMinContrast = 2.0f; // … raised until it reaches 2:1 on the sunken fill (Light themes)
 
-    /// <summary>A disabled control's fill: none (see the house rule above).</summary>
-    public static ColorRgba DisabledFill() => Transparent;
-    /// <summary>A disabled control's 1 px ring (Bubble OutlineColorFn): muted, faded with the window like any fill.</summary>
-    public ColorRgba DisabledOutline() => Fill(Muted());
-    /// <summary>A disabled control's label: muted at reduced alpha.</summary>
-    public ColorRgba DisabledLabel() => Muted() with { A = DisabledLabelAlpha };
+    /// <summary>A disabled control's sunken fill, opaque: black @28 % over <paramref name="surface"/> (the panel or tile
+    /// the control sits on; default the panel). Wrap in <see cref="Fill"/> like every other fill.</summary>
+    public ColorRgba DisabledFill(ColorRgba? surface = null) => Over(DisabledShade, surface ?? Panel());
+
+    /// <summary>A disabled control's label: the theme Text at ~32 % alpha, raised in steps until it reaches 2:1 against
+    /// the opaque sunken fill on <paramref name="surface"/>.</summary>
+    public ColorRgba DisabledLabel(ColorRgba? surface = null)
+    {
+        var bg = DisabledFill(surface);
+        var lb = Luminance(bg);
+        var a = DisabledLabelAlpha;
+        while (a < 1f && ContrastRatio(Luminance(Over(Text() with { A = a }, bg)), lb) < DisabledLabelMinContrast)
+            a = MathF.Min(1f, a + 0.04f);
+        return Text() with { A = a };
+    }
 
     /// <summary>The label on a SOLID fill (Primary, Danger — R7): white while white reaches 3:1 against the fill as the
     /// window actually draws it; otherwise a near-black label at 4.5:1. The old rule nudged white toward black only

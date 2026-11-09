@@ -76,12 +76,25 @@ public sealed class StellarStyleTokenTests
     }
 
     [Fact]
-    public void Disabled_HasNoFill_AndAFadedMutedLabel()
+    public void Disabled_IsASunkenFill_WithAFaintLegibleLabel()
     {
-        var s = new StellarStyle(new PresetColors(ThemePreset.Default), (IChromeStyle?)null);
-        Assert.Equal(0f, StellarStyle.DisabledFill().A);
-        Assert.True(s.DisabledLabel().A < 1f);
-        Assert.Equal(1f, s.DisabledOutline().A, 3);
+        foreach (var preset in System.Enum.GetValues<ThemePreset>())
+        {
+            var s = new StellarStyle(new PresetColors(preset), (IChromeStyle?)null);
+            foreach (var surface in new[] { s.Panel(), s.Tile() })
+            {
+                // Recessed: darker than the surface it sits on, opaque (Fill() applies the window opacity).
+                var fill = s.DisabledFill(surface);
+                Assert.Equal(1f, fill.A, 3);
+                Assert.True(StellarStyle.Luminance(fill) < StellarStyle.Luminance(surface), $"{preset}: not darker");
+                // Faint (well below a full label) but still >= 2:1 as drawn on the sunken fill.
+                var label = s.DisabledLabel(surface);
+                Assert.True(label.A < 1f, $"{preset}: label not faded");
+                var seen = StellarStyle.Over(label, fill);
+                Assert.True(StellarStyle.ContrastRatio(StellarStyle.Luminance(seen), StellarStyle.Luminance(fill)) >= 2f,
+                    $"{preset}: label under 2:1");
+            }
+        }
     }
 
     [Fact]

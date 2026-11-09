@@ -35,7 +35,7 @@ internal sealed partial class StellarStyle
 
     /// <summary>The ONE labelled button (SDL §4 PillButton): 28 px, round ends, bold-13 label. <paramref name="width"/>
     /// fixes the LABEL box (longest label in any locale and state — R10); 0 hugs. A disabled pill keeps its geometry,
-    /// swallows the click and loses its fill (transparent + 1 px muted ring + faded muted label — the house rule).</summary>
+    /// swallows the click and RECESSES: a sunken fill darker than the panel + a faint label (the house rule, StellarStyle.cs).</summary>
     public HudElement PillButton(Func<string> label, PillKind kind, Action onClick, float width = 0f,
         Func<bool>? enabled = null)
     {
@@ -98,9 +98,8 @@ internal sealed partial class StellarStyle
             OnClick: () => { if (En()) onClick(); })
             { Bare = true, OnHover = over => hover.On = over })
         {
-            // Disabled = no fill + a muted ring (house rule, StellarStyle.cs): the ring is an overlay, so no layout jump.
-            FillColorFn = () => !En() ? DisabledFill() : Fill(hover.On ? Hover(fill()) : fill()),
-            OutlineColorFn = () => En() ? null : DisabledOutline(),
+            // Disabled = a sunken fill on the panel (house rule, StellarStyle.cs): only the colour changes, so no layout jump.
+            FillColorFn = () => Fill(!En() ? DisabledFill() : hover.On ? Hover(fill()) : fill()),
             CornerRadius = RoundRadius(PillHeight), PaddingX = 0f, PaddingY = 0f,
         };
     }
