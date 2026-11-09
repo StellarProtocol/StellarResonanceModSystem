@@ -396,7 +396,7 @@ internal sealed partial class WindowBuilder
         // crt moves while the user scrolls → the ticker drops canvas pixelPerfect until it settles (same as
         // BuildScrollViewport). Without it a plain ScrollElement (launcher grid, Settings lists, every plugin scroll)
         // re-snapped + rebatched the whole canvas each scrolling frame. Destroyed entries are pruned by the ticker.
-        RegisterScrollView?.Invoke(crt);
+        RegisterScrollView?.Invoke(crt, sr);
     }
 
     // Visible themed vertical scrollbar — activates IChromeStyle.ScrollbarStyle (previously a no-op). A thin

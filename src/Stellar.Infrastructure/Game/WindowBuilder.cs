@@ -99,8 +99,9 @@ internal sealed partial class WindowBuilder
 
     // Scroll-view content-rect hook: the interaction ticker watches these content rects for per-frame motion so
     // SyncPixelPerfect can drop pixelPerfect while a list is being scrolled (same per-frame re-snap/rebatch cost
-    // as a window drag — this is the chat-log scroll FPS fix). Null in the sandbox → a no-op.
-    internal Action<RectTransform>? RegisterScrollView { get; set; }
+    // as a window drag — this is the chat-log scroll FPS fix). The ScrollRect itself lets the ticker stop a coasting
+    // list on wheel / press (WindowInteractionTicker.ScrollInertia.cs). Null in the sandbox → a no-op.
+    internal Action<RectTransform, ScrollRect>? RegisterScrollView { get; set; }
 
     // Slot-drag exclusion hook for a clickable meter-row voice icon: (cell rect, excluded) → the ticker
     // adds/removes it from VoiceClickRects so a press on the icon reaches its EventSystem Button (cycle voice)

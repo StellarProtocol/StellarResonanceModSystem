@@ -98,6 +98,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         // ScrollContents + its parallel _scrollPrevY (.PixelPerfect.cs) — drop both at the same index (mirror Hovers/_hoverState).
         for (var i = ScrollContents.Count - 1; i >= 0; i--) if (ScrollContents[i] == null) { ScrollContents.RemoveAt(i); if (i < _scrollPrevY.Count) _scrollPrevY.RemoveAt(i); }
+        PruneScrollViews();   // (.ScrollInertia.cs)
         PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
@@ -155,6 +156,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         var fieldFocused = Sticky != null && AnyFieldFocused();   // before the field ticks: an Esc that defocuses is the field's
         SyncUiScale();
+        TickScrollInertiaStop();   // .ScrollInertia.cs — wheel / press over a coasting Stellar list stops its fling first
         TickScrollActivity();   // .PixelPerfect.cs — latch list-scroll motion so SyncPixelPerfect covers it too
         TickWindowMotion();     // .PixelPerfect.cs — latch window drag/resize MOTION (a held, still handle stays crisp)
         SyncPixelPerfect();
