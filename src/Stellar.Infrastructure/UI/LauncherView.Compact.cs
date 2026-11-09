@@ -83,15 +83,16 @@ internal sealed partial class LauncherView
         return CompactTileShell(icon, () => T("launcher.settings"), () => _actions.OpenSettings(null), () => false);
     }
 
-    // 64 × 88 (prototype .ctile, enlarged): transparent at rest, Tile fill + text-coloured name on hover, Success wash on
-    // the click flash; 44 px icon tile at the top, the name in a fixed two-line slot (10 px, muted).
+    // 64 × 88 (prototype .ctile, enlarged): transparent at rest, Tile fill on hover, Success wash on the click flash;
+    // 44 px icon tile at the top, the name in a fixed two-line slot (10 px). The name is always the text colour, like the
+    // full-menu tiles (it was muted until hovered, so the bar read grey; user 2026-11-09) — hover shows on the tile fill.
     private HudElement CompactTileShell(HudElement iconTile, Func<string> label, Action onClick, Func<bool> flashing)
     {
         var hover = new StellarStyle.HoverFlag();
         var nameRow = new RowElement(new HudElement[]
         {
             new SpacerElement(2f, CompactNameSlot),
-            new CellElement(Small(label, () => hover.On ? _s.Text() : _s.Muted(), CompactNameFont, TextAlign.Center,
+            new CellElement(Small(label, () => _s.Text(), CompactNameFont, TextAlign.Center,
                 maxLines: 2) with { Height = CompactNameSlot }, Weight: 1f),
             new SpacerElement(2f, 1f),
         }, Gap: 0.01f);
