@@ -52,8 +52,9 @@ internal sealed partial class GameUiPanel
             s.NeutralButton(kit.T("common.resetAll"), () => _confirmReset = true),
         });
         return kit.Panel("gameui.panel", kit.T("gameui.panel.hint"),
-            // Not FixedHeight: the list takes the panel's slack down to the bottom buttons.
-            new ScrollElement(new ColumnElement(rows.ToArray(), Gap: 2f), Height: 140f),
+            // Not FixedHeight: the list takes the panel's slack down to the bottom buttons. Padding 2 (ring + 1): a row's
+            // flash ring flush with the viewport's RectMask2D lost its top edge and side ends (user screenshot 2026-11-09).
+            new ScrollElement(new ColumnElement(rows.ToArray(), Gap: 2f) { Padding = 2 }, Height: 140f),
             new ConditionalElement(() => _confirmReset, confirm, bottom));
     }
 

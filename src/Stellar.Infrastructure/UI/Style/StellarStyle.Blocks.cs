@@ -134,13 +134,17 @@ internal sealed partial class StellarStyle
     public const float ListRowPitch   = ListTileHeight + ListRowGap;
     public const float TilePadX       = 6f;
 
-    /// <summary>One pooled list row = [26 px tile, 2 px spacer] (R15): a VirtualList slot STRETCHES its one child to the
-    /// full RowHeight, so a bare tile in a 28 px slot fills all 28 and the rows touch.</summary>
-    public static HudElement ListSlot(HudElement tile) => new ColumnElement(new HudElement[]
-    {
-        tile,
-        new SpacerElement(0f, ListRowGap),
-    }, Gap: 0.01f);
+    /// <summary>One pooled list row = the 26 px tile inset 1 px on every side (R15): a VirtualList slot STRETCHES its one
+    /// child to the full RowHeight, so a bare tile in a 28 px slot fills all 28 and the rows touch. The gap is split
+    /// round the tile (rows still 2 px apart) rather than all below it, so the tile's 1 px flash ring (ListTile) never
+    /// sits on the scroll viewport's RectMask2D edge: flush, the first row lost its ring's top edge and every row its
+    /// side ends (user screenshot 2026-11-09). Wrap any other ringed list row with <see cref="RingSafe"/>.</summary>
+    public static HudElement ListSlot(HudElement tile) => RingSafe(tile, (int)(ListRowGap / 2f));
+
+    /// <summary><paramref name="row"/> inset <paramref name="pad"/> px on every side, so a Bubble outline ring on it stays
+    /// inside a clipping scroll viewport.</summary>
+    public static HudElement RingSafe(HudElement row, int pad = 1)
+        => new ColumnElement(new HudElement[] { row }, Gap: 0.01f) { Padding = pad };
 
     /// <summary>Viewport height showing exactly <paramref name="rows"/> rows (the last row's gap falls outside).</summary>
     public static float ListHeight(int rows) => rows * ListRowPitch - ListRowGap;
