@@ -47,6 +47,7 @@ internal sealed partial class PandaWireTap : IWireTap
     public void Register(ulong serviceUuid, uint methodId, Action<WireEnvelope> handler)
     {
         if (handler is null) throw new ArgumentNullException(nameof(handler));
+        handler = TimedForHitch(handler, "#" + methodId);
         lock (_lock)
         {
             var key = (serviceUuid, methodId);
@@ -68,6 +69,7 @@ internal sealed partial class PandaWireTap : IWireTap
     public void RegisterReturn(Action<WireEnvelope> handler)
     {
         if (handler is null) throw new ArgumentNullException(nameof(handler));
+        handler = TimedForHitch(handler, "#ret");
         lock (_lock)
         {
             var existing = _returnHandlers;
@@ -77,6 +79,25 @@ internal sealed partial class PandaWireTap : IWireTap
             // Volatile publish so readers on other threads see the new array.
             Volatile.Write(ref _returnHandlers, next);
         }
+    }
+
+    // Diagnostics only: when [Hitch] attribution is armed, wrap the handler so its time is charged to a named
+    // slot (wireTop=PandaChatProbe#1:…) — the wireHooks total alone can't say whose handler stalled. Disarmed
+    // (the normal case) the bare handler is kept: zero per-call cost. DispatchTo's per-handler catch still sees
+    // any throw (finally only stops the clock).
+    private static Action<WireEnvelope> TimedForHitch(Action<WireEnvelope> handler, string tag)
+    {
+        if (!Stellar.Abstractions.Diagnostics.HitchProbe.IsEnabled) return handler;
+        var slot = Stellar.Abstractions.Diagnostics.HitchProbe.HookSlotFor(
+            Stellar.Abstractions.Diagnostics.HitchProbe.HookKindWire,
+            Stellar.Abstractions.Diagnostics.HitchProbe.DescribeHandler(handler) + tag);
+        if (slot is null) return handler;
+        return env =>
+        {
+            var t = Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
+            try { handler(env); }
+            finally { Stellar.Abstractions.Diagnostics.HitchProbe.EndHookSlot(slot, t); }
+        };
     }
 
     private Capture.WirePacketCapture? _capture;

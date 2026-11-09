@@ -31,7 +31,8 @@ internal sealed partial class WorldNtfStubDispatcher
 
     private static WorldNtfStubDispatcher? Instance;
 
-    private readonly StubRouter _router = new();
+    // Handlers attributed per name on a [Hitch] line (combatTop=) — this postfix feeds the combatHooks total.
+    private readonly StubRouter _router = new(Stellar.Abstractions.Diagnostics.HitchProbe.HookKindCombat);
 
     private readonly IPluginLog _log;
     private Harmony? _harmony;

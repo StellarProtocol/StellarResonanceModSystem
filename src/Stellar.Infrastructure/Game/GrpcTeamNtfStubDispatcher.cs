@@ -33,7 +33,8 @@ internal sealed partial class GrpcTeamNtfStubDispatcher
 
     private static GrpcTeamNtfStubDispatcher? Instance;
 
-    private readonly StubRouter _router = new();
+    // Handlers attributed per name on a [Hitch] line (wireTop=) — this postfix feeds the wireHooks total.
+    private readonly StubRouter _router = new(Stellar.Abstractions.Diagnostics.HitchProbe.HookKindWire);
     private readonly IPluginLog _log;
     private Harmony? _harmony;
     private bool _patched;

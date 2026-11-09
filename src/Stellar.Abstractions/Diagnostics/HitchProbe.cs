@@ -17,7 +17,7 @@ namespace Stellar.Abstractions.Diagnostics;
 /// combat-hook total is fed from hook threads and accumulates with <see cref="Interlocked"/>.</para>
 /// <para>Static mutable state is the sanctioned diagnostic exception, as for <see cref="PerfProbe"/>.</para>
 /// </summary>
-public static class HitchProbe
+public static partial class HitchProbe
 {
     private static readonly bool _enabled = StellarDiagnostics.IsEnabled || PerfControls.Flag("HITCH");
 
@@ -111,6 +111,7 @@ public static class HitchProbe
         foreach (var b in _buckets.Values) { b.Ticks = 0; b.Calls = 0; }
         foreach (var c in _counts.Values) c.Calls = 0;
         for (var k = 0; k < 2; k++) { Interlocked.Exchange(ref _hookTicks[k], 0L); Interlocked.Exchange(ref _hookCalls[k], 0L); }
+        ResetHookSlots();
     }
 
     private static void AppendHook(StringBuilder sb, string label, int kind)
@@ -137,6 +138,9 @@ public static class HitchProbe
         foreach (var kv in _counts) if (kv.Value.Calls > 0) sb.Append(' ').Append(kv.Key).Append("=#").Append(kv.Value.Calls);
         AppendHook(sb, " combatHooks=", 0);
         AppendHook(sb, " wireHooks=", 1);
+        AppendHookTop(sb, " combatTop=", HookKindCombat);       // top-3 handlers by name (HitchProbe.Attribution.cs)
+        AppendHookTop(sb, " wireTop=", HookKindWire);
+        AppendHookTop(sb, " combatSubsTop=", HookKindCombatSubscriber);
         sb.Append(" gc=+").Append(g0 - _lastGc0).Append("/+").Append(g1 - _lastGc1).Append("/+").Append(g2 - _lastGc2);
         sb.Append(" il2cppGc=");
         if (il2Cpp >= 0 && _lastIl2CppGc >= 0) sb.Append('+').Append(il2Cpp - _lastIl2CppGc); else sb.Append('?');
