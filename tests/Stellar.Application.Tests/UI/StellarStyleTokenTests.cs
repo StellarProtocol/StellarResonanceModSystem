@@ -65,6 +65,26 @@ public sealed class StellarStyleTokenTests
     }
 
     [Fact]
+    public void Default_PrimaryLabel_FlipsToARealDarkLabel()
+    {
+        // Teal #5FB8C4: white is only 2.3:1, so the label flips dark — and must reach 4.5:1, not stop at a mid grey
+        // just past 3:1 (the washed-out #535353 seen in game, 2026-11-09).
+        var s = new StellarStyle(new PresetColors(ThemePreset.Default), (IChromeStyle?)null);
+        var label = s.PrimaryLabel();
+        Assert.NotEqual(StellarStyle.White, label);
+        Assert.True(StellarStyle.ContrastRatio(StellarStyle.Luminance(label), StellarStyle.Luminance(s.Primary())) >= 4.5f);
+    }
+
+    [Fact]
+    public void Disabled_HasNoFill_AndAFadedMutedLabel()
+    {
+        var s = new StellarStyle(new PresetColors(ThemePreset.Default), (IChromeStyle?)null);
+        Assert.Equal(0f, StellarStyle.DisabledFill().A);
+        Assert.True(s.DisabledLabel().A < 1f);
+        Assert.Equal(1f, s.DisabledOutline().A, 3);
+    }
+
+    [Fact]
     public void StatusColours_ComeFromTheTheme()
     {
         var light = new StellarStyle(new PresetColors(ThemePreset.Light), (IChromeStyle?)null);

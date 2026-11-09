@@ -81,11 +81,11 @@ internal sealed partial class StellarStyle
     public ColorRgba NeutralHover() => Hover(Neutral());
     public ColorRgba NeutralLabel() => EnsureContrast(Text(), Neutral(), TintedMinContrast);
     public ColorRgba Primary()      => Accent();
-    public ColorRgba PrimaryLabel() => EnsureContrast(White, Primary(), SolidMinContrast);
+    public ColorRgba PrimaryLabel() => SolidLabel(Primary());
     public ColorRgba CautionFill()  => Over(Caution() with { A = WashAlpha }, Panel());
     public ColorRgba CautionLabel() => EnsureContrast(Caution(), CautionFill(), TintedMinContrast);
     public ColorRgba DangerFill()   => Over(Danger() with { A = DangerAlpha }, Panel());
-    public ColorRgba DangerLabel()  => EnsureContrast(White, DangerFill(), SolidMinContrast);
+    public ColorRgba DangerLabel()  => SolidLabel(DangerFill());
     /// <summary>The selected / open highlight: accent @22 % over <paramref name="surface"/> (default the panel).</summary>
     public ColorRgba AccentWash(ColorRgba? surface = null) => Over(Accent() with { A = WashAlpha }, surface ?? Panel());
     public ColorRgba ChipOff() => Over(Muted() with { A = ChipOffAlpha }, Panel());
@@ -98,8 +98,30 @@ internal sealed partial class StellarStyle
     public ColorRgba Readable(ColorRgba color, ColorRgba surface) => EnsureContrast(color, surface, TintedMinContrast);
     /// <summary>Hover over any fill: text @10 % composited on it (lighter on dark themes, darker on Light).</summary>
     public ColorRgba Hover(ColorRgba fill) => Over(Text() with { A = HoverMix }, fill);
-    /// <summary>A disabled control's fill: halfway back to the panel (geometry unchanged, R10).</summary>
-    public ColorRgba Disabled(ColorRgba fill) => Mix(Panel(), fill, 0.5f);
+    // House rule (user, 2026-11-09): pressable and disabled must never look alike. Every pressable control has a FILL;
+    // a disabled one has NONE — transparent, a 1 px muted ring (same radius, so no size/shape change), a faded muted
+    // label. The old "fill halfway back to the panel" still read as a (dull) button.
+    private const float DisabledLabelAlpha = 0.55f;
+
+    /// <summary>A disabled control's fill: none (see the house rule above).</summary>
+    public static ColorRgba DisabledFill() => Transparent;
+    /// <summary>A disabled control's 1 px ring (Bubble OutlineColorFn): muted, faded with the window like any fill.</summary>
+    public ColorRgba DisabledOutline() => Fill(Muted());
+    /// <summary>A disabled control's label: muted at reduced alpha.</summary>
+    public ColorRgba DisabledLabel() => Muted() with { A = DisabledLabelAlpha };
+
+    /// <summary>The label on a SOLID fill (Primary, Danger — R7): white while white reaches 3:1 against the fill as the
+    /// window actually draws it; otherwise a near-black label at 4.5:1. The old rule nudged white toward black only
+    /// until it JUST reached 3:1, which on the teal Default accent (#5FB8C4, white = 2.3:1) stopped at a mid grey
+    /// #535353 (3.4:1, measured in a screenshot) — thin bold text at that contrast reads washed out.</summary>
+    public ColorRgba SolidLabel(ColorRgba fill)
+    {
+        var seen = Over(fill with { A = Opacity }, Panel());   // the faded fill over what sits behind it (≈ the panel)
+        if (ContrastRatio(1f, Luminance(seen)) >= SolidMinContrast) return White;
+        return EnsureContrast(DarkLabel, seen, TintedMinContrast);
+    }
+
+    private static readonly ColorRgba DarkLabel = new(0.12f, 0.12f, 0.12f, 1f);   // #1F1F1F
 
     // ── window opacity (SDL §5) ──────────────────────────────────────────────────────────────────────────────────
     /// <summary>The live fill factor (Themes › Window Opacity, 0.3–1), 1 without a source.</summary>

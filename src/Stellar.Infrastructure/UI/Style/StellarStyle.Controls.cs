@@ -35,12 +35,12 @@ internal sealed partial class StellarStyle
 
     /// <summary>The ONE labelled button (SDL §4 PillButton): 28 px, round ends, bold-13 label. <paramref name="width"/>
     /// fixes the LABEL box (longest label in any locale and state — R10); 0 hugs. A disabled pill keeps its geometry,
-    /// swallows the click and dims (label → muted, fill → halfway to the panel).</summary>
+    /// swallows the click and loses its fill (transparent + 1 px muted ring + faded muted label — the house rule).</summary>
     public HudElement PillButton(Func<string> label, PillKind kind, Action onClick, float width = 0f,
         Func<bool>? enabled = null)
     {
         bool En() => enabled == null || enabled();
-        var text = new TextElement(label, Color: () => En() ? PillLabel(kind) : Muted(),
+        var text = new TextElement(label, Color: () => En() ? PillLabel(kind) : DisabledLabel(),
             Width: width, Align: TextAlign.Center, NoWrap: true, FontSize: (int)PillLabelSize) { Bold = true };
         var pill = RoundPill(DropBold(text), () => PillFill(kind), onClick, enabled);
         // A fixed label box gets an explicit MaxWidth too: a MaxWidth-0 bubble placed directly in a Conditional inside a
@@ -98,7 +98,9 @@ internal sealed partial class StellarStyle
             OnClick: () => { if (En()) onClick(); })
             { Bare = true, OnHover = over => hover.On = over })
         {
-            FillColorFn = () => Fill(!En() ? Disabled(fill()) : hover.On ? Hover(fill()) : fill()),
+            // Disabled = no fill + a muted ring (house rule, StellarStyle.cs): the ring is an overlay, so no layout jump.
+            FillColorFn = () => !En() ? DisabledFill() : Fill(hover.On ? Hover(fill()) : fill()),
+            OutlineColorFn = () => En() ? null : DisabledOutline(),
             CornerRadius = RoundRadius(PillHeight), PaddingX = 0f, PaddingY = 0f,
         };
     }

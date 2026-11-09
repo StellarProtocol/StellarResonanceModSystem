@@ -25,7 +25,7 @@ internal sealed partial class StellarStyle
     {
         bool En() => enabled == null || enabled();
         var hover = new HoverFlag();
-        var text = new TextElement(label, Color: () => En() ? PillLabel(kind) : Muted(),
+        var text = new TextElement(label, Color: () => En() ? PillLabel(kind) : DisabledLabel(),
             Width: width, Align: TextAlign.Center, NoWrap: true, FontSize: SmallPillLabelSize) { Bold = true };
         var maxW = width > 0f ? width + 2f * SmallPillPadX : 0f;
         return new BubbleElement(new SelectableElement(
@@ -38,7 +38,8 @@ internal sealed partial class StellarStyle
             OnClick: () => { if (En()) onClick(); })
             { Bare = true, OnHover = over => hover.On = over })
         {
-            FillColorFn = () => Fill(!En() ? Disabled(PillFill(kind)) : hover.On ? Hover(PillFill(kind)) : PillFill(kind)),
+            FillColorFn = () => !En() ? DisabledFill() : Fill(hover.On ? Hover(PillFill(kind)) : PillFill(kind)),
+            OutlineColorFn = () => En() ? null : DisabledOutline(),
             CornerRadius = RoundRadius(SmallPillHeight), PaddingX = 0f, PaddingY = 0f, MaxWidth = maxW,
         };
     }
