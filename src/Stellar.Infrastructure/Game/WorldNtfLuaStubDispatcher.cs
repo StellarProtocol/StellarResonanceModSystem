@@ -22,7 +22,8 @@ namespace Stellar.Infrastructure.Game;
 /// </para>
 ///
 /// <para>
-/// Runs on the network receive thread; never throws across the IL2CPP boundary.
+/// Runs on the game's main thread (RPC stubs are dispatched from ZRpcImpl.ProcessFrameDownPackets);
+/// never throws across the IL2CPP boundary.
 /// Register handlers before <see cref="Install"/>.
 /// </para>
 /// </summary>

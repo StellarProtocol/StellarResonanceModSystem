@@ -18,10 +18,12 @@ namespace Stellar.Infrastructure.Game;
 /// subscribed methodIds through an internal <see cref="StubRouter"/>.
 ///
 /// <para>
-/// Runs on the network receive thread; never throws across the IL2CPP
-/// boundary. As of this task the dispatcher is defined but NOT wired in — the
-/// combat and inventory probes still own their own hooks. Later tasks migrate
-/// them onto <see cref="Register"/> and call <see cref="Install"/> from Host.
+/// Runs on the game's MAIN thread — the game dispatches downstream RPC frames
+/// from <c>ZRpcImpl.ProcessFrameDownPackets</c> inside its frame loop (proven
+/// by WPR), NOT on a network receive thread — so every microsecond here is
+/// frame time. Never throws across the IL2CPP boundary. Host wires it
+/// (<c>Wiring.Wire.cs</c>): probes <see cref="Register"/>, then
+/// <see cref="Install"/>.
 /// </para>
 /// </summary>
 internal sealed partial class WorldNtfStubDispatcher
@@ -89,15 +91,17 @@ internal sealed partial class WorldNtfStubDispatcher
     /// HarmonyX postfix. Reads the stub header once with cached accessors,
     /// cheaply rejects foreign / unsubscribed packets before extracting any
     /// payload, then routes subscribed methodIds through the router. Runs on
-    /// the network receive thread; never throws across the IL2CPP boundary.
+    /// the game's main thread (inside <c>ZRpcImpl.ProcessFrameDownPackets</c>);
+    /// never throws across the IL2CPP boundary.
     /// </summary>
     private static void OnCallStubPostfix(object?[] __args)
     {
         var d = Instance;
         if (d is null) return;
 
-        // Perf harness: time the per-packet header read + dispatch (runs on the
-        // network thread; invisible to the per-frame Update/draw timers). No-op off.
+        // Perf harness: time the per-packet header read + dispatch. It runs on the
+        // MAIN thread but inside the game's RPC pump, outside the per-frame
+        // Update/draw timers — this hook timer is the only place it shows. No-op off.
         var _perfT = Stellar.Abstractions.Diagnostics.PerfProbe.HookBegin();
         var _perfA = Stellar.Abstractions.Diagnostics.PerfProbe.HookBeginAlloc();
         try

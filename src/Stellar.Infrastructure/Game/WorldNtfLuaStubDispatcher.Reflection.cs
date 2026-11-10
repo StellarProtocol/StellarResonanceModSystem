@@ -7,62 +7,22 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>
 /// Reflection-facing helpers for <see cref="WorldNtfLuaStubDispatcher"/> — a
 /// clone of <see cref="WorldNtfStubDispatcher"/>'s header-read / payload-extract
-/// path, retargeted at the Lua stub. Accessors are cached per concrete stub
-/// <see cref="Type"/>; any failure on the I/O thread translates to false/null.
+/// path, retargeted at the Lua stub. Header/payload accessors are compiled once
+/// per concrete stub <see cref="Type"/> by the shared <see cref="StubCallAccessors"/>;
+/// any failure translates to false/null.
 /// </summary>
 internal sealed partial class WorldNtfLuaStubDispatcher
 {
-    private MethodInfo? _getUuid;
-    private MethodInfo? _getMethodId;
-    private MethodInfo? _getCallData;
-    private Type? _resolvedFor;
+    private StubCallAccessors? _accessors;
+    private StubCallAccessors Accessors => _accessors ??= new StubCallAccessors(_log, "[LuaStubDispatch]");
 
     private bool TryReadHeader(object stubCall, out ulong uuid, out uint methodId)
-    {
-        uuid = 0;
-        methodId = 0;
-        try
-        {
-            var t = stubCall.GetType();
-            if (!ReferenceEquals(t, _resolvedFor))
-                ResolveAccessors(t);
-
-            if (_getUuid is null || _getMethodId is null) return false;
-
-            var u = _getUuid.Invoke(stubCall, null);
-            var m = _getMethodId.Invoke(stubCall, null);
-            if (u is null || m is null) return false;
-
-            uuid = Convert.ToUInt64(u);
-            methodId = Convert.ToUInt32(m);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void ResolveAccessors(Type t)
-    {
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
-        _getUuid = t.GetMethod("GetUuid", flags);
-        _getMethodId = t.GetMethod("GetMethodId", flags);
-        _getCallData = t.GetMethod("GetCallData", flags);
-        _resolvedFor = t;
-    }
+        => Accessors.TryReadHeader(stubCall, out uuid, out methodId);
 
     private byte[]? ExtractPayload(object stubCall)
     {
-        var getCallData = _getCallData;
-        if (getCallData is null) return null;
-
-        object? callDataRaw;
-        try { callDataRaw = getCallData.Invoke(stubCall, null); }
-        catch { return null; }
-        if (callDataRaw is null) return null;
-
-        return CoerceCallData(callDataRaw);
+        var callDataRaw = Accessors.GetCallData(stubCall);
+        return callDataRaw is null ? null : CoerceCallData(callDataRaw);
     }
 
     private byte[]? CoerceCallData(object callDataRaw)
