@@ -123,7 +123,8 @@ internal sealed class WindowPrewarm
         if (_watch.Changed(sig, shown)) _phase = 3;
     }
 
-    // Waits for the churn gap and the environment gate (not behind a loading screen, canvas ready). Opened meanwhile: its
+    // Waits for the churn gap and the environment gate (canvas ready; a loading screen only with the world up under it —
+    // the world-entry content change re-warms behind it, Wiring.Prewarm.cs CanStartPrewarm). Opened meanwhile: its
     // bindings pull the change on that open (as before) — nothing left to warm.
     private void TickRewarmPending(IWindowControl control, Func<bool> ready, IWindowBackgroundWarm? warm)
     {

@@ -54,9 +54,16 @@ public sealed partial class BootstrapPlugin
     {
         // Window canvas up with its CanvasScaler settled, so the mount succeeds and the anchored rect applies.
         if (!_windowService!.CanvasScaleReady) return false;
-        // Not behind a loading screen (neither window renders there anyway; keep the build off a load frame), and
-        // only once the login UI exists.
-        if ((_clientState!.UiState & GameUIState.Loading) != 0 || _clientState.Phase == GamePhase.Startup) return false;
+        // Only once the login UI exists.
+        if (_clientState!.Phase == GamePhase.Startup) return false;
+        // Behind a loading screen: only once the world is up underneath it. The world-entry loading screen stays up
+        // for seconds AFTER IsWorldActive rises (Phase → World), and that is exactly when the launcher's content
+        // changes (world-only plugin tiles pass their ShouldShow = Phase == World). Waiting for the screen to clear
+        // put the re-warm into play: raid log 11-10, `[Hitch] frame=111.7ms apply:settings.hub=76.9ms` right after
+        // world entry (1 → 22 tiles). Behind the screen nobody sees the freeze. A loading screen with the world NOT
+        // up (zone transition) still waits: content is mid-change and the scene is being torn down.
+        if ((_clientState.UiState & GameUIState.Loading) != 0
+            && !(_clientState.Phase == GamePhase.World && _clientState.IsWorldActive)) return false;
         // Build with the real client language, so the first paint bakes the right font/glyphs rather than English ones
         // swapped on the first open. Char select always latches it (OnLogin → OnLanguageSet).
         return _clientLanguage?.IsKnown != false || _clientState.Phase >= GamePhase.CharSelect;
