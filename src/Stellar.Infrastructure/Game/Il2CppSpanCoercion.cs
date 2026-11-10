@@ -109,22 +109,21 @@ internal static class Il2CppSpanCoercion
     {
         if (raw is byte[] managed) return managed;
 
-        // Fast path: Il2CppStructArray<byte> is a blittable IL2CPP array — bulk
-        // CopyTo into a managed array. The reflective per-element walk below boxed
-        // every byte (GetValue + Convert.ToByte), which is ~N reflection calls and
-        // 2N boxed objects on the hot network-receive path (a ~10 KB container
-        // delta = thousands of allocations per packet). The combat probe shares
-        // this helper and benefits too. Falls through to the reflective walk if
-        // the shape differs or CopyTo fails.
+        // Fast path: Il2CppStructArray<byte> is a blittable IL2CPP array — ONE memcpy
+        // over its native buffer. NOT Il2CppArrayBase<T>.CopyTo: that loops per element
+        // and every iteration re-reads Length (native il2cpp_array_length) and goes
+        // through the indexer, which rebuilds AsSpan() (another Length + the GC-handle
+        // Pointer read) — ~5 native calls PER BYTE, per WorldNtf packet, on the main
+        // thread (ZRpcImpl.ProcessFrameDownPackets). AsSpan() reads Length and the data
+        // pointer once; the bytes are the same memory the indexer reads. The reflective
+        // per-element walk below is the shape-mismatch fallback only.
         if (raw is Il2CppStructArray<byte> structArr)
         {
             try
             {
-                var n = structArr.Length;
-                if (n <= 0) return null;
-                var dst = new byte[n];
-                structArr.CopyTo(dst, 0);
-                return dst;
+                Span<byte> src = structArr.AsSpan();
+                if (src.Length <= 0) return null;
+                return src.ToArray();
             }
             catch { /* fall through to the reflective path */ }
         }
