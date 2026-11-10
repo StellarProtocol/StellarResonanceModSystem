@@ -156,8 +156,11 @@ internal sealed partial class WindowBuilder
         _registerPulse = registerPulse;
     }
 
-    /// <summary>Builds <paramref name="reg"/> under <paramref name="parent"/> and returns the token.</summary>
-    public WindowToken Build(WindowRegistration reg, Transform parent)
+    /// <summary>Builds <paramref name="reg"/> under <paramref name="parent"/> and returns the token.
+    /// <paramref name="firstApply"/> false = STRUCTURE only (WindowSpec.Prebuild at the login screen): the tree is built
+    /// but no value is pulled — no text/visibility/list lambda runs and no Conditional branch is built; the token's first
+    /// Apply does that later (WindowRenderer.MountStructure).</summary>
+    public WindowToken Build(WindowRegistration reg, Transform parent, bool firstApply = true)
     {
         var token = new WindowToken();
         _surface = reg.Spec.Surface;   // per-window; read by BuildText/BuildBar/BuildPill for the HudOverlay branch
@@ -174,6 +177,7 @@ internal sealed partial class WindowBuilder
         hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
         hitchT = HitchProbe.Lap("build:tree", hitchT);
+        if (!firstApply) { token.StructureOnly = true; return token; }
         token.Apply(); HitchProbe.End("build:firstApply", hitchT);   // first paint (builds the active Cond branches)
         return token;
     }

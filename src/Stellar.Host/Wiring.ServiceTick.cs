@@ -389,6 +389,7 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:toast");
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
+        PumpPluginPrebuilds(deltaTime);   // WindowSpec.Prebuild (Wiring.Prewarm.cs) — before Tick, which mounts / parks what it starts / ends
         _windowService?.Tick(deltaTime);
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:window");
         // One gate, three demands: a focused Stellar text field, a held input shield (free camera — spec D8),

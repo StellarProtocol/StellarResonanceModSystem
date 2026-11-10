@@ -113,12 +113,15 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     public bool IsCanvasAvailable() => EnsureCanvas();
 
-    public object? Mount(WindowRegistration reg)
+    public object? Mount(WindowRegistration reg) => MountCore(reg, structureOnly: false);
+
+    // structureOnly = WindowSpec.Prebuild's login-screen stage (.StructureMount.cs): built without its first apply.
+    private WindowToken? MountCore(WindowRegistration reg, bool structureOnly)
     {
         if (!EnsureCanvas() || _canvasRoot == null || _builder == null) return null;
         try
         {
-            var token = _builder.Build(reg, _canvasRoot);
+            var token = _builder.Build(reg, _canvasRoot, firstApply: !structureOnly);
             _tokens.Add(token);   // track for in-place re-skin on theme change
             AttachNestedCanvas(token, reg.Spec);   // OverrideSortingOrder / IsolateCanvas → own Canvas (+ raycaster)
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
@@ -279,7 +282,10 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
         WindowBuilder.BubbleBinding.WindowInBackground = bg;   // off-screen warm: every bubble measure is budgeted
         try { t.Apply(); } finally { WindowBuilder.BubbleBinding.WindowInBackground = false; }
-        ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        // Gated re-measure (.ContentMinWidth.cs) — forced on the first apply of a structure-only mount, whose mount-time
+        // measure saw the tree before any value was pulled (.StructureMount.cs).
+        ApplyContentMinWidth(t, force: t.StructureOnly);
+        t.StructureOnly = false;
         UiPerfStats.AddApply(reg.Spec.Id, perfT);
         if (showT != 0L) NoteShow(t, showT, perfT);
     }
