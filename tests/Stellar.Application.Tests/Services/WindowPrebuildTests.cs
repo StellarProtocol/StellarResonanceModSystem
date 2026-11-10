@@ -197,6 +197,16 @@ public sealed class WindowPrebuildTests
     }
 
     [Fact]
+    public void Slot_switch_never_shows_a_window_only_the_prebuild_mounted()
+    {
+        var (svc, r, h) = Rig();
+        Step(svc, Title);
+        svc.ReapplyLayout(applyVisibility: true);   // nothing persisted → a restore would read "shown"
+        Step(svc, Title);
+        Assert.False(h.IsShown);
+    }
+
+    [Fact]
     public void Busy_framework_warm_starts_nothing()
     {
         var (svc, r, _) = Rig();

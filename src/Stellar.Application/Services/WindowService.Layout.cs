@@ -164,7 +164,9 @@ internal sealed partial class WindowService
             // so a non-HUD free-drag window (Settings/DataInspector/launcher/CombatMeter History) is skipped for BOTH
             // position and visibility. The res-change path leaves this false so every window still re-clamps.
             if (editableHudsOnly && !e.Reg.Spec.EditModeDragOnly) continue;
-            ApplySavedRect(e, applyVisibility);
+            // A window mounted only by WindowSpec.Prebuild (never really shown) was unmounted before that feature, so a slot
+            // switch skipped it: reposition it, but leave its show/hide to its first real open (.Prebuild.cs).
+            ApplySavedRect(e, applyVisibility && !e.VisRestoreOwed);
         }
     }
 
