@@ -1,4 +1,4 @@
-using Stellar.Infrastructure.Game;
+using Stellar.Application.Services;
 using Xunit;
 
 namespace Stellar.Application.Tests.Ui;
