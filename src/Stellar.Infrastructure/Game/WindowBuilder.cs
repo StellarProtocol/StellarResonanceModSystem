@@ -294,9 +294,11 @@ internal sealed partial class WindowBuilder
         if (t.Width > 0f) { le.preferredWidth = le.minWidth = t.Width; le.flexibleWidth = 0f; }   // fixed column cell
         else { le.flexibleWidth = 0f; le.minWidth = 0f; }
         PinTextHeight(le, t.Height);
-        // Clip a fixed-width single line to its column so a long label truncates instead of spilling onto neighbours.
-        // Ellipsize clips too: between a resize and the next apply's re-fit the old cut may be a few px too wide.
-        if (t.MaxLines <= 0 && ((t.Width > 0f && t.NoWrap) || t.Ellipsize)) go.AddComponent<RectMask2D>();
+        // NO RectMask2D on the label. One used to sit here (fixed-width NoWrap / Ellipsize) to clip a long line to its
+        // cell, but uGUI never lets a RectMask2D clip a graphic on its OWN GameObject (MaskUtilities.
+        // GetRectMaskForClippable skips a mask whose gameObject == the clippable's) — so it clipped nothing and only
+        // cost a registered clipper re-evaluated every frame. Removing it changes no pixels. Ellipsize truncates via
+        // the binding's re-fit; a NoWrap fixed-width label overflows its cell exactly as it always has.
         // Readability outline for chrome-less overlays — the shared recipe (also the meter bar values).
         if (t.Shadow) UGuiPrimitives.AddReadabilityOutline(go);
         token.Texts.Add(BuildTextBinding(t, txt));

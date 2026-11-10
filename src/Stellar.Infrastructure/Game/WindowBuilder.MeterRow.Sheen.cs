@@ -21,8 +21,15 @@ internal sealed partial class WindowBuilder
     // MaskUtilities.GetRectMaskForClippable only drops a parent RectMask2D across an intervening canvas when that
     // canvas has overrideSorting=true, so FillClip's RectMask2D still clips (and culls) the band. No
     // GraphicRaycaster: the band is raycastTarget=false. Same reasoning as WindowRenderer's IsolateCanvas.
+    //
+    // The clip lives HERE, not in the fill builders: every bar fill is a flat spriteless Image stretched to its
+    // width-sized container, so it needs no clipping — only this band does. One RectMask2D per sheen, none per plain
+    // fill (each enabled RectMask2D is a registered clipper re-evaluated every frame in PerformClipping). A sliding
+    // uvRect crop instead of the mask was considered and rejected: the band is partly outside the fill almost all of
+    // the time, so the crop would re-mesh the quad every frame (a uiGraphic rebuild per row per frame).
     private GameObject BuildMeterSheen(RectTransform clipRt, WindowToken token, Graphic? cullProbe)
     {
+        if (clipRt.GetComponent<RectMask2D>() == null) clipRt.gameObject.AddComponent<RectMask2D>();
         var sheenGo = UGuiPrimitives.NewChild("Sheen", clipRt.transform);
         var sheenRt = sheenGo.GetComponent<RectTransform>();
         sheenRt.anchorMin = new Vector2(0f, 0f); sheenRt.anchorMax = new Vector2(0f, 1f); sheenRt.pivot = new Vector2(0f, 0.5f);

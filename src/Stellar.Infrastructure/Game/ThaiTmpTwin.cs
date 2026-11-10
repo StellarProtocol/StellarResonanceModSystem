@@ -12,8 +12,8 @@ namespace Stellar.Infrastructure.Game;
 /// Legacy Text can't take the shipped TTF (<c>new Font(path)</c> draws nothing on it), so the text moves to TMP.
 /// <para>How: a lazily built TMP SIBLING ("twin") of the legacy Text, created the first time a Thai string reaches
 /// it. Its GameObject replaces the legacy one in the layout (legacy SetActive(false), twin SetActive(true)) at the
-/// same sibling slot with a copy of its RectTransform, LayoutElement (fixed width, pinned Height, flex) and
-/// RectMask2D, so the layout contract is identical; only the glyph metrics are the TMP face's own. A later non-Thai
+/// same sibling slot with a copy of its RectTransform and LayoutElement (fixed width, pinned Height, flex),
+/// so the layout contract is identical; only the glyph metrics are the TMP face's own. A later non-Thai
 /// string swaps back, so a live language switch (windows re-skin in place, Func labels re-poll — no rebuild) and a
 /// Thai name inside a Latin UI both land right. The legacy Text stays the STYLE MODEL: every existing colour /
 /// size writer (bindings, reskin closures, hover tints) keeps writing it while it is hidden, and <see cref="Sync"/>
@@ -151,8 +151,9 @@ internal sealed class ThaiTmpTwin
         rt.anchoredPosition = src.anchoredPosition; rt.sizeDelta = src.sizeDelta;
     }
 
-    // The legacy GO's LayoutElement (TextElement.Width / Height pins, minWidth=0, flexibleWidth=0, tile widths) and
-    // its clip mask (fixed-width NoWrap / Ellipsize) carry over unchanged. A fit-mode twin with a NATURAL width lets
+    // The legacy GO's LayoutElement (TextElement.Width / Height pins, minWidth=0, flexibleWidth=0, tile widths)
+    // carries over unchanged (no clip mask: a RectMask2D on the text's own GO never clipped it, so the builder no longer
+    // adds one — WindowBuilder.BuildText). A fit-mode twin with a NATURAL width lets
     // the handle own preferredWidth = the full string padded — the same contract TryBuildEmphasisText sets up.
     private static void CopyLayout(Text legacy, GameObject go, IStyledTextHandle h, bool fits)
     {
@@ -168,7 +169,6 @@ internal sealed class ThaiTmpTwin
             }
             if (fits && le.preferredWidth < 0f) h.PadPreferredWidth(le);
         }
-        if (legacy.GetComponent<RectMask2D>() != null) go.AddComponent<RectMask2D>();
     }
 
     private static TextAlign AlignOf(TextAnchor a) => a switch

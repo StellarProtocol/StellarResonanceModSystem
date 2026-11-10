@@ -76,6 +76,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 12;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (clipRt, fill) = BuildBarTrack(row.transform, b);
@@ -193,6 +194,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 10;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
@@ -223,7 +225,8 @@ internal sealed partial class WindowBuilder
             token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
     }
 
-    // Flat translucent track + width-anchored RectMask2D clip + flat role-coloured fill. Mirrors
+    // Flat translucent track + width-anchored fill container + flat role-coloured fill stretched to it (no RectMask2D:
+    // the spriteless fill IS the container's width; BuildMeterSheen adds the clip only when b.Sheen). Mirrors
     // WindowBuilder.MeterRow.BuildMeterBar (MeterRow.cs:322-336), honouring the BarElement geometry. Returns the
     // track transform (overlay-text parent), the fill-clip RectTransform (the BarBinding drives its anchorMax.x),
     // and the fill Graphic (the BarBinding re-colours it per refresh when BarElement.FillColorFn is set).
@@ -242,7 +245,6 @@ internal sealed partial class WindowBuilder
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.anchorMax = new Vector2(Mathf.Clamp01(b.Fraction01()), 1f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
         UGuiPrimitives.Stretch(fillGo);
@@ -271,7 +273,8 @@ internal sealed partial class WindowBuilder
     }
 
     // Builds a left-anchored, width-clipped fill on the given track — identical to BuildModernTrack's main
-    // FillClip (RectMask2D + a stretched spriteless Fill Image painted from ColorRgba incl. alpha). Returns the
+    // FillClip (a stretched spriteless Fill Image painted from ColorRgba incl. alpha; no RectMask2D — nothing in it
+    // needs clipping, the container width IS the fill width). Returns the
     // clip RectTransform so a BarBinding can drive its anchorMax.x. Caller sets the initial width + draw order.
     private static RectTransform BuildOverlayClip(Transform track, ColorRgba color)
     {
@@ -280,7 +283,6 @@ internal sealed partial class WindowBuilder
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.anchorMax = new Vector2(0f, 1f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
         UGuiPrimitives.Stretch(fillGo);

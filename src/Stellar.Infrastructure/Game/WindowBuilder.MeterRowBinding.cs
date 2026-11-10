@@ -102,6 +102,7 @@ internal sealed partial class WindowBuilder
         public GameObject LeaderGo = null!;
         public RawImage VoiceImg = null!;           // name-line status icon (team-voice); plugin-supplied texture
         public GameObject? SheenGo;                 // animated bar sheen band (hidden by HideSheen; inactive = not driven)
+        public RectMask2D? FillMask;                // FillClip's clip — only the sheen needs it, so it follows HideSheen (fewer clippers)
         public Action<bool>? SetVoiceExcluded;      // add/remove this row's voice cell in the ticker slot-drag exclusion
         private object? _lastVoiceTex; private Color _lastVoiceTint = new(-2f, -2f, -2f, -2f); private int _lastVoiceVis = -1, _lastVoiceClickable = -1;
         public GameObject TalkBorderGo = null!;     // plugin-tinted box border (e.g. green while talking)
@@ -268,7 +269,7 @@ internal sealed partial class WindowBuilder
             if (PrimaryGo != null && _lastPrimaryVis != (d.ShowPrimary ? 1 : 0)) { PrimaryGo.SetActive(d.ShowPrimary); _lastPrimaryVis = d.ShowPrimary ? 1 : 0; }
             var showLeader = d.IsLeader && d.ShowLeaderFlag;
             if (LeaderGo != null && _lastLeader != (showLeader ? 1 : 0)) { LeaderGo.SetActive(showLeader); _lastLeader = showLeader ? 1 : 0; }
-            if (SheenGo != null && _lastSheenVis != (d.HideSheen ? 0 : 1)) { SheenGo.SetActive(!d.HideSheen); _lastSheenVis = d.HideSheen ? 0 : 1; }
+            if (SheenGo != null && _lastSheenVis != (d.HideSheen ? 0 : 1)) { SheenGo.SetActive(!d.HideSheen); if (FillMask != null) FillMask.enabled = !d.HideSheen; _lastSheenVis = d.HideSheen ? 0 : 1; }
             ApplyVoiceIcon(d);
             ApplyRowBorder(d);
 

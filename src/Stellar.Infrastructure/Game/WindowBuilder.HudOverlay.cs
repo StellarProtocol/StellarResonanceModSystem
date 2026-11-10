@@ -90,6 +90,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : HudBarLabelSize;
 
         var row = UGuiPrimitives.NewChild("Bar", parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         var lg = row.AddComponent<HorizontalLayoutGroup>();
         lg.spacing = 6f;
         lg.childControlWidth = true; lg.childControlHeight = true;

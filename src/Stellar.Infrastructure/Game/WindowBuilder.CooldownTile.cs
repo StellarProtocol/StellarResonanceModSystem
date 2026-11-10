@@ -28,6 +28,7 @@ internal sealed partial class WindowBuilder
     private void BuildCooldownTile(CooldownTileElement ct, Transform parent, WindowToken token)
     {
         var root = UGuiPrimitives.NewChild("CdTile", parent);
+        AddLiveCanvas(root, interactive: ct.OnClick != null);   // own batch: the ticking fill + seconds re-batch this tile only (.LiveCanvas.cs)
         var vlg = root.AddComponent<VerticalLayoutGroup>();
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = false; vlg.childForceExpandHeight = false;
@@ -45,8 +46,7 @@ internal sealed partial class WindowBuilder
         var charge = AddOverlayText(token, iconBox.transform, "Chg", TextAnchor.UpperRight, 13);
         charge.color = CdChgCol; charge.gameObject.SetActive(false);
         // Centred fallback abbreviation, shown by Apply only while the icon texture is null.
-        var fallback = AddOverlayText(token, iconBox.transform, "Fallback", TextAnchor.MiddleCenter, 16);
-        fallback.gameObject.SetActive(false);
+        var fallback = AddOverlayText(token, iconBox.transform, "Fallback", TextAnchor.MiddleCenter, 16); fallback.gameObject.SetActive(false);
 
         var secsGo = UGuiPrimitives.NewChild("Secs", root.transform);
         var secs = secsGo.AddComponent<Text>();
