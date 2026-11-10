@@ -16,9 +16,9 @@ internal sealed partial class PandaGameDataProbe
     /// Spec §4 picks this as the equip-slot meta source from the several equip
     /// tables present. POCO has <c>Id, Name, Slot, BaseAttrs</c>.
     /// </summary>
-    private IReadOnlyDictionary<int, EquipInfo> LoadEquips()
+    private TableLoadJob LoadEquips()
     {
-        return LoadDeferredTable<EquipInfo>(
+        return DeferredJob<EquipInfo>(
             label: "Equip",
             typeName: "Bokura.EquipEnchantItemTableBase",
             capacityHint: 256,
@@ -51,9 +51,9 @@ internal sealed partial class PandaGameDataProbe
     /// and <see cref="WeaponInfo.BaseDamage"/> stays at 0 until a richer table is
     /// identified in Phase 7.
     /// </summary>
-    private IReadOnlyDictionary<int, WeaponInfo> LoadWeapons()
+    private TableLoadJob LoadWeapons()
     {
-        return LoadDeferredTable<WeaponInfo>(
+        return DeferredJob<WeaponInfo>(
             label: "Weapon",
             typeName: "Bokura.EquipWeaponTableBase",
             capacityHint: 256,

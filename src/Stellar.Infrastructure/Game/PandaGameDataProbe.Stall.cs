@@ -9,7 +9,7 @@ namespace Stellar.Infrastructure.Game;
 //
 // StallDetailTableBase is a ZTable<System.Int32, StallDetailTableBase>: the item id is the DICTIONARY
 // KEY, and the row VALUE exposes only Category + Subcategory (no id field). The shared value-only
-// LoadEagerTable path discards the key (it reads KeyValuePair.Value), so it produced 0 usable rows.
+// table-job (EagerJob/DeferredJob) path discards the key (it reads KeyValuePair.Value), so it produced 0 usable rows.
 // We enumerate KEY+VALUE pairs here and take the id from the key.
 internal sealed partial class PandaGameDataProbe : IStallSubcategorySource
 {
