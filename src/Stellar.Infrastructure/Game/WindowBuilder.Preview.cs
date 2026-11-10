@@ -76,6 +76,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 12;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (clipRt, fill) = BuildBarTrack(row.transform, b);
@@ -193,6 +194,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 10;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);

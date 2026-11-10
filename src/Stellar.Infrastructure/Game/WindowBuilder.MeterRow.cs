@@ -84,6 +84,7 @@ internal sealed partial class WindowBuilder
     private void BuildMeterRow(MeterRowElement el, Transform parent, WindowToken token)
     {
         var row = UGuiPrimitives.NewChild("MeterRow", parent);
+        AddLiveCanvas(row, interactive: true);   // own batch: per-refresh values re-batch this row only (.LiveCanvas.cs); voice/debuff Buttons → raycaster
         var le = row.AddComponent<LayoutElement>();
         le.preferredHeight = le.minHeight = MeterRowHeight; le.flexibleWidth = 1f;
 
