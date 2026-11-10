@@ -96,64 +96,39 @@ internal sealed partial class PandaGameDataProbe : IGameDataProbe, IStallSubcate
     }
 
     public bool TryLoadEager(out GameDataEagerSnapshot snapshot)
-    {
-        // Each per-table loader handles its own failures (logs once, returns
-        // an empty dictionary). One bad table does not block the others.
-        var professions       = LoadProfessions();
-        var skills            = LoadSkills();
-        var skillLevelToBase  = LoadSkillLevelToBase();
-        var buffs             = LoadBuffs();
-        _attrIconByBase       = LoadFightAttrIcons();   // before LoadAttributes (icon join)
-        var attributes        = LoadAttributes();
-        var attributeProfiles = LoadAttributeProfiles();
-        var items             = LoadItems();
-
-        snapshot = new GameDataEagerSnapshot
-        {
-            Skills            = skills,
-            SkillLevelToBase  = skillLevelToBase,
-            Buffs             = buffs,
-            Professions       = professions,
-            Attributes        = attributes,
-            AttributeProfiles = attributeProfiles,
-            Items             = items,
-        };
-
-        return true;
-    }
+        => StepEager(long.MaxValue, out snapshot) == GameDataStep.Done;
 
     public bool TryLoadOne(GameDataTableKind kind, out object cache)
+        => StepOne(kind, long.MaxValue, out cache) == GameDataStep.Done;
+
+    // Time-sliced queue drivers (StepEager / StepOne) live in PandaGameDataProbe.SlicedQueue.cs.
+
+    // Per-kind deferred job factory. Each loader lives in one of the PandaGameDataProbe.Deferred*.cs or
+    // Projections.Equip.cs sibling partials and runs through the shared DeferredJob<TInfo> envelope, which
+    // logs success and swallows failures (logs once, keeps the rows so far). Null = unknown kind.
+    private TableLoadJob? CreateDeferredJob(GameDataTableKind kind) => kind switch
     {
-        // Dispatch to a per-kind projection living in one of the
-        // PandaGameDataProbe.Deferred*.cs or Projections.Equip.cs sibling partials.
-        // Each loader runs through the shared LoadDeferredTable<TInfo> envelope
-        // which logs success and swallows failures (logs once, returns empty dict).
-        switch (kind)
-        {
-            case GameDataTableKind.Talent:      cache = LoadTalents();      return cache is not null;
-            case GameDataTableKind.DamageAttr:  cache = LoadDamageAttrs();  return cache is not null;
-            case GameDataTableKind.Equip:       cache = LoadEquips();       return cache is not null;
-            case GameDataTableKind.Weapon:      cache = LoadWeapons();      return cache is not null;
-            case GameDataTableKind.Monster:     cache = LoadMonsters();     return cache is not null;
-            case GameDataTableKind.Npc:         cache = LoadNpcs();         return cache is not null;
-            case GameDataTableKind.Scene:       cache = LoadScenes();       return cache is not null;
-            case GameDataTableKind.Map:         cache = LoadMaps();         return cache is not null;
-            case GameDataTableKind.Quest:       cache = LoadQuests();       return cache is not null;
-            case GameDataTableKind.Dungeon:     cache = LoadDungeons();     return cache is not null;
-            case GameDataTableKind.Activity:    cache = LoadActivities();   return cache is not null;
-            case GameDataTableKind.Achievement: cache = LoadAchievements(); return cache is not null;
-            case GameDataTableKind.Title:       cache = LoadTitles();       return cache is not null;
-            case GameDataTableKind.Award:       cache = LoadAwards();       return cache is not null;
-            case GameDataTableKind.EquipRow:     cache = LoadEquipRows();      return cache is not null;
-            case GameDataTableKind.EquipAttrLib: cache = LoadEquipAttrLibs();  return cache is not null;
-            case GameDataTableKind.EquipSchoolAttrLib: cache = LoadEquipSchoolAttrLibs(); return cache is not null;
-            case GameDataTableKind.EquipEnchantItem: cache = LoadEquipEnchantItems(); return cache is not null;
-            case GameDataTableKind.EquipPart:    cache = LoadEquipSlotNames(); return cache is not null;
-            default:
-                cache = null!;
-                return false;
-        }
-    }
+        GameDataTableKind.Talent             => LoadTalents(),
+        GameDataTableKind.DamageAttr         => LoadDamageAttrs(),
+        GameDataTableKind.Equip              => LoadEquips(),
+        GameDataTableKind.Weapon             => LoadWeapons(),
+        GameDataTableKind.Monster            => LoadMonsters(),
+        GameDataTableKind.Npc                => LoadNpcs(),
+        GameDataTableKind.Scene              => LoadScenes(),
+        GameDataTableKind.Map                => LoadMaps(),
+        GameDataTableKind.Quest              => LoadQuests(),
+        GameDataTableKind.Dungeon            => LoadDungeons(),
+        GameDataTableKind.Activity           => LoadActivities(),
+        GameDataTableKind.Achievement        => LoadAchievements(),
+        GameDataTableKind.Title              => LoadTitles(),
+        GameDataTableKind.Award              => LoadAwards(),
+        GameDataTableKind.EquipRow           => LoadEquipRows(),
+        GameDataTableKind.EquipAttrLib       => LoadEquipAttrLibs(),
+        GameDataTableKind.EquipSchoolAttrLib => LoadEquipSchoolAttrLibs(),
+        GameDataTableKind.EquipEnchantItem   => LoadEquipEnchantItems(),
+        GameDataTableKind.EquipPart          => LoadEquipSlotNames(),
+        _ => null,
+    };
 
     private bool TryGetTable(Type tableBaseType, out object? table)
     {

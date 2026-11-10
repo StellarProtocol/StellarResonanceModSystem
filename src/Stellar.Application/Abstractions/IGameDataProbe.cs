@@ -24,6 +24,34 @@ internal interface IGameDataProbe
     /// next on the queue.
     /// </summary>
     bool TryLoadOne(GameDataTableKind kind, out object cache);
+
+    /// <summary>
+    /// Time-sliced form of <see cref="TryLoadEager"/>: does eager-batch work until <paramref name="deadline"/>
+    /// (a <see cref="System.Diagnostics.Stopwatch"/> timestamp) and returns <see cref="GameDataStep.Pending"/>
+    /// while work remains — call again next tick. <paramref name="snapshot"/> is valid only on
+    /// <see cref="GameDataStep.Done"/>. The default runs the whole batch in one call (fakes / old probes).
+    /// </summary>
+    GameDataStep StepEager(long deadline, out GameDataEagerSnapshot snapshot)
+        => TryLoadEager(out snapshot) ? GameDataStep.Done : GameDataStep.Failed;
+
+    /// <summary>
+    /// Time-sliced form of <see cref="TryLoadOne"/> for ONE deferred table: <see cref="GameDataStep.Pending"/>
+    /// until that table is complete; the caller keeps passing the same <paramref name="kind"/> until it is
+    /// not Pending. The default loads the table in one call.
+    /// </summary>
+    GameDataStep StepOne(GameDataTableKind kind, long deadline, out object cache)
+        => TryLoadOne(kind, out cache) ? GameDataStep.Done : GameDataStep.Failed;
+}
+
+/// <summary>Outcome of one time-sliced game-data load step.</summary>
+internal enum GameDataStep
+{
+    /// <summary>More work remains — call again on a later tick.</summary>
+    Pending,
+    /// <summary>Finished; the out value is valid.</summary>
+    Done,
+    /// <summary>Finished unsuccessfully; skip it (same as the one-shot <c>false</c>).</summary>
+    Failed,
 }
 
 /// <summary>

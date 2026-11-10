@@ -68,25 +68,46 @@ internal sealed partial class PandaInventoryPullReader
         }
     }
 
-    // Finds the parameterless GetEnumerator method on a map type, or null.
+    // Reflection handles per runtime Type, resolved ONCE per type for the process lifetime. Every map walk
+    // used to re-resolve them: GetEnumerator via GetMethods() (copies the proxy's whole method array — an
+    // Il2CppInterop proxy carries dozens), then MoveNext/Current, Key/Value and Dispose by name. The
+    // per-class loadout walk does ~8 small map walks per gear piece (roll maps) across every plan, so the
+    // lookups — not the handful of map entries — dominated it (raid 2026-11-10: fw:lo.perClass avg 20 ms,
+    // max 83 ms). A null value is cached too (a type that lacks the member never re-scans). Concurrent:
+    // these statics are shared by every reader instance, and a lookup must never tear.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, MethodInfo?> GetEnumeratorByType = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, (MethodInfo? MoveNext, PropertyInfo? Current)> EnumeratorMembersByType = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, (PropertyInfo? Key, PropertyInfo? Value)> KvpMembersByType = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, MethodInfo?> DisposeByType = new();
+
+    // Finds the parameterless GetEnumerator method on a map type, or null. Cached per type (see above).
     private static MethodInfo? FindParameterlessGetEnumerator(Type mapType)
-    {
-        foreach (var m in mapType.GetMethods(AnyInstance))
+        => GetEnumeratorByType.GetOrAdd(mapType, static t =>
         {
-            if (m.Name != "GetEnumerator") continue;
-            if (m.GetParameters().Length != 0) continue;
-            return m;
-        }
-        return null;
-    }
+            foreach (var m in t.GetMethods(AnyInstance))
+            {
+                if (m.Name != "GetEnumerator") continue;
+                if (m.GetParameters().Length != 0) continue;
+                return m;
+            }
+            return null;
+        });
+
+    private static (MethodInfo? MoveNext, PropertyInfo? Current) EnumeratorMembers(Type enumeratorType)
+        => EnumeratorMembersByType.GetOrAdd(enumeratorType, static t => (
+            t.GetMethod("MoveNext", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null),
+            t.GetProperty("Current", AnyInstance)));
+
+    private static (PropertyInfo? Key, PropertyInfo? Value) KvpMembers(Type kvpType)
+        => KvpMembersByType.GetOrAdd(kvpType, static t => (
+            t.GetProperty("Key", AnyInstance),
+            t.GetProperty("Value", AnyInstance)));
 
     // Walks a typed IL2CPP enumerator object, yielding (key, value) pairs from
     // its KeyValuePair-shaped Current. Disposes the enumerator when done.
     private static IEnumerable<(object? key, object? value)> EnumerateTypedKvp(object enumerator)
     {
-        var et = enumerator.GetType();
-        var moveNext = et.GetMethod("MoveNext", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null);
-        var current = et.GetProperty("Current", AnyInstance);
+        var (moveNext, current) = EnumeratorMembers(enumerator.GetType());
         if (moveNext is null || current is null)
         {
             TryDispose(enumerator);
@@ -108,8 +129,7 @@ internal sealed partial class PandaInventoryPullReader
             if (kvp is null) continue;
             if (keyProp is null)
             {
-                keyProp = kvp.GetType().GetProperty("Key", AnyInstance);
-                valueProp = kvp.GetType().GetProperty("Value", AnyInstance);
+                (keyProp, valueProp) = KvpMembers(kvp.GetType());
                 if (keyProp is null || valueProp is null) break;
             }
             object? k, v;
@@ -265,7 +285,10 @@ internal sealed partial class PandaInventoryPullReader
             try { d.Dispose(); } catch { /* ignore */ }
             return;
         }
-        var disposeMethod = maybeDisposable?.GetType().GetMethod("Dispose", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null);
+        if (maybeDisposable is null) return;
+        // The Il2Cpp Enumerator exposes Dispose() without implementing BCL IDisposable — cached per type.
+        var disposeMethod = DisposeByType.GetOrAdd(maybeDisposable.GetType(), static t =>
+            t.GetMethod("Dispose", AnyInstance, binder: null, types: Type.EmptyTypes, modifiers: null));
         if (disposeMethod is not null)
         {
             try { disposeMethod.Invoke(maybeDisposable, Array.Empty<object>()); } catch { /* ignore */ }
