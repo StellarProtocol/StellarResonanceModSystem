@@ -191,6 +191,8 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// behind the world-entry loading screen when there is one. A window only registered in the world, or one the loading
     /// screen didn't cover, is filled during play one window at a time, outside combat, seconds apart.</item>
     /// </list>
+    /// A window that is Visible but held hidden by <see cref="ShouldRender"/> and not drawn yet (a HUD waiting for a
+    /// target or combat) gets the fill too, so its first DRAWN apply no longer builds its Conditionals and lists.
     /// The fill ignores <see cref="ShouldRender"/> (it runs while the window is hidden), so value lambdas must be safe
     /// whenever the world is up — the same contract as any shown window. Register the window at plugin start-up (not
     /// lazily on first use) so the structure stage can reach it. Costs the built tree's memory for the session (a parked
