@@ -6,7 +6,8 @@ using Xunit;
 
 namespace Stellar.Application.Tests.Interop;
 
-// Il2CppInteropFastPath: the native sign-check stub in front of Il2CppInterop's Class_FromIl2CppType managed hook.
+// Il2CppInteropFastPath: the native sign-check stubs in front of Il2CppInterop's Class_FromIl2CppType and
+// MetadataCache_GetTypeInfoFromTypeDefinitionIndex managed hooks.
 // The patching itself only runs in game; these pin the byte-level pieces — the stub, the token sign rule, the Dobby
 // slot decoder and the trampoline jump-back check — and, on Windows x64, EXECUTE the stub against two native targets.
 public sealed unsafe class InteropFastPathCodeTests
@@ -182,6 +183,49 @@ public sealed unsafe class InteropFastPathCodeTests
         Assert.Equal(2000 + 1, call((long*)0, 1));
         Assert.Equal(2000 + 0, call((long*)0x20, 0));
         Assert.Equal(2000 + 1, call((long*)(InteropFastPathCode.StubMinPointer - 1), 1));
+    }
+
+    // ── Index stub (MetadataCache::GetTypeInfoFromTypeDefinitionIndex) ─────────────────────────────────────────────
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(int.MaxValue, true)]
+    [InlineData(-1, false)]
+    [InlineData(-3, false)]                    // first token InjectorHelpers.CreateClassToken mints (-2 decremented)
+    [InlineData(int.MinValue, false)]
+    public void Index_sign_rule_matches_the_managed_hook(int index, bool fast)
+        => Assert.Equal(fast, InteropFastPathCode.TakesIndexFastPath(index));
+
+    [Fact]
+    public void Index_stub_bytes_are_exact()
+    {
+        byte[] b = InteropFastPathCode.BuildIndexStub(0x1122334455667788, unchecked((long)0x99AABBCCDDEEFF00));
+        Assert.Equal(32, b.Length);
+        Assert.Equal(InteropFastPathCode.IndexStubLength, b.Length);
+        Assert.Equal(new byte[] { 0x85, 0xC9, 0x78, 0x0E, 0xFF, 0x25, 0, 0, 0, 0 }, b[..10]);   // test ecx,ecx; js; jmp [rip]
+        Assert.Equal(0x1122334455667788, BitConverter.ToInt64(b, InteropFastPathCode.IndexStubOriginalSlot));
+        Assert.Equal(new byte[] { 0xFF, 0x25, 0, 0, 0, 0 }, b[18..24]);
+        Assert.Equal(unchecked((long)0x99AABBCCDDEEFF00), BitConverter.ToInt64(b, InteropFastPathCode.IndexStubManagedSlot));
+        Assert.Equal(InteropFastPathCode.IndexStubManagedJmp, 4 + b[3]);   // js lands exactly on the second jmp
+    }
+
+    [UnmanagedCallersOnly] private static long IndexFast(int index) => 1_000_000L + index;
+    [UnmanagedCallersOnly] private static long IndexManaged(int index) => -1_000_000L + index;
+
+    [Fact]
+    public void Index_stub_routes_by_sign_and_passes_the_argument_through()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.ProcessArchitecture != Architecture.X64) return;
+        long fast = (long)(delegate* unmanaged<int, long>)&IndexFast;
+        long managed = (long)(delegate* unmanaged<int, long>)&IndexManaged;
+        IntPtr stub = ExecutableMemory.AllocCode(InteropFastPathCode.BuildIndexStub(fast, managed));
+        Assert.NotEqual(IntPtr.Zero, stub);
+        var call = (delegate* unmanaged<int, long>)stub;
+
+        Assert.Equal(1_000_000L + 0, call(0));
+        Assert.Equal(1_000_000L + 12345, call(12345));
+        Assert.Equal(1_000_000L + int.MaxValue, call(int.MaxValue));
+        Assert.Equal(-1_000_000L - 3, call(-3));
+        Assert.Equal(-1_000_000L + int.MinValue, call(int.MinValue));
     }
 
     [Fact]

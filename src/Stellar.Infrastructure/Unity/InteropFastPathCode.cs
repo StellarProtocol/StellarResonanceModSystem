@@ -5,7 +5,7 @@ namespace Stellar.Infrastructure.Unity;
 
 /// <summary>
 /// Pure byte-level logic behind <see cref="Il2CppInteropFastPath"/> — no IL2CPP, no process memory, so it is
-/// unit-testable: the x64 early-out stub, the token sign rule it encodes, and the decoders that find Dobby's
+/// unit-testable: the two x64 early-out stubs, the token sign rules they encode, and the decoders that find Dobby's
 /// detour pointer slot and confirm a trampoline jumps back into the hooked function.
 /// </summary>
 internal static class InteropFastPathCode
@@ -75,6 +75,48 @@ internal static class InteropFastPathCode
         BitConverter.GetBytes(original).CopyTo(b, StubOriginalSlot);
         new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, StubManagedJmp);
         BitConverter.GetBytes(managed).CopyTo(b, StubManagedSlot);
+        return b;
+    }
+
+    // ── Second stub: MetadataCache::GetTypeInfoFromTypeDefinitionIndex(int index) ─────────────────────────────────
+
+    /// <summary>
+    /// Routing rule of the index stub. Il2CppInterop's <c>MetadataCache_GetTypeInfoFromTypeDefinitionIndex_Hook.Hook</c>
+    /// looks the index up in <c>s_InjectedClasses</c> (keys = injected tokens, all ≤ -3) and otherwise calls
+    /// <c>Original(index)</c> with no other side effect. A non-negative index can never hit, so it goes straight to the
+    /// original; negative indices keep the managed lookup.
+    /// </summary>
+    public static bool TakesIndexFastPath(int index) => index >= 0;
+
+    /// <summary>Total index-stub length in bytes.</summary>
+    public const int IndexStubLength = 32;
+    /// <summary>Offset of the 8-byte absolute address of the original-function trampoline.</summary>
+    public const int IndexStubOriginalSlot = 10;
+    /// <summary>Offset of the second <c>jmp [rip+0]</c> (→ managed thunk) — the target of the early branch.</summary>
+    public const int IndexStubManagedJmp = 18;
+    /// <summary>Offset of the 8-byte absolute address of the managed hook's reverse-P/Invoke thunk.</summary>
+    public const int IndexStubManagedSlot = 24;
+
+    /// <summary>
+    /// x64 stub in front of the index hook (Win64 ABI: <c>ecx</c> = <c>TypeDefinitionIndex</c>, a 32-bit int):
+    /// <code>
+    ///  0: 85 C9                  test ecx, ecx            ; 32-bit test: the upper half of rcx is undefined for an int arg
+    ///  2: 78 0E                  js   managed (+14 → 18)  ; negative (injected token) → managed hook
+    ///  4: FF 25 00 00 00 00      jmp  [rip+0]             ; → original trampoline
+    /// 10: &lt;original abs64&gt;
+    /// 18: FF 25 00 00 00 00      jmp  [rip+0]             ; → managed thunk
+    /// 24: &lt;managed abs64&gt;
+    /// </code>
+    /// No memory is read (so there is no null-page fault class here, unlike <see cref="BuildStub"/>); only flags are
+    /// touched, the stack is untouched and both exits are tail jumps, so the callee sees the caller's exact state.
+    /// </summary>
+    public static byte[] BuildIndexStub(long original, long managed)
+    {
+        var b = new byte[IndexStubLength];
+        new byte[] { 0x85, 0xC9, 0x78, 0x0E, 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, 0);
+        BitConverter.GetBytes(original).CopyTo(b, IndexStubOriginalSlot);
+        new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, IndexStubManagedJmp);
+        BitConverter.GetBytes(managed).CopyTo(b, IndexStubManagedSlot);
         return b;
     }
 

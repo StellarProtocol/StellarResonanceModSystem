@@ -39,7 +39,7 @@ internal sealed class UnityTickHost
         StellarTicker.OnStart = () =>
         {
             _pacer.Start(Time.realtimeSinceStartup);
-            // Second chance for the FromIl2CppType fast path if Il2CppInterop's hook didn't exist at boot. No-op otherwise.
+            // Second chance for the interop fast-path stubs if Il2CppInterop's hooks didn't exist at boot. No-op otherwise.
             Il2CppInteropFastPath.RetryIfPending(_log);
         };
         StellarTicker.OnTick = FireScheduled;
