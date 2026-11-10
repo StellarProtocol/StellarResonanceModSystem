@@ -27,12 +27,26 @@ public sealed unsafe class InteropFastPathCodeTests
     {
         byte[] b = InteropFastPathCode.BuildStub(0x1122334455667788, unchecked((long)0x99AABBCCDDEEFF00));
         Assert.Equal(InteropFastPathCode.StubLength, b.Length);
-        Assert.Equal(new byte[] { 0x48, 0x8B, 0x01, 0x48, 0x85, 0xC0, 0x78, 0x0E, 0xFF, 0x25, 0, 0, 0, 0 }, b[..14]);
+        Assert.Equal(45, b.Length);
+        Assert.Equal(new byte[]
+        {
+            0x48, 0x81, 0xF9, 0x00, 0x00, 0x01, 0x00,   // cmp rcx, 0x10000
+            0x72, 0x16,                                 // jb  managed
+            0x48, 0x8B, 0x01,                           // mov rax, [rcx]
+            0x48, 0x85, 0xC0,                           // test rax, rax
+            0x78, 0x0E,                                 // js  managed
+            0xFF, 0x25, 0, 0, 0, 0,                     // jmp [rip] → original
+        }, b[..23]);
+        Assert.Equal(23, InteropFastPathCode.StubOriginalSlot);
         Assert.Equal(0x1122334455667788, BitConverter.ToInt64(b, InteropFastPathCode.StubOriginalSlot));
-        Assert.Equal(new byte[] { 0xFF, 0x25, 0, 0, 0, 0 }, b[22..28]);
+        Assert.Equal(new byte[] { 0xFF, 0x25, 0, 0, 0, 0 }, b[31..37]);
+        Assert.Equal(37, InteropFastPathCode.StubManagedSlot);
         Assert.Equal(unchecked((long)0x99AABBCCDDEEFF00), BitConverter.ToInt64(b, InteropFastPathCode.StubManagedSlot));
-        // js rel8 lands exactly on the second jmp: 8 + 0x0E = 22.
-        Assert.Equal(22, 8 + b[7]);
+        // Both early branches land exactly on the second jmp: jb 9 + 0x16 = 31, js 17 + 0x0E = 31.
+        Assert.Equal(InteropFastPathCode.StubManagedJmp, 9 + b[8]);
+        Assert.Equal(InteropFastPathCode.StubManagedJmp, 17 + b[16]);
+        // The cmp imm32 is the null-page bound.
+        Assert.Equal(InteropFastPathCode.StubMinPointer, BitConverter.ToInt32(b, 3));
     }
 
     // ── Dobby slot decoder over a fake address space ───────────────────────────────────────────────────────────────
@@ -150,6 +164,24 @@ public sealed unsafe class InteropFastPathCodeTests
         type[0] = 0;                Assert.Equal(1000 + 0, call(type, 0));
         type[0] = -2;               Assert.Equal(2000 + 1, call(type, 1));
         type[0] = long.MinValue;    Assert.Equal(2000 + 0, call(type, 0));
+    }
+
+    // Regression: GetAttr<object> → il2cpp_class_get_type(NULL) = 0x20 reached Class::FromIl2CppType. The stub must NOT
+    // dereference such a pointer (a native AV failfasts the process); it routes to the managed hook, which faults
+    // catchably. If the stub read [rcx] here, this test would crash the test host instead of failing.
+    [Fact]
+    public void Stub_routes_null_page_pointers_to_managed_without_reading_them()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.ProcessArchitecture != Architecture.X64) return;
+        long fast = (long)(delegate* unmanaged<long*, int, long>)&FastTarget;
+        long managed = (long)(delegate* unmanaged<long*, int, long>)&ManagedTarget;
+        IntPtr stub = ExecutableMemory.AllocCode(InteropFastPathCode.BuildStub(fast, managed));
+        Assert.NotEqual(IntPtr.Zero, stub);
+        var call = (delegate* unmanaged<long*, int, long>)stub;
+
+        Assert.Equal(2000 + 1, call((long*)0, 1));
+        Assert.Equal(2000 + 0, call((long*)0x20, 0));
+        Assert.Equal(2000 + 1, call((long*)(InteropFastPathCode.StubMinPointer - 1), 1));
     }
 
     [Fact]

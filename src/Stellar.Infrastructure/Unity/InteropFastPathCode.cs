@@ -22,33 +22,50 @@ internal static class InteropFastPathCode
     /// </summary>
     public static bool TakesFastPath(long typeData) => typeData >= 0;
 
+    /// <summary>
+    /// Pointers below this are never dereferenced by the stub — they go to the managed hook instead. Windows never
+    /// maps the first 64 KB, so a bogus <c>Il2CppType*</c> there (e.g. <c>il2cpp_class_get_type(NULL)</c> = 0x20,
+    /// reached via <c>Il2CppClassPointerStore&lt;System.Object&gt;</c> when a plugin calls
+    /// <c>MakeGenericMethod(typeof(object))</c> on a game generic) must fault in MANAGED code: there the read is a
+    /// catchable NullReferenceException, whereas a fault inside this native stub is an AccessViolationException →
+    /// CoreCLR corrupted-state failfast, i.e. the game dies.
+    /// </summary>
+    public const long StubMinPointer = 0x10000;
+
     /// <summary>Total stub length in bytes.</summary>
-    public const int StubLength = 36;
+    public const int StubLength = 45;
     /// <summary>Offset of the 8-byte absolute address of the original-function trampoline.</summary>
-    public const int StubOriginalSlot = 14;
+    public const int StubOriginalSlot = 23;
+    /// <summary>Offset of the second <c>jmp [rip+0]</c> (→ managed thunk) — the target of both early branches.</summary>
+    public const int StubManagedJmp = 31;
     /// <summary>Offset of the 8-byte absolute address of the managed hook's reverse-P/Invoke thunk.</summary>
-    public const int StubManagedSlot = 28;
+    public const int StubManagedSlot = 37;
 
     /// <summary>
     /// x64 stub placed in front of the managed hook (Win64 ABI: <c>rcx</c> = <c>Il2CppType*</c>, <c>dl</c> = throwOnError):
     /// <code>
-    ///  0: 48 8B 01             mov  rax, [rcx]          ; type->data (offset 0)
-    ///  3: 48 85 C0             test rax, rax
-    ///  6: 78 0E                js   managed (+14 → 22)  ; negative token → managed hook
-    ///  8: FF 25 00 00 00 00    jmp  [rip+0]             ; → original trampoline
-    /// 14: &lt;original abs64&gt;
-    /// 22: FF 25 00 00 00 00    jmp  [rip+0]             ; → managed thunk
-    /// 28: &lt;managed abs64&gt;
+    ///  0: 48 81 F9 00 00 01 00   cmp  rcx, 0x10000
+    ///  7: 72 16                  jb   managed (+22 → 31)  ; null-page pointer → managed hook (faults catchably there)
+    ///  9: 48 8B 01               mov  rax, [rcx]          ; type->data (offset 0)
+    /// 12: 48 85 C0               test rax, rax
+    /// 15: 78 0E                  js   managed (+14 → 31)  ; negative token → managed hook
+    /// 17: FF 25 00 00 00 00      jmp  [rip+0]             ; → original trampoline
+    /// 23: &lt;original abs64&gt;
+    /// 31: FF 25 00 00 00 00      jmp  [rip+0]             ; → managed thunk
+    /// 37: &lt;managed abs64&gt;
     /// </code>
-    /// Only <c>rax</c> and flags are touched (both volatile), the stack is untouched and both exits are tail jumps,
+    /// Only <c>rax</c> and flags are touched (both volatile), the stack is untouched and every exit is a tail jump,
     /// so the callee sees exactly the caller's registers and return address — the argument registers
-    /// (including the full <c>edx</c>) pass through verbatim.
+    /// (including the full <c>edx</c>) pass through verbatim. <c>jb</c> is the unsigned compare, so only the
+    /// low null-page range is diverted; any user-mode pointer above it takes the original sign-check path.
     /// </summary>
     public static byte[] BuildStub(long original, long managed)
     {
         var b = new byte[StubLength];
         byte[] head =
         {
+            0x48, 0x81, 0xF9, 0x00, 0x00, 0x01, 0x00,
+            0x72, 0x16,
             0x48, 0x8B, 0x01,
             0x48, 0x85, 0xC0,
             0x78, 0x0E,
@@ -56,7 +73,7 @@ internal static class InteropFastPathCode
         };
         head.CopyTo(b, 0);
         BitConverter.GetBytes(original).CopyTo(b, StubOriginalSlot);
-        new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, 22);
+        new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, StubManagedJmp);
         BitConverter.GetBytes(managed).CopyTo(b, StubManagedSlot);
         return b;
     }

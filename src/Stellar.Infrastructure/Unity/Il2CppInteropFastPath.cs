@@ -17,9 +17,10 @@ namespace Stellar.Infrastructure.Unity;
 /// <c>Il2CppType.data</c>) need the managed code — measured ~10–12% of the raid main thread (~4–5 ms/frame).
 /// </para>
 /// <para>
-/// Fix: a 36-byte native stub (<see cref="InteropFastPathCode.BuildStub"/>) that tests the sign of <c>type-&gt;data</c>
+/// Fix: a 45-byte native stub (<see cref="InteropFastPathCode.BuildStub"/>) that tests the sign of <c>type-&gt;data</c>
 /// and jumps either to the ORIGINAL function's trampoline (non-negative: what the managed hook would have done anyway)
-/// or to the managed hook's thunk (negative: unchanged path). Installed by swapping Dobby's detour pointer slot from the
+/// or to the managed hook's thunk (negative: unchanged path). A null-page <c>type</c> pointer is never dereferenced
+/// natively — it goes to the managed hook so its fault stays a catchable NRE, not a process-killing AV. Installed by swapping Dobby's detour pointer slot from the
 /// managed thunk to the stub with one atomic compare-and-swap. Every address is cross-checked first; any mismatch or
 /// exception skips with one log line and leaves the original detour in place. Same family as
 /// <see cref="Il2CppClassInitFix"/> (reflective repair of Il2CppInterop's injector internals).
