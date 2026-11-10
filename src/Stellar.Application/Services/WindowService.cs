@@ -180,9 +180,11 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     private void TickEntry(Entry e, bool applyNow)
     {
+        if (e.Visible && e.BgWarming) EndFillForRealShow(e);   // WindowSpec.Prebuild: the user opened it mid-fill (.Prebuild.cs)
         // Hidden: park and drop any pending auto-focus (a user-show armed it, then hid before it ever activated —
         // don't let it fire on some later unrelated activation). It's re-armed on the next SetVisible rising edge.
-        if (!e.Visible)
+        // A prebuild fill (BgWarming) keeps a hidden window live: mounted and applied off-screen, never shown (.Prebuild.cs).
+        if (!e.Visible && !e.BgWarming)
         {
             e.AutoFocusPending = false; e.ActivateOnShow = false; ParkOrDestroy(e);
             if (applyNow) RefreshParked(e);
@@ -199,7 +201,10 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             e.ActivateOnShow = false;
             if (e.Topmost != e.Reg.Spec.Topmost) _order?.SetTopmost(e.Token, e.Topmost);
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
-            ApplySavedRect(e);   // restore saved position (or DefaultRect) — WindowService.Layout (may defer)
+            // Restore saved position (or DefaultRect) — WindowService.Layout (may defer). A prebuild fill mount restores the
+            // position only: the persisted show/hide waits for the first real show (VisRestoreOwed), so it can never show it.
+            ApplySavedRect(e, applyVisibility: e.Visible);
+            e.VisRestoreOwed = !e.Visible;
             // A click-away popup placed BEFORE its first mount (Entry.SetRect while Token was null): apply that rect now,
             // over the saved one and before the first paint, so it never shows a frame at its old position.
             if (e.PendingRect is { } pending) { e.PendingRect = null; e.SetRect(pending); }
@@ -215,13 +220,14 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             if (e.ActivateOnShow) _order?.Activate(e.Token);
         }
         e.ActivateOnShow = false;   // visible + mounted: a hide→show within one tick never actually hid it
+        if (e.Visible && e.Reg.Spec.Prebuild) { e.PrebuildFilled = true; if (e.VisRestoreOwed) { RestoreOwedVisibility(e); if (!e.Visible) return; } }
         // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
         // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
         // that scale is live so the saved rect clamps against the correct canvas-unit bound.
         if (e.ApplyPending && CanvasScaleReady) ApplySavedRect(e, e.PendingApplyVisibility);
         if (applyNow || e.Dirty) { SafeApply(e); e.Dirty = false; }
         if (e.AutoFocusPending) TryAutoFocus(e);   // re-show (unpark) or a retry after the GO wasn't active yet
-        if (applyNow) PersistIfSettled(e);   // save the rect once a titlebar drag settles
+        if (applyNow && !e.BgWarming) PersistIfSettled(e);   // save the rect once a titlebar drag settles
     }
 
     // Consume a pending user-show auto-focus (armed on the rising edge of Visible in Entry.SetVisible, for a window
@@ -306,7 +312,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     public void DisposeAll() { foreach (var e in _windows.Values) DestroyIfMounted(e); _windows.Clear(); }
 
-    private sealed class Entry : IWindowControl, IWindowTopmost
+    private sealed partial class Entry : IWindowControl, IWindowTopmost
     {
         public Entry(WindowRegistration reg) { Reg = reg; Topmost = reg.Spec.Topmost; }
         public WindowRegistration Reg { get; }
@@ -331,7 +337,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // [Hitch] bucket names (mount/apply/destroy/hidden background apply), built once per window on first use.
         private string[]? _hitchKeys;
         public string HitchKey(int kind)
-            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id, "bgapply:" + Reg.Spec.Id })[kind];
+            => (_hitchKeys ??= new[] { "mount:" + Reg.Spec.Id, "apply:" + Reg.Spec.Id, "destroy:" + Reg.Spec.Id, "bgapply:" + Reg.Spec.Id, "prebuild:" + Reg.Spec.Id })[kind];
         public bool IsShown => Token != null && Visible;
         public void MarkDirty() => Dirty = true;
         public void SetVisible(bool visible)

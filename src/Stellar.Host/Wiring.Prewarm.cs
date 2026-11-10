@@ -69,3 +69,26 @@ public sealed partial class BootstrapPlugin
         return _clientLanguage?.IsKnown != false || _clientState.Phase >= GamePhase.CharSelect;
     }
 }
+
+// WindowSpec.Prebuild for PLUGIN windows (WindowService.Prebuild.cs): the framework drives it because plugin ticks are
+// IsWorldActive-gated and never run at the login screen. This only gathers the environment; the stage rules are
+// WindowPrebuildRules (pure, unit-tested).
+public sealed partial class BootstrapPlugin
+{
+    // Pumped from TickOverlayServices right BEFORE WindowService.Tick (un-gated band, every phase): a fill started or
+    // ended here is mounted / parked by the same tick.
+    private void PumpPluginPrebuilds(float deltaSeconds)
+    {
+        if (_windowService == null || _clientState == null) return;
+        var phase = _clientState.Phase;
+        var stage = Stellar.Application.Services.WindowPrebuildRules.StageFor(phase, _clientState.IsWorldActive,
+            _windowService.CanvasScaleReady, _clientLanguage?.IsKnown != false);
+        var gate = new Stellar.Application.Services.PrebuildGate(stage,
+            InWorld: phase == GamePhase.World,
+            BehindLoading: (_clientState.UiState & GameUIState.Loading) != 0,
+            InCombat: _combatState?.LocalPlayerInCombat ?? false,
+            // The launcher / Settings hub warm-up is mid-build: start no plugin build on the same frames.
+            Busy: _launcherPrewarm.Warming || _hubPrewarm.Warming);
+        _windowService.TickPrebuilds(gate, deltaSeconds);
+    }
+}
