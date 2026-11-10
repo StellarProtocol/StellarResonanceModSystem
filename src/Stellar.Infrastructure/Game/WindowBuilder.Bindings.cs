@@ -91,7 +91,7 @@ internal sealed partial class WindowBuilder
             }
             var s = TextFn();
             if (ThaiTmp && s != _last && ShowThai(s)) return;
-            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
+            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (a one-tick overflow on a shrink).
             var fitToRect = EllipsizeToRect || MaxLines > 0;
             float rw = fitToRect ? C.rectTransform.rect.width : 0f;
             if (s != _last || (fitToRect && Math.Abs(rw - _fittedW) > 0.5f))
