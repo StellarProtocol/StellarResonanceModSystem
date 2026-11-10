@@ -270,6 +270,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
         if (_scheduler is not null)
             _scheduler.MasterRateChanged += hz => _tickHost?.Reschedule(hz);
         _tickHost.Install(RunFrameworkTick);
+        // Il2CppInterop's Class::FromIl2CppType hook exists by now (StellarTicker / any plugin injection applied it):
+        // put the native sign-check stub in front of it so real game types stop round-tripping through managed code.
+        Stellar.Infrastructure.Unity.Il2CppInteropFastPath.TryInstall(log);
     }
 
     // Phase E: the perf overlay is a uGUI window (registered in WirePhase9Ui once _windowService
