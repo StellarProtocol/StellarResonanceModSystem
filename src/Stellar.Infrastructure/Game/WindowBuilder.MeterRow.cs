@@ -121,7 +121,7 @@ internal sealed partial class WindowBuilder
             BarFillRect = fillRect, BarFillImg = fillImg, BarShieldImg = barShield, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
-            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo,
+            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo, FillMask = fillRect.GetComponent<RectMask2D>(),
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });
@@ -328,13 +328,13 @@ internal sealed partial class WindowBuilder
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
         var track = bar.AddComponent<Image>(); track.color = MeterTrackBg; track.raycastTarget = false;
 
-        // Filled region = a width-clipped container (anchorMax.x = fraction) with a RectMask2D, so the role
-        // fill AND the scrolling sheen are clipped to the filled width — the IMGUI GUI.BeginClip(fill) analog.
+        // Filled region = a width-sized container (anchorMax.x = fraction). The flat, spriteless fill is STRETCHED to it,
+        // so the fill needs no clip; only the scrolling sheen does — BuildMeterSheen puts the RectMask2D on this
+        // container (the IMGUI GUI.BeginClip(fill) analog) and the binding disables it with the band (HideSheen).
         var clipGo = UGuiPrimitives.NewChild("FillClip", bar.transform);
         var clipRt = clipGo.GetComponent<RectTransform>();
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.anchorMax = new Vector2(1f, 1f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillImg = AddStretchedImage(clipGo.transform, "Fill", Color.clear, ignoreLayout: false);
 
