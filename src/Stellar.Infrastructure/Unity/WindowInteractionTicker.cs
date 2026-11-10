@@ -53,7 +53,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     // The row binding adds/removes its cell as clickability flips, so only clickable cells sit here; every
     // other row's drag behaviour is byte-identical.
     internal readonly List<RectTransform> VoiceClickRects = new();
-    private readonly List<bool> _hoverState = new();
+    // Per-hover-cell state (+ cached GameObject) lives in .Hover.cs (_hoverSlots, parallel to Hovers).
     private const float PulseSpeed = 2.6f;                  // radians/sec — matches the old IMGUI GlowPulseSpeed
     private int _activeDrag = -1;
     private RectTransform? _activeWinDrag;
@@ -86,7 +86,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = DragAreas.Count - 1; i >= 0; i--) if (DragAreas[i].Area == null) DragAreas.RemoveAt(i);
         for (var i = DragWindows.Count - 1; i >= 0; i--) if (DragWindows[i].Handle == null || DragWindows[i].Target == null) DragWindows.RemoveAt(i);
         for (var i = DragResizers.Count - 1; i >= 0; i--) if (DragResizers[i].Grip == null || DragResizers[i].Target == null) DragResizers.RemoveAt(i);
-        for (var i = Hovers.Count - 1; i >= 0; i--) if (Hovers[i].Cell == null) { Hovers.RemoveAt(i); if (i < _hoverState.Count) _hoverState.RemoveAt(i); }
+        for (var i = Hovers.Count - 1; i >= 0; i--) if (Hovers[i].Cell == null) RemoveHoverAt(i);   // + its parallel slot (.Hover.cs)
         for (var i = DragSlots.Count - 1; i >= 0; i--) if (DragSlots[i].Cell == null) DragSlots.RemoveAt(i);
         for (var i = RightClicks.Count - 1; i >= 0; i--) if (RightClicks[i].Cell == null) RightClicks.RemoveAt(i);
         for (var i = Dismissables.Count - 1; i >= 0; i--) if (Dismissables[i].Root == null) Dismissables.RemoveAt(i);
@@ -103,7 +103,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
             EndSlotDrag(commit: false);
     }
 
-    // TickHoversAndPulses lives in WindowInteractionTicker.Hover.cs.
+    // TickHoversAndPulses (gated hover pass + pulses) lives in WindowInteractionTicker.Hover.cs.
 
     private void SyncUiScale()
     {
@@ -115,6 +115,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         if (Mathf.Abs(u - _appliedUiScale) < 0.001f) return;
         _appliedUiScale = u;
         _scaler.referenceResolution = Stellar.Infrastructure.Game.WindowRenderer.UiRefResolution(u);
+        _hoverGate.MarkDirty();   // every window re-scales under the pointer
     }
 
     private void Update()
