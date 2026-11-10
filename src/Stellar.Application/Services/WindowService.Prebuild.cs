@@ -20,6 +20,10 @@ namespace Stellar.Application.Services;
 // Stale content: a filled window whose PrebuildSignature moved while hidden is filled again (ContentWatch, the
 // launcher's re-warm rule), and a new login into the world (InWorld rising edge) re-queues every fill.
 // A real open mid-fill takes over (EndFillForRealShow): warm off, activated on top, moved home by its next apply.
+// Also covered: a window that is Visible but held hidden by its ShouldRender and never drawn yet (a HUD that waits for a
+// target / combat — targetlens.bufflist firstshow 74 ms, statinspector.mini-hud 45 ms in the 11-10 log). Hidden windows
+// skip their apply, so its Conditionals and lists were built on the first DRAWN apply; the fill does that off-screen.
+// Its takeover is ShouldRender turning true, not SetVisible.
 internal sealed partial class WindowService
 {
     private Entry? _filling;          // the one window being filled (off-screen), or null
@@ -54,14 +58,16 @@ internal sealed partial class WindowService
         }
     }
 
-    private static bool Wants(Entry e) => e.Reg.Spec.Prebuild && !e.Removed && !e.Visible;
+    // Hidden (structure-built, parked or not mounted yet), or Visible-but-not-drawn and mounted (ShouldRender false).
+    private bool Wants(Entry e)
+        => e.Reg.Spec.Prebuild && !e.Removed && !e.Drawn && (!e.Visible || (e.Token != null && _renderer.IsAlive(e.Token)));
 
     private void TryStructureMount()
     {
         if (_renderer is not IWindowStructureMount sm) return;
         foreach (var e in _windows.Values)
         {
-            if (!Wants(e) || (e.Token != null && _renderer.IsAlive(e.Token)) || e.StructureFailed) continue;
+            if (!e.Reg.Spec.Prebuild || e.Removed || e.Visible || e.StructureFailed || (e.Token != null && _renderer.IsAlive(e.Token))) continue;
             var hitchT = HitchProbe.Begin();
             e.Token = sm.MountStructure(e.Reg);
             if (hitchT != 0L) HitchProbe.End(e.HitchKey(4), hitchT);
@@ -79,7 +85,7 @@ internal sealed partial class WindowService
         foreach (var e in _windows.Values)
         {
             if (!Wants(e) || e.PrebuildFilled) continue;
-            _log.Info($"[Prebuild] {e.Reg.Spec.Id}: fill {(e.Token == null ? "(mount)" : "(structure built)")} "
+            _log.Info($"[Prebuild] {e.Reg.Spec.Id}: fill {(e.Token == null ? "(mount)" : e.Visible ? "(held hidden by ShouldRender)" : "(built, hidden)")} "
                 + $"{(behindLoading ? "behind the loading screen" : "in play")}{(e.FillReason != null ? " — " + e.FillReason : "")}");
             e.FillReason = null;
             warm.SetBackgroundWarm(e.Reg.Spec.Id, true);   // before the mount / un-park: it lands off-screen
@@ -108,7 +114,7 @@ internal sealed partial class WindowService
         _filling = null; _sinceFill = 0f;
     }
 
-    // ~2/s: a filled, hidden window whose content moved gets filled again. Shown → its bindings keep it current, so the
+    // ~2/s: a filled, undrawn window whose content moved gets filled again. Drawn → its bindings keep it current, so the
     // signature just becomes the new baseline (ContentWatch).
     private void SampleSignatures(float dt)
     {
@@ -117,7 +123,7 @@ internal sealed partial class WindowService
         foreach (var e in _windows.Values)
         {
             if (!e.Reg.Spec.Prebuild || e.Removed || !e.PrebuildFilled || e.Reg.Spec.PrebuildSignature == null) continue;
-            var shown = e.IsShown;
+            var shown = e.Drawn;
             if (!e.Watch.Changed(Signature(e), shown) || shown) continue;
             e.PrebuildFilled = false; e.FillReason = "content changed while hidden";
         }
@@ -129,14 +135,45 @@ internal sealed partial class WindowService
         try { return e.Reg.Spec.PrebuildSignature?.Invoke() ?? 0; } catch { return e.Watch.Baseline; }
     }
 
-    // TickEntry, a window shown while it was being filled: the user's open wins. Warm off (the next apply moves it home —
-    // a real show from the renderer's view, so [UiPerf] winshow from=first), on top as if just opened, repaint now.
+    // TickEntry: a filling window that is Visible AND would draw now (its ShouldRender passes) takes over — the open wins.
+    // Visible but still suppressed keeps filling (it isn't on screen either way).
+    private bool FillTakenOver(Entry e)
+    {
+        if (!e.BgWarming || !e.Visible) return false;
+        try { if (WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec)) return false; } catch { return false; }
+        EndFillForRealShow(e);
+        return true;
+    }
+
+    // Warm off (the next apply moves it home — a real show from the renderer's view, so [UiPerf] winshow from=first) and
+    // repaint now. A SetVisible(true) during the fill (ActivateOnShow kept armed meanwhile) puts it on top as if just
+    // opened; a ShouldRender flip on an already-Visible window never re-activated before, so it doesn't now either.
     private void EndFillForRealShow(Entry e)
     {
         (_renderer as IWindowBackgroundWarm)?.SetBackgroundWarm(e.Reg.Spec.Id, false);
         e.BgWarming = false; e.PrebuildFilled = true; e.Dirty = true;
-        if (e.Token != null && _renderer.IsAlive(e.Token)) _order?.Activate(e.Token);
+        if (e.ActivateOnShow && e.Token != null && _renderer.IsAlive(e.Token)) _order?.Activate(e.Token);
         e.ActivateOnShow = false;
+    }
+
+    // TickEntry, a Visible mounted window: spend ActivateOnShow — except mid-fill, so the takeover can still put a
+    // SetVisible(true) window on top — and run the persisted show/hide restore a prebuild mount owes. True = that restore
+    // hid it: stop this tick (the next one parks it, as a cold mount's restore did).
+    private bool SettleShowFlags(Entry e)
+    {
+        if (e.BgWarming) return false;
+        e.ActivateOnShow = false;
+        if (!e.VisRestoreOwed || !e.Visible) return false;
+        RestoreOwedVisibility(e);
+        return !e.Visible;
+    }
+
+    // SafeApply: what this apply did (a fill's apply doesn't count). Drawn → current bindings → counts as filled.
+    private static void NoteDrawn(Entry e, bool drawn)
+    {
+        if (e.BgWarming) return;
+        e.Drawn = drawn;
+        if (drawn && e.Reg.Spec.Prebuild) e.PrebuildFilled = true;
     }
 
     // TickEntry, first real show of a window a prebuild mounted: the persisted show/hide restore a normal mount does
@@ -157,6 +194,7 @@ internal sealed partial class WindowService
         public bool VisRestoreOwed;   // mounted by a prebuild: RestoreOwedVisibility on the first real show
         public bool StructureFailed;  // MountStructure returned null: leave it to the fill
         public string? FillReason;    // for the "[Prebuild] <id>: fill" log line
+        public bool Drawn;            // the last apply drew it (on screen); false while parked / suppressed / unmounted
         public readonly ContentWatch Watch = new();
     }
 }

@@ -41,13 +41,14 @@ public sealed class WindowPrebuildTests
         public bool IsBackgroundWarmDone(string windowId) => Done;
     }
 
-    private static (WindowService svc, Renderer r, IWindowControl h) Rig(bool prebuild = true, System.Func<int>? sig = null)
+    private static (WindowService svc, Renderer r, IWindowControl h) Rig(bool prebuild = true, System.Func<int>? sig = null,
+        System.Func<bool>? render = null, bool startVisible = false)
     {
         var r = new Renderer();
         var svc = new WindowService(r, new NullLog());
         svc.AttachLayout(new LayoutStorage(new Config(), new NullLog()), () => Res);
         var spec = new WindowSpec("w", "", new WindowRect(10, 10, 100, 100), WindowCategory.Tools, WindowPanelStyle.GlassMenu)
-            { StartVisible = false, ShouldRender = () => true, Prebuild = prebuild, PrebuildSignature = sig };
+            { StartVisible = startVisible, ShouldRender = render ?? (() => true), Prebuild = prebuild, PrebuildSignature = sig };
         return (svc, r, svc.Register(new WindowRegistration(spec, new TextElement(() => "x"))));
     }
 
@@ -175,6 +176,24 @@ public sealed class WindowPrebuildTests
         r.Calls.Clear();
         Step(svc, Loading, 6);
         Assert.Contains("warm:True", r.Calls);
+    }
+
+    [Fact]
+    public void Visible_window_held_hidden_by_ShouldRender_is_filled_until_it_draws()
+    {
+        var draw = false;
+        var (svc, r, h) = Rig(render: () => draw, startVisible: true);
+        Step(svc, Title);   // Visible: the normal path mounts it (suppressed); no structure stage for it
+        Assert.Equal(new[] { "mount", "apply" }, r.Calls.ToArray());
+        r.Calls.Clear(); r.Done = false;
+        Step(svc, Loading, 2);
+        Assert.Equal(new[] { "warm:True", "apply:bg", "apply:bg" }, r.Calls.ToArray());
+        r.Calls.Clear();
+        draw = true; Step(svc, Loading);   // ShouldRender turns true: the draw wins, no re-activation (not a SetVisible)
+        Assert.Equal(new[] { "warm:False", "apply" }, r.Calls.ToArray());
+        r.Calls.Clear();
+        draw = false; Step(svc, Loading, 10);   // drawn once → filled; hidden again by ShouldRender → no refill
+        Assert.DoesNotContain("warm:True", r.Calls);
     }
 
     [Fact]

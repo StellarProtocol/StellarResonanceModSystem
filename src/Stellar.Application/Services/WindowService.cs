@@ -180,13 +180,13 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     private void TickEntry(Entry e, bool applyNow)
     {
-        if (e.Visible && e.BgWarming) EndFillForRealShow(e);   // WindowSpec.Prebuild: the user opened it mid-fill (.Prebuild.cs)
+        FillTakenOver(e);   // WindowSpec.Prebuild: opened (and drawable) mid-fill → the open wins (.Prebuild.cs)
         // Hidden: park and drop any pending auto-focus (a user-show armed it, then hid before it ever activated —
         // don't let it fire on some later unrelated activation). It's re-armed on the next SetVisible rising edge.
         // A prebuild fill (BgWarming) keeps a hidden window live: mounted and applied off-screen, never shown (.Prebuild.cs).
         if (!e.Visible && !e.BgWarming)
         {
-            e.AutoFocusPending = false; e.ActivateOnShow = false; ParkOrDestroy(e);
+            e.AutoFocusPending = false; e.ActivateOnShow = false; e.Drawn = false; ParkOrDestroy(e);
             if (applyNow) RefreshParked(e);
             return;
         }
@@ -219,8 +219,8 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             // (SetVisibleRestore: layout/slot/startup visibility) keeps the window's old place.
             if (e.ActivateOnShow) _order?.Activate(e.Token);
         }
-        e.ActivateOnShow = false;   // visible + mounted: a hide→show within one tick never actually hid it
-        if (e.Visible && e.Reg.Spec.Prebuild) { e.PrebuildFilled = true; if (e.VisRestoreOwed) { RestoreOwedVisibility(e); if (!e.Visible) return; } }
+        // Visible + mounted: a hide→show within one tick never actually hid it (ActivateOnShow spent; .Prebuild.cs rules).
+        if (SettleShowFlags(e)) return;
         // Deferred layout apply: a mount that landed before the CanvasScaler settled (boot / scene-change canvas
         // recreate) parked the real placement to avoid clamping against the transient default scale. Re-run it now
         // that scale is live so the saved rect clamps against the correct canvas-unit bound.
@@ -261,6 +261,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         bool hide;
         try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
         catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
+        NoteDrawn(e, !hide);   // WindowSpec.Prebuild bookkeeping (.Prebuild.cs)
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         var hitchT = HitchProbe.Begin();
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
@@ -295,7 +296,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
 
     private void DestroyIfMounted(Entry e)
     {
-        e.Parked = false;
+        e.Parked = false; e.Drawn = false;
         if (e.Token is null) return;
         var hitchT = HitchProbe.Begin();
         _renderer.Destroy(e.Token);
