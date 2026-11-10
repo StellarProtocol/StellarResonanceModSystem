@@ -179,6 +179,32 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// content-fit, as before. Init-only → binary-safe (no plugin rebuild).</summary>
     public bool FixedHeight { get; init; }
 
+    /// <summary>Build this window ahead of its first open, at moments where a freeze doesn't matter, so the first open
+    /// is a plain re-show instead of a 100-400 ms build. Meant for big windows the player opens by hand (hubs, confirm
+    /// dialogs, chat, meters) that start hidden. The window stays hidden throughout (<c>IsShown</c> false), never takes
+    /// clicks or hover, and its z-order is untouched. Two stages, both framework-driven:
+    /// <list type="number">
+    /// <item><b>Structure</b> at the login / character-select screen: the element tree is built WITHOUT pulling any
+    /// values. Only build-time callbacks run there (button <c>Label</c>/<c>Icon</c>, slider <c>Get</c>, the
+    /// <c>TitleProvider</c>) — keep those free of game-state reads.</item>
+    /// <item><b>Fill</b> once in the world: one normal apply off-screen (every value lambda, Conditional and list),
+    /// behind the world-entry loading screen when there is one. A window only registered in the world, or one the loading
+    /// screen didn't cover, is filled during play one window at a time, outside combat, seconds apart.</item>
+    /// </list>
+    /// The fill ignores <see cref="ShouldRender"/> (it runs while the window is hidden), so value lambdas must be safe
+    /// whenever the world is up — the same contract as any shown window. Register the window at plugin start-up (not
+    /// lazily on first use) so the structure stage can reach it. Costs the built tree's memory for the session (a parked
+    /// window keeps it anyway once opened). Default false = built on first open, as before. Init-only → binary-safe.
+    /// Added in 2.30.0.</summary>
+    public bool Prebuild { get; init; }
+
+    /// <summary>With <see cref="Prebuild"/>: a CHEAP hash of what the window would show (row counts, selected tab, ids of
+    /// the listed things — not every changing number). Sampled about twice a second while the window is hidden and
+    /// filled; when it changes, the fill re-runs off-screen (behind a loading screen if one is up, else during play
+    /// outside combat), so content that grew while hidden doesn't rebuild inside the open. Null (default) = filled once
+    /// per world entry. A throwing signature reads as "unchanged". Init-only → binary-safe. Added in 2.30.0.</summary>
+    public Func<int>? PrebuildSignature { get; init; }
+
     /// <summary>The title the window chrome DISPLAYS: <see cref="TitleProvider"/> if set, otherwise
     /// <see cref="Title"/>. Invokes the provider (so it throws if the provider does) — read it only where the window
     /// is being drawn.</summary>
