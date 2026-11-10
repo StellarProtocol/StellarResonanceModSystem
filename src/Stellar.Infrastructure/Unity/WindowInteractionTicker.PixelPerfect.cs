@@ -146,11 +146,15 @@ public sealed partial class WindowInteractionTicker
             var v = ScrollViews[i];
             var c = v.Content;
             // A re-activated view must not register a spurious jump on its first frame back → seed NaN while inactive.
-            if (c == null || v.Sr == null || !c.gameObject.activeInHierarchy) { v.PrevY = float.NaN; continue; }
+            // Cached GameObject: one destroyed-check + one activeInHierarchy per view per frame (was c==null, Sr==null,
+            // Component.gameObject, activeInHierarchy). The ScrollRect sits above its content, and nothing destroys a
+            // ScrollRect component alone, so a live content GameObject implies a live Sr.
+            if (v.ContentGo == null || !v.ContentGo.activeInHierarchy) { v.PrevY = float.NaN; continue; }
             var y = c.anchoredPosition.y;
             // 0.5px threshold ignores sub-pixel jitter; NaN prev (first/re-activated frame) = no move this frame. An engaged
             // hold still counts on still frames, so one slow drag-scroll is exactly one OFF and one ON (after release).
             var moved = !float.IsNaN(v.PrevY) && Mathf.Abs(y - v.PrevY) > 0.5f;
+            if (moved) _contentMovedThisFrame = true;   // ANY move (user or programmatic) shifts rows under the pointer: hover rescan (.Hover.cs)
             if (IsUserScrolling(v, moved)) MarkMotion(c, 0, now);
             v.PrevY = y;
         }

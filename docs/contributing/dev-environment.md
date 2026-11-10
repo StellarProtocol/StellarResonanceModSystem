@@ -111,7 +111,10 @@ Copy [`../../src/Stellar.Host/Local.props.example`](../../src/Stellar.Host/Local
 ## Where to look when it runs
 
 - **The log:** `<game_mini>/BepInEx/LogOutput.log`. A successful boot prints
-  `[Stellar] diagnostics=ON` or `OFF` ([`../../src/Stellar.Host/BootstrapPlugin.cs`](../../src/Stellar.Host/BootstrapPlugin.cs)).
+  `[Stellar] diagnostics=ON|OFF hitch=… perfhud=… frameTiming=ON|OFF` (each ON names its source: env var or
+  `stellar_perf.flags`) ([`../../src/Stellar.Host/BootstrapPlugin.cs`](../../src/Stellar.Host/BootstrapPlugin.cs)).
+  `frameTiming=ON` means the `[Hitch]`/`[UiPerf]` timing is collected: armed by `STELLAR_HITCH=1` (or a `HITCH` line
+  in `stellar_perf.flags`) or by diagnostics; leave it OFF for normal play.
 - **To tell which build loaded**, read the BepInEx boot lines for the framework, not the file on disk.
   BepInEx loads one copy per plugin GUID; a stray backup copy anywhere under `BepInEx/plugins/` can be
   loaded instead of yours. Keep backups outside `BepInEx/plugins/` and `stellar/plugins/`.
