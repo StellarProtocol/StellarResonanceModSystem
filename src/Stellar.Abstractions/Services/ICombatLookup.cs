@@ -8,9 +8,11 @@ namespace Stellar.Abstractions.Services;
 /// wire — not limited to party members or the local player. Mirrors the
 /// lookup half of the original mixed combat surface; the polled local snapshot
 /// lives on <see cref="ICombatSnapshot"/> and the event stream lives on
-/// <see cref="ICombatEvents"/>.
+/// <see cref="ICombatEvents"/>. Per-buff effect ids come from the
+/// <see cref="ICombatBuffEffectLookup"/> base (added on a base because this
+/// interface is at the STELLAR0005 member cap — existing members never move).
 /// </summary>
-public interface ICombatLookup
+public interface ICombatLookup : ICombatBuffEffectLookup
 {
     /// <summary>Active buffs on the given entity, derived from observed BuffChanged events. Empty if entity is unknown.</summary>
     IReadOnlyList<ActiveBuff> BuffsFor(EntityId entityId);

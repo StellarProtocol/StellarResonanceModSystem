@@ -31,6 +31,11 @@ internal sealed class StubCombat : ICombatSnapshot, ICombatLookup, ICombatEvents
     public long GetTeamId(EntityId entityId) => 0;
     public long GetFightPoint(EntityId entityId) => 0;
     public IReadOnlyList<SkillLevel> GetSkillLevels(EntityId entityId) => System.Array.Empty<SkillLevel>();
+    public bool TryGetBuffEffectIds(EntityId entityId, int buffUuid, out IReadOnlyList<int> effectIds)
+    {
+        effectIds = Array.Empty<int>();
+        return false;
+    }
 
     public void Raise(CombatEvent evt) => CombatEventOccurred?.Invoke(evt);
 }

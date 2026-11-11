@@ -21,6 +21,8 @@ public sealed class AppearBuffSeedTests
         public void ApplyBuffEvents(EntityId entityId, IReadOnlyList<ActiveBuff> upserts, IReadOnlyList<int> removedBuffUuids, long timestampMs) { }
         public void ClearAllBuffs() { }
         public void ReplaceEntityBuffs(EntityId entityId, IReadOnlyList<ActiveBuff>? buffs, long timestampMs) => Replaced.Add((entityId, buffs));
+        public readonly List<BuffEffectIdUpdate> EffectIds = new();
+        public void ApplyBuffEffectIds(EntityId entityId, IReadOnlyList<BuffEffectIdUpdate> updates) => EffectIds.AddRange(updates);
     }
 
     private static readonly EntityId Id = new((1L << 16) | 640L);
@@ -51,5 +53,14 @@ public sealed class AppearBuffSeedTests
         var sink = new RecordingSink();
         Assert.True(AppearBuffSeed.Apply(sink, Id, new AppearEntityMsg(Id.Value, null), 1000));
         Assert.Null(Assert.Single(sink.Replaced).Item2);
+    }
+
+    [Fact]
+    public void UnknownSnapshot_StillAppliesEffectIds()
+    {
+        var sink = new RecordingSink();
+        var fx = new[] { new BuffEffectIdUpdate(0, 7, new[] { 3 }) };
+        Assert.False(AppearBuffSeed.Apply(sink, Id, new AppearEntityMsg(Id.Value, null, null, BuffsUnknown: true, fx), 1000));
+        Assert.Equal(fx[0], Assert.Single(sink.EffectIds));
     }
 }

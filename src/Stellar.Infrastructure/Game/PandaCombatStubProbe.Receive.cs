@@ -307,11 +307,14 @@ internal sealed partial class PandaCombatStubProbe
         // Pass 2 — pre-attributed damage records from SkillEffects.Damages[].
         ApplyDamageDeltas(deltas, timestampMs);
 
-        // Pass 3 — buff events (AoiSyncDelta field 10, BuffEffectSync).
+        // Pass 3 — buff events (AoiSyncDelta field 10, BuffEffectSync). Effect ids first and regardless of
+        // Touched: a Customize-only effect changes ids without any buff upsert/remove.
         foreach (var d in deltas)
         {
-            if (d.BuffEvents is not { } be || !be.Touched) continue;
+            if (d.BuffEvents is not { } be) continue;
             var entityId = new EntityId(d.Uuid);
+            if (be.EffectIds is { Count: > 0 } fx) _sink.ApplyBuffEffectIds(entityId, fx);
+            if (!be.Touched) continue;
             DiagBuffEvents(d.Uuid, be);
             _sink.ApplyBuffEvents(entityId, be.Upserts, be.Removes, timestampMs);
         }

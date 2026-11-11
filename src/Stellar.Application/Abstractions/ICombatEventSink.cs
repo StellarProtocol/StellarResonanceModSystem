@@ -63,6 +63,13 @@ internal interface ICombatBuffSink
     /// <summary>Full buff snapshot for one entity (AOI appear / EnterScene self); null = empty set. Contract on
     /// <c>CombatService.ReplaceEntityBuffs</c>.</summary>
     void ReplaceEntityBuffs(EntityId entityId, IReadOnlyList<ActiveBuff>? buffs, long timestampMs);
+
+    /// <summary>
+    /// Apply decoded buff effect-id changes for messages about <paramref name="entityId"/> (the fallback host when
+    /// an update names none), in order. Independent of the buff set: a Customize-only effect changes ids without
+    /// any upsert. Cleared by <see cref="ClearAllBuffs"/>. Read side: <c>ICombatBuffEffectLookup</c>.
+    /// </summary>
+    void ApplyBuffEffectIds(EntityId entityId, IReadOnlyList<BuffEffectIdUpdate> updates);
 }
 
 /// <summary>
