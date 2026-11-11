@@ -91,7 +91,7 @@ internal sealed partial class PandaHudAdapter
         // Inner: the wrapper's parent is the element itself. Outer: the element's parent — a non-RectTransform parent
         // (none on the allowlist) has no pivot to match, so it keeps pivot .5 and no re-sync.
         var parentRt = e.Mode == NativeUiWrapMode.Inner ? rt : space.TryCast<RectTransform>();
-        var go = new GameObject("stellar_wrap_" + e.Id) { layer = space.gameObject.layer };
+        var go = new GameObject(WrapperPath.Prefix + e.Id) { layer = space.gameObject.layer };
         var w = go.AddComponent<RectTransform>();
         // Children are re-parented with worldPositionStays=false only AFTER Stretch has set the pivot: with the
         // wrapper's rect AND local origin identical to the parent's, both their anchoredPosition and localPosition
@@ -116,6 +116,7 @@ internal sealed partial class PandaHudAdapter
             AdoptTwins(e, w, space, idx);   // PandaHudAdapter.Twins.cs — the location bar's recycle twin
         }
         e.Wrapper = w;
+        RegisterWrapper(w);   // PandaHudAdapter.PathWalk.cs: nested elements' path walks look through it
         e.WrapParent = parentRt;
         e.WrapperGroup = null;
         _log.Info($"[NativeUi] wrapped '{e.Id}' ({e.Mode})");
@@ -186,7 +187,8 @@ internal sealed partial class PandaHudAdapter
             for (var i = 0; i < n; i++) kids[i] = w.GetChild(i);
             for (var i = 0; i < n; i++) { kids[i].SetParent(space, false); kids[i].SetSiblingIndex(idx + i); }
         }
-        if (w.childCount == 0) Object.Destroy(w.gameObject);
+        // Unregister only once destroyed: a wrapper left holding game nodes must stay walk-through for path lookups.
+        if (w.childCount == 0) { UnregisterWrapper(w); Object.Destroy(w.gameObject); }
         else _log.Warning($"[NativeUi] '{e.Id}' wrapper still holds {w.childCount} node(s); left in place (never destroying game UI)");
     }
 

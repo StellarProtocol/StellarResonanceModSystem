@@ -50,25 +50,6 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         return true;
     }
 
-    // Walk the FULL allowlist path one segment at a time from the cached root. Transform.Find also returns INACTIVE
-    // children (GameObject.Find only sees active objects), so a solo player's hidden party panel still resolves —
-    // which is what the removed every-5-s Resources.FindObjectsOfTypeAll<Canvas>() fallback used to be needed for.
-    // Exact path only, never a name search: photo mode builds a SECOND FighterBtnsView copy elsewhere. Il2Cpp's
-    // Transform.Find can't take a multi-segment path, hence the per-segment walk (segments split once per path).
-    private Transform? WalkPath(string path)
-    {
-        if (!_pathSegments.TryGetValue(path, out var segs)) _pathSegments[path] = segs = path.Split('/');
-        if (_root == null)
-        {
-            var go = GameObject.Find(segs[0]);
-            if (go == null) return null;
-            _root = go.transform;
-        }
-        var cur = _root;
-        for (var i = 1; i < segs.Length && cur != null; i++) cur = cur.Find(segs[i]);
-        return cur;
-    }
-
     // The edit-outline / grab-box rect. When the allowlist supplies a spec (syntax: OutlineSpec), it's a ';'-separated
     // list of Transform.Find sub-paths whose rects are UNIONED — so a panel made of separated pieces (HP bar + stamina
     // bar, excluding the class gauge between them) frames tightly. Each token is the child's OWN rect by default;
@@ -118,21 +99,6 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         for (var i = 0; i < tokens.Count; i++)
             if (tokens[i].Exclude && FindByPath(rt.transform, tokens[i].Path) is { } t) (list ??= new()).Add(t);
         return list;
-    }
-
-    // Resolve a '/'-separated child path one segment at a time. Il2Cpp's Transform.Find returns null for a
-    // multi-segment path (only single-name lookup works), so we walk level by level — which also lets a name
-    // legitimately contain no '/' surprises (e.g. "main_team_sub_pc(Clone)").
-    private static Transform? FindByPath(Transform root, string path)
-    {
-        var cur = root;
-        foreach (var seg in path.Split('/'))
-        {
-            if (cur == null) return null;
-            if (seg.Length == 0 || seg == ".") continue;   // "." (or "*.") = the resolved node itself
-            cur = cur.Find(seg);
-        }
-        return cur;
     }
 
     public bool IsAlive(NativeUiHandle handle)

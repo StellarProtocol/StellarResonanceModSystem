@@ -24,9 +24,7 @@ internal sealed partial class PandaHudAdapter
         var t = g.Node;
         if (t == null)
         {
-            t = OutlineRoot(e);
-            for (var i = 0; i < g.Segments.Length && t != null; i++)
-                if (g.Segments[i].Length > 0 && g.Segments[i] != ".") t = t.Find(g.Segments[i]);
+            t = WrapperPath.Walk(default(UnityTree), (Transform)OutlineRoot(e), g.Segments);   // through our wrappers
             if (t == null) return false;   // can't tell the state → not a rest sample
             g.Node = t;
         }
