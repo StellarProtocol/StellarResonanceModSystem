@@ -96,12 +96,22 @@ internal static class NativeUiReconWalker
         ctx.LogInfo($"[NativeUi/Recon] {new string(' ', depth * 2)}{ctx.PathSb} active={t.gameObject.activeSelf} {rectInfo}");
     }
 
+    // Our own stellar_wrap_* ANCESTORS are left out of the printed path: these paths get copied into the allowlist,
+    // which must name the GAME hierarchy (resolution looks through wrappers — WrapperPath). A wrapper node itself still
+    // gets its own line (its name ends the path), so the dump still shows where we wrapped.
     private static void BuildHierarchyPath(Transform t, StringBuilder sb, Stack<string> stack)
     {
         stack.Clear();
         sb.Clear();
         var cur = t;
-        while (cur != null) { stack.Push(cur.name); cur = cur.parent; }
+        var self = true;
+        while (cur != null)
+        {
+            var name = cur.name;
+            if (self || !WrapperPath.IsWrapperName(name)) stack.Push(name);
+            self = false;
+            cur = cur.parent;
+        }
         var first = true;
         while (stack.Count > 0)
         {

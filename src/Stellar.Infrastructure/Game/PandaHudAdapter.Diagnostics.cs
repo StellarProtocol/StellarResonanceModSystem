@@ -88,7 +88,7 @@ internal sealed partial class PandaHudAdapter
             foreach (var seg in path.Split('/'))
             {
                 if (seg.Length == 0 || seg == ".") continue;   // "." = the element itself (FindByPath parity)
-                cur = cur == null ? null : cur.Find(seg);
+                cur = cur == null ? null : FindChildThroughWrappers(cur, seg);   // same walk as FindByPath
                 if (cur == null) { failSeg = seg; break; }
             }
             _log.Info($"[NativeUi/Curate]   token {(token.Exclude ? "-" : token.Content ? "*" : "")}'{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}{UnionWalkInfo(token, cur, cam)}");

@@ -31,8 +31,31 @@ internal sealed partial class NativeUiService
     private const float ReferenceCanvasHeight = 1080f; // fallback px-per-unit guess before an element was ever measured
     private const float SeenTolerancePx = 2f;          // last-seen changes smaller than this aren't re-persisted
     private const float MinSeenPx = 3f;              // last-seen sizes below this are collapsed, never saved or used
+    private const float SettleEdgePx = 2f;            // a run "matches" while all 4 edges stay within this of its first rect
+    // A rect must hold still this long before it becomes the last-seen rect. 0.9 s, not 1.0: two consecutive 1 Hz
+    // measure passes are ~1 s apart, and float clock accumulation must not make that 0.9999 and miss the dwell.
+    private const float SettleDwellSeconds = 0.9f;
 
     internal static bool IsUsableSeen(float w, float h) => w >= MinSeenPx && h >= MinSeenPx;
+
+    /// <summary>Feed one SHOWING default-rect sample into the settle run; true once the run has held (every edge
+    /// within <see cref="SettleEdgePx"/> of the run's first rect) for <see cref="SettleDwellSeconds"/>. A sample
+    /// outside the tolerance starts a new run. Why: the game's skill-bar hide fades the slot children to alpha 0
+    /// BEFORE the bar itself counts as hidden, and the content union skips alpha-0 nodes — so mid-fade the bar
+    /// measures as just its [L Ctrl] cluster (~160x180 of ~870x190). Remembering that transient rect put the
+    /// Quickbar placeholder in a shrunken box. A real resting rect holds still; a fade doesn't.</summary>
+    internal static bool AdvanceSettle(ref SeenStability s, WindowRect d, float now)
+    {
+        if (s.Has
+            && Math.Abs(d.X - s.Rect.X) <= SettleEdgePx && Math.Abs(d.Y - s.Rect.Y) <= SettleEdgePx
+            && Math.Abs(d.X + d.Width - (s.Rect.X + s.Rect.Width)) <= SettleEdgePx
+            && Math.Abs(d.Y + d.Height - (s.Rect.Y + s.Rect.Height)) <= SettleEdgePx)
+            return now - s.Since >= SettleDwellSeconds;
+        s.Rect = d;
+        s.Since = now;
+        s.Has = true;
+        return false;
+    }
 
     /// <summary>True when the editor should offer this element. Placeholders only appear once the HUD exists (any
     /// entry resolved) — so the title screen never shows a screenful of empty boxes. Nothing is editable while the
@@ -82,17 +105,28 @@ internal sealed partial class NativeUiService
         e.LastMeasure = m;
         e.LastMeasureAt = _clock;
         e.HasMeasure = true;
-        if (m.Showing) { e.Rect = m.Rect; RecordSeen(e, m); }
+        if (m.Showing)
+        {
+            e.Rect = m.Rect;   // the live outline / hit box follows the live rect, transient or not
+            if (m.PxPerUnit > 0f) e.LivePx = m.PxPerUnit;
+            RecordSeen(e, m);
+        }
+        else e.Stability.Has = false;   // the run must be consecutive SHOWING samples
         return m;
     }
 
-    // Remember the element's DEFAULT geometry (live rect minus our offset) for placeholders; flag it for persisting
-    // only when it moved/resized past the tolerance (FlushSeen writes at most once per measure pass).
+    // Remember the element's DEFAULT geometry (live rect minus our offset) for placeholders, once it has SETTLED
+    // (AdvanceSettle); flag it for persisting only when it moved/resized past the tolerance (FlushSeen writes at most
+    // once per measure pass). Until it settles SeenFresh stays false, so the 1 Hz pass keeps sampling it.
     private void RecordSeen(EntryState e, NativeUiMeasure m)
     {
         var px = m.PxPerUnit > 0f ? m.PxPerUnit : PxPerUnit(e);
         var d = DefaultRectOf(e, m);
-        if (!IsUsableSeen(d.Width, d.Height)) return;   // never remember a collapsed size (a 0-height placeholder line)
+        // Never remember a collapsed size (a 0-height placeholder line), nor a gated transient state (the Quickbar
+        // while Ctrl holds its skill wheel EXPANDED — stable for as long as the key is held, so the dwell alone
+        // can't reject it). Either breaks the run like a hidden sample.
+        if (!m.SeenAllowed || !IsUsableSeen(d.Width, d.Height)) { e.Stability.Has = false; return; }
+        if (!AdvanceSettle(ref e.Stability, d, _clock)) return;
         var changed = !e.HasSeen
             || Math.Abs(e.Seen.X - d.X) > SeenTolerancePx || Math.Abs(e.Seen.Y - d.Y) > SeenTolerancePx
             || Math.Abs(e.Seen.W - d.Width) > SeenTolerancePx || Math.Abs(e.Seen.H - d.Height) > SeenTolerancePx;
@@ -129,10 +163,12 @@ internal sealed partial class NativeUiService
         return new WindowRect(d.X + sx, d.Y + sy, d.Width, d.Height);
     }
 
-    // Screen px per wrapper-local unit: last-seen value, else a 1080-reference-canvas guess (the game HUD canvas
-    // scales with screen height; only used until the element was measured once at this resolution).
+    // Screen px per wrapper-local unit: the live value from the latest showing measurement (px/unit comes from the
+    // parent transform, so the fade-shrink doesn't touch it — a drag needs it before the rect has settled), else
+    // last-seen, else a 1080-reference-canvas guess (the game HUD canvas scales with screen height).
     private float PxPerUnit(EntryState e)
     {
+        if (e.LivePx > 0f) return e.LivePx;
         if (e.HasSeen && e.Seen.PxPerUnit > 0f) return e.Seen.PxPerUnit;
         return _lastResolution.Height > 0 ? _lastResolution.Height / ReferenceCanvasHeight : 1f;
     }

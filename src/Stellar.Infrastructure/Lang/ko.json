@@ -86,6 +86,7 @@
   "gameui.entry.chatWindow": "채팅창",
   "gameui.entry.classGauge": "클래스 게이지",
   "gameui.entry.itemBar": "아이템 바",
+  "gameui.entry.locationLine": "위치 및 채널",
   "gameui.entry.minimap": "미니맵",
   "gameui.entry.partyPanel": "파티 패널",
   "gameui.entry.playerHp": "플레이어 HP/MP",

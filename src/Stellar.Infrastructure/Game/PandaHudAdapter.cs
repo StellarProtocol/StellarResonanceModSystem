@@ -42,30 +42,12 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         {
             Id = d.Id, Path = d.Path, GameObject = rt.gameObject, RectTransform = rt, Camera = GetCanvasCamera(rt),
             RectChildPath = d.RectChild, Mode = d.Wrap, BlockInputWhenHidden = d.BlockInputWhenHidden,
+            Twins = ResolveTwins(rt, d.Twins), SeenGate = NewSeenGate(d.SeenGate),
         };
         _cache[d.Path] = entry;
         LogCurateResolve(rt, entry.Camera, d.Path, d.RectChild, ComputeOutlineRect(rt, entry.Camera, d.RectChild));   // diagnostics (gated)
         handle = entry.ToHandle();
         return true;
-    }
-
-    // Walk the FULL allowlist path one segment at a time from the cached root. Transform.Find also returns INACTIVE
-    // children (GameObject.Find only sees active objects), so a solo player's hidden party panel still resolves —
-    // which is what the removed every-5-s Resources.FindObjectsOfTypeAll<Canvas>() fallback used to be needed for.
-    // Exact path only, never a name search: photo mode builds a SECOND FighterBtnsView copy elsewhere. Il2Cpp's
-    // Transform.Find can't take a multi-segment path, hence the per-segment walk (segments split once per path).
-    private Transform? WalkPath(string path)
-    {
-        if (!_pathSegments.TryGetValue(path, out var segs)) _pathSegments[path] = segs = path.Split('/');
-        if (_root == null)
-        {
-            var go = GameObject.Find(segs[0]);
-            if (go == null) return null;
-            _root = go.transform;
-        }
-        var cur = _root;
-        for (var i = 1; i < segs.Length && cur != null; i++) cur = cur.Find(segs[i]);
-        return cur;
     }
 
     // The edit-outline / grab-box rect. When the allowlist supplies a spec (syntax: OutlineSpec), it's a ';'-separated
@@ -119,21 +101,6 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         return list;
     }
 
-    // Resolve a '/'-separated child path one segment at a time. Il2Cpp's Transform.Find returns null for a
-    // multi-segment path (only single-name lookup works), so we walk level by level — which also lets a name
-    // legitimately contain no '/' surprises (e.g. "main_team_sub_pc(Clone)").
-    private static Transform? FindByPath(Transform root, string path)
-    {
-        var cur = root;
-        foreach (var seg in path.Split('/'))
-        {
-            if (cur == null) return null;
-            if (seg.Length == 0 || seg == ".") continue;   // "." (or "*.") = the resolved node itself
-            cur = cur.Find(seg);
-        }
-        return cur;
-    }
-
     public bool IsAlive(NativeUiHandle handle)
         => _cache.TryGetValue(handle.AllowlistPath, out var e) && e.RectTransform != null;
 
@@ -142,7 +109,8 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return default;
         var rt = e.RectTransform;
         // An inactive RectTransform reports garbage world corners (collapsed / jumped) — never measure it.
-        if (!rt.gameObject.activeInHierarchy) return new NativeUiMeasure(default, false, PxPerUnit(e));
+        // (A twin entry measures on while any twin is active: the inactive primary's "*" union just frames nothing.)
+        if (!rt.gameObject.activeInHierarchy && !AnyTwinActive(e)) return new NativeUiMeasure(default, false, PxPerUnit(e));
         // A user hide is scale 0 on OUR wrapper, which collapses the world corners. Lift it for the measurement and
         // put it back in the same frame (nothing renders in between), so a hidden element still reports the rect
         // it will reappear at — the dimmed re-enable outline — and the self-measure never sees its own hide (the
@@ -152,13 +120,18 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         WindowRect rect;
         if (lifted) w!.localScale = Vector3.one;
         bool hasContent;
-        try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent); }
+        var alpha = GroupAlpha(rt);
+        try
+        {
+            rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent);
+            if (e.Twins != null) MergeTwinOutlines(e, ref rect, ref hasContent, ref alpha);   // inside the scale lift too
+        }
         finally { if (lifted) w!.localScale = Vector3.zero; }   // never leave a user-hidden element shown
         // Not showing also when the curated rect is degenerate in EITHER axis or framed nothing: an active-but-empty
         // element (Buff Timers with no timed buff, 300x0) must become a grabbable placeholder, not a zero-height box.
         var showing = hasContent && !IsCollapsedStub(rect) && rect.Width >= MinShownPx && rect.Height >= MinShownPx
-            && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
-        return new NativeUiMeasure(rect, showing, PxPerUnit(e));
+            && alpha >= MinShowingAlpha && InnerWrapHoldsContent(e);
+        return new NativeUiMeasure(rect, showing, PxPerUnit(e), showing && SeenGateOpen(e));   // PandaHudAdapter.SeenGate.cs
     }
 
     // An inner wrapper that is EMPTY or has un-adopted siblings measures its own full-stretch node rect (the "*."
@@ -217,8 +190,12 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         public string? RectChildPath;   // curated rect spec (edit outline / grab box)
         public NativeUiWrapMode Mode;
         public bool BlockInputWhenHidden;
+        public RectTransform[]? Twins;      // sibling nodes the game shows instead of the element; share its outer wrapper
+        public ResolvedSeenGate? SeenGate;  // last-seen rest-state gate (PandaHudAdapter.SeenGate.cs); null = always open
+        public Transform? TwinSpace;        // the twins' original parent (= outer wrapper's parent), cached at wrap time
         public RectTransform? Wrapper;      // OUR node carrying offset + hide; null until the element is customized
         public CanvasGroup? WrapperGroup;   // only for BlockInputWhenHidden (chat): input off while hidden
+        public RectTransform? WrapParent;   // the wrapper's parent at wrap time; its pivot is mirrored onto the wrapper
 
         public NativeUiHandle ToHandle() => new()
         {

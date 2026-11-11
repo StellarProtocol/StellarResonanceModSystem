@@ -47,4 +47,21 @@ internal sealed record NativeUiEntryDescriptor(string Id, string DisplayNameKey,
 
     /// <summary>Optional placeholder sub line key (shown under the hint while not hidden by the user).</summary>
     public string? SubHintKey { get; init; }
+
+    /// <summary>Optional names of SIBLING nodes the game shows instead of the element (outer wrap only); they share
+    /// its wrapper, so offset + hide apply to them too. See <c>NativeUiAllowlistEntry.Twins</c>.</summary>
+    public string[]? Twins { get; init; }
+
+    /// <summary>Optional gate on recording the last-seen rect: sampled only while this descendant resolves and is at
+    /// its rest scale. See <c>NativeUiAllowlistEntry.SeenGate</c>.</summary>
+    public NativeUiSeenGate? SeenGate { get; init; }
+
+    /// <summary>Last-seen key generation (1 = the original <c>seen.{id}.{W}x{H}.*</c> keys). Bump it to orphan values
+    /// saved by a build that measured a wrong state; see <c>NativeUiAllowlistEntry.SeenKeyVersion</c>.</summary>
+    public int SeenKeyVersion { get; init; } = 1;
 }
+
+/// <summary>A last-seen gate: <paramref name="Path"/> ('/'-separated, relative to the element like a RectChild sub-path)
+/// must resolve and its <c>localScale.x</c> be ≤ <paramref name="MaxScale"/>, else a measurement is not a rest-state
+/// sample (it breaks the settle run like a hidden one).</summary>
+internal sealed record NativeUiSeenGate(string Path, float MaxScale);

@@ -54,6 +54,29 @@ internal sealed record NativeUiAllowlistEntry(
 
     /// <summary>Optional placeholder sub line key.</summary>
     public string? SubHintKey { get; init; }
+
+    /// <summary>
+    /// Optional names of SIBLING nodes (same parent as <see cref="Path"/>, listed in sibling order) that the game shows
+    /// INSTEAD of the element — the location bar swaps to <c>group_sceneline_recycle</c> while the line is recycled.
+    /// They move into the element's OUTER wrapper, so they get the same offset + hide with no second persistence
+    /// key, and the outline is the union of whichever of them is drawing (the same <see cref="RectChild"/> spec is
+    /// applied to each, so keep it node-relative, e.g. "*."). Outer wrap only; twins should sit next to the element
+    /// (anything between them would be re-ordered behind the wrapper).
+    /// </summary>
+    public string[]? Twins { get; init; }
+
+    /// <summary>
+    /// Optional gate on the edit-mode placeholder's last-seen rect: a measurement only counts while this descendant
+    /// (sub-path relative to <see cref="Path"/>) resolves AND its <c>localScale.x</c> ≤ the max — i.e. the element is in
+    /// its REST state. For a state the game holds steadily (the Quickbar's skill wheel stays expanded while Ctrl is
+    /// held) the settle dwell can't tell it from rest. The live edit outline is not gated.
+    /// </summary>
+    public NativeUiSeenGate? SeenGate { get; init; }
+
+    /// <summary>Last-seen key generation (default 1 = <c>seen.{id}.{W}x{H}.*</c>). Bump when a fix means previously
+    /// saved last-seen values are wrong: n &gt; 1 reads/writes <c>seen.{id}.v{n}.{W}x{H}.*</c>, so the old ones are ignored
+    /// and the placeholder uses <see cref="DefaultFraction"/> until a new rest sample settles.</summary>
+    public int SeenKeyVersion { get; init; } = 1;
 }
 
 internal static class NativeUiAllowlist
@@ -95,7 +118,14 @@ internal static class NativeUiAllowlist
               DefaultFraction = new(0.78f, 0.14f, 0.20f, 0.34f), SubHintKey = "gameui.ph.partySub" },
         new("gameui.minimap",       "gameui.entry.minimap",      MainHud + "/anim_upper_left/node_upper_left/group_minimap")
             { DefaultFraction = new(0.01f, 0.02f, 0.11f, 0.20f) },
-        new("gameui.quickbar",      "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")
+        // Location + line bar ("Asterleeds ⇄ Line 3 [P]") under the minimap; a sibling of group_minimap/node_left_track,
+        // so an OUTER wrapper (live 2026-11-11). The game hides it by CanvasGroup alpha (SetUIVisible) and, while the
+        // line is being recycled, shows the sibling group_sceneline_recycle (same spot) instead → a twin in the SAME
+        // wrapper. In Homestead the Lua sets group_sceneline.localPosition itself — inside our wrapper, so it stacks.
+        // Default fraction = the live label rect at 2560x1440 (x 58..330, y 312..339 px), 2026-11-11.
+        new("gameui.location-line", "gameui.entry.locationLine", MainHud + "/anim_upper_left/node_upper_left/group_sceneline")
+            { RectChild = "*.", Twins = new[] { "group_sceneline_recycle" }, DefaultFraction = new(0.022f, 0.216f, 0.107f, 0.02f) },
+        new("gameui.quickbar",     "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")
             // Content union of the bar (the slot icons overflow ABOVE the 700x90 container; the [L Ctrl] dodge cluster
             // "999" sits inside it) MINUS child "10", the skill drawer that floats far up-right (why June used the
             // container's own rect). Inactive / alpha-0 slots are already skipped by the union. Outline/hit box only.
@@ -103,7 +133,12 @@ internal static class NativeUiAllowlist
             // out of its node budget (1500) / depth cap (6) before reaching it (in-game 11-11: right + top circles
             // clipped) — it gets its OWN "*" token, i.e. its own budget and one more level. [NativeUi/Curate] logs
             // visited / depthCapped / budgetHit per "*" token to confirm which cap it was.
-            { RectChild = "*button_pos_group;*button_pos_group/999;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
+            // SeenGate: in town the bar only shows while L Ctrl is HELD, which also EXPANDS the [L Ctrl] skill wheel
+            // (drawer_expand localScale 0.52 → 1.00, live 2026-11-11) — a steady state, so it passed the settle dwell
+            // and saved a 1149x372 px placeholder (2560x1440). Last-seen only at the rest scale; v2 drops those values.
+            { RectChild = "*button_pos_group;*button_pos_group/999;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f),
+              SeenGate = new("button_pos_group/999/anim_999/999/battle_main_node_window_skill_drawer_expand_pc", 0.8f),
+              SeenKeyVersion = 2 },
         // View root: the game detaches + re-parents it on every full-screen menu → INNER wrapper (verified over 3
         // menu cycles). While hidden it is also input-blocked so Enter can't focus the invisible box.
         new("gameui.chat-window",   "gameui.entry.chatWindow",   ChatWindow)
