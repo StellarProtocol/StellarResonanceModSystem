@@ -1,129 +1,122 @@
 using System;
 using System.Collections.Generic;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using UnityEngine;
-using UnityEngine.UI;
 using Stellar.Abstractions.Domain;
 
 namespace Stellar.Infrastructure.Game;
 
 /// <summary>
-/// INativeUiAdapter implementation that resolves Panda.Hud Canvas GameObjects
-/// by path, caches the resolved transform + its original pose, and applies
-/// position / visibility mutations via UnityEngine RectTransform.
+/// INativeUiAdapter implementation over the Panda.Hud uGUI hierarchy. Resolves an allowlist path, measures the
+/// curated screen rect for the editor, and owns the framework WRAPPER RectTransform that carries the user's offset
+/// + hide (<c>PandaHudAdapter.Wrap.cs</c>).
 /// </summary>
 /// <remarks>
-/// SetRect translates the target by the screen-space delta between its captured
-/// original top-left and the requested top-left, expressed in the PARENT's
-/// local space — it does NOT touch the element's own anchors / pivot / size.
-/// An earlier impl re-anchored to (0,1)/(0,1) and wrote screen coordinates,
-/// which only works for a direct child of a full-screen canvas; the real Panda
-/// HUD nodes are deeply nested (their parent is not screen-sized), so that
-/// re-anchor flung them to the corner. Screen Y is bottom-up; the Settings UI
-/// Rect.Y is top-down, so we flip via Screen.height on the way in.
+/// Why a wrapper (Native-UI-Layout-Positioning.md): translating the game's own node and <c>SetActive</c>-hiding it
+/// lost races to Lua resets, open tweens and view re-parenting, and needed a 1 Hz re-assert loop with a fragile
+/// (target, anchoredPosition, size) guard. Our own node is written by nobody else, so we write it once and only
+/// re-check that it still exists. Coordinates: rects are screen px top-left / y-DOWN (Unity screen y is bottom-up,
+/// flipped via <c>Screen.height</c> in <c>ToScreenRect</c>); wrapper offsets are the wrapper parent's local units, y-UP.
 /// </remarks>
 internal sealed partial class PandaHudAdapter : INativeUiAdapter
 {
     private readonly Dictionary<string, ResolvedEntry> _cache = new();
+    private readonly Dictionary<string, string[]> _pathSegments = new();
     private readonly IPluginLog _log;
+    private Transform? _root;   // the first path segment ("zuiroot"), cached — the only GameObject.Find we do
 
     public PandaHudAdapter(IPluginLog log) { _log = log; }
 
-    public bool TryResolve(string allowlistPath, string? rectChildPath, out NativeUiHandle handle)
+    public bool TryResolve(NativeUiEntryDescriptor d, out NativeUiHandle handle)
     {
-        if (_cache.TryGetValue(allowlistPath, out var cached) && cached.GameObject != null)
+        if (_cache.TryGetValue(d.Path, out var cached) && cached.RectTransform != null)
         {
             handle = cached.ToHandle();
             return true;
         }
-
-        // Carry the last real-size outline across a re-resolve (the game destroys + rebuilds these nodes on a
-        // scene change, so we get a fresh entry). Without this, LastVisibleRect resets to null and — when the
-        // rebuild happens during a loading/cutscene collapse — the edit-mode grab-box drops to the corner because
-        // there's no good rect to hold and OriginalScreenRect is itself collapsed. The user's saved position is
-        // the same across scenes, so the carried rect is the right thing to show until the element expands again.
-        WindowRect? carriedVisible = _cache.TryGetValue(allowlistPath, out var prev) ? prev.LastVisibleRect : null;
-
-        var go = GameObject.Find(allowlistPath);
-        if (go == null) go = SearchByPath(allowlistPath);
-        if (go == null) { handle = default; return false; }
-
-        var rt = go.GetComponent<RectTransform>();
-        if (rt == null)
+        var rt = WalkPath(d.Path)?.TryCast<RectTransform>();
+        if (rt == null) { handle = default; return false; }
+        if (cached != null) DiscardWrapper(cached);   // an orphaned outer wrapper of the dead element
+        var entry = new ResolvedEntry
         {
-            _log.Warning($"[NativeUi] '{allowlistPath}' resolved but has no RectTransform; skipping.");
-            handle = default;
-            return false;
-        }
-
-        var entry = BuildEntry(allowlistPath, go, rt, rectChildPath, carriedVisible);
-        _cache[allowlistPath] = entry;
-        LogCurateResolve(rt, entry.Camera, allowlistPath, rectChildPath, entry.OriginalScreenRect);   // diagnostics (gated)
+            Id = d.Id, Path = d.Path, GameObject = rt.gameObject, RectTransform = rt, Camera = GetCanvasCamera(rt),
+            RectChildPath = d.RectChild, Mode = d.Wrap, BlockInputWhenHidden = d.BlockInputWhenHidden,
+        };
+        _cache[d.Path] = entry;
+        LogCurateResolve(rt, entry.Camera, d.Path, d.RectChild, ComputeOutlineRect(rt, entry.Camera, d.RectChild));   // diagnostics (gated)
         handle = entry.ToHandle();
         return true;
     }
 
-    // Capture a freshly-resolved node's original pose + outline. Split out of TryResolve to keep it under the
-    // method-size cap (STELLAR0002). carriedVisible holds the prior entry's last real-size outline across a
-    // re-resolve so the edit box keeps the user's spot through a loading/cutscene rebuild.
-    private ResolvedEntry BuildEntry(string allowlistPath, GameObject go, RectTransform rt, string? rectChildPath, WindowRect? carriedVisible)
+    // Walk the FULL allowlist path one segment at a time from the cached root. Transform.Find also returns INACTIVE
+    // children (GameObject.Find only sees active objects), so a solo player's hidden party panel still resolves —
+    // which is what the removed every-5-s Resources.FindObjectsOfTypeAll<Canvas>() fallback used to be needed for.
+    // Exact path only, never a name search: photo mode builds a SECOND FighterBtnsView copy elsewhere. Il2Cpp's
+    // Transform.Find can't take a multi-segment path, hence the per-segment walk (segments split once per path).
+    private Transform? WalkPath(string path)
     {
-        var cam = GetCanvasCamera(rt);
-        var entry = new ResolvedEntry
+        if (!_pathSegments.TryGetValue(path, out var segs)) _pathSegments[path] = segs = path.Split('/');
+        if (_root == null)
         {
-            Path = allowlistPath,
-            GameObject = go,
-            RectTransform = rt,
-            Camera = cam,
-            OriginalAnchorMin = rt.anchorMin,
-            OriginalAnchorMax = rt.anchorMax,
-            OriginalPivot = rt.pivot,
-            OriginalAnchoredPos = rt.anchoredPosition,
-            OriginalSizeDelta = rt.sizeDelta,
-            OriginalActiveSelf = go.activeSelf,
-            RectChildPath = rectChildPath,
-            OriginalScreenRect = ComputeOutlineRect(rt, cam, rectChildPath),
-        };
-        // Prefer the carried last-good outline; else seed from OriginalScreenRect only if it isn't itself a
-        // collapsed stub (resolved mid-loading).
-        if (carriedVisible.HasValue) entry.LastVisibleRect = carriedVisible;
-        else if (!IsCollapsedStub(entry.OriginalScreenRect)) entry.LastVisibleRect = entry.OriginalScreenRect;
-        return entry;
+            var go = GameObject.Find(segs[0]);
+            if (go == null) return null;
+            _root = go.transform;
+        }
+        var cur = _root;
+        for (var i = 1; i < segs.Length && cur != null; i++) cur = cur.Find(segs[i]);
+        return cur;
     }
 
-    // The edit-outline / grab-box rect. When the allowlist supplies a spec, it's a ';'-separated list of
-    // Transform.Find sub-paths whose rects are UNIONED — so a panel made of separated pieces (HP bar + stamina
-    // bar, excluding the class gauge between them) frames tightly. Each token is the child's OWN rect by
-    // default (tight to a container, e.g. the quickbar bar = 'button_pos_group', which excludes the skill
-    // drawer that floats far away); prefix a token with '*' to use the visible-drawable UNION of that subtree
-    // instead (when the wanted box is a node's contents that overflow its own rect, e.g. a bar plus the number
-    // label anchored above it). No spec → the auto rect (usable node rect, else visible-drawable union).
+    // The edit-outline / grab-box rect. When the allowlist supplies a spec (syntax: OutlineSpec), it's a ';'-separated
+    // list of Transform.Find sub-paths whose rects are UNIONED — so a panel made of separated pieces (HP bar + stamina
+    // bar, excluding the class gauge between them) frames tightly. Each token is the child's OWN rect by default;
+    // '*' uses the visible-drawable UNION of that subtree instead (contents that overflow the node's own rect, e.g. the
+    // quickbar's skill icons poking above its 700x90 container); "h:"/"w:" take one axis only; '-' EXCLUDES a subtree
+    // from every '*' union (the quickbar's floating skill drawer). No spec → the auto rect (usable node rect, else
+    // visible-drawable union). rt is the element, or — for an INNER-wrapped element — our wrapper (same rect).
     private static WindowRect ComputeOutlineRect(RectTransform rt, Camera? cam, string? spec)
+        => ComputeOutlineRect(rt, cam, spec, out _);
+
+    // hasContent = false when the spec has "*" tokens and NONE found a visible drawable (the union fell back to a node
+    // rect) — e.g. Buff Timers with no timed buff: active, but nothing to frame. Measure treats that as hidden-by-game.
+    private static WindowRect ComputeOutlineRect(RectTransform rt, Camera? cam, string? spec, out bool hasContent)
     {
+        hasContent = true;
         if (string.IsNullOrEmpty(spec)) return ComputeContentScreenRect(rt, cam);
+        int contentTokens = 0, contentFound = 0;
+        var tokens = OutlineSpec.Parse(spec);
+        var exclude = ResolveExcludes(rt, tokens);
         float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
-        foreach (var raw in spec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        for (var i = 0; i < tokens.Count; i++)
         {
-            // Per-axis prefixes: "h:" contributes only the node's vertical extent, "w:" only horizontal — so a
-            // rect can take its WIDTH from one node and HEIGHT from another (quest tracker: width from the title
-            // bar, height down to the scroll list). "*" = visible-content union of the subtree.
-            var token = raw;
-            bool axisX = true, axisY = true;
-            if (token.StartsWith("h:")) { axisX = false; token = token.Substring(2); }
-            else if (token.StartsWith("w:")) { axisY = false; token = token.Substring(2); }
-            var contentMode = token.StartsWith("*");
-            var path = contentMode ? token.Substring(1) : token;
-            var childRt = FindByPath(rt.transform, path)?.TryCast<RectTransform>();
+            var tok = tokens[i];
+            if (tok.Exclude) continue;
+            var childRt = FindByPath(rt.transform, tok.Path)?.TryCast<RectTransform>();
             if (childRt == null) continue;
             var own = ToScreenRect(childRt, cam);
-            var r = contentMode ? ContentUnionRect(childRt, cam, own) : own;
-            if (axisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }
-            if (axisY) { minY = Math.Min(minY, r.Y); maxY = Math.Max(maxY, r.Bottom); }
+            var r = own;
+            if (tok.Content)
+            {
+                contentTokens++;
+                r = SpecUnionRect(childRt, cam, own, exclude, out var any);
+                if (any) contentFound++;
+            }
+            if (tok.AxisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }
+            if (tok.AxisY) { minY = Math.Min(minY, r.Y); maxY = Math.Max(maxY, r.Bottom); }
         }
+        hasContent = contentTokens == 0 || contentFound > 0;
         if (minX > maxX || minY > maxY) return ComputeContentScreenRect(rt, cam);   // nothing resolved
         return new WindowRect(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    // The live transforms named by '-' tokens (null when the spec has none — the common case allocates nothing).
+    private static List<Transform>? ResolveExcludes(RectTransform rt, IReadOnlyList<OutlineToken> tokens)
+    {
+        List<Transform>? list = null;
+        for (var i = 0; i < tokens.Count; i++)
+            if (tokens[i].Exclude && FindByPath(rt.transform, tokens[i].Path) is { } t) (list ??= new()).Add(t);
+        return list;
     }
 
     // Resolve a '/'-separated child path one segment at a time. Il2Cpp's Transform.Find returns null for a
@@ -144,349 +137,94 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     public bool IsAlive(NativeUiHandle handle)
         => _cache.TryGetValue(handle.AllowlistPath, out var e) && e.RectTransform != null;
 
-    // The element's CURRENT curated screen rect, recomputed live while ACTIVE — so the edit outline tracks the
-    // element through animations / layout changes (e.g. the party panel growing 5→20 person). When the element
-    // is HIDDEN (inactive), its world-corners / content-union are invalid (children skipped → collapses to ~0
-    // or jumps to a different node rect), so return the last rect cached while it was visible — a stable,
-    // non-zero "re-enable" outline that doesn't jump on hide/show.
-    public WindowRect GetCurrentRect(NativeUiHandle handle)
+    public NativeUiMeasure Measure(NativeUiHandle handle)
     {
-        if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return handle.OriginalRect;
-        if (!e.RectTransform.gameObject.activeInHierarchy)
-            return e.LastVisibleRect ?? e.OriginalScreenRect;
-        var r = ComputeOutlineRect(e.RectTransform, e.Camera, e.RectChildPath);
-        // While the game collapses its HUD (loading / cutscene), elements are active but shrink to a ~1px stub at
-        // the screen edge, so the live rect is degenerate. Don't let the edit-mode grab-box follow it down to the
-        // corner, and NEVER cache a stub — hold the last rect seen at real size (carried across re-resolves, see
-        // TryResolve) so the box stays at the user's spot through the transition. A real widget is never tiny in
-        // BOTH axes when shown (a thin bar is still wide), so this only catches the collapsed/transient case.
-        if (IsCollapsedStub(r)) return e.LastVisibleRect ?? e.OriginalScreenRect;
-        e.LastVisibleRect = r;   // cache only real-size rects, for the inactive/collapsed fallback
-        return r;
-    }
-
-    // Pull a rect fully on-screen (top-left in [0, screen-size]) when it fits; larger-than-screen elements keep
-    // their top-left at 0. Keeps a moved game-UI element from clipping off an edge in a wider layout.
-    private static WindowRect ClampFullyOnScreen(WindowRect r)
-    {
-        var x = Math.Clamp(r.X, 0f, Math.Max(0f, Screen.width  - r.Width));
-        var y = Math.Clamp(r.Y, 0f, Math.Max(0f, Screen.height - r.Height));
-        return new WindowRect(x, y, r.Width, r.Height);
-    }
-
-    public void SetVisible(NativeUiHandle handle, bool visible)
-    {
-        if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.GameObject == null) return;
-        if (e.GameObject.activeSelf == visible) return;
-        e.GameObject.SetActive(visible);
-    }
-
-    public void SetRect(NativeUiHandle handle, WindowRect rect)
-    {
-        if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return;
+        if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return default;
         var rt = e.RectTransform;
-        // Never reposition a HIDDEN element. The game deactivates its HUD during cutscenes / scene transitions,
-        // and an inactive RectTransform reports garbage world-corners (GetWorldCorners on a culled subtree
-        // collapses to ~0 / jumps) — see GetCurrentRect. Translating by the resulting bogus delta flings the
-        // element thousands of px off-screen, and it STAYS there when the game re-shows it after the cutscene
-        // (the reported "in-game UI disappears after a cutscene"). Skip while hidden; ReassertAll re-applies the
-        // saved pose once the element is live again.
-        if (!rt.gameObject.activeInHierarchy) return;
-
-        // Compute the live curated rect + the clamped target for the element's CURRENT size, both up front. The
-        // guard and the translate both key off these, and the size matters: an element reflows (grows to its
-        // settled size) AFTER we apply, which is the whole bug this guard fixes.
-        var liveRect = ComputeOutlineRect(rt, e.Camera, e.RectChildPath);
-        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, liveRect.Width, liveRect.Height));
-
-        var target = new Vector2(rect.X, rect.Y);
-        // Skip only when the request is unchanged AND the element is still where we left it AND its curated size
-        // hasn't reflowed. (target, anchoredPosition) alone froze an element whose size grew AFTER we applied —
-        // the reflow moves sizeDelta, not anchoredPosition (the resolution round-trip "quest window drops" bug),
-        // so the size term forces a re-apply when the curated size changes. Comparing the last-applied
-        // anchoredPosition (NOT a clamped-target comparison) avoids churning an element whose on-screen rect
-        // legitimately sits past a screen edge — e.g. the boss HP bar's curated top is ~19px above y=0, which a
-        // clamp-forced target can never match, so a clamped comparison re-applied every tick.
-        if (e.LastAppliedTarget is { } lt && lt == target
-            && e.LastAppliedAnchoredPos is { } la && rt.anchoredPosition == la
-            && e.LastAppliedLiveSize is { } ls
-            && Mathf.Abs(liveRect.Width - ls.x) <= GuardTolerancePx && Mathf.Abs(liveRect.Height - ls.y) <= GuardTolerancePx)
-            return;
-
-        ApplyTranslate(e, rt, rect, liveRect, clamped);
+        // An inactive RectTransform reports garbage world corners (collapsed / jumped) — never measure it.
+        if (!rt.gameObject.activeInHierarchy) return new NativeUiMeasure(default, false, PxPerUnit(e));
+        // A user hide is scale 0 on OUR wrapper, which collapses the world corners. Lift it for the measurement and
+        // put it back in the same frame (nothing renders in between), so a hidden element still reports the rect
+        // it will reappear at — the dimmed re-enable outline — and the self-measure never sees its own hide (the
+        // 2026-11-09 live check: a reassert that measured under scale 0 nudged the profile +24 px).
+        var w = e.Wrapper;
+        var lifted = w != null && w.localScale.x == 0f;
+        WindowRect rect;
+        if (lifted) w!.localScale = Vector3.one;
+        bool hasContent;
+        try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent); }
+        finally { if (lifted) w!.localScale = Vector3.zero; }   // never leave a user-hidden element shown
+        // Not showing also when the curated rect is degenerate in EITHER axis or framed nothing: an active-but-empty
+        // element (Buff Timers with no timed buff, 300x0) must become a grabbable placeholder, not a zero-height box.
+        var showing = hasContent && !IsCollapsedStub(rect) && rect.Width >= MinShownPx && rect.Height >= MinShownPx
+            && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
+        return new NativeUiMeasure(rect, showing, PxPerUnit(e));
     }
 
-    // The translate math + write, split out of SetRect to keep each method under the 50-LoC cap (STELLAR0002).
-    // Only reached for a LIVE element that isn't already at the clamped target (SetRect's guards ran first); the
-    // live curated rect + clamped target are computed once in SetRect and passed in to avoid recomputing them.
-    private void ApplyTranslate(ResolvedEntry e, RectTransform rt, WindowRect rect, WindowRect liveRect, WindowRect clamped)
-    {
-        var parent = rt.parent != null ? rt.parent.TryCast<RectTransform>() : null;
-        if (parent == null) return; // need a RectTransform parent to translate in its local space
+    // An inner wrapper that is EMPTY or has un-adopted siblings measures its own full-stretch node rect (the "*."
+    // content union falls back to it), not the element's content — a bogus default for migration / last-seen size
+    // (the class-gauge bug, 2026-11-11). Report "not showing" until the 10 Hz check has adopted the content.
+    private static bool InnerWrapHoldsContent(ResolvedEntry e)
+        => e.Mode != NativeUiWrapMode.Inner || e.Wrapper == null
+        || (e.Wrapper.childCount > 0 && e.RectTransform!.childCount == 1);
 
-        // Translate RELATIVE TO THE ELEMENT'S CURRENT live position (not the resolve-time snapshot): the move is
-        // the parent-local delta from where the element is NOW to the clamped target top-left. This makes a
-        // zero-movement click a true no-op (target == current → delta 0) and a drag move by exactly the pointer
-        // delta — robust to the element being a different size/position than at resolve (e.g. the party panel
-        // switching between the 5- and 20-person layout). clamped already pulled the requested top-left on-screen
-        // (by the current size) so a saved spot can't push a wider layout off-screen.
-        var curTopLeft = new Vector2(liveRect.X, Screen.height - liveRect.Y);
-        var newTopLeft = new Vector2(clamped.X, Screen.height - clamped.Y);
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, curTopLeft, e.Camera, out var localCur);
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, newTopLeft, e.Camera, out var localNew);
-        var delta = localNew - localCur;
-        // Sanity cap: a parent-local delta larger than this means the live geometry was bogus (a transient /
-        // mid-animation frame gave garbage corners). Never translate by it — that's what flung elements
-        // thousands of px off-screen. Leave LastAppliedAnchoredPos unset so a sane frame re-applies cleanly.
-        if (Mathf.Abs(delta.x) > MaxSaneDeltaPx || Mathf.Abs(delta.y) > MaxSaneDeltaPx) return;
-        rt.anchoredPosition += delta;
-        e.LastAppliedTarget = new Vector2(rect.X, rect.Y);
-        e.LastAppliedAnchoredPos = rt.anchoredPosition;
-        // Record the curated size we translated against: the SetRect guard compares the current curated size to
-        // this to detect a post-apply reflow (size grew, anchoredPosition didn't) and re-apply instead of freezing.
-        e.LastAppliedLiveSize = new UnityEngine.Vector2(liveRect.Width, liveRect.Height);
-    }
+    // Effective CanvasGroup alpha from the element up the hierarchy: the game hides the whole main HUD by the root
+    // CanvasGroup alpha (map open) and keeps the buff bar's group at alpha 0 at rest, both while staying active.
+    private const float MinShowingAlpha = 0.05f;
+    private const float MinShownPx = 3f;
+    private const int GroupAlphaMaxDepth = 16;
 
-    public void RestoreOriginal(NativeUiHandle handle)
+    private static float GroupAlpha(RectTransform rt)
     {
-        if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
-        WriteOriginalPose(e);
-        // Full restore ALSO reverts the active-self flag (host-shutdown mod isolation / a full Reset). The
-        // position-only RestoreOriginalPose deliberately skips this — the game owns show/hide during a resolution
-        // transition, so visibility must be left alone there.
-        if (e.GameObject != null && e.GameObject.activeSelf != e.OriginalActiveSelf)
-            e.GameObject.SetActive(e.OriginalActiveSelf);
-    }
-
-    public void RestoreOriginalPose(NativeUiHandle handle)
-    {
-        // Position/anchor-only restore, visibility untouched — see INativeUiAdapter.RestoreOriginalPose. Called
-        // when a resolution change lands on a resolution with no saved layout: the element must fall back to the
-        // game's default position for the NEW resolution (the captured pose is anchor-based ⇒ resolution-
-        // independent, so the game's canvas re-positions it correctly), but we must not toggle its visibility.
-        if (!_cache.TryGetValue(handle.AllowlistPath, out var e)) return;
-        WriteOriginalPose(e);
-    }
-
-    // Shared writeback for both restore paths: rewrite the captured original ANCHOR pose (anchorMin/Max, pivot,
-    // anchoredPosition, sizeDelta) and clear the last-applied cache so the next SetRect re-writes cleanly instead
-    // of short-circuiting on a stale comparison. Visibility is NOT touched here — that's the only difference
-    // between RestoreOriginal (also reverts active-self) and RestoreOriginalPose (leaves it).
-    private static void WriteOriginalPose(ResolvedEntry e)
-    {
-        if (e.RectTransform != null)
+        var a = 1f;
+        var t = rt.transform;
+        for (var i = 0; i < GroupAlphaMaxDepth && t != null; i++, t = t.parent)
         {
-            e.RectTransform.anchorMin        = e.OriginalAnchorMin;
-            e.RectTransform.anchorMax        = e.OriginalAnchorMax;
-            e.RectTransform.pivot            = e.OriginalPivot;
-            e.RectTransform.anchoredPosition = e.OriginalAnchoredPos;
-            e.RectTransform.sizeDelta        = e.OriginalSizeDelta;
+            var cg = t.GetComponent<CanvasGroup>();
+            if (cg == null) continue;
+            a *= cg.alpha;
+            if (cg.ignoreParentGroups || a < MinShowingAlpha) break;
         }
-        e.LastAppliedTarget = null;
-        e.LastAppliedAnchoredPos = null;
-        e.LastAppliedLiveSize = null;   // load-bearing: the SetRect guard reads it — a restored element must not falsely match on size
+        return a;
     }
 
-    private static GameObject? SearchByPath(string path)
+    // Screen px per local unit of the wrapper's PARENT space (the space wrapper.anchoredPosition lives in): the
+    // element's parent for an outer wrapper, the element itself for an inner one. 0 = unknown (detached view root).
+    private static float PxPerUnit(ResolvedEntry e)
     {
-        // Slow fallback: walk every loaded Canvas and try the leaf subtree.
-        var idx = path.IndexOf('/');
-        var leafPath = idx >= 0 ? path.Substring(idx + 1) : path;
-        foreach (var canvas in Resources.FindObjectsOfTypeAll<Canvas>())
-        {
-            var found = canvas.transform.Find(leafPath);
-            if (found != null) return found.gameObject;
-        }
-        return null;
+        var rt = e.RectTransform;
+        if (rt == null) return 0f;
+        var space = e.Mode == NativeUiWrapMode.Inner ? rt.transform : e.Wrapper != null ? e.Wrapper.parent : rt.parent;
+        if (space == null) return 0f;
+        var a = RectTransformUtility.WorldToScreenPoint(e.Camera, space.TransformPoint(Vector3.zero));
+        var b = RectTransformUtility.WorldToScreenPoint(e.Camera, space.TransformPoint(new Vector3(100f, 0f, 0f)));
+        var px = (b - a).magnitude / 100f;
+        return float.IsFinite(px) ? px : 0f;
     }
 
-    private static WindowRect ToScreenRect(RectTransform rt, Camera? cam)
-    {
-        // Il2CppInterop: GetWorldCorners fills the array IN PLACE. A managed
-        // Vector3[] gets coerced to a throwaway Il2Cpp copy that the method
-        // writes into, leaving the managed array all-zeros — so allocate the
-        // Il2Cpp array explicitly and read back from it.
-        var corners = new Il2CppStructArray<Vector3>(4);
-        rt.GetWorldCorners(corners);
-        // World corners -> screen px. For a ScreenSpaceCamera canvas this needs
-        // the canvas camera; passing null (Overlay) treats world == screen.
-        var min = RectTransformUtility.WorldToScreenPoint(cam, corners[0]); // bottom-left
-        var max = RectTransformUtility.WorldToScreenPoint(cam, corners[2]); // top-right
-        return new WindowRect(min.x, Screen.height - max.y, max.x - min.x, max.y - min.y);
-    }
-
-    // The render camera for the element's canvas, or null for ScreenSpaceOverlay.
-    // Needed by both world->screen (ToScreenRect) and screen->local (SetRect):
-    // the game's HUD canvas is ScreenSpaceCamera, where null gives wrong coords.
-    private static Camera? GetCanvasCamera(RectTransform rt)
-    {
-        var canvas = rt.GetComponentInParent<Canvas>();
-        if (canvas == null) return null;
-        var root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
-        return root.renderMode == RenderMode.ScreenSpaceOverlay ? null : root.worldCamera;
-    }
-
-    // Most Panda HUD groups are full-screen or zero-size CONTAINER nodes whose
-    // visible widget is assembled from absolutely-positioned children — so the
-    // node's own rect is useless for an outline/grab-box. Instead bound the
-    // union of the drawable descendants (those carrying a CanvasRenderer). A
-    // depth cap keeps masked/scrolling content (e.g. the minimap's map markers,
-    // which live many levels down and pan outside the visible mask) from
-    // ballooning the box back to full-screen.
-    private const int ContentMaxDepth = 6;
-    private const int ContentNodeBudget = 1500;
-
-    // Largest parent-local translate SetRect will ever apply. A legit cross-screen move is bounded by the
-    // parent's local size (~ canvas size); anything past this is bogus geometry from a transient frame, so we
-    // refuse it rather than fling the element off-screen.
-    private const float MaxSaneDeltaPx = 6000f;
-
-    // Tolerance (screen px) on the SetRect guard's curated-size comparison: the element is treated as un-reflowed
-    // (and the guard may skip) while its curated width/height stay within this of the last-applied size. Small
-    // enough that a real reflow (hundreds of px) always re-applies, large enough that sub-px curated-size jitter
-    // on a steady element doesn't thrash the translate.
-    private const float GuardTolerancePx = 1.5f;
-
-    private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
-    {
-        // Prefer the node's OWN rect when it's a real widget bound. Many HUD groups whose own rect is useful
-        // (the quickbar = 700x90, the exp bar, the profession-buff group) were being over-expanded by unioning
-        // spatially-separated descendants — e.g. the quickbar's skill-drawer / extra slot floats far above the
-        // main bar, ballooning a 700x90 bar into 959x358. The union is only needed for the genuine CONTAINER
-        // nodes (party/minimap/chat/quest = full-screen, player-HP = zero-width), whose own rect is useless.
-        var nodeRect = ToScreenRect(root, cam);
-        if (IsUsableNodeRect(nodeRect)) return nodeRect;
-        return ContentUnionRect(root, cam, nodeRect);
-    }
-
-    // The screen-rect bounding the visible (non-transparent/enabled/un-culled) drawable descendants of
-    // <paramref name="root"/>, or <paramref name="fallback"/> when nothing draws.
-    private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback)
-    {
-        var acc = new BoundsAcc();
-        AccumulateContentBounds(root.transform, cam, depth: 0, acc);
-        if (!acc.Any) return fallback;
-        return new WindowRect(acc.MinX, Screen.height - acc.MaxY, acc.MaxX - acc.MinX, acc.MaxY - acc.MinY);
-    }
-
-    // A node rect is usable as the outline directly when it's neither a full-screen container (party/minimap/
-    // chat/quest all report the canvas's 1920x1080) nor a zero-size anchor (player-HP's hide-root is 0-wide).
-    private static bool IsUsableNodeRect(WindowRect r)
-    {
-        if (r.Width < 1f || r.Height < 1f) return false;
-        return !(r.Width >= Screen.width * 0.9f && r.Height >= Screen.height * 0.9f);
-    }
-
-    // A collapsed/auto-hidden stub: tiny in BOTH axes (the game shrinks HUD nodes to ~1px during loading /
-    // cutscenes; the idle chat icon is ~18x10). Requiring both axes means a wide-but-thin bar (HP / stamina /
-    // class-gauge, hundreds of px × ~10-15) — a real shown widget — is never mistaken for a stub.
-    private const float StubMaxPx = 24f;
-    private static bool IsCollapsedStub(WindowRect r) => r.Width < StubMaxPx && r.Height < StubMaxPx;
-
-    private static void AccumulateContentBounds(Transform t, Camera? cam, int depth, BoundsAcc acc)
-    {
-        if (t == null || depth > ContentMaxDepth || acc.Budget <= 0) return;
-        acc.Budget--;
-        if (!t.gameObject.activeInHierarchy) return; // hidden subtree contributes nothing
-        var rt = t.TryCast<RectTransform>();
-        if (rt == null) return;
-
-        // A clip region (Mask/RectMask2D, e.g. the minimap's circular mask or a
-        // chat scroll viewport) bounds everything below it — its children pan
-        // freely behind it (the minimap map texture is 1833px). Bound the mask
-        // rect itself and stop, so clipped content can't balloon the box.
-        if (IsClip(t))
-        {
-            AddCorners(rt, cam, acc);
-            return;
-        }
-
-        // Only count a node that's ACTUALLY VISIBLE. A CanvasRenderer alone isn't enough: full-area press
-        // catchers (a=0.00), unfilled placeholder slots (a=0.04), culled, or graphic-less container nodes all
-        // carry a CanvasRenderer yet draw nothing — and they were inflating the union (e.g. the party panel's
-        // transparent presscheck dragged the box left). The node's visible children still contribute their own
-        // corners, so dropping the invisible parent never loses real bounds.
-        if (IsVisibleGraphic(t)) AddCorners(rt, cam, acc);
-        for (var i = 0; i < t.childCount; i++)
-            AccumulateContentBounds(t.GetChild(i), cam, depth + 1, acc);
-    }
-
-    private const float MinVisibleAlpha = 0.1f;
-
-    private static bool IsVisibleGraphic(Transform t)
-    {
-        var g = t.GetComponent<Graphic>();
-        if (g == null || !g.enabled) return false;
-        var cr = g.canvasRenderer;
-        if (cr != null && cr.cull) return false;
-        return g.color.a >= MinVisibleAlpha;
-    }
-
-    private static bool IsClip(Transform t)
-        => t.GetComponent<RectMask2D>() != null
-        || t.GetComponent<Mask>() != null
-        || t.name == "mask" || t.name == "Mask";
-
-    private static void AddCorners(RectTransform rt, Camera? cam, BoundsAcc acc)
-    {
-        var corners = new Il2CppStructArray<Vector3>(4);
-        rt.GetWorldCorners(corners);
-        for (var i = 0; i < 4; i++)
-        {
-            var s = RectTransformUtility.WorldToScreenPoint(cam, corners[i]);
-            acc.Add(s.x, s.y);
-        }
-    }
-
-    private sealed class BoundsAcc
-    {
-        public float MinX = float.MaxValue, MinY = float.MaxValue;
-        public float MaxX = float.MinValue, MaxY = float.MinValue;
-        public int  Budget = ContentNodeBudget;
-        public bool Any;
-        public void Add(float x, float y)
-        {
-            if (x < MinX) MinX = x;
-            if (y < MinY) MinY = y;
-            if (x > MaxX) MaxX = x;
-            if (y > MaxY) MaxY = y;
-            Any = true;
-        }
-    }
+    // The node the curated rect is measured from: our inner wrapper holds an inner-wrapped element's children (it is
+    // full-stretch, so its rect equals the element's), keeping RectChild sub-paths and content depths unchanged.
+    private static RectTransform OutlineRoot(ResolvedEntry e)
+        => e.Mode == NativeUiWrapMode.Inner && e.Wrapper != null ? e.Wrapper : e.RectTransform!;
 
     private sealed class ResolvedEntry
     {
+        public string Id = "";
         public string Path = "";
         public GameObject? GameObject;
         public RectTransform? RectTransform;
         public Camera? Camera;
-        public Vector2 OriginalAnchorMin;
-        public Vector2 OriginalAnchorMax;
-        public Vector2 OriginalPivot;
-        public Vector2 OriginalAnchoredPos;
-        public Vector2 OriginalSizeDelta;
-        public bool    OriginalActiveSelf;
-        public WindowRect OriginalScreenRect;
-        public string? RectChildPath;   // curated rect spec — lets SetRect recompute the live curated size for on-screen clamping
-        public WindowRect? LastVisibleRect;   // last curated rect while active — the editor's outline uses it when hidden (inactive)
-        // Cached last-requested top-left; used by SetRect to skip the
-        // translation math + write when the target hasn't drifted (Mn8).
-        public Vector2? LastAppliedTarget;
-        // The anchoredPosition we LEFT the element at after the last SetRect. Lets the guard tell "still where we
-        // put it" (skip) from "the game reset it" (re-apply) — so a cutscene/scene reset is corrected instead of
-        // leaving the element at the game default.
-        public Vector2? LastAppliedAnchoredPos;
-        // Curated size at the last successful SetRect apply. The SetRect idempotent guard compares it against the
-        // current curated size so a post-apply reflow (size grew, anchoredPosition didn't) forces a re-apply
-        // instead of freezing — the resolution round-trip "quest window drops" fix.
-        public UnityEngine.Vector2? LastAppliedLiveSize;
+        public string? RectChildPath;   // curated rect spec (edit outline / grab box)
+        public NativeUiWrapMode Mode;
+        public bool BlockInputWhenHidden;
+        public RectTransform? Wrapper;      // OUR node carrying offset + hide; null until the element is customized
+        public CanvasGroup? WrapperGroup;   // only for BlockInputWhenHidden (chat): input off while hidden
 
         public NativeUiHandle ToHandle() => new()
         {
             AllowlistPath = Path,
             // Opaque marker — only AllowlistPath is consulted to look up cache.
             GameObjectRef = GameObject != null ? (IntPtr)GameObject.GetInstanceID() : IntPtr.Zero,
-            OriginalRect  = OriginalScreenRect,
         };
     }
 }

@@ -1,330 +1,267 @@
 using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
-using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
 using Stellar.Application.Services;
 using Xunit;
 
 namespace Stellar.Application.Tests.NativeUi;
 
+/// <summary>Wrapper-ownership semantics of <see cref="NativeUiService"/>: only customized elements are wrapped, the
+/// offset lives in wrapper-local units, hide = wrapper scale 0, no re-assert loop, re-wrap on a lost wrapper / rebuilt
+/// element, legacy-rect migration, per slot × resolution persistence. Edit-mode placeholders: NativeUiPlaceholderTests.</summary>
 public sealed class NativeUiServiceTests
 {
-    private static readonly Resolution Res = new(1920, 1080);
+    internal static readonly Resolution Res = new(1920, 1080);
+    internal const string Id = "gameui.test";
+    internal const string P = "slot0.gameui.test.1920x1080";
 
-    private sealed class SlotBox { public int Value; }
+    internal sealed class SlotBox { public int Value; }
 
-    private static (NativeUiService svc, FakeAdapter adapter, InMemoryConfig cfg, SlotBox slot) New()
+    internal static (NativeUiService svc, FakeNativeUiAdapter adapter, NativeUiMemoryConfig cfg, SlotBox slot) New(
+        params NativeUiEntryDescriptor[] extra)
     {
-        var adapter = new FakeAdapter();
-        var cfg = new InMemoryConfig();
+        var adapter = new FakeNativeUiAdapter();
+        var cfg = new NativeUiMemoryConfig();
         var slot = new SlotBox();
-        var targets = new List<NativeUiEntryDescriptor>
-        {
-            new("gameui.test", "Test", "zuiroot/x/y"),
-        };
-        return (new NativeUiService(adapter, cfg, () => slot.Value, new NullLog(), targets), adapter, cfg, slot);
+        var targets = new List<NativeUiEntryDescriptor> { new(Id, "Test", "zuiroot/x/y") };
+        targets.AddRange(extra);
+        return (new NativeUiService(adapter, cfg, () => slot.Value, new NativeUiNullLog(), targets), adapter, cfg, slot);
     }
 
-    [Fact] // The regression: resolving an element the user never touched must not move it.
-    public void UnmodifiedEntry_IsNeverWritten_OnResolveOrReassert()
+    [Fact] // The regression: resolving an element the user never touched must not wrap or write it.
+    public void UnmodifiedEntry_IsNeverWrapped()
     {
         var (svc, adapter, _, _) = New();
-
-        svc.Tick(5f, Res); // crosses both the 5s resolve and 1s reassert thresholds
-        svc.Tick(1f, Res); // another reassert pass
-
+        svc.Tick(0.2f, Res);
+        svc.Tick(1f, Res);
         Assert.Equal(1, adapter.ResolveCount);
-        Assert.Equal(0, adapter.SetRectCount);
-        Assert.Equal(0, adapter.SetVisibleCount);
+        Assert.Equal(0, adapter.ApplyCount);
     }
 
-    [Fact]
-    public void AfterUserMove_ReassertReappliesTheRect()
+    [Fact] // A drag's screen delta becomes a wrapper offset in local units (÷ px-per-unit, y flipped to y-up).
+    public void SetRect_MovesWrapperOffset_InLocalUnits()
     {
         var (svc, adapter, _, _) = New();
-        svc.Tick(5f, Res); // resolve
-
-        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));
-        var afterMove = adapter.SetRectCount; // 1 (the user write)
-
-        svc.Tick(1f, Res); // reassert pass
-
-        Assert.True(adapter.SetRectCount > afterMove, "modified entry should be re-asserted");
+        svc.Tick(0.2f, Res);                                     // resolve; measure base rect (10,20) at 2 px/unit
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));     // +100 px right, +100 px down
+        Assert.Equal((50f, -50f, true), adapter.Applied[Id]);
     }
 
-    [Fact] // Re-assert must NOT force a moved-but-visible element on: the game owns show/hide and hides the HUD
-           // during cutscenes — a 1 Hz SetVisible(true) fought that. Only POSITION is re-asserted here.
-    public void AfterUserMove_Reassert_DoesNotForceVisible()
+    [Fact] // There is no re-assert loop any more: once applied, later ticks never re-write an intact wrapper.
+    public void AfterUserMove_TicksDoNotReapply()
     {
         var (svc, adapter, _, _) = New();
-        svc.Tick(5f, Res);                                   // resolve (no saved override → no SetVisible)
-        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));   // user move; stays visible
-        Assert.Equal(0, adapter.SetVisibleCount);
-
-        svc.Tick(1f, Res);                                   // reassert pass
-        Assert.Equal(0, adapter.SetVisibleCount);            // never force-shown
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        var applies = adapter.ApplyCount;
+        for (var i = 0; i < 30; i++) svc.Tick(0.2f, Res);
+        Assert.Equal(applies, adapter.ApplyCount);
     }
 
-    [Fact] // A USER-requested hide is still enforced every re-assert (the game rebuilds the element shown).
-    public void UserHidden_Reassert_EnforcesHide()
-    {
-        var (svc, adapter, _, _) = New();
-        svc.Tick(5f, Res);
-        svc.SetVisible("gameui.test", false);                // SafeToHide default true → hides
-        var afterHide = adapter.SetVisibleCount;
-
-        svc.Tick(1f, Res);                                   // reassert pass
-        Assert.True(adapter.SetVisibleCount > afterHide, "user hide must be re-enforced on reassert");
-    }
-
-    [Fact]
-    public void SavedOverride_IsAppliedOnResolve_AndReasserted()
+    [Fact] // Hide = scale 0 on OUR wrapper (Apply visible:false) at the current offset; persisted at once.
+    public void SetVisibleFalse_AppliesHideOnWrapper_AndPersists()
     {
         var (svc, adapter, cfg, _) = New();
-        // Persisted override for this (slot × id × resolution).
-        const string prefix = "slot0.gameui.test.1920x1080";
-        cfg.Set($"{prefix}.x", 300f);
-        cfg.Set($"{prefix}.y", 150f);
-        cfg.Set($"{prefix}.w", 200f);
-        cfg.Set($"{prefix}.h", 80f);
-        cfg.Set($"{prefix}.visible", true);
+        svc.Tick(0.2f, Res);
+        svc.SetVisible(Id, false);
+        Assert.Equal((0f, 0f, false), adapter.Applied[Id]);
+        Assert.False(cfg.Get($"{P}.visible", true));
+    }
 
-        svc.Tick(5f, Res); // resolve loads + applies the override
-        var afterResolve = adapter.SetRectCount;
-        svc.Tick(1f, Res); // and keeps defending it
+    [Fact] // The game dropped our wrapper (e.g. re-parented the node): the 10 Hz liveness check re-wraps it.
+    public void LostWrapper_IsRewrapped_OnNextLivenessPass()
+    {
+        var (svc, adapter, _, _) = New();
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        var applies = adapter.ApplyCount;
+        adapter.WrapIntact = false;
+        svc.Tick(0.1f, Res);
+        Assert.Equal(applies + 1, adapter.ApplyCount);
+        Assert.Equal((50f, -50f, true), adapter.Applied[Id]);   // same in-memory offset, no measurement needed
+    }
 
-        Assert.True(afterResolve >= 1, "saved override should apply on resolve");
-        Assert.True(adapter.SetRectCount > afterResolve, "saved override should be re-asserted");
+    [Fact] // Scene change destroyed the element: re-resolve the rebuilt one and re-apply the offset immediately.
+    public void StaleHandle_ReResolves_AndReappliesOffset()
+    {
+        var (svc, adapter, cfg, _) = New();
+        cfg.Set($"{P}.ox", 30f); cfg.Set($"{P}.oy", -12f); cfg.Set($"{P}.visible", true);
+        svc.Tick(0.2f, Res);
+        Assert.Equal(1, adapter.ResolveCount);
+        adapter.Alive = false;                                   // the game rebuilt the battle HUD
+        adapter.Applied.Clear();
+        svc.Tick(0.1f, Res);
+        Assert.Equal(2, adapter.ResolveCount);
+        Assert.Equal((30f, -12f, true), adapter.Applied[Id]);
     }
 
     [Fact]
-    public void Reset_FullyRestores_AndStopsReasserting()
-    {
-        var (svc, adapter, _, _) = New();
-        svc.Tick(5f, Res);
-        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));
-
-        svc.ResetToOriginal("gameui.test");
-        var setRectAtReset = adapter.SetRectCount;
-
-        Assert.Equal(1, adapter.RestoreCount);     // full original-pose writeback, not a SetRect round-trip
-        svc.Tick(1f, Res);                          // reassert pass
-        Assert.Equal(setRectAtReset, adapter.SetRectCount); // no longer modified => not re-asserted
-    }
-
-    [Fact] // Reset drops the saved override for EVERY resolution (not just the current one) — matching how a mod
-           // window's reset removes its LayoutStorage entry screen-wide — so every resolution falls back to default.
-    public void Reset_RemovesOverride_ForAllResolutions()
-    {
-        var (svc, _, cfg, _) = New();
-        var other = new Resolution(2560, 1440);
-
-        svc.Tick(5f, Res);                                          // resolve at 1920x1080
-        svc.SetRect("gameui.test", new WindowRect(100, 200, 50, 40));
-        svc.Commit("gameui.test");                                  // persist under 1920x1080
-        svc.Tick(5f, other);                                        // re-tick so _lastResolution = 2560x1440
-        svc.SetRect("gameui.test", new WindowRect(300, 400, 50, 40));
-        svc.Commit("gameui.test");                                  // persist under 2560x1440
-        Assert.Contains("slot0.gameui.test.1920x1080.x", cfg.Keys);
-        Assert.Contains("slot0.gameui.test.2560x1440.x", cfg.Keys);
-
-        svc.ResetToOriginal("gameui.test");
-
-        // Both resolutions' overrides are gone — every resolution now falls back to the game default.
-        Assert.DoesNotContain("slot0.gameui.test.1920x1080.x", cfg.Keys);
-        Assert.DoesNotContain("slot0.gameui.test.2560x1440.x", cfg.Keys);
-    }
-
-    [Fact] // Scene change destroys + rebuilds the game HUD: a stale (no-longer-alive) entry must re-resolve and
-           // re-apply its saved override to the new element (else the move is lost on scene change — bug #4).
-    public void SceneChange_ReResolves_AndReappliesSavedOverride()
+    public void SavedOffset_IsAppliedOnResolve()
     {
         var (svc, adapter, cfg, _) = New();
-        const string prefix = "slot0.gameui.test.1920x1080";
-        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f);
-        cfg.Set($"{prefix}.w", 200f); cfg.Set($"{prefix}.h", 80f); cfg.Set($"{prefix}.visible", true);
-
-        svc.Tick(5f, Res);                          // resolve #1 + apply override
-        Assert.Equal(1, adapter.ResolveCount);
-        var setRectAtResolve1 = adapter.SetRectCount;
-
-        adapter.Alive = false;                      // simulate the scene-change destroy
-        svc.Tick(5f, Res);                          // resolve pass detects the dead handle
-        Assert.Equal(2, adapter.ResolveCount);      // re-resolved the rebuilt element
-        Assert.True(adapter.SetRectCount > setRectAtResolve1, "saved override re-applied to the new element");
-    }
-
-    [Fact] // Editor enumeration includes a hidden entry, and reports SafeToHide as CanHide.
-    public void EditableElements_IncludesHidden_AndReportsCanHide()
-    {
-        var (svc, _, _, _) = New();
-        svc.Tick(5f, Res);                                  // resolve gameui.test (SafeToHide=true default)
-
-        svc.SetVisible("gameui.test", false);               // hide it
-        var els = new List<EditableElement>(svc.EditableElements());
-
-        var e = Assert.Single(els);
-        Assert.Equal("gameui.test", e.Id);
-        Assert.False(e.Visible);                            // still enumerated while hidden
-        Assert.True(e.CanHide);
+        cfg.Set($"{P}.ox", 30f); cfg.Set($"{P}.oy", -12f); cfg.Set($"{P}.visible", false);
+        svc.Tick(0.2f, Res);
+        Assert.Equal((30f, -12f, false), adapter.Applied[Id]);
     }
 
     [Fact] // Drag-move must not disk-write every frame; persistence waits for Commit (release).
     public void SetRect_DoesNotPersist_UntilCommit()
     {
         var (svc, _, cfg, _) = New();
-        svc.Tick(5f, Res);
-
-        svc.SetRect("gameui.test", new WindowRect(100, 100, 40, 40)); // mid-drag frame
-        Assert.DoesNotContain("slot0.gameui.test.1920x1080.x", cfg.Keys);
-
-        svc.Commit("gameui.test");                              // release
-        Assert.Contains("slot0.gameui.test.1920x1080.x", cfg.Keys);
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        Assert.DoesNotContain($"{P}.ox", cfg.Keys);
+        svc.Commit(Id);
+        Assert.Equal(50f, cfg.Get($"{P}.ox", 0f));
+        Assert.Equal(-50f, cfg.Get($"{P}.oy", 0f));
     }
 
-    [Fact] // A layout slot captures native-UI positions independently per slot.
-    public void Slots_StoreNativePositionsIndependently()
+    [Fact] // Pre-wrapper layouts (.x/.y screen top-left) migrate once the element is seen: offset = saved − default.
+    public void LegacyRect_MigratesToOffset_WhenSeen()
+    {
+        var (svc, adapter, cfg, _) = New();
+        cfg.Set($"{P}.x", 300f); cfg.Set($"{P}.y", 150f); cfg.Set($"{P}.visible", true);
+        svc.Tick(0.2f, Res);                                     // resolve (offset 0 until measured)
+        svc.Tick(1f, Res);                                       // 1 Hz measure pass → migrate
+        Assert.Equal(145f, cfg.Get($"{P}.ox", 0f));              // (300 − 10) / 2
+        Assert.Equal(-65f, cfg.Get($"{P}.oy", 0f));              // −(150 − 20) / 2
+        Assert.Equal((145f, -65f, true), adapter.Applied[Id]);
+        Assert.Contains($"{P}.x", cfg.Keys);                     // old keys are not deleted by this change
+    }
+
+    [Fact] // A legacy element the user had hidden stays hidden from the first frame (before any measurement).
+    public void LegacyHidden_IsHiddenImmediately()
+    {
+        var (svc, adapter, cfg, _) = New();
+        cfg.Set($"{P}.x", 300f); cfg.Set($"{P}.y", 150f); cfg.Set($"{P}.visible", false);
+        svc.Tick(0.2f, Res);
+        Assert.Equal((0f, 0f, false), adapter.Applied[Id]);
+    }
+
+    [Fact] // A legacy element the game isn't showing yet is not migrated against a bogus rect — it waits.
+    public void LegacyRect_WaitsWhileGameHidesElement()
+    {
+        var (svc, adapter, cfg, _) = New();
+        cfg.Set($"{P}.x", 300f); cfg.Set($"{P}.y", 150f);
+        adapter.Showing = false;
+        svc.Tick(0.2f, Res);
+        svc.Tick(1f, Res);
+        Assert.DoesNotContain($"{P}.ox", cfg.Keys);
+    }
+
+    [Fact]
+    public void MigrationMath_SubtractsDefault_FlipsY_DividesByScale()
+    {
+        Assert.Equal((145f, -65f), NativeUiService.MigrateLegacyOffset(300, 150, new WindowRect(10, 20, 100, 40), 2f));
+        Assert.Equal((0f, 0f), NativeUiService.ScreenDeltaToOffset(10, 10, 0f));   // unknown scale → no move
+        Assert.Equal((20f, -8f), NativeUiService.OffsetToScreenDelta(10, 4, 2f));
+    }
+
+    [Fact] // Reset drops the override for EVERY resolution and unwraps the element.
+    public void Reset_RemovesOverride_ForAllResolutions_AndUnwraps()
+    {
+        var (svc, adapter, cfg, _) = New();
+        var other = new Resolution(2560, 1440);
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        svc.Commit(Id);
+        svc.ReapplyForActiveSlot(other, applyVisibility: false);
+        svc.Tick(0.2f, other);
+        svc.SetRect(Id, new WindowRect(300, 400, 100, 40));
+        svc.Commit(Id);
+        Assert.Contains($"{P}.ox", cfg.Keys);
+        Assert.Contains("slot0.gameui.test.2560x1440.ox", cfg.Keys);
+        var unwraps = adapter.UnwrapCount;
+
+        svc.ResetToOriginal(Id);
+
+        Assert.DoesNotContain($"{P}.ox", cfg.Keys);
+        Assert.DoesNotContain("slot0.gameui.test.2560x1440.ox", cfg.Keys);
+        Assert.True(adapter.UnwrapCount > unwraps);
+    }
+
+    [Fact] // A layout slot captures native-UI offsets independently; a slot without an override unwraps.
+    public void Slots_StoreOffsetsIndependently()
     {
         var (svc, adapter, cfg, slot) = New();
-        svc.Tick(5f, Res);                                  // resolve on slot 0
-
-        svc.SetRect("gameui.test", new WindowRect(100, 100, 40, 40));
-        svc.Commit("gameui.test");                          // release => persist under slot0
-        Assert.Contains("slot0.gameui.test.1920x1080.x", cfg.Keys);
-
-        slot.Value = 1;                                     // user switches to slot 1
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        svc.Commit(Id);
+        slot.Value = 1;
+        var unwraps = adapter.UnwrapCount;
         svc.ReapplyForActiveSlot(Res);
-        var restoreAfterSwitch = adapter.RestoreCount;
-        Assert.True(restoreAfterSwitch >= 1, "switching to a slot with no override snaps back to original");
-
-        svc.SetRect("gameui.test", new WindowRect(500, 500, 40, 40));
-        svc.Commit("gameui.test");                          // persist under slot1
-        Assert.Contains("slot1.gameui.test.1920x1080.x", cfg.Keys);
-        // slot0's value is untouched.
-        Assert.Equal(100f, cfg.Get("slot0.gameui.test.1920x1080.x", -1f));
-        Assert.Equal(500f, cfg.Get("slot1.gameui.test.1920x1080.x", -1f));
+        Assert.True(adapter.UnwrapCount > unwraps, "switching to a slot with no override unwraps");
+        svc.SetRect(Id, new WindowRect(10, 220, 100, 40));      // +200 px down from the default (10,20)
+        svc.Commit(Id);
+        Assert.Equal(50f, cfg.Get($"{P}.ox", -1f));               // slot 0 untouched
+        Assert.Equal(-100f, cfg.Get("slot1.gameui.test.1920x1080.oy", -1f));
     }
 
-    [Fact] // Closest-resolution fallback (parity with the mod-window path): a saved pose under a NEAR-MISS resolution
-           // is recovered, so a transient/changed resolution read during a scene load can't strand the element at the
-           // game default with IsModified=false (which ReassertAll would then skip forever).
-    public void SavedOverride_UnderNearMissResolution_IsRecovered_AndDefended()
+    [Fact] // Closest-resolution fallback within 10% (parity with the mod-window path).
+    public void SavedOffset_UnderNearMissResolution_IsRecovered()
     {
         var (svc, adapter, cfg, _) = New();
-        const string prefix = "slot0.gameui.test.1920x1080";   // saved only at 1920x1080
-        cfg.Set($"{prefix}.x", 300f);
-        cfg.Set($"{prefix}.y", 150f);
-        cfg.Set($"{prefix}.visible", true);
-
-        var nearMiss = new Resolution(1900, 1060);             // within the 10% delta, but no exact key exists
-        svc.Tick(5f, nearMiss);                                // resolve loads the pose via the closest-res fallback
-        var afterResolve = adapter.SetRectCount;
-        svc.Tick(1f, nearMiss);                                // and keeps defending it (fallback set IsModified)
-
-        Assert.True(afterResolve >= 1, "near-miss saved override should apply on resolve via the closest-res fallback");
-        Assert.True(adapter.SetRectCount > afterResolve, "recovered override should be re-asserted (IsModified true)");
+        cfg.Set($"{P}.ox", 30f); cfg.Set($"{P}.oy", 5f);
+        svc.Tick(0.2f, new Resolution(1900, 1060));
+        Assert.Equal((30f, 5f, true), adapter.Applied[Id]);
     }
 
-    [Fact] // The fallback respects the delta cap: a FAR resolution never borrows an unrelated saved pose — the
-           // element stays exactly where the game placed it (unmodified), same as having no override at all.
-    public void SavedOverride_UnderFarResolution_IsNotBorrowed()
+    [Fact] // …but a FAR resolution never borrows an unrelated saved pose.
+    public void SavedOffset_UnderFarResolution_IsNotBorrowed()
     {
         var (svc, adapter, cfg, _) = New();
-        const string prefix = "slot0.gameui.test.1920x1080";
-        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
-
-        svc.Tick(5f, new Resolution(800, 600));                // far outside the 10% delta → no fallback match
-        Assert.Equal(0, adapter.SetRectCount);                 // untouched: no exact key, no close-enough key
+        cfg.Set($"{P}.ox", 30f); cfg.Set($"{P}.oy", 5f);
+        svc.Tick(0.2f, new Resolution(800, 600));
+        Assert.Equal(0, adapter.ApplyCount);
     }
 
-    [Fact] // Switching to a resolution with NO saved layout returns the element to the game's DEFAULT anchoring
-           // (position-only) instead of stranding it at the previous resolution's translate — and never touches
-           // visibility (the game owns show/hide during a resolution transition).
-    public void ReapplyForActiveSlot_UnconfiguredResolution_RestoresPoseOnly()
+    [Fact] // Resolution change to an unconfigured resolution = game default (offset 0); a user hide is preserved.
+    public void ReapplyForActiveSlot_UnconfiguredResolution_ReturnsToDefault_KeepsVisibility()
     {
         var (svc, adapter, cfg, _) = New();
-        const string prefix = "slot0.gameui.test.1920x1080";   // saved only at 1920x1080
-        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
-
-        svc.Tick(5f, Res);                                     // resolve + apply the saved 1920x1080 pose
-        var visibleBefore = adapter.SetVisibleCount;
-
-        // Resolution change to a FAR resolution with no saved layout (and none close enough to borrow).
+        cfg.Set($"{P}.ox", 30f); cfg.Set($"{P}.oy", 5f); cfg.Set($"{P}.visible", false);
+        svc.Tick(0.2f, Res);
         svc.ReapplyForActiveSlot(new Resolution(800, 600), applyVisibility: false);
+        Assert.Equal((0f, 0f, false), adapter.Applied[Id]);     // offset 0, still hidden (wrapped at scale 0)
 
-        Assert.Equal(1, adapter.RestoreOriginalPoseCount);     // fell back to the game default (pose only)
-        Assert.Equal(0, adapter.RestoreCount);                 // NOT the full restore
-        Assert.Equal(visibleBefore, adapter.SetVisibleCount);  // visibility left alone
+        cfg.Set($"{P}.visible", true);
+        svc.ReapplyForActiveSlot(Res, applyVisibility: false);  // back: offset restored, visibility untouched
+        Assert.Equal((30f, 5f, false), adapter.Applied[Id]);
     }
 
-    [Fact] // A canvas-generation bump (scene change) invalidates cached handles: the next Tick re-resolves against
-           // the rebuilt nodes and re-applies the saved pose — on the SAME tick, because the accumulator is armed.
+    [Fact] // A canvas-generation bump invalidates handles: the next Tick re-resolves on the SAME beat (armed).
     public void InvalidateResolvedHandles_ForcesReResolve_OnNextTick()
     {
-        var (svc, adapter, cfg, _) = New();
-        const string prefix = "slot0.gameui.test.1920x1080";
-        cfg.Set($"{prefix}.x", 300f); cfg.Set($"{prefix}.y", 150f); cfg.Set($"{prefix}.visible", true);
+        var (svc, adapter, _, _) = New();
+        svc.Tick(0.2f, Res);
+        svc.InvalidateResolvedHandles();
+        svc.Tick(0.016f, Res);
+        Assert.Equal(2, adapter.ResolveCount);
+    }
 
-        svc.Tick(5f, Res);                          // resolve #1 + apply override
+    [Fact] // Scene-enter signals arm an immediate absent-resolve pass (no 0.5 s wait).
+    public void RequestRecheck_ResolvesAbsentElement_OnNextTick()
+    {
+        var (svc, adapter, _, _) = New();
+        adapter.Absent.Add(Id);
+        svc.Tick(0.2f, Res);
+        adapter.Absent.Clear();
+        svc.Tick(0.016f, Res);
+        Assert.Equal(0, adapter.ResolveCount);                   // below every cadence → not yet
+        svc.RequestRecheck();
+        svc.Tick(0.016f, Res);
         Assert.Equal(1, adapter.ResolveCount);
-
-        svc.InvalidateResolvedHandles();            // Host calls this on a canvas-generation bump
-        svc.Tick(0.016f, Res);                      // a single ~60fps beat re-resolves (accumulator was armed)
-        Assert.Equal(2, adapter.ResolveCount);      // re-resolved against the rebuilt element
     }
 
-    private sealed class FakeAdapter : INativeUiAdapter
+    [Fact] // Framework dispose unwraps every resolved element (mod isolation).
+    public void OnFrameworkDispose_UnwrapsResolved()
     {
-        public int ResolveCount, SetRectCount, SetVisibleCount, RestoreCount, RestoreOriginalPoseCount;
-        public bool Alive = true;   // toggled by scene-change self-heal tests; resolved entries stay resolved while true
-        public bool TryResolve(string allowlistPath, string? rectChildPath, out NativeUiHandle handle)
-        {
-            ResolveCount++;
-            handle = new NativeUiHandle
-            {
-                AllowlistPath = allowlistPath,
-                GameObjectRef = (IntPtr)1,
-                OriginalRect  = new WindowRect(10, 20, 100, 40),
-            };
-            return true;
-        }
-        public void SetVisible(NativeUiHandle handle, bool visible) => SetVisibleCount++;
-        public void SetRect(NativeUiHandle handle, WindowRect rect) => SetRectCount++;
-        public void RestoreOriginal(NativeUiHandle handle) => RestoreCount++;
-        // Pose-only restore: mirror the real adapter's contract — no visibility toggle here (the game owns
-        // show/hide during a resolution transition), so this stub touches SetVisibleCount not at all.
-        public void RestoreOriginalPose(NativeUiHandle handle) => RestoreOriginalPoseCount++;
-        public bool IsAlive(NativeUiHandle handle) => Alive;
-        public WindowRect GetCurrentRect(NativeUiHandle handle) => handle.OriginalRect;
-        public void DumpDiagnostics(System.Action<string> log) { }
-    }
-
-    private sealed class InMemoryConfig : IConfigSection, IConfigKeyReader
-    {
-        private readonly Dictionary<string, object?> _v = new();
-        public System.Collections.Generic.IEnumerable<string> Keys => _v.Keys;
-        public T? Get<T>(string key, T? def) => _v.TryGetValue(key, out var x) && x is T t ? t : def;
-        public void Set<T>(string key, T value) => _v[key] = value;
-        public void Save() { }
-        public void SaveQuiet() { }
-        public void RemoveByPrefix(string prefix)
-        {
-            foreach (var k in new List<string>(_v.Keys))
-                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) _v.Remove(k);
-        }
-        public System.Collections.Generic.IEnumerable<string> KeysWithPrefix(string prefix)
-        {
-            foreach (var k in new List<string>(_v.Keys))
-                if (k.StartsWith(prefix, System.StringComparison.Ordinal)) yield return k;
-        }
-    }
-
-    private sealed class NullLog : IPluginLog
-    {
-        public void Info(string m) { }
-        public void Warning(string m) { }
-        public void Error(string m) { }
-        public void Debug(string m) { }
+        var (svc, adapter, _, _) = New();
+        svc.Tick(0.2f, Res);
+        svc.SetRect(Id, new WindowRect(110, 120, 100, 40));
+        var unwraps = adapter.UnwrapCount;
+        svc.OnFrameworkDispose();
+        Assert.Equal(unwraps + 1, adapter.UnwrapCount);
     }
 }

@@ -30,9 +30,9 @@ internal sealed partial class PandaHudAdapter
             if (e.RectTransform == null || e.GameObject == null) continue;
             var node = ToScreenRect(e.RectTransform, e.Camera);
             var content = ComputeContentScreenRect(e.RectTransform, e.Camera);
-            var outline = e.OriginalScreenRect;   // what the grab-box ACTUALLY uses (RectChild applied at resolve)
+            var outline = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath);   // what the grab-box ACTUALLY uses (RectChild applied)
             log($"[NativeUi/RectDiag] {e.Path}");
-            log($"[NativeUi/RectDiag]   node    =({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) active={e.GameObject.activeInHierarchy}");
+            log($"[NativeUi/RectDiag]   node    =({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) active={e.GameObject.activeInHierarchy} wrapped={(e.Wrapper != null ? e.Mode.ToString() : "no")}");
             log($"[NativeUi/RectDiag]   content =({content.X:0},{content.Y:0} {content.Width:0}x{content.Height:0}) (auto)");
             log($"[NativeUi/RectDiag]   OUTLINE =({outline.X:0},{outline.Y:0} {outline.Width:0}x{outline.Height:0}) <- grab-box (RectChild if curated)");
             var count = 0;
@@ -49,7 +49,13 @@ internal sealed partial class PandaHudAdapter
         if (t == null || depth > ContentMaxDepth || count >= DiagMaxLinesPerEntry) return;
         if (!t.gameObject.activeInHierarchy) return;
         var rt = t.TryCast<RectTransform>();
-        if (rt == null) return;
+        if (rt == null)   // plain Transform holder: no rect, but its subtree draws (same rule as AccumulateContentBounds)
+        {
+            log($"[NativeUi/RectDiag]     {new string(' ', depth * 2)}{t.name} (Transform)");
+            count++;
+            for (var i = 0; i < t.childCount; i++) DumpContributors(t.GetChild(i), cam, depth + 1, ref count, log);
+            return;
+        }
 
         // Log EVERY active node (not just drawables) so a curation target — often a non-drawable layout
         // container whose own rect tightly frames the visible widget — is visible too. Tag: clip / draw
@@ -74,18 +80,37 @@ internal sealed partial class PandaHudAdapter
         var node = ToScreenRect(rt, cam);
         _log.Info($"[NativeUi/Curate] {allowlistPath} spec='{spec ?? "(none)"}' node=({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) outline=({outline.X:0},{outline.Y:0} {outline.Width:0}x{outline.Height:0})");
         if (string.IsNullOrEmpty(spec)) return;
-        foreach (var token in spec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var token in OutlineSpec.Parse(spec))
         {
-            var path = token.StartsWith("*") ? token.Substring(1) : token;
+            var path = token.Path;
             var cur = rt.transform;
             var failSeg = "";
             foreach (var seg in path.Split('/'))
             {
+                if (seg.Length == 0 || seg == ".") continue;   // "." = the element itself (FindByPath parity)
                 cur = cur == null ? null : cur.Find(seg);
                 if (cur == null) { failSeg = seg; break; }
             }
-            _log.Info($"[NativeUi/Curate]   token '{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}");
+            _log.Info($"[NativeUi/Curate]   token {(token.Exclude ? "-" : token.Content ? "*" : "")}'{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}{UnionWalkInfo(token, cur, cam)}");
         }
+    }
+
+    // For a "*" token: how the content-union walk went — nodes visited and whether the depth cap or the node budget cut
+    // it (either silently drops drawables, e.g. a cluster that is the LAST child of a big bar). Diagnostics only.
+    private static string UnionWalkInfo(OutlineToken token, Transform? node, Camera? cam)
+    {
+        if (!token.Content || node == null) return "";
+        var acc = SpecAcc(null);
+        acc.ClipLog = new System.Collections.Generic.List<string>();
+        AccumulateContentBounds(node, cam, depth: 0, acc);
+        var clips = acc.ClipLog.Count == 0 ? "none" : string.Join(", ", acc.ClipLog);
+        return $" union: visited={ContentNodeBudget - acc.Budget} any={acc.Any} depthCapped={acc.DepthCapped} budgetHit={acc.BudgetHit} clips=[{clips}]";
+    }
+
+    private static string ClipEntry(Transform t, RectTransform rt, Camera? cam)
+    {
+        var r = ToScreenRect(rt, cam);
+        return $"{t.name} ({r.X:0},{r.Y:0} {r.Width:0}x{r.Height:0})";
     }
 
     private static string GraphicInfo(Transform t)

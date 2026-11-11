@@ -53,6 +53,7 @@ public sealed partial class BootstrapPlugin
         _photoModeProbe = new PandaPhotoModeProbe(_gameTypeRegistry!, _clientState!, log);
         _photoMode = new PhotoModeService(_photoModeProbe);
         WirePhotoReassert();
+        WireNativeUiRewrapSignals();   // scene entry / HUD re-init → native-UI re-wrap (Wiring.NativeUi)
         WireRenderQualityPhotoSignals();
         var renderLook = _renderLook;
         _framework!.Update += _ => { renderLook.Tick(); DrainPhotoReassert(); };   // Tick is a no-op unless a look tracks the player

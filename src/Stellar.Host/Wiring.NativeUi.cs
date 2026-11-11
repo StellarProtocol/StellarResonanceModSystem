@@ -29,9 +29,26 @@ public sealed partial class BootstrapPlugin
         var descriptors = new List<NativeUiEntryDescriptor>();
         foreach (var entry in NativeUiAllowlist.V1Targets)
             descriptors.Add(new NativeUiEntryDescriptor(entry.Id, entry.DisplayNameKey, entry.Path)
-                { SafeToHide = entry.SafeToHide, RectChild = entry.RectChild });
+                {
+                    SafeToHide = entry.SafeToHide, RectChild = entry.RectChild, Wrap = entry.Wrap,
+                    BlockInputWhenHidden = entry.BlockInputWhenHidden, DefaultFraction = entry.DefaultFraction,
+                    HintKey = entry.HintKey, SubHintKey = entry.SubHintKey,
+                });
         _nativeUi = new NativeUiService(new PandaHudAdapter(log), gameUiSection,
                                         () => _layoutStorage!.ActiveSlot, log, descriptors);
+    }
+
+    /// <summary>
+    /// Event-driven re-wrap: a scene change rebuilds the battle HUD + chat (our wrappers die with the old objects),
+    /// so the game's scene-entry / HUD re-init signals arm an immediate liveness + resolve pass on the next native-UI
+    /// tick instead of waiting for a poll. Handlers only set a flag (O(1)); the work runs on the un-gated tick.
+    /// Called once the visibility backend (owner of the ZUiRoot/HudMgr Init + HudMgr.OnEnterScene postfixes) exists.
+    /// </summary>
+    private void WireNativeUiRewrapSignals()
+    {
+        if (_nativeUi is not { } nativeUi) return;
+        _clientState!.SceneChanged += _ => nativeUi.RequestRecheck();
+        if (_visibilityBackend is not null) _visibilityBackend.TargetRebuilt += nativeUi.RequestRecheck;
     }
 
     /// <summary>

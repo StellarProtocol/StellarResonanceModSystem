@@ -7,28 +7,24 @@ using Stellar.Application.Abstractions;
 namespace Stellar.Application.Services;
 
 /// <summary>
-/// Manages per-resolution position/visibility state for the native UI
-/// allowlist. Holds resolved handles; re-asserts saved rects on a 1 Hz
-/// cadence to defeat per-frame Panda updates. Persists per (id × resolution)
-/// flat keys through a single <see cref="IConfigSection"/>.
+/// Per-resolution move/hide state for the native UI allowlist. A customized element is owned through a framework
+/// WRAPPER (see <see cref="INativeUiAdapter"/>): its offset + hide live on our RectTransform, so the game's own
+/// writes to its node compose with ours instead of fighting them — there is no re-assert loop any more. The tick
+/// only (a) re-wraps when a scene change rebuilt the element and (b) resolves absent elements at a low rate.
+/// Persists per (slot × id × resolution) flat keys through a single <see cref="IConfigSection"/>.
 /// </summary>
 /// <remarks>
-/// Ownership: <see cref="OnFrameworkDispose"/> restores every modified
-/// element to its OriginalRect so unloading the framework leaves the game's
-/// native UI in its original positions (mod isolation).
+/// Ownership: <see cref="OnFrameworkDispose"/> unwraps every element so unloading the framework leaves the game's
+/// HUD hierarchy exactly as we found it (mod isolation). Untouched elements are never wrapped.
 /// </remarks>
-internal sealed class NativeUiService
+internal sealed partial class NativeUiService
 {
-    private const float ReassertIntervalSeconds = 1.0f;
-    private const float ResolveRetrySeconds     = 5.0f;
-
     private readonly INativeUiAdapter _adapter;
     private readonly IConfigSection _config;
     private readonly Func<int> _activeSlot;
     private readonly IPluginLog _log;
     private readonly Dictionary<string, EntryState> _entries = new();
-    private float _reassertAccumulator;
-    private float _resolveAccumulator;
+    private readonly EntryState[] _order;   // stable iteration order without a dictionary enumerator per pass
     private Resolution _lastResolution;
 
     public NativeUiService(INativeUiAdapter adapter, IConfigSection config, Func<int> activeSlot,
@@ -38,76 +34,55 @@ internal sealed class NativeUiService
         _config = config;
         _activeSlot = activeSlot;
         _log = log;
-        foreach (var t in targets)
-            _entries[t.Id] = new EntryState(t);
+        _order = new EntryState[targets.Count];
+        for (var i = 0; i < targets.Count; i++)
+            _entries[targets[i].Id] = _order[i] = new EntryState(targets[i]);
         _log.Info($"[NativeUi] tracking {_entries.Count} allowlist entries");
     }
 
     public IReadOnlyCollection<EntryState> Entries => _entries.Values;
 
-    /// <summary>The entry's CURRENT curated screen rect (live), for the edit-mode outline + hit-test — so the
-    /// box tracks the element's real size/position (e.g. the party panel growing 5→20 person) rather than the
-    /// rect snapshotted at resolve.</summary>
-    public WindowRect GetLiveRect(EntryState e) => e.IsResolved ? _adapter.GetCurrentRect(e.Handle) : e.Rect;
-
-    /// <summary>All resolved native-UI entries the editor can outline — INCLUDING hidden ones (so they keep a
-    /// dimmed re-enable outline). Rect is the live curated rect; CanHide mirrors the allowlist SafeToHide flag.</summary>
-    public IEnumerable<EditableElement> EditableElements()
-    {
-        foreach (var e in _entries.Values)
-            if (e.IsResolved)
-                yield return new EditableElement(e.Descriptor.Id, GetLiveRect(e), e.Visible, e.Descriptor.SafeToHide, Resizable: false);
-    }
-
-    public void Tick(float deltaTime, Resolution currentRes)
-    {
-        _lastResolution = currentRes;
-        _reassertAccumulator += deltaTime;
-        _resolveAccumulator += deltaTime;
-
-        if (_resolveAccumulator >= ResolveRetrySeconds)
-        {
-            _resolveAccumulator = 0f;
-            TryResolveAll(currentRes);
-        }
-        if (_reassertAccumulator >= ReassertIntervalSeconds)
-        {
-            _reassertAccumulator = 0f;
-            ReassertAll();
-        }
-    }
-
     public void SetVisible(string id, bool visible)
     {
-        if (!_entries.TryGetValue(id, out var e) || !e.IsResolved) return;
+        if (!_entries.TryGetValue(id, out var e) || !IsOffered(e)) return;
         if (!e.Descriptor.SafeToHide && !visible)
         {
             _log.Warning($"[NativeUi] '{id}' is not safe-to-hide; ignoring request.");
             return;
         }
-        _adapter.SetVisible(e.Handle, visible);
         e.Visible = visible;
         e.IsModified = true;
+        ApplyToGame(e);
         Persist(e);
     }
 
     /// <summary>
-    /// Apply a new rect to the live element WITHOUT persisting — called every
-    /// frame during a drag. Persisting (a disk write) is deferred to
-    /// <see cref="Commit"/> on drag-release, matching the mod-window behaviour.
+    /// Move the element so its curated rect's top-left lands at <paramref name="rect"/> (screen px, top-left /
+    /// y-down) WITHOUT persisting — called every frame during a drag; <see cref="Commit"/> persists on release.
+    /// The screen delta from the element's current rect becomes a wrapper-offset delta in the wrapper parent's
+    /// local units. Works on a placeholder too (absent / game-hidden element): the offset applies when it appears.
     /// </summary>
     public void SetRect(string id, WindowRect rect)
     {
-        if (!_entries.TryGetValue(id, out var e) || !e.IsResolved) return;
-        _adapter.SetRect(e.Handle, rect);
-        e.Rect = rect;
+        if (!_entries.TryGetValue(id, out var e) || !IsOffered(e)) return;
+        var cur = GetLiveRect(e);
+        var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, cur.Width, cur.Height), _lastResolution);
+        var (dox, doy) = ScreenDeltaToOffset(clamped.X - cur.X, clamped.Y - cur.Y, PxPerUnit(e));
+        e.OffsetX += dox;
+        e.OffsetY += doy;
+        e.LegacyRect = null;   // an explicit user move supersedes a pending legacy-rect migration
         e.IsModified = true;
+        e.Rect = clamped;
+        // Keep the cached measurement in step so the outline tracks the drag this tick (the 10 Hz re-measure
+        // would otherwise lag it).
+        if (e.HasMeasure) e.LastMeasure = e.LastMeasure with { Rect = clamped };
+        ApplyToGame(e);
     }
 
-    /// <summary>Persist the current rect/visibility for <paramref name="id"/> — call on drag-release.</summary>
+    /// <summary>Persist the current offset/visibility for <paramref name="id"/> — call on drag-release.</summary>
     public void Commit(string id)
     {
-        if (_entries.TryGetValue(id, out var e) && e.IsResolved) Persist(e);
+        if (_entries.TryGetValue(id, out var e)) Persist(e);
     }
 
     /// <summary>Forward a diagnostic rect dump to the adapter (self-gates on diagnostics; called on edit-mode
@@ -116,272 +91,76 @@ internal sealed class NativeUiService
 
     public void ResetToOriginal(string id)
     {
-        if (!_entries.TryGetValue(id, out var e) || !e.IsResolved) return;
-        // Full original-pose writeback (anchors/pivot/size/pos/active), not a
-        // SetRect round-trip — SetRect only translates anchoredPosition, so a
-        // reset-via-SetRect could leave an element the game has since nudged.
-        _adapter.RestoreOriginal(e.Handle);
-        e.Rect = e.Handle.OriginalRect;
-        e.Visible = true;
-        e.IsModified = false;
-        // Reset = drop the saved override entirely (matches LayoutStorage.Remove for
-        // mod windows), NOT re-persist the original pose. Remove every persisted key
-        // for this id under the active slot across ALL resolutions (prefix has a
-        // trailing dot, so it can't collide with a longer id that shares this stem),
-        // so every resolution now falls back to the game's own default.
+        if (!_entries.TryGetValue(id, out var e)) return;
+        ClearOverride(e, visible: true);
+        // Reset = drop the saved override entirely (matches LayoutStorage.Remove for mod windows). Remove every
+        // persisted key for this id under the active slot across ALL resolutions (prefix has a trailing dot, so it
+        // can't collide with a longer id sharing this stem) → every resolution falls back to the game default.
         _config.RemoveByPrefix($"slot{_activeSlot()}.{id}.");
         _config.Save();
     }
 
     public void ResetAll()
     {
-        foreach (var e in _entries.Values)
-            if (e.IsResolved) ResetToOriginal(e.Descriptor.Id);
+        foreach (var e in _order) ResetToOriginal(e.Descriptor.Id);
     }
 
     /// <summary>
-    /// Re-apply the active layout slot's saved native-UI positions to every
-    /// already-resolved entry. Called on slot-switch (LayoutEditorOverlay) so a
-    /// layout slot restores the game HUD arrangement alongside the mod windows.
-    /// Entries with no override in the new slot snap back to the game's original
-    /// pose. applyVisibility=true (slot-switch) also applies saved/forced show-hide;
-    /// false (resolution change) applies position only and leaves current visibility.
+    /// Re-load the active layout slot's saved state for <paramref name="res"/> into every entry and push it to the
+    /// game. Called on slot-switch (applyVisibility=true: saved show/hide too; no override → back to default and
+    /// shown) and on a resolution change (applyVisibility=false: position only; an unconfigured resolution falls
+    /// back to the game default = offset 0, while the current visibility is kept).
     /// </summary>
     public void ReapplyForActiveSlot(Resolution res, bool applyVisibility = true)
     {
         _lastResolution = res;
-        var slot = _activeSlot();
-        foreach (var e in _entries.Values)
-        {
-            if (!e.IsResolved) continue;
-            if (TryLoadFor(slot, e.Descriptor.Id, res, out var rect, out var visible))
-            {
-                _adapter.SetRect(e.Handle, rect);
-                e.Rect = rect;
-                e.IsModified = true;
-                if (applyVisibility) { _adapter.SetVisible(e.Handle, visible); e.Visible = visible; }
-            }
-            else
-            {
-                e.IsModified = false;
-                if (applyVisibility)
-                {
-                    // Slot-switch (same resolution): an un-overridden element snaps back to the game original.
-                    // OriginalRect is valid here because the resolution isn't changing.
-                    _adapter.RestoreOriginal(e.Handle);
-                    e.Rect = e.Handle.OriginalRect;
-                    e.Visible = true;
-                }
-                else
-                {
-                    // Resolution change with NO saved layout for the new resolution: return the element to the game's
-                    // captured DEFAULT anchoring so it lands where the game itself would place it at this resolution —
-                    // NOT stranded at the translate we applied for the previous resolution (the game does not re-lay-out
-                    // the node on a plain resolution change, so that stale offset otherwise persists). Position-only: the
-                    // captured anchor pose is resolution-independent, and we must not toggle visibility here (the game owns
-                    // show/hide during a resolution transition). Switching back to a configured resolution re-applies its
-                    // saved pose via the TryLoadFor hit above.
-                    _adapter.RestoreOriginalPose(e.Handle);
-                    e.Rect = GetLiveRect(e);
-                }
-            }
-        }
+        foreach (var e in _order) LoadState(e, res, applyVisibility);
     }
 
-    /// <summary>
-    /// Mod-isolation cleanup — invoke <see cref="INativeUiAdapter.RestoreOriginal"/>
-    /// for every resolved entry. This writes back the full captured original
-    /// pose (anchors, pivot, size, anchoredPos, activeSelf), NOT just the
-    /// screen rect — <see cref="SetRect"/> re-anchors to (0,1) and a
-    /// reset-via-SetRect would leave the anchoring mod-injected even though
-    /// the visible position matches.
-    /// </summary>
+    /// <summary>Mod-isolation cleanup — unwrap every resolved element (outer: element back to its original parent
+    /// + sibling index; inner: children back to the root), leaving the game hierarchy untouched.</summary>
     public void OnFrameworkDispose()
     {
-        foreach (var e in _entries.Values)
-        {
-            if (!e.IsResolved) continue;
-            _adapter.RestoreOriginal(e.Handle);
-        }
+        foreach (var e in _order)
+            if (e.IsResolved) _adapter.Unwrap(e.Handle);
     }
 
     /// <summary>
     /// Force every entry to re-resolve on the next <see cref="Tick"/>. Called from the Host on a canvas-generation
-    /// bump (scene change destroyed + rebuilt the game HUD): the game rebuilds these nodes at their DEFAULT pose and
-    /// our cached handles now point at dead/stale RectTransforms, so <see cref="ReapplyForActiveSlot"/> (which pushes
-    /// to those handles) no-ops. Dropping IsResolved makes the next <see cref="TryResolveAll"/> bind the freshly-
-    /// rebuilt nodes and re-apply the SAVED pose, beating the game's default layout for the frame. Arms the resolve
-    /// accumulator so re-resolution runs on the very next Tick (not up to <see cref="ResolveRetrySeconds"/> later).
+    /// bump (scene change rebuilt the game HUD) — a still-alive element re-binds to its cached handle (wrapper
+    /// intact → Apply is a no-op write), a rebuilt one is re-wrapped with the in-memory offset immediately.
     /// </summary>
     internal void InvalidateResolvedHandles()
     {
-        foreach (var e in _entries.Values)
-            e.IsResolved = false;
-        _resolveAccumulator = ResolveRetrySeconds;   // next Tick crosses the resolve threshold immediately
+        foreach (var e in _order) e.IsResolved = false;
+        RequestRecheck();
     }
 
-    private void TryResolveAll(Resolution res)
+    /// <summary>Arm an immediate liveness + resolve pass on the next <see cref="Tick"/> — wired to the scene-enter
+    /// signals (<c>OnEnterScene</c>, <c>HudMgr.OnEnterScene</c>/<c>Init</c>). O(1): sets a flag.</summary>
+    internal void RequestRecheck() => _recheckArmed = true;
+
+    // Drop the override in memory and return the element to the game default (unwrapped).
+    private void ClearOverride(EntryState e, bool visible)
     {
-        foreach (var e in _entries.Values)
-        {
-            // Self-heal on scene change: the game destroys + rebuilds these HUD nodes, leaving our cached handle
-            // pointing at a dead object — so a resolved entry that's no longer alive must be re-resolved and have
-            // its saved layout re-applied to the NEW element (else the move "doesn't survive a scene change").
-            if (e.IsResolved)
-            {
-                if (_adapter.IsAlive(e.Handle)) continue;
-                _log.Info($"[NativeUi] '{e.Descriptor.Id}' went stale (scene change?) — re-resolving");
-                e.IsResolved = false;
-            }
-            if (!_adapter.TryResolve(e.Descriptor.Path, e.Descriptor.RectChild, out var handle)) continue;
-            e.Handle = handle;
-            e.IsResolved = true;
-            _log.Info($"[NativeUi] resolved '{e.Descriptor.Id}'");
-            if (TryLoadFor(_activeSlot(), e.Descriptor.Id, res, out var savedRect, out var savedVisible))
-            {
-                _adapter.SetRect(handle, savedRect);
-                _adapter.SetVisible(handle, savedVisible);
-                e.Rect = savedRect;
-                e.Visible = savedVisible;
-                e.IsModified = true;
-            }
-            else
-            {
-                // No user override: leave the element exactly where the game
-                // placed it. Do NOT apply OriginalRect — only re-assert poses
-                // the user has actually changed (see ReassertAll).
-                e.Rect = handle.OriginalRect;
-                e.Visible = true;
-            }
-        }
+        e.OffsetX = e.OffsetY = 0f;
+        e.LegacyRect = null;
+        e.Visible = visible;
+        e.IsModified = !visible;   // a kept hide is still a customization (wrapped at offset 0, scale 0)
+        ApplyToGame(e);
     }
 
-    private void ReassertAll()
+    // Push the in-memory state to the game: customized → wrapper offset + hide; untouched → no wrapper at all. The
+    // editor's transient "Hide others" (NativeUiService.EditHide.cs) wraps an untouched element at offset 0 (pixel-
+    // identical) just to scale it to 0, and only ever ANDs the effective visibility — e.Visible itself is never changed.
+    private void ApplyToGame(EntryState e)
     {
-        foreach (var e in _entries.Values)
-        {
-            // Only defend elements the user has actually customized. Re-asserting
-            // an unmodified element's OriginalRect is not a guaranteed no-op for
-            // deeply-nested HUD nodes and was displacing them on resolve.
-            if (!e.IsResolved || !e.IsModified) continue;
-            // Re-assert POSITION only (SetRect is a no-op when the value hasn't drifted, and self-skips while the
-            // element is game-hidden during a cutscene — see PandaHudAdapter.SetRect). Do NOT force visibility on:
-            // the game owns show/hide (it hides the HUD during cutscenes), and a 1 Hz SetVisible(true) fought that,
-            // flickering elements on mid-cutscene. We only ENFORCE a user-requested hide here; un-hiding is handled
-            // by the explicit SetVisible path + re-resolve reapply.
-            _adapter.SetRect(e.Handle, e.Rect);
-            if (!e.Visible) _adapter.SetVisible(e.Handle, false);
-        }
+        if (!e.IsResolved) return;   // applied when it resolves
+        if (NeedsWrap(e)) _adapter.Apply(e.Handle, e.OffsetX, e.OffsetY, e.Visible && !_transientHidden);
+        else _adapter.Unwrap(e.Handle);
     }
 
-    // Cache of the 5 flat config keys per (entry × resolution). Built lazily
-    // on first read; the (id, resolution) pair is stable for the entire
-    // session so the dictionary never grows beyond ~9 × N-resolutions
-    // entries. Previous impl reallocated the 5 strings every 5s resolve pass
-    // for every unresolved entry.
-    private readonly Dictionary<(int, string, Resolution), string[]> _configKeyCache = new();
-
-    private string[] GetConfigKeys(int slot, string id, Resolution res)
-    {
-        var key = (slot, id, res);
-        if (_configKeyCache.TryGetValue(key, out var cached)) return cached;
-        var prefix = ConfigPrefix(slot, id, res);
-        var keys = new[]
-        {
-            $"{prefix}.x", $"{prefix}.y", $"{prefix}.w", $"{prefix}.h", $"{prefix}.visible",
-        };
-        _configKeyCache[key] = keys;
-        return keys;
-    }
-
-    // 10% of the larger screen axis — the max resolution mismatch we'll reuse a saved pose across. Mirrors
-    // LayoutStorage.ResolutionMatchDeltaFraction so the native-UI path matches the mod-window / HUD path.
-    private const double ResolutionMatchDeltaFraction = 0.10;
-
-    private bool TryLoadFor(int slot, string id, Resolution res, out WindowRect rect, out bool visible)
-    {
-        if (TryLoadExact(slot, id, res, out rect, out visible)) return true;
-
-        // Exact-resolution miss — fall back to the CLOSEST saved resolution within delta, mirroring
-        // LayoutStorage.FindClosestResolution for the mod-window path. This closes a permanent-loss edge: a
-        // transient/changed CurrentResolution read during a scene load would otherwise miss the exact key, strand
-        // the element at the game default AND leave IsModified=false — so ReassertAll's !IsModified guard would
-        // skip it forever. With the fallback, a near-miss resolution still recovers the saved pose (IsModified set
-        // by the caller). Requires the config to enumerate keys (IConfigKeyReader); degrades to no-fallback if not.
-        if (_config is IConfigKeyReader reader)
-        {
-            var closest = FindClosestSavedResolution(reader, slot, id, res);
-            if (closest is { } cres && TryLoadExact(slot, id, cres, out rect, out visible)) return true;
-        }
-        rect = default; visible = true; return false;
-    }
-
-    private bool TryLoadExact(int slot, string id, Resolution res, out WindowRect rect, out bool visible)
-    {
-        var keys = GetConfigKeys(slot, id, res);
-        // Sentinel: if "<prefix>.x" doesn't exist (returns sentinel default), no saved state.
-        const float NotPersisted = float.MinValue;
-        var x = _config.Get(keys[0], NotPersisted);
-        if (x <= NotPersisted) { rect = default; visible = true; return false; }
-        var y = _config.Get(keys[1], 0f);
-        // Position-only: a native element is MOVED, never resized — its size is recomputed live from the
-        // curated rect each frame (GetCurrentRect), and SetRect translates by the live size. So we persist only
-        // the top-left; width/height carry 0 (ignored downstream). This also means a later rect-curation tweak
-        // takes effect immediately without a Reset (no stale saved size to mask it).
-        rect = new WindowRect(x, y, 0f, 0f);
-        visible = _config.Get(keys[4], true);
-        return true;
-    }
-
-    // Nearest saved resolution (within delta) for this (slot × id), or null. Parses the "{W}x{H}" segment out of
-    // the persisted "slot{slot}.{id}.{W}x{H}.{field}" keys — the prefix carries the id's own dots + a trailing
-    // dot, so it can't collide with a longer id sharing this stem (same reasoning as ResetToOriginal's prefix).
-    private static Resolution? FindClosestSavedResolution(IConfigKeyReader reader, int slot, string id, Resolution target)
-    {
-        var prefix = $"slot{slot}.{id}.";
-        Resolution? best = null;
-        var bestDist = double.MaxValue;
-        var maxDelta = Math.Max(target.Width, target.Height) * ResolutionMatchDeltaFraction;
-        foreach (var key in reader.KeysWithPrefix(prefix))
-        {
-            var rest = key.Substring(prefix.Length);          // "{W}x{H}.{field}"
-            var dot = rest.IndexOf('.');
-            if (dot <= 0) continue;
-            if (!TryParseResolution(rest.Substring(0, dot), out var savedRes)) continue;
-            var dist = savedRes.DistanceTo(target);
-            if (dist < bestDist && dist <= maxDelta) { bestDist = dist; best = savedRes; }
-        }
-        return best;
-    }
-
-    private static bool TryParseResolution(string segment, out Resolution res)
-    {
-        res = default;
-        var parts = segment.Split('x');
-        if (parts.Length != 2) return false;
-        if (!int.TryParse(parts[0], out var w) || !int.TryParse(parts[1], out var h)) return false;
-        res = new Resolution(w, h);
-        return true;
-    }
-
-    private void Persist(EntryState e)
-    {
-        // Use the last Tick'd resolution as the persistence key. Edits made
-        // before the first Tick (cannot happen — Settings UI is gated on
-        // post-OnGUI frames) would use a default Resolution; safe enough.
-        var keys = GetConfigKeys(_activeSlot(), e.Descriptor.Id, _lastResolution);
-        // Position-only (see TryLoadFor): persist top-left + visibility; size is live, never saved.
-        _config.Set(keys[0], e.Rect.X);
-        _config.Set(keys[1], e.Rect.Y);
-        _config.Set(keys[4], e.Visible);
-        _config.Save();
-    }
-
-    // Native HUD positions are scoped per layout slot (slot0 = Default), so a
-    // layout slot captures the whole screen arrangement — mod windows AND game
-    // UI. Slot-switch reapplies via ReapplyForActiveSlot.
-    private static string ConfigPrefix(int slot, string id, Resolution res)
-        => $"slot{slot}.{id}.{res.Width}x{res.Height}";
+    private bool NeedsWrap(EntryState e) => e.IsModified || _transientHidden;
 
     internal sealed class EntryState
     {
@@ -389,10 +168,31 @@ internal sealed class NativeUiService
         public NativeUiEntryDescriptor Descriptor { get; }
         public bool IsResolved { get; set; }
         public NativeUiHandle Handle { get; set; }
+        /// <summary>Last rect shown for this element in the editor (screen px, top-left / y-down).</summary>
         public WindowRect Rect { get; set; }
         public bool Visible { get; set; } = true;
-        // True once the user moves/hides this element (or a saved override is
-        // loaded). Gates ReassertAll so untouched game UI is never written.
+        /// <summary>True once the user moves/hides this element (or a saved override is loaded). Only these are
+        /// wrapped — untouched game UI is never written.</summary>
         public bool IsModified { get; set; }
+        /// <summary>Wrapper offset in the wrapper parent's local units (y-up), the persisted position.</summary>
+        public float OffsetX { get; set; }
+        public float OffsetY { get; set; }
+
+        internal bool Loaded;                 // state loaded from config for the current slot × resolution
+        internal WindowRect? LegacyRect;      // pre-wrapper saved screen top-left awaiting migration to an offset
+        internal SeenGeometry Seen;           // last-seen default geometry at the current resolution (placeholders)
+        internal bool HasSeen, SeenFresh, SeenDirty;
+        internal NativeUiMeasure LastMeasure;
+        internal float LastMeasureAt;
+        internal bool HasMeasure;
+        internal bool WrapLossLogged;         // one "wrapper lost" log line per loss, not per retry
+    }
+
+    /// <summary>Last-seen geometry of an element at one resolution: its DEFAULT (offset-0) curated top-left and
+    /// size in screen px, plus screen px per wrapper-local unit — enough to draw a placeholder at the saved offset
+    /// while the element is absent or game-hidden.</summary>
+    internal struct SeenGeometry
+    {
+        public float X, Y, W, H, PxPerUnit;
     }
 }

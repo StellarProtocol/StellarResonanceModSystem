@@ -121,14 +121,16 @@ internal sealed partial class LayoutEditorOverlay
         if (_editor.IsEditing)
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
+            SyncHideOthers();   // "Hide others" transient hide (.HideOthers.cs) — before input so hit-tests see it
             ProcessInput();
-            TickNudge();    // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
+            TickNudge();   // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
             TickResetDialog();   // keep a freshly-opened Reset-all confirm centred under the toolbar
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
         else if (_wasEditing)
         {
             _chrome.Teardown();   // destroy the overlay canvas on edit-mode exit
+            ClearHideOthers();    // undo every "Hide others" transient hide (windows + game UI)
             // A toolbar dropdown (filter/slot) left open when edit mode exits lives on its OWN scene-root popup
             // canvas, so hiding the toolbar below does NOT tear it down — close it explicitly or the option list
             // stays on screen after exit (Alt+E / Exit-button-while-open bug).
@@ -329,17 +331,27 @@ internal sealed partial class LayoutEditorOverlay
     private bool TryGrabNativeUiEntry(float px, float py)
     {
         if (_nativeUi is null) return false;
+        // Overlapping boxes: prefer a PLACEHOLDER (it has no other way to be grabbed), then the SMALLEST rect — a
+        // placeholder sitting over Player Profile used to lose the press to the profile (11-11).
+        NativeUiService.EntryState? best = null;
+        WindowRect bestRect = default;
+        var bestPlaceholder = false;
         foreach (var e in _nativeUi.Entries)
         {
-            if (!e.IsResolved || !e.Visible) continue;
-            var rect = _nativeUi.GetLiveRect(e);   // current curated rect (matches the live outline)
+            // Live elements AND placeholders (absent / game-hidden) are grabbable; a user-hidden one isn't (eye first).
+            if (!e.Visible || !_nativeUi.TryGetEditView(e, out var view)) continue;
+            var rect = view.Rect;   // current curated / placeholder rect (matches the drawn outline)
             if (!rect.Contains(px, py)) continue;
-            _editor.SelectWindow(e.Descriptor.Id);
-            _editor.BeginDrag(px, py, rect);
-            _dragKind = DragKind.NativeUi;
-            return true;
+            var placeholder = view.Presence != NativeUiPresence.Showing;
+            if (best != null && (bestPlaceholder && !placeholder
+                || bestPlaceholder == placeholder && bestRect.Width * bestRect.Height <= rect.Width * rect.Height)) continue;
+            best = e; bestRect = rect; bestPlaceholder = placeholder;
         }
-        return false;
+        if (best == null) return false;
+        _editor.SelectWindow(best.Descriptor.Id);
+        _editor.BeginDrag(px, py, bestRect);
+        _dragKind = DragKind.NativeUi;
+        return true;
     }
 
     private void HandleDragMove()

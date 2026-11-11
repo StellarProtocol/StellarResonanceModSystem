@@ -18,6 +18,7 @@ internal sealed partial class WindowBuilder
         public RectTransform Rect = null!;
         public bool Resizable;   // window's root is fixed-size (grip-resizable) rather than content-height-fit
         internal bool EditModeInteractive;   // window's controls stay clickable during layout-edit mode (toolbar only)
+        internal bool EditHidden;   // layout-editor "Hide others" (transient) — beats the edit-mode force-show (WindowRenderer.EditHide.cs)
         // Stacking inputs. The rule itself is Stellar.Application.Services.WindowStacking (non-sticky, unit-tested).
         internal int ZOrder;     // plugin-set explicit draw order (higher = on top)
         internal Stellar.Abstractions.Domain.WindowCategory ZCat;   // HUD = lower layer; Tools/Debug = normal layer

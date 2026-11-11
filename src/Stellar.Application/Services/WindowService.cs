@@ -16,6 +16,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IWindowParking? _parking;   // hide = deactivate the built tree, not destroy it (see IWindowParking)
+    private readonly IWindowEditHide? _editHide;   // layout-editor "Hide others" (.EditHide.cs)
     private readonly IWindowAutoFocus? _autofocus;   // optional: focus a window's AutoFocus field on a user-show (see IWindowAutoFocus)
     private readonly IWindowParkedRefresh? _parkedRefresh;   // optional: keep a soft-parked hidden window current
     private readonly IPluginLog _log;
@@ -27,7 +28,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _parkedRefresh = renderer as IWindowParkedRefresh; _log = log; _layoutEditor = layoutEditor; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _parkedRefresh = renderer as IWindowParkedRefresh; _editHide = renderer as IWindowEditHide; _log = log; _layoutEditor = layoutEditor; }
 
     /// <summary>Late-bind the plugin display-name resolver (composition root, after the launcher exists) so the
     /// layout editor's plugin filter can caption each plugin by its own localized tile title.</summary>
@@ -259,11 +260,12 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // A ShouldRender that throws (a buggy plugin predicate) fails SAFE — window hidden, warned once per
         // apply — instead of the NRE bubbling out of the tick. (A null predicate is handled in the policy.)
         bool hide;
-        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
+        try { hide = e.EditHidden || WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }   // EditHidden: layout-editor "Hide others" (.EditHide.cs)
         catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         NoteDrawn(e, !hide);   // WindowSpec.Prebuild bookkeeping (.Prebuild.cs)
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         var hitchT = HitchProbe.Begin();
+        _editHide?.SetEditHidden(e.Token, e.EditHidden);   // beats the renderer's edit-mode force-show (.EditHide.cs)
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }
         finally { PerfProbe.EndWindow(e.Reg.Spec.Id); if (hitchT != 0L) HitchProbe.End(e.HitchKey(1), hitchT); }
@@ -321,6 +323,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
         public string? OwnerPluginId;   // guid of the plugin that registered this window; null = framework-owned
         public bool Parked;   // mounted but deactivated by a SetVisible(false) (IWindowParking)
+        public bool EditHidden;   // TRANSIENT layout-editor "Hide others" draw-suppress; never persisted, never touches Visible
         public bool BringToFrontPending;
         // Armed on the rising edge of Visible (a user-initiated show) when the window has an InputElement.AutoFocus;
         // TickEntry focuses that field once the window mounts/activates, then clears it. NOT set by Init (start-
