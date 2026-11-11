@@ -59,7 +59,7 @@ The framework constructs your plugin once via constructor injection of `IPluginS
 | Sub-service | What it gives you |
 |---|---|
 | `Log` (`IPluginLog`) | `Info` / `Warning` / `Error` / `Debug` into `BepInEx/LogOutput.log`. Tag your lines `[MyMod]`. |
-| `Framework` (`IFramework`) | `Update` event (fires at *your plugin's* update rate, `float deltaTime`) + `FrameCount` + `EffectiveUpdateRateHz` + `RequestUpdateRate(hz)`. See [Update rate](#update-rate). |
+| `Framework` (`IFramework`) | `Update` event (fires at *your plugin's* update rate, `float deltaTime`) + `FrameCount` + `EffectiveUpdateRateHz` + `RequestUpdateRate(hz)` + read-only `DeveloperMode` / `DeveloperModeChanged` (show debug tools only while the user has developer mode on; 2.30.0+). See [Update rate](#update-rate). |
 | `ClientState` (`IClientState`) | Session state (`IsLoggedIn`, `CurrentSceneName`, `Login` / `Logout` / `SceneChanged`) **plus** the client-phase and world/UI signals: `Phase` (+ `PhaseChanged`), `IsWorldActive`, `UiState`. See [Phases and window visibility](#phases-and-window-visibility). |
 | `GameEvents` (`IGameEvents`) | Low-level escape hatch: `Subscribe(fullTypeName, handler)` returning an `IDisposable`. |
 | `PlayerState` (`IPlayerState`) | Polled local-player snapshot: `IsAvailable`, `Name`, `Level`, `Profession`, `Health`/`MaxHealth`, `Stamina`/`MaxStamina`, `Position`. |
@@ -479,6 +479,7 @@ public void Dispose()
 | Surface | Thread |
 |---|---|
 | `IFramework.Update` | Unity main thread |
+| `IFramework.DeveloperModeChanged` | Unity main thread |
 | Element `Func`/`Action` callbacks | Unity main thread (during the framework's poll/build) |
 | `IChat.MessageReceived` | Unity main thread (drained from an I/O queue once per `Update`) |
 | `IClientState` / `IPartyEvents` / `ICombatEvents` | Unity main thread |

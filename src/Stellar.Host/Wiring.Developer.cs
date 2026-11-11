@@ -16,6 +16,9 @@ public sealed partial class BootstrapPlugin
         // A hand edit of the config file applies live (SectionChanged is raised on the game thread by the store's
         // drain); our own writes are SaveQuiet, and a same-value reload is a no-op anyway.
         config.SectionChanged += name => { if (name == DeveloperModePrefs.SectionName) dev.Reload(); };
+        // Plugins read it (read-only) through IFramework.DeveloperMode / DeveloperModeChanged; each per-plugin facade
+        // relays the shared event and drops its subscription on plugin dispose.
+        _framework?.BindDeveloperMode(dev);
         // The perf overlay is a developer tool: turning developer mode off closes it (the hub leaves the tab itself).
         dev.Changed += on => { if (!on && _perfOverlayControl?.IsShown == true) _perfOverlayControl.SetVisible(false); };
     }
