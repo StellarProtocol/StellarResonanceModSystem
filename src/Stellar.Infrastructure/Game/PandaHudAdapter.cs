@@ -76,8 +76,15 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     // from every '*' union (the quickbar's floating skill drawer). No spec → the auto rect (usable node rect, else
     // visible-drawable union). rt is the element, or — for an INNER-wrapped element — our wrapper (same rect).
     private static WindowRect ComputeOutlineRect(RectTransform rt, Camera? cam, string? spec)
+        => ComputeOutlineRect(rt, cam, spec, out _);
+
+    // hasContent = false when the spec has "*" tokens and NONE found a visible drawable (the union fell back to a node
+    // rect) — e.g. Buff Timers with no timed buff: active, but nothing to frame. Measure treats that as hidden-by-game.
+    private static WindowRect ComputeOutlineRect(RectTransform rt, Camera? cam, string? spec, out bool hasContent)
     {
+        hasContent = true;
         if (string.IsNullOrEmpty(spec)) return ComputeContentScreenRect(rt, cam);
+        int contentTokens = 0, contentFound = 0;
         var tokens = OutlineSpec.Parse(spec);
         var exclude = ResolveExcludes(rt, tokens);
         float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
@@ -88,10 +95,17 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             var childRt = FindByPath(rt.transform, tok.Path)?.TryCast<RectTransform>();
             if (childRt == null) continue;
             var own = ToScreenRect(childRt, cam);
-            var r = tok.Content ? ContentUnionRect(childRt, cam, own, exclude) : own;
+            var r = own;
+            if (tok.Content)
+            {
+                contentTokens++;
+                r = ContentUnionRect(childRt, cam, own, exclude, out var any);
+                if (any) contentFound++;
+            }
             if (tok.AxisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }
             if (tok.AxisY) { minY = Math.Min(minY, r.Y); maxY = Math.Max(maxY, r.Bottom); }
         }
+        hasContent = contentTokens == 0 || contentFound > 0;
         if (minX > maxX || minY > maxY) return ComputeContentScreenRect(rt, cam);   // nothing resolved
         return new WindowRect(minX, minY, maxX - minX, maxY - minY);
     }
@@ -137,9 +151,13 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         var lifted = w != null && w.localScale.x == 0f;
         WindowRect rect;
         if (lifted) w!.localScale = Vector3.one;
-        try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath); }
+        bool hasContent;
+        try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent); }
         finally { if (lifted) w!.localScale = Vector3.zero; }   // never leave a user-hidden element shown
-        var showing = !IsCollapsedStub(rect) && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
+        // Not showing also when the curated rect is degenerate in EITHER axis or framed nothing: an active-but-empty
+        // element (Buff Timers with no timed buff, 300x0) must become a grabbable placeholder, not a zero-height box.
+        var showing = hasContent && !IsCollapsedStub(rect) && rect.Width >= MinShownPx && rect.Height >= MinShownPx
+            && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
         return new NativeUiMeasure(rect, showing, PxPerUnit(e));
     }
 
@@ -153,6 +171,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
     // Effective CanvasGroup alpha from the element up the hierarchy: the game hides the whole main HUD by the root
     // CanvasGroup alpha (map open) and keeps the buff bar's group at alpha 0 at rest, both while staying active.
     private const float MinShowingAlpha = 0.05f;
+    private const float MinShownPx = 3f;
     private const int GroupAlphaMaxDepth = 16;
 
     private static float GroupAlpha(RectTransform rt)

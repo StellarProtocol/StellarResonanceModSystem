@@ -99,7 +99,11 @@ internal static class NativeUiAllowlist
             // Content union of the bar (the slot icons overflow ABOVE the 700x90 container; the [L Ctrl] dodge cluster
             // "999" sits inside it) MINUS child "10", the skill drawer that floats far up-right (why June used the
             // container's own rect). Inactive / alpha-0 slots are already skipped by the union. Outline/hit box only.
-            { RectChild = "*button_pos_group;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
+            // The [L Ctrl] cluster "999" is the LAST child of a big bar, so the one union over button_pos_group can run
+            // out of its node budget (1500) / depth cap (6) before reaching it (in-game 11-11: right + top circles
+            // clipped) — it gets its OWN "*" token, i.e. its own budget and one more level. [NativeUi/Curate] logs
+            // visited / depthCapped / budgetHit per "*" token to confirm which cap it was.
+            { RectChild = "*button_pos_group;*button_pos_group/999;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
         // View root: the game detaches + re-parents it on every full-screen menu → INNER wrapper (verified over 3
         // menu cycles). While hidden it is also input-blocked so Enter can't focus the invisible box.
         new("gameui.chat-window",   "gameui.entry.chatWindow",   ChatWindow)
@@ -133,7 +137,7 @@ internal static class NativeUiAllowlist
               HintKey = "gameui.ph.statusEffects" },
         // Buff/debuff timer bars ("Swift 00:05"): items are instantiated only while a timed buff runs.
         new("gameui.buff-timers",   "gameui.entry.buffTimers",   BattleHud + "/node_bufftime_list")
-            { RectChild = "*.", DefaultFraction = new(0.01f, 0.89f, 0.17f, 0.04f), HintKey = "gameui.ph.timedBuff" },
+            { RectChild = "*.", DefaultFraction = new(0.01f, 0.84f, 0.17f, 0.04f), HintKey = "gameui.ph.timedBuff" },
         // Bottom-right action row ([G] mount, [Q], [E], [ESC]). Wrap the SUBVIEW SLOT node_bottom_btns_sub, never its
         // subview root main_bottom_btns_sub(Clone). Key bindings keep working while hidden (only the clicks are gone).
         new("gameui.action-buttons", "gameui.entry.actionButtons", MainHud + "/node_bottom_btns_sub")

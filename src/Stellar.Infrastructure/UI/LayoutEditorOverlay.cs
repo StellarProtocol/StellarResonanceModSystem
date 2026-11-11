@@ -331,18 +331,27 @@ internal sealed partial class LayoutEditorOverlay
     private bool TryGrabNativeUiEntry(float px, float py)
     {
         if (_nativeUi is null) return false;
+        // Overlapping boxes: prefer a PLACEHOLDER (it has no other way to be grabbed), then the SMALLEST rect — a
+        // placeholder sitting over Player Profile used to lose the press to the profile (11-11).
+        NativeUiService.EntryState? best = null;
+        WindowRect bestRect = default;
+        var bestPlaceholder = false;
         foreach (var e in _nativeUi.Entries)
         {
             // Live elements AND placeholders (absent / game-hidden) are grabbable; a user-hidden one isn't (eye first).
             if (!e.Visible || !_nativeUi.TryGetEditView(e, out var view)) continue;
             var rect = view.Rect;   // current curated / placeholder rect (matches the drawn outline)
             if (!rect.Contains(px, py)) continue;
-            _editor.SelectWindow(e.Descriptor.Id);
-            _editor.BeginDrag(px, py, rect);
-            _dragKind = DragKind.NativeUi;
-            return true;
+            var placeholder = view.Presence != NativeUiPresence.Showing;
+            if (best != null && (bestPlaceholder && !placeholder
+                || bestPlaceholder == placeholder && bestRect.Width * bestRect.Height <= rect.Width * rect.Height)) continue;
+            best = e; bestRect = rect; bestPlaceholder = placeholder;
         }
-        return false;
+        if (best == null) return false;
+        _editor.SelectWindow(best.Descriptor.Id);
+        _editor.BeginDrag(px, py, bestRect);
+        _dragKind = DragKind.NativeUi;
+        return true;
     }
 
     private void HandleDragMove()

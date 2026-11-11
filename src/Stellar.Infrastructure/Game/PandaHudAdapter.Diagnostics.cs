@@ -81,11 +81,22 @@ internal sealed partial class PandaHudAdapter
             var failSeg = "";
             foreach (var seg in path.Split('/'))
             {
+                if (seg.Length == 0 || seg == ".") continue;   // "." = the element itself (FindByPath parity)
                 cur = cur == null ? null : cur.Find(seg);
                 if (cur == null) { failSeg = seg; break; }
             }
-            _log.Info($"[NativeUi/Curate]   token {(token.Exclude ? "-" : token.Content ? "*" : "")}'{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}");
+            _log.Info($"[NativeUi/Curate]   token {(token.Exclude ? "-" : token.Content ? "*" : "")}'{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}{UnionWalkInfo(token, cur, cam)}");
         }
+    }
+
+    // For a "*" token: how the content-union walk went — nodes visited and whether the depth cap or the node budget cut
+    // it (either silently drops drawables, e.g. a cluster that is the LAST child of a big bar). Diagnostics only.
+    private static string UnionWalkInfo(OutlineToken token, Transform? node, Camera? cam)
+    {
+        if (!token.Content || node == null) return "";
+        var acc = new BoundsAcc();
+        AccumulateContentBounds(node, cam, depth: 0, acc);
+        return $" union: visited={ContentNodeBudget - acc.Budget} any={acc.Any} depthCapped={acc.DepthCapped} budgetHit={acc.BudgetHit}";
     }
 
     private static string GraphicInfo(Transform t)

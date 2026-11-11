@@ -65,9 +65,15 @@ internal sealed partial class PandaHudAdapter
     // <paramref name="root"/>, or <paramref name="fallback"/> when nothing draws.
     private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
         System.Collections.Generic.List<Transform>? exclude = null)
+        => ContentUnionRect(root, cam, fallback, exclude, out _);
+
+    // any = false when nothing visible was found (the fallback is returned).
+    private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
+        System.Collections.Generic.List<Transform>? exclude, out bool any)
     {
         var acc = new BoundsAcc { Exclude = exclude };
         AccumulateContentBounds(root.transform, cam, depth: 0, acc);
+        any = acc.Any;
         if (!acc.Any) return fallback;
         return new WindowRect(acc.MinX, Screen.height - acc.MaxY, acc.MaxX - acc.MinX, acc.MaxY - acc.MinY);
     }
@@ -88,7 +94,9 @@ internal sealed partial class PandaHudAdapter
 
     private static void AccumulateContentBounds(Transform t, Camera? cam, int depth, BoundsAcc acc)
     {
-        if (t == null || depth > ContentMaxDepth || acc.Budget <= 0) return;
+        if (t == null) return;
+        if (depth > ContentMaxDepth) { acc.DepthCapped = true; return; }   // flags for the [NativeUi/Curate] diagnostics
+        if (acc.Budget <= 0) { acc.BudgetHit = true; return; }
         acc.Budget--;
         if (acc.IsExcluded(t)) return;               // a "-" token of the outline spec (OutlineSpec)
         if (!t.gameObject.activeInHierarchy) return; // hidden subtree contributes nothing
@@ -148,6 +156,7 @@ internal sealed partial class PandaHudAdapter
         public float MaxX = float.MinValue, MaxY = float.MinValue;
         public int  Budget = ContentNodeBudget;
         public bool Any;
+        public bool DepthCapped, BudgetHit;   // diagnostics: the walk was cut by the depth cap / node budget
         public System.Collections.Generic.List<Transform>? Exclude;   // subtrees skipped by the union ("-" spec tokens)
         public bool IsExcluded(Transform t)
         {
