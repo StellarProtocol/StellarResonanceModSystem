@@ -14,16 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.30.0] - Unreleased
-_**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (foundation). A new Sakura theme, more theme colours you can change in your own themes, and the groundwork for the redesigned Settings window and launcher. Adds `IThemeStatusColors`, `ThemePreset.Sakura` and `TextElement.MaxLines` (Abstractions 2.30.0); additive, no plugin rebuild._
+## [2.30.0] - 2026-11-12
+_**2.30.0** (minor) — a redesigned Settings window and launcher, the Sakura theme, more movable game HUD parts, and less CPU in raids and crowded places. Adds `IThemeStatusColors`, `ThemePreset.Sakura`, `TextElement.MaxLines`, `IFrameworkDeveloperMode`, `ICombatBuffEffectLookup`, `WindowSpec.Prebuild`/`Topmost`/`FixedHeight` (Abstractions 2.30.0); additive, no plugin rebuild._
 ### Added
 - A new built-in theme, Sakura: rose-purple panels with a pink accent.
 - Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
 - Mods can now show text over a set number of lines, ending in "…" when it is longer.
 - Drag your favorite plugins to put them in the order you like, in the Stellar menu's Favorites tab or on the compact bar. Both use the same order.
-- A General tab in Settings for the language and the font and UI size.
-- A Discord link on the About tab, to ask questions, report bugs and get news.
-- Save and Discard buttons when you edit a theme's colours. Changes still show right away; Discard puts everything back, and closing with unsaved changes asks first.
 - Four more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar and Action Buttons.
 - The location and line bar (top-left, under the minimap) can now be moved and hidden in the layout editor. The line-recycle notice the game sometimes shows in its place moves and hides with it.
 - The layout editor shows a dashed placeholder for game HUD parts that aren't on screen right now (for example the boss HP bar outside a boss fight, or the party panel while solo), so you can place or hide them at any time.
@@ -43,6 +40,7 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - The compact bar shows plugin names in normal white text, and its Settings tile matches the other tiles.
 - Dropdowns in Settings use the same colours as the other buttons.
 - Switching between Settings tabs, and opening or closing Settings and the launcher, is much smoother.
+- Mods use less CPU in raids and other crowded places, so busy fights run smoother.
 ### Removed
 - The "Reset selected to default" and "Reset all in this slot" buttons on the Layout tab, which did nothing. The layout editor's own toolbar resets windows.
 ### Fixed
