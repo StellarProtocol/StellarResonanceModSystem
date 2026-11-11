@@ -282,6 +282,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
         WindowBuilder.BubbleBinding.WindowInBackground = bg;   // off-screen warm: every bubble measure is budgeted
         try { t.Apply(); } finally { WindowBuilder.BubbleBinding.WindowInBackground = false; }
+        if (t.MovedUnderPointer && !bg) _ticker?.MarkUiGeometryDirty();   // branch swap / row count change: hover rescan
         // Gated re-measure (.ContentMinWidth.cs) — forced on the first apply of a structure-only mount, whose mount-time
         // measure saw the tree before any value was pulled (.StructureMount.cs).
         ApplyContentMinWidth(t, force: t.StructureOnly);

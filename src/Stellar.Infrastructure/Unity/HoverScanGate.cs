@@ -14,6 +14,9 @@ namespace Stellar.Infrastructure.Unity;
 /// <item>at least every <see cref="IdleRescanSec"/> regardless — the safety net for content that changes under a still
 /// pointer with no signal (a list growing from live data, a ConditionalElement branch switching, text re-wrapping).</item>
 /// </list>
+/// Before any of that: while the game has the cursor hidden / locked (camera mode, see <see cref="CursorHidden"/>) no mod
+/// window can be hovered, so the pass does not run at all — in combat the skill keys alone would otherwise hold the
+/// after-input window open and scan nearly every frame.
 /// Pure (no Unity types) so the rule is unit-tested; the ticker feeds it mouse position and Time.unscaledTime.</summary>
 internal sealed class HoverScanGate
 {
@@ -27,9 +30,36 @@ internal sealed class HoverScanGate
     private float _lastScan;
     private float _inputUntil = float.NegativeInfinity;
     private int _dirtyFrames;
+    private bool _cursorWasHidden;
+
+    /// <summary>Passes run / skipped (still pointer) / skipped (cursor hidden) since the last <see cref="TakeCounts"/>.
+    /// Plain int increments, always on; only the diagnostics-gated [UiHover] line reads them.</summary>
+    public int Scans { get; private set; }
+    public int SkipsIdle { get; private set; }
+    public int SkipsHidden { get; private set; }
+
+    /// <summary>Read and reset the counters (the [UiHover] summary window).</summary>
+    public (int Scans, int Idle, int Hidden) TakeCounts()
+    {
+        var c = (Scans, SkipsIdle, SkipsHidden);
+        Scans = SkipsIdle = SkipsHidden = 0;
+        return c;
+    }
 
     /// <summary>Geometry under the pointer may have changed: scan this frame and the next.</summary>
     public void MarkDirty() => _dirtyFrames = 2;
+
+    /// <summary>The cursor is hidden or locked this frame (the game's camera mode), so nothing can be hovered: the pass is
+    /// skipped. Returns true on the FIRST such frame only — the caller then turns any lit cell off once, so nothing stays
+    /// highlighted under an invisible cursor. The first usable frame afterwards always scans (see <see cref="ShouldScan"/>):
+    /// the pointer reappears wherever the game put it, and lists may have moved meanwhile.</summary>
+    public bool CursorHidden()
+    {
+        SkipsHidden++;
+        if (_cursorWasHidden) return false;
+        _cursorWasHidden = true;
+        return true;
+    }
 
     /// <summary>Key / button / wheel input at <paramref name="now"/>: scan every frame for <see cref="AfterInputSec"/>.</summary>
     public void MarkInput(float now) => _inputUntil = now + AfterInputSec;
@@ -37,10 +67,11 @@ internal sealed class HoverScanGate
     /// <summary>True when the hover pass must run this frame; records the scan (mouse + time) when it says yes.</summary>
     public bool ShouldScan(float mouseX, float mouseY, float now)
     {
-        var scan = !_primed || mouseX != _x || mouseY != _y || _dirtyFrames > 0 || now < _inputUntil
+        var scan = !_primed || _cursorWasHidden || mouseX != _x || mouseY != _y || _dirtyFrames > 0 || now < _inputUntil
                    || now - _lastScan >= IdleRescanSec || now < _lastScan;   // clock went backwards: rescan, re-anchor
-        if (!scan) return false;
-        _primed = true; _x = mouseX; _y = mouseY; _lastScan = now;
+        if (!scan) { SkipsIdle++; return false; }
+        Scans++;
+        _primed = true; _cursorWasHidden = false; _x = mouseX; _y = mouseY; _lastScan = now;
         if (_dirtyFrames > 0) _dirtyFrames--;
         return true;
     }

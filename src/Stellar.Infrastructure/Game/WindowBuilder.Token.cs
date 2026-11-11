@@ -98,6 +98,9 @@ internal sealed partial class WindowBuilder
         // ApplyCount/LastApplyFrame let it wait for an apply to fill a staged branch's texts before putting it away.
         internal PrebuildState? Prebuild;
         internal int ApplyCount, LastApplyFrame = -1;
+        // The last Apply changed which branches/rows show in the visible window (Conditional flip, list / virtual-list count
+        // change) → content may now sit under a still pointer: the renderer marks the ticker's hover pass dirty.
+        internal bool MovedUnderPointer;
         internal readonly List<ListBinding> Lists = new();
         // Holds both the uniform VirtualListBinding and the measured VariableListBinding (WindowBuilder.VariableList.cs)
         // behind IVirtualListBinding — Apply() runs them FIRST (see Apply below) so slot Funcs resolve the fresh window.
@@ -166,10 +169,17 @@ internal sealed partial class WindowBuilder
             // content-sized window (AutoSizeWidth launcher: Full↔Minimal↔horizontal) would keep its old size and
             // clip/overflow. Force one rebuild when any visibility changed (mirrors Reskin()).
             var vlBuilt = VirtualLists.Count;   // a Cond may lazily build a branch; apply any VirtualList it brought
-            for (var i = 0; i < Conds.Count; i++) if (GatedBinding.Runs(Conds[i])) Note(ref structuralChange, Conds[i], Conds[i].Apply());
+            var flipped = false;   // a visible Conditional swapped branches (kept-alive tab flips aren't "structural")
+            for (var i = 0; i < Conds.Count; i++)
+            {
+                if (!GatedBinding.Runs(Conds[i])) continue;
+                Note(ref structuralChange, Conds[i], Conds[i].Apply());
+                if (Conds[i].Flipped && !GatedBinding.InBackground(Conds[i])) flipped = true;
+            }
             for (var i = vlBuilt; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) Note(ref structuralChange, VirtualLists[i] as GatedBinding, VirtualLists[i].Apply());
             for (var i = 0; i < Lists.Count; i++) if (GatedBinding.Runs(Lists[i])) Note(ref structuralChange, Lists[i], Lists[i].Apply());
             if (_bgStructural) RelayoutWarmingKeepAlives();
+            MovedUnderPointer = structuralChange || flipped;
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
             // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect

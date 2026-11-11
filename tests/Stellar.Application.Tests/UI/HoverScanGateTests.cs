@@ -61,4 +61,28 @@ public sealed class HoverScanGateTests
         g.ShouldScan(10, 10, 100f);
         Assert.True(g.ShouldScan(10, 10, 1f));
     }
+
+    [Fact]
+    public void HiddenCursorClearsOnceThenRescansWhenItReturns()
+    {
+        var g = new HoverScanGate();
+        g.ShouldScan(10, 10, 0f);
+        Assert.True(g.CursorHidden());    // first hidden frame: caller turns lit cells off
+        Assert.False(g.CursorHidden());   // later hidden frames: nothing to do
+        Assert.False(g.CursorHidden());
+        Assert.True(g.ShouldScan(10, 10, Frame));    // cursor back at the same spot, inside the safety net: still scans
+        Assert.False(g.ShouldScan(10, 10, 2 * Frame));
+        Assert.True(g.CursorHidden());    // hiding again clears again
+    }
+
+    [Fact]
+    public void CountsScansAndSkips()
+    {
+        var g = new HoverScanGate();
+        g.ShouldScan(10, 10, 0f);
+        g.ShouldScan(10, 10, Frame);
+        g.CursorHidden(); g.CursorHidden();
+        Assert.Equal((1, 1, 2), g.TakeCounts());
+        Assert.Equal((0, 0, 0), g.TakeCounts());
+    }
 }
