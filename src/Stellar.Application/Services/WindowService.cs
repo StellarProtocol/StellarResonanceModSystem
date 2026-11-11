@@ -16,6 +16,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private readonly IWindowRenderer _renderer;
     private readonly IWindowOrder? _order;
     private readonly IWindowParking? _parking;   // hide = deactivate the built tree, not destroy it (see IWindowParking)
+    private readonly IWindowEditHide? _editHide;   // layout-editor "Hide others" (.EditHide.cs)
     private readonly IWindowAutoFocus? _autofocus;   // optional: focus a window's AutoFocus field on a user-show (see IWindowAutoFocus)
     private readonly IWindowParkedRefresh? _parkedRefresh;   // optional: keep a soft-parked hidden window current
     private readonly IPluginLog _log;
@@ -27,7 +28,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
     private float _accum;
 
     public WindowService(IWindowRenderer renderer, IPluginLog log, LayoutEditorService? layoutEditor = null)
-    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _parkedRefresh = renderer as IWindowParkedRefresh; _log = log; _layoutEditor = layoutEditor; }
+    { _renderer = renderer; _order = renderer as IWindowOrder; _parking = renderer as IWindowParking; _autofocus = renderer as IWindowAutoFocus; _parkedRefresh = renderer as IWindowParkedRefresh; _editHide = renderer as IWindowEditHide; _log = log; _layoutEditor = layoutEditor; }
 
     /// <summary>Late-bind the plugin display-name resolver (composition root, after the launcher exists) so the
     /// layout editor's plugin filter can caption each plugin by its own localized tile title.</summary>
@@ -264,6 +265,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         NoteDrawn(e, !hide);   // WindowSpec.Prebuild bookkeeping (.Prebuild.cs)
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
         var hitchT = HitchProbe.Begin();
+        _editHide?.SetEditHidden(e.Token, e.EditHidden);   // beats the renderer's edit-mode force-show (.EditHide.cs)
         try { _renderer.ApplyValues(e.Token, e.Reg, hide); }
         catch (Exception ex) { _log.Warning($"[Window/{e.Reg.Spec.Id}] apply: {ex.Message}"); }
         finally { PerfProbe.EndWindow(e.Reg.Spec.Id); if (hitchT != 0L) HitchProbe.End(e.HitchKey(1), hitchT); }

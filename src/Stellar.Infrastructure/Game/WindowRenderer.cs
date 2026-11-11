@@ -275,8 +275,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         // otherwise they'd render with no outline/handle: visible but not arrangeable.
         // A background warm (.BackgroundWarm.cs) is never hidden: kept active off-screen and applied like a shown window.
         var bg = InBackgroundWarm(t);
-        var hideAll = !bg && (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
-                      && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly);
+        // The layout editor's transient "Hide others" (t.EditHidden, .EditHide.cs) is the one hide that beats the force-show.
+        var hideAll = !bg && (t.EditHidden || (hide || (PerfControls.MasterHudKill && reg.Spec.Category == Stellar.Abstractions.Domain.WindowCategory.HUD))
+                      && !(LayoutEditGate.IsEditing && reg.Spec.EditModeDragOnly));
         var showT = SetShown(t, hideAll, bg);   // (de)activate the root (.BackgroundWarm.cs)
         if (hideAll) return;
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)

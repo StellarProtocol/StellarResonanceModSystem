@@ -11,9 +11,11 @@ namespace Stellar.Application.Tests.Services;
 /// that never changes the user's Visible flag, only applies to edit-mode windows, and re-evaluates per call.</summary>
 public sealed class WindowEditHideTests
 {
-    private sealed class Renderer : IWindowRenderer
+    private sealed class Renderer : IWindowRenderer, IWindowEditHide
     {
         public readonly Dictionary<string, bool> Hide = new();
+        public readonly Dictionary<string, bool> EditHide = new();   // the flag that beats the renderer's edit-mode force-show
+        public void SetEditHidden(object? token, bool hidden) => EditHide[(string)token!] = hidden;
         public bool IsCanvasAvailable() => true;
         public object? Mount(WindowRegistration reg) => reg.Spec.Id;
         public bool IsAlive(object? token) => token != null;
@@ -59,6 +61,18 @@ public sealed class WindowEditHideTests
         svc.Tick(0.016f);
         Assert.False(r.Hide["a"]);
         Assert.False(svc.IsEditHidden("a"));
+    }
+
+    [Fact] // The renderer-level flag (which beats the edit-mode force-show of overlays) is pushed on every apply.
+    public void RendererEditHideFlag_FollowsSync()
+    {
+        var (svc, r) = New();
+        svc.SyncEditHidden(id => id == "a");
+        svc.Tick(0.016f);
+        Assert.True(r.EditHide["a"]); Assert.False(r.EditHide["b"]);
+        svc.SyncEditHidden(null);
+        svc.Tick(0.016f);
+        Assert.False(r.EditHide["a"]);
     }
 
     [Fact] // A changed predicate (filter change) re-evaluates at once.
