@@ -14,6 +14,7 @@ internal sealed class FakeNativeUiAdapter : INativeUiAdapter
 
     public int ResolveCount, ApplyCount, UnwrapCount, MeasureCount;
     public bool Alive = true, WrapIntact = true, Showing = true;
+    public bool SeenAllowed = true;   // false = the entry's SeenGate is closed (e.g. Quickbar skill wheel expanded)
     public WindowRect? Base;   // overrides BaseRect (e.g. a collapsed 270x0 measurement)
     public readonly HashSet<string> Absent = new();                                  // descriptor ids that don't resolve
     public readonly Dictionary<string, (float X, float Y, bool Visible)> Applied = new();   // by descriptor id
@@ -52,7 +53,7 @@ internal sealed class FakeNativeUiAdapter : INativeUiAdapter
         var (ox, oy) = Applied.TryGetValue(_idByPath[handle.AllowlistPath], out var a) ? (a.X, a.Y) : (0f, 0f);
         var b = Base ?? BaseRect;
         var r = new WindowRect(b.X + ox * Px, b.Y - oy * Px, b.Width, b.Height);
-        return new NativeUiMeasure(r, Showing, Px);
+        return new NativeUiMeasure(r, Showing, Px, SeenAllowed);
     }
 
     public void DumpDiagnostics(System.Action<string> log) { }

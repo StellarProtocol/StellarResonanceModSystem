@@ -122,8 +122,10 @@ internal sealed partial class NativeUiService
     {
         var px = m.PxPerUnit > 0f ? m.PxPerUnit : PxPerUnit(e);
         var d = DefaultRectOf(e, m);
-        // never remember a collapsed size (a 0-height placeholder line)
-        if (!IsUsableSeen(d.Width, d.Height)) { e.Stability.Has = false; return; }
+        // Never remember a collapsed size (a 0-height placeholder line), nor a gated transient state (the Quickbar
+        // while Ctrl holds its skill wheel EXPANDED — stable for as long as the key is held, so the dwell alone
+        // can't reject it). Either breaks the run like a hidden sample.
+        if (!m.SeenAllowed || !IsUsableSeen(d.Width, d.Height)) { e.Stability.Has = false; return; }
         if (!AdvanceSettle(ref e.Stability, d, _clock)) return;
         var changed = !e.HasSeen
             || Math.Abs(e.Seen.X - d.X) > SeenTolerancePx || Math.Abs(e.Seen.Y - d.Y) > SeenTolerancePx

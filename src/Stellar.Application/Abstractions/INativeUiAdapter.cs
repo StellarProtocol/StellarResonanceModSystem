@@ -52,7 +52,9 @@ internal interface INativeUiAdapter
 /// <param name="Rect">Live curated screen rect (top-left / y-down px), at the current wrapper offset.</param>
 /// <param name="Showing">True when the game currently draws it (active, not collapsed, CanvasGroup alpha &gt; 0).</param>
 /// <param name="PxPerUnit">Screen px per wrapper-parent local unit; 0 = unknown.</param>
-internal readonly record struct NativeUiMeasure(WindowRect Rect, bool Showing, float PxPerUnit);
+/// <param name="SeenAllowed">False when the entry's <see cref="NativeUiSeenGate"/> is closed (element in a transient
+/// expanded state): the live outline still uses <paramref name="Rect"/>, but it must not become the last-seen rect.</param>
+internal readonly record struct NativeUiMeasure(WindowRect Rect, bool Showing, float PxPerUnit, bool SeenAllowed = true);
 
 /// <summary>
 /// Opaque handle returned by <see cref="INativeUiAdapter.TryResolve"/>. Only the adapter knows the meaning of

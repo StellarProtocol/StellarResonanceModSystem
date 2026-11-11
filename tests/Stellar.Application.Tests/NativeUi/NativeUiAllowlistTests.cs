@@ -31,6 +31,18 @@ public sealed class NativeUiAllowlistTests
         Assert.True(e.DefaultFraction.Width > 0f && e.DefaultFraction.Height > 0f);
     }
 
+    [Fact] // Quickbar: last-seen only at the skill wheel's rest scale (0.52; 1.00 while L Ctrl holds it expanded), and
+           // v2 seen keys so the expanded rect saved before the gate is ignored.
+    public void Quickbar_SeenGate_OnCollapsedSkillWheel_AndV2SeenKeys()
+    {
+        var e = Assert.Single(NativeUiAllowlist.V1Targets, x => x.Id == "gameui.quickbar");
+        Assert.NotNull(e.SeenGate);
+        Assert.EndsWith("/battle_main_node_window_skill_drawer_expand_pc", e.SeenGate!.Path);
+        Assert.InRange(e.SeenGate.MaxScale, 0.53f, 0.99f);
+        Assert.Equal(2, e.SeenKeyVersion);
+        Assert.All(NativeUiAllowlist.V1Targets.Where(x => x.Id != "gameui.quickbar"), x => Assert.Equal(1, x.SeenKeyVersion));
+    }
+
     [Fact] // Twins join an OUTER wrapper (siblings of the element); an inner wrapper lives under the element.
     public void Twins_OnlyOnOuterEntries()
     {

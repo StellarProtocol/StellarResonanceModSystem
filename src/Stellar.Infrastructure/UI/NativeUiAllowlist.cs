@@ -64,6 +64,19 @@ internal sealed record NativeUiAllowlistEntry(
     /// (anything between them would be re-ordered behind the wrapper).
     /// </summary>
     public string[]? Twins { get; init; }
+
+    /// <summary>
+    /// Optional gate on the edit-mode placeholder's last-seen rect: a measurement only counts while this descendant
+    /// (sub-path relative to <see cref="Path"/>) resolves AND its <c>localScale.x</c> ≤ the max — i.e. the element is in
+    /// its REST state. For a state the game holds steadily (the Quickbar's skill wheel stays expanded while Ctrl is
+    /// held) the settle dwell can't tell it from rest. The live edit outline is not gated.
+    /// </summary>
+    public NativeUiSeenGate? SeenGate { get; init; }
+
+    /// <summary>Last-seen key generation (default 1 = <c>seen.{id}.{W}x{H}.*</c>). Bump when a fix means previously
+    /// saved last-seen values are wrong: n &gt; 1 reads/writes <c>seen.{id}.v{n}.{W}x{H}.*</c>, so the old ones are ignored
+    /// and the placeholder uses <see cref="DefaultFraction"/> until a new rest sample settles.</summary>
+    public int SeenKeyVersion { get; init; } = 1;
 }
 
 internal static class NativeUiAllowlist
@@ -120,7 +133,12 @@ internal static class NativeUiAllowlist
             // out of its node budget (1500) / depth cap (6) before reaching it (in-game 11-11: right + top circles
             // clipped) — it gets its OWN "*" token, i.e. its own budget and one more level. [NativeUi/Curate] logs
             // visited / depthCapped / budgetHit per "*" token to confirm which cap it was.
-            { RectChild = "*button_pos_group;*button_pos_group/999;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
+            // SeenGate: in town the bar only shows while L Ctrl is HELD, which also EXPANDS the [L Ctrl] skill wheel
+            // (drawer_expand localScale 0.52 → 1.00, live 2026-11-11) — a steady state, so it passed the settle dwell
+            // and saved a 1149x372 px placeholder (2560x1440). Last-seen only at the rest scale; v2 drops those values.
+            { RectChild = "*button_pos_group;*button_pos_group/999;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f),
+              SeenGate = new("button_pos_group/999/anim_999/999/battle_main_node_window_skill_drawer_expand_pc", 0.8f),
+              SeenKeyVersion = 2 },
         // View root: the game detaches + re-parents it on every full-screen menu → INNER wrapper (verified over 3
         // menu cycles). While hidden it is also input-blocked so Enter can't focus the invisible box.
         new("gameui.chat-window",   "gameui.entry.chatWindow",   ChatWindow)

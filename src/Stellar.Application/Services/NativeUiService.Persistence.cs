@@ -14,7 +14,8 @@ namespace Stellar.Application.Services;
 ///   the element is seen at a settled size the offset is computed + written); never deleted by this change.</item>
 /// <item><c>seen.{id}.{W}x{H}.x/.y/.w/.h/.s</c> — last-seen DEFAULT (offset-0) curated rect in screen px + screen px
 ///   per local unit, per resolution (screen px don't transfer between resolutions), not per slot (it's the game's
-///   geometry, not the user's layout). Drives edit-mode placeholders. Reset leaves it (it isn't an override).</item>
+///   geometry, not the user's layout). Drives edit-mode placeholders. Reset leaves it (it isn't an override).
+///   An entry with <c>SeenKeyVersion</c> n &gt; 1 uses <c>seen.{id}.v{n}.{W}x{H}.*</c> instead.</item>
 /// </list>
 /// Closest-resolution reuse within 10% and the unconfigured-resolution fallback mirror LayoutStorage.
 /// </summary>
@@ -120,8 +121,8 @@ internal sealed partial class NativeUiService
 
     private void LoadSeen(EntryState e, Resolution res)
     {
-        var k = GetSeenKeys(e.Descriptor.Id, res);
-        var x = _config.Get(k[KSeenX], NotPersisted);
+        var k = GetSeenKeys(e.Descriptor, res);
+        var x =_config.Get(k[KSeenX], NotPersisted);
         e.HasSeen = x > NotPersisted;
         e.SeenFresh = e.SeenDirty = false;
         // Fresh settle run + live scale per resolution. A saved value never blocks re-recording: SeenFresh=false keeps
@@ -149,7 +150,7 @@ internal sealed partial class NativeUiService
     private void WriteSeen(EntryState e)
     {
         if (!e.SeenDirty || !e.HasSeen) return;
-        var k = GetSeenKeys(e.Descriptor.Id, _lastResolution);
+        var k = GetSeenKeys(e.Descriptor, _lastResolution);
         _config.Set(k[KSeenX], e.Seen.X);
         _config.Set(k[KSeenY], e.Seen.Y);
         _config.Set(k[KSeenW], e.Seen.W);
@@ -170,11 +171,15 @@ internal sealed partial class NativeUiService
         return keys;
     }
 
-    private string[] GetSeenKeys(string id, Resolution res)
+    private string[] GetSeenKeys(NativeUiEntryDescriptor d, Resolution res)
     {
-        var key = (id, res);
+        var key = (d.Id, res);
         if (_seenKeyCache.TryGetValue(key, out var cached)) return cached;
-        var p = $"seen.{id}.{res.Width}x{res.Height}";
+        // SeenKeyVersion > 1 inserts ".v{n}" so values saved by an older build (that measured a wrong state, e.g. the
+        // Quickbar's expanded skill wheel) are simply never read again — no migration, no delete.
+        var p = d.SeenKeyVersion > 1
+            ? $"seen.{d.Id}.v{d.SeenKeyVersion}.{res.Width}x{res.Height}"
+            : $"seen.{d.Id}.{res.Width}x{res.Height}";
         var keys = new[] { $"{p}.x", $"{p}.y", $"{p}.w", $"{p}.h", $"{p}.s" };
         _seenKeyCache[key] = keys;
         return keys;

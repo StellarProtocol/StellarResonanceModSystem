@@ -33,6 +33,7 @@ public sealed partial class BootstrapPlugin
                     SafeToHide = entry.SafeToHide, RectChild = entry.RectChild, Wrap = entry.Wrap,
                     BlockInputWhenHidden = entry.BlockInputWhenHidden, DefaultFraction = entry.DefaultFraction,
                     HintKey = entry.HintKey, SubHintKey = entry.SubHintKey, Twins = entry.Twins,
+                    SeenGate = entry.SeenGate, SeenKeyVersion = entry.SeenKeyVersion,
                 });
         _nativeUi = new NativeUiService(new PandaHudAdapter(log), gameUiSection,
                                         () => _layoutStorage!.ActiveSlot, log, descriptors);

@@ -107,7 +107,8 @@ internal sealed partial class NativeUiService
             _measureCursor = (_measureCursor + 1) % _order.Length;
             if (!e.IsResolved || (e.LegacyRect is null && e.SeenFresh)) continue;
             var m = MeasureNow(e);
-            if (m.Showing && e.LegacyRect is { } legacy) MigrateLegacy(e, legacy, m);
+            // Same gate as the last-seen rect: never derive an offset from a transient (expanded) state.
+            if (m.Showing && m.SeenAllowed && e.LegacyRect is { } legacy) MigrateLegacy(e, legacy, m);
             return;
         }
     }

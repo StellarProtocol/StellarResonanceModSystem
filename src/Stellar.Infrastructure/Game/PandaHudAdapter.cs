@@ -42,7 +42,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         {
             Id = d.Id, Path = d.Path, GameObject = rt.gameObject, RectTransform = rt, Camera = GetCanvasCamera(rt),
             RectChildPath = d.RectChild, Mode = d.Wrap, BlockInputWhenHidden = d.BlockInputWhenHidden,
-            Twins = ResolveTwins(rt, d.Twins),
+            Twins = ResolveTwins(rt, d.Twins), SeenGate = NewSeenGate(d.SeenGate),
         };
         _cache[d.Path] = entry;
         LogCurateResolve(rt, entry.Camera, d.Path, d.RectChild, ComputeOutlineRect(rt, entry.Camera, d.RectChild));   // diagnostics (gated)
@@ -165,7 +165,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         // element (Buff Timers with no timed buff, 300x0) must become a grabbable placeholder, not a zero-height box.
         var showing = hasContent && !IsCollapsedStub(rect) && rect.Width >= MinShownPx && rect.Height >= MinShownPx
             && alpha >= MinShowingAlpha && InnerWrapHoldsContent(e);
-        return new NativeUiMeasure(rect, showing, PxPerUnit(e));
+        return new NativeUiMeasure(rect, showing, PxPerUnit(e), showing && SeenGateOpen(e));   // PandaHudAdapter.SeenGate.cs
     }
 
     // An inner wrapper that is EMPTY or has un-adopted siblings measures its own full-stretch node rect (the "*."
@@ -225,6 +225,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         public NativeUiWrapMode Mode;
         public bool BlockInputWhenHidden;
         public RectTransform[]? Twins;      // sibling nodes the game shows instead of the element; share its outer wrapper
+        public ResolvedSeenGate? SeenGate;  // last-seen rest-state gate (PandaHudAdapter.SeenGate.cs); null = always open
         public Transform? TwinSpace;        // the twins' original parent (= outer wrapper's parent), cached at wrap time
         public RectTransform? Wrapper;      // OUR node carrying offset + hide; null until the element is customized
         public CanvasGroup? WrapperGroup;   // only for BlockInputWhenHidden (chat): input off while hidden
