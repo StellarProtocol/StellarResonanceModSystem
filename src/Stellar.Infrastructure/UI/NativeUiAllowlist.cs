@@ -33,6 +33,9 @@ internal sealed record NativeUiAllowlistEntry(
     /// container HUDs (a full-screen/zero-size root, or a designed footprint with reserved empty space).
     /// Null → fall back to the auto rect (usable node rect, else visible-drawable union). The element is
     /// still MOVED through its wrapper; only the outline rect comes from this child.
+    /// Syntax (parsed by <c>OutlineSpec</c>): ';'-separated tokens; a token is a sub-path ("." = the element), its own
+    /// rect by default; <c>*path</c> = the visible-drawable union of that subtree; <c>h:</c> / <c>w:</c> = take only the
+    /// vertical / horizontal extent; <c>-path</c> = EXCLUDE that subtree from every <c>*</c> union in the same spec.
     /// </summary>
     public string? RectChild { get; init; }
 
@@ -93,7 +96,10 @@ internal static class NativeUiAllowlist
         new("gameui.minimap",       "gameui.entry.minimap",      MainHud + "/anim_upper_left/node_upper_left/group_minimap")
             { DefaultFraction = new(0.01f, 0.02f, 0.11f, 0.20f) },
         new("gameui.quickbar",      "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")
-            { RectChild = "button_pos_group", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
+            // Content union of the bar (the slot icons overflow ABOVE the 700x90 container; the [L Ctrl] dodge cluster
+            // "999" sits inside it) MINUS child "10", the skill drawer that floats far up-right (why June used the
+            // container's own rect). Inactive / alpha-0 slots are already skipped by the union. Outline/hit box only.
+            { RectChild = "*button_pos_group;-button_pos_group/10", DefaultFraction = new(0.32f, 0.86f, 0.36f, 0.08f) },
         // View root: the game detaches + re-parents it on every full-screen menu → INNER wrapper (verified over 3
         // menu cycles). While hidden it is also input-blocked so Enter can't focus the invisible box.
         new("gameui.chat-window",   "gameui.entry.chatWindow",   ChatWindow)
@@ -120,6 +126,22 @@ internal static class NativeUiAllowlist
             { RectChild = "*.", DefaultFraction = new(0.01f, 0.93f, 0.28f, 0.06f) },
         // Whole body at the title's width: the scroll list is a fixed 534px and the text doesn't fill it, so
         // width comes from the title bar (330px) and HEIGHT extends down to the scroll list ("h:" = vertical-only).
+        // Status/stack icon row above the HP bar. Wrap the anim_* node, not abnormal_container inside it: its own
+        // Animator curves may address abnormal_container by relative path, which a wrapper in between would break.
+        new("gameui.status-icons",  "gameui.entry.statusIcons",  BattleHud + "/anim_abnormal_container")
+            { RectChild = "*abnormal_container", DefaultFraction = new(0.35f, 0.82f, 0.11f, 0.03f),
+              HintKey = "gameui.ph.statusEffects" },
+        // Buff/debuff timer bars ("Swift 00:05"): items are instantiated only while a timed buff runs.
+        new("gameui.buff-timers",   "gameui.entry.buffTimers",   BattleHud + "/node_bufftime_list")
+            { RectChild = "*.", DefaultFraction = new(0.01f, 0.89f, 0.17f, 0.04f), HintKey = "gameui.ph.timedBuff" },
+        // Bottom-right action row ([G] mount, [Q], [E], [ESC]). Wrap the SUBVIEW SLOT node_bottom_btns_sub, never its
+        // subview root main_bottom_btns_sub(Clone). Key bindings keep working while hidden (only the clicks are gone).
+        new("gameui.action-buttons", "gameui.entry.actionButtons", MainHud + "/node_bottom_btns_sub")
+            { RectChild = "*main_bottom_btns_sub(Clone)", DefaultFraction = new(0.72f, 0.92f, 0.27f, 0.05f) },
+        // Consumable item bar ([F1] ‹ items › [F3]). Wrap the SUBVIEW SLOT takemedicine_sub, never its subview root
+        // main_take_medicine(Clone) (Lua resets subview roots on Active — same reason as party/minimap/quest).
+        new("gameui.item-bar",      "gameui.entry.itemBar",      BattleHud + "/takemedicine_sub")
+            { RectChild = "*main_take_medicine(Clone)", DefaultFraction = new(0.80f, 0.70f, 0.18f, 0.11f) },
         new("gameui.quest-tracker", "gameui.entry.questTracker", MainHud + "/anim_upper_left/node_upper_left/node_left_track")
             { RectChild = "node_track_title;h:node_track_sub/track_bar_sub_pc(Clone)/node_parent/scrollview",
               DefaultFraction = new(0.01f, 0.40f, 0.18f, 0.22f) },
