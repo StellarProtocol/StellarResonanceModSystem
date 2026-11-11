@@ -94,9 +94,17 @@ internal sealed partial class PandaHudAdapter
     private static string UnionWalkInfo(OutlineToken token, Transform? node, Camera? cam)
     {
         if (!token.Content || node == null) return "";
-        var acc = new BoundsAcc();
+        var acc = SpecAcc(null);
+        acc.ClipLog = new System.Collections.Generic.List<string>();
         AccumulateContentBounds(node, cam, depth: 0, acc);
-        return $" union: visited={ContentNodeBudget - acc.Budget} any={acc.Any} depthCapped={acc.DepthCapped} budgetHit={acc.BudgetHit}";
+        var clips = acc.ClipLog.Count == 0 ? "none" : string.Join(", ", acc.ClipLog);
+        return $" union: visited={ContentNodeBudget - acc.Budget} any={acc.Any} depthCapped={acc.DepthCapped} budgetHit={acc.BudgetHit} clips=[{clips}]";
+    }
+
+    private static string ClipEntry(Transform t, RectTransform rt, Camera? cam)
+    {
+        var r = ToScreenRect(rt, cam);
+        return $"{t.name} ({r.X:0},{r.Y:0} {r.Width:0}x{r.Height:0})";
     }
 
     private static string GraphicInfo(Transform t)

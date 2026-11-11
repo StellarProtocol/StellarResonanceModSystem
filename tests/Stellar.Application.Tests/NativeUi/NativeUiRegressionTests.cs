@@ -128,3 +128,40 @@ public sealed class NativeUiRegressionTests
         Assert.Equal((145f, -65f, true), adapter.Applied[Id]);
     }
 }
+
+/// <summary>Collapsed last-seen sizes (saved by an older build: seen.gameui.buff-timers h 0) are never saved or used.</summary>
+public sealed class NativeUiSeenGuardTests
+{
+    private static readonly NativeUiEntryDescriptor Timers =
+        new("gameui.timers", "Timers", "zuiroot/timers") { DefaultFraction = new WindowRect(0.01f, 0.84f, 0.17f, 0.04f) };
+
+    private static NativeUiService.EntryState Entry(NativeUiService svc, string id)
+    {
+        foreach (var e in svc.Entries) if (e.Descriptor.Id == id) return e;
+        throw new KeyNotFoundException(id);
+    }
+
+    [Fact] // A zero-height measurement is not remembered (even if the adapter reported it as showing).
+    public void CollapsedMeasurement_IsNotSaved()
+    {
+        var (svc, adapter, cfg, _) = New();
+        adapter.Base = new WindowRect(606, 1330, 270, 0);
+        svc.Tick(0.2f, Res);
+        svc.Tick(1f, Res);
+        Assert.DoesNotContain("seen.gameui.test.1920x1080.x", cfg.Keys);
+    }
+
+    [Fact] // A collapsed saved last-seen rect is ignored on load → the placeholder uses the default rect.
+    public void CollapsedSavedSeen_IsIgnored_DefaultRectUsed()
+    {
+        var (svc, adapter, cfg, _) = New(Timers);
+        const string s = "seen.gameui.timers.1920x1080";
+        cfg.Set($"{s}.x", 606f); cfg.Set($"{s}.y", 1330.7f); cfg.Set($"{s}.w", 270.7f); cfg.Set($"{s}.h", 0f); cfg.Set($"{s}.s", 1.333f);
+        adapter.Absent.Add("gameui.timers");
+        svc.Tick(0.2f, Res);
+        Assert.True(svc.TryGetEditView(Entry(svc, "gameui.timers"), out var v));
+        Assert.Equal(19.2f, v.Rect.X, 1);
+        Assert.Equal(907.2f, v.Rect.Y, 1);
+        Assert.Equal(43.2f, v.Rect.Height, 1);
+    }
+}

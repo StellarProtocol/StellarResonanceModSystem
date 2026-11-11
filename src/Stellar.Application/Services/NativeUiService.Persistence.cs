@@ -130,6 +130,7 @@ internal sealed partial class NativeUiService
             X = x, Y = _config.Get(k[KSeenY], 0f), W = _config.Get(k[KSeenW], 0f), H = _config.Get(k[KSeenH], 0f),
             PxPerUnit = _config.Get(k[KSeenS], 0f),
         };
+        if (!IsUsableSeen(e.Seen.W, e.Seen.H)) e.HasSeen = false;   // a collapsed size saved by an older build → default rect
     }
 
     // Persist dirty last-seen geometry (at most one quiet save per measure pass; usually once per element per session).

@@ -65,13 +65,21 @@ internal sealed partial class PandaHudAdapter
     // <paramref name="root"/>, or <paramref name="fallback"/> when nothing draws.
     private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
         System.Collections.Generic.List<Transform>? exclude = null)
-        => ContentUnionRect(root, cam, fallback, exclude, out _);
+        => UnionWith(root, cam, fallback, new BoundsAcc { Exclude = exclude }, out _);
 
     // any = false when nothing visible was found (the fallback is returned).
-    private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
+    // SpecUnionRect: a curated "*" token of an allowlist RectChild spec — walk 2 levels deeper and clip only at REAL enabled
+    // Mask/RectMask2D components (not the auto union's "named mask" heuristic, which can bound a non-clipping node and
+    // cut drawn content: the quickbar [L Ctrl] rings, 11-11). The auto union (no spec) keeps the old, tighter rules.
+    private static WindowRect SpecUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
         System.Collections.Generic.List<Transform>? exclude, out bool any)
+        => UnionWith(root, cam, fallback, SpecAcc(exclude), out any);
+
+    private static BoundsAcc SpecAcc(System.Collections.Generic.List<Transform>? exclude)
+        => new() { Exclude = exclude, MaxDepth = ContentMaxDepth + SpecExtraDepth, NameClip = false };
+
+    private static WindowRect UnionWith(RectTransform root, Camera? cam, WindowRect fallback, BoundsAcc acc, out bool any)
     {
-        var acc = new BoundsAcc { Exclude = exclude };
         AccumulateContentBounds(root.transform, cam, depth: 0, acc);
         any = acc.Any;
         if (!acc.Any) return fallback;
@@ -95,7 +103,7 @@ internal sealed partial class PandaHudAdapter
     private static void AccumulateContentBounds(Transform t, Camera? cam, int depth, BoundsAcc acc)
     {
         if (t == null) return;
-        if (depth > ContentMaxDepth) { acc.DepthCapped = true; return; }   // flags for the [NativeUi/Curate] diagnostics
+        if (depth > acc.MaxDepth) { acc.DepthCapped = true; return; }   // flags for the [NativeUi/Curate] diagnostics
         if (acc.Budget <= 0) { acc.BudgetHit = true; return; }
         acc.Budget--;
         if (acc.IsExcluded(t)) return;               // a "-" token of the outline spec (OutlineSpec)
@@ -107,9 +115,10 @@ internal sealed partial class PandaHudAdapter
         // chat scroll viewport) bounds everything below it — its children pan
         // freely behind it (the minimap map texture is 1833px). Bound the mask
         // rect itself and stop, so clipped content can't balloon the box.
-        if (IsClip(t))
+        if (IsClip(t, acc.NameClip))
         {
             AddCorners(rt, cam, acc);
+            acc.ClipLog?.Add(ClipEntry(t, rt, cam));   // diagnostics only ([NativeUi/Curate] clip list; not evaluated when null)
             return;
         }
 
@@ -134,10 +143,18 @@ internal sealed partial class PandaHudAdapter
         return g.color.a >= MinVisibleAlpha;
     }
 
-    private static bool IsClip(Transform t)
-        => t.GetComponent<RectMask2D>() != null
-        || t.GetComponent<Mask>() != null
-        || t.name == "mask" || t.name == "Mask";
+    private const int SpecExtraDepth = 2;
+
+    // A clip region: an ENABLED RectMask2D / Mask (a disabled one clips nothing), or — auto union only (nameClip) — a
+    // node merely NAMED mask, the original minimap heuristic.
+    private static bool IsClip(Transform t, bool nameClip = true)
+    {
+        var r2d = t.GetComponent<RectMask2D>();
+        if (r2d != null && r2d.enabled) return true;
+        var m = t.GetComponent<Mask>();
+        if (m != null && m.enabled) return true;
+        return nameClip && (t.name == "mask" || t.name == "Mask");
+    }
 
     private static void AddCorners(RectTransform rt, Camera? cam, BoundsAcc acc)
     {
@@ -157,6 +174,9 @@ internal sealed partial class PandaHudAdapter
         public int  Budget = ContentNodeBudget;
         public bool Any;
         public bool DepthCapped, BudgetHit;   // diagnostics: the walk was cut by the depth cap / node budget
+        public int MaxDepth = ContentMaxDepth;
+        public bool NameClip = true;
+        public System.Collections.Generic.List<string>? ClipLog;   // set only by the diagnostics walk
         public System.Collections.Generic.List<Transform>? Exclude;   // subtrees skipped by the union ("-" spec tokens)
         public bool IsExcluded(Transform t)
         {

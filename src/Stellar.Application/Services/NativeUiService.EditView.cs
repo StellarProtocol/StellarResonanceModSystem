@@ -30,6 +30,9 @@ internal sealed partial class NativeUiService
     private const float MeasureCacheSeconds = 0.1f;   // edit-mode outlines refresh at ≤10 Hz
     private const float ReferenceCanvasHeight = 1080f; // fallback px-per-unit guess before an element was ever measured
     private const float SeenTolerancePx = 2f;          // last-seen changes smaller than this aren't re-persisted
+    private const float MinSeenPx = 3f;              // last-seen sizes below this are collapsed, never saved or used
+
+    internal static bool IsUsableSeen(float w, float h) => w >= MinSeenPx && h >= MinSeenPx;
 
     /// <summary>True when the editor should offer this element. Placeholders only appear once the HUD exists (any
     /// entry resolved) — so the title screen never shows a screenful of empty boxes. Nothing is editable while the
@@ -89,6 +92,7 @@ internal sealed partial class NativeUiService
     {
         var px = m.PxPerUnit > 0f ? m.PxPerUnit : PxPerUnit(e);
         var d = DefaultRectOf(e, m);
+        if (!IsUsableSeen(d.Width, d.Height)) return;   // never remember a collapsed size (a 0-height placeholder line)
         var changed = !e.HasSeen
             || Math.Abs(e.Seen.X - d.X) > SeenTolerancePx || Math.Abs(e.Seen.Y - d.Y) > SeenTolerancePx
             || Math.Abs(e.Seen.W - d.Width) > SeenTolerancePx || Math.Abs(e.Seen.H - d.Height) > SeenTolerancePx;

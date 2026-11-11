@@ -99,7 +99,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
             if (tok.Content)
             {
                 contentTokens++;
-                r = ContentUnionRect(childRt, cam, own, exclude, out var any);
+                r = SpecUnionRect(childRt, cam, own, exclude, out var any);
                 if (any) contentFound++;
             }
             if (tok.AxisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }

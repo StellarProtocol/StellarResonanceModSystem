@@ -14,6 +14,7 @@ internal sealed class FakeNativeUiAdapter : INativeUiAdapter
 
     public int ResolveCount, ApplyCount, UnwrapCount, MeasureCount;
     public bool Alive = true, WrapIntact = true, Showing = true;
+    public WindowRect? Base;   // overrides BaseRect (e.g. a collapsed 270x0 measurement)
     public readonly HashSet<string> Absent = new();                                  // descriptor ids that don't resolve
     public readonly Dictionary<string, (float X, float Y, bool Visible)> Applied = new();   // by descriptor id
     private readonly Dictionary<string, string> _idByPath = new();
@@ -49,7 +50,8 @@ internal sealed class FakeNativeUiAdapter : INativeUiAdapter
     {
         MeasureCount++;
         var (ox, oy) = Applied.TryGetValue(_idByPath[handle.AllowlistPath], out var a) ? (a.X, a.Y) : (0f, 0f);
-        var r = new WindowRect(BaseRect.X + ox * Px, BaseRect.Y - oy * Px, BaseRect.Width, BaseRect.Height);
+        var b = Base ?? BaseRect;
+        var r = new WindowRect(b.X + ox * Px, b.Y - oy * Px, b.Width, b.Height);
         return new NativeUiMeasure(r, Showing, Px);
     }
 
