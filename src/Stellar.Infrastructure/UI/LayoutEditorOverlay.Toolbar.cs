@@ -152,7 +152,7 @@ internal sealed partial class LayoutEditorOverlay
     // The currently-selectable layout objects, in a STABLE deterministic order (each group sorted by label, so the
     // dropdown's Options() and SelectionSelectedIndex() always agree frame-to-frame regardless of dictionary order).
     // Mirrors exactly what click-select can target under the active filter: native game-UI entries (ShouldOutlineGameUi,
-    // resolved) then mod windows (ShouldOutlineStellar via EditableElements, per-plugin filter). HIDDEN elements are
+    // editable — live or placeholder) then mod windows (ShouldOutlineStellar via EditableElements, per-plugin filter). HIDDEN elements are
     // INCLUDED (each row carries its Visible flag) so a hidden element stays selectable and can be re-shown from the
     // toolbar — SelectionOptions marks the hidden rows with a localized "(hidden)" suffix.
     private System.Collections.Generic.IReadOnlyList<(string Id, string Label, bool Visible)> SelectableObjects()
@@ -162,7 +162,7 @@ internal sealed partial class LayoutEditorOverlay
         {
             var g = new List<(string Id, string Label, bool Visible)>();
             foreach (var e in _nativeUi.Entries)
-                if (e.IsResolved) g.Add((e.Descriptor.Id, _text!.T(e.Descriptor.DisplayNameKey), e.Visible));
+                if (_nativeUi.IsEditable(e)) g.Add((e.Descriptor.Id, _text!.T(e.Descriptor.DisplayNameKey), e.Visible));
             g.Sort((a, b) => string.Compare(a.Label, b.Label, System.StringComparison.CurrentCultureIgnoreCase));
             list.AddRange(g);
         }
@@ -211,7 +211,7 @@ internal sealed partial class LayoutEditorOverlay
         if (_editor.SelectedWindowId is not { } sel) return (false, true, false);
         if (_nativeUi is not null)
             foreach (var e in _nativeUi.Entries)
-                if (e.IsResolved && e.Descriptor.Id == sel) return (true, e.Visible, e.Descriptor.SafeToHide);
+                if (e.Descriptor.Id == sel && _nativeUi.IsEditable(e)) return (true, e.Visible, e.Descriptor.SafeToHide);
         if (_windows is not null)
             foreach (var el in _windows.EditableElements())
                 if (el.Id == sel) return (true, el.Visible, el.CanHide);
@@ -307,7 +307,7 @@ internal sealed partial class LayoutEditorOverlay
     }
 
     // "Reset all" = EVERY editable element restored to its default pose, REGARDLESS of the active filter: every
-    // resolved native game-UI entry + every editable mod window (no ShouldOutline* gate, no per-plugin filter).
+    // editable native game-UI entry (live or placeholder) + every editable mod window (no ShouldOutline* gate, no per-plugin filter).
     // Enumerate EditableElements (NOT EditableRects): EditableRects yields only VISIBLE windows, so a window the
     // user HID via the eye toggle would never make the reset list and would stay hidden — iterating the full
     // (hidden-inclusive) set means ResetWindow also clears a hidden window's persisted-hidden state (ResetRect
@@ -334,13 +334,13 @@ internal sealed partial class LayoutEditorOverlay
         _log.Info($"[LayoutEditor] reset filtered {ids.Count} elements to defaults");
     }
 
-    // The ids "Reset all" touches: every resolved native entry + every editable mod window, hidden included. A fresh
+    // The ids "Reset all" touches: every editable native entry (live or placeholder) + every editable mod window, hidden included. A fresh
     // snapshot, so a reset never mutates a collection mid-enumeration; also the confirm dialog's count.
     private List<string> AllResetIds()
     {
         var ids = new List<string>();
         if (_nativeUi is not null)
-            foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
+            foreach (var e in _nativeUi.Entries) if (_nativeUi.IsEditable(e)) ids.Add(e.Descriptor.Id);
         if (_windows is not null)
             foreach (var el in _windows.EditableElements()) ids.Add(el.Id);
         return ids;
@@ -352,7 +352,7 @@ internal sealed partial class LayoutEditorOverlay
     {
         var ids = new List<string>();
         if (ShouldOutlineGameUi && _nativeUi is not null)
-            foreach (var e in _nativeUi.Entries) if (e.IsResolved) ids.Add(e.Descriptor.Id);
+            foreach (var e in _nativeUi.Entries) if (_nativeUi.IsEditable(e)) ids.Add(e.Descriptor.Id);
         if (ShouldOutlineStellar && _windows is not null)
             foreach (var el in _windows.EditableElements()) if (WindowOwnerMatchesFilter(el.Id)) ids.Add(el.Id);
         return ids;

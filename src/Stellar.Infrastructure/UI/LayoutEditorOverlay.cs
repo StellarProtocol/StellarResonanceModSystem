@@ -331,8 +331,9 @@ internal sealed partial class LayoutEditorOverlay
         if (_nativeUi is null) return false;
         foreach (var e in _nativeUi.Entries)
         {
-            if (!e.IsResolved || !e.Visible) continue;
-            var rect = _nativeUi.GetLiveRect(e);   // current curated rect (matches the live outline)
+            // Live elements AND placeholders (absent / game-hidden) are grabbable; a user-hidden one isn't (eye first).
+            if (!e.Visible || !_nativeUi.TryGetEditView(e, out var view)) continue;
+            var rect = view.Rect;   // current curated / placeholder rect (matches the drawn outline)
             if (!rect.Contains(px, py)) continue;
             _editor.SelectWindow(e.Descriptor.Id);
             _editor.BeginDrag(px, py, rect);

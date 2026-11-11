@@ -111,7 +111,7 @@ internal sealed partial class LayoutEditorOverlay
         return false;
     }
 
-    // Apply a screen-px delta to the selected element, dispatching by type. A resolved native entry with this id →
+    // Apply a screen-px delta to the selected element, dispatching by type. An editable native entry with this id →
     // native path (screen px directly, clamp on-screen, persist on release). Otherwise → mod-window path, which
     // converts to canvas units and persists via PersistIfSettled (see WindowService.NudgeRect).
     private void ApplyNudge(string id, float dxPx, float dyPx)
@@ -122,7 +122,7 @@ internal sealed partial class LayoutEditorOverlay
         {
             foreach (var e in _nativeUi.Entries)
             {
-                if (!e.IsResolved || e.Descriptor.Id != id) continue;
+                if (e.Descriptor.Id != id || !_nativeUi.IsEditable(e)) continue;   // live or placeholder
                 var rect = _nativeUi.GetLiveRect(e);
                 var res = _input.CurrentResolution;
                 // Keep ≥ NudgeMinOnScreenPx of the element within the screen (top-left origin, Y-down).

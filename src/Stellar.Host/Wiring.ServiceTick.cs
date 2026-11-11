@@ -165,8 +165,8 @@ public sealed partial class BootstrapPlugin
     // false): that is exactly when the game destroys+rebuilds its HUD at the default layout. A gated tick froze
     // through the rebuild and only caught up 0-5s later, by which point the game had re-laid-out and kept winning
     // the frame — the "repositioned game HUD element snaps back on scene change" bug. Pure GameObject reads/writes
-    // via PandaHudAdapter (TryResolve/SetRect), no game-state or network touch — safe every phase like the
-    // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so TryResolveAll no-ops.
+    // via PandaHudAdapter (TryResolve / wrapper Apply), no game-state or network touch — safe every phase like the
+    // login/loading/uGUI probes; at title/char-select the HUD nodes don't exist yet so the resolve walk no-ops.
     // The loading-screen probe, then the scene freeze's time-pause watchdog (Wiring.FreeCamera.cs) — un-gated like the probes:
     // the watchdog must see a pause outside the world, which the world-gated IFramework.Update never could (qa I-1).
     private void TickLoadingAndPauseWatchdog()
@@ -200,10 +200,10 @@ public sealed partial class BootstrapPlugin
         {
             _pendingCanvasReapply = true;
             // Native UI uses the generation SIGNAL directly (no scale-ready defer — it clamps in raw Screen pixels,
-            // no scaleFactor transient). The game rebuilt its HUD nodes at defaults and our cached native handles now
-            // point at dead/stale RectTransforms, so ReapplyForActiveSlot below would push to them and no-op. Drop
-            // every entry's IsResolved so the un-gated NativeUiService.Tick re-resolves against the freshly-rebuilt
-            // nodes and re-applies the SAVED pose on the very next Tick (this same beat — the accumulator is armed).
+            // no scaleFactor transient). The game rebuilt its HUD nodes (our wrappers died with the old ones) and our
+            // cached native handles may point at dead RectTransforms. Drop every entry's IsResolved so the un-gated
+            // NativeUiService.Tick re-resolves the rebuilt nodes and re-wraps them with the in-memory offset + hide on
+            // the very next Tick (this same beat — the recheck is armed). Applying needs no measurement → no snap frame.
             _nativeUi?.InvalidateResolvedHandles();
         }
         _lastCanvasGen = curGen;

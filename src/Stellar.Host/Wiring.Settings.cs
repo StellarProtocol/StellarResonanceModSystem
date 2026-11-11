@@ -105,7 +105,7 @@ public sealed partial class BootstrapPlugin
         // a closure that supplies the current resolution — keeps NativeUiService free of a resolution dependency.
         // applyVisibility:true: a slot switch is an explicit user action (matches the old toolbar
         // ReapplyForActiveSlot call that omitted the flag → defaulted true). ReapplyForActiveSlot only reads the
-        // active slot + config and pushes to the adapter (through the SetRect idempotent guard), so it never
+        // active slot + config and pushes to the adapter (a wrapper offset write), so it never
         // re-fires SlotsChanged — no feedback loop. The -= before += keeps re-wiring idempotent.
         if (_layoutStorage is not null)
         {

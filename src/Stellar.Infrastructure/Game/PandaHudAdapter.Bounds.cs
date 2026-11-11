@@ -49,17 +49,6 @@ internal sealed partial class PandaHudAdapter
     private const int ContentMaxDepth = 6;
     private const int ContentNodeBudget = 1500;
 
-    // Largest parent-local translate SetRect will ever apply. A legit cross-screen move is bounded by the
-    // parent's local size (~ canvas size); anything past this is bogus geometry from a transient frame, so we
-    // refuse it rather than fling the element off-screen.
-    private const float MaxSaneDeltaPx = 6000f;
-
-    // Tolerance (screen px) on the SetRect guard's curated-size comparison: the element is treated as un-reflowed
-    // (and the guard may skip) while its curated width/height stay within this of the last-applied size. Small
-    // enough that a real reflow (hundreds of px) always re-applies, large enough that sub-px curated-size jitter
-    // on a steady element doesn't thrash the translate.
-    private const float GuardTolerancePx = 1.5f;
-
     private static WindowRect ComputeContentScreenRect(RectTransform root, Camera? cam)
     {
         // Prefer the node's OWN rect when it's a real widget bound. Many HUD groups whose own rect is useful

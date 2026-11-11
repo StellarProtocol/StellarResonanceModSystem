@@ -30,9 +30,9 @@ internal sealed partial class PandaHudAdapter
             if (e.RectTransform == null || e.GameObject == null) continue;
             var node = ToScreenRect(e.RectTransform, e.Camera);
             var content = ComputeContentScreenRect(e.RectTransform, e.Camera);
-            var outline = e.OriginalScreenRect;   // what the grab-box ACTUALLY uses (RectChild applied at resolve)
+            var outline = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath);   // what the grab-box ACTUALLY uses (RectChild applied)
             log($"[NativeUi/RectDiag] {e.Path}");
-            log($"[NativeUi/RectDiag]   node    =({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) active={e.GameObject.activeInHierarchy}");
+            log($"[NativeUi/RectDiag]   node    =({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) active={e.GameObject.activeInHierarchy} wrapped={(e.Wrapper != null ? e.Mode.ToString() : "no")}");
             log($"[NativeUi/RectDiag]   content =({content.X:0},{content.Y:0} {content.Width:0}x{content.Height:0}) (auto)");
             log($"[NativeUi/RectDiag]   OUTLINE =({outline.X:0},{outline.Y:0} {outline.Width:0}x{outline.Height:0}) <- grab-box (RectChild if curated)");
             var count = 0;

@@ -12,8 +12,8 @@ public sealed partial class BootstrapPlugin
 
     private void DisposePhase9()
     {
-        // Mod-isolation: restore every modified game HUD element to its
-        // OriginalRect on host shutdown.
+        // Mod-isolation: unwrap every customized game HUD element (the game hierarchy is
+        // left exactly as we found it) on host shutdown.
         _nativeUi?.OnFrameworkDispose();
         // Remove the Stellar rail button explicitly, then the bulk uGUI teardown.
         _railButtonHandle?.Remove();

@@ -4,74 +4,62 @@ using Stellar.Abstractions.Domain;
 namespace Stellar.Application.Abstractions;
 
 /// <summary>
-/// Outbound interface implemented in Infrastructure (PandaHudAdapter) and
-/// consumed by Application's NativeUiService. Resolves an allowlist path to
-/// a handle representing a Panda.Hud Canvas RectTransform, and applies
-/// position / visibility mutations against it.
+/// Outbound interface implemented in Infrastructure (PandaHudAdapter) and consumed by Application's
+/// NativeUiService. Resolves an allowlist path to a handle for a Panda.Hud RectTransform and owns the
+/// framework's WRAPPER around it: the user's offset + hide live on a RectTransform WE insert (outer = the
+/// element's new parent, inner = the element's new first child holding its children), so the game keeps
+/// writing its own node and the two compose — we never translate or SetActive a game node.
+/// See Knowledge Base <c>Native-UI-Layout-Positioning.md</c> ("Wrapper spike 2026-11-11").
 /// </summary>
 internal interface INativeUiAdapter
 {
     /// <summary>
-    /// Walk the Canvas hierarchy and resolve <paramref name="allowlistPath"/>
-    /// to a handle, caching the underlying GameObject + original pose. Returns
-    /// false until the game has constructed the target (in-world).
-    /// <paramref name="rectChildPath"/> (nullable) is a sub-path under the resolved node whose own screen-rect
-    /// becomes the handle's <see cref="NativeUiHandle.OriginalRect"/> (the edit outline / grab box); null →
-    /// the adapter computes the rect from the node / visible-drawable union.
+    /// Resolve <paramref name="entry"/>'s full allowlist path to a handle (walks the path segment by segment, so
+    /// an inactive element resolves too). Never name-searches (photo mode has a second FighterBtnsView copy).
+    /// Allocation-free on a miss; returns false until the game has built the element.
     /// </summary>
-    bool TryResolve(string allowlistPath, string? rectChildPath, out NativeUiHandle handle);
+    bool TryResolve(NativeUiEntryDescriptor entry, out NativeUiHandle handle);
 
-    /// <summary>Toggle GameObject.SetActive on the resolved element.</summary>
-    void SetVisible(NativeUiHandle handle, bool visible);
-
-    /// <summary>Apply a top-left-anchored screen-space rect to the resolved RectTransform.</summary>
-    void SetRect(NativeUiHandle handle, WindowRect rect);
-
-    /// <summary>
-    /// Restore the captured original RectTransform pose (anchorMin/Max, pivot,
-    /// anchoredPosition, sizeDelta) AND active-self flag for the resolved
-    /// element. Called from <c>NativeUiService.OnFrameworkDispose</c> on host
-    /// shutdown so unloading the framework leaves the game's HUD anchoring
-    /// configuration in the exact state we found it. <see cref="SetRect"/>
-    /// re-anchors to (0,1) which by itself is NOT a full restore.
-    /// </summary>
-    void RestoreOriginal(NativeUiHandle handle);
-
-    /// <summary>
-    /// Restore the captured original RectTransform ANCHORING (anchorMin/Max, pivot, anchoredPosition,
-    /// sizeDelta) WITHOUT touching the active-self flag. Used when a resolution change lands on a resolution
-    /// with no saved layout: the element must return to the game's default position for the new resolution, but
-    /// the game owns show/hide during a resolution transition, so visibility must be left alone (unlike the full
-    /// <see cref="RestoreOriginal"/>). The captured pose is anchor-based ⇒ resolution-independent, so the game's
-    /// canvas positions it correctly at the new resolution; it must NOT reuse the screen-space OriginalRect,
-    /// which was captured at the old resolution.
-    /// </summary>
-    void RestoreOriginalPose(NativeUiHandle handle);
-
-    /// <summary>True while the resolved element behind <paramref name="handle"/> still exists. Goes false when
-    /// the game destroys it (scene change) — the service uses this to re-resolve + re-apply the saved layout to
-    /// the rebuilt element (bug #4: layout lost on scene change).</summary>
+    /// <summary>True while the resolved element behind <paramref name="handle"/> still exists. Goes false when the
+    /// game destroys it (scene change rebuilds the battle HUD + chat) — the service then re-resolves + re-wraps.</summary>
     bool IsAlive(NativeUiHandle handle);
 
-    /// <summary>The element's current curated screen rect, recomputed live (tracks animations / layout changes
-    /// such as the party panel resizing between 5- and 20-person). Used for the edit outline + hit-test.</summary>
-    WindowRect GetCurrentRect(NativeUiHandle handle);
+    /// <summary>Cheap liveness of OUR wrapper: outer → the element's parent is still our wrapper; inner → our
+    /// wrapper is still the element's child. False also when the element was never wrapped. Polled at ≤10 Hz for
+    /// customized elements only.</summary>
+    bool IsWrapIntact(NativeUiHandle handle);
+
+    /// <summary>Wrap the element if needed, then set the wrapper offset (<paramref name="offsetX"/>/<paramref name="offsetY"/>,
+    /// the wrapper parent's local units, y-up) and the hide (<c>localScale</c> 0 / 1). Needs no measurement, so
+    /// it works while the element is inactive / loading — no snap-back frame after a rebuild.</summary>
+    void Apply(NativeUiHandle handle, float offsetX, float offsetY, bool visible);
+
+    /// <summary>Remove our wrapper, restoring the element (outer) or its children (inner) to the original parent
+    /// at the original sibling index. Idempotent; never destroys a game node.</summary>
+    void Unwrap(NativeUiHandle handle);
+
+    /// <summary>Measure the element's curated screen rect (top-left / y-down screen px) AS IF SHOWN by us (a
+    /// user hide is lifted for the measurement within the same frame), whether the GAME is showing it, and the
+    /// screen px per wrapper-local unit. Walks the content union — call at a low rate or while editing.</summary>
+    NativeUiMeasure Measure(NativeUiHandle handle);
 
     /// <summary>Diagnostic-only (self-gates on <c>StellarDiagnostics.IsEnabled</c>): dump, for every resolved
-    /// element, its own node screen-rect, the computed content rect the editor outline uses, and each drawable
-    /// descendant's screen-rect + visibility — so an oversized outline can be traced to the child inflating it
-    /// (bug #5). No-op when diagnostics are off.</summary>
+    /// element, its node rect, content rect and drawable descendants (bug #5 oversized outlines).</summary>
     void DumpDiagnostics(Action<string> log);
 }
 
+/// <summary>One measurement of a resolved element (see <see cref="INativeUiAdapter.Measure"/>).</summary>
+/// <param name="Rect">Live curated screen rect (top-left / y-down px), at the current wrapper offset.</param>
+/// <param name="Showing">True when the game currently draws it (active, not collapsed, CanvasGroup alpha &gt; 0).</param>
+/// <param name="PxPerUnit">Screen px per wrapper-parent local unit; 0 = unknown.</param>
+internal readonly record struct NativeUiMeasure(WindowRect Rect, bool Showing, float PxPerUnit);
+
 /// <summary>
-/// Opaque handle returned by <see cref="INativeUiAdapter.TryResolve"/>. Only
-/// the adapter knows the meaning of <see cref="GameObjectRef"/>; Application
-/// code carries the value through unchanged.
+/// Opaque handle returned by <see cref="INativeUiAdapter.TryResolve"/>. Only the adapter knows the meaning of
+/// <see cref="GameObjectRef"/>; Application code carries the value through unchanged.
 /// </summary>
 internal readonly struct NativeUiHandle
 {
-    public string     AllowlistPath { get; init; }
-    public IntPtr     GameObjectRef { get; init; }
-    public WindowRect OriginalRect  { get; init; }
+    public string AllowlistPath { get; init; }
+    public IntPtr GameObjectRef { get; init; }
 }
