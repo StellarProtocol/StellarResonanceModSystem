@@ -115,7 +115,10 @@ internal sealed partial class NativeUiService
     private void MigrateLegacy(EntryState e, WindowRect legacy, Abstractions.NativeUiMeasure m)
     {
         var px = m.PxPerUnit > 0f ? m.PxPerUnit : PxPerUnit(e);
-        var (ox, oy) = MigrateLegacyOffset(legacy.X, legacy.Y, DefaultRectOf(e, m), px);
+        // Old builds could save a flung, far off-screen rect (seen: x = -19700 at 1280x720); pull it on-screen first so a
+        // migrated offset can never strand the element off-screen.
+        var target = ClampFullyOnScreen(new WindowRect(legacy.X, legacy.Y, m.Rect.Width, m.Rect.Height), _lastResolution);
+        var (ox, oy) = MigrateLegacyOffset(target.X, target.Y, DefaultRectOf(e, m), px);
         e.OffsetX = ox;
         e.OffsetY = oy;
         e.LegacyRect = null;

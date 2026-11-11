@@ -136,9 +136,16 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         if (lifted) w!.localScale = Vector3.one;
         try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath); }
         finally { if (lifted) w!.localScale = Vector3.zero; }   // never leave a user-hidden element shown
-        var showing = !IsCollapsedStub(rect) && GroupAlpha(rt) >= MinShowingAlpha;
+        var showing = !IsCollapsedStub(rect) && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
         return new NativeUiMeasure(rect, showing, PxPerUnit(e));
     }
+
+    // An inner wrapper that is EMPTY or has un-adopted siblings measures its own full-stretch node rect (the "*."
+    // content union falls back to it), not the element's content — a bogus default for migration / last-seen size
+    // (the class-gauge bug, 2026-11-11). Report "not showing" until the 10 Hz check has adopted the content.
+    private static bool InnerWrapHoldsContent(ResolvedEntry e)
+        => e.Mode != NativeUiWrapMode.Inner || e.Wrapper == null
+        || (e.Wrapper.childCount > 0 && e.RectTransform!.childCount == 1);
 
     // Effective CanvasGroup alpha from the element up the hierarchy: the game hides the whole main HUD by the root
     // CanvasGroup alpha (map open) and keeps the buff bar's group at alpha 0 at rest, both while staying active.

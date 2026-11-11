@@ -20,7 +20,12 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed partial class NativeUiService
 {
-    private const int KOx = 0, KOy = 1, KVisible = 2, KLegacyX = 3, KLegacyY = 4;
+    private const int KOx = 0, KOy = 1, KVisible = 2, KLegacyX = 3, KLegacyY = 4, KMigration = 5;
+
+    // Written with every offset save. 2 = the offset was computed by a build that measures an INNER wrapper only once it
+    // holds the element's content. An inner-wrapped entry with an offset but no marker (saved by f8a7de57 or earlier,
+    // which could migrate against an EMPTY wrapper — the class-gauge bug) re-migrates once from its legacy .x/.y.
+    private const float MigrationVersion = 2f;
     private const int KSeenX = 0, KSeenY = 1, KSeenW = 2, KSeenH = 3, KSeenS = 4;
     private const float NotPersisted = float.MinValue;
 
@@ -81,7 +86,7 @@ internal sealed partial class NativeUiService
         var k = GetConfigKeys(slot, id, res);
         var visible = _config.Get(k[KVisible], true);
         var ox = _config.Get(k[KOx], NotPersisted);
-        if (ox > NotPersisted)
+        if (ox > NotPersisted && !NeedsRemigration(id, k))
         {
             state = new SavedState(true, ox, _config.Get(k[KOy], 0f), null, visible);
             return true;
@@ -96,6 +101,11 @@ internal sealed partial class NativeUiService
         return false;
     }
 
+    // See MigrationVersion: an untrusted inner-wrapper offset that still has its legacy rect to migrate from.
+    private bool NeedsRemigration(string id, string[] k)
+        => _entries.TryGetValue(id, out var e) && e.Descriptor.Wrap == NativeUiWrapMode.Inner
+        && _config.Get(k[KMigration], 0f) < MigrationVersion && _config.Get(k[KLegacyX], NotPersisted) > NotPersisted;
+
     private void Persist(EntryState e)
     {
         // Keyed by the last Tick'd resolution (edits only happen in-world, long after the first Tick).
@@ -103,6 +113,7 @@ internal sealed partial class NativeUiService
         _config.Set(k[KOx], e.OffsetX);
         _config.Set(k[KOy], e.OffsetY);
         _config.Set(k[KVisible], e.Visible);
+        _config.Set(k[KMigration], MigrationVersion);
         WriteSeen(e);
         _config.Save();
     }
@@ -149,7 +160,7 @@ internal sealed partial class NativeUiService
         // Native HUD state is scoped per layout slot (slot0 = Default): a slot captures the whole screen — mod
         // windows AND game UI. Slot-switch reapplies via ReapplyForActiveSlot.
         var p = $"slot{slot}.{id}.{res.Width}x{res.Height}";
-        var keys = new[] { $"{p}.ox", $"{p}.oy", $"{p}.visible", $"{p}.x", $"{p}.y" };
+        var keys = new[] { $"{p}.ox", $"{p}.oy", $"{p}.visible", $"{p}.x", $"{p}.y", $"{p}.mv" };
         _configKeyCache[key] = keys;
         return keys;
     }

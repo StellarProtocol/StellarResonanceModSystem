@@ -16,22 +16,24 @@ internal sealed partial class PandaHudAdapter
     public bool IsWrapIntact(NativeUiHandle handle)
         => _cache.TryGetValue(handle.AllowlistPath, out var e) && IsWrapIntact(e);
 
-    // Outer: the element still sits under our wrapper. Inner: our wrapper still sits under the element. Polled at
-    // 10 Hz per customized element, so it uses Transform.IsChildOf (bool result) rather than reading .parent, which
-    // would allocate a fresh managed proxy per call (Plugin-Performance-Rules §2). A destroyed wrapper/element fails
-    // the Unity-null checks first.
+    // Outer: the element still sits under our wrapper. Inner: our wrapper still sits under the element AND is its ONLY
+    // child — the game instantiates content into some nodes AFTER we wrap (class gauge: the class-resource prefab
+    // battle_res_uibinder_* lands in group_energy as a SIBLING of our wrapper, live 2026-11-11), and that late child
+    // must be adopted or it stays at the game default. Polled at 10 Hz per customized element, so it uses
+    // Transform.IsChildOf + childCount (value results) rather than reading .parent, which would allocate a fresh
+    // managed proxy per call (Plugin-Performance-Rules §2). A destroyed wrapper/element fails the Unity-null checks first.
     private static bool IsWrapIntact(ResolvedEntry e)
     {
         var rt = e.RectTransform;
         var w = e.Wrapper;
         if (rt == null || w == null) return false;
-        return e.Mode == NativeUiWrapMode.Inner ? w.IsChildOf(rt) : rt.IsChildOf(w);
+        return e.Mode == NativeUiWrapMode.Inner ? rt.childCount == 1 && w.IsChildOf(rt) : rt.IsChildOf(w);
     }
 
     public void Apply(NativeUiHandle handle, float offsetX, float offsetY, bool visible)
     {
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return;
-        if (!IsWrapIntact(e))
+        if (!IsWrapIntact(e) && !TryAdoptStrays(e))
         {
             DiscardWrapper(e);
             if (!CreateWrapper(e)) return;
@@ -43,6 +45,29 @@ internal sealed partial class PandaHudAdapter
         var scale = visible ? Vector3.one : Vector3.zero;
         if (w.localScale != scale) w.localScale = scale;
         if (e.BlockInputWhenHidden) SetInputBlocked(e, w, !visible);
+    }
+
+    // Inner wrapper still a direct child of the element, but the game added children beside it: move them INTO the
+    // wrapper (after the ones it already holds, in their sibling order) so the offset/hide applies to them too, and keep
+    // the wrapper first. In-place, so no destroy/re-create of our node. Allocates only on this (rare) path.
+    private bool TryAdoptStrays(ResolvedEntry e)
+    {
+        var rt = e.RectTransform;
+        var w = e.Wrapper;
+        if (e.Mode != NativeUiWrapMode.Inner || rt == null || w == null) return false;
+        var wp = w.parent;
+        if (wp == null || wp.Pointer != rt.Pointer) return false;
+        var n = rt.childCount;
+        var strays = new System.Collections.Generic.List<Transform>(n);
+        for (var i = 0; i < n; i++)
+        {
+            var c = rt.GetChild(i);
+            if (c.Pointer != w.Pointer) strays.Add(c);
+        }
+        foreach (var c in strays) c.SetParent(w, false);
+        w.SetAsFirstSibling();
+        _log.Info($"[NativeUi] '{e.Id}' adopted {strays.Count} late child node(s) into its wrapper");
+        return true;
     }
 
     public void Unwrap(NativeUiHandle handle)
