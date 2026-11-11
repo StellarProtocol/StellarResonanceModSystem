@@ -84,6 +84,7 @@ internal sealed partial class WindowBuilder
     private void BuildMeterRow(MeterRowElement el, Transform parent, WindowToken token)
     {
         var row = UGuiPrimitives.NewChild("MeterRow", parent);
+        AddLiveCanvas(row, interactive: true);   // own batch: per-refresh values re-batch this row only (.LiveCanvas.cs); voice/debuff Buttons → raycaster
         var le = row.AddComponent<LayoutElement>();
         le.preferredHeight = le.minHeight = MeterRowHeight; le.flexibleWidth = 1f;
 
@@ -101,7 +102,7 @@ internal sealed partial class WindowBuilder
         vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false; vlg.childAlignment = TextAnchor.MiddleLeft;
 
         var (crest, crestCell, deadMark, rank, name, nameStrike, className, spec, specGo, score, scoreGo, share, shareGo, leaderGo, imagine, imagineGroup, voiceImg, topLine) = BuildMeterTopLine(content.transform, token);
-        var (fillRect, fillImg, barShield, primary, secondary, fadeL, fadeR) = BuildMeterBar(content.transform, token);
+        var (fillRect, fillImg, barShield, primary, secondary, fadeL, fadeR, sheenGo) = BuildMeterBar(content.transform, token);
 
         // Right-edge hosts: the imagine right-column + the far-right 2×2 debuff block (both ignore-layout,
         // full height). Extracted to keep BuildMeterRow under the 50-LoC cap (STELLAR0002).
@@ -121,7 +122,7 @@ internal sealed partial class WindowBuilder
             BarFillRect = fillRect, BarFillImg = fillImg, BarShieldImg = barShield, Primary = primary, PrimaryGo = primary.gameObject, Secondary = secondary, SecondaryGo = secondary.gameObject, Scrim = scrim, PrimaryOutline = primary.GetComponent<Outline>(), SecondaryOutline = secondary.GetComponent<Outline>(), PrimaryFadeImg = fadeL, SecondaryFadeImg = fadeR,
             Imagine0Cell = imagine[0], Imagine1Cell = imagine[1],
             ImagineGroup = imagineGroup.transform, TopLine = topLine, RightColHost = rightCol,
-            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le,
+            DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo, FillMask = fillRect.GetComponent<RectMask2D>(),
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         });
@@ -322,31 +323,24 @@ internal sealed partial class WindowBuilder
         return (txt, pill);
     }
 
-    private (RectTransform fillRect, Image fillImg, Image barShield, Text primary, Text secondary, RawImage fadeL, RawImage fadeR) BuildMeterBar(Transform parent, WindowToken token)
+    private (RectTransform fillRect, Image fillImg, Image barShield, Text primary, Text secondary, RawImage fadeL, RawImage fadeR, GameObject sheenGo) BuildMeterBar(Transform parent, WindowToken token)
     {
         var bar = UGuiPrimitives.NewChild("Bar", parent);
         bar.AddComponent<LayoutElement>().preferredHeight = MeterBarH;
         var track = bar.AddComponent<Image>(); track.color = MeterTrackBg; track.raycastTarget = false;
 
-        // Filled region = a width-clipped container (anchorMax.x = fraction) with a RectMask2D, so the role
-        // fill AND the scrolling sheen are clipped to the filled width — the IMGUI GUI.BeginClip(fill) analog.
+        // Filled region = a width-sized container (anchorMax.x = fraction). The flat, spriteless fill is STRETCHED to it,
+        // so the fill needs no clip; only the scrolling sheen does — BuildMeterSheen puts the RectMask2D on this
+        // container (the IMGUI GUI.BeginClip(fill) analog) and the binding disables it with the band (HideSheen).
         var clipGo = UGuiPrimitives.NewChild("FillClip", bar.transform);
         var clipRt = clipGo.GetComponent<RectTransform>();
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.anchorMax = new Vector2(1f, 1f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillImg = AddStretchedImage(clipGo.transform, "Fill", Color.clear, ignoreLayout: false);
 
-        // Sheen: a soft white band scrolled left→right within the clipped fill (per-frame, ticker-driven via the
-        // pulse hook). Null in the sandbox → renders static at its rest position.
-        var sheenGo = UGuiPrimitives.NewChild("Sheen", clipGo.transform);
-        var sheenRt = sheenGo.GetComponent<RectTransform>();
-        sheenRt.anchorMin = new Vector2(0f, 0f); sheenRt.anchorMax = new Vector2(0f, 1f); sheenRt.pivot = new Vector2(0f, 0.5f);
-        sheenRt.sizeDelta = new Vector2(60f, 0f); sheenRt.anchoredPosition = Vector2.zero;
-        var sheen = sheenGo.AddComponent<RawImage>(); sheen.texture = SheenTexture(); sheen.raycastTarget = false; sheen.color = Color.white;
-        System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
-        token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
+        // Sheen band (scrolled across the clipped fill) — built + driven in WindowBuilder.MeterRow.Sheen.cs.
+        var sheenGo = BuildMeterSheen(clipRt, token, fillImg);   // hidden per row by MeterRowData.HideSheen (binding)
 
         // Shield overlay for the main bar in HP mode: a grey/white band from the LEFT edge drawn OVER the fill
         // (width = BarShieldFraction via anchorMax.x), the horizontal analogue of the spine's shield band. A
@@ -365,42 +359,7 @@ internal sealed partial class WindowBuilder
         // Overlay texts span the FULL bar (not the clip); left = per-second, right = total. 5-px horizontal inset.
         var primary = AddOverlayText(token, bar.transform, "Primary", TextAnchor.MiddleLeft);
         var secondary = AddOverlayText(token, bar.transform, "Secondary", TextAnchor.MiddleRight);
-        return (clipRt, fillImg, barShield, primary, secondary, fadeL, fadeR);
-    }
-
-    private const float SheenPeriod = 2.4f;
-
-    // Move the sheen band across the (variable-width) clipped fill from time — mirrors MeterRowView.DrawSheen.
-    private static void DriveSheen(RectTransform clip, RectTransform sheen, RawImage img)
-    {
-        if (clip == null || sheen == null || img == null || !sheen.gameObject.activeInHierarchy) return;
-        float w = clip.rect.width;
-        if (w < 8f) { if (img.enabled) img.enabled = false; return; }
-        if (!img.enabled) img.enabled = true;
-        float band = Mathf.Max(50f, w * 0.55f);
-        float p = (Time.realtimeSinceStartup % SheenPeriod) / SheenPeriod;
-        sheen.sizeDelta = new Vector2(band, 0f);
-        sheen.anchoredPosition = new Vector2(-band + p * (w + band), 0f);
-    }
-
-    // Soft white horizontal gradient band (alpha peaks at the centre) — built once, shared by every row's sheen.
-    private Texture2D? _sheenTex;
-    private Texture2D SheenTexture()
-    {
-        if (_sheenTex != null) return _sheenTex;
-        const int w = 64, h = 4;
-        var t = new Texture2D(w, h, TextureFormat.RGBA32, false)
-        { hideFlags = HideFlags.HideAndDontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
-        for (var x = 0; x < w; x++)
-        {
-            float d = Mathf.Abs(x - w * 0.5f) / (w * 0.5f);
-            float a = Mathf.Clamp01(1f - d); a = a * a * 0.42f;
-            var c = new Color(1f, 1f, 1f, a);
-            for (var y = 0; y < h; y++) t.SetPixel(x, y, c);
-        }
-        t.Apply();
-        _sheenTex = t;
-        return t;
+        return (clipRt, fillImg, barShield, primary, secondary, fadeL, fadeR, sheenGo);
     }
 
     private Text AddOverlayText(WindowToken token, Transform parent, string nm, TextAnchor anchor, int baseSize = 10)

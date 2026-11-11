@@ -13,10 +13,10 @@ internal sealed partial class PandaGameDataProbe
     // shapes (including raw property type names for the nested-array columns)
     // so a patch-day drift is visible in the BepInEx log.
 
-    private IReadOnlyDictionary<int, EquipRowInfo> LoadEquipRows()
+    private TableLoadJob LoadEquipRows()
     {
         var firstLogged = false;
-        return LoadDeferredTable<EquipRowInfo>(
+        return DeferredJob<EquipRowInfo>(
             label: "EquipRow",
             typeName: "Bokura.EquipTableBase",
             capacityHint: 4992,
@@ -55,10 +55,10 @@ internal sealed partial class PandaGameDataProbe
 
     // Rows are emitted ROW-keyed (the wire's per-instance roll-map key space); the Application-side
     // service builds both indexes from this (row id + regrouped AttrLibId).
-    private IReadOnlyDictionary<int, EquipAttrLibRowData> LoadEquipAttrLibs()
+    private TableLoadJob LoadEquipAttrLibs()
     {
         var firstLogged = false;
-        return LoadDeferredTable<EquipAttrLibRowData>(
+        return DeferredJob<EquipAttrLibRowData>(
             label: "EquipAttrLib",
             typeName: "Bokura.EquipAttrLibTableBase",
             capacityHint: 4992,
@@ -88,10 +88,10 @@ internal sealed partial class PandaGameDataProbe
     // v2 SCHOOL attr-lib table (Bokura.EquipAttrSchoolLibTableBase): same shape as EquipAttrLib plus the
     // TalentSchoolId list (which specs the row applies to). Spec-dependent advanced rolls for raid gear —
     // resolved via the inspected player's spec (ProfessionSpecs.TalentSchool) so far players' v2 rolls show.
-    private IReadOnlyDictionary<int, EquipAttrSchoolLibRowData> LoadEquipSchoolAttrLibs()
+    private TableLoadJob LoadEquipSchoolAttrLibs()
     {
         var firstLogged = false;
-        return LoadDeferredTable<EquipAttrSchoolLibRowData>(
+        return DeferredJob<EquipAttrSchoolLibRowData>(
             label: "EquipSchoolAttrLib",
             typeName: "Bokura.EquipAttrSchoolLibTableBase",
             capacityHint: 4992,
@@ -116,10 +116,10 @@ internal sealed partial class PandaGameDataProbe
     // (EnchantItemTypeId, EnchantItemLevel) — the wire enchant pair. The DISPLAY level lives in the gem
     // item's name (row.Id → item table), so we surface that item id; the wire enchant_level is just the
     // index. EnchantItemEffect[k]=[type,attrId] pairs with EnchantItemPar[k]=[value] (flat, no rolls).
-    private IReadOnlyDictionary<int, EnchantItemRowData> LoadEquipEnchantItems()
+    private TableLoadJob LoadEquipEnchantItems()
     {
         var firstLogged = false;
-        return LoadDeferredTable<EnchantItemRowData>(
+        return DeferredJob<EnchantItemRowData>(
             label: "EquipEnchantItem",
             typeName: "Bokura.EquipEnchantItemTableBase",
             capacityHint: 2048,
@@ -152,13 +152,13 @@ internal sealed partial class PandaGameDataProbe
         return list.ToArray();
     }
 
-    // LoadDeferredTable needs a struct TInfo — unwrap to plain strings after the walk.
+    // DeferredJob needs a struct TInfo — unwrap to plain strings after the walk.
     private readonly record struct EquipSlotNameRow(string Name);
 
-    private IReadOnlyDictionary<int, string> LoadEquipSlotNames()
+    private TableLoadJob LoadEquipSlotNames()
     {
         var firstLogged = false;
-        var rows = LoadDeferredTable<EquipSlotNameRow>(
+        return DeferredJob<EquipSlotNameRow>(
             label: "EquipPart",
             typeName: "Bokura.EquipPartTableBase",
             capacityHint: 32,
@@ -177,10 +177,12 @@ internal sealed partial class PandaGameDataProbe
                 }
 
                 return (id, new EquipSlotNameRow(name));
+            },
+            finish: rows =>
+            {
+                var result = new Dictionary<int, string>(rows.Count);
+                foreach (var kv in rows) result[kv.Key] = kv.Value.Name;
+                return result;
             });
-
-        var result = new Dictionary<int, string>(rows.Count);
-        foreach (var kv in rows) result[kv.Key] = kv.Value.Name;
-        return result;
     }
 }

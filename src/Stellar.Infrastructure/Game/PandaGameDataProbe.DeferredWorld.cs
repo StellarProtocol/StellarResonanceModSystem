@@ -10,9 +10,9 @@ internal sealed partial class PandaGameDataProbe
     // ===== Monster ========================================================
 
     /// <summary><c>Bokura.MonsterTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, MonsterInfo> LoadMonsters()
+    private TableLoadJob LoadMonsters()
     {
-        return LoadDeferredTable<MonsterInfo>(
+        return DeferredJob<MonsterInfo>(
             label: "Monster",
             typeName: "Bokura.MonsterTableBase",
             capacityHint: 2048,
@@ -47,9 +47,9 @@ internal sealed partial class PandaGameDataProbe
     // ===== Npc ============================================================
 
     /// <summary><c>Bokura.NpcTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, NpcInfo> LoadNpcs()
+    private TableLoadJob LoadNpcs()
     {
-        return LoadDeferredTable<NpcInfo>(
+        return DeferredJob<NpcInfo>(
             label: "Npc",
             typeName: "Bokura.NpcTableBase",
             capacityHint: 1024,
@@ -77,9 +77,9 @@ internal sealed partial class PandaGameDataProbe
     // ===== Scene ==========================================================
 
     /// <summary><c>Bokura.SceneTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, SceneInfo> LoadScenes()
+    private TableLoadJob LoadScenes()
     {
-        return LoadDeferredTable<SceneInfo>(
+        return DeferredJob<SceneInfo>(
             label: "Scene",
             typeName: "Bokura.SceneTableBase",
             capacityHint: 256,
@@ -103,9 +103,9 @@ internal sealed partial class PandaGameDataProbe
     // ===== Map ============================================================
 
     /// <summary><c>Bokura.MapInfoTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, MapInfo> LoadMaps()
+    private TableLoadJob LoadMaps()
     {
-        return LoadDeferredTable<MapInfo>(
+        return DeferredJob<MapInfo>(
             label: "Map",
             typeName: "Bokura.MapInfoTableBase",
             capacityHint: 128,

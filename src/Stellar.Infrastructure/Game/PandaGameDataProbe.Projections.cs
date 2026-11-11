@@ -8,82 +8,23 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaGameDataProbe
 {
     /// <summary>
-    /// Shared eager-table-load envelope. Resolves the type, fetches the ZTable,
-    /// times the walk, logs the per-table summary, swallows exceptions (logs
-    /// once, returns the partially-built dictionary). Each per-table loader
-    /// only supplies a label, a type name, and a projector that turns one row
-    /// object into a key + value pair.
+    /// One-shot (unsliced) deferred-table load: resolves the type, fetches the ZTable, walks every row
+    /// through <paramref name="projector"/>, logs the per-table summary, swallows exceptions (logs once,
+    /// returns the partially-built dictionary). It is the same resumable <see cref="TableLoadJob"/> the
+    /// eager/deferred queues slice across ticks (<c>PandaGameDataProbe.SlicedLoad.cs</c>), run to the end
+    /// in this call — kept for the on-demand readers (spec-root talent tables) that need the table now.
     /// </summary>
     /// <param name="label">Human-readable label for log lines (e.g. "Skill").</param>
     /// <param name="typeName">Fully-qualified Bokura table type (e.g. "Bokura.SkillTableBase").</param>
     /// <param name="capacityHint">Pre-allocation hint for the result dictionary.</param>
     /// <param name="projector">Per-row projector. Returning <c>id == 0</c> skips the row.</param>
-    private IReadOnlyDictionary<int, TInfo> LoadEagerTable<TInfo>(
-        string label,
-        string typeName,
-        int capacityHint,
-        Func<object, Type, (int id, TInfo info)> projector)
-        where TInfo : struct
-        => LoadTableCore<TInfo>(batch: "eager", label, typeName, capacityHint, projector);
-
-    /// <summary>
-    /// Shared deferred-table-load envelope — identical to <see cref="LoadEagerTable"/>
-    /// but emits an <c>[GameData] deferred: …</c> log line on success. Returns
-    /// the built dictionary (possibly empty); callers pass it through TryLoadOne
-    /// as the boxed cache.
-    /// </summary>
     private IReadOnlyDictionary<int, TInfo> LoadDeferredTable<TInfo>(
         string label,
         string typeName,
         int capacityHint,
         Func<object, Type, (int id, TInfo info)> projector)
         where TInfo : struct
-        => LoadTableCore<TInfo>(batch: "deferred", label, typeName, capacityHint, projector);
-
-    private IReadOnlyDictionary<int, TInfo> LoadTableCore<TInfo>(
-        string batch,
-        string label,
-        string typeName,
-        int capacityHint,
-        Func<object, Type, (int id, TInfo info)> projector)
-        where TInfo : struct
-    {
-        var stopwatch = Stopwatch.StartNew();
-        var result = new Dictionary<int, TInfo>(capacity: capacityHint);
-
-        try
-        {
-            var tableType = _typeRegistry.FindType(typeName);
-            if (tableType is null)
-            {
-                _log.Warning($"[Stellar][GameData] missing type {typeName}");
-                return result;
-            }
-
-            if (!TryGetTable(tableType, out var table) || table is null)
-            {
-                return result;
-            }
-
-            LogTableShape(label + "TableBase", table);
-
-            foreach (var row in EnumerateRowsAsObjects(table))
-            {
-                if (row is null) continue;
-                var (id, info) = projector(row, row.GetType());
-                if (id == 0) continue;
-                result[id] = info;
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"[Stellar][GameData] Load{label} threw: {ex.GetType().Name}: {ex.Message}");
-        }
-
-        stopwatch.Stop();
-        _log.Info($"[Stellar][GameData] {batch}: {label} loaded ({result.Count} rows, {stopwatch.ElapsedMilliseconds}ms)");
-        return result;
-    }
+        => (IReadOnlyDictionary<int, TInfo>)DeferredJob(label, typeName, capacityHint, projector).RunToEnd()!;
 
     // ===== Profession =====================================================
 
@@ -93,12 +34,12 @@ internal sealed partial class PandaGameDataProbe
     /// ProfessionId). On any failure log once and return an empty dictionary —
     /// never throw.
     /// </summary>
-    private IReadOnlyDictionary<int, ProfessionInfo> LoadProfessions()
+    private TableLoadJob LoadProfessions()
     {
         var nameByProfessionId = BuildProfessionSystemLookups(out var iconFallbackByProfessionId);
         var firstLogged = false;
 
-        return LoadEagerTable<ProfessionInfo>(
+        return EagerJob<ProfessionInfo>(
             label: "Profession",
             typeName: "Bokura.ProfessionTableBase",
             capacityHint: 16,
@@ -233,12 +174,12 @@ internal sealed partial class PandaGameDataProbe
     /// The diagnostic <see cref="LogSkillCooldownSamples"/> remains as a
     /// confirmation that no direct column exists.
     /// </summary>
-    private IReadOnlyDictionary<int, SkillInfo> LoadSkills()
+    private TableLoadJob LoadSkills()
     {
         var firstLogged = false;
         var cooldownSamples = new List<(int id, int cooldown)>(8);
 
-        var result = LoadEagerTable<SkillInfo>(
+        return EagerJob<SkillInfo>(
             label: "Skill",
             typeName: "Bokura.SkillTableBase",
             capacityHint: 256,
@@ -267,10 +208,12 @@ internal sealed partial class PandaGameDataProbe
                     Kind: MapSkillKind(info.skillTypeInt),
                     CooldownMs: info.cooldown,
                     IsAoe: info.isAoe));
+            },
+            finish: result =>
+            {
+                LogSkillCooldownSamples(cooldownSamples);
+                return result;
             });
-
-        LogSkillCooldownSamples(cooldownSamples);
-        return result;
     }
 
     /// <summary>
@@ -319,7 +262,7 @@ internal sealed partial class PandaGameDataProbe
 
     // ===== Skill leveled-id -> base-id map =================================
 
-    private readonly record struct BaseSkillRef(int BaseSkillId);   // LoadEagerTable needs a struct TInfo
+    private readonly record struct BaseSkillRef(int BaseSkillId);   // EagerJob needs a struct TInfo
 
     /// <summary>
     /// Build the leveled-skill-id → base-skill-id map from
@@ -332,9 +275,9 @@ internal sealed partial class PandaGameDataProbe
     /// resolve a leveled id to its base skill's name on a direct-lookup miss.
     /// On any failure logs once and returns an empty map — never throws.
     /// </summary>
-    private IReadOnlyDictionary<int, int> LoadSkillLevelToBase()
+    private TableLoadJob LoadSkillLevelToBase()
     {
-        var rows = LoadEagerTable<BaseSkillRef>(
+        return EagerJob<BaseSkillRef>(
             label: "SkillFightLevel",
             typeName: "Bokura.SkillFightLevelTableBase",
             capacityHint: 4096,
@@ -345,14 +288,16 @@ internal sealed partial class PandaGameDataProbe
                 var baseId = ReadInt(row, rowType, "SkillId");
                 if (baseId == 0) return (0, default);
                 return (leveledId, new BaseSkillRef(baseId));
+            },
+            finish: rows =>
+            {
+                var map = new Dictionary<int, int>(capacity: rows.Count);
+                foreach (var kvp in rows)
+                {
+                    map[kvp.Key] = kvp.Value.BaseSkillId;
+                }
+                return map;
             });
-
-        var map = new Dictionary<int, int>(capacity: rows.Count);
-        foreach (var kvp in rows)
-        {
-            map[kvp.Key] = kvp.Value.BaseSkillId;
-        }
-        return map;
     }
 
     // ===== Buff ===========================================================
@@ -368,8 +313,8 @@ internal sealed partial class PandaGameDataProbe
     /// </summary>
     private bool _firstBuffLogged;
 
-    private IReadOnlyDictionary<int, BuffInfo> LoadBuffs()
-        => LoadEagerTable<BuffInfo>(
+    private TableLoadJob LoadBuffs()
+        => EagerJob<BuffInfo>(
             label: "Buff",
             typeName: "Bokura.BuffTableBase",
             capacityHint: 1024,

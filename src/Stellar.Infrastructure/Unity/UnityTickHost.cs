@@ -36,7 +36,12 @@ internal sealed class UnityTickHost
         // don't fatally crash here. No-op when already resolved. See Il2CppClassInitFix.
         Il2CppClassInitFix.EnsureSeeded(_log);
         _onTick = onTick;
-        StellarTicker.OnStart = () => _pacer.Start(Time.realtimeSinceStartup);
+        StellarTicker.OnStart = () =>
+        {
+            _pacer.Start(Time.realtimeSinceStartup);
+            // Second chance for the interop fast-path stubs if Il2CppInterop's hooks didn't exist at boot. No-op otherwise.
+            Il2CppInteropFastPath.RetryIfPending(_log);
+        };
         StellarTicker.OnTick = FireScheduled;
         StellarTicker.OnError = m => _log.Error($"[Ticker] tick threw: {m}");
         try { ClassInjector.RegisterTypeInIl2Cpp<StellarTicker>(); }

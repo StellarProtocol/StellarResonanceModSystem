@@ -190,7 +190,7 @@ public sealed partial class BootstrapPlugin : BasePlugin
     {
         var log = new BepInExPluginLog(Log);
         log.Info($"=== {PluginName} v{PluginVersion} loaded ===");
-        log.Info($"[Stellar] diagnostics={(StellarDiagnostics.IsEnabled ? "ON" : "OFF")}");
+        log.Info(DiagnosticsSwitchesLine());
 
         // Wire the SyncContainerDirtyData (method-22) delta discovery dump sink
         // to the BepInEx log. SetDiagnosticLog is a no-op unless
@@ -270,6 +270,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
         if (_scheduler is not null)
             _scheduler.MasterRateChanged += hz => _tickHost?.Reschedule(hz);
         _tickHost.Install(RunFrameworkTick);
+        // Il2CppInterop's injector hooks exist by now (StellarTicker / any plugin injection applied them):
+        // put the native sign-check stubs in front of them so real game types stop round-tripping through managed code.
+        Stellar.Infrastructure.Unity.Il2CppInteropFastPath.TryInstall(log);
     }
 
     // Phase E: the perf overlay is a uGUI window (registered in WirePhase9Ui once _windowService
@@ -373,6 +376,21 @@ public sealed partial class BootstrapPlugin : BasePlugin
     /// Infrastructure factory would invert the responsibility: Infrastructure would
     /// need to know about Host's env-var convention. Keep it here.
     /// </remarks>
+    // Every diagnostics switch + where an ON came from. "diagnostics=OFF" alone was misleading: frame timing
+    // ([Hitch]/[UiPerf], hook timing, canvas-rebuild/queue probes) is armed by HITCH too, and a persistent USER env var
+    // STELLAR_HITCH=1 kept it running (11-10 raid log) while this line said OFF. PERFHUD = the separate [Perf] harness.
+    private static string DiagnosticsSwitchesLine()
+    {
+        static string Sw(string name, bool on)
+        {
+            if (!on) return name.ToLowerInvariant() + "=OFF";
+            var env = Environment.GetEnvironmentVariable("STELLAR_" + name);
+            return name.ToLowerInvariant() + "=ON(" + (string.IsNullOrEmpty(env) ? "stellar_perf.flags" : "env STELLAR_" + name) + ")";
+        }
+        return $"[Stellar] {Sw("DIAGNOSTICS", StellarDiagnostics.IsEnabled)} {Sw("HITCH", PerfControls.Flag("HITCH"))}"
+             + $" {Sw("PERFHUD", PerfProbe.IsEnabled)} frameTiming={(HitchProbe.IsEnabled ? "ON" : "OFF")}";
+    }
+
     private static T SelectMockOrReal<T>(
         string envVarName,
         Func<T> mockFactory,

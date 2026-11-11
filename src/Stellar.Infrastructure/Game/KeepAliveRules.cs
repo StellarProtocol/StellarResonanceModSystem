@@ -1,3 +1,4 @@
+using Stellar.Application.Services;
 using System;
 using System.Collections.Generic;
 

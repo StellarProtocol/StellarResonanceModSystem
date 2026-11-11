@@ -85,7 +85,9 @@ internal sealed partial class LayoutPanel
     private HudElement BuildEditPanel()
     {
         var s = _k.S;
-        return _k.Panel("layout.edit", () => "Shift+`",
+        // The caption hint is the edit-mode key as the Hotkeys pill shows it, live (it said "Shift+`", which was never
+        // even the default — that is Alt+E); "Not set" once the key is cleared.
+        return _k.Panel("layout.edit", () => _k.Keys.BindingLabel(FrameworkHotkeyIds.LayoutEdit, "hotkeys.notSet"),
             _k.Description("layout.edit.desc"),
             new RowElement(new HudElement[]
             {

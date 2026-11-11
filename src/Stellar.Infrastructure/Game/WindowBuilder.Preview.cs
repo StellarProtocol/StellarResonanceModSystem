@@ -76,6 +76,7 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 12;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (clipRt, fill) = BuildBarTrack(row.transform, b);
@@ -184,7 +185,7 @@ internal sealed partial class WindowBuilder
     }
 
     // Modern (BarStyle.Modern) window bar — the CombatMeter metric-bar look, REUSING the WindowBuilder.MeterRow
-    // primitives (MeterTrackBg / MeterBarH / SheenTexture / DriveSheen / AddOverlayText — nothing ported from
+    // primitives (MeterTrackBg / MeterBarH / SheenTexture / BuildMeterSheen / AddOverlayText — nothing ported from
     // HudElementBuilder.Meter.cs, no new pulse/animator/texture code). Visually mirrors the HUD BuildBarMeter
     // render. Honours Height/Width/FillWidth + Prefix (left caption); LabelInside is meaningless with dual
     // overlays (ignored, matching the HUD). Fill width driven by BarBinding; overlays by TextBinding.
@@ -193,10 +194,11 @@ internal sealed partial class WindowBuilder
         int ls = b.LabelFontSize > 0 ? b.LabelFontSize : 10;
 
         var row = BuildBarRow(parent);
+        AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
-        if (b.Sheen) BuildModernSheen(clipRt, token);
+        if (b.Sheen) BuildModernSheen(clipRt, fill, token);
         if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
         var fillBind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 };
         // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
@@ -223,7 +225,8 @@ internal sealed partial class WindowBuilder
             token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
     }
 
-    // Flat translucent track + width-anchored RectMask2D clip + flat role-coloured fill. Mirrors
+    // Flat translucent track + width-anchored fill container + flat role-coloured fill stretched to it (no RectMask2D:
+    // the spriteless fill IS the container's width; BuildMeterSheen adds the clip only when b.Sheen). Mirrors
     // WindowBuilder.MeterRow.BuildMeterBar (MeterRow.cs:322-336), honouring the BarElement geometry. Returns the
     // track transform (overlay-text parent), the fill-clip RectTransform (the BarBinding drives its anchorMax.x),
     // and the fill Graphic (the BarBinding re-colours it per refresh when BarElement.FillColorFn is set).
@@ -242,7 +245,6 @@ internal sealed partial class WindowBuilder
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.anchorMax = new Vector2(Mathf.Clamp01(b.Fraction01()), 1f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
         UGuiPrimitives.Stretch(fillGo);
@@ -252,19 +254,9 @@ internal sealed partial class WindowBuilder
         return (track.transform, clipRt, fill);
     }
 
-    // Sheen: a soft white band scrolled left→right within the clipped fill (per-frame, ticker-driven via the
-    // pulse hook), REUSING the shared SheenTexture/DriveSheen. Registered exactly as MeterRow.cs:340-346.
-    private void BuildModernSheen(RectTransform clipRt, WindowToken token)
-    {
-        var sheenGo = UGuiPrimitives.NewChild("Sheen", clipRt.transform);
-        var sheenRt = sheenGo.GetComponent<RectTransform>();
-        sheenRt.anchorMin = new Vector2(0f, 0f); sheenRt.anchorMax = new Vector2(0f, 1f); sheenRt.pivot = new Vector2(0f, 0.5f);
-        sheenRt.sizeDelta = new Vector2(60f, 0f); sheenRt.anchoredPosition = Vector2.zero;
-        var sheen = sheenGo.AddComponent<RawImage>();
-        sheen.texture = SheenTexture(); sheen.raycastTarget = false; sheen.color = Color.white;
-        System.Action<float> sweep = _ => DriveSheen(clipRt, sheenRt, sheen);
-        token.Pulses.Add(sweep); _registerPulse?.Invoke(sweep);
-    }
+    // Sheen: the shared meter-row band (WindowBuilder.MeterRow.Sheen.cs) — same nested-canvas isolation, width
+    // cache and visibility/cull skips as the CombatMeter rows; the fill doubles as the scroll-cull probe.
+    private void BuildModernSheen(RectTransform clipRt, Graphic fill, WindowToken token) => BuildMeterSheen(clipRt, token, fill);
 
     // Secondary "overlay" fill on the SAME Modern track (e.g. a monster shield on an HP bar). Builds a second
     // width-clipped fill (mirrors the main FillClip) and drives it via its OWN BarBinding from Overlay01. Draw
@@ -281,7 +273,8 @@ internal sealed partial class WindowBuilder
     }
 
     // Builds a left-anchored, width-clipped fill on the given track — identical to BuildModernTrack's main
-    // FillClip (RectMask2D + a stretched spriteless Fill Image painted from ColorRgba incl. alpha). Returns the
+    // FillClip (a stretched spriteless Fill Image painted from ColorRgba incl. alpha; no RectMask2D — nothing in it
+    // needs clipping, the container width IS the fill width). Returns the
     // clip RectTransform so a BarBinding can drive its anchorMax.x. Caller sets the initial width + draw order.
     private static RectTransform BuildOverlayClip(Transform track, ColorRgba color)
     {
@@ -290,7 +283,6 @@ internal sealed partial class WindowBuilder
         clipRt.anchorMin = new Vector2(0f, 0f); clipRt.pivot = new Vector2(0f, 0.5f);
         clipRt.anchorMax = new Vector2(0f, 1f);
         clipRt.offsetMin = Vector2.zero; clipRt.offsetMax = Vector2.zero;
-        clipGo.AddComponent<RectMask2D>();
 
         var fillGo = UGuiPrimitives.NewChild("Fill", clipGo.transform);
         UGuiPrimitives.Stretch(fillGo);

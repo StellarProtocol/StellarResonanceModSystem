@@ -6,7 +6,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class PandaGameDataProbe
 {
     // Deferred Combat-domain projections — Talent + DamageAttr. Each goes
-    // through the shared LoadDeferredTable<TInfo> envelope so the success log
+    // through the shared DeferredJob<TInfo> envelope so the success log
     // line shape ("[Stellar][GameData] deferred: <Label> loaded (N rows, Mms)")
     // is consistent with eager loads.
     //
@@ -21,9 +21,9 @@ internal sealed partial class PandaGameDataProbe
     /// talent id). 14 talent-related tables exist; the rest are stage /
     /// progression sub-tables out of scope for v1.
     /// </summary>
-    private IReadOnlyDictionary<int, TalentInfo> LoadTalents()
+    private TableLoadJob LoadTalents()
     {
-        return LoadDeferredTable<TalentInfo>(
+        return DeferredJob<TalentInfo>(
             label: "Talent",
             typeName: "Bokura.TalentTableBase",
             capacityHint: 256,
@@ -56,9 +56,9 @@ internal sealed partial class PandaGameDataProbe
     /// <c>Bokura.DamageAttrTableBase</c> — damage attribute (element/physical)
     /// metadata. Fields per spec §4: <c>Id, Name, ElementKind, BaseValue</c>.
     /// </summary>
-    private IReadOnlyDictionary<int, DamageAttrInfo> LoadDamageAttrs()
+    private TableLoadJob LoadDamageAttrs()
     {
-        return LoadDeferredTable<DamageAttrInfo>(
+        return DeferredJob<DamageAttrInfo>(
             label: "DamageAttr",
             typeName: "Bokura.DamageAttrTableBase",
             capacityHint: 32,

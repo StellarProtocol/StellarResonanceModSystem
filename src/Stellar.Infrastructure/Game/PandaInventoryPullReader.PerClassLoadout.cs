@@ -77,8 +77,8 @@ internal sealed partial class PandaInventoryPullReader
 
     /// <summary>
     /// Resolves EVERY saved loadout's per-class gear + modules from their slot → uuid maps (read by the
-    /// loadout probe from <c>equipInfoMap</c>/<c>modInfoMap</c>), in one pass. Builds the uuid → item
-    /// index ONCE (not per plan), then per plan: gear items decode to <see cref="GearInstance"/> (rolls
+    /// loadout probe from <c>equipInfoMap</c>/<c>modInfoMap</c>), in one pass. Looks up the referenced uuids
+    /// ONCE (keyed, not a whole-bag walk — UuidIndex partial), then per plan: gear items decode to <see cref="GearInstance"/> (rolls
     /// via <see cref="ReadEquipAttrObject"/>), module items to <see cref="ModuleInfo"/> (parts via the
     /// existing <see cref="BuildModuleInfoOrNull"/>). Returns a same-length list of empties when the
     /// container isn't resolved yet (or holds no items) — the loadout probe treats an all-empty result
@@ -97,13 +97,20 @@ internal sealed partial class PandaInventoryPullReader
         var charSerialize = TryGetLiveCharSerialize();
         if (charSerialize is null) return EmptyResults(plans.Count);
 
-        var index = BuildUuidIndex(charSerialize);
+        // Keyed lookup of ONLY the referenced uuids (UuidIndex partial) — not a whole-bag walk. An empty
+        // index (items not synced yet, or nothing referenced is owned) yields all-empty results either way.
+        var wanted = CollectWantedUuids(plans, out var moduleUuids);
+        var index = BuildUuidIndex(charSerialize, wanted);
         if (index.Count == 0) return EmptyResults(plans.Count);   // items not synced yet — retry
 
-        var modInfosByUuid = ReadModInfosByUuid(charSerialize);
+        var modInfosByUuid = ReadModInfosFor(charSerialize, moduleUuids);
+        // Plans share most pieces (the appended LIVE set mirrors the current plan), so each item is decoded
+        // once per resolve — the roll maps are ~8 IL2CPP map walks per gear piece.
+        var gearMemo = new Dictionary<(long, int), GearInstance>();
+        var moduleMemo = new Dictionary<long, ModuleInfo?>();
         var results = new List<(IReadOnlyList<GearInstance>, IReadOnlyDictionary<int, ModuleInfo>)>(plans.Count);
         foreach (var (equip, mod) in plans)
-            results.Add((ResolveGear(equip, index), ResolveModules(mod, index, modInfosByUuid)));
+            results.Add((ResolveGear(equip, index, gearMemo), ResolveModules(mod, index, modInfosByUuid, moduleMemo)));
         return results;
     }
 
@@ -114,56 +121,36 @@ internal sealed partial class PandaInventoryPullReader
         return list;
     }
 
-    private List<GearInstance> ResolveGear(IReadOnlyDictionary<int, long> equipUuidsBySlot, Dictionary<long, object> index)
+    // Saved-plan gear carries refine 0 / enchant null, so a piece depends only on (uuid, slot) — memoized.
+    private List<GearInstance> ResolveGear(
+        IReadOnlyDictionary<int, long> equipUuidsBySlot, Dictionary<long, object> index, Dictionary<(long, int), GearInstance> memo)
     {
         var gear = new List<GearInstance>(equipUuidsBySlot.Count);
         foreach (var (slot, uuid) in equipUuidsBySlot)
         {
             if (uuid == 0 || !index.TryGetValue(uuid, out var entry)) continue;
-            gear.Add(ReadGearInstanceFromContainer(entry, slot, uuid));
+            if (!memo.TryGetValue((uuid, slot), out var piece))
+                memo[(uuid, slot)] = piece = ReadGearInstanceFromContainer(entry, slot, uuid);
+            gear.Add(piece);
         }
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return gear;
     }
 
+    // A module depends only on its uuid (item + ModInfo) — memoized, including a null "not a module".
     private Dictionary<int, ModuleInfo> ResolveModules(
-        IReadOnlyDictionary<int, long> modUuidsBySlot, Dictionary<long, object> index, Dictionary<long, object>? modInfosByUuid)
+        IReadOnlyDictionary<int, long> modUuidsBySlot, Dictionary<long, object> index,
+        Dictionary<long, object>? modInfosByUuid, Dictionary<long, ModuleInfo?> memo)
     {
         var modules = new Dictionary<int, ModuleInfo>(modUuidsBySlot.Count);
         foreach (var (slot, uuid) in modUuidsBySlot)
         {
             if (uuid == 0 || !index.TryGetValue(uuid, out var entry)) continue;
-            var m = BuildModuleInfoOrNull(entry, modInfosByUuid);
+            if (!memo.TryGetValue(uuid, out var m))
+                memo[uuid] = m = BuildModuleInfoOrNull(entry, modInfosByUuid);
             if (m is not null) modules[slot] = m;
         }
         return modules;
-    }
-
-    // Index every owned item by uuid across ALL packages (mirrors the game's GetItemTabDataByUuid, which
-    // scans itemPackage.packages[*].items[uuid]). A plan's gear/modules may live in any package, and a
-    // non-active plan's items stay in the packages (confirmed in-game 2026-08-03).
-    private Dictionary<long, object> BuildUuidIndex(object charSerialize)
-    {
-        var index = new Dictionary<long, object>(256);
-        object? itemPackage = SafeGet(_itemPackageProperty, charSerialize);
-        if (itemPackage is null) return index;
-        object? packagesMap = SafeGet(_packagesProperty, itemPackage);
-        if (packagesMap is null) return index;
-
-        foreach (var package in EnumerateMapValues(packagesMap))
-        {
-            if (package is null) continue;
-            _packageItemsProperty ??= FindMapLikeProperty(package.GetType(), "Items");
-            object? itemsMap = SafeGet(_packageItemsProperty, package);
-            if (itemsMap is null) continue;
-            foreach (var entry in EnumerateMapValues(itemsMap))
-            {
-                if (entry is null) continue;
-                long uuid = TryReadInt64(entry, _itemUuidProperty);
-                if (uuid != 0) index[uuid] = entry;
-            }
-        }
-        return index;
     }
 
     private GearInstance ReadGearInstanceFromContainer(object entry, int slot, long uuid, int refine = 0, GearEnchant? enchant = null)
@@ -188,25 +175,44 @@ internal sealed partial class PandaInventoryPullReader
     {
         var charSerialize = TryGetLiveCharSerialize();
         if (charSerialize is null) return (Array.Empty<GearInstance>(), EmptyModuleDict);
-        var index = BuildUuidIndex(charSerialize);
+        // Read the equipped slot views FIRST so the item lookup is keyed to just those uuids (UuidIndex
+        // partial) instead of indexing the whole bag.
+        object? equip = SafeGet(_equipProperty, charSerialize);
+        var equipRows = ReadLiveEquipRows(equip);
+        var modSlots = ReadEquippedSlots(charSerialize);   // cs.mod.modSlots (slot -> uuid), reflects manual edits
+        var wanted = new HashSet<long>();
+        var moduleUuids = new HashSet<long>();
+        foreach (var row in equipRows) wanted.Add(row.Uuid);
+        foreach (var uuid in modSlots.Values) if (uuid != 0) { wanted.Add(uuid); moduleUuids.Add(uuid); }
+        var index = BuildUuidIndex(charSerialize, wanted);
         if (index.Count == 0) return (Array.Empty<GearInstance>(), EmptyModuleDict);
-        return (ReadLiveGear(charSerialize, index), ReadLiveModules(charSerialize, index));
+        return (ReadLiveGear(equip, equipRows, index), ReadLiveModules(modSlots, index, ReadModInfosFor(charSerialize, moduleUuids)));
     }
 
-    private List<GearInstance> ReadLiveGear(object charSerialize, Dictionary<long, object> index)
+    // CharSerialize.equip.equipList (slot -> EquipInfo) as (slot, uuid, refine) rows; uuid 0 rows dropped.
+    private List<(int Slot, long Uuid, int Refine)> ReadLiveEquipRows(object? equip)
     {
-        var gear = new List<GearInstance>(12);
-        object? equip = SafeGet(_equipProperty, charSerialize);
+        var rows = new List<(int, long, int)>(12);
         object? equipListMap = SafeGet(_equipListMapProperty, equip);   // slot -> EquipInfo
-        if (equipListMap is null) return gear;
-        var enchants = ReadEnchants(equip);
+        if (equipListMap is null) return rows;
         foreach (var (slotKey, info) in EnumerateMapEntries(equipListMap))
         {
             if (info is null) continue;
             long uuid = TryReadInt64(info, _equipInfoUuidProperty);
-            if (uuid == 0 || !index.TryGetValue(uuid, out var entry)) continue;
-            int slot = AsInt32(slotKey);
-            int refine = TryReadInt32(info, _equipInfoRefineProperty);
+            if (uuid == 0) continue;
+            rows.Add((AsInt32(slotKey), uuid, TryReadInt32(info, _equipInfoRefineProperty)));
+        }
+        return rows;
+    }
+
+    private List<GearInstance> ReadLiveGear(object? equip, List<(int Slot, long Uuid, int Refine)> equipRows, Dictionary<long, object> index)
+    {
+        var gear = new List<GearInstance>(12);
+        if (equipRows.Count == 0) return gear;
+        var enchants = ReadEnchants(equip);
+        foreach (var (slot, uuid, refine) in equipRows)
+        {
+            if (!index.TryGetValue(uuid, out var entry)) continue;
             var enchant = enchants.TryGetValue(uuid, out var e) ? e : (GearEnchant?)null;
             gear.Add(ReadGearInstanceFromContainer(entry, slot, uuid, refine, enchant));
         }
@@ -230,10 +236,9 @@ internal sealed partial class PandaInventoryPullReader
         return map;
     }
 
-    private Dictionary<int, ModuleInfo> ReadLiveModules(object charSerialize, Dictionary<long, object> index)
+    private Dictionary<int, ModuleInfo> ReadLiveModules(
+        IReadOnlyDictionary<int, long> slots, Dictionary<long, object> index, Dictionary<long, object>? modInfosByUuid)
     {
-        var slots = ReadEquippedSlots(charSerialize);   // cs.mod.modSlots (slot -> uuid), reflects manual edits
-        var modInfosByUuid = ReadModInfosByUuid(charSerialize);
         var modules = new Dictionary<int, ModuleInfo>(slots.Count);
         foreach (var (slot, uuid) in slots)
         {

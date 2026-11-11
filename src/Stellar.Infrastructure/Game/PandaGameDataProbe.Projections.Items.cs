@@ -19,11 +19,11 @@ internal sealed partial class PandaGameDataProbe
     // StatInspector formats %/raw from game data instead of a name heuristic.
     private IReadOnlyDictionary<int, int> _attrNumTypeByBase = new Dictionary<int, int>();
 
-    private readonly record struct AttrIconRow(string Path, int NumType);   // LoadEagerTable needs a struct TInfo
+    private readonly record struct AttrIconRow(string Path, int NumType);   // EagerJob needs a struct TInfo
 
-    private IReadOnlyDictionary<int, string> LoadFightAttrIcons()
+    private TableLoadJob LoadFightAttrIcons()
     {
-        var rows = LoadEagerTable<AttrIconRow>(
+        return EagerJob<AttrIconRow>(
             label: "FightAttrIcon",
             typeName: "Bokura.FightAttrTableBase",
             capacityHint: 192,
@@ -34,16 +34,22 @@ internal sealed partial class PandaGameDataProbe
                 var icon = ReadString(row, rowType, "Icon") ?? string.Empty;
                 var numType = ReadInt(row, rowType, "AttrNumType");
                 return (id, new AttrIconRow(icon, numType));
+            },
+            // Both joins are published here, before the Attribute job is even created (the eager stages run
+            // strictly in order) — LoadAttributes reads them per row.
+            finish: rows =>
+            {
+                var iconMap = new Dictionary<int, string>(rows.Count);
+                var numMap  = new Dictionary<int, int>(rows.Count);
+                foreach (var kv in rows)
+                {
+                    if (!string.IsNullOrEmpty(kv.Value.Path)) iconMap[kv.Key] = kv.Value.Path;
+                    numMap[kv.Key] = kv.Value.NumType;
+                }
+                _attrNumTypeByBase = numMap;
+                _attrIconByBase = iconMap;
+                return iconMap;
             });
-        var iconMap = new Dictionary<int, string>(rows.Count);
-        var numMap  = new Dictionary<int, int>(rows.Count);
-        foreach (var kv in rows)
-        {
-            if (!string.IsNullOrEmpty(kv.Value.Path)) iconMap[kv.Key] = kv.Value.Path;
-            numMap[kv.Key] = kv.Value.NumType;
-        }
-        _attrNumTypeByBase = numMap;
-        return iconMap;
     }
 
     // ===== Attribute ======================================================
@@ -61,11 +67,11 @@ internal sealed partial class PandaGameDataProbe
     /// stays <see cref="AttributeGroup.Unknown"/> until a category-keyed table
     /// surfaces in Phase 6 (<c>StatInspector</c> consumes it for HUD labels).
     /// </summary>
-    private IReadOnlyDictionary<int, AttributeInfo> LoadAttributes()
+    private TableLoadJob LoadAttributes()
     {
         var firstLogged = false;
 
-        return LoadEagerTable<AttributeInfo>(
+        return EagerJob<AttributeInfo>(
             label: "Attribute",
             typeName: "Bokura.AttrDescriptionBase",
             capacityHint: 1536,
@@ -111,11 +117,11 @@ internal sealed partial class PandaGameDataProbe
     /// uses <see cref="AttributeProfileInfo.TypeDisplayName"/> verbatim so
     /// the mapping is observational, not load-bearing.
     /// </summary>
-    private IReadOnlyDictionary<int, AttributeProfileInfo> LoadAttributeProfiles()
+    private TableLoadJob LoadAttributeProfiles()
     {
         var firstLogged = false;
 
-        return LoadEagerTable<AttributeProfileInfo>(
+        return EagerJob<AttributeProfileInfo>(
             label: "AttributeProfile",
             typeName: "Bokura.ProfileAttrTableBase",
             capacityHint: 64,
@@ -161,12 +167,12 @@ internal sealed partial class PandaGameDataProbe
     /// Type distribution inside that range so the bounds + heuristic can be
     /// validated against live data in Phase 7.
     /// </summary>
-    private IReadOnlyDictionary<int, ItemInfo> LoadItems()
+    private TableLoadJob LoadItems()
     {
         var firstLogged = false;
         var moduleRangeStats = new ModuleRangeStats();
 
-        var result = LoadEagerTable<ItemInfo>(
+        return EagerJob<ItemInfo>(
             label: "Item",
             typeName: "Bokura.ItemTableBase",
             capacityHint: 4096,
@@ -206,10 +212,8 @@ internal sealed partial class PandaGameDataProbe
                     Quality: quality,
                     Kind: MapItemKind(typeInt, id),
                     GroupId: groupId));
-            });
-
-        LogItemModuleRangeDistribution(moduleRangeStats);
-        return result;
+            },
+            finish: result => { LogItemModuleRangeDistribution(moduleRangeStats); return result; });
     }
 
     /// <summary>

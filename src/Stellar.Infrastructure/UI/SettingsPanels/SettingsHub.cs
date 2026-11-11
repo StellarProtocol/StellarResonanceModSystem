@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
+using Stellar.Application.Services;
 using Stellar.Infrastructure.UI.Style;
 
 namespace Stellar.Infrastructure.UI.SettingsPanels;
@@ -207,6 +208,12 @@ internal sealed partial class SettingsHub
         }, Gap: 10f);
     }
 
-    /// <summary>The idle footer hint of the current tab (prototype DESC_FOOT).</summary>
-    public string FooterHint() => _k.Loc.T(Tabs[_tab].HintKey);
+    /// <summary>The idle footer hint of the current tab (prototype DESC_FOOT). The About and Layout hints name a hotkey:
+    /// they show its live binding (or a no-key line once it is cleared), never a hard-coded default.</summary>
+    public string FooterHint() => Tabs[_tab].Key switch
+    {
+        "about"  => _k.Keys.Text(FrameworkHotkeyIds.SettingsToggle, Tabs[_tab].HintKey, "settings.foot.about.unbound"),
+        "layout" => _k.Keys.Text(FrameworkHotkeyIds.LayoutEdit, Tabs[_tab].HintKey, "settings.foot.layout.unbound"),
+        _        => _k.Loc.T(Tabs[_tab].HintKey),
+    };
 }

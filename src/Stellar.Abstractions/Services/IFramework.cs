@@ -5,9 +5,11 @@ namespace Stellar.Abstractions.Services;
 /// <summary>
 /// Per-frame callbacks driven by the game's main update loop. Timing / main-thread-marshalling members
 /// (<see cref="IFrameworkTiming.Post"/>, <see cref="IFrameworkTiming.Every"/>,
-/// <see cref="IFrameworkTiming.TimeNow"/>) are inherited from <see cref="IFrameworkTiming"/>.
+/// <see cref="IFrameworkTiming.TimeNow"/>) are inherited from <see cref="IFrameworkTiming"/>; the read-only developer
+/// mode flag (<see cref="IFrameworkDeveloperMode.DeveloperMode"/> + <see cref="IFrameworkDeveloperMode.DeveloperModeChanged"/>)
+/// from <see cref="IFrameworkDeveloperMode"/>.
 /// </summary>
-public interface IFramework : IFrameworkTiming
+public interface IFramework : IFrameworkTiming, IFrameworkDeveloperMode
 {
     /// <summary>Fired once per game frame. Argument is deltaTime in seconds.</summary>
     event Action<float> Update;

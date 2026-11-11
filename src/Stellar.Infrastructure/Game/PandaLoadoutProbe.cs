@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PerfProbe = Stellar.Abstractions.Diagnostics.PerfProbe;
 using Stellar.Abstractions.Domain.Inventory;
 using Stellar.Abstractions.Domain.Loadout;
 using Stellar.Abstractions.Services;
@@ -150,10 +151,18 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // hotbar — and re-fires the on-demand plan refresh. Coalesced: the flag is set on the network
         // thread, consumed once here, so a burst of deltas costs ONE read. No timer anywhere on this
         // path (owner ruling 2026-08-23) — see PandaLoadoutProbe.LiveState.cs.
+        // Each sub-step is its own PerfProbe/[Hitch] segment (fw:lo.*, nested in the host's fw:eq.loadout) so a
+        // loadout stall names its step. Diagnostics only: a cached-flag return when off; const names, no alloc.
+        PerfProbe.BeginSeg(SegLiveState);
         RefreshLiveStateIfArmed();
+        PerfProbe.EndSeg(SegLiveState);
 
+        PerfProbe.BeginSeg(SegRefresh);
         RefreshIfDue();
+        PerfProbe.EndSeg(SegRefresh);
+        PerfProbe.BeginSeg(SegParse);
         ParseLoadoutData();
+        PerfProbe.EndSeg(SegParse);
         // Per-class gear/modules BASE = each saved loadout's equipInfoMap/modInfoMap resolved via the item
         // container (distinct per class — correct for loadout switching). Resolves once when the loadout
         // data + item container are both ready, then LATCHES (bounded retry — not continuous polling). The
@@ -161,21 +170,39 @@ internal sealed partial class PandaLoadoutProbe : ILoadoutProbe
         // on the TRAILING edge: a re-equip burst arms the resolve ~30x/s and the walk is
         // whole-item-container, so it runs ONCE after the burst goes quiet (ResolveQuietTicks) with a hard
         // ResolveMaxDeferTicks ceiling — deferred, never dropped (owner report 2026-09-05).
+        PerfProbe.BeginSeg(SegPerClass);
         TryResolvePerClassDetailsIfDue();
+        PerfProbe.EndSeg(SegPerClass);
         // A queued loadout SAVE (PandaLoadoutProbe.Save.cs) goes out before a switch queued the same tick.
+        PerfProbe.BeginSeg(SegSave);
         DrainPendingSave();
+        PerfProbe.EndSeg(SegSave);
+        PerfProbe.BeginSeg(SegDispatch);
         DrainPendingDispatches();
+        PerfProbe.EndSeg(SegDispatch);
+        CompletePendingSwitchIfDone();
+    }
 
+    // Polls the in-flight switch (if any) for completion. Split out of DrainPendingCompletions for the
+    // 50-LoC method cap when its sub-steps gained [Hitch] segments.
+    private void CompletePendingSwitchIfDone()
+    {
         PendingSwitch? pending;
         lock (_pendingLock) { pending = _pending; }
         if (pending is null) return;
 
+        PerfProbe.BeginSeg(SegEvaluate);
         var outcome = Evaluate(pending);
         if (outcome is { } result)
         {
             pending.Complete(result, this);
         }
+        PerfProbe.EndSeg(SegEvaluate);
     }
+
+    // [Hitch]/[Perf] segment names for DrainPendingCompletions' sub-steps (const → no per-tick allocation).
+    private const string SegLiveState = "fw:lo.liveState", SegRefresh = "fw:lo.refresh", SegParse = "fw:lo.parse",
+        SegPerClass = "fw:lo.perClass", SegSave = "fw:lo.save", SegDispatch = "fw:lo.dispatch", SegEvaluate = "fw:lo.evaluate";
 
     // Fire the SyncProjectList refresh chunk ON DEMAND only: once the first time the
     // bridge is resolved in-world (so weapon_data.rolePlanServerData_ populates), and

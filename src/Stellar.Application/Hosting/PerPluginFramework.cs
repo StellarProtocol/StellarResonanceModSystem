@@ -25,9 +25,29 @@ internal sealed class PerPluginFramework : IFramework
         _scheduler = scheduler;
         _shared = shared;
         _scheduler.RegisterPlugin(_guid, dt => { _dispatch.Drain(dt); Update?.Invoke(dt); });
+        // ONE subscription on the shared flag per plugin, fanned out to this plugin's own handlers; Unregister drops
+        // it, so a disabled/unloaded plugin's handlers are never called again and never kept alive.
+        _shared.DeveloperModeChanged += OnDeveloperModeChanged;
     }
 
     public event Action<float>? Update;
+
+    public bool DeveloperMode => _shared.DeveloperMode;
+    public event Action<bool>? DeveloperModeChanged;
+
+    // Every handler runs even if one throws; the first failure is rethrown tagged with the plugin guid, so the shared
+    // service's per-subscriber guard logs WHICH plugin threw (its own delegate name would only say PerPluginFramework).
+    private void OnDeveloperModeChanged(bool on)
+    {
+        if (DeveloperModeChanged is not { } multicast) return;
+        Exception? first = null;
+        foreach (var d in multicast.GetInvocationList())
+        {
+            try { ((Action<bool>)d)(on); }
+            catch (Exception ex) { first ??= ex; }
+        }
+        if (first != null) throw new InvalidOperationException($"plugin {_guid}: {first.Message}", first);
+    }
 
     public long FrameCount => _shared.FrameCount;
     public int ScreenWidth => _shared.ScreenWidth;
@@ -42,5 +62,10 @@ internal sealed class PerPluginFramework : IFramework
     public int EffectiveUpdateRateHz => _scheduler.EffectiveRateFor(_guid);
     public IUpdateRateScope RequestUpdateRate(int hz) => _scheduler.RequestDynamicRate(_guid, hz);
 
-    public void Unregister() => _scheduler.UnregisterPlugin(_guid);
+    public void Unregister()
+    {
+        _scheduler.UnregisterPlugin(_guid);
+        _shared.DeveloperModeChanged -= OnDeveloperModeChanged;
+        DeveloperModeChanged = null;
+    }
 }

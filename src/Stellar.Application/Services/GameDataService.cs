@@ -61,8 +61,25 @@ internal sealed class GameDataService : IGameData
     /// the eager caches and flips IsAvailable to true.
     /// </summary>
     internal void LoadEager(IGameDataProbe probe)
+        => ApplyEager(probe.TryLoadEager(out var snapshot), snapshot);
+
+    /// <summary>
+    /// Time-sliced <see cref="LoadEager"/>: advances the probe's eager batch until <paramref name="deadline"/>
+    /// (a Stopwatch timestamp). Returns true once the batch has finished (caches populated and
+    /// <see cref="IsAvailable"/> set exactly as the one-shot path would), false while work remains — the
+    /// caches stay untouched until then, so consumers see the whole eager set appear at once.
+    /// </summary>
+    internal bool StepEager(IGameDataProbe probe, long deadline)
     {
-        if (!probe.TryLoadEager(out var snapshot))
+        var step = probe.StepEager(deadline, out var snapshot);
+        if (step == GameDataStep.Pending) return false;
+        ApplyEager(step == GameDataStep.Done, snapshot);
+        return true;
+    }
+
+    private void ApplyEager(bool loaded, GameDataEagerSnapshot snapshot)
+    {
+        if (!loaded)
         {
             Volatile.Write(ref _isAvailable, false);
             return;
@@ -87,7 +104,14 @@ internal sealed class GameDataService : IGameData
     /// Called per Game.Update tick on the game thread. Loads the next deferred
     /// table from the queue. No-op once the queue is empty.
     /// </summary>
-    internal void DrainDeferred(IGameDataProbe probe)
+    internal void DrainDeferred(IGameDataProbe probe) => DrainDeferred(probe, long.MaxValue);
+
+    /// <summary>
+    /// Time-sliced <see cref="DrainDeferred(IGameDataProbe)"/>: advances the CURRENT queued table until
+    /// <paramref name="deadline"/> (a Stopwatch timestamp) and moves to the next table only once it has
+    /// finished, so a large table spreads across ticks and still lands in its cache in one piece.
+    /// </summary>
+    internal void DrainDeferred(IGameDataProbe probe, long deadline)
     {
         if (DeferredComplete)
         {
@@ -95,9 +119,18 @@ internal sealed class GameDataService : IGameData
         }
 
         var kind = DeferredOrder[_deferredIndex];
+        GameDataStep step;
+        object cache;
+        try { step = probe.StepOne(kind, deadline, out cache); }
+        catch
+        {
+            _deferredIndex++;   // a throwing table is skipped, never retried forever (the one-shot contract)
+            throw;
+        }
+        if (step == GameDataStep.Pending) return;   // same table again next tick
         _deferredIndex++;
 
-        if (!probe.TryLoadOne(kind, out var cache))
+        if (step == GameDataStep.Failed)
         {
             return; // Failure already logged in Infrastructure; skip and continue next tick.
         }

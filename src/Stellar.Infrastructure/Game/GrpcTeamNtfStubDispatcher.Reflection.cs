@@ -6,79 +6,35 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// Reflection-facing helpers for <see cref="GrpcTeamNtfStubDispatcher"/>. The
-/// key perf property lives here: the <c>GetUuid</c> / <c>GetMethodId</c> /
-/// <c>GetCallData</c> <see cref="MethodInfo"/> accessors are resolved ONCE per
-/// concrete stub <see cref="Type"/> and cached, so the per-packet path only
-/// pays <c>MethodInfo.Invoke</c> — never a <c>Type.GetMethod</c> lookup.
+/// key perf property lives in the shared <see cref="StubCallAccessors"/>: the
+/// <c>GetUuid</c> / <c>GetMethodId</c> / <c>GetCallData</c> accessors are
+/// resolved ONCE per concrete stub <see cref="Type"/> and compiled into typed
+/// delegates, so the per-packet path is a plain call — no <c>MethodInfo.Invoke</c>.
 ///
 /// <para>
 /// Mirrors <see cref="WorldNtfStubDispatcher"/>.<c>Reflection.cs</c> exactly:
 /// shared <see cref="Il2CppSpanCoercion"/> for the <c>ToArray()</c> span
-/// extraction; same per-type accessor cache pattern. All helpers are I/O-thread
-/// safe; reflection or marshalling failures translate to a <c>false</c> /
-/// <c>null</c> return so the postfix can swallow the packet silently.
+/// extraction; same per-type accessor cache. Reflection or marshalling
+/// failures translate to a <c>false</c> / <c>null</c> return so the postfix
+/// can swallow the packet silently.
 /// </para>
 /// </summary>
 internal sealed partial class GrpcTeamNtfStubDispatcher
 {
-    // Accessors resolved at most once per concrete stub type.
-    private MethodInfo? _getUuid;
-    private MethodInfo? _getMethodId;
-    private MethodInfo? _getCallData;
-    private Type? _resolvedFor;
+    private StubCallAccessors? _accessors;
+    private StubCallAccessors Accessors => _accessors ??= new StubCallAccessors(_log, "[TeamStubDispatch]");
 
-    // Read (uuid, methodId) off IStubCall using accessors cached per concrete
-    // type. Returns false on any reflection failure or null accessor.
+    // Read (uuid, methodId) off IStubCall via the per-type compiled accessors.
     private bool TryReadHeader(object stubCall, out ulong uuid, out uint methodId)
-    {
-        uuid = 0;
-        methodId = 0;
-        try
-        {
-            var t = stubCall.GetType();
-            if (!ReferenceEquals(t, _resolvedFor))
-                ResolveAccessors(t);
-
-            if (_getUuid is null || _getMethodId is null) return false;
-
-            var u = _getUuid.Invoke(stubCall, null);
-            var m = _getMethodId.Invoke(stubCall, null);
-            if (u is null || m is null) return false;
-
-            uuid = Convert.ToUInt64(u);
-            methodId = Convert.ToUInt32(m);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    // One-shot accessor resolution for a concrete stub type.
-    private void ResolveAccessors(Type t)
-    {
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
-        _getUuid = t.GetMethod("GetUuid", flags);
-        _getMethodId = t.GetMethod("GetMethodId", flags);
-        _getCallData = t.GetMethod("GetCallData", flags);
-        _resolvedFor = t;
-    }
+        => Accessors.TryReadHeader(stubCall, out uuid, out methodId);
 
     // Fetch IStubCall.GetCallData() via the cached accessor and coerce the
     // IL2CPP-projected ReadOnlySpan<byte> into a managed byte[]. Returns null
     // on any failure.
     private byte[]? ExtractPayload(object stubCall)
     {
-        var getCallData = _getCallData;
-        if (getCallData is null) return null;
-
-        object? callDataRaw;
-        try { callDataRaw = getCallData.Invoke(stubCall, null); }
-        catch { return null; }
-        if (callDataRaw is null) return null;
-
-        return CoerceCallData(callDataRaw);
+        var callDataRaw = Accessors.GetCallData(stubCall);
+        return callDataRaw is null ? null : CoerceCallData(callDataRaw);
     }
 
     // Resolve (once per process) and apply the shared ToArray span extractor.

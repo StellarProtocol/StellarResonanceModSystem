@@ -45,6 +45,38 @@ internal sealed class FrameworkService : IFramework
     public int CanvasWidth => _canvasScale > 0f ? (int)System.Math.Round(ScreenWidth / _canvasScale) : ScreenWidth;
     public int CanvasHeight => _canvasScale > 0f ? (int)System.Math.Round(ScreenHeight / _canvasScale) : ScreenHeight;
 
+    // Developer mode (IFrameworkDeveloperMode): read-only view of the host's DeveloperModePrefs, bound once it exists
+    // (BuildDeveloperMode runs after this service is built; false until then).
+    private DeveloperModePrefs? _developerMode;
+
+    public bool DeveloperMode => _developerMode?.Enabled == true;
+    public event Action<bool>? DeveloperModeChanged;
+
+    /// <summary>Binds the developer-mode flag plugins read. Its <c>Changed</c> is raised on the game thread (a Settings
+    /// click, or the config store's SectionChanged drain after a hand edit).</summary>
+    internal void BindDeveloperMode(DeveloperModePrefs prefs)
+    {
+        if (_developerMode != null) _developerMode.Changed -= RaiseDeveloperModeChanged;
+        _developerMode = prefs;
+        prefs.Changed += RaiseDeveloperModeChanged;
+    }
+
+    // Each subscriber (one per plugin: its PerPluginFramework) on its own, so one throwing plugin never starves the
+    // others. A flip is a rare user action, so the invocation-list copy is fine here (unlike the per-frame Update).
+    private void RaiseDeveloperModeChanged(bool on)
+    {
+        if (DeveloperModeChanged is not { } multicast) return;
+        foreach (var d in multicast.GetInvocationList())
+        {
+            try { ((Action<bool>)d)(on); }
+            catch (Exception ex)
+            {
+                var who = (d.Method.DeclaringType?.FullName ?? "?") + "." + d.Method.Name;
+                Warn?.Invoke($"[Framework] a DeveloperModeChanged subscriber threw: {who}: {ex.Message}");
+            }
+        }
+    }
+
     public int EffectiveUpdateRateHz => Stellar.Abstractions.Diagnostics.PerfControls.UpdateRateHz;
     public IUpdateRateScope RequestUpdateRate(int hz) => InertUpdateRateScope.Instance;
 

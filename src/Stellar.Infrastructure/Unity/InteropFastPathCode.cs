@@ -1,0 +1,201 @@
+using System;
+using System.Text;
+
+namespace Stellar.Infrastructure.Unity;
+
+/// <summary>
+/// Pure byte-level logic behind <see cref="Il2CppInteropFastPath"/> — no IL2CPP, no process memory, so it is
+/// unit-testable: the two x64 early-out stubs, the token sign rules they encode, and the decoders that find Dobby's
+/// detour pointer slot and confirm a trampoline jumps back into the hooked function.
+/// </summary>
+internal static class InteropFastPathCode
+{
+    /// <summary>Reads <c>len</c> bytes at an address, or null if unreadable (production: <see cref="ExecutableMemory.TryRead"/>).</summary>
+    public delegate byte[]? MemReader(IntPtr addr, int len);
+
+    /// <summary>
+    /// The routing rule the stub implements. Il2CppInterop's managed hook only does anything for an
+    /// <c>Il2CppType</c> whose <c>data</c> is NEGATIVE (a fake token minted by <c>InjectorHelpers.CreateClassToken</c>,
+    /// counting down from -2); for everything else it calls <c>Original</c> unchanged. Real <c>data</c> values are
+    /// user-mode pointers / metadata indices, so they are never negative. So: non-negative → straight to the original
+    /// (fast path); negative → the managed hook, which still applies its own class/valuetype check.
+    /// </summary>
+    public static bool TakesFastPath(long typeData) => typeData >= 0;
+
+    /// <summary>
+    /// Pointers below this are never dereferenced by the stub — they go to the managed hook instead. Windows never
+    /// maps the first 64 KB, so a bogus <c>Il2CppType*</c> there (e.g. <c>il2cpp_class_get_type(NULL)</c> = 0x20,
+    /// reached via <c>Il2CppClassPointerStore&lt;System.Object&gt;</c> when a plugin calls
+    /// <c>MakeGenericMethod(typeof(object))</c> on a game generic) must fault in MANAGED code: there the read is a
+    /// catchable NullReferenceException, whereas a fault inside this native stub is an AccessViolationException →
+    /// CoreCLR corrupted-state failfast, i.e. the game dies.
+    /// </summary>
+    public const long StubMinPointer = 0x10000;
+
+    /// <summary>Total stub length in bytes.</summary>
+    public const int StubLength = 45;
+    /// <summary>Offset of the 8-byte absolute address of the original-function trampoline.</summary>
+    public const int StubOriginalSlot = 23;
+    /// <summary>Offset of the second <c>jmp [rip+0]</c> (→ managed thunk) — the target of both early branches.</summary>
+    public const int StubManagedJmp = 31;
+    /// <summary>Offset of the 8-byte absolute address of the managed hook's reverse-P/Invoke thunk.</summary>
+    public const int StubManagedSlot = 37;
+
+    /// <summary>
+    /// x64 stub placed in front of the managed hook (Win64 ABI: <c>rcx</c> = <c>Il2CppType*</c>, <c>dl</c> = throwOnError):
+    /// <code>
+    ///  0: 48 81 F9 00 00 01 00   cmp  rcx, 0x10000
+    ///  7: 72 16                  jb   managed (+22 → 31)  ; null-page pointer → managed hook (faults catchably there)
+    ///  9: 48 8B 01               mov  rax, [rcx]          ; type->data (offset 0)
+    /// 12: 48 85 C0               test rax, rax
+    /// 15: 78 0E                  js   managed (+14 → 31)  ; negative token → managed hook
+    /// 17: FF 25 00 00 00 00      jmp  [rip+0]             ; → original trampoline
+    /// 23: &lt;original abs64&gt;
+    /// 31: FF 25 00 00 00 00      jmp  [rip+0]             ; → managed thunk
+    /// 37: &lt;managed abs64&gt;
+    /// </code>
+    /// Only <c>rax</c> and flags are touched (both volatile), the stack is untouched and every exit is a tail jump,
+    /// so the callee sees exactly the caller's registers and return address — the argument registers
+    /// (including the full <c>edx</c>) pass through verbatim. <c>jb</c> is the unsigned compare, so only the
+    /// low null-page range is diverted; any user-mode pointer above it takes the original sign-check path.
+    /// </summary>
+    public static byte[] BuildStub(long original, long managed)
+    {
+        var b = new byte[StubLength];
+        byte[] head =
+        {
+            0x48, 0x81, 0xF9, 0x00, 0x00, 0x01, 0x00,
+            0x72, 0x16,
+            0x48, 0x8B, 0x01,
+            0x48, 0x85, 0xC0,
+            0x78, 0x0E,
+            0xFF, 0x25, 0x00, 0x00, 0x00, 0x00,
+        };
+        head.CopyTo(b, 0);
+        BitConverter.GetBytes(original).CopyTo(b, StubOriginalSlot);
+        new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, StubManagedJmp);
+        BitConverter.GetBytes(managed).CopyTo(b, StubManagedSlot);
+        return b;
+    }
+
+    // ── Second stub: MetadataCache::GetTypeInfoFromTypeDefinitionIndex(int index) ─────────────────────────────────
+
+    /// <summary>
+    /// Routing rule of the index stub. Il2CppInterop's <c>MetadataCache_GetTypeInfoFromTypeDefinitionIndex_Hook.Hook</c>
+    /// looks the index up in <c>s_InjectedClasses</c> (keys = injected tokens, all ≤ -3) and otherwise calls
+    /// <c>Original(index)</c> with no other side effect. A non-negative index can never hit, so it goes straight to the
+    /// original; negative indices keep the managed lookup.
+    /// </summary>
+    public static bool TakesIndexFastPath(int index) => index >= 0;
+
+    /// <summary>Total index-stub length in bytes.</summary>
+    public const int IndexStubLength = 32;
+    /// <summary>Offset of the 8-byte absolute address of the original-function trampoline.</summary>
+    public const int IndexStubOriginalSlot = 10;
+    /// <summary>Offset of the second <c>jmp [rip+0]</c> (→ managed thunk) — the target of the early branch.</summary>
+    public const int IndexStubManagedJmp = 18;
+    /// <summary>Offset of the 8-byte absolute address of the managed hook's reverse-P/Invoke thunk.</summary>
+    public const int IndexStubManagedSlot = 24;
+
+    /// <summary>
+    /// x64 stub in front of the index hook (Win64 ABI: <c>ecx</c> = <c>TypeDefinitionIndex</c>, a 32-bit int):
+    /// <code>
+    ///  0: 85 C9                  test ecx, ecx            ; 32-bit test: the upper half of rcx is undefined for an int arg
+    ///  2: 78 0E                  js   managed (+14 → 18)  ; negative (injected token) → managed hook
+    ///  4: FF 25 00 00 00 00      jmp  [rip+0]             ; → original trampoline
+    /// 10: &lt;original abs64&gt;
+    /// 18: FF 25 00 00 00 00      jmp  [rip+0]             ; → managed thunk
+    /// 24: &lt;managed abs64&gt;
+    /// </code>
+    /// No memory is read (so there is no null-page fault class here, unlike <see cref="BuildStub"/>); only flags are
+    /// touched, the stack is untouched and both exits are tail jumps, so the callee sees the caller's exact state.
+    /// </summary>
+    public static byte[] BuildIndexStub(long original, long managed)
+    {
+        var b = new byte[IndexStubLength];
+        new byte[] { 0x85, 0xC9, 0x78, 0x0E, 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, 0);
+        BitConverter.GetBytes(original).CopyTo(b, IndexStubOriginalSlot);
+        new byte[] { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 }.CopyTo(b, IndexStubManagedJmp);
+        BitConverter.GetBytes(managed).CopyTo(b, IndexStubManagedSlot);
+        return b;
+    }
+
+    /// <summary>
+    /// Follow the jump chain Dobby wrote at the hooked function <paramref name="target"/> until an absolute
+    /// <c>jmp [rip+disp32]</c> (<c>FF 25</c>) whose pointer slot holds <paramref name="expected"/> (the managed
+    /// thunk). Accepts <c>E9 rel32</c> hops (Dobby's near-branch mode) and pointer chains, at most 4 hops.
+    /// Anything else is an unknown layout and fails with the bytes in <paramref name="why"/>.
+    /// </summary>
+    public static bool TryFindDetourSlot(IntPtr target, IntPtr expected, MemReader read, out IntPtr slot, out string why)
+    {
+        slot = IntPtr.Zero;
+        long at = (long)target;
+        for (int hop = 0; hop < 4; hop++)
+        {
+            byte[]? b = read((IntPtr)at, 6);
+            if (b == null) { why = $"unreadable code at 0x{at:X} (hop {hop})"; return false; }
+            if (b[0] == 0xE9)
+            {
+                long next = at + 5 + BitConverter.ToInt32(b, 1);
+                if (next == (long)expected) { why = "rel32 jmp straight to the managed thunk (no pointer slot to swap)"; return false; }
+                at = next;
+                continue;
+            }
+            if (b[0] == 0xFF && b[1] == 0x25)
+            {
+                long s = at + 6 + BitConverter.ToInt32(b, 2);
+                byte[]? v = read((IntPtr)s, 8);
+                if (v == null) { why = $"unreadable jmp slot at 0x{s:X}"; return false; }
+                long val = BitConverter.ToInt64(v, 0);
+                if (val == (long)expected) { slot = (IntPtr)s; why = ""; return true; }
+                at = val;
+                continue;
+            }
+            why = $"unexpected bytes [{Hex(b)}] at 0x{at:X} (hop {hop})";
+            return false;
+        }
+        why = "jump chain longer than 4 hops";
+        return false;
+    }
+
+    /// <summary>
+    /// True when <paramref name="tramp"/> (bytes read from a candidate trampoline at <paramref name="trampAddr"/>)
+    /// contains a jump back into the hooked function's body, i.e. to (<paramref name="target"/>,
+    /// <paramref name="target"/> + <paramref name="maxPrologue"/>] — the shape every inline-hook trampoline has
+    /// (relocated prologue, then continue after the overwritten bytes). Recognises <c>FF 25</c> with an in-buffer
+    /// slot and <c>E9 rel32</c>.
+    /// </summary>
+    public static bool HasJumpBack(byte[] tramp, IntPtr trampAddr, IntPtr target, int maxPrologue = 64)
+    {
+        long lo = (long)target, hi = lo + maxPrologue;
+        for (int i = 0; i + 5 <= tramp.Length; i++)
+        {
+            if (tramp[i] == 0xFF && i + 6 <= tramp.Length && tramp[i + 1] == 0x25)
+            {
+                int s = i + 6 + BitConverter.ToInt32(tramp, i + 2);
+                if (s >= 0 && s + 8 <= tramp.Length)
+                {
+                    long dest = BitConverter.ToInt64(tramp, s);
+                    if (dest > lo && dest <= hi) return true;
+                }
+            }
+            if (tramp[i] == 0xE9)
+            {
+                long dest = (long)trampAddr + i + 5 + BitConverter.ToInt32(tramp, i + 1);
+                if (dest > lo && dest <= hi) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>An 8-byte write is atomic on x64 when it does not straddle a 64-byte cache line (aligned or not).</summary>
+    public static bool IsAtomicSlot(IntPtr addr) => ((long)addr & 63) <= 56;
+
+    /// <summary>Space-separated upper-case hex, for log lines.</summary>
+    public static string Hex(byte[] b)
+    {
+        var sb = new StringBuilder(b.Length * 3);
+        foreach (byte x in b) { if (sb.Length > 0) sb.Append(' '); sb.Append(x.ToString("X2")); }
+        return sb.ToString();
+    }
+}

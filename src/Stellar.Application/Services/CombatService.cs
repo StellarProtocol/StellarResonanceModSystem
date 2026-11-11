@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using Stellar.Abstractions.Diagnostics;
 using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using Stellar.Application.Abstractions;
@@ -44,6 +45,10 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
 
     private Action<CombatEvent>[]? _handlers;
     private readonly object        _handlersLock = new();
+    // [Hitch] attribution slot per subscriber (same index as _handlers; null entries / null array when hitch
+    // attribution is off). Rebuilt under _handlersLock alongside _handlers; FireEvent only uses it when the
+    // lengths agree, so a racing (un)subscribe can at worst mis-attribute one diagnostic sample.
+    private HitchProbe.HookSlot?[]? _handlerSlots;
 
     private EntityId                     _localEntityId  = EntityId.None;
     // Cooldowns arrive as DELTAS from SyncToMeDeltaInfo.SyncSkillCDs — each
@@ -221,11 +226,12 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
             if (value is null) return;
             lock (_handlersLock)
             {
-                if (_handlers is null) { _handlers = new[] { value }; return; }
+                if (_handlers is null) { _handlers = new[] { value }; RebuildHandlerSlots(); return; }
                 var next = new Action<CombatEvent>[_handlers.Length + 1];
                 Array.Copy(_handlers, next, _handlers.Length);
                 next[_handlers.Length] = value;
                 _handlers = next;
+                RebuildHandlerSlots();
             }
         }
         remove
@@ -236,13 +242,27 @@ internal sealed partial class CombatService : ICombatSnapshot, ICombatLookup, IC
                 if (_handlers is null) return;
                 var idx = Array.IndexOf(_handlers, value);
                 if (idx < 0) return;
-                if (_handlers.Length == 1) { _handlers = null; return; }
+                if (_handlers.Length == 1) { _handlers = null; RebuildHandlerSlots(); return; }
                 var next = new Action<CombatEvent>[_handlers.Length - 1];
                 Array.Copy(_handlers, 0, next, 0, idx);
                 Array.Copy(_handlers, idx + 1, next, idx, _handlers.Length - idx - 1);
                 _handlers = next;
+                RebuildHandlerSlots();
             }
         }
+    }
+
+    // Diagnostics only (under _handlersLock): one named [Hitch] slot per subscriber — combatSubsTop= names the
+    // plugin whose CombatEventOccurred handler ate a frame. Slots are deduped by name inside HitchProbe, so
+    // re-subscribing never grows the registry. No-op (null) when hitch attribution is off.
+    private void RebuildHandlerSlots()
+    {
+        var h = _handlers;
+        if (h is null || !HitchProbe.IsEnabled) { _handlerSlots = null; return; }
+        var slots = new HitchProbe.HookSlot?[h.Length];
+        for (var i = 0; i < h.Length; i++)
+            slots[i] = HitchProbe.HookSlotFor(HitchProbe.HookKindCombatSubscriber, HitchProbe.DescribeHandler(h[i]));
+        _handlerSlots = slots;
     }
 
     public string? GetEntityName(EntityId entityId) => _entities.GetEntityName(entityId);

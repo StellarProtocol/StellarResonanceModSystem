@@ -20,7 +20,8 @@ namespace Stellar.Infrastructure.Game;
 /// </para>
 ///
 /// <para>
-/// Runs on the network receive thread; never throws across the IL2CPP
+/// Runs on the game's main thread (RPC stubs are dispatched from
+/// ZRpcImpl.ProcessFrameDownPackets); never throws across the IL2CPP
 /// boundary. Register all handlers before calling <see cref="Install"/> so the
 /// router is fully populated before any packets arrive (same ordering constraint
 /// as <see cref="WorldNtfStubDispatcher"/>).
@@ -33,7 +34,8 @@ internal sealed partial class GrpcTeamNtfStubDispatcher
 
     private static GrpcTeamNtfStubDispatcher? Instance;
 
-    private readonly StubRouter _router = new();
+    // Handlers attributed per name on a [Hitch] line (wireTop=) — this postfix feeds the wireHooks total.
+    private readonly StubRouter _router = new(Stellar.Abstractions.Diagnostics.HitchProbe.HookKindWire);
     private readonly IPluginLog _log;
     private Harmony? _harmony;
     private bool _patched;
@@ -107,7 +109,7 @@ internal sealed partial class GrpcTeamNtfStubDispatcher
 
     /// <summary>
     /// HarmonyX postfix — fires after <c>GrpcTeamNtfStub.OnCallStub</c> on the
-    /// network receive thread. Never throws across the IL2CPP boundary.
+    /// game's main thread. Never throws across the IL2CPP boundary.
     /// </summary>
     private static void OnCallStubPostfix(object?[] __args)
     {

@@ -31,6 +31,10 @@ internal sealed class SettingsKit
     public StellarRowFlash Flash { get; }
     public ILocalization Loc { get; }
 
+    /// <summary>Hint text that names a framework hotkey by its LIVE binding (set by the wiring as an init property,
+    /// keeping the constructor under the dependency cap).</summary>
+    public HotkeyHintText Keys { get; init; } = null!;
+
     /// <summary>Switches the hub to a tab by key ("plugins", "hotkeys", …). Set by the hub.</summary>
     public Action<string> GoToTab { get; set; } = _ => { };
 
@@ -51,6 +55,14 @@ internal sealed class SettingsKit
     public HudElement Help(string key, string titleKey, string bodyKey, string sectionKey)
     {
         HelpPopover.Add(key, T(titleKey), T(bodyKey), T(sectionKey));
+        return HelpPopover.Button(key);
+    }
+
+    /// <summary>As <see cref="Help(string,string,string,string)"/> with live title / body texts (ones that name a
+    /// hotkey through <see cref="Keys"/>).</summary>
+    public HudElement Help(string key, Func<string> title, Func<string> body, string sectionKey)
+    {
+        HelpPopover.Add(key, title, body, T(sectionKey));
         return HelpPopover.Button(key);
     }
 

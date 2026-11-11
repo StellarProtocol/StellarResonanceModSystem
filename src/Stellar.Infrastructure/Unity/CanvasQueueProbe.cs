@@ -21,6 +21,10 @@ namespace Stellar.Infrastructure.Unity;
 /// <item>Once per window: the registered RectMask2D count and a timed EXTRA <c>ClipperRegistry.Cull()</c> (per-frame
 /// clipping work that never shows up in a rebuild queue — it runs inside the same PerformUpdate), and a census of
 /// this canvas's CanvasRenderers whose <c>hasMoved</c> is set (moved this frame → re-culled / re-batched).</item>
+/// <item>On the same sampled frames, every uGUI/TMP GRAPHIC-queue entry attributed to its WINDOW (the direct child of
+/// the shared Stellar canvas = the window root, named by its spec id; anything outside it = "(other)": the game's uGUI,
+/// Stellar popups/toasts on their own canvases) — the "top windows by changed graphics" line, so a boss-fight
+/// uiGraphic=108 can be split per plugin window.</item>
 /// </list>
 /// Logged every ~10 s as <c>[UiPerf.Queues]</c> lines. Each part fails closed on its own (one log line) so a
 /// missing interop member never breaks the frame.
@@ -42,6 +46,8 @@ internal static class CanvasQueueProbe
     private static readonly int[] _lenMax = new int[QueueNames.Length];
     private static readonly Dictionary<string, int>[] _hits = NewHits();
     private static readonly Dictionary<IntPtr, string> _pathCache = new();
+    private static readonly Dictionary<string, int> _winHits = new();        // window id → graphic-queue hits (sampled)
+    private static readonly Dictionary<IntPtr, string> _winCache = new();    // graphic transform → window id
     private static bool _censusDone;
     private static string _census = "";
     private static readonly StringBuilder _sb = new(1024);
@@ -78,7 +84,7 @@ internal static class CanvasQueueProbe
             AddLen(0, layout.Count); AddLen(1, graphic.Count);
             if (!sample) return;
             for (var i = 0; i < layout.Count && i < MaxPerQueue; i++) Hit(0, layout[i]?.transform);
-            for (var i = 0; i < graphic.Count && i < MaxPerQueue; i++) Hit(1, graphic[i]?.transform);
+            for (var i = 0; i < graphic.Count && i < MaxPerQueue; i++) { var t = graphic[i]?.transform; Hit(1, t); HitWindow(t); }
         }
         catch (Exception ex) { _uiBroken = true; _log?.Invoke($"[UiPerf.Queues] uGUI queues unreadable: {ex.GetType().Name}: {ex.Message}"); }
     }
@@ -95,7 +101,7 @@ internal static class CanvasQueueProbe
             if (internalN > _tmpInternalMax) _tmpInternalMax = internalN;
             if (!sample) return;
             for (var i = 0; i < layout.Count && i < MaxPerQueue; i++) Hit(2, layout[i]?.transform);
-            for (var i = 0; i < graphic.Count && i < MaxPerQueue; i++) Hit(3, graphic[i]?.transform);
+            for (var i = 0; i < graphic.Count && i < MaxPerQueue; i++) { var t = graphic[i]?.transform; Hit(3, t); HitWindow(t); }
             for (var i = 0; i < cull.Count && i < MaxPerQueue; i++) Hit(4, cull[i]?.transform);
         }
         catch (Exception ex) { _tmpBroken = true; _log?.Invoke($"[UiPerf.Queues] TMP queues unreadable: {ex.GetType().Name}: {ex.Message}"); }
@@ -109,6 +115,43 @@ internal static class CanvasQueueProbe
         var path = PathOf(t);
         var d = _hits[q];
         d[path] = d.TryGetValue(path, out var n) ? n + 1 : 1;
+    }
+
+    // Per-window graphic attribution: the queued graphic's window = the ancestor whose parent is the shared Stellar canvas
+    // (window roots are named by spec id, WindowBuilder.Chrome NewRect(spec.Id)). Not under it → "(other)" (the game's
+    // own uGUI shares CanvasUpdateRegistry). Cached by native pointer like PathOf, so the walk is paid once per element
+    // per 10-s window, on sample frames only.
+    private static void HitWindow(Transform? t)
+    {
+        if (t == null || Root == null) return;
+        var key = t.Pointer;
+        if (!_winCache.TryGetValue(key, out var w))
+        {
+            w = "(other)";
+            var rootPtr = Root.Pointer;
+            for (var cur = t; cur != null; cur = cur.parent)
+            {
+                var p = cur.parent;
+                if (p != null && p.Pointer == rootPtr) { w = cur.name; break; }
+            }
+            _winCache[key] = w;
+        }
+        _winHits[w] = _winHits.TryGetValue(w, out var n) ? n + 1 : 1;
+    }
+
+    // "[UiPerf.Queues] top windows by changed graphics (N sampled frames): 1234×CombatMeter(12.3/f); …" — uGUI + TMP
+    // graphic-queue entries summed per window, with the per-sampled-frame average (≈ graphics re-meshed per frame).
+    private static void LogTopWindows(Action<string> log)
+    {
+        if (_winHits.Count == 0 || _samples == 0) return;
+        var list = new List<KeyValuePair<string, int>>(_winHits);
+        list.Sort((a, b) => b.Value.CompareTo(a.Value));
+        var sb = _sb.Clear();
+        sb.Append("[UiPerf.Queues] top windows by changed graphics (").Append(_samples).Append(" sampled frames):");
+        for (var i = 0; i < list.Count && i < TopN; i++)
+            sb.Append(' ').Append(list[i].Value).Append('×').Append(list[i].Key)
+              .Append('(').Append(((double)list[i].Value / _samples).ToString("0.0")).Append("/f);");
+        log(sb.ToString());
     }
 
     // Up to 6 levels, leaf last ("…/Grand/Parent/Leaf"). Cached by native pointer for the window (names are interop
@@ -181,6 +224,7 @@ internal static class CanvasQueueProbe
             sb.Append(" tmpInternalUpdate=").Append(_tmpInternalMax).Append(" |").Append(_census);
             log(sb.ToString());
             for (var q = 0; q <= QueueNames.Length; q++) LogTop(log, q);
+            LogTopWindows(log);
         }
         Reset(now);
     }
@@ -206,7 +250,7 @@ internal static class CanvasQueueProbe
         _windowStart = now; _frames = 0; _samples = 0; _tmpInternalMax = 0;
         Array.Clear(_lenSum, 0, _lenSum.Length); Array.Clear(_lenMax, 0, _lenMax.Length);
         for (var i = 0; i < _hits.Length; i++) _hits[i].Clear();
-        _pathCache.Clear();
+        _pathCache.Clear(); _winCache.Clear(); _winHits.Clear();
         _censusDone = false; _census = "";
     }
 }

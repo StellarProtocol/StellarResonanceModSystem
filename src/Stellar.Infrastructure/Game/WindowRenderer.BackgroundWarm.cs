@@ -1,3 +1,5 @@
+using Stellar.Application.Abstractions;
+using Stellar.Application.Services;
 using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
@@ -64,11 +66,11 @@ internal sealed partial class WindowRenderer : IWindowBackgroundWarm
         var realShow = !hideAll && !bg && (plan.WasHidden || !t.EverShown);
         var showT = realShow ? HitchProbe.Begin() : 0L;
         if (realShow) { t.ShowIsFirst = !t.EverShown; t.EverShown = true; }
-        if (plan.SoftUnpark) SoftUnpark(t);
+        if (plan.SoftUnpark) { SoftUnpark(t); _ticker?.MarkUiGeometryDirty(); }   // shown again: hover rescan
         // Still inactive: parked KeepAlive branches drop back to background re-warming, or the re-activation below would
         // re-enable (re-mesh + re-layout) every one of them in this frame (WindowBuilder.KeepAlive.cs).
         if (plan.PrepareReshow) t.PrepareReshow();
-        if (t.Root.activeSelf == hideAll) t.Root.SetActive(!hideAll);
+        if (t.Root.activeSelf == hideAll) { t.Root.SetActive(!hideAll); _ticker?.MarkUiGeometryDirty(); }   // shown / ShouldRender-hidden
         if (!bg && t.BgShifted) ShiftBack(t);   // warm / soft park over: back home (a real show, or about to park)
         // A window re-shown after being deactivated re-arms its immediate first-layout, so a content-sized popup
         // (e.g. the cursor-positioned row context menu) is rebuilt to its true size the same frame it reappears
@@ -94,6 +96,7 @@ internal sealed partial class WindowRenderer : IWindowBackgroundWarm
         t.BgShifted = true; RestartWarmCount(t);
         t.Rect.anchoredPosition += new Vector2(BackgroundOffset, 0f);
         _ticker?.BackgroundRoots.Add(t.Rect);
+        _ticker?.MarkUiGeometryDirty();
     }
 
     private void ShiftBack(WindowToken t)
@@ -102,6 +105,7 @@ internal sealed partial class WindowRenderer : IWindowBackgroundWarm
         if (t.Rect == null) return;
         t.Rect.anchoredPosition -= new Vector2(BackgroundOffset, 0f);
         _ticker?.BackgroundRoots.Remove(t.Rect);
+        _ticker?.MarkUiGeometryDirty();
     }
 
     // GetRect/SetRect speak the REAL position while a window sits shifted.

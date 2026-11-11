@@ -1,4 +1,5 @@
 using System;
+using PerfProbe = Stellar.Abstractions.Diagnostics.PerfProbe;
 
 namespace Stellar.Host;
 
@@ -139,9 +140,7 @@ public sealed partial class BootstrapPlugin
         if (_clientState!.IsWorldActive) _framework!.Tick(globalDt);   // (plugins use _scheduler, not this)
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:internal");
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:gamedata");
-        TryLoadGameDataEagerOnce();        // fires once when Bokura.*TableBase handles are populated
-        DrainGameDataDeferred();           // one deferred table per tick; no-op until eager done / queue empty
-        StepSpecRootBuffs();               // then the 3 talent tables for the spec-root map, one per tick
+        TickGameData();                    // eager batch → deferred queue → spec-root tables, time-sliced (Wiring.GameData.Tick)
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("fw:gamedata");
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("fw:equiploadout");
         DrainEquipAndLoadout();            // equip + loadout probes — no latency need; kept at global rate
@@ -314,9 +313,43 @@ public sealed partial class BootstrapPlugin
     private void DrainEquipAndLoadout()
     {
         if (!_clientState!.IsWorldActive) return;   // equip/loadout probes touch the game's main-thread Lua VM
+        // Each job is its own PerfProbe/[Hitch] segment (fw:eq.*) inside the outer fw:equiploadout, so a 40-120 ms
+        // equip-loadout stall names WHICH probe stalled (raid 2026-11-09: ~170 such stalls, owner unknown).
+        // Diagnostics only — Begin/EndSeg return on a cached flag when diagnostics are off; const names, no alloc.
+        // A throwing job skips its EndSeg; the next BeginSeg of that name simply restarts the stamp.
+        PerfProbe.BeginSeg(SegEquip);
         try { _moduleEquipProbe!.DrainPendingCompletions(); }
         catch (Exception ex) { Log.LogWarning($"[boot] equip drain threw: {ex.Message}"); }
+        PerfProbe.EndSeg(SegEquip);
 
+        TickLoadoutChain();
+
+        // Deep-Slumber write probe: drains its own single-flight dispatch queue (enable line / socket /
+        // unsocket a factor). Independent Lua-bridge resolution from the loadout read probe above.
+        PerfProbe.BeginSeg(SegDsWrite);
+        try { _seasonTalentWriteProbe?.DrainPending(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] season-talent write drain threw: {ex.Message}"); }
+        PerfProbe.EndSeg(SegDsWrite);
+
+        // Wardrobe (fashion) probe: resolves its own Lua bridge, refreshes the worn-outfit capture when
+        // armed (merge event / post-apply), and drains a queued FashionWear apply. Own bridge + queue.
+        PerfProbe.BeginSeg(SegWardrobe);
+        try { _fashionProbe?.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] wardrobe tick threw: {ex.Message}"); }
+        PerfProbe.EndSeg(SegWardrobe);
+
+        // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on
+        // in-dungeon + PartyId==0, throttled + capped, so it's a no-op on every normal tick.
+        PerfProbe.BeginSeg(SegTeamRefresh);
+        try { _teamInfoRefreshProbe!.Tick(); }
+        catch (Exception ex) { Log.LogWarning($"[boot] team-refresh tick threw: {ex.Message}"); }
+        PerfProbe.EndSeg(SegTeamRefresh);
+    }
+
+    // Loadout probe → resonance → loadout service, in that order (split out of DrainEquipAndLoadout for the
+    // 50-LoC method cap when the jobs gained [Hitch] segments).
+    private void TickLoadoutChain()
+    {
         // Order is load-bearing: the probe drains the container-merge event (re-reading the live
         // equipped set / class / talents / imagine hotbar), the resonance service republishes the
         // imagine pair from the probe's fresh latch, and ONLY THEN does the loadout service tick —
@@ -326,28 +359,24 @@ public sealed partial class BootstrapPlugin
         // removed. It is a list-identity compare — a no-op on every tick that changed nothing.
         try
         {
+            PerfProbe.BeginSeg(SegLoadout);   // its sub-steps are segmented as fw:lo.* inside the probe
             _loadoutProbe!.TryResolveBridgeIfDue();
             _loadoutProbe!.DrainPendingCompletions();
+            PerfProbe.EndSeg(SegLoadout);
+            PerfProbe.BeginSeg(SegResonance);
             _resonanceService!.Refresh();
+            PerfProbe.EndSeg(SegResonance);
+            PerfProbe.BeginSeg(SegLoadoutSvc);
             _loadoutService!.Tick();
+            PerfProbe.EndSeg(SegLoadoutSvc);
         }
         catch (Exception ex) { Log.LogWarning($"[boot] loadout tick threw: {ex.Message}"); }
-
-        // Deep-Slumber write probe: drains its own single-flight dispatch queue (enable line / socket /
-        // unsocket a factor). Independent Lua-bridge resolution from the loadout read probe above.
-        try { _seasonTalentWriteProbe?.DrainPending(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] season-talent write drain threw: {ex.Message}"); }
-
-        // Wardrobe (fashion) probe: resolves its own Lua bridge, refreshes the worn-outfit capture when
-        // armed (merge event / post-apply), and drains a queued FashionWear apply. Own bridge + queue.
-        try { _fashionProbe?.Tick(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] wardrobe tick threw: {ex.Message}"); }
-
-        // Mid-dungeon-reconnect party-id refresh (WorldProxy.GetTeamInfo via Lua) — self-gates on
-        // in-dungeon + PartyId==0, throttled + capped, so it's a no-op on every normal tick.
-        try { _teamInfoRefreshProbe!.Tick(); }
-        catch (Exception ex) { Log.LogWarning($"[boot] team-refresh tick threw: {ex.Message}"); }
     }
+
+    // [Hitch]/[Perf] segment names for DrainEquipAndLoadout's jobs (const → no per-tick allocation).
+    private const string SegEquip = "fw:eq.equip", SegLoadout = "fw:eq.loadout", SegResonance = "fw:eq.resonance",
+        SegLoadoutSvc = "fw:eq.loadoutSvc", SegDsWrite = "fw:eq.dsWrite", SegWardrobe = "fw:eq.wardrobe",
+        SegTeamRefresh = "fw:eq.teamRefresh";
 
     // uGUI HUD + window toolkits + the SP1 keyboard gate, ticked from the throttled tick. deltaTime is the
     // real seconds since the previous tick (≈1/UpdateRateHz) — pass it (NOT Time.deltaTime, the render-frame
@@ -360,6 +389,7 @@ public sealed partial class BootstrapPlugin
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:toast");
         if (Stellar.Abstractions.Diagnostics.PerfProbe.IsEnabled) _perfOverlay?.RefreshTopWindows();
         Stellar.Abstractions.Diagnostics.PerfProbe.BeginSeg("svc:window");
+        PumpPluginPrebuilds(deltaTime);   // WindowSpec.Prebuild (Wiring.Prewarm.cs) — before Tick, which mounts / parks what it starts / ends
         _windowService?.Tick(deltaTime);
         Stellar.Abstractions.Diagnostics.PerfProbe.EndSeg("svc:window");
         // One gate, three demands: a focused Stellar text field, a held input shield (free camera — spec D8),

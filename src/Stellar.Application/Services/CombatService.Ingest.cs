@@ -128,13 +128,18 @@ internal sealed partial class CombatService
     {
         var snapshot = _handlers;
         if (snapshot is null) return;
+        // [Hitch] per-subscriber attribution (diagnostics only — null when off, so the loop is unchanged).
+        var slots = _handlerSlots;
+        if (slots is not null && slots.Length != snapshot.Length) slots = null;
         for (var i = 0; i < snapshot.Length; i++)
         {
+            var t = slots is null ? 0L : Stellar.Abstractions.Diagnostics.HitchProbe.Begin();
             try { snapshot[i](evt); }
             catch (Exception ex)
             {
                 _log.Warning($"[Combat] subscriber threw: {ex.GetType().Name}: {ex.Message}");
             }
+            if (slots is not null) Stellar.Abstractions.Diagnostics.HitchProbe.EndHookSlot(slots[i], t);
         }
     }
 }

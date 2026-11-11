@@ -15,11 +15,11 @@ internal sealed partial class PandaGameDataProbe
     /// <c>Bokura.QuestTableBase</c> — primary among 8 quest tables (others are
     /// quest-stage / quest-line tables out of scope).
     /// </summary>
-    private IReadOnlyDictionary<int, QuestInfo> LoadQuests()
+    private TableLoadJob LoadQuests()
     {
         var firstLogged = false;
 
-        return LoadDeferredTable<QuestInfo>(
+        return DeferredJob<QuestInfo>(
             label: "Quest",
             typeName: "Bokura.QuestTableBase",
             capacityHint: 2048,
@@ -71,9 +71,9 @@ internal sealed partial class PandaGameDataProbe
     /// SceneID, FunctionID, …</c>. No <c>MinLevel</c> / <c>Difficulty</c> single
     /// columns — first <c>MonsterLv</c> entry serves as MinLevel.
     /// </summary>
-    private IReadOnlyDictionary<int, DungeonInfo> LoadDungeons()
+    private TableLoadJob LoadDungeons()
     {
-        return LoadDeferredTable<DungeonInfo>(
+        return DeferredJob<DungeonInfo>(
             label: "Dungeon",
             typeName: "Bokura.DungeonsTableBase",
             capacityHint: 256,
@@ -110,9 +110,9 @@ internal sealed partial class PandaGameDataProbe
     /// as a free-form string (display label, e.g. "Mon-Fri 20:00") rather than
     /// unix ms — Start/EndUnixMs remain 0 until a date-keyed table surfaces.
     /// </summary>
-    private IReadOnlyDictionary<int, ActivityInfo> LoadActivities()
+    private TableLoadJob LoadActivities()
     {
-        return LoadDeferredTable<ActivityInfo>(
+        return DeferredJob<ActivityInfo>(
             label: "Activity",
             typeName: "Bokura.UnionActivityTableBase",
             capacityHint: 128,
@@ -147,9 +147,9 @@ internal sealed partial class PandaGameDataProbe
     // ===== Achievement ====================================================
 
     /// <summary><c>Bokura.AchievementTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, AchievementInfo> LoadAchievements()
+    private TableLoadJob LoadAchievements()
     {
-        return LoadDeferredTable<AchievementInfo>(
+        return DeferredJob<AchievementInfo>(
             label: "Achievement",
             typeName: "Bokura.AchievementTableBase",
             capacityHint: 512,
@@ -195,9 +195,9 @@ internal sealed partial class PandaGameDataProbe
     /// Lookups for non-dungeon titles (e.g. PvP rank titles) will return null
     /// in v1.
     /// </summary>
-    private IReadOnlyDictionary<int, TitleInfo> LoadTitles()
+    private TableLoadJob LoadTitles()
     {
-        return LoadDeferredTable<TitleInfo>(
+        return DeferredJob<TitleInfo>(
             label: "Title",
             typeName: "Bokura.DungeonTitleTableBase",
             capacityHint: 256,
@@ -229,11 +229,11 @@ internal sealed partial class PandaGameDataProbe
     // ===== Award ==========================================================
 
     /// <summary><c>Bokura.AwardTableBase</c>.</summary>
-    private IReadOnlyDictionary<int, AwardInfo> LoadAwards()
+    private TableLoadJob LoadAwards()
     {
         var firstLogged = false;
 
-        return LoadDeferredTable<AwardInfo>(
+        return DeferredJob<AwardInfo>(
             label: "Award",
             typeName: "Bokura.AwardTableBase",
             capacityHint: 256,

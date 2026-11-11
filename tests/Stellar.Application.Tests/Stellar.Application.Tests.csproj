@@ -2,6 +2,8 @@
   <PropertyGroup>
     <RootNamespace>Stellar.Application.Tests</RootNamespace>
     <AssemblyName>Stellar.Application.Tests</AssemblyName>
+    <!-- Interop/InteropFastPathCodeTests executes the native stub through function pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>Unit tests for Stellar.Application services. Pure .NET — no IL2CPP / BepInEx / Unity dependencies, so tests run on plain `dotnet test`.</Description>
   </PropertyGroup>
 

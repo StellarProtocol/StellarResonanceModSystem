@@ -24,6 +24,7 @@ public sealed partial class WindowInteractionTicker
     {
         public ScrollRect Sr = null!;
         public RectTransform Content = null!;   // moves while scrolling (motion source for the pixelPerfect latch)
+        public GameObject ContentGo = null!;    // Content.gameObject, fetched once (per-frame activeInHierarchy poll)
         public RectTransform Hit = null!;       // the ScrollRect's own rect: viewport AND its scrollbar
         public float PrevY = float.NaN;         // previous frame's Content.anchoredPosition.y (NaN = unknown/inactive)
         public bool Pressed;                    // left button went down over this view and is still held (drag / scrollbar)
@@ -34,7 +35,7 @@ public sealed partial class WindowInteractionTicker
     private bool _anyScrollPressed;
 
     internal void AddScrollView(RectTransform content, ScrollRect sr)
-        => ScrollViews.Add(new ScrollView { Sr = sr, Content = content, Hit = sr.GetComponent<RectTransform>() });
+        => ScrollViews.Add(new ScrollView { Sr = sr, Content = content, ContentGo = content.gameObject, Hit = sr.GetComponent<RectTransform>() });
 
     private void PruneScrollViews()
     {

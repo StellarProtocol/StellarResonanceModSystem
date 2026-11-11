@@ -91,7 +91,7 @@ internal sealed partial class WindowBuilder
             }
             var s = TextFn();
             if (ThaiTmp && s != _last && ShowThai(s)) return;
-            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (the RectMask2D hides it).
+            // Rect width is the previous layout pass's, so the cut lags a resize by one apply (a one-tick overflow on a shrink).
             var fitToRect = EllipsizeToRect || MaxLines > 0;
             float rw = fitToRect ? C.rectTransform.rect.width : 0f;
             if (s != _last || (fitToRect && Math.Abs(rw - _fittedW) > 0.5f))
@@ -381,11 +381,16 @@ internal sealed partial class WindowBuilder
         // (WindowBuilder.KeepAlive.cs). Null = the plain SetActive toggle.
         public KeepAliveHost? Keep;
         private bool _init, _last;
+        // The shown branch flipped on this Apply — kept-alive flips included, which return structural=false but still swap
+        // what is under the pointer (WindowToken.MovedUnderPointer → hover rescan).
+        public bool Flipped;
         public bool Apply()   // returns true when the active branch changed (→ caller forces a layout rebuild)
         {
+            Flipped = false;
             if (Gate != null && !Gate.activeSelf) return false;
             var b = When();
             if (_init && b == _last) return false;
+            Flipped = _init;   // the first resolve isn't a swap (the mount already marked the hover pass dirty)
             // Build the branch about to show, once (cleared BEFORE invoking so a throwing build can't retry forever).
             var build = b ? BuildThen : BuildElse;
             if (b) BuildThen = null; else BuildElse = null;

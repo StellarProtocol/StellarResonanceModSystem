@@ -119,16 +119,21 @@ internal sealed partial class PandaInventoryPullReader
 
     private Dictionary<long, object>? ReadModInfosByUuid(object charSerialize)
     {
+        var modInfosMap = ReadModInfosMap(charSerialize);
+        return modInfosMap is null ? null : MaterializeKeyedDict<long>(modInfosMap);
+    }
+
+    // CharSerialize.Mod.ModInfos (uuid -> ModInfo) — the raw IL2CPP map, or null when unresolved. Shared by
+    // the whole-map materialize above and the per-class resolver's keyed lookup (UuidIndex partial).
+    private object? ReadModInfosMap(object charSerialize)
+    {
         if (_modProperty is null || _modInfosProperty is null) return null;
         object? modContainer;
         try { modContainer = _modProperty.GetValue(charSerialize); }
         catch { return null; }
         if (modContainer is null) return null;
-        object? modInfosMap;
-        try { modInfosMap = _modInfosProperty.GetValue(modContainer); }
+        try { return _modInfosProperty.GetValue(modContainer); }
         catch { return null; }
-        if (modInfosMap is null) return null;
-        return MaterializeKeyedDict<long>(modInfosMap);
     }
 
     // Returns null if the item is not a module (no ModParts) or if any

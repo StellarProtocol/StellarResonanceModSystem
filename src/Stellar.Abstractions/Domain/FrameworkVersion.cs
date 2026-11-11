@@ -22,7 +22,11 @@ public static class FrameworkVersion
     /// 2.30.0 adds <c>IThemeStatusColors</c> (<c>theme.Colors.Success</c>/<c>Danger</c>/<c>Caution</c>), <c>ThemePreset.Sakura</c>
     /// <c>TextElement.MaxLines</c> and <c>TextElement.Height</c>, plus <c>WindowSpec.Topmost</c> and <c>IWindowTopmost</c>
     /// (<c>control.SetTopmost(bool)</c> / <c>control.IsTopmost()</c> via <c>WindowTopmostExtensions</c>), and
-    /// <c>ListElement.Gap</c> / <c>Horizontal</c> / <c>CanReorder</c> (all additive); a
+    /// <c>ListElement.Gap</c> / <c>Horizontal</c> / <c>CanReorder</c>, and <c>WindowSpec.Prebuild</c> /
+    /// <c>PrebuildSignature</c> (build a hidden window ahead of its first open), and
+    /// <c>ICombatBuffEffectLookup.TryGetBuffEffectIds</c> (a base of <c>ICombatLookup</c>: per-buff PlayEffect /
+    /// Customize effect ids off the wire), and <c>IFrameworkDeveloperMode</c> (a base of <c>IFramework</c>:
+    /// read-only <c>services.Framework.DeveloperMode</c> + <c>DeveloperModeChanged</c>) (all additive); a
     /// plugin that uses any of them needs ≥2.30.0. Runtime: window stacking is no longer sticky — <c>BringToFront</c> acts
     /// like a fresh open, a window shown from hidden goes on top of its layer, a fronted HUD rises above Tools/Debug only
     /// until it is hidden.

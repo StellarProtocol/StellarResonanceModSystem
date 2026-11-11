@@ -87,5 +87,6 @@ internal sealed partial class CombatService
             _buffsByEntity.Clear();
             _localSnapshot = EntityBuffSet.Empty;
         }
+        ClearBuffEffectIds();   // same scene scope (CombatService.BuffEffectIds.cs)
     }
 }

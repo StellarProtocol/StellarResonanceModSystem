@@ -113,12 +113,15 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
 
     public bool IsCanvasAvailable() => EnsureCanvas();
 
-    public object? Mount(WindowRegistration reg)
+    public object? Mount(WindowRegistration reg) => MountCore(reg, structureOnly: false);
+
+    // structureOnly = WindowSpec.Prebuild's login-screen stage (.StructureMount.cs): built without its first apply.
+    private WindowToken? MountCore(WindowRegistration reg, bool structureOnly)
     {
         if (!EnsureCanvas() || _canvasRoot == null || _builder == null) return null;
         try
         {
-            var token = _builder.Build(reg, _canvasRoot);
+            var token = _builder.Build(reg, _canvasRoot, firstApply: !structureOnly);
             _tokens.Add(token);   // track for in-place re-skin on theme change
             AttachNestedCanvas(token, reg.Spec);   // OverrideSortingOrder / IsolateCanvas → own Canvas (+ raycaster)
             // Click-away popups: let the per-frame ticker dismiss this window (Escape / press outside its rect).
@@ -196,6 +199,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         for (var i = 0; i < _tokens.Count; i++) if (_tokens[i].Rect != null) _zsort.Add(_tokens[i]);
         _zsort.Sort(ZCompare);
         for (var i = 0; i < _zsort.Count; i++) _zsort[i].Rect.SetSiblingIndex(i);
+        _ticker?.MarkUiGeometryDirty();   // z-order decides which window owns the pointer: re-run the hover pass
     }
 
     public bool IsAlive(object? token) => token is WindowToken t && t.Root != null;
@@ -217,6 +221,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         }
         t.ZLifted = false;
         NoteHide(t, hideT, soft);
+        _ticker?.MarkUiGeometryDirty();   // hidden: its hovered cell must un-hover, the window under it may hover
     }
 
     // Re-show of a parked window. Its order changes only through Activate (WindowService calls it for a REAL show from
@@ -277,7 +282,11 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         var perfT = UiPerfStats.On ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;   // [UiPerf] summary (HITCH only)
         WindowBuilder.BubbleBinding.WindowInBackground = bg;   // off-screen warm: every bubble measure is budgeted
         try { t.Apply(); } finally { WindowBuilder.BubbleBinding.WindowInBackground = false; }
-        ApplyContentMinWidth(t, force: false);   // gated re-measure (.ContentMinWidth.cs)
+        if (t.MovedUnderPointer && !bg) _ticker?.MarkUiGeometryDirty();   // branch swap / row count change: hover rescan
+        // Gated re-measure (.ContentMinWidth.cs) — forced on the first apply of a structure-only mount, whose mount-time
+        // measure saw the tree before any value was pulled (.StructureMount.cs).
+        ApplyContentMinWidth(t, force: t.StructureOnly);
+        t.StructureOnly = false;
         UiPerfStats.AddApply(reg.Spec.Id, perfT);
         if (showT != 0L) NoteShow(t, showT, perfT);
     }
@@ -285,6 +294,7 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
     public void SetRect(object? token, WindowRect rect)
     {
         if (token is not WindowToken t || t.Rect == null) return;
+        var posBefore = t.Rect.anchoredPosition; var sizeBefore = t.Rect.sizeDelta;   // hover-dirty only on a real change
         // Clamp programmatic placement on-screen the SAME way drags do (WindowInteractionTicker →
         // LayoutStorage.ClampVisible): without this, a default/saved/plugin-supplied position (e.g. CombatMeter's
         // off-screen party-focus x) could drop a window fully off-canvas and unreachable, since drags clamp but
@@ -302,6 +312,9 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
         }
         var clamped = ClampToScreen(t, rect);
         t.Rect.anchoredPosition = new Vector2(clamped.X + ShiftX(t), -clamped.Y);   // still off-screen while warming
+        // Programmatic move/resize (layout slot, restore, plugin SetRect) → hover rescan. Several callers SetRect EVERY tick
+        // (toolbar re-centre, docked pickers, help popover): marking on those would keep the hover pass running every frame.
+        if (_ticker != null && (t.Rect.anchoredPosition != posBefore || t.Rect.sizeDelta != sizeBefore)) _ticker.MarkUiGeometryDirty();
     }
 
     // ClampVisible needs the window SIZE to clamp the right/bottom edge. Position-only callers pass a zero
@@ -393,5 +406,6 @@ internal sealed partial class WindowRenderer : IWindowRenderer, IWindowOrder, IW
             if (t.Root != null) UnityEngine.Object.Destroy(t.Root);
         }
         _ticker?.Prune();   // drop drag/hover areas whose RectTransform was destroyed
+        _ticker?.MarkUiGeometryDirty();
     }
 }

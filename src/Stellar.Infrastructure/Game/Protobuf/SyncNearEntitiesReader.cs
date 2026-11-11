@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Stellar.Abstractions.Domain;
+using Stellar.Application.Abstractions;
 using Stellar.Wire;
 
 namespace Stellar.Infrastructure.Game.Protobuf;
@@ -15,12 +16,16 @@ namespace Stellar.Infrastructure.Game.Protobuf;
 /// field 7 is absent. <c>BuffsUnknown</c> is true when field 7 was present but could not be decoded
 /// completely (truncated framing or a malformed <c>BuffInfo</c>): the snapshot is then NOT complete and the
 /// consumer must not replace the entity's buffs with it. A field 7 occurring more than once is merged
-/// (entries accumulate, unknown is OR-ed). Everything else on the wire Entity (ent_type, temp_attrs,
-/// body_part_infos, passive_skill_infos, buff_effect, appear_type, magnetic queue)
+/// (entries accumulate, unknown is OR-ed). <c>EffectIds</c> = buff effect-id updates (null when none): each
+/// field-7 <c>BuffInfo</c>'s own PlayEffect ids, then the ids of field 8 (<c>buff_effect</c>, a BuffEffectSync,
+/// decoded ONLY for its ids — its buff upserts stay ignored as before), the order the game's
+/// <c>ZEntityCreator.parseBuff</c> sees them. Everything else on the wire Entity (ent_type, temp_attrs,
+/// body_part_infos, passive_skill_infos, appear_type, magnetic queue)
 /// is skipped.
 /// </summary>
 internal readonly record struct AppearEntityMsg(
-    long Uuid, AttrCollectionMsg? Attrs, IReadOnlyList<ActiveBuff>? Buffs = null, bool BuffsUnknown = false);
+    long Uuid, AttrCollectionMsg? Attrs, IReadOnlyList<ActiveBuff>? Buffs = null, bool BuffsUnknown = false,
+    IReadOnlyList<BuffEffectIdUpdate>? EffectIds = null);
 
 /// <summary>
 /// One <c>disappear</c> entity entry. <see cref="DisappearType"/> is the raw
@@ -197,6 +202,7 @@ internal static class SyncNearEntitiesReader
         AttrCollectionMsg? attrs = null;
         List<ActiveBuff>? buffs = null;
         bool buffsUnknown = false;
+        List<BuffEffectIdUpdate>? effectIds = null;
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -218,7 +224,12 @@ internal static class SyncNearEntitiesReader
 
                 case (7, 2):
                     if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var buffSync)) return false;
-                    MergeBuffInfoSync(buffSync, ref buffs, ref buffsUnknown);
+                    MergeBuffInfoSync(buffSync, ref buffs, ref buffsUnknown, ref effectIds);
+                    break;
+
+                case (8, 2):
+                    if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var effSync)) return false;
+                    if (BuffEffectSyncReader.TryRead(effSync).EffectIds is { } fx) (effectIds ??= new(fx.Count)).AddRange(fx);
                     break;
 
                 default:
@@ -226,16 +237,17 @@ internal static class SyncNearEntitiesReader
                     break;
             }
         }
-        entity = new AppearEntityMsg(uuid, attrs, buffs, buffsUnknown);
+        entity = new AppearEntityMsg(uuid, attrs, buffs, buffsUnknown, effectIds);
         return true;
     }
 
     /// <summary>Protobuf merge semantics for a repeated occurrence of the embedded field 7: the repeated
     /// <c>buff_infos</c> of every occurrence accumulate, and one undecodable occurrence marks the whole set
     /// unknown (a later good occurrence never clears the flag).</summary>
-    private static void MergeBuffInfoSync(ReadOnlySpan<byte> payload, ref List<ActiveBuff>? buffs, ref bool unknown)
+    private static void MergeBuffInfoSync(ReadOnlySpan<byte> payload, ref List<ActiveBuff>? buffs, ref bool unknown,
+        ref List<BuffEffectIdUpdate>? effectIds)
     {
-        var part = ReadBuffInfoSync(payload, out var partUnknown);
+        var part = ReadBuffInfoSync(payload, out var partUnknown, ref effectIds);
         unknown |= partUnknown;
         if (part is null) return;
         if (buffs is null) buffs = part;
@@ -245,8 +257,11 @@ internal static class SyncNearEntitiesReader
     /// <summary>Decode <c>BuffInfoSync{uuid=1, buff_infos=2 repeated BuffInfo}</c> with the shared
     /// <see cref="BuffInfoReader"/>. All-or-nothing: any framing or <c>BuffInfo</c> failure sets
     /// <paramref name="unknown"/> and returns null — a partial list must never pass for the full set. The list
-    /// is sized exactly by a framing-only pre-count pass (no per-buff decoding, no regrowth).</summary>
-    private static List<ActiveBuff>? ReadBuffInfoSync(ReadOnlySpan<byte> payload, out bool unknown)
+    /// is sized exactly by a framing-only pre-count pass (no per-buff decoding, no regrowth). Each decoded
+    /// <c>BuffInfo</c> carrying PlayEffect ids adds an effect-id update (kept even if a later entry fails — the ids
+    /// are per instance, not a complete set).</summary>
+    private static List<ActiveBuff>? ReadBuffInfoSync(ReadOnlySpan<byte> payload, out bool unknown,
+        ref List<BuffEffectIdUpdate>? effectIds)
     {
         unknown = true;
         int count = CountBuffInfos(payload);
@@ -259,8 +274,9 @@ internal static class SyncNearEntitiesReader
             if (field == 2 && wire == 2)
             {
                 WireProtocol.TryReadLengthDelimited(payload, ref pos, out var bi);
-                if (!BuffInfoReader.TryRead(bi, out var buff)) return null;
+                if (!BuffInfoReader.TryRead(bi, out var buff, out var host, out var ids)) return null;
                 list.Add(buff);
+                if (ids != null) (effectIds ??= new(2)).Add(new BuffEffectIdUpdate(host, buff.BuffUuid, ids));
             }
             else WireProtocol.SkipField(payload, ref pos, wire);
         }

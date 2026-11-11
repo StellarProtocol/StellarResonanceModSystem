@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Stellar.Abstractions.Diagnostics;
 
 namespace Stellar.Wire;
 
@@ -10,6 +11,12 @@ namespace Stellar.Wire;
 public sealed class StubRouter
 {
     private readonly Dictionary<uint, Action<uint, byte[]>> _handlers = new();
+    private readonly int _hitchKind;
+
+    /// <summary>Creates a router. <paramref name="hitchKind"/> is the <see cref="HitchProbe"/> hook kind its
+    /// handlers are attributed to on a <c>[Hitch]</c> line (<see cref="HitchProbe.HookKindCombat"/> /
+    /// <see cref="HitchProbe.HookKindWire"/>); -1 (default) = no per-handler attribution.</summary>
+    public StubRouter(int hitchKind = -1) => _hitchKind = hitchKind;
 
     /// <summary>
     /// Subscribes <paramref name="handler"/> to <paramref name="methodId"/>. Several probes may
@@ -25,9 +32,27 @@ public sealed class StubRouter
     /// </summary>
     public void Register(uint methodId, Action<uint, byte[]> handler)
     {
+        handler = TimedForHitch(methodId, handler);
         _handlers[methodId] = _handlers.TryGetValue(methodId, out var existing)
             ? (Action<uint, byte[]>)Delegate.Combine(existing, handler)
             : handler;
+    }
+
+    // Diagnostics only: when [Hitch] attribution is armed, wrap the handler so its time is charged to a named
+    // slot ("PandaCombatStubProbe#26") — the combatHooks/wireHooks totals alone can't say whose handler stalled.
+    // Disarmed (the normal case) the bare handler is registered: zero per-call cost. try/finally keeps the
+    // multicast exception contract above (a throw still unwinds past the later handlers).
+    private Action<uint, byte[]> TimedForHitch(uint methodId, Action<uint, byte[]> handler)
+    {
+        if (_hitchKind < 0 || !HitchProbe.IsEnabled) return handler;
+        var slot = HitchProbe.HookSlotFor(_hitchKind, HitchProbe.DescribeHandler(handler) + "#" + methodId);
+        if (slot is null) return handler;
+        return (id, payload) =>
+        {
+            var t = HitchProbe.Begin();
+            try { handler(id, payload); }
+            finally { HitchProbe.EndHookSlot(slot, t); }
+        };
     }
 
     /// <summary>Returns <see langword="true"/> when a handler is registered for

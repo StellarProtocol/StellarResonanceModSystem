@@ -22,7 +22,8 @@ namespace Stellar.Infrastructure.Game;
 /// </para>
 ///
 /// <para>
-/// Runs on the network receive thread; never throws across the IL2CPP boundary.
+/// Runs on the game's main thread (RPC stubs are dispatched from ZRpcImpl.ProcessFrameDownPackets);
+/// never throws across the IL2CPP boundary.
 /// Register handlers before <see cref="Install"/>.
 /// </para>
 /// </summary>
@@ -33,7 +34,8 @@ internal sealed partial class WorldNtfLuaStubDispatcher
 
     private static WorldNtfLuaStubDispatcher? Instance;
 
-    private readonly StubRouter _router = new();
+    // Handlers attributed per name on a [Hitch] line (wireTop=) — this postfix feeds the wireHooks total.
+    private readonly StubRouter _router = new(Stellar.Abstractions.Diagnostics.HitchProbe.HookKindWire);
     private readonly IPluginLog _log;
     private Harmony? _harmony;
     private bool _patched;

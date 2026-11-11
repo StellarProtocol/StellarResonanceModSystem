@@ -46,16 +46,22 @@ internal sealed class DeveloperPanel
                     k.Help("developer.recon", "developer.recon.label", "help.developer.recon", section))),
             // The overlay's own window state is the source of truth (Shift+End or its ✕ change it too), so the toggle
             // reads it live instead of keeping a copy.
+            // The label and help name the perf hotkey by its LIVE binding (no key → no brackets / no key sentence).
             k.Panel("tab.performance", null,
-                SettingsKit.Row(k.Label(k.T("developer.perf.label")),
+                SettingsKit.Row(k.Label(PerfLabel(k)),
                     SettingsKit.Toggle(_perfShown, _setPerfShown),
-                    k.Help("developer.perf", "developer.perf.label", "help.developer.perf", section))),
+                    k.Help("developer.perf", PerfLabel(k),
+                        () => k.Keys.Text(FrameworkHotkeyIds.PerfToggle, "help.developer.perf", "help.developer.perf.unbound"),
+                        section))),
             k.Panel("developer.mode", null,
                 SettingsKit.Row(k.Label(k.T("developer.off.label")),
                     s.NeutralButton(k.T("developer.off.button"), () => TurnOff(k), 116f),
                     k.Help("developer.off", "developer.off.label", "help.developer.off", section))),
         }, Gap: 8f);
     }
+
+    private static Func<string> PerfLabel(SettingsKit k)
+        => () => k.Keys.Text(FrameworkHotkeyIds.PerfToggle, "developer.perf.label", "developer.perf.label.unbound");
 
     /// <summary>Header status: "Developer mode on".</summary>
     public string Status(SettingsKit k) => _loc.T("developer.status");

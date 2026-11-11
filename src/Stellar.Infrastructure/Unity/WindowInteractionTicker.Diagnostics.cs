@@ -20,6 +20,7 @@ public sealed partial class WindowInteractionTicker
         Stellar.Infrastructure.Game.UiPerfStats.OnFrame(frameMs, HitchLog);
         CanvasQueueProbe.Root = transform;   // re-pointed each frame: a canvas re-create brings a new ticker
         CanvasRebuildProbe.EnsureInstalled(HitchLog);
+        ReportHoverStats(HitchLog);   // .Hover.cs — [UiHover] hover passes run vs skipped per ~10 s
     }
 
     // The game's own (IL2CPP / Boehm) collector — distinct from the BepInEx CoreCLR heap System.GC reports.
