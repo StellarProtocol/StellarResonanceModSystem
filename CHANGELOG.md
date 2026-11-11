@@ -21,8 +21,7 @@ _**2.30.0** (minor) — a redesigned Settings window and launcher, the Sakura th
 - Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
 - Mods can now show text over a set number of lines, ending in "…" when it is longer.
 - Drag your favorite plugins to put them in the order you like, in the Stellar menu's Favorites tab or on the compact bar. Both use the same order.
-- Four more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar and Action Buttons.
-- The location and line bar (top-left, under the minimap) can now be moved and hidden in the layout editor. The line-recycle notice the game sometimes shows in its place moves and hides with it.
+- Five more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar, Action Buttons, and the location and line bar under the minimap (the line-recycle notice the game sometimes shows there moves and hides with it).
 - The layout editor shows a dashed placeholder for game HUD parts that aren't on screen right now (for example the boss HP bar outside a boss fight, or the party panel while solo), so you can place or hide them at any time.
 - A "Hide others" switch next to the layout editor's SHOW filter: while you edit one plugin or only the game UI, everything else is hidden so it doesn't get in the way. It is never saved and everything comes back when you leave edit mode.
 ### Changed
