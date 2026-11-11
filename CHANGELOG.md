@@ -14,18 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.30.0] - Unreleased
-_**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (foundation). A new Sakura theme, more theme colours you can change in your own themes, and the groundwork for the redesigned Settings window and launcher. Adds `IThemeStatusColors`, `ThemePreset.Sakura` and `TextElement.MaxLines` (Abstractions 2.30.0); additive, no plugin rebuild._
+## [2.30.0] - 2026-11-12
+_**2.30.0** (minor) — a redesigned Settings window and launcher, the Sakura theme, more movable game HUD parts, and less CPU in raids and crowded places. Adds `IThemeStatusColors`, `ThemePreset.Sakura`, `TextElement.MaxLines`, `IFrameworkDeveloperMode`, `ICombatBuffEffectLookup`, `WindowSpec.Prebuild`/`Topmost`/`FixedHeight` (Abstractions 2.30.0); additive, no plugin rebuild._
 ### Added
 - A new built-in theme, Sakura: rose-purple panels with a pink accent.
 - Your own themes can now change the text colour, the muted text colour, and the green, red and amber used for "on", "remove" and "careful" states.
 - Mods can now show text over a set number of lines, ending in "…" when it is longer.
 - Drag your favorite plugins to put them in the order you like, in the Stellar menu's Favorites tab or on the compact bar. Both use the same order.
-- A General tab in Settings for the language and the font and UI size.
-- A Discord link on the About tab, to ask questions, report bugs and get news.
-- Save and Discard buttons when you edit a theme's colours. Changes still show right away; Discard puts everything back, and closing with unsaved changes asks first.
-- Four more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar and Action Buttons.
-- The location and line bar (top-left, under the minimap) can now be moved and hidden in the layout editor. The line-recycle notice the game sometimes shows in its place moves and hides with it.
+- Five more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar, Action Buttons, and the location and line bar under the minimap (the line-recycle notice the game sometimes shows there moves and hides with it).
 - The layout editor shows a dashed placeholder for game HUD parts that aren't on screen right now (for example the boss HP bar outside a boss fight, or the party panel while solo), so you can place or hide them at any time.
 - A "Hide others" switch next to the layout editor's SHOW filter: while you edit one plugin or only the game UI, everything else is hidden so it doesn't get in the way. It is never saved and everything comes back when you leave edit mode.
 ### Changed
@@ -43,37 +39,29 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - The compact bar shows plugin names in normal white text, and its Settings tile matches the other tiles.
 - Dropdowns in Settings use the same colours as the other buttons.
 - Switching between Settings tabs, and opening or closing Settings and the launcher, is much smoother.
+- Mods use less CPU in raids and other crowded places, so busy fights run smoother.
 ### Removed
 - The "Reset selected to default" and "Reset all in this slot" buttons on the Layout tab, which did nothing. The layout editor's own toolbar resets windows.
 ### Fixed
 - Your own themes based on a theme that this version doesn't know are now kept, instead of disappearing the next time settings are saved.
 - You can now have up to 12 of your own themes. Before, a 13th theme was saved but never shown, so you couldn't select, rename or delete it.
-- Plugin names in the launcher no longer break in the middle of a word; a name too long for its tile ends in "…".
-- The favorite star on launcher tiles is easier to see, and lights up when you point at it.
-- Confirmations in Settings (delete a theme, remove a layout slot, reset all hotkeys or game UI) now fit their panel: the text wraps and the buttons keep a normal size.
 - A custom theme can no longer be named like a built-in theme (for example "Default"), so it can't be mistaken for it. Existing themes keep their names.
-- The colour picker in "Edit colours" now opens in its own small window beside the list, next to the colour you are editing, and follows the list window when you move it. The list window no longer changes size.
 - Scrolling lists in mod windows is smoother.
 - Text in mod windows stays sharp when you just click a window or a list without moving it, and moving, resizing or drag-scrolling slowly no longer flickers between sharp and soft.
 - The Stellar Settings window and the Stellar launcher open instantly the first time, instead of freezing the game for a moment.
-- The Stellar launcher no longer stutters for a moment right after you enter the world.
 - Plugins can now have their big windows prepared while you log in, so they open without a freeze the first time.
 - Scrolling with the mouse wheel now stops a list that is still gliding after a drag.
 - Fewer small stutters from mod windows while you stand idle, for example when a new chat message arrives.
 - Scrolling a mod window list with the mouse wheel no longer stutters on every step.
 - Dragging or scrolling the Stellar menu, Settings or chat no longer makes other mod windows stutter.
-- A mod window you open now always appears on top of the other mod windows, and the one you opened last stays on top. Before, a window opened from the Stellar launcher could open behind the launcher or Settings.
 - Thai text in mod windows now stacks tone marks above vowels correctly (for example ปลั๊กอิน), and all Thai text uses the same font.
 - Renaming one of your own themes keeps its colours, and Duplicate copies the selected theme's colours instead of starting from its base theme.
-- The Settings window stays the same height on every tab.
-- Highlight outlines on the first and last rows of Settings lists are no longer cut off.
 - Settings hints now show the keys you actually set in Hotkeys, not the default keys, and say so when a key is not set.
 - Game HUD parts you moved no longer jump back to their default spot for a moment after a scene change, a menu or a cutscene; the chat window in particular stays where you put it.
 - Game HUD parts you hid no longer flash back on when the game shows them again.
 - The skill bar and the player HP bar can now be hidden too. Skills and HP keep working normally while they're hidden.
 - A hidden chat window no longer opens an invisible input box when you press Enter.
 - The skill bar's edit outline now covers the whole bar, including the dodge buttons.
-- In layout edit mode, a hidden skill bar's placeholder now matches the normal bar instead of showing at the wrong size (only part of the bar, or the enlarged [L Ctrl] skill wheel).
 ### Developer notes
 - **Native game-UI wrapper ownership (`NativeUiService` / `PandaHudAdapter`, framework-internal).** Moved/hidden game HUD nodes are now owned through a framework `stellar_wrap_<id>` RectTransform (outer wrap for in-prefab nodes; inner wrap — wrapper as the element's only child, adopting late children — for view roots chat / target frame and the class gauge). Position = wrapper offset, hide = wrapper scale 0 (never `SetActive` on game nodes; chat also blocks input via a CanvasGroup on the wrapper). Removed: the 1 Hz re-assert + idempotent guard + `Resources.FindObjectsOfTypeAll` resolve scan; replaced by a 10 Hz alloc-free intact check and scene-enter re-wrap. Saved rects migrate once to offset keys (`.ox/.oy`, marker `.mv`). Allowlist `RectChild` specs gain a `-` exclude token; `*` unions walk through plain Transform holders. Layout editor: placeholders, "Hide others" (`IWindowEditHide`, transient, never persisted). No Abstractions/SDK change.
 - **Developer mode readable by plugins (`IFrameworkDeveloperMode`, a new base of `IFramework`):** `bool DeveloperMode { get; }` and `event Action<bool> DeveloperModeChanged`, reached as `services.Framework.DeveloperMode`. Read-only — plugins cannot switch it. Meant for showing a plugin's debug tools / verbose logs only while the user has developer mode on. The event fires on the main thread on every flip (Settings, or a hand edit of `stellar.framework.config.json` → `developer.developerMode`), not at subscribe time. `PerPluginFramework` holds ONE subscription on the shared `FrameworkService` and fans out to the plugin's handlers; `Unregister` (plugin disable / unload / failed ctor) drops it and clears the plugin's handlers. Each plugin's handlers are isolated (a throw is logged with the plugin guid; other handlers and plugins still run). `IFramework` stays at the STELLAR0005 8-member cap (nothing moved, so compiled callers are unaffected; only implementors — the framework-internal `FrameworkService` / `PerPluginFramework` — change). Needs framework ≥ 2.30.0.
