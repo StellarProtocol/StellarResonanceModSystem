@@ -70,7 +70,8 @@ internal sealed partial class LayoutEditorOverlay
         };
     }
 
-    // " · N hidden while editing" appended to the toolbar status (the existing "N hidden" = user-hidden; separate count).
-    private string TempHiddenSuffix()
-        => _tempHiddenCount > 0 ? " · " + _text!.TFormat("layout.toolbar.tempHidden", _tempHiddenCount) : "";
+    // The toolbar's THIRD status line: "N hidden while editing" (separate from the status line's user-hidden "N hidden").
+    // A non-breaking space when nothing is temp-hidden, so the reserved line keeps its height (no toolbar jump).
+    private string TempHiddenLine()
+        => _tempHiddenCount > 0 ? _text!.TFormat("layout.toolbar.tempHidden", _tempHiddenCount) : " ";
 }

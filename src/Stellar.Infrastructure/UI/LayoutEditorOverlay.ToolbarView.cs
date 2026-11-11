@@ -19,9 +19,9 @@ internal sealed partial class LayoutEditorOverlay
     // Fixed geometry (canvas units). The prototype's English widths are 150 / 130 / 220 dropdowns and 64 / 64 / 118 /
     // 64 pills; the pills' LABEL boxes here fit the longest locale instead (id/fil/ja labels run longer — R10), which
     // makes the bar ~1,460 wide instead of ~1,320.
-    // +188 for the SHOW group's "Hide others" label (112) + chip (64) + gaps, +80 for the wider status line that also
-    // carries "N hidden while editing" → 1728 (still fits the 2560-reference canvas up to UI scale ~1.48).
-    internal const float ToolbarWidth = 1728f;
+    // +188 for the SHOW group's "Hide others" label (112) + chip (64) + gaps → 1648 (fits the 2560-reference
+    // canvas up to UI scale ~1.55). "N hidden while editing" sits on its own third status line, not a wider one.
+    internal const float ToolbarWidth = 1648f;
     private const float GroupHeight = 40f;
     private const float FilterDropWidth = 150f;
     private const float SlotDropWidth = 130f;
@@ -30,7 +30,7 @@ internal sealed partial class LayoutEditorOverlay
     private const float ResetLabelWidth = 52f;      // Reset (selected)       → 76 px pill
     internal const float ResetAllLabelWidth = 128f; // Reset all / Reset shown → 152 px pill
     private const float DoneLabelWidth = 60f;       // Done                   → 84 px pill
-    private const float StatusWidth = 280f;
+    private const float StatusWidth = 200f;
     private const float HeaderIconSize = 28f;
 
     private StellarStyle? _s;
@@ -104,6 +104,11 @@ internal sealed partial class LayoutEditorOverlay
             new TextElement(ToolbarStatus, Color: () => _feedback?.IsShowing == true
                     ? s.Readable(s.Success(), s.Background()) : s.Muted(),
                 NoWrap: true, FontSize: 12) { RichEmoji = true, Ellipsize = true },
+            // Third line: "N hidden while editing" ("Hide others", .HideOthers.cs) in the theme Caution (warm amber).
+            // ALWAYS reserved (a non-breaking space when N = 0) so the toolbar keeps one height: collapsing it would
+            // grow/shrink the top-anchored bar and shift every group as the filter or chip changes.
+            new TextElement(TempHiddenLine, Color: () => s.Readable(s.Caution(), s.Background()),
+                NoWrap: true, FontSize: 12) { RichEmoji = true, Ellipsize = true },
         }, Gap: 1f), Width: StatusWidth),
     }, Gap: 8f);
 
@@ -132,8 +137,8 @@ internal sealed partial class LayoutEditorOverlay
         int n = 0, hidden = 0;
         foreach (var o in SelectableObjects()) { n++; if (!o.Visible) hidden++; }
         var slot = _storage.GetSlotName(_storage.ActiveSlot);
-        return (hidden > 0 ? _text!.TFormat("layout.toolbar.statusHidden", slot, n, hidden)
-                           : _text!.TFormat("layout.toolbar.status", slot, n)) + TempHiddenSuffix();
+        return hidden > 0 ? _text!.TFormat("layout.toolbar.statusHidden", slot, n, hidden)
+                           : _text!.TFormat("layout.toolbar.status", slot, n);
     }
 
     private string _feedbackText = "";
