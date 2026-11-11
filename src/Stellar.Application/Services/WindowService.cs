@@ -259,7 +259,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         // A ShouldRender that throws (a buggy plugin predicate) fails SAFE — window hidden, warned once per
         // apply — instead of the NRE bubbling out of the tick. (A null predicate is handled in the policy.)
         bool hide;
-        try { hide = WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }
+        try { hide = e.EditHidden || WindowGatingPolicy.IsDrawSuppressed(e.Reg.Spec); }   // EditHidden: layout-editor "Hide others" (.EditHide.cs)
         catch (Exception ex) { hide = true; _log.Warning($"[Window/{e.Reg.Spec.Id}] ShouldRender threw: {ex.Message}"); }
         NoteDrawn(e, !hide);   // WindowSpec.Prebuild bookkeeping (.Prebuild.cs)
         PerfProbe.BeginWindow(e.Reg.Spec.Id);
@@ -321,6 +321,7 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
         public object? Token; public bool Visible; public bool Dirty = true; public bool Removed;
         public string? OwnerPluginId;   // guid of the plugin that registered this window; null = framework-owned
         public bool Parked;   // mounted but deactivated by a SetVisible(false) (IWindowParking)
+        public bool EditHidden;   // TRANSIENT layout-editor "Hide others" draw-suppress; never persisted, never touches Visible
         public bool BringToFrontPending;
         // Armed on the rising edge of Visible (a user-initiated show) when the window has an InputElement.AutoFocus;
         // TickEntry focuses that field once the window mounts/activates, then clears it. NOT set by Init (start-

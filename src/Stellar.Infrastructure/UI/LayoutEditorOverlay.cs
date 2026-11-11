@@ -121,14 +121,16 @@ internal sealed partial class LayoutEditorOverlay
         if (_editor.IsEditing)
         {
             if (!_wasEditing) { ShowToolbar(); _editInputBlocker.SetActive(true); _nativeUi?.DumpRectDiagnostics(_log.Info); }   // bug #5 evidence (self-gates on diagnostics)
+            SyncHideOthers();   // "Hide others" transient hide (.HideOthers.cs) — before input so hit-tests see it
             ProcessInput();
-            TickNudge();    // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
+            TickNudge();   // arrow-key nudge of the selected element (before SyncChrome so the outline tracks it)
             TickResetDialog();   // keep a freshly-opened Reset-all confirm centred under the toolbar
             SyncChrome();   // build the editable-element list + push to the uGUI overlay (EnsureCanvas self-heals)
         }
         else if (_wasEditing)
         {
             _chrome.Teardown();   // destroy the overlay canvas on edit-mode exit
+            ClearHideOthers();    // undo every "Hide others" transient hide (windows + game UI)
             // A toolbar dropdown (filter/slot) left open when edit mode exits lives on its OWN scene-root popup
             // canvas, so hiding the toolbar below does NOT tear it down — close it explicitly or the option list
             // stays on screen after exit (Alt+E / Exit-button-while-open bug).

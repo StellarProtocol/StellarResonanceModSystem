@@ -32,8 +32,12 @@ internal sealed partial class NativeUiService
     private const float SeenTolerancePx = 2f;          // last-seen changes smaller than this aren't re-persisted
 
     /// <summary>True when the editor should offer this element. Placeholders only appear once the HUD exists (any
-    /// entry resolved) — so the title screen never shows a screenful of empty boxes.</summary>
-    public bool IsEditable(EntryState e) => e.IsResolved || (_anyResolved && e.Loaded);
+    /// entry resolved) — so the title screen never shows a screenful of empty boxes. Nothing is editable while the
+    /// editor's "Hide others" hides the game UI (NativeUiService.EditHide.cs).</summary>
+    public bool IsEditable(EntryState e) => !_transientHidden && IsOffered(e);
+
+    // Editable ignoring "Hide others" — the Settings → Game UI chips still work while the editor hides the game UI.
+    private bool IsOffered(EntryState e) => e.IsResolved || (_anyResolved && e.Loaded);
 
     /// <summary>The element's live-or-placeholder view for the editor; false when it isn't editable now.</summary>
     public bool TryGetEditView(EntryState e, out NativeUiEditView view)

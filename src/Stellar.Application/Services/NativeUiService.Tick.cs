@@ -69,7 +69,7 @@ internal sealed partial class NativeUiService
                     e.HasMeasure = false;
                     resolveAbsent = true;   // the rebuilt element usually exists already — bind it this pass
                 }
-                else if (e.IsModified && !_adapter.IsWrapIntact(e.Handle))
+                else if (NeedsWrap(e) && !_adapter.IsWrapIntact(e.Handle))
                 {
                     // Log once per loss: a re-wrap that can't succeed yet (outer element momentarily detached) retries
                     // every pass and must not spam the log.

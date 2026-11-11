@@ -133,6 +133,13 @@ internal sealed partial class StellarStyle
     public HudElement StatusChip(Func<string> label, Func<ColorRgba?> color, float width = ChipWidth)
         => Chip(label, () => color() != null, onClick: null, width, onColor: () => color() ?? Muted());
 
+    /// <summary>Disabled (non-interactive) chip at the same 64×24 footprint: muted label on the recessed disabled fill —
+    /// the house rule that disabled never looks pressable (Rule 22). Swap it in for <see cref="Chip"/> with a
+    /// ConditionalElement wrapping the whole chip, so the size never changes.</summary>
+    public HudElement DisabledChip(Func<string> label, float width = ChipWidth)
+        => new CellElement(ChipShell(new TextElement(label, Color: () => Muted(), Align: TextAlign.Center, NoWrap: true),
+            () => DisabledFill(), width, onClick: null, new HoverFlag()), Width: width);
+
     private HudElement ChipShell(HudElement text, Func<ColorRgba> fill, float width, Action? onClick, HoverFlag hover)
     {
         HudElement content = new RowElement(new HudElement[]

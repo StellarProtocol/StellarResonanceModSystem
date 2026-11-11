@@ -19,7 +19,9 @@ internal sealed partial class LayoutEditorOverlay
     // Fixed geometry (canvas units). The prototype's English widths are 150 / 130 / 220 dropdowns and 64 / 64 / 118 /
     // 64 pills; the pills' LABEL boxes here fit the longest locale instead (id/fil/ja labels run longer — R10), which
     // makes the bar ~1,460 wide instead of ~1,320.
-    internal const float ToolbarWidth = 1460f;
+    // +188 for the SHOW group's "Hide others" label (112) + chip (64) + gaps, +80 for the wider status line that also
+    // carries "N hidden while editing" → 1728 (still fits the 2560-reference canvas up to UI scale ~1.48).
+    internal const float ToolbarWidth = 1728f;
     private const float GroupHeight = 40f;
     private const float FilterDropWidth = 150f;
     private const float SlotDropWidth = 130f;
@@ -28,7 +30,7 @@ internal sealed partial class LayoutEditorOverlay
     private const float ResetLabelWidth = 52f;      // Reset (selected)       → 76 px pill
     internal const float ResetAllLabelWidth = 128f; // Reset all / Reset shown → 152 px pill
     private const float DoneLabelWidth = 60f;       // Done                   → 84 px pill
-    private const float StatusWidth = 200f;
+    private const float StatusWidth = 280f;
     private const float HeaderIconSize = 28f;
 
     private StellarStyle? _s;
@@ -52,8 +54,7 @@ internal sealed partial class LayoutEditorOverlay
         {
             new SpacerElement(),   // flexible: centres the fixed content block in the fixed-width glass panel
             ToolbarHeader(s),
-            Group(s, "layout.toolbar.capShow", new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected,
-                Width: FilterDropWidth) { Style = DropdownStyle.Pill, CornerRadius = 13f, MaxVisibleRows = 10 }),
+            Group(s, "layout.toolbar.capShow", ShowGroupControls(s)),
             // Slots switch only (add/remove/rename stay in Settings › Layout). SlotNames is a live snapshot.
             Group(s, "layout.slot", new DropdownElement(() => _storage.ActiveSlot, () => _storage.SlotNames, SwitchToSlot,
                 Width: SlotDropWidth) { Style = DropdownStyle.Pill, CornerRadius = 13f, MaxVisibleRows = 8 }),
@@ -74,6 +75,18 @@ internal sealed partial class LayoutEditorOverlay
         }, Gap: 6f);
         // Column wrap so the Row gets the full panel width (childForceExpandWidth) → the flex spacers can centre.
         return new ColumnElement(new HudElement[] { row });
+    }
+
+    // SHOW group: the filter dropdown, then [Hide others] [On/Off chip] (LayoutEditorOverlay.HideOthers.cs).
+    private HudElement[] ShowGroupControls(StellarStyle s)
+    {
+        var hide = HideOthersControls(s);
+        return new HudElement[]
+        {
+            new DropdownElement(FilterSelectedIndex, FilterOptions, OnFilterSelected, Width: FilterDropWidth)
+                { Style = DropdownStyle.Pill, CornerRadius = 13f, MaxVisibleRows = 10 },
+            hide[0], hide[1],
+        };
     }
 
     // [28 px accent tile with the edit_layout glyph] [bold "Layout Editor" over the live status / feedback line]. The
@@ -119,8 +132,8 @@ internal sealed partial class LayoutEditorOverlay
         int n = 0, hidden = 0;
         foreach (var o in SelectableObjects()) { n++; if (!o.Visible) hidden++; }
         var slot = _storage.GetSlotName(_storage.ActiveSlot);
-        return hidden > 0 ? _text!.TFormat("layout.toolbar.statusHidden", slot, n, hidden)
-                          : _text!.TFormat("layout.toolbar.status", slot, n);
+        return (hidden > 0 ? _text!.TFormat("layout.toolbar.statusHidden", slot, n, hidden)
+                           : _text!.TFormat("layout.toolbar.status", slot, n)) + TempHiddenSuffix();
     }
 
     private string _feedbackText = "";

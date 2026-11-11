@@ -44,7 +44,7 @@ internal sealed partial class NativeUiService
 
     public void SetVisible(string id, bool visible)
     {
-        if (!_entries.TryGetValue(id, out var e) || !IsEditable(e)) return;
+        if (!_entries.TryGetValue(id, out var e) || !IsOffered(e)) return;
         if (!e.Descriptor.SafeToHide && !visible)
         {
             _log.Warning($"[NativeUi] '{id}' is not safe-to-hide; ignoring request.");
@@ -64,7 +64,7 @@ internal sealed partial class NativeUiService
     /// </summary>
     public void SetRect(string id, WindowRect rect)
     {
-        if (!_entries.TryGetValue(id, out var e) || !IsEditable(e)) return;
+        if (!_entries.TryGetValue(id, out var e) || !IsOffered(e)) return;
         var cur = GetLiveRect(e);
         var clamped = ClampFullyOnScreen(new WindowRect(rect.X, rect.Y, cur.Width, cur.Height), _lastResolution);
         var (dox, doy) = ScreenDeltaToOffset(clamped.X - cur.X, clamped.Y - cur.Y, PxPerUnit(e));
@@ -150,13 +150,17 @@ internal sealed partial class NativeUiService
         ApplyToGame(e);
     }
 
-    // Push the in-memory state to the game: customized → wrapper offset + hide; untouched → no wrapper at all.
+    // Push the in-memory state to the game: customized → wrapper offset + hide; untouched → no wrapper at all. The
+    // editor's transient "Hide others" (NativeUiService.EditHide.cs) wraps an untouched element at offset 0 (pixel-
+    // identical) just to scale it to 0, and only ever ANDs the effective visibility — e.Visible itself is never changed.
     private void ApplyToGame(EntryState e)
     {
         if (!e.IsResolved) return;   // applied when it resolves
-        if (e.IsModified) _adapter.Apply(e.Handle, e.OffsetX, e.OffsetY, e.Visible);
+        if (NeedsWrap(e)) _adapter.Apply(e.Handle, e.OffsetX, e.OffsetY, e.Visible && !_transientHidden);
         else _adapter.Unwrap(e.Handle);
     }
+
+    private bool NeedsWrap(EntryState e) => e.IsModified || _transientHidden;
 
     internal sealed class EntryState
     {
