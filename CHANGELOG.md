@@ -25,6 +25,7 @@ _**2.30.0** (minor) — branch `enhance/settings-launcher-redesign`, phase 1 (fo
 - A Discord link on the About tab, to ask questions, report bugs and get news.
 - Save and Discard buttons when you edit a theme's colours. Changes still show right away; Discard puts everything back, and closing with unsaved changes asks first.
 - Four more parts of the game HUD can be moved and hidden in the layout editor: Status Icons, Buff Timers, Item Bar and Action Buttons.
+- The location and line bar (top-left, under the minimap) can now be moved and hidden in the layout editor. The line-recycle notice the game sometimes shows in its place moves and hides with it.
 - The layout editor shows a dashed placeholder for game HUD parts that aren't on screen right now (for example the boss HP bar outside a boss fight, or the party panel while solo), so you can place or hide them at any time.
 - A "Hide others" switch next to the layout editor's SHOW filter: while you edit one plugin or only the game UI, everything else is hidden so it doesn't get in the way. It is never saved and everything comes back when you leave edit mode.
 ### Changed

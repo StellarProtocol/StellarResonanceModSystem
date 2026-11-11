@@ -27,7 +27,7 @@ internal sealed partial class PandaHudAdapter
         var rt = e.RectTransform;
         var w = e.Wrapper;
         if (rt == null || w == null) return false;
-        return e.Mode == NativeUiWrapMode.Inner ? rt.childCount == 1 && w.IsChildOf(rt) : rt.IsChildOf(w);
+        return e.Mode == NativeUiWrapMode.Inner ? rt.childCount == 1 && w.IsChildOf(rt) : rt.IsChildOf(w) && TwinsUnder(e, w);
     }
 
     public void Apply(NativeUiHandle handle, float offsetX, float offsetY, bool visible)
@@ -103,6 +103,7 @@ internal sealed partial class PandaHudAdapter
             Stretch(w);
             w.SetSiblingIndex(idx);
             rt.SetParent(w, false);
+            AdoptTwins(e, w, space, idx);   // PandaHudAdapter.Twins.cs — the location bar's recycle twin
         }
         e.Wrapper = w;
         e.WrapperGroup = null;
@@ -152,11 +153,18 @@ internal sealed partial class PandaHudAdapter
                 for (var i = 0; i < n; i++) { kids[i].SetParent(rt, false); kids[i].SetSiblingIndex(idx + i); }
             }
         }
-        else if (rt != null && rt.parent != null && rt.parent.Pointer == w.Pointer && w.parent != null)
+        else if (e.Mode == NativeUiWrapMode.Outer && w.parent != null)
         {
+            // Every child, not just the element: twins (PandaHudAdapter.Twins.cs) share the wrapper. In wrapper order,
+            // starting at the wrapper's index — exactly the sibling order they had before we wrapped them. An outer
+            // wrapper only ever holds game nodes WE put there, so this also returns a twin whose element the game
+            // re-parented elsewhere (otherwise the twin would be stranded in a wrapper we then re-create beside it).
+            var space = w.parent;
             var idx = w.GetSiblingIndex();
-            rt.SetParent(w.parent, false);
-            rt.SetSiblingIndex(idx);
+            var n = w.childCount;
+            var kids = new Transform[n];
+            for (var i = 0; i < n; i++) kids[i] = w.GetChild(i);
+            for (var i = 0; i < n; i++) { kids[i].SetParent(space, false); kids[i].SetSiblingIndex(idx + i); }
         }
         if (w.childCount == 0) Object.Destroy(w.gameObject);
         else _log.Warning($"[NativeUi] '{e.Id}' wrapper still holds {w.childCount} node(s); left in place (never destroying game UI)");

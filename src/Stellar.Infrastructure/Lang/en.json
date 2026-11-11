@@ -86,6 +86,7 @@
   "gameui.entry.chatWindow": "Chat Window",
   "gameui.entry.classGauge": "Class Gauge",
   "gameui.entry.itemBar": "Item Bar",
+  "gameui.entry.locationLine": "Location & Line",
   "gameui.entry.minimap": "Minimap",
   "gameui.entry.partyPanel": "Party Panel",
   "gameui.entry.playerHp": "Player HP/MP",

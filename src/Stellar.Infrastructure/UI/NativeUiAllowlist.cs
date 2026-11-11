@@ -54,6 +54,16 @@ internal sealed record NativeUiAllowlistEntry(
 
     /// <summary>Optional placeholder sub line key.</summary>
     public string? SubHintKey { get; init; }
+
+    /// <summary>
+    /// Optional names of SIBLING nodes (same parent as <see cref="Path"/>, listed in sibling order) that the game shows
+    /// INSTEAD of the element — the location bar swaps to <c>group_sceneline_recycle</c> while the line is recycled.
+    /// They move into the element's OUTER wrapper, so they get the same offset + hide with no second persistence
+    /// key, and the outline is the union of whichever of them is drawing (the same <see cref="RectChild"/> spec is
+    /// applied to each, so keep it node-relative, e.g. "*."). Outer wrap only; twins should sit next to the element
+    /// (anything between them would be re-ordered behind the wrapper).
+    /// </summary>
+    public string[]? Twins { get; init; }
 }
 
 internal static class NativeUiAllowlist
@@ -95,7 +105,14 @@ internal static class NativeUiAllowlist
               DefaultFraction = new(0.78f, 0.14f, 0.20f, 0.34f), SubHintKey = "gameui.ph.partySub" },
         new("gameui.minimap",       "gameui.entry.minimap",      MainHud + "/anim_upper_left/node_upper_left/group_minimap")
             { DefaultFraction = new(0.01f, 0.02f, 0.11f, 0.20f) },
-        new("gameui.quickbar",      "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")
+        // Location + line bar ("Asterleeds ⇄ Line 3 [P]") under the minimap; a sibling of group_minimap/node_left_track,
+        // so an OUTER wrapper (live 2026-11-11). The game hides it by CanvasGroup alpha (SetUIVisible) and, while the
+        // line is being recycled, shows the sibling group_sceneline_recycle (same spot) instead → a twin in the SAME
+        // wrapper. In Homestead the Lua sets group_sceneline.localPosition itself — inside our wrapper, so it stacks.
+        // Default fraction = the live label rect at 2560x1440 (x 58..330, y 312..339 px), 2026-11-11.
+        new("gameui.location-line", "gameui.entry.locationLine", MainHud + "/anim_upper_left/node_upper_left/group_sceneline")
+            { RectChild = "*.", Twins = new[] { "group_sceneline_recycle" }, DefaultFraction = new(0.022f, 0.216f, 0.107f, 0.02f) },
+        new("gameui.quickbar",     "gameui.entry.quickbar",     BattleHud + "/button_pos_group_hide_root")
             // Content union of the bar (the slot icons overflow ABOVE the 700x90 container; the [L Ctrl] dodge cluster
             // "999" sits inside it) MINUS child "10", the skill drawer that floats far up-right (why June used the
             // container's own rect). Inactive / alpha-0 slots are already skipped by the union. Outline/hit box only.

@@ -42,6 +42,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         {
             Id = d.Id, Path = d.Path, GameObject = rt.gameObject, RectTransform = rt, Camera = GetCanvasCamera(rt),
             RectChildPath = d.RectChild, Mode = d.Wrap, BlockInputWhenHidden = d.BlockInputWhenHidden,
+            Twins = ResolveTwins(rt, d.Twins),
         };
         _cache[d.Path] = entry;
         LogCurateResolve(rt, entry.Camera, d.Path, d.RectChild, ComputeOutlineRect(rt, entry.Camera, d.RectChild));   // diagnostics (gated)
@@ -142,7 +143,8 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         if (!_cache.TryGetValue(handle.AllowlistPath, out var e) || e.RectTransform == null) return default;
         var rt = e.RectTransform;
         // An inactive RectTransform reports garbage world corners (collapsed / jumped) — never measure it.
-        if (!rt.gameObject.activeInHierarchy) return new NativeUiMeasure(default, false, PxPerUnit(e));
+        // (A twin entry measures on while any twin is active: the inactive primary's "*" union just frames nothing.)
+        if (!rt.gameObject.activeInHierarchy && !AnyTwinActive(e)) return new NativeUiMeasure(default, false, PxPerUnit(e));
         // A user hide is scale 0 on OUR wrapper, which collapses the world corners. Lift it for the measurement and
         // put it back in the same frame (nothing renders in between), so a hidden element still reports the rect
         // it will reappear at — the dimmed re-enable outline — and the self-measure never sees its own hide (the
@@ -152,12 +154,17 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         WindowRect rect;
         if (lifted) w!.localScale = Vector3.one;
         bool hasContent;
-        try { rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent); }
+        var alpha = GroupAlpha(rt);
+        try
+        {
+            rect = ComputeOutlineRect(OutlineRoot(e), e.Camera, e.RectChildPath, out hasContent);
+            if (e.Twins != null) MergeTwinOutlines(e, ref rect, ref hasContent, ref alpha);   // inside the scale lift too
+        }
         finally { if (lifted) w!.localScale = Vector3.zero; }   // never leave a user-hidden element shown
         // Not showing also when the curated rect is degenerate in EITHER axis or framed nothing: an active-but-empty
         // element (Buff Timers with no timed buff, 300x0) must become a grabbable placeholder, not a zero-height box.
         var showing = hasContent && !IsCollapsedStub(rect) && rect.Width >= MinShownPx && rect.Height >= MinShownPx
-            && GroupAlpha(rt) >= MinShowingAlpha && InnerWrapHoldsContent(e);
+            && alpha >= MinShowingAlpha && InnerWrapHoldsContent(e);
         return new NativeUiMeasure(rect, showing, PxPerUnit(e));
     }
 
@@ -217,6 +224,8 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         public string? RectChildPath;   // curated rect spec (edit outline / grab box)
         public NativeUiWrapMode Mode;
         public bool BlockInputWhenHidden;
+        public RectTransform[]? Twins;      // sibling nodes the game shows instead of the element; share its outer wrapper
+        public Transform? TwinSpace;        // the twins' original parent (= outer wrapper's parent), cached at wrap time
         public RectTransform? Wrapper;      // OUR node carrying offset + hide; null until the element is customized
         public CanvasGroup? WrapperGroup;   // only for BlockInputWhenHidden (chat): input off while hidden
 

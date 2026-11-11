@@ -47,4 +47,8 @@ internal sealed record NativeUiEntryDescriptor(string Id, string DisplayNameKey,
 
     /// <summary>Optional placeholder sub line key (shown under the hint while not hidden by the user).</summary>
     public string? SubHintKey { get; init; }
+
+    /// <summary>Optional names of SIBLING nodes the game shows instead of the element (outer wrap only); they share
+    /// its wrapper, so offset + hide apply to them too. See <c>NativeUiAllowlistEntry.Twins</c>.</summary>
+    public string[]? Twins { get; init; }
 }
