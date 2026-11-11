@@ -182,6 +182,8 @@ internal sealed partial class NativeUiService
         internal WindowRect? LegacyRect;      // pre-wrapper saved screen top-left awaiting migration to an offset
         internal SeenGeometry Seen;           // last-seen default geometry at the current resolution (placeholders)
         internal bool HasSeen, SeenFresh, SeenDirty;
+        internal SeenStability Stability;     // the settle run a measured rect must survive before it becomes Seen
+        internal float LivePx;                // px per unit from the latest SHOWING measurement (0 = none yet)
         internal NativeUiMeasure LastMeasure;
         internal float LastMeasureAt;
         internal bool HasMeasure;
@@ -194,5 +196,14 @@ internal sealed partial class NativeUiService
     internal struct SeenGeometry
     {
         public float X, Y, W, H, PxPerUnit;
+    }
+
+    /// <summary>The current run of matching default-rect measurements: the run's FIRST rect (every later sample is
+    /// compared to it, so a slow fade-shrink can't creep along in sub-tolerance steps) and when the run started.</summary>
+    internal struct SeenStability
+    {
+        public WindowRect Rect;
+        public float Since;
+        public bool Has;
     }
 }

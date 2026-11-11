@@ -11,8 +11,9 @@ namespace Stellar.Application.Services;
 ///   place?" — a few interop reads, no allocation. A broken wrapper is re-wrapped + re-applied at once; applying
 ///   needs no measurement, so it works while the rebuilt element is still inactive (no snap-back frame).</item>
 /// <item>2 Hz absent resolve: a path walk per absent element (boss bar outside fights, battle HUD not built).</item>
-/// <item>1 Hz measure: ONE element per pass, only while it still needs it (legacy migration or no last-seen size at
-///   this resolution yet) — the content-union walk is the expensive bit, so it is never polled steadily.</item>
+/// <item>1 Hz measure: ONE element per pass, only while it still needs it (legacy migration or no SETTLED last-seen
+///   size at this resolution yet — a rect must hold still across two passes, AdvanceSettle) — the content-union walk
+///   is the expensive bit, so it is never polled steadily.</item>
 /// </list>
 /// Scene-enter signals arm an immediate liveness + resolve pass (<see cref="RequestRecheck"/>).
 /// </summary>
@@ -91,6 +92,7 @@ internal sealed partial class NativeUiService
         e.Handle = handle;
         e.IsResolved = true;
         e.HasMeasure = false;
+        e.Stability.Has = false;   // a rebuilt element starts a new settle run
         _log.Info($"[NativeUi] resolved '{e.Descriptor.Id}'");
         ApplyToGame(e);   // in-memory state (loaded once per slot × resolution) — no config read on a rebuild
     }

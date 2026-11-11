@@ -124,6 +124,10 @@ internal sealed partial class NativeUiService
         var x = _config.Get(k[KSeenX], NotPersisted);
         e.HasSeen = x > NotPersisted;
         e.SeenFresh = e.SeenDirty = false;
+        // Fresh settle run + live scale per resolution. A saved value never blocks re-recording: SeenFresh=false keeps
+        // the 1 Hz pass sampling until a settled rect replaces it (self-heals a transient rect saved by an older build).
+        e.Stability = default;
+        e.LivePx = 0f;
         if (!e.HasSeen) return;
         e.Seen = new SeenGeometry
         {

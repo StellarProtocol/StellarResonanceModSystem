@@ -148,6 +148,7 @@ public sealed class NativeUiSeenGuardTests
         adapter.Base = new WindowRect(606, 1330, 270, 0);
         svc.Tick(0.2f, Res);
         svc.Tick(1f, Res);
+        svc.Tick(1f, Res);                                    // long enough to settle — still never saved
         Assert.DoesNotContain("seen.gameui.test.1920x1080.x", cfg.Keys);
     }
 

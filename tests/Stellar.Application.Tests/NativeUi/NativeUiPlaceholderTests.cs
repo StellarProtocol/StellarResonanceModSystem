@@ -49,8 +49,9 @@ public sealed class NativeUiPlaceholderTests
     {
         var (svc, adapter, _, _) = New();
         svc.Tick(0.2f, Res);
-        Assert.True(svc.TryGetEditView(Entry(svc, Id), out var live));   // seen once while showing
+        Assert.True(svc.TryGetEditView(Entry(svc, Id), out var live));   // showing: starts the settle run
         Assert.Equal(NativeUiPresence.Showing, live.Presence);
+        svc.Tick(1f, Res);                                                // still there 1 s later → settled, remembered
         svc.SetRect(Id, new WindowRect(110, 120, 100, 40));               // offset (50,-50) at 2 px/unit
 
         adapter.Showing = false;
@@ -92,7 +93,8 @@ public sealed class NativeUiPlaceholderTests
     {
         var (svc, _, cfg, _) = New();
         svc.Tick(0.2f, Res);
-        svc.Tick(1f, Res);                                                // measure pass + flush
+        svc.Tick(1f, Res);                                                // measure pass: starts the settle run
+        svc.Tick(1f, Res);                                                // same rect 1 s later → settled + flush
         Assert.Equal(10f, cfg.Get("seen.gameui.test.1920x1080.x", 0f));
         Assert.Equal(100f, cfg.Get("seen.gameui.test.1920x1080.w", 0f));
         Assert.Equal(2f, cfg.Get("seen.gameui.test.1920x1080.s", 0f));
