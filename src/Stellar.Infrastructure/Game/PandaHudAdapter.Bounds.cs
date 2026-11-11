@@ -63,9 +63,10 @@ internal sealed partial class PandaHudAdapter
 
     // The screen-rect bounding the visible (non-transparent/enabled/un-culled) drawable descendants of
     // <paramref name="root"/>, or <paramref name="fallback"/> when nothing draws.
-    private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback)
+    private static WindowRect ContentUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
+        System.Collections.Generic.List<Transform>? exclude = null)
     {
-        var acc = new BoundsAcc();
+        var acc = new BoundsAcc { Exclude = exclude };
         AccumulateContentBounds(root.transform, cam, depth: 0, acc);
         if (!acc.Any) return fallback;
         return new WindowRect(acc.MinX, Screen.height - acc.MaxY, acc.MaxX - acc.MinX, acc.MaxY - acc.MinY);
@@ -89,6 +90,7 @@ internal sealed partial class PandaHudAdapter
     {
         if (t == null || depth > ContentMaxDepth || acc.Budget <= 0) return;
         acc.Budget--;
+        if (acc.IsExcluded(t)) return;               // a "-" token of the outline spec (OutlineSpec)
         if (!t.gameObject.activeInHierarchy) return; // hidden subtree contributes nothing
         var rt = t.TryCast<RectTransform>();
         if (rt == null) return;
@@ -146,6 +148,13 @@ internal sealed partial class PandaHudAdapter
         public float MaxX = float.MinValue, MaxY = float.MinValue;
         public int  Budget = ContentNodeBudget;
         public bool Any;
+        public System.Collections.Generic.List<Transform>? Exclude;   // subtrees skipped by the union ("-" spec tokens)
+        public bool IsExcluded(Transform t)
+        {
+            if (Exclude == null) return false;
+            for (var i = 0; i < Exclude.Count; i++) if (Exclude[i].Pointer == t.Pointer) return true;
+            return false;
+        }
         public void Add(float x, float y)
         {
             if (x < MinX) MinX = x;

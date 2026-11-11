@@ -68,38 +68,41 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         return cur;
     }
 
-    // The edit-outline / grab-box rect. When the allowlist supplies a spec, it's a ';'-separated list of
-    // Transform.Find sub-paths whose rects are UNIONED — so a panel made of separated pieces (HP bar + stamina
-    // bar, excluding the class gauge between them) frames tightly. Each token is the child's OWN rect by
-    // default (tight to a container, e.g. the quickbar bar = 'button_pos_group', which excludes the skill
-    // drawer that floats far away); prefix a token with '*' to use the visible-drawable UNION of that subtree
-    // instead (when the wanted box is a node's contents that overflow its own rect, e.g. a bar plus the number
-    // label anchored above it). No spec → the auto rect (usable node rect, else visible-drawable union).
-    // rt is the element, or — for an INNER-wrapped element — our wrapper, which now holds its children (same rect).
+    // The edit-outline / grab-box rect. When the allowlist supplies a spec (syntax: OutlineSpec), it's a ';'-separated
+    // list of Transform.Find sub-paths whose rects are UNIONED — so a panel made of separated pieces (HP bar + stamina
+    // bar, excluding the class gauge between them) frames tightly. Each token is the child's OWN rect by default;
+    // '*' uses the visible-drawable UNION of that subtree instead (contents that overflow the node's own rect, e.g. the
+    // quickbar's skill icons poking above its 700x90 container); "h:"/"w:" take one axis only; '-' EXCLUDES a subtree
+    // from every '*' union (the quickbar's floating skill drawer). No spec → the auto rect (usable node rect, else
+    // visible-drawable union). rt is the element, or — for an INNER-wrapped element — our wrapper (same rect).
     private static WindowRect ComputeOutlineRect(RectTransform rt, Camera? cam, string? spec)
     {
         if (string.IsNullOrEmpty(spec)) return ComputeContentScreenRect(rt, cam);
+        var tokens = OutlineSpec.Parse(spec);
+        var exclude = ResolveExcludes(rt, tokens);
         float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
-        foreach (var raw in spec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        for (var i = 0; i < tokens.Count; i++)
         {
-            // Per-axis prefixes: "h:" contributes only the node's vertical extent, "w:" only horizontal — so a
-            // rect can take its WIDTH from one node and HEIGHT from another (quest tracker: width from the title
-            // bar, height down to the scroll list). "*" = visible-content union of the subtree.
-            var token = raw;
-            bool axisX = true, axisY = true;
-            if (token.StartsWith("h:")) { axisX = false; token = token.Substring(2); }
-            else if (token.StartsWith("w:")) { axisY = false; token = token.Substring(2); }
-            var contentMode = token.StartsWith("*");
-            var path = contentMode ? token.Substring(1) : token;
-            var childRt = FindByPath(rt.transform, path)?.TryCast<RectTransform>();
+            var tok = tokens[i];
+            if (tok.Exclude) continue;
+            var childRt = FindByPath(rt.transform, tok.Path)?.TryCast<RectTransform>();
             if (childRt == null) continue;
             var own = ToScreenRect(childRt, cam);
-            var r = contentMode ? ContentUnionRect(childRt, cam, own) : own;
-            if (axisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }
-            if (axisY) { minY = Math.Min(minY, r.Y); maxY = Math.Max(maxY, r.Bottom); }
+            var r = tok.Content ? ContentUnionRect(childRt, cam, own, exclude) : own;
+            if (tok.AxisX) { minX = Math.Min(minX, r.X); maxX = Math.Max(maxX, r.Right); }
+            if (tok.AxisY) { minY = Math.Min(minY, r.Y); maxY = Math.Max(maxY, r.Bottom); }
         }
         if (minX > maxX || minY > maxY) return ComputeContentScreenRect(rt, cam);   // nothing resolved
         return new WindowRect(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    // The live transforms named by '-' tokens (null when the spec has none — the common case allocates nothing).
+    private static List<Transform>? ResolveExcludes(RectTransform rt, IReadOnlyList<OutlineToken> tokens)
+    {
+        List<Transform>? list = null;
+        for (var i = 0; i < tokens.Count; i++)
+            if (tokens[i].Exclude && FindByPath(rt.transform, tokens[i].Path) is { } t) (list ??= new()).Add(t);
+        return list;
     }
 
     // Resolve a '/'-separated child path one segment at a time. Il2Cpp's Transform.Find returns null for a

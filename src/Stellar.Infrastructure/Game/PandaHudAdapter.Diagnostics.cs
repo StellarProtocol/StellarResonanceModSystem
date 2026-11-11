@@ -74,9 +74,9 @@ internal sealed partial class PandaHudAdapter
         var node = ToScreenRect(rt, cam);
         _log.Info($"[NativeUi/Curate] {allowlistPath} spec='{spec ?? "(none)"}' node=({node.X:0},{node.Y:0} {node.Width:0}x{node.Height:0}) outline=({outline.X:0},{outline.Y:0} {outline.Width:0}x{outline.Height:0})");
         if (string.IsNullOrEmpty(spec)) return;
-        foreach (var token in spec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var token in OutlineSpec.Parse(spec))
         {
-            var path = token.StartsWith("*") ? token.Substring(1) : token;
+            var path = token.Path;
             var cur = rt.transform;
             var failSeg = "";
             foreach (var seg in path.Split('/'))
@@ -84,7 +84,7 @@ internal sealed partial class PandaHudAdapter
                 cur = cur == null ? null : cur.Find(seg);
                 if (cur == null) { failSeg = seg; break; }
             }
-            _log.Info($"[NativeUi/Curate]   token '{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}");
+            _log.Info($"[NativeUi/Curate]   token {(token.Exclude ? "-" : token.Content ? "*" : "")}'{path}' → {(cur != null ? "FOUND" : $"FAIL at '{failSeg}'")}");
         }
     }
 
