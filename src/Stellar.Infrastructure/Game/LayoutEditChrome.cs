@@ -9,7 +9,21 @@ namespace Stellar.Infrastructure.Game;
 /// coords, same as IInputGateway.PointerPosition), the outline/handle colour (orange unselected / yellow
 /// selected / red errored), and the label.</summary>
 internal readonly record struct EditChromeItem(
-    WindowRect Rect, Color Color, string Label, string Id, bool Visible, bool CanHide, bool Resizable);
+    WindowRect Rect, Color Color, string Label, string Id, bool Visible, bool CanHide, bool Resizable)
+{
+    /// <summary>Draw as a native-UI PLACEHOLDER (element absent or hidden by the game): dashed outline + hatched
+    /// fill + centred caption instead of the solid ring (approved prototype style A).</summary>
+    public bool Placeholder { get; init; }
+
+    /// <summary>Placeholder caption: the element display name (bold).</summary>
+    public string? Caption { get; init; }
+
+    /// <summary>Placeholder hint line (orange-tinted), e.g. "Hidden by the game now".</summary>
+    public string? Hint { get; init; }
+
+    /// <summary>Optional placeholder sub line, e.g. "(shows when you're in a party)".</summary>
+    public string? SubHint { get; init; }
+}
 
 /// <summary>
 /// uGUI renderer for layout edit-mode chrome — a screen-space overlay canvas with a grow-only pool of
@@ -22,7 +36,7 @@ internal readonly record struct EditChromeItem(
 /// idiom as HudRenderer.SetRect. All Images/Text are <c>raycastTarget=false</c> + the canvas has no
 /// GraphicRaycaster, so the overlay is transparent to the pointer (edit-drag hit-tests manual rects).</para>
 /// </summary>
-internal sealed class LayoutEditChrome
+internal sealed partial class LayoutEditChrome
 {
     private const int SortingOrder = 32758;   // HUD 32750 < Window 32755 < this < input-blocker 32760
     private const float OutlineThickness = 2f;
@@ -46,6 +60,7 @@ internal sealed class LayoutEditChrome
         public Image Handle = null!;
         public Text Label = null!;
         public Image Eye = null!;
+        public Placeholder Ph = null!;   // dashed sides + hatch + caption (LayoutEditChrome.Placeholder.cs)
         public string Id = "";
         public Rect EyeScreen;       // top-left / y-down screen rect of the eye, for the editor's manual hit-test
         public bool EyeInteractive;  // false for unsafe-to-hide (greyed) elements
@@ -131,6 +146,7 @@ internal sealed class LayoutEditChrome
         var eyeLocalX = it.Label.preferredWidth + 4f;
         it.Eye.rectTransform.anchoredPosition = new Vector2(eyeLocalX, 0f);
         it.EyeScreen = new Rect(r.X + 2f + eyeLocalX, r.Y - 16f, 13f, 13f);
+        PositionPlaceholder(it, data, a);   // solid ring vs dashed/hatched placeholder (same 40% dim when hidden)
     }
 
     private static Color Fade(Color c, float a) => new(c.r, c.g, c.b, c.a * a);
@@ -175,7 +191,9 @@ internal sealed class LayoutEditChrome
         var eImg = eye.AddComponent<Image>();
         eImg.sprite = _eyeOpenSprite; eImg.raycastTarget = false;
 
-        return new Item { Root = root, Rt = rt, Border = bImg, Handle = hImg, Label = txt, Eye = eImg };
+        // Placeholder parts (hidden unless the item is a placeholder); the hatch is moved behind the ring/handle.
+        var ph = BuildPlaceholder(root.transform);
+        return new Item { Root = root, Rt = rt, Border = bImg, Handle = hImg, Label = txt, Eye = eImg, Ph = ph };
     }
 
     /// <summary>True if (x,y) — top-left / y-down screen coords, same domain as IInputGateway.PointerPosition —
@@ -215,6 +233,7 @@ internal sealed class LayoutEditChrome
         }
         if (_eyeOpenSprite == null)   _eyeOpenSprite   = BakeEye(open: true);
         if (_eyeClosedSprite == null) _eyeClosedSprite = BakeEye(open: false);
+        EnsurePlaceholderSprites();
     }
 
     // A crude but readable 16×16 eye: a wide almond outline + (open) a centred pupil / (closed) a horizontal
