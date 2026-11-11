@@ -49,7 +49,13 @@ internal sealed partial class PandaHudAdapter
         if (t == null || depth > ContentMaxDepth || count >= DiagMaxLinesPerEntry) return;
         if (!t.gameObject.activeInHierarchy) return;
         var rt = t.TryCast<RectTransform>();
-        if (rt == null) return;
+        if (rt == null)   // plain Transform holder: no rect, but its subtree draws (same rule as AccumulateContentBounds)
+        {
+            log($"[NativeUi/RectDiag]     {new string(' ', depth * 2)}{t.name} (Transform)");
+            count++;
+            for (var i = 0; i < t.childCount; i++) DumpContributors(t.GetChild(i), cam, depth + 1, ref count, log);
+            return;
+        }
 
         // Log EVERY active node (not just drawables) so a curation target — often a non-drawable layout
         // container whose own rect tightly frames the visible widget — is visible too. Tag: clip / draw

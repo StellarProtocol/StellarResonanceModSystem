@@ -68,7 +68,7 @@ internal sealed partial class PandaHudAdapter
         => UnionWith(root, cam, fallback, new BoundsAcc { Exclude = exclude }, out _);
 
     // any = false when nothing visible was found (the fallback is returned).
-    // SpecUnionRect: a curated "*" token of an allowlist RectChild spec — walk 2 levels deeper and clip only at REAL enabled
+    // SpecUnionRect: a curated "*" token of an allowlist RectChild spec — walk 6 levels deeper and clip only at REAL enabled
     // Mask/RectMask2D components (not the auto union's "named mask" heuristic, which can bound a non-clipping node and
     // cut drawn content: the quickbar [L Ctrl] rings, 11-11). The auto union (no spec) keeps the old, tighter rules.
     private static WindowRect SpecUnionRect(RectTransform root, Camera? cam, WindowRect fallback,
@@ -108,8 +108,12 @@ internal sealed partial class PandaHudAdapter
         acc.Budget--;
         if (acc.IsExcluded(t)) return;               // a "-" token of the outline spec (OutlineSpec)
         if (!t.gameObject.activeInHierarchy) return; // hidden subtree contributes nothing
+        // A plain Transform (no RectTransform — e.g. the quickbar's anim_999 holder) draws nothing itself but must NOT
+        // prune its subtree: the old `rt == null → return` stopped the [L Ctrl] walk at node 2 (visited=2, 11-11), so
+        // the cluster's icons 10 levels down were never reached. Descend through it; only bound RectTransforms.
         var rt = t.TryCast<RectTransform>();
-        if (rt == null) return;
+        if (rt == null) { if (!acc.NameClip) Descend(t, cam, depth, acc); return; }   // auto union keeps the old prune (approved outlines)
+        if (!acc.NameClip && IsFadedOut(t)) return;   // spec walks: a CanvasGroup at ~0 alpha draws nothing below it
 
         // A clip region (Mask/RectMask2D, e.g. the minimap's circular mask or a
         // chat scroll viewport) bounds everything below it — its children pan
@@ -127,9 +131,20 @@ internal sealed partial class PandaHudAdapter
         // carry a CanvasRenderer yet draw nothing — and they were inflating the union (e.g. the party panel's
         // transparent presscheck dragged the box left). The node's visible children still contribute their own
         // corners, so dropping the invisible parent never loses real bounds.
-        if (IsVisibleGraphic(t)) AddCorners(rt, cam, acc);
+        if (IsVisibleGraphic(t)) AddCorners(rt, cam, acc);   // world corners: lossy scale (e.g. 0.52) applies
+        Descend(t, cam, depth, acc);
+    }
+
+    private static void Descend(Transform t, Camera? cam, int depth, BoundsAcc acc)
+    {
         for (var i = 0; i < t.childCount; i++)
             AccumulateContentBounds(t.GetChild(i), cam, depth + 1, acc);
+    }
+
+    private static bool IsFadedOut(Transform t)
+    {
+        var cg = t.GetComponent<CanvasGroup>();
+        return cg != null && cg.alpha < MinVisibleAlpha;
     }
 
     private const float MinVisibleAlpha = 0.1f;
@@ -143,7 +158,7 @@ internal sealed partial class PandaHudAdapter
         return g.color.a >= MinVisibleAlpha;
     }
 
-    private const int SpecExtraDepth = 2;
+    private const int SpecExtraDepth = 6;   // spec walks reach depth 12 (the L Ctrl icons sit 9-10 below their token)
 
     // A clip region: an ENABLED RectMask2D / Mask (a disabled one clips nothing), or — auto union only (nameClip) — a
     // node merely NAMED mask, the original minimap heuristic.
