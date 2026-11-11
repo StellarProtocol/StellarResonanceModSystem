@@ -144,7 +144,11 @@ public sealed partial class BootstrapPlugin
         var help = new StellarHelpPopover(style, loc, _framework!, SettingsHub.HelpWindowId, () => gate() && HubShown());
         SettingsHub? hub = null;
         var kit = new SettingsKit(style, help, new StellarFeedbackLine(style, () => hub?.FooterHint() ?? ""),
-            new StellarRowFlash(), loc);
+            new StellarRowFlash(), loc)
+        {
+            // Hints that name a framework hotkey show its live binding (reads nothing until a hint is drawn).
+            Keys = new HotkeyHintText(_hotkeyService!, loc),
+        };
         hub = _settingsHub = new SettingsHub(kit, panels, tab) { HubShown = HubShown };
         // Hotkeys capture has no Event.current outside OnGUI — poll it per frame from the game loop.
         _hotkeysCapturePoll = panels.Hotkeys.PollCaptureUgui;
