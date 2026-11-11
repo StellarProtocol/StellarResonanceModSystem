@@ -6,8 +6,8 @@ namespace Stellar.Infrastructure.Game;
 /// <summary>
 /// The wrapper half of <see cref="PandaHudAdapter"/>: insert / re-check / remove the framework's own RectTransform
 /// around an allowlist element. Recipe live-verified 2026-11-11 (Native-UI-Layout-Positioning.md "Wrapper spike"):
-/// a full-stretch RectTransform (anchors 0..1, offsets 0, pivot .5, scale 1, parent's layer) inserted between a node
-/// and its parent moves it by exactly 0 px; the offset is <c>wrapper.anchoredPosition</c>, the hide is
+/// a full-stretch RectTransform (anchors 0..1, offsets 0, scale 1, parent's layer) inserted between a node and its
+/// parent moves it by exactly 0 px; the offset is <c>wrapper.anchoredPosition</c>, the hide is
 /// <c>wrapper.localScale = 0</c> (element stays active — skills by key still fire, HP/cooldowns keep updating).
 /// We NEVER SetActive, translate or destroy a game node.
 /// </summary>
@@ -39,6 +39,10 @@ internal sealed partial class PandaHudAdapter
             if (!CreateWrapper(e)) return;
         }
         var w = e.Wrapper!;
+        // Keep the wrapper's pivot = its parent's (see Stretch). Two value reads on cached nodes, no proxy allocation;
+        // a stretched rect with sizeDelta 0 doesn't move when its pivot changes, so re-syncing is invisible.
+        var pp = e.WrapParent;
+        if (pp != null && w.pivot != pp.pivot) w.pivot = pp.pivot;
         // Write only on change — our node is ours alone, so a value we set stays set (no re-assert needed).
         var pos = new Vector2(offsetX, offsetY);
         if (w.anchoredPosition != pos) w.anchoredPosition = pos;
@@ -84,15 +88,21 @@ internal sealed partial class PandaHudAdapter
         var rt = e.RectTransform!;
         var space = e.Mode == NativeUiWrapMode.Inner ? rt.transform : rt.parent;
         if (space == null) return false;   // outer needs a parent (a detached element is re-tried next liveness pass)
+        // Inner: the wrapper's parent is the element itself. Outer: the element's parent — a non-RectTransform parent
+        // (none on the allowlist) has no pivot to match, so it keeps pivot .5 and no re-sync.
+        var parentRt = e.Mode == NativeUiWrapMode.Inner ? rt : space.TryCast<RectTransform>();
         var go = new GameObject("stellar_wrap_" + e.Id) { layer = space.gameObject.layer };
         var w = go.AddComponent<RectTransform>();
+        // Children are re-parented with worldPositionStays=false only AFTER Stretch has set the pivot: with the
+        // wrapper's rect AND local origin identical to the parent's, both their anchoredPosition and localPosition
+        // mean the same thing under the wrapper as before → 0 px move at wrap time.
         if (e.Mode == NativeUiWrapMode.Inner)
         {
             var n = rt.childCount;
             var kids = new Transform[n];
             for (var i = 0; i < n; i++) kids[i] = rt.GetChild(i);
             w.SetParent(rt, false);
-            Stretch(w);
+            Stretch(w, parentRt);
             for (var i = 0; i < n; i++) kids[i].SetParent(w, false);
             w.SetAsFirstSibling();
         }
@@ -100,12 +110,13 @@ internal sealed partial class PandaHudAdapter
         {
             var idx = rt.GetSiblingIndex();
             w.SetParent(space, false);
-            Stretch(w);
+            Stretch(w, parentRt);
             w.SetSiblingIndex(idx);
             rt.SetParent(w, false);
             AdoptTwins(e, w, space, idx);   // PandaHudAdapter.Twins.cs — the location bar's recycle twin
         }
         e.Wrapper = w;
+        e.WrapParent = parentRt;
         e.WrapperGroup = null;
         _log.Info($"[NativeUi] wrapped '{e.Id}' ({e.Mode})");
         WarnIfLaidOut(e, space);
@@ -121,11 +132,19 @@ internal sealed partial class PandaHudAdapter
             _log.Warning($"[NativeUi] '{e.Id}' wrapper parent has a LayoutGroup — the offset may be overridden by layout");
     }
 
-    private static void Stretch(RectTransform w)
+    // Full-stretch over the parent, pivot = the PARENT's pivot. The game writes `node.localPosition = v` on some
+    // wrapped nodes (group_sceneline on every line switch, mainui_left_home_comp.lua), and localPosition is relative
+    // to the parent's PIVOT: with a pivot-.5 wrapper under a pivot-(0,1)-ish node_upper_left those writes landed
+    // half a parent off — the location bar jumped +(1280,720) px at 2560x1440 (live 2026-11-11). Matching pivots makes
+    // the wrapper's local origin coincide with the parent's, so localPosition writes land exactly as unwrapped.
+    // The user offset stays pivot-independent: for stretch anchors offsetMin = anchoredPosition − sizeDelta·pivot,
+    // offsetMax = anchoredPosition + sizeDelta·(1−pivot), and sizeDelta is 0 → the rect is the parent's rect shifted
+    // by anchoredPosition whatever the pivot, so stored .ox/.oy offsets mean the same px as before (no migration).
+    private static void Stretch(RectTransform w, RectTransform? parent)
     {
         w.anchorMin = Vector2.zero;
         w.anchorMax = Vector2.one;
-        w.pivot = new Vector2(0.5f, 0.5f);
+        w.pivot = parent != null ? parent.pivot : new Vector2(0.5f, 0.5f);
         w.offsetMin = Vector2.zero;
         w.offsetMax = Vector2.zero;
         w.localScale = Vector3.one;
@@ -140,6 +159,7 @@ internal sealed partial class PandaHudAdapter
         var w = e.Wrapper;
         e.Wrapper = null;
         e.WrapperGroup = null;
+        e.WrapParent = null;
         if (w == null) return;   // never wrapped, or it died with a rebuilt prefab
         var rt = e.RectTransform;
         if (e.Mode == NativeUiWrapMode.Inner)

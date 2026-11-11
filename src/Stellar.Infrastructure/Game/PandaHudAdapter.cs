@@ -228,6 +228,7 @@ internal sealed partial class PandaHudAdapter : INativeUiAdapter
         public Transform? TwinSpace;        // the twins' original parent (= outer wrapper's parent), cached at wrap time
         public RectTransform? Wrapper;      // OUR node carrying offset + hide; null until the element is customized
         public CanvasGroup? WrapperGroup;   // only for BlockInputWhenHidden (chat): input off while hidden
+        public RectTransform? WrapParent;   // the wrapper's parent at wrap time; its pivot is mirrored onto the wrapper
 
         public NativeUiHandle ToHandle() => new()
         {
