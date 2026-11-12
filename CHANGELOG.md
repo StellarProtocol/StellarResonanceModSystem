@@ -14,8 +14,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.31.0] - Unreleased
-_**2.31.0** (minor) — branch `enhance/wardrobe-preview`. The wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
+## [2.31.0] - 2026-11-13
+_**2.31.0** (minor) — the wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
 ### Added
 - Wardrobe mods can now show your weapon in the 3D outfit preview, including the weapon skin saved with an outfit.
 - The 3D outfit preview can now show an outfit exactly as saved, with its own hidden pieces, even when you are hiding a piece (like a hat) right now.
