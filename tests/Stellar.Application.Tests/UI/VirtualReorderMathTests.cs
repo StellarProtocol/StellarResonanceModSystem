@@ -92,4 +92,22 @@ public sealed class VirtualReorderMathTests
     [InlineData(50f, 200f, 280f, 0f)]   // content shorter than the viewport → no scroll range
     public void ClampScroll_keeps_offset_in_range(float y, float contentH, float viewportH, float expected)
         => Assert.Equal(expected, VirtualReorderMath.ClampScroll(y, contentH, viewportH));
+
+    // fw #162: the wheel during a reorder drag must feel like the list's normal wheel — uGUI ScrollRect.OnScroll
+    // negates scrollDelta.y and scales by scrollSensitivity (24 on framework scroll views): wheel-up → toward the top.
+    [Theory]
+    [InlineData(1f, 24f, -24f)]    // one notch up → 24 units toward the top
+    [InlineData(-1f, 24f, 24f)]    // one notch down → 24 units toward the bottom
+    [InlineData(-3f, 24f, 72f)]    // a fast spin delivers several notches in one frame
+    [InlineData(0f, 24f, 0f)]
+    public void WheelScrollDelta_matches_the_scroll_rect_wheel_step(float wheelY, float sensitivity, float expected)
+        => Assert.Equal(expected, VirtualReorderMath.WheelScrollDelta(wheelY, sensitivity));
+
+    [Fact]
+    public void WheelScroll_is_clamped_at_both_ends()
+    {
+        // at the top, wheel-up stays at 0; at the bottom (1000 − 280 = 720), wheel-down stays at 720
+        Assert.Equal(0f, VirtualReorderMath.ClampScroll(0f + VirtualReorderMath.WheelScrollDelta(1f, 24f), 1000f, 280f));
+        Assert.Equal(720f, VirtualReorderMath.ClampScroll(710f + VirtualReorderMath.WheelScrollDelta(-1f, 24f), 1000f, 280f));
+    }
 }
