@@ -10,7 +10,7 @@ namespace Stellar.Abstractions.Services;
 /// self model with the outfit you pass — for a wardrobe hover/click preview. The model is created
 /// asynchronously; <see cref="Texture"/> stays null for a few frames until the game delivers it.
 /// </summary>
-public interface IWardrobePreview
+public interface IWardrobePreview : IWardrobePreviewOptions
 {
     /// <summary>True while a preview subject is active (model created or being created).</summary>
     bool IsActive { get; }

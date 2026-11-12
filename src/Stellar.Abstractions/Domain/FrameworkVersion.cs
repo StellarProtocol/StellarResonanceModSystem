@@ -19,6 +19,9 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.31.0 adds <c>IWardrobePreviewOptions</c> (a base of <c>IWardrobePreview</c>): <c>ShowWeapon</c> and the
+    /// <c>Show(self, outfit, dyes, hidden)</c> overload (the outfit's own show/hide state) (additive); a plugin that uses
+    /// either needs ≥2.31.0. Runtime: the mouse wheel scrolls a list while one of its rows is being drag-reordered.
     /// 2.30.0 adds <c>IThemeStatusColors</c> (<c>theme.Colors.Success</c>/<c>Danger</c>/<c>Caution</c>), <c>ThemePreset.Sakura</c>
     /// <c>TextElement.MaxLines</c> and <c>TextElement.Height</c>, plus <c>WindowSpec.Topmost</c> and <c>IWindowTopmost</c>
     /// (<c>control.SetTopmost(bool)</c> / <c>control.IsTopmost()</c> via <c>WindowTopmostExtensions</c>), and
@@ -458,5 +461,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.30.0";
+    public const string Value = "2.31.0";
 }

@@ -214,11 +214,15 @@ internal sealed partial class WindowBuilder
         else { le.preferredWidth = 160f; le.flexibleWidth = 1f; }
         var slider = go.AddComponent<Slider>();
         slider.minValue = s.Min; slider.maxValue = s.Max; slider.direction = Slider.Direction.LeftToRight;
+        // Disabled tint = white (no-op): SliderBinding paints the recessed disabled look itself (fw #160), so the stock
+        // ColorTint (0.78 grey @50 %) must not multiply on top. Set BEFORE targetGraphic is assigned (Button.OnEnable /
+        // ColorTint snap gotcha: colours written after the transition source would be overridden).
+        var cb = slider.colors; cb.disabledColor = Color.white; slider.colors = cb;
 
         var track = UGuiPrimitives.NewChild("Track", go.transform);
         var trt = track.GetComponent<RectTransform>();
         trt.anchorMin = new Vector2(0f, 0.5f); trt.anchorMax = new Vector2(1f, 0.5f); trt.sizeDelta = new Vector2(0f, 4f); trt.anchoredPosition = Vector2.zero;
-        var timg = track.AddComponent<Image>(); timg.sprite = _assets.Capsule; timg.type = Image.Type.Sliced; timg.color = new Color(1f, 1f, 1f, 0.10f); timg.raycastTarget = false;
+        var timg = track.AddComponent<Image>(); timg.sprite = _assets.Capsule; timg.type = Image.Type.Sliced; timg.color = SliderBinding.TrackOn; timg.raycastTarget = false;
 
         // Fill area spans the FULL track width (no handle inset) so the accent fill starts exactly at the
         // track's left edge — no grey sliver before it.
@@ -228,15 +232,18 @@ internal sealed partial class WindowBuilder
         var fillGo = UGuiPrimitives.NewChild("Fill", fillArea.transform);
         var fillrt = fillGo.GetComponent<RectTransform>(); fillrt.anchorMin = Vector2.zero; fillrt.anchorMax = new Vector2(0f, 1f); fillrt.sizeDelta = Vector2.zero;
         var fimg = fillGo.AddComponent<Image>(); fimg.sprite = _assets.Capsule; fimg.type = Image.Type.Sliced; fimg.color = _assets.MenuAccent; fimg.raycastTarget = false;
-        token.ReskinActions.Add(() => { if (fimg != null) fimg.color = _assets.MenuAccent; });   // accent follows theme
 
         var hrt = BuildSliderHandle(s, go.transform);
+        var himg = hrt.GetComponent<Image>();
 
-        slider.fillRect = fillrt; slider.handleRect = hrt; slider.targetGraphic = hrt.GetComponent<Image>();
+        slider.fillRect = fillrt; slider.handleRect = hrt; slider.targetGraphic = himg;
         slider.SetValueWithoutNotify(s.Get());
         var set = s.Set;
         slider.onValueChanged.AddListener((UnityAction<float>)(v => set(v)));
-        token.Sliders.Add(new SliderBinding { S = slider, Get = s.Get, EnabledFn = s.Enabled });
+        // The binding owns all three colours: enabled (accent fill follows the theme) vs recessed disabled (#160).
+        var binding = new SliderBinding { S = slider, Get = s.Get, EnabledFn = s.Enabled, Track = timg, Fill = fimg, Knob = himg, Assets = _assets };
+        token.Sliders.Add(binding);
+        token.ReskinActions.Add(binding.Reskin);
         // Drag-exclusion zone (same hook as the scrollbar): on a title-bar-less Draggable window the WHOLE frame is
         // the ticker's drag handle, and the ticker polls the mouse itself — it never sees that the uGUI Slider took
         // the press. Unregistered, dragging the knob moved the window (and the value barely changed, since the
@@ -286,7 +293,7 @@ internal sealed partial class WindowBuilder
         // SquareHandle = the round-knob opt-in: scale the capsule's fixed 7px corners to handle/2 so it is a circle
         // at ANY HandleSize (unscaled, a 22px knob drew as a rounded square). The stretched default is untouched.
         if (s.SquareHandle) himg.pixelsPerUnitMultiplier = CapsuleGeometry.CircleMultiplier(handle);
-        himg.color = new Color(0.81f, 0.88f, 0.95f, 1f);
+        himg.color = SliderBinding.KnobOn;
         return hrt;
     }
 

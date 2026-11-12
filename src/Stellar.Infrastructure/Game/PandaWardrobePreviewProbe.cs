@@ -24,7 +24,7 @@ namespace Stellar.Infrastructure.Game;
 /// de-dupe every game view that shows a weapon skin on a preview model performs (see
 /// <c>WeaponMountClearLua</c>). Every preview writes a one-line outcome the host logs unconditionally.</para>
 /// </summary>
-internal sealed class PandaWardrobePreviewProbe
+internal sealed partial class PandaWardrobePreviewProbe
 {
     private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
     private const BindingFlags AnyStatic = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
@@ -53,10 +53,11 @@ internal sealed class PandaWardrobePreviewProbe
 
     /// <summary>Create the preview model for <paramref name="charId"/> dressed with <paramref name="outfit"/>
     /// (async — lands in the Lua global a few frames later). No-op if the Lua bridge is unresolved.</summary>
-    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
+    public void BuildModel(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes,
+        IReadOnlyDictionary<int, bool>? hidden = null)
     {
         _weaponLogged = false;   // one weapon-outcome line per preview, emitted when the model lands
-        Run(BuildModelChunk(charId, outfit, dyes), $"[WardrobePreview] BuildModel({charId})");
+        Run(BuildModelChunk(charId, outfit, dyes, hidden), $"[WardrobePreview] BuildModel({charId})");
     }
 
     /// <summary>Recycle the preview model through the game's pool and clear the global.</summary>
@@ -92,6 +93,8 @@ internal sealed class PandaWardrobePreviewProbe
     //   weapon skin=… social=no-professionData …          — social data carried no profession block
     //   weapon skin=… mount=skip(skin0) …                 — resolved default look: nothing to de-dupe
     //   weapon skin=… social=err:… | mount=err:… | disp=err:…  — that Lua call threw (message included)
+    //   … hide=ok(rb=same|rb=<read-back>|rb=na) | hide=err:…    — only when Show got a hidden map (2.31.0;
+    //                                                     see .WearSetting.cs); absent = no EWearSetting write
     private void LogWeaponOutcome(object state)
     {
         if (_weaponLogged || _luaToString is null) return;
@@ -128,12 +131,15 @@ internal sealed class PandaWardrobePreviewProbe
     // Recipe = fetch the self social data, inject the previewed weapon skin INTO it, create the model from
     // it, dress it with the outfit + each piece's LIVE dye, then (weapon-skin previews only) clear the
     // CMount weapon the social data brought with it so the model carries ONE weapon. Split into head /
-    // weapon / gen / dress / mount / tail to stay under the method-size gate.
-    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes)
+    // weapon / gen / dress / hide / mount / tail to stay under the method-size gate. `hidden` null = no
+    // EWearSetting write at all (the model keeps the player's global setting — the pre-2.31.0 chunk exactly).
+    internal static string BuildModelChunk(int charId, IReadOnlyDictionary<int, int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes,
+        IReadOnlyDictionary<int, bool>? hidden = null)
     {
         var hasSkin = outfit.TryGetValue(WardrobeRegions.WeaponSkinPreview, out var skinId);
         return CoroHead(charId) + (hasSkin ? WeaponSkinSourceLua(skinId) : string.Empty) + GenLua() +
                DressLua(outfit, dyes) +
+               (hidden != null ? WearSettingLua(BuildWearSetting(hidden)) : string.Empty) +
                (hasSkin ? WeaponMountClearLua + WeaponSkinOverrideLua : string.Empty) +
                "    rawset(_G, '" + ModelGlobal + "', m)\n" +
                "  end)\n" +

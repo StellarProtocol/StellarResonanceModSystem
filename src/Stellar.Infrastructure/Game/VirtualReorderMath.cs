@@ -57,6 +57,12 @@ internal static class VirtualReorderMath
         return 0f;
     }
 
+    /// <summary>Content offset change (content units; negative = toward the top) for one frame's mouse wheel while
+    /// dragging — the locked ScrollRect's own wheel step and direction: uGUI's <c>ScrollRect.OnScroll</c> negates
+    /// <c>scrollDelta.y</c> and adds <c>delta × scrollSensitivity</c> to the content position, so wheel-up (positive)
+    /// moves toward the top. Clamp the result with <see cref="ClampScroll"/>.</summary>
+    internal static float WheelScrollDelta(float wheelY, float sensitivity) => -wheelY * sensitivity;
+
     /// <summary>Clamp a content scroll offset (0 = top) to the scrollable range.</summary>
     internal static float ClampScroll(float y, float contentH, float viewportH)
         => Math.Clamp(y, 0f, Math.Max(0f, contentH - viewportH));

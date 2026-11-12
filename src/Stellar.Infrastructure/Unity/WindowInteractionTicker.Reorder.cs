@@ -116,6 +116,7 @@ public sealed partial class WindowInteractionTicker
             if ((mp - _rlPress).sqrMagnitude < ReorderThresholdPx * ReorderThresholdPx) return;
             if (!StartReorderDrag(reg)) { EndReorder(commit: false); return; }
         }
+        TickReorderWheel(reg, mp);                                                       // .ReorderWheel.cs (fw #162)
         if (reg.Virtual != null) { TickAutoScroll(reg, mp); SyncVirtualSource(reg); }   // .ReorderVirtual.cs
         PlaceGhost(mp);
         PlaceInsertionBar(reg, mp);
@@ -314,7 +315,8 @@ public sealed partial class WindowInteractionTicker
     // Switch the enclosing ScrollRect's axes off for the press. ScrollRect.OnDrag skips a disabled axis, so the
     // EventSystem drag that bubbles up from the item's Button cannot scroll the grid; StopMovement kills any fling.
     // (The `vertical` setter is a plain field write — no relayout; the framework's scrollbars are AutoHide, whose
-    // visibility doesn't depend on the axis flag.) The wheel is also inert for the press, which is harmless.
+    // visibility doesn't depend on the axis flag.) That also makes the ScrollRect's own wheel inert, so once the drag is
+    // active the ticker applies the wheel itself (.ReorderWheel.cs, fw #162); a still-PENDING press keeps it inert.
     private void LockScroll(ScrollRect? sr)
     {
         _rlScroll = sr;
