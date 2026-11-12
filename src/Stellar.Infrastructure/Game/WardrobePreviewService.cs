@@ -36,15 +36,25 @@ internal sealed class WardrobePreviewService : IWardrobePreview
         }
     }
 
+    /// <summary>Show/hide the model's weapon; forwarded to the model host like <see cref="EntityPortraitService"/>
+    /// does — live, no model rebuild (the host re-asserts its ch_wp_* exclusion set). The host is this service's
+    /// own instance, so the Entity-Inspector portrait's setting is unaffected.</summary>
+    public bool ShowWeapon { get => _host.ShowWeapon; set => _host.ShowWeapon = value; }
+
     public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit,
         IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes = null)
+        => Show(self, outfit, dyes, hidden: null);
+
+    public void Show(EntityId self, IReadOnlyDictionary<int, int> outfit,
+        IReadOnlyDictionary<int, IReadOnlyDictionary<int, float[]>>? dyes,
+        IReadOnlyDictionary<int, bool>? hidden)
     {
         if (!self.IsPlayer) { Hide(); return; }
         if (!_host.EnsureCreated()) return;
         ReleaseModel();                       // switching outfit while open: drop the old model first
         _host.ApplyTuning();
         _host.SetVisible(true);
-        _probe.BuildModel(self.Uid, outfit, dyes);
+        _probe.BuildModel(self.Uid, outfit, dyes, hidden);
         _awaitingModel = true;
         IsActive = true;
     }
