@@ -25,13 +25,44 @@ internal sealed partial class WindowBuilder
         public Slider S = null!;
         public Func<float> Get = null!;
         public Func<bool>? EnabledFn;
+        // The three painted parts + the theme, so the binding can swap the enabled look for the RECESSED disabled look
+        // (Stellar Design Language rule 22, fw #160). Colours only — no size/layout change, so flipping Enabled never jumps.
+        public Image? Track, Fill, Knob;
+        public WindowThemeAssets Assets = null!;
         private bool _init; private float _last;
+        private int _look = -1;   // last painted look: -1 = not yet, 1 = enabled, 0 = disabled
+
+        // Enabled look (unchanged from before #160): faint white track, accent fill, light knob.
+        internal static readonly Color TrackOn = new(1f, 1f, 1f, 0.10f);
+        internal static readonly Color KnobOn = new(0.81f, 0.88f, 0.95f, 1f);
+        // Disabled = recessed: the track sinks to translucent black@0.28 (the StellarStyle.DisabledShade recipe, left
+        // translucent so the renderer blends it with the real surface and it fades with window opacity like the enabled
+        // track); the fill keeps a faint Muted trace so the value stays readable without looking live; the knob goes
+        // Muted. No outline ring (the user rejected the ring look, 11-09).
+        private static readonly Color TrackOff = new(0f, 0f, 0f, 0.28f);
+        private const float FillOffAlpha = 0.30f, KnobOffAlpha = 0.70f;
+
         public void Apply()
         {
             if (S == null || !S.gameObject.activeInHierarchy) return;
             var v = Get();
             if (!_init || !Mathf.Approximately(v, _last)) { S.SetValueWithoutNotify(v); _last = v; _init = true; }
-            if (EnabledFn != null) S.interactable = EnabledFn();
+            var en = EnabledFn == null || EnabledFn();
+            if (EnabledFn != null) S.interactable = en;
+            // Repaint ONLY on a state flip (the per-frame poll must not touch graphics — each colour write dirties the
+            // canvas batch; Plugin-Performance-Rules).
+            if ((en ? 1 : 0) != _look) Paint(en);
+        }
+
+        /// <summary>Theme change: the accent / Muted colours moved, so repaint the CURRENT look.</summary>
+        public void Reskin() { if (_look >= 0) Paint(_look == 1); else if (Fill != null) Fill.color = Assets.MenuAccent; }
+
+        private void Paint(bool enabled)
+        {
+            _look = enabled ? 1 : 0;
+            if (Track != null) Track.color = enabled ? TrackOn : TrackOff;
+            if (Fill != null) Fill.color = enabled ? Assets.MenuAccent : Assets.MenuMuted with { a = FillOffAlpha };
+            if (Knob != null) Knob.color = enabled ? KnobOn : Assets.MenuMuted with { a = KnobOffAlpha };
         }
     }
 
