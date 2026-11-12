@@ -14,6 +14,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.31.0] - Unreleased
+_**2.31.0** (minor) — branch `enhance/wardrobe-preview`. The wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
+### Added
+- Wardrobe mods can now show your weapon in the 3D outfit preview, including the weapon skin saved with an outfit.
+- The 3D outfit preview can now show an outfit exactly as saved, with its own hidden pieces, even when you are hiding a piece (like a hat) right now.
+### Changed
+- While you drag a row to reorder a list, the mouse wheel now scrolls the list, so you can move a row past what's on screen.
+### Developer notes
+- **`IWardrobePreviewOptions`** — a new base of `IWardrobePreview` (which stays at the STELLAR0005 8-member cap; nothing moved, so compiled callers are unaffected; only the framework-internal `WardrobePreviewService` implements it). Reached as `services.WardrobePreview`:
+  - `bool ShowWeapon { get; set; }` — default `false` (today's weaponless preview). Live, no model rebuild. Global to the preview service, so set it before each `Show`. With an outfit that carries a weapon skin (`WardrobeRegions.WeaponSkinPreview`) the model wears exactly that skin (the existing social-data injection + CMount de-dupe); without one it wears the player's current weapon.
+  - `void Show(EntityId self, IReadOnlyDictionary<int,int> outfit, IReadOnlyDictionary<int, IReadOnlyDictionary<int,float[]>>? dyes, IReadOnlyDictionary<int,bool>? hidden)` — `hidden` = region → `true` (hidden) over the 14 `WardrobeRegions.All` regions; a missing region is shown, other keys are ignored. The framework writes the model's own `EWearSetting` (all 14 regions explicit) after dressing, so the player's current global hide setting no longer leaks into the preview. `null` = the existing `Show` exactly. The `[WardrobePreview] weapon …` log line gains ` hide=ok(rb=same)` (or `rb=<read-back>` / ` hide=err:…`) when a map was passed — check it on the first in-game test, the live client's Lua can differ from the extracted one.
+- **Reorder + wheel (#162):** during an active `ListElement.OnReorder` / `VirtualListElement.OnReorder` drag the ticker applies `Input.mouseScrollDelta.y` to the list content with the ScrollRect's own wheel step (`scrollSensitivity`), clamped, gated on the pointer being over the list viewport and `FrontWindowBlocks`. The press-drag scroll lock stays; a press that hasn't become a drag yet still ignores the wheel. No allocation; no work on frames without a wheel delta.
+- **Compatibility.** A plugin that sets `ShowWeapon` or calls the 4-argument `Show` needs framework ≥ 2.31.0.
+
 ## [2.30.0] - 2026-11-12
 _**2.30.0** (minor) — a redesigned Settings window and launcher, the Sakura theme, more movable game HUD parts, and less CPU in raids and crowded places. Adds `IThemeStatusColors`, `ThemePreset.Sakura`, `TextElement.MaxLines`, `IFrameworkDeveloperMode`, `ICombatBuffEffectLookup`, `WindowSpec.Prebuild`/`Topmost`/`FixedHeight` (Abstractions 2.30.0); additive, no plugin rebuild._
 ### Added
