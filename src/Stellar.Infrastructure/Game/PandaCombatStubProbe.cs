@@ -36,6 +36,8 @@ internal sealed partial class PandaCombatStubProbe
     // never calls back into it (that trace no longer touches EntityVitalsService at all; it stays
     // main-thread-only, never invoked from this probe's network-receive-thread handlers).
     private readonly EntityVitalsService   _entityVitals;
+    // AttrFashionData dye-hue rule per piece (colour-group table lookup, cached) — see FashionDyePaletteResolver.
+    private readonly DyeHueMapper          _dyeHue;
 
     /// <summary>
     /// Cached local entity uuid. Set when <see cref="OnSelfDelta"/> first
@@ -60,13 +62,15 @@ internal sealed partial class PandaCombatStubProbe
         DungeonRunIdResolver runIdResolver,
         WireEntityPositions positions,
         IPluginLog log,
-        EntityVitalsService entityVitals)
+        EntityVitalsService entityVitals,
+        FashionDyePaletteResolver dyePalette)
     {
         _sink          = sink          ?? throw new ArgumentNullException(nameof(sink));
         _runIdResolver = runIdResolver ?? throw new ArgumentNullException(nameof(runIdResolver));
         _positions     = positions     ?? throw new ArgumentNullException(nameof(positions));
         _log           = log           ?? throw new ArgumentNullException(nameof(log));
         _entityVitals  = entityVitals  ?? throw new ArgumentNullException(nameof(entityVitals));
+        _dyeHue        = (dyePalette   ?? throw new ArgumentNullException(nameof(dyePalette))).Mapper;
         _route         = Route;   // cached once — no delegate allocation per packet
     }
 
