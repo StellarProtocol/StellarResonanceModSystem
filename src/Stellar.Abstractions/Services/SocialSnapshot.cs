@@ -11,7 +11,8 @@ public readonly record struct GearSlotRef(int Slot, int EquipId);
 
 /// <summary>Affiliation/prestige extras from a full-mask social reply (the ID-card fetch requests
 /// mask 0 = all sections). Thin-mask replies (nameplate/avatar queries carry identity only) leave
-/// these at defaults — values are best-effort, last-reply-wins via the cache.</summary>
+/// these at defaults on the decoded reply; the framework cache keeps each value from the last reply that
+/// carried its section (see <see cref="SocialSnapshot.Sections"/>).</summary>
 /// <param name="Guild">Guild name from <c>union_data.name</c>; empty when guildless or section absent.</param>
 /// <param name="PartySize">Member count of the player's party from <c>team_data.team_num</c>; 0 when solo or absent.</param>
 /// <param name="MasterScore">Master-mode season score from <c>master_mode_dungeon_data.season_score</c>;
@@ -79,6 +80,21 @@ public sealed record SocialSnapshot(
     /// member list for players outside our own party (see <see cref="SocialParty"/>).
     /// Init-only for the same binary-compatibility reason as <see cref="Location"/>.</summary>
     public SocialParty? Party { get; init; }
+
+    /// <summary>The player's online state from <c>SocialData.basic_data</c> (field 3); null when the snapshot has no
+    /// <c>basic_data</c>. Every request the game makes includes <c>basic_data</c>, so a decoded reply effectively always
+    /// carries it; the framework cache still keeps the last known value if a reply without it arrives.
+    /// Init-only for the same binary-compatibility reason as <see cref="Location"/>.</summary>
+    public SocialPresence? Presence { get; init; }
+
+    /// <summary>Whether the player is online: <see cref="SocialPresence.IsOnline"/>, or null when
+    /// <see cref="Presence"/> is unknown — so "unknown" is never confused with "offline".</summary>
+    public bool? IsOnline => Presence?.IsOnline;
+
+    /// <summary>Which <c>SocialData</c> sections this snapshot holds data from; see <see cref="SocialSections"/>.
+    /// A member whose section is missing here holds its default (0 / empty), not a real value.
+    /// Init-only for the same binary-compatibility reason as <see cref="Location"/>.</summary>
+    public SocialSections Sections { get; init; }
 }
 
 /// <summary>A player's scene location as carried by <c>SocialData.scene_data</c> (<c>zproto.SceneData</c>).

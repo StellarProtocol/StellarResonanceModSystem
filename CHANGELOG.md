@@ -14,6 +14,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Added
+- Mods can now tell whether another player is online, when they went offline, and the status they have set.
+### Fixed
+- A player's ability score, class, gear and outfit no longer disappear from mods after the game briefly looks that player up again (for a nameplate or portrait).
+### Developer notes
+- **`SocialSnapshot.Presence`** (`SocialPresence?`, init-only) — decoded from `SocialData.basic_data`: `OfflineTimeMs` (field 9, Unix ms, 0 while online), `OnlineTimeMs` (field 16), `PersonalStates` (field 8, repeated int32, packed or unpacked; `ChatStatusTable` ids, never null), `ReceivedAtMs` (framework server clock, stamped by the cache), `IsOnline` (`OfflineTimeMs == 0`, the game's own rule). Convenience **`SocialSnapshot.IsOnline`** (`bool?`) is null when `Presence` is unknown. Every game request includes `basic_data`, so decoded snapshots effectively always carry it.
+- **`SocialSnapshot.Sections`** (`SocialSections` flags, init-only) — which `SocialData` sections the snapshot holds data from (`Basic`, `Avatar`, `Profession`, `Equip`, `Fashion`, `Scene`, `Attr`, `Team`, `Union`, `PersonalZone`, `MasterMode`). `None` = not reported (hand-built snapshot).
+- **Cache merge changed:** `SocialDataCache` now merges per section instead of last-reply-wins. A section the new reply carries replaces the cached one (an empty-but-present section still replaces); a section it omits is kept. Fixes thin-mask replies (mask 1 basic-only, nameplate basic+avatar+personal_zone) zeroing `FightPoint`/`ProfessionId`/`Gear`/`Fashion`/`Identity`. `Presence` is carried forward when a reply has none, like `Location`/`Party`. Snapshots with `Sections == None` keep the old replace behaviour. All additions are init-only properties and a new record/enum — no positional-parameter change, no plugin rebuild.
+
 ## [2.31.0] - 2026-11-13
 _**2.31.0** (minor) — the wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
 ### Added
