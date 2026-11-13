@@ -14,7 +14,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [Unreleased]
+## [2.32.0] - 2026-11-13
+_**2.32.0** (minor) — mods can tell whether another player is online, a player's profile no longer goes blank in mods after a quick lookup, and outfit areas reset to default no longer read as black. Adds `SocialSnapshot.Presence` / `IsOnline` / `Sections` and the `SocialPresence` / `SocialSections` types (Abstractions 2.32.0); additive, no plugin rebuild._
 ### Added
 - Mods can now tell whether another player is online, when they went offline, and the status they have set.
 ### Fixed
