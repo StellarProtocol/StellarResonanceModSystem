@@ -11,20 +11,25 @@ namespace Stellar.Wire;
 public static partial class SocialDataReader
 {
     /// <summary>Decode a GetSocialDataReply payload. Null if no SocialData / char_id parsed.</summary>
-    public static SocialSnapshot? Read(ReadOnlySpan<byte> payload)
+    public static SocialSnapshot? Read(ReadOnlySpan<byte> payload) => Read(payload, null);
+
+    /// <summary>Decode a GetSocialDataReply payload, mapping outfit dye hues through
+    /// <paramref name="dyeHue"/> (see <see cref="AttrFashionDataReader.Read(ReadOnlySpan{byte}, DyeHueMapper?)"/>).
+    /// Null if no SocialData / char_id parsed.</summary>
+    public static SocialSnapshot? Read(ReadOnlySpan<byte> payload, DyeHueMapper? dyeHue)
     {
         int pos = 0;
         while (pos < payload.Length)
         {
             if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) break;
             if (field == 2 && wire == 2 && WireProtocol.TryReadLengthDelimited(payload, ref pos, out var data))
-                return ReadSocialData(data);
+                return ReadSocialData(data, dyeHue);
             if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
         }
         return null;
     }
 
-    private static SocialSnapshot? ReadSocialData(ReadOnlySpan<byte> payload)
+    private static SocialSnapshot? ReadSocialData(ReadOnlySpan<byte> payload, DyeHueMapper? dyeHue)
     {
         long charId = 0, fightPoint = 0; int level = 0, professionId = 0; string name = "", guild = "";
         int partySize = 0, masterScore = 0, titleId = 0;
@@ -48,7 +53,7 @@ public static partial class SocialDataReader
                     case 3:  presence = ReadBasicWithPresence(inner, ref name, ref level); break;
                     case 6:  professionId = (int)ReadFirstVarintField(inner, 1); break;
                     case 7:  ReadEquip(inner, gear); break;
-                    case 8:  fashion = AttrFashionDataReader.Read(inner); break;
+                    case 8:  fashion = AttrFashionDataReader.Read(inner, dyeHue); break;
                     case 11: fightPoint = ReadFirstVarintField(inner, 4); break;
                     case 12: party = SocialTeamReader.Read(inner); partySize = party.TeamNum; break; // team_data (team_num = PartySize)
                     case 13: guild = ReadFirstStringField(inner, 2); break;              // union_data.name

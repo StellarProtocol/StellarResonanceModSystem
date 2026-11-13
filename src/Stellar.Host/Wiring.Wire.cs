@@ -38,8 +38,9 @@ public sealed partial class BootstrapPlugin
         // OnEnterScene (IClientState.SceneChanged) because the scene id lands after the wire uuid.
         var runIdResolver = new Stellar.Infrastructure.Game.DungeonRunIdResolver(
             _dungeonStateService!, _gameDataService!.World, _clientState!);
+        _dyePalette = new FashionDyePaletteResolver(log, typeRegistry);
         _combatStubProbe = new PandaCombatStubProbe(
-            _combatService!, runIdResolver, _wirePositions, log, _entityVitals!);
+            _combatService!, runIdResolver, _wirePositions, log, _entityVitals!, _dyePalette);
 
         // GrpcTeamNtfStubDispatcher owns the single HarmonyX postfix for
         // GrpcTeamNtfStub.OnCallStub. PandaPartyStubProbe registers its six
@@ -108,7 +109,7 @@ public sealed partial class BootstrapPlugin
     // read side feeds IEntityDetail.GetSocialSnapshot.
     private void InstallSocialDataProbe(BepInExPluginLog log)
     {
-        _socialDataProbe = new PandaSocialDataProbe(_socialDataCache!, _wireTap!, log);
+        _socialDataProbe = new PandaSocialDataProbe(_socialDataCache!, _wireTap!, log, _dyePalette!);
         _socialDataProbe.Start();
     }
 

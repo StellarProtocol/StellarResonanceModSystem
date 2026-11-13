@@ -187,4 +187,66 @@ public sealed class AttrFashionDataReaderTests
         Assert.Equal(1f, entry.Dyes[1].B, 5);
         Assert.Equal(new[] { 1, 2 }, entry.DyeAreas);
     }
+
+    [Fact]
+    public void Drops_reset_to_default_sentinel_area()
+    {
+        // {-1,-1,-1} = "reset to default" (fashion_vm.lua:901-906). int32 -1 is a 10-byte varint on the
+        // wire. The area must be dropped (shows the piece default), NOT decoded to a clamped black colour.
+        var payload = FashionData(FashionInfo(1, 5300123, ColorInfo(
+            ColorMapEntry(1, IntVec3(-1, -1, -1)),
+            ColorMapEntry(2, IntVec3(120, 100, 100)))));
+
+        var entry = Assert.Single(AttrFashionDataReader.Read(payload));
+
+        var dye = Assert.Single(entry.Dyes);
+        Assert.Equal(1f, dye.G, 5);
+        Assert.Equal(new[] { 2 }, entry.DyeAreas);
+    }
+
+    [Fact]
+    public void Drops_reset_sentinel_in_socks_map()
+    {
+        var payload = FashionData(FashionInfo(1, 5300123, AttachmentInfo(ColorMapEntry(1, IntVec3(-1, -1, -1)))));
+
+        var entry = Assert.Single(AttrFashionDataReader.Read(payload));
+
+        Assert.Empty(entry.Dyes);
+        Assert.Empty(entry.DyeAreas);
+    }
+
+    [Fact]
+    public void Hue_mapper_receives_fashion_id_and_maps_swatch_id()
+    {
+        // Option-type colour group: wire x is a swatch id. Mapper turns id 2 → 240° (blue) for this piece.
+        int seenId = 0;
+        var palette = DyeHuePalette.FromGroup(1, new[] { new[] { 1, 0 }, new[] { 2, 240 } });
+        DyeHueMapper mapper = (fid, x) => { seenId = fid; return palette.ToDegrees(x); };
+        var payload = FashionData(FashionInfo(1, 7000001, ColorInfo(ColorMapEntry(1, IntVec3(2, 100, 100)))));
+
+        var entry = Assert.Single(AttrFashionDataReader.Read(payload, mapper));
+
+        Assert.Equal(7000001, seenId);
+        Assert.Equal(0f, entry.Dyes[0].R, 5);
+        Assert.Equal(0f, entry.Dyes[0].G, 5);
+        Assert.Equal(1f, entry.Dyes[0].B, 5);
+    }
+
+    [Fact]
+    public void Hue_mapper_sees_fashion_id_even_when_colors_precede_it()
+    {
+        // Field order is not guaranteed: colours (field 3) written BEFORE fashion_id (field 2).
+        int seenId = 0;
+        DyeHueMapper mapper = (fid, x) => { seenId = fid; return x; };
+        var info = new WireBytes()
+            .Tag(1, 0).Varint(1)
+            .Tag(3, 2).LengthDelimited(ColorInfo(ColorMapEntry(1, IntVec3(120, 100, 100))))
+            .Tag(2, 0).Varint(7000002)
+            .ToArray();
+
+        var entry = Assert.Single(AttrFashionDataReader.Read(FashionData(info), mapper));
+
+        Assert.Equal(7000002, seenId);
+        Assert.Equal(1f, entry.Dyes[0].G, 5);
+    }
 }

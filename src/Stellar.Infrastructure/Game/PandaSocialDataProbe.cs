@@ -34,12 +34,16 @@ internal sealed partial class PandaSocialDataProbe
     private readonly ISocialDataSink _sink;
     private readonly IWireTap        _wireTap;
     private readonly IPluginLog      _log;
+    // Outfit dye-hue rule. Runs on the network I/O thread: the resolver only reads its cache here and falls
+    // back to "x is degrees" on a miss (it never reflects off the main thread).
+    private readonly DyeHueMapper    _dyeHue;
 
-    public PandaSocialDataProbe(ISocialDataSink sink, IWireTap wireTap, IPluginLog log)
+    public PandaSocialDataProbe(ISocialDataSink sink, IWireTap wireTap, IPluginLog log, FashionDyePaletteResolver dyePalette)
     {
         _sink    = sink    ?? throw new ArgumentNullException(nameof(sink));
         _wireTap = wireTap ?? throw new ArgumentNullException(nameof(wireTap));
         _log     = log     ?? throw new ArgumentNullException(nameof(log));
+        _dyeHue  = (dyePalette ?? throw new ArgumentNullException(nameof(dyePalette))).Mapper;
     }
 
     /// <summary>
@@ -53,7 +57,7 @@ internal sealed partial class PandaSocialDataProbe
         var payload = env.Payload.Span;
         if (payload.Length < 4) return;
 
-        var snapshot = Decode(payload);
+        var snapshot = Decode(payload, _dyeHue);
         if (snapshot is null) return;
 
         DiagFirstSocialDecode(snapshot);
@@ -68,18 +72,18 @@ internal sealed partial class PandaSocialDataProbe
     // GetSocialDataReply, then decode. Falls back to a direct parse for an already-unwrapped
     // reply (defensive). The unwrap lives here (Infrastructure) so SocialDataReader stays a
     // pure GetSocialDataReply decoder, matching the GetTeamInfoReplyReader split.
-    private static SocialSnapshot? Decode(ReadOnlySpan<byte> payload)
+    private static SocialSnapshot? Decode(ReadOnlySpan<byte> payload, DyeHueMapper dyeHue)
     {
         int p = 0;
         if (WireProtocol.TryReadTag(payload, ref p, out var field, out var wire)
             && field == 1 && wire == 2
             && WireProtocol.TryReadLengthDelimited(payload, ref p, out var inner))
         {
-            var unwrapped = SocialDataReader.Read(inner);
+            var unwrapped = SocialDataReader.Read(inner, dyeHue);
             if (unwrapped is not null) return unwrapped;
         }
 
         // Defensive: payload already IS GetSocialDataReply (no outer _Ret envelope).
-        return SocialDataReader.Read(payload);
+        return SocialDataReader.Read(payload, dyeHue);
     }
 }
