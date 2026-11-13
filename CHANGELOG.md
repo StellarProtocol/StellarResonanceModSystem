@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Fixed
+- Outfit dye colours from palette-type colour groups now show the right colour in inspectors.
+- An outfit area the player reset to its default colour no longer shows up as a black dye in inspectors.
+### Developer notes
+- **Dye hue decoding (`Stellar.Wire`):** a dye `IntVec3.x` is hue degrees only for a Board colour group (`ColorGroupTable.Type == 3`); for any other type it is a swatch id matched against the first element of the group's `Hue` rows (`[id, degrees]`), miss / `x == 0` → hue 0; no group row (`ColorGroupId == 0`) → hue 0 (`fashion_data.lua:327-351`). New pure `DyeHuePalette` + `DyeHueMapper` delegate, and additive overloads `AttrFashionDataReader.Read(span, DyeHueMapper?)` / `SocialDataReader.Read(span, DyeHueMapper?)`; the old single-argument overloads are unchanged (degrees). The framework-internal `FashionDyePaletteResolver` supplies the mapper from `FashionTableBase.ColorGroupId` → `ColorGroupTableBase`, cached per fashion id / group id, reflecting only on the main thread (the social-data decode runs on the I/O thread and falls back to degrees on a cache miss). In release_3.7 every dyeable outfit piece uses a Board group, so today this changes only the 4 group-0 pieces; it future-proofs palette groups.
+- **`{-1,-1,-1}` reset sentinel:** that area is now dropped from `FashionEntry.Dyes`/`DyeAreas` (= the piece's default colour) instead of decoding to black. No public API change.
+
 ## [2.31.0] - 2026-11-13
 _**2.31.0** (minor) — the wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
 ### Added

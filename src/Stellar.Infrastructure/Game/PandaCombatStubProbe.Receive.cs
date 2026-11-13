@@ -395,7 +395,7 @@ internal sealed partial class PandaCombatStubProbe
         }
         if (attr.Id == AttrTypeIds.AttrFashionData)
         {
-            var fashion = AttrFashionDataReader.Read(attr.RawData.Span);
+            var fashion = AttrFashionDataReader.Read(attr.RawData.Span, _dyeHue);
             _sink.SetEntityFashion(eid, fashion);
             DiagFashionDecoded(eid, fashion);
             return;

@@ -8,7 +8,8 @@ namespace Stellar.Wire;
 /// <c>FashionData{ repeated FashionInfo fashion_infos = 1 }</c> message where each
 /// <c>FashionInfo{ slot=1, fashion_id=2, colors=3 }</c> carries the worn cosmetic and its dye
 /// colours (<c>FashionColorInfo.colors map&lt;int32, IntVec3&gt;</c>, HSV — see
-/// <see cref="HsvToRgb"/>). Defensive: malformed input yields what parsed so far, never an
+/// <see cref="HsvToRgb"/>; the hue's wire meaning depends on the piece's colour group, see
+/// <see cref="DyeHuePalette"/>). Defensive: malformed input yields what parsed so far, never an
 /// exception.</summary>
 public static class AttrFashionDataReader
 {
@@ -22,9 +23,16 @@ public static class AttrFashionDataReader
     // Socks1(5) + key - 1 = SocksKeyBase + key.
     private const int SocksKeyBase = 4;
 
-    /// <summary>Decode the raw payload into worn-cosmetic entries ordered by slot.
+    /// <summary>Decode the raw payload into worn-cosmetic entries ordered by slot, treating every dye
+    /// <c>x</c> as hue degrees (correct for Board colour groups only — prefer the
+    /// <see cref="Read(ReadOnlySpan{byte}, DyeHueMapper?)"/> overload where game tables are available).
     /// Returns an empty list (never null) when nothing parsed.</summary>
-    public static IReadOnlyList<FashionEntry> Read(ReadOnlySpan<byte> payload)
+    public static IReadOnlyList<FashionEntry> Read(ReadOnlySpan<byte> payload) => Read(payload, null);
+
+    /// <summary>Decode the raw payload, mapping each dye's wire <c>x</c> to hue degrees through
+    /// <paramref name="hue"/> (the piece's colour-group rule — see <see cref="DyeHuePalette"/>). Null =
+    /// treat <c>x</c> as degrees. Returns an empty list (never null) when nothing parsed.</summary>
+    public static IReadOnlyList<FashionEntry> Read(ReadOnlySpan<byte> payload, DyeHueMapper? hue)
     {
         var list = new List<FashionEntry>(8);
         int pos = 0;
@@ -34,7 +42,7 @@ public static class AttrFashionDataReader
             if (field == 1 && wire == 2)
             {
                 if (!WireProtocol.TryReadLengthDelimited(payload, ref pos, out var inner)) break;
-                if (TryReadFashionInfo(inner, out var entry)) list.Add(entry);
+                if (TryReadFashionInfo(inner, hue, out var entry)) list.Add(entry);
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
         }
@@ -42,9 +50,12 @@ public static class AttrFashionDataReader
         return list;
     }
 
-    private static bool TryReadFashionInfo(ReadOnlySpan<byte> payload, out FashionEntry entry)
+    private static bool TryReadFashionInfo(ReadOnlySpan<byte> payload, DyeHueMapper? hue, out FashionEntry entry)
     {
-        int slot = 0, fashionId = 0, pos = 0;
+        int slot = 0, pos = 0;
+        // The hue rule depends on the piece, so fashion_id must be known before any colour is converted.
+        // Proto writers emit fields in order (2 before 3), but don't rely on it: peek it first.
+        int fashionId = PeekFashionId(payload);
         List<ColorRgba>? dyes = null;
         List<int>? areas = null;
         while (pos < payload.Length)
@@ -57,7 +68,7 @@ public static class AttrFashionDataReader
             }
             else if (field == 3 && wire == 2 && WireProtocol.TryReadLengthDelimited(payload, ref pos, out var colors))
             {
-                ReadColorInfo(colors, ref dyes, ref areas);
+                ReadColorInfo(colors, new HueContext(fashionId, hue), ref dyes, ref areas);
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
         }
@@ -68,13 +79,33 @@ public static class AttrFashionDataReader
         return fashionId != 0;
     }
 
+    // FashionInfo.fashion_id (field 2, varint) without decoding anything else. 0 when absent.
+    private static int PeekFashionId(ReadOnlySpan<byte> payload)
+    {
+        int pos = 0, id = 0;
+        while (pos < payload.Length)
+        {
+            if (!WireProtocol.TryReadTag(payload, ref pos, out var field, out var wire)) break;
+            if (wire == 0 && WireProtocol.TryReadVarint(payload, ref pos, out var v)) { if (field == 2) id = (int)v; }
+            else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
+        }
+        return id;
+    }
+
+    // Which piece a colour belongs to + how to turn its x into degrees. A struct so passing it down the
+    // map-entry readers allocates nothing.
+    private readonly record struct HueContext(int FashionId, DyeHueMapper? Mapper)
+    {
+        public int ToDegrees(int x) => Mapper is null ? x : Mapper(FashionId, x);
+    }
+
     // FashionColorInfo { id=1, colors map<int32,IntVec3>=2, attachment_color map<int32,IntVec3>=3 } — each
     // map entry is a nested message { key=1 varint, value=2 IntVec3{ x,y,z } }. Field 2's key is the
     // ABSOLUTE EFashionColorAreaType area; field 3 (socks) is keyed by a relative 1..4 index → absolute
     // area SocksKeyBase+key. Both feed the parallel dyes/areas lists so a consumer can place each colour on
     // its real area. A field-3 element that is a bare IntVec3 (repeated, not a map) yields no value → it is
     // safely skipped rather than misread.
-    private static void ReadColorInfo(ReadOnlySpan<byte> payload, ref List<ColorRgba>? dyes, ref List<int>? areas)
+    private static void ReadColorInfo(ReadOnlySpan<byte> payload, HueContext hue, ref List<ColorRgba>? dyes, ref List<int>? areas)
     {
         int pos = 0;
         while (pos < payload.Length)
@@ -83,7 +114,7 @@ public static class AttrFashionDataReader
             if ((field == 2 || field == 3) && wire == 2 && WireProtocol.TryReadLengthDelimited(payload, ref pos, out var mapEntry))
             {
                 if ((dyes?.Count ?? 0) >= MaxDyes) continue;
-                if (TryReadMapEntry(mapEntry, out var key, out var rgb))
+                if (TryReadMapEntry(mapEntry, hue, out var key, out var rgb))
                 {
                     dyes ??= new List<ColorRgba>(MaxDyes);
                     areas ??= new List<int>(MaxDyes);
@@ -96,8 +127,11 @@ public static class AttrFashionDataReader
     }
 
     // Read one map entry { key=1 varint, value=2 IntVec3 } → (area key, rgb). False when no value IntVec3
-    // is present (so a bare repeated IntVec3 in field 3 contributes nothing rather than a garbage colour).
-    private static bool TryReadMapEntry(ReadOnlySpan<byte> payload, out int key, out ColorRgba rgb)
+    // is present (so a bare repeated IntVec3 in field 3 contributes nothing rather than a garbage colour),
+    // or when the value is the {-1,-1,-1} "reset to default" sentinel (fashion_vm.lua:901-906): that area
+    // shows the piece's DEFAULT colour, so it is dropped exactly like an area the player never dyed —
+    // decoding it would clamp to black.
+    private static bool TryReadMapEntry(ReadOnlySpan<byte> payload, HueContext hue, out int key, out ColorRgba rgb)
     {
         key = 0;
         rgb = default;
@@ -109,15 +143,14 @@ public static class AttrFashionDataReader
             if (field == 1 && wire == 0 && WireProtocol.TryReadVarint(payload, ref pos, out var k)) key = (int)k;
             else if (field == 2 && wire == 2 && WireProtocol.TryReadLengthDelimited(payload, ref pos, out var vec))
             {
-                rgb = ReadIntVec3Rgb(vec);
-                haveVec = true;
+                haveVec = TryReadIntVec3Rgb(vec, hue, out rgb);
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
         }
         return haveVec;
     }
 
-    private static ColorRgba ReadIntVec3Rgb(ReadOnlySpan<byte> vec)
+    private static bool TryReadIntVec3Rgb(ReadOnlySpan<byte> vec, HueContext hue, out ColorRgba rgb)
     {
         int x = 0, y = 0, z = 0, pos = 0;
         while (pos < vec.Length)
@@ -131,10 +164,19 @@ public static class AttrFashionDataReader
             }
             else if (!WireProtocol.SkipField(vec, ref pos, wire)) break;
         }
-        return HsvToRgb(x, y, z);
+        // int32 -1 arrives as a 10-byte varint; the (int) casts above truncate it back to -1. No real dye
+        // component is negative, so any negative component means "reset", not a colour.
+        if (x < 0 || y < 0 || z < 0)
+        {
+            rgb = default;
+            return false;
+        }
+        rgb = HsvToRgb(hue.ToDegrees(x), y, z);
+        return true;
     }
 
-    // Dye IntVec3 is HSV ON THE WIRE: x = hue 0-360, y = saturation 0-100, z = value 0-100. Truth:
+    // Dye IntVec3 is HSV ON THE WIRE: x = hue 0-360 (after the colour-group mapping above — for a
+    // non-Board group the wire x is a swatch id, see DyeHuePalette), y = saturation 0-100, z = value 0-100. Truth:
     // fashion_vm.lua compares server values against floor(x*360)/floor(y*100)/floor(z*100) defaults,
     // and the game's dye picker is an HSV picker. Misreading the triple as RGB/255 rendered a WHITE
     // dye (s=0, v=85 → D9D9D9) as magenta — user-flagged in-world 2026-06-13.

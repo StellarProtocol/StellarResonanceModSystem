@@ -124,6 +124,9 @@ public sealed partial class BootstrapPlugin : BasePlugin
     private PandaCombatStubProbe? _combatStubProbe;
     private PandaPartyStubProbe? _partyStubProbe;
     private PandaSocialDataProbe? _socialDataProbe;
+    // Outfit dye-hue rule (FashionTable → ColorGroupTable) shared by the combat + social probes. Built in
+    // InstallWireAndStubProbes on the MAIN thread — it records that thread and only reflects on it.
+    private FashionDyePaletteResolver? _dyePalette;
     private PandaReadyCheckProbe? _readyCheckProbe;
     private WorldNtfStubDispatcher? _worldNtfDispatcher;
     private PandaDungeonProbe? _dungeonProbe;
