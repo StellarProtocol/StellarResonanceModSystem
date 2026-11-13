@@ -8,7 +8,7 @@ namespace Stellar.Wire;
 /// <summary>Pure parser for the game's <c>Social.GetSocialData</c> reply
 /// (<c>GetSocialDataReply{ mask=1, data=2 SocialData, err_code=3 }</c>) into a <see cref="SocialSnapshot"/>.
 /// Defensive: malformed input yields what parsed so far (or null when nothing usable), never throws.</summary>
-public static class SocialDataReader
+public static partial class SocialDataReader
 {
     /// <summary>Decode a GetSocialDataReply payload. Null if no SocialData / char_id parsed.</summary>
     public static SocialSnapshot? Read(ReadOnlySpan<byte> payload) => Read(payload, null);
@@ -39,6 +39,8 @@ public static class SocialDataReader
         IReadOnlyList<FashionEntry> fashion = Array.Empty<FashionEntry>();
         SocialLocation? location = null;
         SocialParty? party = null;
+        SocialPresence? presence = null;
+        var sections = SocialSections.None;   // which sections this reply carried — lets the cache keep the rest
         int pos = 0;
         while (pos < payload.Length)
         {
@@ -48,7 +50,7 @@ public static class SocialDataReader
             {
                 switch (field)
                 {
-                    case 3:  ReadBasic(inner, ref name, ref level); break;
+                    case 3:  presence = ReadBasicWithPresence(inner, ref name, ref level); break;
                     case 6:  professionId = (int)ReadFirstVarintField(inner, 1); break;
                     case 7:  ReadEquip(inner, gear); break;
                     case 8:  fashion = AttrFashionDataReader.Read(inner, dyeHue); break;
@@ -60,6 +62,7 @@ public static class SocialDataReader
                     case 4:  AvatarInfoReader.Read(inner, out profileUrl, out halfBodyUrl); break;
                     case 10: location = ReadSceneData(inner); break;                     // scene_data
                 }
+                sections |= SectionFor(field);
             }
             else if (!WireProtocol.SkipField(payload, ref pos, wire)) break;
         }
@@ -71,7 +74,7 @@ public static class SocialDataReader
         gear.Sort(static (a, b) => a.Slot.CompareTo(b.Slot));
         return new SocialSnapshot(charId, name, level, fightPoint, professionId, gear, fashion,
             new SocialIdentity(guild, partySize, masterScore, titleId, fashionCollect, rideCollect, weaponSkinCollect),
-            profileUrl, halfBodyUrl) { Location = location, Party = party };
+            profileUrl, halfBodyUrl) { Location = location, Party = party, Presence = presence, Sections = sections };
     }
 
     // scene_data (zproto.SceneData) { map_id = 1, pos = 3 Position, level_pos = 5 Position, level_map_id = 6,

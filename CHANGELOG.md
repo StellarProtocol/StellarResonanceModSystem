@@ -15,12 +15,34 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [Unreleased]
+### Added
+- Mods can now tell whether another player is online, when they went offline, and the status they have set.
 ### Fixed
-- Outfit dye colours from palette-type colour groups now show the right colour in inspectors.
-- An outfit area the player reset to its default colour no longer shows up as a black dye in inspectors.
+- A player's ability score, class, gear and outfit no longer disappear from mods after the game briefly looks that player up again (for a nameplate or portrait).
+- An outfit area the player reset to its default colour no longer shows up as black in mods.
 ### Developer notes
-- **Dye hue decoding (`Stellar.Wire`):** a dye `IntVec3.x` is hue degrees only for a Board colour group (`ColorGroupTable.Type == 3`); for any other type it is a swatch id matched against the first element of the group's `Hue` rows (`[id, degrees]`), miss / `x == 0` → hue 0; no group row (`ColorGroupId == 0`) → hue 0 (`fashion_data.lua:327-351`). New pure `DyeHuePalette` + `DyeHueMapper` delegate, and additive overloads `AttrFashionDataReader.Read(span, DyeHueMapper?)` / `SocialDataReader.Read(span, DyeHueMapper?)`; the old single-argument overloads are unchanged (degrees). The framework-internal `FashionDyePaletteResolver` supplies the mapper from `FashionTableBase.ColorGroupId` → `ColorGroupTableBase`, cached per fashion id / group id, reflecting only on the main thread (the social-data decode runs on the I/O thread and falls back to degrees on a cache miss). In release_3.7 every dyeable outfit piece uses a Board group, so today this changes only the 4 group-0 pieces; it future-proofs palette groups.
-- **`{-1,-1,-1}` reset sentinel:** that area is now dropped from `FashionEntry.Dyes`/`DyeAreas` (= the piece's default colour) instead of decoding to black. No public API change.
+- **`SocialSnapshot.Presence`** (`SocialPresence?`, init-only), decoded from `SocialData.basic_data`:
+  - `OfflineTimeMs` (field 9, Unix ms, 0 while online)
+  - `OnlineTimeMs` (field 16)
+  - `PersonalStates` (field 8, packed or unpacked; `ChatStatusTable` ids, never null)
+  - `ReceivedAtMs` (stamped by the cache)
+  - `IsOnline` (`OfflineTimeMs == 0`, the game's own rule)
+
+  The shortcut `SocialSnapshot.IsOnline` (`bool?`) is null when `Presence` is unknown. (#165)
+- **`SocialSnapshot.Sections`** (`SocialSections` flags) records which `SocialData` sections a snapshot holds. `None` means not reported (hand-built snapshot). (#165)
+- **Cache merge:** `SocialDataCache` now merges per section instead of letting the last reply win.
+  - A section the reply carries replaces the cached one, even when it is present but empty.
+  - A section the reply leaves out is kept.
+  - `Presence`, `Location` and `Party` carry forward.
+  - `Sections == None` keeps the old replace-everything behaviour.
+
+  This fixes thin replies (basic-only, nameplate) wiping `FightPoint` / `ProfessionId` / `Gear` / `Fashion` / `Identity`. (#165)
+- **Dye hue decoding (`Stellar.Wire`):** a dye's `x` is hue degrees only for a Board colour group (`ColorGroupTable.Type == 3`). For other group types it is a swatch id looked up in the group's `Hue` rows. A miss, `x == 0` or `ColorGroupId == 0` decodes to hue 0, matching the client (`fashion_data.lua:327-351`).
+  - New `DyeHuePalette` + `DyeHueMapper`, with additive `Read(span, DyeHueMapper?)` overloads on `AttrFashionDataReader` / `SocialDataReader`.
+  - `FashionDyePaletteResolver` caches per fashion id and per group id, and reflects only on the main thread. A miss during an I/O-thread decode falls back to degrees.
+  - In release_3.7 every dyeable piece uses a Board group, so this only changes the 4 group-0 pieces and guards future builds. (#164)
+- **`{-1,-1,-1}` reset sentinel:** a reset area is now dropped from `FashionEntry.Dyes` / `DyeAreas` (the piece's default colour) instead of decoding to black. (#164)
+- **Compatibility.** All additions are init-only properties and new types, with no positional-record change, so existing plugins keep working. A plugin that reads `Presence` / `IsOnline` / `Sections` needs framework ≥ 2.32.0.
 
 ## [2.31.0] - 2026-11-13
 _**2.31.0** (minor) — the wardrobe 3D preview can show the weapon and each outfit's own hidden pieces, and lists scroll with the mouse wheel while you drag a row. Adds `IWardrobePreviewOptions` (`IWardrobePreview.ShowWeapon` and a `Show` overload with a hidden-pieces map) (Abstractions 2.31.0); additive, no plugin rebuild._
