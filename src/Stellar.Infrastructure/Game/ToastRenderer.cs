@@ -193,6 +193,7 @@ internal sealed class ToastRenderer
             if (!_typeRegistered)
             {
                 try { ClassInjector.RegisterTypeInIl2Cpp<ToastAnimator>(); } catch { /* already registered */ }
+                Il2CppInjectedGcFix.EnsureScanned<ToastAnimator>(_log.Info);
                 _typeRegistered = true;
             }
             _animator = go.AddComponent<ToastAnimator>();

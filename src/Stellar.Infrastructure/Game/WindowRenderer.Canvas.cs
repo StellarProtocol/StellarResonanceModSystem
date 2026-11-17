@@ -21,11 +21,16 @@ internal sealed partial class WindowRenderer
         if (!_tickerRegistered)
         {
             try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
+            Il2CppInjectedGcFix.EnsureScanned<WindowInteractionTicker>(_log.Info);
             _tickerRegistered = true;
         }
         if (!_chartRegistered)
         {
             try { ClassInjector.RegisterTypeInIl2Cpp<ChartGraphic>(); } catch { /* already registered */ }
+            // Load-bearing for ChartGraphic: Il2CppInterop leaves has_references=0 on injected classes, so a
+            // MaskableGraphic subclass would be allocated GC-UNSCANNED and the UnityEvent / material refs Unity's
+            // serializer stores in it get collected -> crash in a later scene-load serializer walk (2026-11-17).
+            Il2CppInjectedGcFix.EnsureScanned<ChartGraphic>(_log.Info);
             _chartRegistered = true;
         }
     }

@@ -47,6 +47,7 @@ internal sealed class FrameDriverHost : IDisposable
             Il2CppClassInitFix.EnsureSeeded(_log);
             try { ClassInjector.RegisterTypeInIl2Cpp<FreeCameraFrameDriver>(); }
             catch (Exception ex) { _log.Debug($"[FreeCam] RegisterTypeInIl2Cpp(FreeCameraFrameDriver): {ex.Message}"); }
+            Il2CppInjectedGcFix.EnsureScanned<FreeCameraFrameDriver>(_log.Info);
             _registered = true;
         }
         var go = new GameObject("StellarFreeCameraDriver") { hideFlags = HideFlags.HideAndDontSave };
