@@ -33,12 +33,22 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
     private readonly bool _rich;
     private bool _hasTag;
     private int _spriteGen;
+    // TextElement.CenterCaps: Capline when the current face reports a cap height, else the line-box row (_lineAlign).
+    private readonly bool _centerCaps;
+    private readonly TextAlignmentOptions _capsAlign, _lineAlign;
 
     // The per-element style constants come straight from the spec (bold face, RichEmoji, Ellipsis, MaxLines).
     private TmpStyledText(TextMeshProUGUI t, StyledTextSpec spec,
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
         _t = t; _bold = spec.Bold; _rich = spec.RichEmoji; _ellipsis = spec.Ellipsis; _maxLines = spec.MaxLines;
+        _centerCaps = spec.CenterCaps && !spec.CenterGlyphs;
+        (_capsAlign, _lineAlign) = spec.Align switch
+        {
+            TextAlign.Center => (TextAlignmentOptions.Capline, TextAlignmentOptions.Center),
+            TextAlign.Right => (TextAlignmentOptions.CaplineRight, TextAlignmentOptions.Right),
+            _ => (TextAlignmentOptions.CaplineLeft, TextAlignmentOptions.Left),
+        };
         _ul = underline.Rt; _ulImg = underline.Img;
         _st = strike.Rt; _stImg = strike.Img;
     }
@@ -53,11 +63,23 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         _cjk = TextFacePick.For(s) == FaceScript.Cjk;
         var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
+        if (_centerCaps) ApplyCapsAlignment();
         if (_rich) ApplySpriteAsset(s);
         if (_maxLines > 0) SetLineCapped(s);   // word-wrapped by the framework, cut to N lines + "…" (TmpStyledText.MaxLines.cs)
         else if (_ellipsis) SetEllipsized(s);   // measure the full string, then show it or its cut
         else _t.text = s;
         FitDecorations();
+    }
+
+    // TMP's Capline row puts the baseline at (box middle − capHeight / 2), with capHeight from the FACE metric
+    // (faceInfo.capLine), so the capitals are centred whatever letters the string has. A face that reports no cap
+    // height would put the BASELINE on the middle (text ~half a cap too high) → keep the line-box row for it. Runs on a
+    // string set only (a struct read + an enum compare), never per frame.
+    private void ApplyCapsAlignment()
+    {
+        var f = _t.font;
+        var want = f != null && f.faceInfo.capLine > 0f ? _capsAlign : _lineAlign;
+        if (_t.alignment != want) _t.alignment = want;
     }
 
     // Tag passed through UNCHANGED — the game writes the 1-based index into TMP against this same asset.
@@ -158,6 +180,7 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         // Middle row centres the font's ascender..descender line box. A lone <sprite=N> sits on the baseline, so under
         // Middle it rides above the box centre by roughly half the descender (font-metric dependent); Midline removes
         // that with no hand-tuned voffset and scales with any font size. Preferred size (layout) is unaffected.
+        // CenterCaps (Capline) is applied per face in SetText (ApplyCapsAlignment); this is its line-box start value.
         t.alignment = (spec.Align, spec.CenterGlyphs) switch
         {
             (TextAlign.Center, true) => TextAlignmentOptions.Midline,

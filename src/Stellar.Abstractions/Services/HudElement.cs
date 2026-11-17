@@ -219,6 +219,18 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool CenterGlyphs { get; init; }
 
+    /// <summary>Vertically centre the font's CAPITAL height in the text's box (framework 2.33.0) — the optical centre of
+    /// a one-line label in a fixed-height control (pill, chip, segment): the middle of "H" lands on the middle of the
+    /// box at any font size. The default line-box centring sits the capitals a pixel or so off-centre (how far depends
+    /// on the face's ascender/descender split and the size), and <see cref="CenterGlyphs"/> centres each string's OWN
+    /// drawn bounds, so a label with descenders ("Party", "Playing") rises above one without ("List"). This uses the
+    /// face's cap-height METRIC, not the drawn glyphs, so every label of a size shares one baseline whatever its
+    /// letters. Applies to the TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and
+    /// HUD-overlay text, and when the face reports no cap height (line-box centring then, as today).
+    /// <see cref="CenterGlyphs"/> wins if both are set. Default false = unchanged. An <c>init</c> property
+    /// (binary-compatible).</summary>
+    public bool CenterCaps { get; init; }
+
     /// <summary>Cap wrapped text at this many lines (framework 2.30.0). When the text wraps to more lines than this at
     /// its laid-out width, it shows exactly <c>MaxLines</c> lines and the last one ends in "…" (a cut the framework
     /// makes itself, re-fitted when the string, the font size or the width changes). The text always wraps when this

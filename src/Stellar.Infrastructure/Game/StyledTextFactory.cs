@@ -137,6 +137,10 @@ internal readonly struct StyledTextSpec
     /// <summary>Centre the drawn geometry vertically (TMP Midline) instead of the line box (TextElement.CenterGlyphs).</summary>
     public bool CenterGlyphs { get; init; }
 
+    /// <summary>Centre the face's cap height vertically (TMP Capline) instead of the line box (TextElement.CenterCaps).
+    /// <see cref="CenterGlyphs"/> wins if both are set.</summary>
+    public bool CenterCaps { get; init; }
+
     /// <summary>&gt;0: wrap, and cut to this many lines with a trailing ellipsis (TextElement.MaxLines). The cut is the
     /// framework's own (TmpStyledText.MaxLines.cs), like <see cref="Ellipsis"/>. Wins over <see cref="Ellipsis"/>.</summary>
     public int MaxLines { get; init; }
@@ -145,7 +149,7 @@ internal readonly struct StyledTextSpec
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
         Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
-        RichEmoji = false; Ellipsis = false; CenterGlyphs = false; MaxLines = 0;
+        RichEmoji = false; Ellipsis = false; CenterGlyphs = false; CenterCaps = false; MaxLines = 0;
     }
 }
 

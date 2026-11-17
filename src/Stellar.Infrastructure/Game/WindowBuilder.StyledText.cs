@@ -29,6 +29,7 @@ internal sealed partial class WindowBuilder
             Ellipsis = t.Ellipsize && !capped,   // prefix + "…" cut to the slot (TmpStyledText.Ellipsis.cs; plain path: TextBinding.EllipsizeToRect)
             MaxLines = t.MaxLines,     // wrapped, cut to N lines + "…" (TmpStyledText.MaxLines.cs; plain path: TextBinding.MaxLines)
             CenterGlyphs = t.CenterGlyphs,   // Midline: centre the drawn quads, not the line box (lone sprite icons)
+            CenterCaps = t.CenterCaps,       // Capline: centre the face's cap height (optical centre of a control label)
         });
         if (h?.Go == null) return false;
         // Mirror the legacy path's layout contract: natural width, a sibling Spacer does the pushing.

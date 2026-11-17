@@ -26,6 +26,7 @@ public static class FrameworkVersion
     /// 2.33.0 also adds <c>IWindowSizeLimits</c> (<c>control.SetSizeLimits(minW, minH, maxW, maxH)</c> via
     /// <c>WindowSizeLimitsExtensions</c>): runtime resize limits for a Resizable window, min == max locks an axis (additive).
     /// 2.33.0 also adds <c>BubbleElement.OutlineWidth</c> (init-only, 0 = the 1 px ring as before): a thicker outline ring.
+    /// 2.33.0 also adds <c>TextElement.CenterCaps</c> (init-only, false = unchanged): centre a label on the face's cap height.
     /// 2.32.0 adds <c>SocialSnapshot.Presence</c> / <c>IsOnline</c> / <c>Sections</c> (<c>SocialPresence</c>, <c>SocialSections</c>)
     /// (additive init-only); a plugin that reads them needs ≥2.32.0. Runtime: per-section social cache merge, dye reset/palette hues.
     /// 2.31.0 adds <c>IWardrobePreviewOptions</c> (a base of <c>IWardrobePreview</c>): <c>ShowWeapon</c> and the
