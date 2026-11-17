@@ -71,7 +71,13 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleBg(int radius)
     {
         if (radius <= 0) return SwatchBg;   // 0 → the shared editor chip (matches SelectableElement's rounding)
-        if (_bubbleSprites.TryGetValue(radius, out var e)) return e.sprite;
+        if (_bubbleSprites.TryGetValue(radius, out var e))
+        {
+            if (Alive(e)) return e.sprite;
+            Evict(_bubbleSprites, radius);
+            // The left-cut sprite shares this texture → it died with it; drop it so BubbleBgLeft re-cuts the new one.
+            if (_bubbleLeftSprites.Remove(radius, out var dead) && dead != null) Object.Destroy(dead);
+        }
         // size = 2*radius + a small centre strip so the 9-slice corners fit; slice border = radius + 1 (as SwatchBg).
         var size = radius * 2 + 4;
         var tex = RoundedTextureBaker.Rounded(size, radius, new ColorRgba(1f, 1f, 1f, 1f));
@@ -91,8 +97,12 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleBgLeft(int radius)
     {
         if (radius <= 0) return null;
-        if (_bubbleLeftSprites.TryGetValue(radius, out var s)) return s;
-        if (BubbleBg(radius) == null) return null;
+        if (BubbleBg(radius) == null) return null;   // first: validates the shared texture (evicts our sprite if it died)
+        if (_bubbleLeftSprites.TryGetValue(radius, out var s))
+        {
+            if (s != null) return s;
+            _bubbleLeftSprites.Remove(radius);   // destroyed behind the cache → re-cut below
+        }
         var tex = _bubbleSprites[radius].tex;
         var b = radius + 1;
         s = Sprite.Create(tex, new UnityEngine.Rect(0f, 0f, b + 1, tex.height), new Vector2(0.5f, 0.5f),
@@ -111,7 +121,7 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleOutline(int radius)
     {
         var r = radius <= 0 ? SwatchRadius : radius;
-        if (_bubbleOutlines.TryGetValue(r, out var e)) return e.sprite;
+        if (_bubbleOutlines.TryGetValue(r, out var e)) { if (Alive(e)) return e.sprite; Evict(_bubbleOutlines, r); }
         var size = r * 2 + 4;
         var tex = RoundedTextureBaker.RoundedBordered(size, r, 1, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
         var sprite = Sliced(tex, r + 1);
@@ -130,7 +140,7 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleRingHalfPx(int radius, int halfPx)
     {
         var key = radius * 64 + halfPx;
-        if (_halfPxRings.TryGetValue(key, out var e)) return e.sprite;
+        if (_halfPxRings.TryGetValue(key, out var e)) { if (Alive(e)) return e.sprite; Evict(_halfPxRings, key); }
         var r2 = System.Math.Max(1, radius) * 2;
         var tex = RoundedTextureBaker.RoundedBordered(r2 * 2 + 4, r2, halfPx, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
         var sprite = Sliced(tex, r2 + 1);
@@ -283,18 +293,37 @@ internal sealed class WindowThemeAssets
         DestroyThemed();
         Drop(ref _capsuleTex, () => Capsule, s => Capsule = s);
         Drop(ref _swatchTex, () => SwatchBg, s => SwatchBg = s);
-        foreach (var e in _bubbleSprites.Values)
+        Drop(ref _cdOutlineTex, () => CdOutline, s => CdOutline = s);
+        // Left-cut sprites first: they are sub-rect sprites over the _bubbleSprites textures destroyed just below.
+        foreach (var s in _bubbleLeftSprites.Values) if (s != null) Object.Destroy(s);
+        _bubbleLeftSprites.Clear();
+        DestroyPairs(_bubbleSprites);
+        DestroyPairs(_bubbleOutlines);
+        DestroyPairs(_halfPxRings);
+    }
+
+    private static void DestroyPairs(System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> d)
+    {
+        foreach (var e in d.Values)
         {
             if (e.sprite != null) Object.Destroy(e.sprite);
             if (e.tex != null) Object.Destroy(e.tex);
         }
-        _bubbleSprites.Clear();
-        foreach (var e in _bubbleOutlines.Values)
-        {
-            if (e.sprite != null) Object.Destroy(e.sprite);
-            if (e.tex != null) Object.Destroy(e.tex);
-        }
-        _bubbleOutlines.Clear();
+        d.Clear();
+    }
+
+    // Liveness of a cached (tex, sprite) pair. Unity's overloaded == reports a DESTROYED object as null, so this catches a
+    // pair killed behind the cache's back (an explicit Destroy, or a scene-switch Resources.UnloadUnusedAssets sweep if
+    // the HideAndDontSave flag were ever lost) — handing a dead sprite to a new Image renders nothing at best.
+    private static bool Alive((Texture2D tex, Sprite sprite) e) => e.sprite != null && e.tex != null;
+
+    // Evict a dead pair (destroying whichever half survived) so the caller re-bakes it.
+    private static void Evict(System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> d, int key)
+    {
+        if (!d.TryGetValue(key, out var e)) return;
+        if (e.sprite != null) Object.Destroy(e.sprite);
+        if (e.tex != null) Object.Destroy(e.tex);
+        d.Remove(key);
     }
 
     // White sprite with the TOP two corners rounded (radius r), bottom square. 4× supersampled AA.

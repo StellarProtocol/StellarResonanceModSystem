@@ -52,6 +52,7 @@ internal sealed partial class WindowBuilder
         }
         t.Apply();
         _cdSprite = Sprite.Create(t, new Rect(0, 0, d, d), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        _cdSprite.hideFlags = HideFlags.HideAndDontSave;   // like its texture: a cached sprite must survive UnloadUnusedAssets
         return _cdSprite;
     }
 

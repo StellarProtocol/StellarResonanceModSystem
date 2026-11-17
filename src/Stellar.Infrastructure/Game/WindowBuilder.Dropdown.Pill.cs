@@ -164,6 +164,7 @@ internal sealed partial class WindowBuilder
             }
         t.Apply();
         _pillChevronSprite = Sprite.Create(t, new Rect(0, 0, W, H), new Vector2(0.5f, 0.5f));
+        _pillChevronSprite.hideFlags = HideFlags.HideAndDontSave;   // static cache: must survive a scene-switch asset sweep
         return _pillChevronSprite;
     }
 

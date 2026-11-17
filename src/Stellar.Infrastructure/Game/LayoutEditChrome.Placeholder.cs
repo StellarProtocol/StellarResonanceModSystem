@@ -136,7 +136,7 @@ internal sealed partial class LayoutEditChrome
             for (int x = 0; x < w; x++)
                 t.SetPixel(x, y, (horizontal ? x : y) < DashOn ? Color.white : Color.clear);
         t.Apply();
-        return Sprite.Create(t, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        return Protect(Sprite.Create(t, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect));
     }
 
     // 135° stripes (CSS repeating-linear-gradient(135deg) runs toward the bottom-right, so stripes lie along the "/"
@@ -153,6 +153,10 @@ internal sealed partial class LayoutEditChrome
                 t.SetPixel(x, y, new Color(1f, 1f, 1f, band < HatchTile / 2 ? 1f : HatchWeakRatio));
             }
         t.Apply();
-        return Sprite.Create(t, new Rect(0, 0, HatchTile, HatchTile), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        return Protect(Sprite.Create(t, new Rect(0, 0, HatchTile, HatchTile), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect));
     }
+
+    // Cached sprites get HideAndDontSave like their textures, so a scene-switch UnloadUnusedAssets never sweeps one
+    // that only this cache holds (e.g. while no placeholder is shown).
+    private static Sprite Protect(Sprite s) { s.hideFlags = HideFlags.HideAndDontSave; return s; }
 }
