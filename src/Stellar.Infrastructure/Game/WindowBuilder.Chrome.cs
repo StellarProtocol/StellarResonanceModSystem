@@ -33,6 +33,12 @@ internal sealed partial class WindowBuilder
         // Borderless optional black background — on the root's existing click-blocker Image so it fills the
         // full window rect and expands when the user resizes height (no separate child GO needed).
         // WindowSpec.BackgroundColor (opt-in, rounded + theme-coloured) wins; the black BackgroundOpacity path is untouched.
+        if (reg.Spec.Style == WindowPanelStyle.Borderless)
+        {
+            // Borderless body = the whole root (no title bar); rounded only when it draws a rounded backdrop.
+            token.Body = result.root;
+            token.BodyRadius = reg.Spec.BackgroundColor != null ? reg.Spec.BackgroundCornerRadius : 0;
+        }
         if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundColor is { } bgCol)
             BuildWindowBackdrop(result.root, bgCol, reg.Spec.BackgroundCornerRadius, token);
         else if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundOpacity is { } bgOp
@@ -132,9 +138,13 @@ internal sealed partial class WindowBuilder
 
         // Drag mode is the per-window EditModeDragOnly flag for EVERY chrome (default false = free-drag any time;
         // true = pinned, moves only in Shift+` edit mode) — so any chrome can be either a free dialog or a HUD.
+        // The window body a "cover the body" overlay (ConfirmHostElement scrim) fits: the whole frame below the title bar,
+        // edge to edge — content padding included — with the frame's corner radius on its free (bottom) corners.
+        token.Body = root; token.BodyRadius = WindowThemeAssets.FrameCornerRadius;
         if (spec.ShowTitleBar)
         {
             var titleBar = BuildTitleBar(reg, root.transform, token);
+            token.BodyTitleBar = titleBar.GetComponent<RectTransform>();
             if (spec.Draggable) _registerWindowDrag?.Invoke(titleBar.GetComponent<RectTransform>(), root, spec.Id, spec.EditModeDragOnly);
         }
         else if (spec.Draggable)

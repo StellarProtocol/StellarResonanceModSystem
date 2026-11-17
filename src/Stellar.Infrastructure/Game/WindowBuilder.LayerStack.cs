@@ -36,7 +36,9 @@ internal sealed partial class WindowBuilder
     /// registers as the host of the base. Null in the sandbox (no ticker → only the uGUI half applies).</summary>
     internal Action<RectTransform, RectTransform, RectTransform[], bool>? RegisterLayerHost { get; set; }
 
-    private void BuildLayerStack(LayerStackElement ls, Transform parent, WindowToken token)
+    /// <param name="coverBody">Internal opt-in (ConfirmHostElement): the overlays fit the WINDOW BODY (token.Body minus
+    /// the title bar — content padding included) instead of the base's rect. Default false = cover the base only.</param>
+    private void BuildLayerStack(LayerStackElement ls, Transform parent, WindowToken token, bool coverBody = false)
     {
         var go = UGuiPrimitives.NewChild("LayerStack", parent);
         UGuiPrimitives.AddLayout(go, gap: 0f, columns: UGuiPrimitives.ColumnMode); ExpandColumnWidth(go);
@@ -50,6 +52,12 @@ internal sealed partial class WindowBuilder
         var host = UGuiPrimitives.NewChild("Overlays", go.transform);
         UGuiPrimitives.Stretch(host);
         host.AddComponent<LayoutElement>().ignoreLayout = true;
+        // Body cover: the host stays UNDER the stack (lifetime, hierarchy-based ticker cover walk and draw order are
+        // unchanged) and is only re-offset to the body's rect by the layer poll (BodyFit). No body (overlay chromes,
+        // sandbox) → the old base-only cover.
+        var fit = coverBody && token.Body != null
+            ? new BodyFit { Host = host.GetComponent<RectTransform>(), Stack = go.GetComponent<RectTransform>(), Body = token.Body, TitleBar = token.BodyTitleBar }
+            : null;
 
         var blocks = new bool[overlays.Length];
         var rects = new RectTransform[overlays.Length];
@@ -71,10 +79,10 @@ internal sealed partial class WindowBuilder
             var layer = overlays[i];
             if (layer == null) continue;
             BuildElement(layer.Content, gos[i].transform, token);
-            if (layer.Visible == null && layer.Background == null) continue;   // static: nothing to poll
+            if (layer.Visible == null && layer.Background == null && fit == null) continue;   // static: nothing to poll
             token.Layers.Add(new LayerBinding
             {
-                Go = gos[i], Visible = layer.Visible, Background = layer.Background,
+                Go = gos[i], Visible = layer.Visible, Background = layer.Background, Fit = fit,
                 Img = layer.Background != null ? gos[i].GetComponent<Image>() : null, Gate = _condGate,
             });
         }
@@ -128,6 +136,7 @@ internal sealed partial class WindowBuilder
         public Func<ColorRgba>? Background;
         public Image? Img;
         public GameObject? Gate;   // enclosing variable-list slot: idle while the slot is inactive (as CondBinding)
+        public BodyFit? Fit;       // body-cover stacks only: re-offset the overlays host to the window body while shown
         private bool _init, _shown, _colorInit;
         private ColorRgba _color;
 
@@ -152,7 +161,40 @@ internal sealed partial class WindowBuilder
                     Img.color = new Color(c.R, c.G, c.B, c.A);
                 }
             }
+            if (shown) Fit?.Apply();   // same apply as the show → the first visible frame already spans the body
             return flipped;
         }
+    }
+
+    /// <summary>Keeps a body-cover stack's overlays host on the window body: the root's rect minus the title bar (its
+    /// LIVE height, read off the chrome), mapped into the stack's space and written as stretch offsets. So the overlay
+    /// spans the content padding edge to edge, follows a resize, and never reaches the title bar (✕ + drag stay live).
+    /// Polled only while a layer of the stack is shown (10 Hz apply); writes only on change; no allocation.</summary>
+    internal sealed class BodyFit
+    {
+        public RectTransform Host = null!, Stack = null!, Body = null!;
+        public RectTransform? TitleBar;
+
+        public void Apply()
+        {
+            if (Host == null || Stack == null || Body == null) return;
+            var r = Body.rect;
+            var top = r.yMax - (TitleBar != null && TitleBar.gameObject.activeSelf ? TitleBar.rect.height : 0f);
+            Vector2 bl = Stack.InverseTransformPoint(Body.TransformPoint(new Vector3(r.xMin, r.yMin, 0f)));
+            Vector2 tr = Stack.InverseTransformPoint(Body.TransformPoint(new Vector3(r.xMax, top, 0f)));
+            var sr = Stack.rect;
+            var min = bl - sr.min;
+            var max = tr - sr.max;
+            if ((Host.offsetMin - min).sqrMagnitude > 0.0001f) Host.offsetMin = min;
+            if ((Host.offsetMax - max).sqrMagnitude > 0.0001f) Host.offsetMax = max;
+        }
+    }
+
+    public sealed partial class WindowToken
+    {
+        // The window body a body-cover LayerStack fits (set by BuildChrome; null for chromes without one → base-only).
+        internal RectTransform? Body;
+        internal RectTransform? BodyTitleBar;   // the title bar sitting on top of Body (excluded from the cover)
+        internal int BodyRadius;                // corner radius of Body's frame (0 = square)
     }
 }

@@ -23,6 +23,8 @@ internal sealed class WindowThemeAssets
     // inside the 9-slice and survives stretch. Texture size comfortably exceeds 2*sliceBorder.
     private const int FrameTexSize = 48;
     private const int FrameRadius = 14;
+    /// <summary>The GlassMenu frame's corner radius (px) — for overlays that must hug the frame's rounded corners.</summary>
+    public const int FrameCornerRadius = FrameRadius;
     private const int FrameBorderPx = 1;
     private const int FrameSlice = 16;
 
@@ -77,6 +79,7 @@ internal sealed class WindowThemeAssets
             Evict(_bubbleSprites, radius);
             // The left-cut sprite shares this texture → it died with it; drop it so BubbleBgLeft re-cuts the new one.
             if (_bubbleLeftSprites.Remove(radius, out var dead) && dead != null) Object.Destroy(dead);
+            if (_bubbleBottomSprites.Remove(radius, out var deadB) && deadB != null) Object.Destroy(deadB);
         }
         // size = 2*radius + a small centre strip so the 9-slice corners fit; slice border = radius + 1 (as SwatchBg).
         var size = radius * 2 + 4;
@@ -109,6 +112,30 @@ internal sealed class WindowThemeAssets
             pixelsPerUnit: 100f, extrude: 0, meshType: SpriteMeshType.FullRect, border: new Vector4(b, b, 0f, b));
         s.hideFlags = HideFlags.HideAndDontSave;
         _bubbleLeftSprites[radius] = s;
+        return s;
+    }
+
+    private readonly System.Collections.Generic.Dictionary<int, Sprite> _bubbleBottomSprites = new();
+
+    /// <summary>A white 9-slice chip rounded on its BOTTOM corners only (top edge straight), matching
+    /// <see cref="BubbleBg"/> at the same <paramref name="radius"/> (&gt; 0). Cut from BubbleBg's texture: the bottom
+    /// r+2 rows, border (r+1, r+1, r+1, 0). For a window-body overlay under a square-bottomed title bar (the
+    /// ConfirmHostElement scrim, 2.33.0). Main-thread only; null before the neutral sprites are baked.</summary>
+    public Sprite? BubbleBgBottom(int radius)
+    {
+        if (radius <= 0) return null;
+        if (BubbleBg(radius) == null) return null;   // validates the shared texture first (as BubbleBgLeft)
+        if (_bubbleBottomSprites.TryGetValue(radius, out var s))
+        {
+            if (s != null) return s;
+            _bubbleBottomSprites.Remove(radius);
+        }
+        var tex = _bubbleSprites[radius].tex;
+        var b = radius + 1;
+        s = Sprite.Create(tex, new UnityEngine.Rect(0f, 0f, tex.width, b + 1), new Vector2(0.5f, 0.5f),
+            pixelsPerUnit: 100f, extrude: 0, meshType: SpriteMeshType.FullRect, border: new Vector4(b, b, b, 0f));
+        s.hideFlags = HideFlags.HideAndDontSave;
+        _bubbleBottomSprites[radius] = s;
         return s;
     }
 
@@ -310,6 +337,8 @@ internal sealed class WindowThemeAssets
         // Left-cut sprites first: they are sub-rect sprites over the _bubbleSprites textures destroyed just below.
         foreach (var s in _bubbleLeftSprites.Values) if (s != null) Object.Destroy(s);
         _bubbleLeftSprites.Clear();
+        foreach (var s in _bubbleBottomSprites.Values) if (s != null) Object.Destroy(s);
+        _bubbleBottomSprites.Clear();
         DestroyPairs(_bubbleSprites);
         DestroyPairs(_bubbleOutlines);
         DestroyPairs(_halfPxRings);
