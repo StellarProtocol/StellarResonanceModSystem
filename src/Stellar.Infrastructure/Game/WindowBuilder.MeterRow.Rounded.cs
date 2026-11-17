@@ -46,7 +46,7 @@ internal sealed partial class WindowBuilder
         SetRoundSprite(b.BarShieldImg, _assets.BubbleBg(MeterRoundBarR));
         StripRectangularBarOverlays(b);
         ShareTopLineBaseline(b);
-        FixRankSlot(b, token);
+        var rankSlot = FixRankSlot(b, token);
 
         var create = b.DebuffBlock.CreateCell!;   // cells are built lazily → round each one as it is created
         b.DebuffBlock.CreateCell = i => { var c = create(i); RoundDebuffCell(c); return c; };
@@ -57,7 +57,7 @@ internal sealed partial class WindowBuilder
             SpineTrack = spineTrack, SpineImgs = new[] { spineTrack, b.SpineFill, b.ShieldFill },
             SpineGroup = b.SpineGo.AddComponent<CanvasGroup>(), BarTrack = barTrack, BarGroup = barGo.AddComponent<CanvasGroup>(),
             BarLe = barGo.GetComponent<LayoutElement>()!, RowGroup = row.AddComponent<CanvasGroup>(),
-            Rank = b.Rank, Spec = b.Spec, Hint = AddEmptyHint(token, row.transform),
+            Rank = b.Rank, RankSlot = rankSlot, Spec = b.Spec, Hint = AddEmptyHint(token, row.transform),
         };
         AttachTopLineFit(skin, b);
         token.ReskinActions.Add(skin.MarkThemeDirty);
@@ -131,33 +131,59 @@ internal sealed partial class WindowBuilder
         if (b.Spec != null) b.Spec.alignByGeometry = false;
     }
 
-    // Widest rank the list shows (ranks 1–24; CombatMeter sends "N."). Digits are the font's own widths, so the
-    // slot is MEASURED from this sample at the rank's live font, not hard-coded.
-    private const string MeterRankSlotSample = "24.";
-
-    // Fixed-width, right-aligned rank slot (mockup `.mr .t .rk`: width 16px, text-align right) so names start at
-    // the same x down the list whether the rank is "2." or "12." — Classic sizes the rank to its own text, so a
-    // two-digit rank pushed its name right. Only the LayoutElement's PREFERRED width is pinned: the Text's own
-    // min width (0) still applies, so a narrow row shrinks the rank exactly as before (and an inactive rank —
-    // ShowRank off — is still skipped by the HLG). Measured once at build, and again only on a reskin (Font Scale
-    // / font change → re-measure after RegisterTextSizeReskin re-sized it); no per-refresh cost.
-    private static void FixRankSlot(MeterRowBinding b, WindowToken token)
+    // Fixed-width, right-aligned rank slot (mockup `.mr .t .rk`: text-align right) so names start at the same x down
+    // the list whether the rank is "2" or "12" — Classic sizes the rank to its own text, so a two-digit rank pushed its
+    // name right. The slot is TWO of the font's widest digit, measured at the rank's live font (CombatMeter sends bare
+    // numbers, "1".."24" in the list and the slot number in party groups). It used to be measured from "24.", which
+    // reserved the width of a dot the plugin no longer sends: every rank sat that much further from the crest than
+    // the name sits from the rank (in-game 2026-11-17). Only the LayoutElement's PREFERRED width is pinned: the Text's
+    // own min width (0) still applies, so a narrow row shrinks the rank exactly as before (and an inactive rank —
+    // ShowRank off — is still skipped by the HLG). A longer rank ("100", the list ranks globally under a scope
+    // filter) widens just that row's slot to its text (Fit, on a rank change only) instead of spilling over the crest.
+    // Measured once at build, and again only on a reskin (Font Scale / font change); no per-refresh cost.
+    private static RankSlot? FixRankSlot(MeterRowBinding b, WindowToken token)
     {
-        if (b.Rank == null) return;
-        var rank = b.Rank;
-        rank.alignment = TextAnchor.MiddleRight;
-        var le = rank.GetComponent<LayoutElement>();   // AddMeterText always adds one; no `??` on Unity objects
-        if (le == null) le = rank.gameObject.AddComponent<LayoutElement>();
-        void Measure()
+        if (b.Rank == null) return null;
+        b.Rank.alignment = TextAnchor.MiddleRight;
+        var le = b.Rank.GetComponent<LayoutElement>();   // AddMeterText always adds one; no `??` on Unity objects
+        if (le == null) le = b.Rank.gameObject.AddComponent<LayoutElement>();
+        var slot = new RankSlot(b.Rank, le);
+        slot.Measure();
+        token.ReskinActions.Add(slot.Measure);
+        return slot;
+    }
+
+    internal sealed class RankSlot
+    {
+        private const int SlotDigits = 2;
+        private readonly Text _rank;
+        private readonly LayoutElement _le;
+        private float _slotW;
+
+        public RankSlot(Text rank, LayoutElement le) { _rank = rank; _le = le; }
+
+        public void Measure()
         {
-            if (rank == null || le == null) return;
-            var keep = rank.text;
-            rank.text = MeterRankSlotSample;
-            le.preferredWidth = Mathf.Ceil(rank.preferredWidth);   // whole px → crisp name x
-            rank.text = keep;
+            if (_rank == null || _le == null) return;
+            var keep = _rank.text;
+            float widest = 0f;
+            for (var c = '0'; c <= '9'; c++)   // 10 text sets, build/reskin only (digits are usually tabular; check anyway)
+            {
+                _rank.text = c.ToString();
+                widest = Mathf.Max(widest, _rank.preferredWidth);
+            }
+            _slotW = Mathf.Ceil(SlotDigits * widest);   // whole px → crisp name x
+            _rank.text = keep;
+            Fit(keep);
         }
-        Measure();
-        token.ReskinActions.Add(Measure);
+
+        /// <summary>Call after the rank text changed: a rank longer than the slot widens this row's slot to the text.</summary>
+        public void Fit(string? text)
+        {
+            if (_rank == null || _le == null) return;
+            _le.preferredWidth = text != null && text.Length > SlotDigits
+                ? Mathf.Max(_slotW, Mathf.Ceil(_rank.preferredWidth)) : _slotW;
+        }
     }
 
     private static void SetRoundSprite(Image? img, Sprite? sprite)
@@ -222,6 +248,7 @@ internal sealed partial class WindowBuilder
         public CanvasGroup SpineGroup = null!, BarGroup = null!, RowGroup = null!;
         public LayoutElement BarLe = null!;
         public Text Rank = null!, Spec = null!, Hint = null!;
+        public RankSlot? RankSlot;
 
         private const float TileAlpha = 0.92f, SelfAlpha = 0.95f, TrackAlpha = 0.90f, EmptyAlpha = 0.75f;
         private const float DeadAlpha = 0.55f, SelfWash = 0.20f, SelfRingAlpha = 0.75f;

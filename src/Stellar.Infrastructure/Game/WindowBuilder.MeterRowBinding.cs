@@ -165,7 +165,7 @@ internal sealed partial class WindowBuilder
             ApplyVisibility(d);
 
             var rank = d.Rank ?? "";
-            if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; }
+            if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; Rounded?.RankSlot?.Fit(rank); }
 
             var name = d.Name ?? "";
             if (name != _lastName) { Name.text = name; _lastName = name; }
