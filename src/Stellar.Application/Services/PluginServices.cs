@@ -76,6 +76,7 @@ internal sealed class PluginServices : IPluginServices
     public IVoiceInjection Voice { get; }
     public IPlayerProfile PlayerProfile { get; }
     public IFriends Friends { get; }
+    public IGameText GameText { get; }
 
     public PluginServices(
         IPluginLog log,
@@ -139,7 +140,8 @@ internal sealed class PluginServices : IPluginServices
         IReShade reShade,
         IVoiceInjection voice,
         IPlayerProfile playerProfile,
-        IFriends friends)
+        IFriends friends,
+        IGameText gameText)
     {
         Log = log;
         Framework = framework;
@@ -210,5 +212,6 @@ internal sealed class PluginServices : IPluginServices
         Voice = voice;
         PlayerProfile = playerProfile;
         Friends = friends;
+        GameText = gameText;
     }
 }

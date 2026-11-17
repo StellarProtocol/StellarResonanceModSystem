@@ -171,4 +171,8 @@ public interface IPluginServices
     /// <summary>Friend list + private-chat (whisper) conversations from the game's own data, and the game's private-chat
     /// actions (open history, mark read, create, close). See <see cref="IFriends"/>.</summary>
     IFriends Friends { get; }
+    /// <summary>English buff/skill names, design names and descriptions shipped with the framework — names for the
+    /// game's unnamed internal rows (proc buffs, sub-buffs, damage zones). Loads lazily in the background on first
+    /// use. See <see cref="IGameText"/>.</summary>
+    IGameText GameText { get; }
 }

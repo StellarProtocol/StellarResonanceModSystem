@@ -149,6 +149,7 @@ internal sealed class PerPluginServices : IPluginServices
     public IVoiceInjection Voice => _voice ?? _shared.Voice;
     public IPlayerProfile PlayerProfile => _shared.PlayerProfile;
     public IFriends Friends => _shared.Friends;
+    public IGameText GameText => _shared.GameText;
 }
 
 /// <summary>
