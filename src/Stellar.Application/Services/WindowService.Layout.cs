@@ -136,7 +136,9 @@ internal sealed partial class WindowService
         e.SetVisible(visible);
         if (_storage != null && _resolution != null)
         {
-            var rect = e.Token != null ? _renderer.GetRect(e.Token)
+            // Mounted: e.Rect, not the raw GetRect — while the restore is parked that is the restore target, not the
+            // (20,20) mount placeholder (persisting the placeholder here would be the same top-left bug as SetRect).
+            var rect = e.Token != null ? e.Rect
                      : e.LastSavedRect.Width > 0 ? e.LastSavedRect : ResolveAnchoredDefault(e.Reg.Spec);
             SaveRect(e.Reg.Spec, rect, visible);
         }
@@ -223,21 +225,15 @@ internal sealed partial class WindowService
             // Compute PendingApplyVisibility using the OLD ApplyPending, THEN set ApplyPending=true.
             e.PendingApplyVisibility = e.ApplyPending ? (e.PendingApplyVisibility || applyVisibility) : applyVisibility;
             e.ApplyPending = true;
+            e.PendingRestorePreview = null;   // a re-defer (slot switch / res change mid-wait) may target a new rect
             if (e.LastSavedRect.Width > 0f) _renderer.SetRect(e.Token, e.LastSavedRect);
             return;
         }
         e.ApplyPending = false;
-        var fallback = ResolveAnchoredDefault(e.Reg.Spec);
-        if (_storage is null || _resolution is null)
-        {
-            _renderer.SetRect(e.Token, fallback);
-            e.LastRect = e.LastSavedRect = fallback;
-            return;
-        }
-        var (rect, visible) = StorageGet(e.Reg.Spec, _resolution(), fallback, CanvasScale);
-        rect = Reanchor(e.Reg.Spec, rect);   // 2.22.0: anchored windows re-placed from their anchor offset
+        var rect = ComputeRestoredRect(e, out var visible);
         _renderer.SetRect(e.Token, rect);
         e.LastRect = e.LastSavedRect = rect;
+        if (_storage is null || _resolution is null) { ConsumePendingSetRect(e, rect); return; }
         // Bidirectional on an applyVisibility apply (mount / reset / slot switch): restore BOTH directions, not
         // just hide. A slot switch carries its own persisted show/hide, so switching from a slot that hid this
         // window back to one where it's visible must SHOW it again — Get() returns visible=true for a slot with no
@@ -251,6 +247,9 @@ internal sealed partial class WindowService
         // the plugin still believing it open (ChatTools channel picker, 2026-10-24). A slot switch must not pop a
         // context menu open either, so the skip holds for every applyVisibility caller.
         if (applyVisibility && !e.Reg.Spec.DismissOnOutsideClick) e.SetVisibleRestore(visible);   // TickEntry mounts/destroys next tick to match
+        // A plugin SetRect made while this restore was parked lands now, on top of it (.LayoutPending.cs). After the
+        // visibility restore so its persist records the restored show/hide.
+        ConsumePendingSetRect(e, rect);
     }
 
     // Persist once after a drag settles: the rect is unchanged since last tick (drag stopped) AND differs

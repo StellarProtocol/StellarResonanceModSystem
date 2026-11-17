@@ -376,13 +376,17 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             Topmost = topmost;
             if (Token != null) Owner._order?.SetTopmost(Token, topmost);   // unmounted: TickEntry applies it at mount
         }
-        public WindowRect Rect => Token != null ? Owner._renderer.GetRect(Token) : Owner.ResolveAnchoredDefault(Reg.Spec);
+        // While the saved-layout restore is parked (ApplyPending), report where it WILL land, not the placeholder (.LayoutPending.cs).
+        public WindowRect Rect => Token == null ? Owner.ResolveAnchoredDefault(Reg.Spec)
+                                : ApplyPending ? Owner.PendingPreviewRect(this) : Owner._renderer.GetRect(Token);
         // Click-away popups only: a SetRect issued before the window has mounted, applied by TickEntry right after the
         // mount (see there). Other windows keep the old pre-mount no-op.
         public WindowRect? PendingRect;
         public void SetRect(WindowRect rect)
         {
             if (Token == null) { if (Reg.Spec.DismissOnOutsideClick) PendingRect = rect; return; }
+            // Restore still parked: queue instead of persisting the placeholder; re-issued when it lands (.LayoutPending.cs).
+            if (ApplyPending) { Owner.QueuePendingSetRect(this, rect); return; }
             Owner._renderer.SetRect(Token, rect);
             // Persist the explicit set immediately (the per-mode geometry restore path) — don't wait for a drag.
             // Skip when the rect already IS the persisted one: per-tick callers (the layout toolbar's re-centre)
