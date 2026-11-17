@@ -447,10 +447,21 @@ internal sealed partial class WindowBuilder
 
         BuildElement(el.Child, go.transform, token);
 
-        token.AccentRows.Add(new AccentRowBinding
+        var bind = new AccentRowBinding
         {
             ShareRect = srt, ShareImg = shareImg, Stripe = stripeImg, StripeFn = el.Stripe, ShareFn = el.Share,
-        });
+            WashAlpha = el.WashAlpha > 0f ? Mathf.Clamp01(el.WashAlpha) : 0.12f,
+        };
+        // 2.33.0 opt-in rounded wash: no stripe; the binding swaps between the left-rounded and the fully rounded sprite
+        // by how close the wash reaches the row's right edge. Pre-bake sandbox (no sprites) → keeps the square wash.
+        var r = Mathf.RoundToInt(el.CornerRadius);
+        if (r > 0 && _assets.BubbleBgLeft(r) is { } left && _assets.BubbleBg(r) is { } full)
+        {
+            stripeGo.SetActive(false);
+            shareImg.sprite = left; shareImg.type = Image.Type.Sliced;
+            bind.RoundLeft = left; bind.RoundFull = full; bind.Radius = r;
+        }
+        token.AccentRows.Add(bind);
     }
 
 }

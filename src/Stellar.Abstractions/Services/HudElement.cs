@@ -299,6 +299,15 @@ public sealed record BarElement(
     /// excess visible as an "extension cap" past the main fill (e.g. <c>Overlay01 = (hp+shield)/max</c> shows the
     /// shield as extra length). Ignored when <see cref="Overlay01"/> is null or in <see cref="BarStyle.Default"/>.</summary>
     public bool          OverlayInFront { get; init; }
+    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): corner radius in px of BOTH the track
+    /// and the fill, so the fill is a rounded bar too (default bars have a square fill). A radius larger than half the
+    /// bar <see cref="Height"/> is drawn down-scaled so the bar never grows past its height (radius 2 on a 4 px bar =
+    /// a capsule). 0 (the default) = today's 3 px track + square fill, unchanged. Init property (binary-compatible).</summary>
+    public float CornerRadius { get; init; }
+    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): track colour, evaluated per refresh
+    /// and painted only when it changes (alpha honoured — e.g. a theme "track" token). Returning null keeps the default
+    /// translucent dark track. Default null → no override machinery, unchanged. Init property (binary-compatible).</summary>
+    public Func<ColorRgba?>? TrackColorFn { get; init; }
 }
 
 /// <summary>Render style for a <see cref="BarElement"/>.</summary>

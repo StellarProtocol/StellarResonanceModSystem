@@ -80,6 +80,28 @@ internal sealed class WindowThemeAssets
         return sprite;
     }
 
+    // Left-rounded variants (corners on the LEFT only, straight right edge), keyed by radius. A second sprite over the
+    // SAME cached BubbleBg texture (no extra bake/texture) — same lifetime rule (kept across re-bakes).
+    private readonly System.Collections.Generic.Dictionary<int, Sprite> _bubbleLeftSprites = new();
+
+    /// <summary>A white 9-slice chip rounded on its LEFT corners only (right edge straight), matching
+    /// <see cref="BubbleBg"/> at the same <paramref name="radius"/> (&gt; 0). Cut from BubbleBg's texture: the left
+    /// r+2 columns, border (r+1, r+1, 0, r+1). For a share wash flush inside a rounded tile (AccentRowElement
+    /// CornerRadius, 2.33.0). Main-thread only; null before the neutral sprites are baked.</summary>
+    public Sprite? BubbleBgLeft(int radius)
+    {
+        if (radius <= 0) return null;
+        if (_bubbleLeftSprites.TryGetValue(radius, out var s)) return s;
+        if (BubbleBg(radius) == null) return null;
+        var tex = _bubbleSprites[radius].tex;
+        var b = radius + 1;
+        s = Sprite.Create(tex, new UnityEngine.Rect(0f, 0f, b + 1, tex.height), new Vector2(0.5f, 0.5f),
+            pixelsPerUnit: 100f, extrude: 0, meshType: SpriteMeshType.FullRect, border: new Vector4(b, b, 0f, b));
+        s.hideFlags = HideFlags.HideAndDontSave;
+        _bubbleLeftSprites[radius] = s;
+        return s;
+    }
+
     // White 1-px rounded RINGS (transparent interior) for BubbleElement.OutlineColorFn, keyed by the same radius as the
     // bubble's fill sprite so the ring hugs its exact edge. Same lifetime rule as _bubbleSprites (kept across re-bakes).
     private readonly System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> _bubbleOutlines = new();

@@ -10,7 +10,21 @@ namespace Stellar.Abstractions.Services;
 /// <paramref name="Stripe"/>-tinted bar whose width is <paramref name="Share"/> (0..1) of the row, plus a 3-px
 /// <paramref name="Stripe"/>-coloured left edge. The CombatMeter History/Skill table rows use this for the
 /// role-coloured stripe + share-fraction wash the IMGUI build drew (DrawRowAccent). Both Funcs are poll-diffed.</summary>
-public sealed record AccentRowElement(HudElement Child, Func<ColorRgba> Stripe, Func<float> Share) : HudElement;
+public sealed record AccentRowElement(HudElement Child, Func<ColorRgba> Stripe, Func<float> Share) : HudElement
+{
+    /// <summary>Opt-in rounded wash (framework 2.33.0). &gt; 0 = drop the 3 px left stripe and draw the share wash with
+    /// corners of this radius in px, so it sits flush inside a rounded tile of the same radius (e.g. a
+    /// <c>BubbleElement</c> with <c>CornerRadius = 6</c>): the left end follows the tile's rounded corners, the right end
+    /// is a straight cut (as if the tile clipped it), and only within <c>radius</c> px of the row's right edge does it
+    /// round off with the tile. A share narrower than the corner draws a proportionally squashed corner. 0 (the
+    /// default) = the original square wash + stripe, unchanged. Init property, NOT a ctor param, so the record's
+    /// primary constructor stays binary-compatible.</summary>
+    public float CornerRadius { get; init; }
+
+    /// <summary>Opacity (0..1) of the share wash, multiplied into the <see cref="Stripe"/> colour (framework 2.33.0).
+    /// 0 (the default) = the original 0.12. Init property (binary-compatible).</summary>
+    public float WashAlpha { get; init; }
+}
 
 /// <summary>One bespoke CombatMeter row — the borderless, role-coloured, animated meter row (HP spine + class
 /// crest + name·spec·share line + role-coloured metric bar with a per-second/total overlay + self highlight +

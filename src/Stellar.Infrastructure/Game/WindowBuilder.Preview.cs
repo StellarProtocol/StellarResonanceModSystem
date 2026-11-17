@@ -79,11 +79,12 @@ internal sealed partial class WindowBuilder
         AddLiveCanvas(row, interactive: false);   // own batch: a fill/label change re-batches this bar only (.LiveCanvas.cs)
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
-        var (clipRt, fill) = BuildBarTrack(row.transform, b);
+        var (clipRt, fill, trackImg) = BuildBarTrack(row.transform, b);
         var label = BuildBarLabel(b, row.transform, clipRt, ls, token);
         var bind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label };
         // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
         if (b.FillColorFn != null) { bind.FillGraphic = fill; bind.FillColorFn = b.FillColorFn; }
+        if (b.TrackColorFn != null) { bind.TrackGraphic = trackImg; bind.TrackColorFn = b.TrackColorFn; }   // 2.33.0 opt-in
         token.Bars.Add(bind);
     }
 
@@ -159,7 +160,7 @@ internal sealed partial class WindowBuilder
     // MeterRow/AccentRow clip their fill width. Geometry from Height/Width/FillWidth (defaults 14/150/fixed).
     // Returns the fill-clip RectTransform (its anchorMax.x drives width) and the fill Graphic (the BarBinding
     // re-colours it per refresh when BarElement.FillColorFn is set).
-    private (RectTransform ClipRt, Graphic Fill) BuildBarTrack(Transform row, BarElement b)
+    private (RectTransform ClipRt, Graphic Fill, Image Track) BuildBarTrack(Transform row, BarElement b)
     {
         var track = UGuiPrimitives.NewChild("Track", row);
         var tle = track.AddComponent<LayoutElement>();
@@ -181,7 +182,20 @@ internal sealed partial class WindowBuilder
         var fill = fillGo.AddComponent<Image>();
         fill.type = Image.Type.Simple; fill.raycastTarget = false;
         fill.color = new Color(b.Fill.R, b.Fill.G, b.Fill.B, b.Fill.A);
-        return (clipRt, fill);
+        if (b.CornerRadius > 0f) RoundBar(trackImg, fill, Mathf.RoundToInt(b.CornerRadius), tle.preferredHeight);
+        return (clipRt, fill, trackImg);
+    }
+
+    // BarElement.CornerRadius (2.33.0 opt-in): track AND fill drawn with the cached BubbleBg(r) sprite, so the fill is
+    // a rounded bar inside the anchor clip. The sprite's slice border is r+1 per side and a sliced Image reports its
+    // borders as a MIN layout size → on a thin bar (2r+2 > height) scale the sprite down via pixelsPerUnitMultiplier
+    // so the borders sum to exactly the height: the bar never grows (r 2 on a 4 px bar = a capsule, ends ≈ round).
+    private void RoundBar(Image track, Image fill, int radius, float height)
+    {
+        if (_assets.BubbleBg(radius) is not { } sprite) return;   // pre-bake sandbox: keep the default look
+        var ppu = height > 0f ? Mathf.Max(1f, 2f * (radius + 1) / height) : 1f;
+        track.sprite = sprite; track.type = Image.Type.Sliced; track.pixelsPerUnitMultiplier = ppu;
+        fill.sprite = sprite;  fill.type = Image.Type.Sliced;  fill.pixelsPerUnitMultiplier = ppu;
     }
 
     // Modern (BarStyle.Modern) window bar — the CombatMeter metric-bar look, REUSING the WindowBuilder.MeterRow

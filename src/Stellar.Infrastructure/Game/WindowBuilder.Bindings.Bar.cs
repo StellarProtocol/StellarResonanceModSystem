@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 namespace Stellar.Infrastructure.Game;
 
-// BarElement's poll-diff binding, split out of WindowBuilder.Bindings.cs (500-LoC file gate). Pure relocation.
+// BarElement's poll-diff binding, split out of WindowBuilder.Bindings.cs (500-LoC file gate).
 internal sealed partial class WindowBuilder
 {
     internal sealed class BarBinding : GatedBinding
@@ -40,6 +40,19 @@ internal sealed partial class WindowBuilder
                 if (s != _lastLabel) { Label.text = s; if (LabelShadow != null) LabelShadow.text = UGuiPrimitives.StripColorTags(s); _lastLabel = s; }
             }
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
+            if (TrackGraphic != null && TrackColorFn != null) ApplyTrackColor(TrackColorFn());
+        }
+
+        // Per-refresh track colour (BarElement.TrackColorFn, 2.33.0). Left null → no machinery, unchanged. Painted only
+        // when the returned colour changes (no per-poll write); null restores the build-time track colour once.
+        public Graphic? TrackGraphic; public Func<ColorRgba?>? TrackColorFn;
+        private Color? _trackBuildColor; private ColorRgba? _lastTrack; private bool _trackInit;
+        private void ApplyTrackColor(ColorRgba? v)
+        {
+            if (_trackInit && Nullable.Equals(v, _lastTrack)) return;
+            _trackBuildColor ??= TrackGraphic!.color;
+            TrackGraphic!.color = v is { } c ? new Color(c.R, c.G, c.B, c.A) : _trackBuildColor.Value;
+            _lastTrack = v; _trackInit = true;
         }
 
         private void ApplyFillColor(ColorRgba? v)
