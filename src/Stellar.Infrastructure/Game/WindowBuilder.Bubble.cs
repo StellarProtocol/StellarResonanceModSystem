@@ -114,7 +114,7 @@ internal sealed partial class WindowBuilder
         return bg;
     }
 
-    // BubbleElement.OutlineColorFn: a 1-px rounded ring (same radius as the fill sprite) stretched over the bubble.
+    // BubbleElement.OutlineColorFn: a 1-px (or OutlineWidth) rounded ring (same radius as the fill sprite) stretched over the bubble.
     // ignoreLayout → the VLG never measures it, so showing/hiding it can't change the bubble's size; added AFTER the
     // content child so BuildBubble's "single content child" index is unaffected; raycastTarget=false like the fill.
     // Starts disabled — BubbleBinding enables + tints it from the first OutlineColorFn poll.
@@ -125,8 +125,17 @@ internal sealed partial class WindowBuilder
         var rt = ringGo.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
         var ring = ringGo.AddComponent<Image>();
-        var sprite = _assets.BubbleOutline(Mathf.RoundToInt(bubble.CornerRadius));
-        if (sprite != null) { ring.sprite = sprite; ring.type = Image.Type.Sliced; }
+        var radius = Mathf.RoundToInt(bubble.CornerRadius);
+        // OutlineWidth 0 = the original 1-px ring sprite, untouched. > 0 = a thicker ring from the 2×-baked half-px
+        // cache (theme-independent, baked once per (radius, width)), drawn at multiplier 2 so it lands at the same
+        // corner radius as the fill and grows INWARD from the bubble edge.
+        var thick = bubble.OutlineWidth > 0f;
+        var sprite = thick ? _assets.BubbleOutlineWidth(radius, bubble.OutlineWidth) : _assets.BubbleOutline(radius);
+        if (sprite != null)
+        {
+            ring.sprite = sprite; ring.type = Image.Type.Sliced;
+            if (thick) ring.pixelsPerUnitMultiplier = 2f;
+        }
         ring.raycastTarget = false;
         ring.enabled = false;
         return ring;

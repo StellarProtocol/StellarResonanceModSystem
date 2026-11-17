@@ -147,6 +147,19 @@ internal sealed class WindowThemeAssets
         _halfPxRings[key] = (tex, sprite);
         return sprite;
     }
+
+    /// <summary>BubbleElement.OutlineWidth (2.33.0): a ring <paramref name="widthPx"/> wide, snapped to 0.5 px and
+    /// clamped to [0.5, corner radius] (a ring wider than the corner would spill into the 9-slice centre strip and
+    /// stretch). Reuses the <see cref="BubbleRingHalfPx"/> cache, so it MUST be drawn Sliced with
+    /// <c>pixelsPerUnitMultiplier = 2</c>. <paramref name="radius"/> &lt;= 0 → the 3-radius chip rounding, matching
+    /// <see cref="BubbleBg"/>(0). Main-thread only.</summary>
+    public Sprite? BubbleOutlineWidth(int radius, float widthPx)
+    {
+        var r = radius <= 0 ? SwatchRadius : radius;
+        // halfPx < 64 keeps BubbleRingHalfPx's radius*64+halfPx key collision-free.
+        var halfPx = System.Math.Clamp((int)System.Math.Round(widthPx * 2f), 1, System.Math.Min(r * 2, 63));
+        return BubbleRingHalfPx(r, halfPx);
+    }
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;

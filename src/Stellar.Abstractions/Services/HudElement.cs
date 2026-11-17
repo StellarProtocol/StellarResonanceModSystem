@@ -118,6 +118,14 @@ public sealed record BubbleElement(HudElement Child) : HudElement
     /// ring is overlaid (never measured), so toggling it never changes the bubble's size. Default null = no ring is
     /// even created: the bubble renders exactly as before. An <c>init</c> property (binary-compatible).</summary>
     public Func<ColorRgba?>? OutlineColorFn { get; init; }
+
+    /// <summary>Thickness in px of the <see cref="OutlineColorFn"/> ring (framework 2.33.0). 0 (default) = the original
+    /// 1 px ring, unchanged. A positive value draws a thicker ring INSIDE the bubble edge, at the same
+    /// <see cref="CornerRadius"/> as the fill; it is snapped to 0.5 px steps and capped at the corner radius (3 px when
+    /// <see cref="CornerRadius"/> is 0). Fixed at build time (the colour stays per-refresh); it never changes the
+    /// bubble's size, so keep <see cref="PaddingX"/>/<see cref="PaddingY"/> larger than it if content must not sit
+    /// under the ring. Has no effect without <see cref="OutlineColorFn"/>. Init property (binary-compatible).</summary>
+    public float OutlineWidth { get; init; }
 }
 
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>
