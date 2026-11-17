@@ -161,7 +161,8 @@ internal sealed partial class WindowBuilder
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
     // emptyOp = the row's BackingOpacity (Rounded rows; 1 = unchanged): multiplies the EMPTY-slot square's alpha only.
-    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache, float emptyOp = 1f)
+    // rows = effect rows (2 = the Normal block; a Compact row passes 1 — MeterRowElement.Density).
+    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache, float emptyOp = 1f, int rows = MeterDebuffRows)
     {
         if (block.Root == null) return;
         if (!cache.Init || d.ShowDebuffs != cache.Shown) { block.Root.SetActive(d.ShowDebuffs); cache.Shown = d.ShowDebuffs; cache.Init = true; }
@@ -171,12 +172,12 @@ internal sealed partial class WindowBuilder
         if (!Mathf.Approximately(cellPx, cache.Size) || cols != cache.Cols)
         {
             block.Grid.cellSize = new Vector2(cellPx, cellPx);
-            block.Grid.constraintCount = cols;   // FixedColumnCount → 2 rows fill for cols*2 cells
+            block.Grid.constraintCount = cols;   // FixedColumnCount → `rows` rows fill for cols*rows cells
             block.Le.preferredWidth = block.Le.minWidth = DebuffBlockPx(d);
-            block.Le.preferredHeight = DebuffRowsPx(d);
+            block.Le.preferredHeight = rows * cellPx + (rows - 1) * MeterDebuffGap;
             cache.Size = cellPx; cache.Cols = cols;
         }
-        var visible = cols * MeterDebuffRows;   // cells to show (rest hidden)
+        var visible = cols * rows;   // cells to show (rest hidden)
         for (var i = 0; i < MeterDebuffMaxCells; i++)
         {
             var cell = block.Cells[i];

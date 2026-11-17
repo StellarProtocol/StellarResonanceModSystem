@@ -51,6 +51,30 @@ public sealed record MeterRowElement(System.Func<MeterRowData> Data, System.Acti
     /// NaN = 1. Polled with the row's refresh, repainted only on a change. Null (the default) = unchanged. Init property,
     /// NOT a ctor param (binary-compatible); a Classic row ignores it.</summary>
     public System.Func<float>? BackingOpacity { get; init; }
+
+    /// <summary>Row size, <see cref="MeterRowStyle.Rounded"/> rows only (framework 2.33.0). <see cref="MeterRowDensity.Normal"/>
+    /// (the default) is the 48 px row, unchanged. <see cref="MeterRowDensity.Compact"/> and <see cref="MeterRowDensity.Mini"/>
+    /// are one-line rows whose metric bar becomes the row's fill (see the enum). Chosen once when the row is built, like
+    /// <see cref="Style"/> — to switch at runtime, build one row set per size behind a <see cref="ConditionalElement"/>
+    /// (branches build lazily, so an unused size costs nothing). Init property, NOT a ctor param (binary-compatible); a
+    /// Classic row ignores it.</summary>
+    public MeterRowDensity Density { get; init; }
+}
+
+/// <summary>Row size of a <see cref="MeterRowStyle.Rounded"/> <see cref="MeterRowElement"/> (framework 2.33.0).</summary>
+public enum MeterRowDensity
+{
+    /// <summary>The 48 px two-line row (the default, unchanged).</summary>
+    Normal = 0,
+    /// <summary>24 px one-line row: 3 px HP spine · 16 px class crest · rank · leader flag · name · total · per-second ·
+    /// up to 3 status-effect tiles (16 px, one row; <see cref="MeterRowData.DebuffOverflow"/> must be counted against 3).
+    /// The metric bar is the row's fill behind the text. Spec, class label, share %, voice icon, ability score and
+    /// Battle Imagines are not drawn; the spine is always 3 px and <see cref="MeterRowData.DebuffCellSize"/> /
+    /// <see cref="MeterRowData.DebuffColumns"/> are ignored.</summary>
+    Compact = 1,
+    /// <summary>17 px bar-only row: rank · name · "total · per-second" on a full-row fill. Additionally no crest, spine,
+    /// leader flag, status effects or bar sheen.</summary>
+    Mini = 2,
 }
 
 /// <summary>Visual style of a <see cref="MeterRowElement"/>.</summary>

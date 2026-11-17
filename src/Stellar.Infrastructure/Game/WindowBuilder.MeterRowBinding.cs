@@ -157,7 +157,7 @@ internal sealed partial class WindowBuilder
         public void Apply()
         {
             if (Bg == null || !Bg.gameObject.activeInHierarchy) return;
-            var d = Data();
+            var d = Data(); Density?.Prepare(ref d);   // Compact / Mini: mask what the size does not draw (stack copy, .MeterRow.Density.cs)
 
             if (Rounded != null) Rounded.Apply(d); else ApplySelfHighlight(d);
             ApplySpine(d);
@@ -180,7 +180,7 @@ internal sealed partial class WindowBuilder
 
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
-            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
+            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc) * FillTint; _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
             // Main-bar shield band (left-anchored, width = BarShieldFraction) — the horizontal analogue of the
             // spine shield in ApplySpine; 0 in DPS mode so the bar is unchanged there.
             if (BarShieldImg != null)
@@ -305,7 +305,7 @@ internal sealed partial class WindowBuilder
         private void ApplyImagineLayout(in MeterRowData d)
         {
             int key = (int)d.ImagineSize * 4 + (int)d.ImaginePosition;
-            if (_lastImgLayout == key) return;
+            if (_lastImgLayout == key || Density != null) return;   // Compact / Mini draw no imagines and own the padding
             _lastImgLayout = key;
             if (ImagineGroup != null && TopLine != null && RightColHost != null)
             {
@@ -332,6 +332,7 @@ internal sealed partial class WindowBuilder
         // debuff block width when both want the right edge (so they never overlap).
         private void ApplyDebuffLayout(in MeterRowData d)
         {
+            if (Density != null) { ApplySlimLayout(d); return; }   // Compact / Mini (.MeterRow.Density.cs)
             float blockW = DebuffBlockPx(d);   // WIDTH — scales with cell size AND column count
             float rowsH  = DebuffRowsPx(d);    // HEIGHT — always 2 rows (columns never change the height)
             // Key includes the column count so a change in columns (same blockW is impossible, but be explicit) relays out.
@@ -365,7 +366,7 @@ internal sealed partial class WindowBuilder
         }
 
         // Poll-diff the trailing 2×2 debuff block (kept out of Apply to respect the method-LoC cap).
-        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff, Rounded?.BackingOp ?? 1f);
+        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff, Rounded?.BackingOp ?? 1f, Density == null ? MeterDebuffRows : MeterRowDensityRules.CompactEffectRows);
 
         // Poll-diff the two trailing Imagine cells (kept out of Apply to respect the method-LoC cap).
         private void ApplyImagines(in MeterRowData d)
@@ -424,7 +425,7 @@ internal sealed partial class WindowBuilder
                 Crest.texture = tex;
                 Crest.enabled = tex != null;
                 // Letterbox a non-square atlas cell inside the 22×22 box (AspectFit) instead of stretching it.
-                if (tex != null) Crest.rectTransform.sizeDelta = AspectFit(22f, d.CrestUv.W * tex.width, d.CrestUv.H * tex.height);
+                if (tex != null) Crest.rectTransform.sizeDelta = AspectFit(CrestBox, d.CrestUv.W * tex.width, d.CrestUv.H * tex.height);
             }
             Crest.uvRect = new UnityEngine.Rect(d.CrestUv.X, d.CrestUv.Y, d.CrestUv.W, d.CrestUv.H);
 

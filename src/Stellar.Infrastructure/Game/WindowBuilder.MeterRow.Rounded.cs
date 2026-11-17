@@ -24,7 +24,7 @@ internal sealed partial class WindowBuilder
     private const float MeterRoundInset  = 4f;    // spine inset from the tile's top/bottom/left edge
 
     // Rounded skin: applies the build-time sprite/geometry changes, then hangs the live painter on the binding.
-    private void ApplyRoundedMeterSkin(MeterRowBinding b, GameObject row, WindowToken token, Func<float>? backing)
+    private void ApplyRoundedMeterSkin(MeterRowBinding b, GameObject row, WindowToken token, MeterRowElement el)
     {
         SetRoundSprite(b.Bg, _assets.BubbleBg(MeterRoundTileR));
         if (b.Scrim != null) SetRoundSprite(b.Scrim.GetComponent<Image>(), _assets.BubbleBg(MeterRoundTileR));
@@ -53,7 +53,7 @@ internal sealed partial class WindowBuilder
 
         var skin = new MeterRowRoundedSkin
         {
-            Assets = _assets, Opacity = _assets.OpacityProvider, Backing = backing, Bg = b.Bg, Ring = AddRoundRing(row.transform),
+            Assets = _assets, Opacity = _assets.OpacityProvider, Backing = el.BackingOpacity, Bg = b.Bg, Ring = AddRoundRing(row.transform),
             SpineTrack = spineTrack, SpineImgs = new[] { spineTrack, b.SpineFill, b.ShieldFill },
             SpineGroup = b.SpineGo.AddComponent<CanvasGroup>(), BarTrack = barTrack, BarGroup = barGo.AddComponent<CanvasGroup>(),
             BarLe = barGo.GetComponent<LayoutElement>()!, RowGroup = row.AddComponent<CanvasGroup>(),
@@ -62,6 +62,7 @@ internal sealed partial class WindowBuilder
         AttachTopLineFit(skin, b);
         token.ReskinActions.Add(skin.MarkThemeDirty);
         b.Rounded = skin;
+        ApplyMeterRowDensity(b, row, token, el.Density);   // Compact / Mini reshape the finished Rounded row (.MeterRow.Density.cs)
     }
 
     // The Classic bar's overlays are RECTANGLES and can't follow a rounded fill:
@@ -249,6 +250,8 @@ internal sealed partial class WindowBuilder
         public LayoutElement BarLe = null!;
         public Text Rank = null!, Spec = null!, Hint = null!;
         public RankSlot? RankSlot;
+        /// <summary>MeterRowDensity.Mini: paint the tile in the recessed track colour (the full-row bar sits on it).</summary>
+        public bool BgAsTrack;
 
         private const float TileAlpha = 0.92f, SelfAlpha = 0.95f, TrackAlpha = 0.90f, EmptyAlpha = 0.75f;
         private const float DeadAlpha = 0.55f, SelfWash = 0.20f, SelfRingAlpha = 0.75f;
@@ -293,7 +296,9 @@ internal sealed partial class WindowBuilder
         private void Paint(in MeterRowData d, float op, float bk)
         {
             bool empty = d.IsEmptySlot;
-            Bg.color = empty ? Fade(_recessed, EmptyAlpha * bk, op) : Fade(d.IsSelf ? _self : _tile, (d.IsSelf ? SelfAlpha : TileAlpha) * bk, op);
+            Bg.color = empty ? Fade(_recessed, EmptyAlpha * bk, op)
+                : BgAsTrack ? Fade(_recessed, TrackAlpha * bk, op)   // Mini: the tile IS the bar track (self = ring only)
+                : Fade(d.IsSelf ? _self : _tile, (d.IsSelf ? SelfAlpha : TileAlpha) * bk, op);
             SpineTrack.color = Fade(_spineTrack, bk, op);
             BarTrack.color = Fade(_recessed, TrackAlpha * bk, op);
             SpineGroup.alpha = empty ? 0f : 1f;

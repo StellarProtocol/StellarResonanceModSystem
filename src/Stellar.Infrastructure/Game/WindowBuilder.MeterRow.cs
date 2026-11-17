@@ -126,7 +126,7 @@ internal sealed partial class WindowBuilder
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
         };
-        if (el.Style == MeterRowStyle.Rounded) ApplyRoundedMeterSkin(binding, row, token, el.BackingOpacity);   // opt-in (.MeterRow.Rounded.cs)
+        if (el.Style == MeterRowStyle.Rounded) ApplyRoundedMeterSkin(binding, row, token, el);   // opt-in (.MeterRow.Rounded.cs; + Density, .MeterRow.Density.cs)
         token.MeterRows.Add(binding);
 
         WireRowInteractions(row, voiceImg, el);
