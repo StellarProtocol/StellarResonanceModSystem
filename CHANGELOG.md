@@ -14,6 +14,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.33.0] - 2026-11-17
+_**2.33.0** (minor) — combat meter rows can use the rounded house-style look. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`) and `MeterRowData.IsEmptySlot` / `EmptyHint` (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
+### Added
+- Combat meter rows can now be drawn as rounded tiles that follow your theme colours and window opacity, with a clear outline on your own row and a softer look for empty party slots.
+### Developer notes
+- **`MeterRowElement.Style`** (`MeterRowStyle`, init-only, default `Classic`). `Classic` is byte-identical to 2.32.0. `Rounded` reskins the same row (all data features unchanged):
+  - row = radius-6 theme Tile @92 % (self: 20 % accent wash @95 % + 1.5 px accent ring @75 %), theme-live, fills × `IChromeStyle.WindowOpacity`;
+  - spine = capsule inset 4 px top/bottom/left (any `SpineWidth`); bar = radius-5 fill on a recessed track; status-effect cells = radius-4 tiles with the kind-coloured 1.5 px ring;
+  - `RowBorder` draws as the rounded ring (wins over the self ring); `SelfAccent` and the skull marker are not used; a `Dead` row fades to 55 % (name strike kept);
+  - rank and spec text use the theme Muted colour.
+- **`MeterRowData.IsEmptySlot`** / **`EmptyHint`** (additive fields, read only by `Rounded`): recessed tile, faint rank + name (pass a localized "Empty"), spine and bar hidden, optional right-aligned muted hint.
+- `MeterRowElement` / `AccentRowElement` moved from `WindowElement.cs` to `MeterRowElement.cs` (500-LoC gate; no API change).
+- `WindowThemeAssets.BubbleRingHalfPx(radius, halfPx)`: 2×-baked ring drawn at `pixelsPerUnitMultiplier = 2` for half-pixel ring widths.
+
 ## [2.32.0] - 2026-11-13
 _**2.32.0** (minor) — mods can tell whether another player is online, a player's profile no longer goes blank in mods after a quick lookup, and outfit areas reset to default no longer read as black. Adds `SocialSnapshot.Presence` / `IsOnline` / `Sections` and the `SocialPresence` / `SocialSections` types (Abstractions 2.32.0); additive, no plugin rebuild._
 ### Added
