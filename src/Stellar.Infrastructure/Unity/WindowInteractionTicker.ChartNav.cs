@@ -53,7 +53,7 @@ public sealed partial class WindowInteractionTicker
             var cn = ChartNavs[i];
             if (cn.Nav == null || !cn.Nav.gameObject.activeInHierarchy) continue;
             if (!Contains(cn.Nav, mp)) continue;
-            if (FrontWindowBlocks(mp, FindWindowRoot(cn.Nav))) continue;
+            if (FrontWindowBlocks(mp, FindWindowRoot(cn.Nav)) || LayerCovered(cn.Nav, mp)) continue;
             if (Contains(cn.Left, mp)) { _navGrab = NavGrab.Left; return i; }
             if (Contains(cn.Right, mp)) { _navGrab = NavGrab.Right; return i; }
             if (Contains(cn.Body, mp)) { return BeginBodyOrReset(i, cn, mp); }

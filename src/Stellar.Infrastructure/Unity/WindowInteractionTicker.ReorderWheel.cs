@@ -28,7 +28,7 @@ public sealed partial class WindowInteractionTicker
         // Same owner rule as every other ticker hit-test: the wheel belongs to this list only while the pointer is over
         // its viewport and no window in front of it owns that point.
         if (_rlZone == null || !RectTransformUtility.RectangleContainsScreenPoint(_rlZone, mp, null)) return;
-        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return;
+        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List)) || LayerCovered(reg.List, mp)) return;
         var pos = content.anchoredPosition;
         var y = VirtualReorderMath.ClampScroll(pos.y + VirtualReorderMath.WheelScrollDelta(wheel, sr.scrollSensitivity),
             content.rect.height, vp.rect.height);

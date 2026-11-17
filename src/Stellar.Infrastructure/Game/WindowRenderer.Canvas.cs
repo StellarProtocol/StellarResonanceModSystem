@@ -108,6 +108,7 @@ internal sealed partial class WindowRenderer
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
         _builder.RegisterReorderList = reg => _ticker!.ReorderLists.Add(reg);
+        _builder.RegisterLayerHost = (host, stack, above, inert) => _ticker!.RegisterLayerHost(host, stack, above, inert);
         _builder.ClickSuppressed = () => _ticker != null && _ticker.ReorderSuppressesClick;
         _builder.RegisterDismissable = (root, dismiss) => _ticker!.Dismissables.Add((root, dismiss));
         _ticker.ModalPopupLayer = () => _builder?.OpenDropdownLayer;   // open dropdown = modal for ticker hover

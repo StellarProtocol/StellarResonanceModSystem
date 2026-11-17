@@ -95,6 +95,7 @@ internal sealed partial class WindowBuilder
         internal UGuiTextInput? AutoFocusField;
         internal readonly List<FieldBinding> FieldSyncs = new();   // re-sync field text from Get() on external change
         internal readonly List<CondBinding> Conds = new();
+        internal readonly List<LayerBinding> Layers = new();   // LayerStackElement overlay show/hide + fill (.LayerStack.cs)
         // ConditionalElement.Prebuild background build of hidden branches (null = none / done; WindowBuilder.Prebuild.cs).
         // ApplyCount/LastApplyFrame let it wait for an apply to fill a staged branch's texts before putting it away.
         internal PrebuildState? Prebuild;
@@ -180,7 +181,7 @@ internal sealed partial class WindowBuilder
             for (var i = vlBuilt; i < VirtualLists.Count; i++) if (GatedBinding.Runs(VirtualLists[i] as GatedBinding)) Note(ref structuralChange, VirtualLists[i] as GatedBinding, VirtualLists[i].Apply());
             for (var i = 0; i < Lists.Count; i++) if (GatedBinding.Runs(Lists[i])) Note(ref structuralChange, Lists[i], Lists[i].Apply());
             if (_bgStructural) RelayoutWarmingKeepAlives();
-            MovedUnderPointer = structuralChange || flipped;
+            MovedUnderPointer = (Layers.Count > 0 && ApplyLayers()) | structuralChange | flipped;
             // Force the FIRST layout immediately even with no structural change: width-readback bindings (a
             // FillWidth LineChart reads its laid-out plot width) must see the resolved geometry on their first
             // poll, and a window with no Conditionals/Lists would otherwise leave _laidOut false and the rect
@@ -210,6 +211,17 @@ internal sealed partial class WindowBuilder
         // gets would re-lay-out the visible tab for nothing (the `ui:structural` + 14-16 ms canvas rebuilds measured on
         // every background tab layout, 11-09).
         private bool _bgStructural;
+
+        // LayerStack overlays: a show/hide changes what is under the pointer (→ hover rescan) but is never structural —
+        // the layer sits under a non-layout host, so its SetActive re-lays-out only itself (.LayerStack.cs). Apply() calls it FIRST
+        // in a non-short-circuit `|` (MovedUnderPointer), so overlays poll on every apply.
+        private bool ApplyLayers()
+        {
+            var flipped = false;
+            for (var i = 0; i < Layers.Count; i++)
+                if (GatedBinding.Runs(Layers[i]) && Layers[i].Apply() && !GatedBinding.InBackground(Layers[i])) flipped = true;
+            return flipped;
+        }
         private void Note(ref bool structural, GatedBinding? b, bool changed)
         {
             if (!changed) return;
