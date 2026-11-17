@@ -15,12 +15,12 @@ namespace Stellar.Infrastructure.Game;
 // (<230 spec / <180 share) only runs in List mode and measures the WINDOW, not this line.
 //
 // Fix: keep the line's preferred sum ≤ its width so the HLG never squeezes. The spec drops first (hidden + out of
-// layout), then the name is cut with the framework's own prefix + "..." (UGuiPrimitives.EllipsizeFit — NOT TMP/uGUI
+// layout), then the class label (CombatMeter's "Both" shows class AND spec), then the name is cut with the framework's own prefix + "..." (UGuiPrimitives.EllipsizeFit — NOT TMP/uGUI
 // Ellipsis, see KB) and its LayoutElement pins the slot. Decision rule = MeterTopLineFit (unit-tested).
 //
 // Cost: steady state = one rect read + one HLG preferredWidth read + reference compares per poll, no allocation. A re-fit
 // (sum the other children's preferred widths, measure, cut) runs only when the line width, the line's laid-out preferred
-// sum (share text / voice / imagines / rank changed), the name, the spec or a font reskin changes. A re-fit changes the
+// sum (share text / voice / imagines / rank changed), the name, the class, the spec or a font reskin changes. A re-fit changes the
 // sum it keys on, so the next poll re-fits once more with identical results and then settles.
 internal sealed partial class WindowBuilder
 {
@@ -33,18 +33,20 @@ internal sealed partial class WindowBuilder
         skin.Name = b.Name;
         skin.NameLe = b.Name.GetComponent<LayoutElement>();
         skin.SpecLe = b.Spec.GetComponent<LayoutElement>();
+        skin.ClassLabel = b.ClassName;
+        skin.ClassLe = b.ClassName?.GetComponent<LayoutElement>();
     }
 
     internal sealed partial class MeterRowRoundedSkin
     {
         public RectTransform? Line;
         public HorizontalLayoutGroup? LineHlg;
-        public Text? Name;
-        public LayoutElement? NameLe, SpecLe;
+        public Text? Name, ClassLabel;
+        public LayoutElement? NameLe, SpecLe, ClassLe;
 
-        private float _fitLineW = -1f, _fitTotal = -1f, _nameFullW, _specFullW;
-        private string? _fitName, _fitSpec;
-        private int _fitSpecWanted = -1;
+        private float _fitLineW = -1f, _fitTotal = -1f, _nameFullW, _specFullW, _classFullW;
+        private string? _fitName, _fitSpec, _fitClass;
+        private int _fitSpecWanted = -1, _fitClassWanted = -1;
         private bool _fitMeasure = true;   // full widths need (re)measuring: first fit, or a font / Font Scale reskin
 
         /// <summary>Call after the binding has written this poll's name/spec text.</summary>
@@ -58,8 +60,10 @@ internal sealed partial class WindowBuilder
             bool specWanted = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
             bool nameChanged = !ReferenceEquals(name, _fitName) && name != _fitName;
             bool specChanged = specWanted && !ReferenceEquals(d.Spec, _fitSpec) && d.Spec != _fitSpec;
-            int sw = specWanted ? 1 : 0;
-            if (!_fitMeasure && !nameChanged && !specChanged && sw == _fitSpecWanted
+            bool classWanted = ClassLabel != null && ClassLe != null && d.ShowClassName && !string.IsNullOrEmpty(d.ClassName);
+            bool classChanged = classWanted && !ReferenceEquals(d.ClassName, _fitClass) && d.ClassName != _fitClass;
+            int sw = specWanted ? 1 : 0, cw = classWanted ? 1 : 0;
+            if (!_fitMeasure && !nameChanged && !specChanged && !classChanged && sw == _fitSpecWanted && cw == _fitClassWanted
                 && Mathf.Approximately(lineW, _fitLineW) && Mathf.Approximately(total, _fitTotal)) return;
 
             if (_fitMeasure || nameChanged)
@@ -68,24 +72,34 @@ internal sealed partial class WindowBuilder
                 _nameFullW = Name.preferredWidth;
             }
             if (specWanted && (_fitMeasure || specChanged)) _specFullW = Spec.preferredWidth;   // binding set "· Spec"
+            if (classWanted && (_fitMeasure || classChanged)) _classFullW = ClassLabel!.preferredWidth;   // binding set it
             _fitMeasure = false;
             _fitName = name; _fitSpec = specWanted ? d.Spec : null; _fitSpecWanted = sw;
+            _fitClass = classWanted ? d.ClassName : null; _fitClassWanted = cw;
             _fitLineW = lineW; _fitTotal = total;
 
             float spacing = LineHlg.spacing;
-            var (showSpec, nameW) = MeterTopLineFit.Decide(lineW - OthersWidth(spacing), _nameFullW, specWanted, _specFullW, spacing);
+            var (showClass, showSpec, nameW) = MeterTopLineFit.Decide(lineW - OthersWidth(spacing), _nameFullW,
+                new MeterTopLineFit.Label(classWanted, _classFullW), new MeterTopLineFit.Label(specWanted, _specFullW), spacing);
 
             if (specWanted)
             {
                 if (Spec.enabled != showSpec) Spec.enabled = showSpec;
                 if (SpecLe.ignoreLayout == showSpec) SpecLe.ignoreLayout = !showSpec;   // dropped spec takes no width or gap
             }
+            // Same hide as the spec: Text.enabled + ignoreLayout, never SetActive — the binding owns the GameObject's
+            // active state (its _lastClassVis cache would go stale and never re-show the label).
+            if (classWanted)
+            {
+                if (ClassLabel!.enabled != showClass) ClassLabel.enabled = showClass;
+                if (ClassLe!.ignoreLayout == showClass) ClassLe.ignoreLayout = !showClass;
+            }
             if (nameW < _nameFullW) Name.text = UGuiPrimitives.EllipsizeFit(Name, name, nameW);
             else if (Name.text != name) Name.text = name;
             if (!Mathf.Approximately(NameLe.preferredWidth, nameW)) NameLe.preferredWidth = nameW;
         }
 
-        // Padding + every laid-out child except name and spec + one gap per such child (the gaps between them plus the
+        // Padding + every laid-out child except name, class and spec + one gap per such child (the gaps between them plus the
         // name's own gap). Live preferred widths (LayoutUtility), so a share text changed this poll is already counted.
         private float OthersWidth(float spacing)
         {
@@ -93,10 +107,11 @@ internal sealed partial class WindowBuilder
             var pad = hlg.padding;
             float w = pad.left + pad.right;
             var nameT = Name!.transform; var specT = Spec.transform;
+            var classT = ClassLabel != null ? ClassLabel.transform : null;
             for (int i = 0; i < line.childCount; i++)
             {
                 var c = line.GetChild(i);
-                if (!c.gameObject.activeSelf || c == nameT || c == specT) continue;
+                if (!c.gameObject.activeSelf || c == nameT || c == specT || c == classT) continue;
                 var le = c.GetComponent<LayoutElement>();
                 if (le != null && le.ignoreLayout) continue;
                 var rt = c.TryCast<RectTransform>();
