@@ -367,7 +367,7 @@ internal sealed partial class WindowBuilder
         }
 
         // Poll-diff the trailing 2×2 debuff block (kept out of Apply to respect the method-LoC cap).
-        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff);
+        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff, Rounded?.BackingOp ?? 1f);
 
         // Poll-diff the two trailing Imagine cells (kept out of Apply to respect the method-LoC cap).
         private void ApplyImagines(in MeterRowData d)

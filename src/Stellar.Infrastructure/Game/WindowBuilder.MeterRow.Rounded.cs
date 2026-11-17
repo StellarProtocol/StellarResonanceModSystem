@@ -24,7 +24,7 @@ internal sealed partial class WindowBuilder
     private const float MeterRoundInset  = 4f;    // spine inset from the tile's top/bottom/left edge
 
     // Rounded skin: applies the build-time sprite/geometry changes, then hangs the live painter on the binding.
-    private void ApplyRoundedMeterSkin(MeterRowBinding b, GameObject row, WindowToken token)
+    private void ApplyRoundedMeterSkin(MeterRowBinding b, GameObject row, WindowToken token, Func<float>? backing)
     {
         SetRoundSprite(b.Bg, _assets.BubbleBg(MeterRoundTileR));
         if (b.Scrim != null) SetRoundSprite(b.Scrim.GetComponent<Image>(), _assets.BubbleBg(MeterRoundTileR));
@@ -53,7 +53,7 @@ internal sealed partial class WindowBuilder
 
         var skin = new MeterRowRoundedSkin
         {
-            Assets = _assets, Opacity = _assets.OpacityProvider, Bg = b.Bg, Ring = AddRoundRing(row.transform),
+            Assets = _assets, Opacity = _assets.OpacityProvider, Backing = backing, Bg = b.Bg, Ring = AddRoundRing(row.transform),
             SpineTrack = spineTrack, SpineImgs = new[] { spineTrack, b.SpineFill, b.ShieldFill },
             SpineGroup = b.SpineGo.AddComponent<CanvasGroup>(), BarTrack = barTrack, BarGroup = barGo.AddComponent<CanvasGroup>(),
             BarLe = barGo.GetComponent<LayoutElement>()!, RowGroup = row.AddComponent<CanvasGroup>(),
@@ -212,6 +212,11 @@ internal sealed partial class WindowBuilder
     {
         public WindowThemeAssets Assets = null!;
         public Func<float>? Opacity;
+        /// <summary>MeterRowElement.BackingOpacity (null = 1): extra multiplier on the backing graphics only.</summary>
+        public Func<float>? Backing;
+        /// <summary>The resolved backing opacity of the last poll — the binding hands it to the empty status-effect
+        /// cells (they are re-coloured every poll in BindDebuffBlock anyway, so no separate diff is needed).</summary>
+        public float BackingOp { get; private set; } = 1f;
         public Image Bg = null!, Ring = null!, SpineTrack = null!, BarTrack = null!;
         public Image?[] SpineImgs = null!;
         public CanvasGroup SpineGroup = null!, BarGroup = null!, RowGroup = null!;
@@ -226,7 +231,7 @@ internal sealed partial class WindowBuilder
         public Color EmptyLabel { get; private set; }
         private bool _themeDirty = true;
         private int _lastKey = -1;
-        private float _lastOpacity = -1f, _lastSpineW = -1f;
+        private float _lastOpacity = -1f, _lastBacking = -1f, _lastSpineW = -1f;
         private ColorRgba _lastRing = new(-2f, -2f, -2f, -2f);
         private string? _lastHint;
 
@@ -236,11 +241,13 @@ internal sealed partial class WindowBuilder
         {
             if (_themeDirty) Recompute();
             float op = Mathf.Clamp01(Opacity?.Invoke() ?? 1f);
+            float bk = Backing == null ? 1f : MeterBackingRules.Resolve(Backing);
+            BackingOp = bk;
             int key = (d.IsEmptySlot ? 1 : 0) | (d.IsSelf ? 2 : 0) | (d.Dead ? 4 : 0);
-            if (key != _lastKey || !Mathf.Approximately(op, _lastOpacity) || !d.RowBorder.Equals(_lastRing))
+            if (key != _lastKey || !Mathf.Approximately(op, _lastOpacity) || bk != _lastBacking || !d.RowBorder.Equals(_lastRing))
             {
-                Paint(d, op);
-                _lastKey = key; _lastOpacity = op; _lastRing = d.RowBorder;
+                Paint(d, op, bk);
+                _lastKey = key; _lastOpacity = op; _lastBacking = bk; _lastRing = d.RowBorder;
             }
             ApplySpineShape(d);
             var hint = d.IsEmptySlot && !string.IsNullOrEmpty(d.EmptyHint) ? d.EmptyHint : null;
@@ -252,12 +259,14 @@ internal sealed partial class WindowBuilder
             }
         }
 
-        private void Paint(in MeterRowData d, float op)
+        // bk = BackingOpacity: fades the dark backing (tile, empty-slot tile, spine + bar tracks) but NOT the self tile —
+        // that tile IS the self wash, which must stay as visible as the self ring.
+        private void Paint(in MeterRowData d, float op, float bk)
         {
             bool empty = d.IsEmptySlot;
-            Bg.color = empty ? Fade(_recessed, EmptyAlpha, op) : d.IsSelf ? Fade(_self, SelfAlpha, op) : Fade(_tile, TileAlpha, op);
-            SpineTrack.color = Fade(_spineTrack, 1f, op);
-            BarTrack.color = Fade(_recessed, TrackAlpha, op);
+            Bg.color = empty ? Fade(_recessed, EmptyAlpha * bk, op) : d.IsSelf ? Fade(_self, SelfAlpha, op) : Fade(_tile, TileAlpha * bk, op);
+            SpineTrack.color = Fade(_spineTrack, bk, op);
+            BarTrack.color = Fade(_recessed, TrackAlpha * bk, op);
             SpineGroup.alpha = empty ? 0f : 1f;
             BarGroup.alpha = empty ? 0f : 1f;
             if (BarLe.ignoreLayout != empty) BarLe.ignoreLayout = empty;   // empty slot = one centred line
@@ -307,4 +316,12 @@ internal sealed partial class WindowBuilder
         private static Color Over(Color fg, Color bg)
             => new(bg.r + (fg.r - bg.r) * fg.a, bg.g + (fg.g - bg.g) * fg.a, bg.b + (fg.b - bg.b) * fg.a, 1f);
     }
+}
+
+/// <summary>Pure rules for <see cref="MeterRowElement.BackingOpacity"/> (System.Math only, no Unity → unit-testable).
+/// Same contract as <see cref="ContentOpacityRules"/>: clamped to [0, 1], a throw or NaN = 1 (a broken plugin delegate
+/// must never strip the row's backing).</summary>
+internal static class MeterBackingRules
+{
+    public static float Resolve(Func<float> backing) => ContentOpacityRules.Resolve(backing);
 }

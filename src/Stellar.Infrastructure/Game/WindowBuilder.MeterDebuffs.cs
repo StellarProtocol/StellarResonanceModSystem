@@ -160,7 +160,8 @@ internal sealed partial class WindowBuilder
     internal static float DebuffRowsPx(in MeterRowData d)  => MeterDebuffRows * DebuffCellPx(d) + (MeterDebuffRows - 1) * MeterDebuffGap;   // HEIGHT (2 rows)
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
-    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache)
+    // emptyOp = the row's BackingOpacity (Rounded rows; 1 = unchanged): multiplies the EMPTY-slot square's alpha only.
+    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache, float emptyOp = 1f)
     {
         if (block.Root == null) return;
         if (!cache.Init || d.ShowDebuffs != cache.Shown) { block.Root.SetActive(d.ShowDebuffs); cache.Shown = d.ShowDebuffs; cache.Init = true; }
@@ -182,7 +183,7 @@ internal sealed partial class WindowBuilder
             if (i >= visible) { if (cell != null && cell.Root != null) cell.Root.SetActive(false); continue; }
             cell ??= block.Cells[i] = block.CreateCell!(i);   // first time this slot is visible
             // The LAST visible cell owns the "+N" overflow; the rest never show it.
-            BindDebuffCell(cell, SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0);
+            BindDebuffCell(cell, SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0, emptyOp);
         }
     }
 
@@ -194,14 +195,15 @@ internal sealed partial class WindowBuilder
         8 => d.Debuff8, 9 => d.Debuff9, 10 => d.Debuff10, _ => d.Debuff11,
     };
 
-    private static void BindDebuffCell(DebuffCell cell, in DebuffSlot slot, int overflow)
+    private static void BindDebuffCell(DebuffCell cell, in DebuffSlot slot, int overflow, float emptyOp)
     {
         if (cell.Root == null) return;
         var more = overflow > 0;
         var present = !more && slot.Present;
         // Every cell renders (the block is shown): a debuff tile, a "+N" count, or a faint empty-slot square.
         cell.Root.SetActive(true);
-        cell.Frame.color = present ? (slot.IsBuff ? MeterBuffFrame : MeterDebuffFrame) : MeterDebuffEmpty;
+        cell.Frame.color = present ? (slot.IsBuff ? MeterBuffFrame : MeterDebuffFrame)
+                         : new Color(MeterDebuffEmpty.r, MeterDebuffEmpty.g, MeterDebuffEmpty.b, MeterDebuffEmpty.a * emptyOp);
         cell.InsetGo.SetActive(present);          // dark body only under a real tile; empty slot = the faint frame alone
         cell.MoreGo.SetActive(more);
         if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }
