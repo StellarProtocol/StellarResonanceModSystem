@@ -40,7 +40,8 @@ public interface IGameText
     string? GetName(GameTextKind kind, int id);
 
     /// <summary>English translation of the row's design label (<c>NameDesign</c>, e.g. buff 2203291 →
-    /// "Firmament Fall-child buff"), or null. A designer label, not player-facing wording — show it only when
+    /// "Fall of the Firmament - Sub-Buff"; official in-game terms where the label contains one, e.g. buff 2203650 →
+    /// "Radiance Barrage adds Steel Beak"), or null. A designer label, not player-facing wording — show it only when
     /// the row has no real name, and ideally with its id.</summary>
     string? GetDesignName(GameTextKind kind, int id);
 

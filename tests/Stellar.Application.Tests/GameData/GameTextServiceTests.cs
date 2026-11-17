@@ -21,9 +21,12 @@ public sealed class GameTextServiceTests
 
     [Theory]
     // Unnamed sub-buffs / damage zones from CombatMeter's Skill Breakdown: the framework names them "Buff <id>".
-    [InlineData(2203291, "Firmament Fall-child buff")]
-    [InlineData(2203521, "Steel Beak - child buff, stack")]
-    [InlineData(55240, "Light Energy Bombardment damage zone")]
+    // Design labels: official in-game terms first, then the Death Recap translations (tools/gametext/README.md).
+    [InlineData(2203291, "Fall of the Firmament - Sub-Buff")]
+    [InlineData(2203521, "Steel Beak - Sub-Buff Stacks")]
+    [InlineData(55240, "Light Bombardment Damage Zone")]
+    [InlineData(2203650, "Radiance Barrage adds Steel Beak")]   // 聚能射击 = skill 2234's official name
+    [InlineData(2203660, "Celestial Eagle doesn't consume Steel Beak")]
     public void UnnamedBuff_ResolvesToDesignName_FlaggedAsFallback(int id, string expected)
     {
         var svc = Loaded(out _);
