@@ -235,7 +235,9 @@ internal sealed partial class WindowBuilder
             bool styleChanged = _lastLabelStyle != (int)style;
             if (styleChanged)
             {
-                bool outline = style == MeterLabelStyle.Outline, shadow = style == MeterLabelStyle.Shadow;
+                // No fades (Rounded skin strips them — rectangles over rounded ends) → Shadow falls back to the halo.
+                bool shadow = style == MeterLabelStyle.Shadow && PrimaryFadeImg != null;
+                bool outline = style == MeterLabelStyle.Outline || (style == MeterLabelStyle.Shadow && !shadow);
                 if (PrimaryOutline != null) PrimaryOutline.enabled = outline;
                 if (SecondaryOutline != null) SecondaryOutline.enabled = outline;
                 if (PrimaryFadeImg != null) PrimaryFadeImg.gameObject.SetActive(shadow);

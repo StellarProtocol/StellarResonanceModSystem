@@ -44,6 +44,7 @@ internal sealed partial class WindowBuilder
         SetRoundSprite(barTrack, _assets.BubbleBg(MeterRoundBarR));
         SetRoundSprite(b.BarFillImg, _assets.BubbleBg(MeterRoundBarR));
         SetRoundSprite(b.BarShieldImg, _assets.BubbleBg(MeterRoundBarR));
+        StripRectangularBarOverlays(b);
 
         var create = b.DebuffBlock.CreateCell!;   // cells are built lazily → round each one as it is created
         b.DebuffBlock.CreateCell = i => { var c = create(i); RoundDebuffCell(c); return c; };
@@ -58,6 +59,27 @@ internal sealed partial class WindowBuilder
         };
         token.ReskinActions.Add(skin.MarkThemeDirty);
         b.Rounded = skin;
+    }
+
+    // The Classic bar's overlays are RECTANGLES and can't follow a rounded fill, so the Rounded skin drops them
+    // (the approved mockup has neither):
+    //  • Sheen + FillClip's RectMask2D. The band is clipped to the fill's RECT, so it paints white into the corner
+    //    zone the rounded fill leaves empty. Worse, RectMask2D is a hard per-fragment clip (UnityGet2DClipping =
+    //    step) at the fill's fractional edge: it cut away the fill's own anti-aliased top/left edge pixels and let
+    //    the dark track's edge show through → a dark 1 px rim that made the rounded fill read as a square box
+    //    (in-game 2026-11-17). Deactivated, not destroyed: SheenDriver early-outs on !activeInHierarchy, and
+    //    nulling the binding refs makes HideSheen a no-op so nothing ever re-enables them.
+    //  • Shadow label fades (64 px dark ramps anchored at the bar ends — square over the rounded track ends).
+    //    Nulled refs → ApplyLabelStyle renders MeterLabelStyle.Shadow as the text Outline halo instead, which is
+    //    also the mockup's look (text-shadow glow on the values).
+    private static void StripRectangularBarOverlays(MeterRowBinding b)
+    {
+        if (b.SheenGo != null) b.SheenGo.SetActive(false);
+        if (b.FillMask != null) b.FillMask.enabled = false;
+        b.SheenGo = null; b.FillMask = null;
+        if (b.PrimaryFadeImg != null) b.PrimaryFadeImg.gameObject.SetActive(false);
+        if (b.SecondaryFadeImg != null) b.SecondaryFadeImg.gameObject.SetActive(false);
+        b.PrimaryFadeImg = null; b.SecondaryFadeImg = null;
     }
 
     private static void SetRoundSprite(Image? img, Sprite? sprite)
