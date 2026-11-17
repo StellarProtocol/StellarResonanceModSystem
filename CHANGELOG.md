@@ -15,7 +15,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [2.33.0] - 2026-11-17
-_**2.33.0** (minor) — combat meter rows can use the rounded house-style look. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`) and `MeterRowData.IsEmptySlot` / `EmptyHint` (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
+_**2.33.0** (minor) — combat meter rows can use the rounded house-style look. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`), `MeterRowData.IsEmptySlot` / `EmptyHint` and `WindowSpec.BackgroundColor` / `BackgroundCornerRadius` (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
 ### Added
 - Combat meter rows can now be drawn as rounded tiles that follow your theme colours and window opacity, with a clear outline on your own row and a softer look for empty party slots.
 ### Developer notes
@@ -27,6 +27,7 @@ _**2.33.0** (minor) — combat meter rows can use the rounded house-style look. 
 - **`MeterRowData.IsEmptySlot`** / **`EmptyHint`** (additive fields, read only by `Rounded`): recessed tile, faint rank + name (pass a localized "Empty"), spine and bar hidden, optional right-aligned muted hint.
 - `MeterRowElement` / `AccentRowElement` moved from `WindowElement.cs` to `MeterRowElement.cs` (500-LoC gate; no API change).
 - `WindowThemeAssets.BubbleRingHalfPx(radius, halfPx)`: 2×-baked ring drawn at `pixelsPerUnitMultiplier = 2` for half-pixel ring widths.
+- **`WindowSpec.BackgroundColor`** (`Func<ColorRgba>?`, default null) + **`WindowSpec.BackgroundCornerRadius`** (`int`, default 0 = square), Borderless only, init-only (no record ctor change): an opt-in theme-coloured, optionally rounded backdrop behind the whole window (fills the full window rect at every resize size). One non-layout, non-raycast Image (cached rounded 9-slice sprite), poll-diffed at the window refresh rate and repainted only when the colour changes; alpha 0 disables it (no draw). The colour is applied as returned — the plugin composes its theme colour and fades it (its opacity setting × `IChromeStyle.WindowOpacity`). Wins over `BackgroundOpacity` when both are set; windows that set neither are unchanged.
 
 ## [2.32.0] - 2026-11-13
 _**2.32.0** (minor) — mods can tell whether another player is online, a player's profile no longer goes blank in mods after a quick lookup, and outfit areas reset to default no longer read as black. Adds `SocialSnapshot.Presence` / `IsOnline` / `Sections` and the `SocialPresence` / `SocialSections` types (Abstractions 2.32.0); additive, no plugin rebuild._

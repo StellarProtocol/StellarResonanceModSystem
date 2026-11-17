@@ -32,7 +32,10 @@ internal sealed partial class WindowBuilder
         // launcher → free drag.
         // Borderless optional black background — on the root's existing click-blocker Image so it fills the
         // full window rect and expands when the user resizes height (no separate child GO needed).
-        if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundOpacity is { } bgOp
+        // WindowSpec.BackgroundColor (opt-in, rounded + theme-coloured) wins; the black BackgroundOpacity path is untouched.
+        if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundColor is { } bgCol)
+            BuildWindowBackdrop(result.root, bgCol, reg.Spec.BackgroundCornerRadius, token);
+        else if (reg.Spec.Style == WindowPanelStyle.Borderless && reg.Spec.BackgroundOpacity is { } bgOp
             && result.root.GetComponent<UnityEngine.UI.Image>() is { } blocker)
         {
             blocker.color = new UnityEngine.Color(0f, 0f, 0f, bgOp());

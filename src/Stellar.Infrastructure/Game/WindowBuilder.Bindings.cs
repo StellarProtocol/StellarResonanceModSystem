@@ -380,16 +380,31 @@ internal sealed partial class WindowBuilder
     {
         public Image Img = null!;
         public Func<float> Opacity = null!;
+        // WindowSpec.BackgroundColor backdrop: the whole colour (alpha included) comes from the plugin; replaces Opacity.
+        public Func<ColorRgba>? ColorFn;
         private float _last = -1f;
+        private ColorRgba _lastColor = new(-1f, -1f, -1f, -1f);
         public void Apply()
         {
             if (Img == null) return;
+            if (ColorFn != null) { ApplyColor(); return; }
             // ChromeKill hides the frame entirely. Set each apply (cheap/idempotent) and BEFORE the alpha
             // short-circuit, so toggling it always takes effect even when the alpha is unchanged.
             Img.enabled = !PerfControls.ChromeKill;
             var a = PerfControls.ForceOpaque ? 1f : Opacity();
             if (Mathf.Approximately(a, _last)) return;
             var c = Img.color; Img.color = new Color(c.r, c.g, c.b, a); _last = a;
+        }
+
+        // Colour path: assign only on a real change. Alpha 0 disables the Image (a 0-alpha Graphic still draws), so the
+        // default-off backdrop costs nothing. A plugin delegate runs in the shared poll loop → a throw hides it, never breaks.
+        private void ApplyColor()
+        {
+            ColorRgba v;
+            try { v = ColorFn!(); } catch { v = default; }
+            Img.enabled = !PerfControls.ChromeKill && v.A > 0f;
+            if (v == _lastColor) return;
+            Img.color = new Color(v.R, v.G, v.B, v.A); _lastColor = v;
         }
     }
 

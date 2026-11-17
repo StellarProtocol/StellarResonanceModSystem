@@ -123,6 +123,18 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// expands when the user resizes height — no separate child GO needed. Null = no background (default).</summary>
     public Func<float>? BackgroundOpacity { get; init; }
 
+    /// <summary>Borderless windows only (fw 2.33.0+): a poll-diffed, COLOURED backdrop panel drawn behind the content and
+    /// filling the whole window rect at every resize size. It is a single non-layout Image, so a colour change never
+    /// relayouts the window (safe on hot HUD windows). The returned colour is applied as-is, alpha included — compose
+    /// the theme colour and fade it by your opacity setting and the theme window opacity in the delegate (allocation-
+    /// free: return a struct, cache the delegate). Alpha 0 disables the Image (no draw). Wins over
+    /// <see cref="BackgroundOpacity"/> when both are set. Null (default) = no backdrop, exactly as before.</summary>
+    public Func<ColorRgba>? BackgroundColor { get; init; }
+
+    /// <summary>Corner radius (px) of the <see cref="BackgroundColor"/> backdrop, drawn from the framework's cached
+    /// rounded 9-slice sprite. 0 (default) = square corners. Ignored without <see cref="BackgroundColor"/>.</summary>
+    public int BackgroundCornerRadius { get; init; }
+
     /// <summary>GlassMenu windows only: per-window override of the frame (background) opacity, polled live like the
     /// global theme setting. Return a value in [0.3, 1] to override, or null to follow the framework's
     /// Themes → Window Opacity (IChromeStyle.WindowOpacity). Only the frame background fades; content stays opaque.

@@ -1,3 +1,4 @@
+using Stellar.Abstractions.Domain;
 using Stellar.Abstractions.Services;
 using UnityEngine;
 using UnityEngine.UI;
@@ -74,5 +75,23 @@ internal sealed partial class WindowBuilder
         img.raycastTarget = false;
         var op = bd.Opacity;
         token.FrameOpacities.Add(new FrameOpacityBinding { Img = img, Opacity = op });
+    }
+
+    // WindowSpec.BackgroundColor: a stretch-fill, ignoreLayout Image behind all content (first sibling) — never a
+    // layout participant, so the poll-diffed colour never relayouts the (possibly hot) window. Rounded via the cached,
+    // theme-independent BubbleBg sprite (kept across theme re-bakes → no reskin action needed; the colour itself is
+    // theme-live through the plugin's delegate). raycastTarget=false: the root blocker already absorbs clicks.
+    private void BuildWindowBackdrop(RectTransform root, System.Func<ColorRgba> color, int radius, WindowToken token)
+    {
+        var go = UGuiPrimitives.NewChild("WindowBackdrop", root);
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
+        UGuiPrimitives.Stretch(go);
+        go.transform.SetAsFirstSibling();
+        var img = go.AddComponent<Image>();
+        if (radius > 0 && _assets.BubbleBg(radius) is { } sprite) { img.sprite = sprite; img.type = Image.Type.Sliced; }
+        img.raycastTarget = false;
+        var binding = new FrameOpacityBinding { Img = img, ColorFn = color };
+        binding.Apply();   // paint at build so the first frame isn't a white flash
+        token.FrameOpacities.Add(binding);
     }
 }

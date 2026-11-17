@@ -21,6 +21,8 @@ public static class FrameworkVersion
     /// BepInEx chainloader happy.
     /// 2.33.0 adds <c>MeterRowElement.Style</c> (<c>MeterRowStyle.Rounded</c>, the house-style meter row) and <c>MeterRowData.IsEmptySlot</c> /
     /// <c>EmptyHint</c> (additive init-only / fields); a plugin that sets them needs >=2.33.0. Classic rows unchanged.
+    /// 2.33.0 also adds <c>WindowSpec.BackgroundColor</c> / <c>BackgroundCornerRadius</c> (opt-in rounded theme-coloured
+    /// Borderless backdrop, a non-layout Image behind the content); unset = unchanged.
     /// 2.32.0 adds <c>SocialSnapshot.Presence</c> / <c>IsOnline</c> / <c>Sections</c> (<c>SocialPresence</c>, <c>SocialSections</c>)
     /// (additive init-only); a plugin that reads them needs ≥2.32.0. Runtime: per-section social cache merge, dye reset/palette hues.
     /// 2.31.0 adds <c>IWardrobePreviewOptions</c> (a base of <c>IWardrobePreview</c>): <c>ShowWeapon</c> and the
