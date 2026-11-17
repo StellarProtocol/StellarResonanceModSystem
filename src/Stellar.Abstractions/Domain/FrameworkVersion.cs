@@ -19,6 +19,17 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.33.0 adds <c>MeterRowElement.Style</c> (<c>MeterRowStyle.Rounded</c>, the house-style meter row) and <c>MeterRowData.IsEmptySlot</c> /
+    /// <c>EmptyHint</c> (additive init-only / fields); a plugin that sets them needs >=2.33.0. Classic rows unchanged.
+    /// 2.33.0 also adds <c>WindowSpec.BackgroundColor</c> / <c>BackgroundCornerRadius</c> (opt-in rounded theme-coloured
+    /// Borderless backdrop, a non-layout Image behind the content); unset = unchanged.
+    /// 2.33.0 also adds <c>IWindowSizeLimits</c> (<c>control.SetSizeLimits(minW, minH, maxW, maxH)</c> via
+    /// <c>WindowSizeLimitsExtensions</c>): runtime resize limits for a Resizable window, min == max locks an axis (additive).
+    /// 2.33.0 also adds <c>BubbleElement.OutlineWidth</c> (init-only, 0 = the 1 px ring as before): a thicker outline ring.
+    /// 2.33.0 also adds <c>TextElement.CenterCaps</c> (init-only, false = unchanged): centre a label on the face's cap height.
+    /// 2.33.0 also adds <c>WindowSpec.ContentOpacity</c> (init-only, null = unchanged): fade a window's content, not its background.
+    /// 2.33.0 also adds <c>MeterRowElement.Density</c> (<c>MeterRowDensity.Compact</c> / <c>Mini</c>, init-only, Normal = unchanged).
+    /// 2.33.0 also adds <c>MeterRowElement.BackingOpacity</c> (init-only, null = unchanged): fade a Rounded meter row's backing only.
     /// 2.32.0 adds <c>SocialSnapshot.Presence</c> / <c>IsOnline</c> / <c>Sections</c> (<c>SocialPresence</c>, <c>SocialSections</c>)
     /// (additive init-only); a plugin that reads them needs ≥2.32.0. Runtime: per-section social cache merge, dye reset/palette hues.
     /// 2.31.0 adds <c>IWardrobePreviewOptions</c> (a base of <c>IWardrobePreview</c>): <c>ShowWeapon</c> and the
@@ -463,5 +474,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.32.0";
+    public const string Value = "2.33.0";
 }

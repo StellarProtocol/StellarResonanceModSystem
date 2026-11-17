@@ -123,11 +123,33 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// expands when the user resizes height — no separate child GO needed. Null = no background (default).</summary>
     public Func<float>? BackgroundOpacity { get; init; }
 
+    /// <summary>Borderless windows only (fw 2.33.0+): a poll-diffed, COLOURED backdrop panel drawn behind the content and
+    /// filling the whole window rect at every resize size. It is a single non-layout Image, so a colour change never
+    /// relayouts the window (safe on hot HUD windows). The returned colour is applied as-is, alpha included — compose
+    /// the theme colour and fade it by your opacity setting and the theme window opacity in the delegate (allocation-
+    /// free: return a struct, cache the delegate). Alpha 0 disables the Image (no draw). Wins over
+    /// <see cref="BackgroundOpacity"/> when both are set. Null (default) = no backdrop, exactly as before.</summary>
+    public Func<ColorRgba>? BackgroundColor { get; init; }
+
+    /// <summary>Corner radius (px) of the <see cref="BackgroundColor"/> backdrop, drawn from the framework's cached
+    /// rounded 9-slice sprite. 0 (default) = square corners. Ignored without <see cref="BackgroundColor"/>.</summary>
+    public int BackgroundCornerRadius { get; init; }
+
     /// <summary>GlassMenu windows only: per-window override of the frame (background) opacity, polled live like the
     /// global theme setting. Return a value in [0.3, 1] to override, or null to follow the framework's
     /// Themes → Window Opacity (IChromeStyle.WindowOpacity). Only the frame background fades; content stays opaque.
     /// Null delegate (default) = always follow the framework.</summary>
     public Func<float?>? FrameOpacity { get; init; }
+
+    /// <summary>fw 2.33.0+: a poll-diffed opacity (0..1, clamped) for the window's whole CONTENT — every text, icon, bar
+    /// and element the plugin built, faded together via one CanvasGroup per top-level content child. The window's
+    /// background is NOT faded: the <see cref="BackgroundColor"/> / <see cref="BackgroundOpacity"/> backdrop, the
+    /// GlassMenu frame (<see cref="FrameOpacity"/>) and a top-level <c>BackdropElement</c> keep their own opacity, so a
+    /// "background" and a "foreground" slider stay independent. Input is unaffected (the groups keep
+    /// <c>blocksRaycasts</c>/<c>interactable</c> on), even at 0. The alpha is assigned only when the value changes
+    /// (a change re-meshes the content once, so don't animate it per frame). Return a cached delegate that allocates
+    /// nothing; a throw counts as 1. Null (default) = no CanvasGroups are added, exactly as before.</summary>
+    public Func<float>? ContentOpacity { get; init; }
 
     /// <summary>Borderless windows only: a purely visual layer. No content padding (the content starts at the window's
     /// top-left corner and fills its rect exactly) and no click blocker, so presses and pointer-over-UI checks fall

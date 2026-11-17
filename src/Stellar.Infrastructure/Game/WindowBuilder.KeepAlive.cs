@@ -111,7 +111,7 @@ internal sealed partial class WindowBuilder
         t => t.VirtualLists, t => t.Conds, t => t.Lists, t => t.Texts, t => t.StyledTexts, t => t.Sprites, t => t.Icons,
         t => t.GameTextures, t => t.Buttons, t => t.Toggles, t => t.Sliders, t => t.XYPads, t => t.Swatches, t => t.Bars,
         t => t.Pickers, t => t.FrameOpacities, t => t.Hovers, t => t.Selectables, t => t.Bubbles, t => t.MeterRows,
-        t => t.AccentRows, t => t.CooldownTiles, t => t.Charts, t => t.FieldSyncs,
+        t => t.AccentRows, t => t.CooldownTiles, t => t.Charts, t => t.FieldSyncs, t => t.Layers,
     };
 
     // The token's binding-list counts before a build inside a KeepAlive branch (null = not inside one: nothing to tag).

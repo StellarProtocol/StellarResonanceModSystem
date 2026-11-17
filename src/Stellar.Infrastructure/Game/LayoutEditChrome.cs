@@ -224,12 +224,14 @@ internal sealed partial class LayoutEditChrome
             t.Apply();
             _borderSprite = Sprite.Create(t, new Rect(0, 0, 8, 8), new Vector2(0.5f, 0.5f), 100f, 0,
                 SpriteMeshType.FullRect, new Vector4(OutlineThickness, OutlineThickness, OutlineThickness, OutlineThickness));
+            _borderSprite.hideFlags = HideFlags.HideAndDontSave;
         }
         if (_handleSprite == null)
         {
             var t = new Texture2D(1, 1, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
             t.SetPixel(0, 0, Color.white); t.Apply();
             _handleSprite = Sprite.Create(t, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            _handleSprite.hideFlags = HideFlags.HideAndDontSave;
         }
         if (_eyeOpenSprite == null)   _eyeOpenSprite   = BakeEye(open: true);
         if (_eyeClosedSprite == null) _eyeClosedSprite = BakeEye(open: false);
@@ -253,7 +255,11 @@ internal sealed partial class LayoutEditChrome
                 t.SetPixel(x, y, (ring || pupil || slit) ? Color.white : Color.clear);
             }
         t.Apply();
-        return Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f));
+        // Sprites need the flag too (only the texture had it): the eye toggles open/closed, so the unshown one is held
+        // by nothing but this cache — a scene-switch UnloadUnusedAssets would otherwise sweep it.
+        var s = Sprite.Create(t, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f));
+        s.hideFlags = HideFlags.HideAndDontSave;
+        return s;
     }
 
     // Reuse the IL2CPP-safe primitive (a raw `new GameObject(name, typeof(RectTransform))` doesn't bind under

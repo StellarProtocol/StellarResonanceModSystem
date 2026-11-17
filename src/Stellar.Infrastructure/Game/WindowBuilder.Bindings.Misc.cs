@@ -19,7 +19,15 @@ internal sealed partial class WindowBuilder
         public Image Stripe = null!;
         public Func<ColorRgba> StripeFn = null!;
         public Func<float> ShareFn = null!;
+        public float WashAlpha = 0.12f;
+        // AccentRowElement.CornerRadius (2.33.0): null sprites = the Classic square wash (none of this runs).
+        public Sprite? RoundLeft, RoundFull; public int Radius;
+        // The row's own RectTransform, captured at build. NOT `(RectTransform)ShareRect.parent`: under Il2CppInterop
+        // `.parent` returns a plain Transform WRAPPER, so a C# cast throws InvalidCastException every poll (aborting the
+        // whole window apply — seen as 400+ "[Window/combatmeter.history.v2] apply: Unable to cast" warnings).
+        public RectTransform RowRect = null!;
         private float _lastShare = -1f;
+        private bool _full;
         private ColorRgba _lastCol;
         private bool _init;
         public void Apply()
@@ -27,13 +35,28 @@ internal sealed partial class WindowBuilder
             if (ShareRect == null || !ShareRect.gameObject.activeInHierarchy) return;
             var share = Mathf.Clamp01(ShareFn());
             if (!Mathf.Approximately(share, _lastShare)) { ShareRect.anchorMax = new Vector2(share, 1f); _lastShare = share; }
+            if (RoundLeft != null) ApplyRoundEnd(share);
             var c = StripeFn();
             if (!_init || !c.Equals(_lastCol))
             {
                 Stripe.color = new Color(c.R, c.G, c.B, 1f);
-                ShareImg.color = new Color(c.R, c.G, c.B, 0.12f);
+                ShareImg.color = new Color(c.R, c.G, c.B, WashAlpha);
                 _lastCol = c; _init = true;
             }
+        }
+
+        // Rounded wash: left-rounded sprite (straight right cut, like the tile clipping it) until the wash reaches the
+        // tile's right corner zone, then the fully rounded sprite so it follows the tile's right corners instead of
+        // poking out of them. Re-checked each poll (one rect read + compare, so a later layout width is honoured); the
+        // sprite is swapped only when the choice flips. Starts on RoundLeft (set at build) → _full = false.
+        private void ApplyRoundEnd(float share)
+        {
+            if (RowRect == null) return;
+            var rowW = RowRect.rect.width;
+            var full = share * rowW >= rowW - Radius;
+            if (full == _full) return;
+            _full = full;
+            ShareImg.sprite = full ? RoundFull : RoundLeft;
         }
     }
 

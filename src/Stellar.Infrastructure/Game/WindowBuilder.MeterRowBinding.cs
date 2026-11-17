@@ -75,7 +75,7 @@ internal sealed partial class WindowBuilder
     // updates the bg/self-highlight, HP spine fill, crest (lazy atlas upload), name·spec·share texts, role bar
     // fill, per-second/total overlay, and offline scrim. Diffs the cheap scalar/string fields; structural
     // SetActive toggles are idempotent so re-applying is harmless.
-    internal sealed class MeterRowBinding : GatedBinding
+    internal sealed partial class MeterRowBinding : GatedBinding
     {
         public Func<MeterRowData> Data = null!;
         public VerticalLayoutGroup ContentVlg = null!;   // bottom padding trimmed when imagine size is Large
@@ -128,6 +128,8 @@ internal sealed partial class WindowBuilder
         public Transform ImagineGroup = null!;     // the re-parentable imagine cluster (for ImaginePosition)
         public Transform TopLine = null!;          // top-line HLG host (top-right / left positions)
         public Transform RightColHost = null!;     // right-column host (RightColumn position)
+        public MeterRowRoundedSkin? Rounded;        // MeterRowStyle.Rounded painter (null = Classic, byte-identical)
+        public float SpineHeightDelta = -4f, SpineLeftExtra;   // spine height inset + extra left offset (Rounded insets 4 px)
 
         private object? _lastAtlas;
         private bool _atlasResolved;
@@ -155,18 +157,18 @@ internal sealed partial class WindowBuilder
         public void Apply()
         {
             if (Bg == null || !Bg.gameObject.activeInHierarchy) return;
-            var d = Data();
+            var d = Data(); Density?.Prepare(ref d);   // Compact / Mini: mask what the size does not draw (stack copy, .MeterRow.Density.cs)
 
-            ApplySelfHighlight(d);
+            if (Rounded != null) Rounded.Apply(d); else ApplySelfHighlight(d);
             ApplySpine(d);
             ApplyCrest(d);
             ApplyVisibility(d);
 
             var rank = d.Rank ?? "";
-            if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; }
+            if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; Rounded?.RankSlot?.Fit(rank); }
 
             var name = d.Name ?? "";
-            if (name != _lastName) { Name.text = name; _lastName = name; }
+            if (name != _lastName) { ApplyName(name); _lastName = name; }   // per-script face/weight (.Name.cs)
 
             var showSpec = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
             if (_lastSpecVis != (showSpec ? 1 : 0)) { SpecGo.SetActive(showSpec); _lastSpecVis = showSpec ? 1 : 0; }
@@ -178,7 +180,7 @@ internal sealed partial class WindowBuilder
 
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
-            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc); _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
+            { var rc = d.Dead ? MeterDeadBarRgba : d.RoleColor; bool rcChanged = !rc.Equals(_lastRoleCol); if (rcChanged) { BarFillImg.color = ToColor(rc) * FillTint; _lastRoleCol = rc; } ApplyLabelStyle(d, rc, rcChanged); }
             // Main-bar shield band (left-anchored, width = BarShieldFraction) — the horizontal analogue of the
             // spine shield in ApplySpine; 0 in DPS mode so the bar is unchanged there.
             if (BarShieldImg != null)
@@ -201,6 +203,7 @@ internal sealed partial class WindowBuilder
             ApplyDebuffLayout(d);
             ApplyImagines(d);
             ApplyDebuffs(d);
+            SyncNameAndFit(d);   // LAST: needs this poll's name / spec / share texts (.Name.cs)
         }
 
         // HP spine fill (bottom-anchored, height = HpFraction) + the grey/white shield band drawn OVER it
@@ -233,7 +236,9 @@ internal sealed partial class WindowBuilder
             bool styleChanged = _lastLabelStyle != (int)style;
             if (styleChanged)
             {
-                bool outline = style == MeterLabelStyle.Outline, shadow = style == MeterLabelStyle.Shadow;
+                // No fades (Rounded skin strips them — rectangles over rounded ends) → Shadow falls back to the halo.
+                bool shadow = style == MeterLabelStyle.Shadow && PrimaryFadeImg != null;
+                bool outline = style == MeterLabelStyle.Outline || (style == MeterLabelStyle.Shadow && !shadow);
                 if (PrimaryOutline != null) PrimaryOutline.enabled = outline;
                 if (SecondaryOutline != null) SecondaryOutline.enabled = outline;
                 if (PrimaryFadeImg != null) PrimaryFadeImg.gameObject.SetActive(shadow);
@@ -260,9 +265,9 @@ internal sealed partial class WindowBuilder
                 var spineW = d.SpineWidth > 0f ? d.SpineWidth : WindowBuilder.MeterSpineW;
                 if (!Mathf.Approximately(spineW, _lastSpineW))
                 {
-                    SpineGo.GetComponent<RectTransform>()!.sizeDelta = new Vector2(spineW, -4f);
+                    SpineGo.GetComponent<RectTransform>()!.sizeDelta = new Vector2(spineW, SpineHeightDelta);
                     var pad = ContentVlg.padding;
-                    ContentVlg.padding = new RectOffset((int)(spineW + WindowBuilder.MeterPad), pad.right, pad.top, pad.bottom);
+                    ContentVlg.padding = new RectOffset((int)(spineW + WindowBuilder.MeterPad + SpineLeftExtra), pad.right, pad.top, pad.bottom);
                     _lastSpineW = spineW;
                 }
             }
@@ -290,9 +295,8 @@ internal sealed partial class WindowBuilder
 
             // Name colour: Dead wins, then an optional NameColor override (ready-check vote),
             // else the default. Updated whenever the effective colour changes, not only on Dead.
-            var effName = d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
+            var effName = Rounded != null && d.IsEmptySlot ? Rounded.EmptyLabel : d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
             if (!effName.Equals(_lastNameCol)) { Name.color = effName; _lastNameCol = effName; }
-
         }
 
         // Re-parent the imagine cluster for MeterRowData.ImaginePosition + size-driven content padding. Keyed
@@ -301,7 +305,7 @@ internal sealed partial class WindowBuilder
         private void ApplyImagineLayout(in MeterRowData d)
         {
             int key = (int)d.ImagineSize * 4 + (int)d.ImaginePosition;
-            if (_lastImgLayout == key) return;
+            if (_lastImgLayout == key || Density != null) return;   // Compact / Mini draw no imagines and own the padding
             _lastImgLayout = key;
             if (ImagineGroup != null && TopLine != null && RightColHost != null)
             {
@@ -328,6 +332,7 @@ internal sealed partial class WindowBuilder
         // debuff block width when both want the right edge (so they never overlap).
         private void ApplyDebuffLayout(in MeterRowData d)
         {
+            if (Density != null) { ApplySlimLayout(d); return; }   // Compact / Mini (.MeterRow.Density.cs)
             float blockW = DebuffBlockPx(d);   // WIDTH — scales with cell size AND column count
             float rowsH  = DebuffRowsPx(d);    // HEIGHT — always 2 rows (columns never change the height)
             // Key includes the column count so a change in columns (same blockW is impossible, but be explicit) relays out.
@@ -361,7 +366,7 @@ internal sealed partial class WindowBuilder
         }
 
         // Poll-diff the trailing 2×2 debuff block (kept out of Apply to respect the method-LoC cap).
-        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff);
+        private void ApplyDebuffs(in MeterRowData d) => BindDebuffBlock(DebuffBlock, d, ref _dbuff, Rounded?.BackingOp ?? 1f, Density == null ? MeterDebuffRows : MeterRowDensityRules.CompactEffectRows);
 
         // Poll-diff the two trailing Imagine cells (kept out of Apply to respect the method-LoC cap).
         private void ApplyImagines(in MeterRowData d)
@@ -420,7 +425,7 @@ internal sealed partial class WindowBuilder
                 Crest.texture = tex;
                 Crest.enabled = tex != null;
                 // Letterbox a non-square atlas cell inside the 22×22 box (AspectFit) instead of stretching it.
-                if (tex != null) Crest.rectTransform.sizeDelta = AspectFit(22f, d.CrestUv.W * tex.width, d.CrestUv.H * tex.height);
+                if (tex != null) Crest.rectTransform.sizeDelta = AspectFit(CrestBox, d.CrestUv.W * tex.width, d.CrestUv.H * tex.height);
             }
             Crest.uvRect = new UnityEngine.Rect(d.CrestUv.X, d.CrestUv.Y, d.CrestUv.W, d.CrestUv.H);
 

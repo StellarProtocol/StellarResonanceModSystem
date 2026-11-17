@@ -111,7 +111,7 @@ internal sealed partial class WindowBuilder
         // Offline scrim — drawn last (on top), toggled by Offline.
         var scrim = AddStretchedImage(row.transform, "Scrim", MeterScrim, ignoreLayout: true).gameObject;
 
-        token.MeterRows.Add(new MeterRowBinding
+        var binding = new MeterRowBinding
         {
             Data = el.Data, ContentVlg = vlg,
             Bg = bg, SelfBorder = border, SpineFill = spineFill, ShieldFill = shieldFill, SpineGo = spine,
@@ -125,7 +125,9 @@ internal sealed partial class WindowBuilder
             DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo, FillMask = fillRect.GetComponent<RectMask2D>(),
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
-        });
+        };
+        if (el.Style == MeterRowStyle.Rounded) ApplyRoundedMeterSkin(binding, row, token, el);   // opt-in (.MeterRow.Rounded.cs; + Density, .MeterRow.Density.cs)
+        token.MeterRows.Add(binding);
 
         WireRowInteractions(row, voiceImg, el);
         WireDebuffClicks(debuffBlock, el);   // per-cell left-click -> MeterRowData.OnDebuffClick (Plugin.DebuffTooltip)
@@ -445,10 +447,22 @@ internal sealed partial class WindowBuilder
 
         BuildElement(el.Child, go.transform, token);
 
-        token.AccentRows.Add(new AccentRowBinding
+        var bind = new AccentRowBinding
         {
             ShareRect = srt, ShareImg = shareImg, Stripe = stripeImg, StripeFn = el.Stripe, ShareFn = el.Share,
-        });
+            WashAlpha = el.WashAlpha > 0f ? Mathf.Clamp01(el.WashAlpha) : 0.12f,
+        };
+        // 2.33.0 opt-in rounded wash: no stripe; the binding swaps between the left-rounded and the fully rounded sprite
+        // by how close the wash reaches the row's right edge. Pre-bake sandbox (no sprites) → keeps the square wash.
+        var r = Mathf.RoundToInt(el.CornerRadius);
+        if (r > 0 && _assets.BubbleBgLeft(r) is { } left && _assets.BubbleBg(r) is { } full)
+        {
+            stripeGo.SetActive(false);
+            shareImg.sprite = left; shareImg.type = Image.Type.Sliced;
+            bind.RoundLeft = left; bind.RoundFull = full; bind.Radius = r;
+            bind.RowRect = go.GetComponent<RectTransform>();   // IL2CPP-safe (never cast a .parent wrapper)
+        }
+        token.AccentRows.Add(bind);
     }
 
 }

@@ -111,7 +111,7 @@ public sealed partial class BootstrapPlugin
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
             _reShadeService!, _voiceService!,
             _playerProfileService!,
-            _friendsService!);
+            _friendsService!, new Stellar.Application.Services.GameTextService(log, _framework!.Post));
     }
 
     /// <summary>

@@ -81,7 +81,7 @@ public sealed partial class WindowInteractionTicker
                 var item = ItemOfCell(reg, i);   // == i for a ListElement
                 if (item < 0 || cell == null || !cell.gameObject.activeInHierarchy) continue;
                 if (!RectTransformUtility.RectangleContainsScreenPoint(cell, mp, null)) continue;
-                if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return false;   // a front window owns this press
+                if (FrontWindowBlocks(mp, FindWindowRoot(reg.List)) || LayerCovered(cell, mp)) return false;   // a front window / overlay owns this press
                 var scroll = reg.List.GetComponentInParent<ScrollRect>();
                 var zone = scroll != null ? (scroll.viewport != null ? scroll.viewport : scroll.GetComponent<RectTransform>()) : reg.List;
                 // An item scrolled out of view is masked, not hidden — a press there belongs to whatever is visible.
@@ -242,7 +242,7 @@ public sealed partial class WindowInteractionTicker
     {
         cellIdx = -1; after = false;
         if (_rlZone == null || !RectTransformUtility.RectangleContainsScreenPoint(_rlZone, mp, null)) return -1;
-        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return -1;
+        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List)) || LayerCovered(reg.List, mp)) return -1;
         var n = CellCount(reg);
         var bestD = float.MaxValue;
         var bestLp = Vector2.zero;

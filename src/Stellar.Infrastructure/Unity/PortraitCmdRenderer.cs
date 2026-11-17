@@ -59,7 +59,12 @@ public sealed class PortraitCmdRenderer : MonoBehaviour
     /// <summary>Create the renderer on a hidden, dont-destroy GameObject.</summary>
     public static PortraitCmdRenderer Create(Action<string> log)
     {
-        if (!_registered) { try { ClassInjector.RegisterTypeInIl2Cpp<PortraitCmdRenderer>(); } catch { /* already */ } _registered = true; }
+        if (!_registered)
+        {
+            try { ClassInjector.RegisterTypeInIl2Cpp<PortraitCmdRenderer>(); } catch { /* already */ }
+            Il2CppInjectedGcFix.EnsureScanned<PortraitCmdRenderer>(log);
+            _registered = true;
+        }
         var go = new GameObject("StellarPortraitCmdRenderer") { hideFlags = HideFlags.HideAndDontSave };
         UnityEngine.Object.DontDestroyOnLoad(go);
         var r = go.AddComponent<PortraitCmdRenderer>();

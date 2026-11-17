@@ -62,6 +62,7 @@
   "common.resetAll": "すべてリセット",
   "common.retry": "再試行",
   "common.save": "保存",
+  "confirm.dontAskAgain": "次回から確認しない",
   "developer.fb.already": "開発者モードはすでにオンです",
   "developer.fb.off": "開発者モードをオフにしました",
   "developer.gameui": "ゲーム UI パス",

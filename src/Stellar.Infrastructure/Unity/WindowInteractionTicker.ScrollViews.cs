@@ -78,7 +78,7 @@ public sealed partial class WindowInteractionTicker
             if (!RectTransformUtility.RectangleContainsScreenPoint(v.Hit, mp, null)) continue;
             // Same owner rule as hover: a window in front of this list (FrontWindowBlocks), or an open dropdown popup
             // that isn't this list, owns the pointer — its wheel/press is not meant for the list underneath.
-            if (HoverBlocked(mp, v.Hit, popup)) continue;
+            if (HoverBlocked(mp, v.Hit, popup) || LayerCovered(v.Hit, mp)) continue;   // + a LayerStack overlay over it
             if (leftDown) { v.Pressed = true; _anyScrollPressed = true; }
             if (v.Sr.velocity != Vector2.zero) v.Sr.StopMovement();   // kill the coast; the wheel step still applies
         }

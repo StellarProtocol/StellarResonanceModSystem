@@ -21,11 +21,16 @@ internal sealed partial class WindowRenderer
         if (!_tickerRegistered)
         {
             try { ClassInjector.RegisterTypeInIl2Cpp<WindowInteractionTicker>(); } catch { /* already registered */ }
+            Il2CppInjectedGcFix.EnsureScanned<WindowInteractionTicker>(_log.Info);
             _tickerRegistered = true;
         }
         if (!_chartRegistered)
         {
             try { ClassInjector.RegisterTypeInIl2Cpp<ChartGraphic>(); } catch { /* already registered */ }
+            // Load-bearing for ChartGraphic: Il2CppInterop leaves has_references=0 on injected classes, so a
+            // MaskableGraphic subclass would be allocated GC-UNSCANNED and the UnityEvent / material refs Unity's
+            // serializer stores in it get collected -> crash in a later scene-load serializer walk (2026-11-17).
+            Il2CppInjectedGcFix.EnsureScanned<ChartGraphic>(_log.Info);
             _chartRegistered = true;
         }
     }
@@ -82,6 +87,10 @@ internal sealed partial class WindowRenderer
         catch (Exception ex) { _log.Error($"[Window] canvas create threw: {ex.Message}"); _canvas = null; return false; }
     }
 
+    /// <summary>The house card of a ConfirmHostElement (UI.ConfirmCard.Build — needs the style kit + the framework
+    /// catalog, which live in Host). Read at build time, so it may be set after the canvas exists.</summary>
+    internal Func<Stellar.Abstractions.Services.ConfirmHostElement, Stellar.Abstractions.Services.HudElement>? ConfirmCardFactory { get; set; }
+
     // Wire the builder's sandbox-pure registration callbacks onto the live ticker. Split out of EnsureCanvas
     // to keep it under the 50-LoC gate; runs once per canvas create (the ticker is non-null here).
     private void WireBuilderHooks()
@@ -103,6 +112,9 @@ internal sealed partial class WindowRenderer
         _builder.SetDragSlotDrop = onDrop => { if (_ticker != null) _ticker.DragSlotDrop = onDrop; };
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
         _builder.RegisterReorderList = reg => _ticker!.ReorderLists.Add(reg);
+        _builder.RegisterLayerHost = (host, stack, above, inert) => _ticker!.RegisterLayerHost(host, stack, above, inert);
+        _builder.RegisterConfirmHost = (root, ctl) => _ticker!.ConfirmHosts.Add(new WindowInteractionTicker.ConfirmHostReg { Root = root, Ctl = ctl });
+        _builder.ConfirmCard = h => ConfirmCardFactory?.Invoke(h)!;   // null → the builder's plain fallback card
         _builder.ClickSuppressed = () => _ticker != null && _ticker.ReorderSuppressesClick;
         _builder.RegisterDismissable = (root, dismiss) => _ticker!.Dismissables.Add((root, dismiss));
         _ticker.ModalPopupLayer = () => _builder?.OpenDropdownLayer;   // open dropdown = modal for ticker hover

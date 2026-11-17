@@ -118,6 +118,14 @@ public sealed record BubbleElement(HudElement Child) : HudElement
     /// ring is overlaid (never measured), so toggling it never changes the bubble's size. Default null = no ring is
     /// even created: the bubble renders exactly as before. An <c>init</c> property (binary-compatible).</summary>
     public Func<ColorRgba?>? OutlineColorFn { get; init; }
+
+    /// <summary>Thickness in px of the <see cref="OutlineColorFn"/> ring (framework 2.33.0). 0 (default) = the original
+    /// 1 px ring, unchanged. A positive value draws a thicker ring INSIDE the bubble edge, at the same
+    /// <see cref="CornerRadius"/> as the fill; it is snapped to 0.5 px steps and capped at the corner radius (3 px when
+    /// <see cref="CornerRadius"/> is 0). Fixed at build time (the colour stays per-refresh); it never changes the
+    /// bubble's size, so keep <see cref="PaddingX"/>/<see cref="PaddingY"/> larger than it if content must not sit
+    /// under the ring. Has no effect without <see cref="OutlineColorFn"/>. Init property (binary-compatible).</summary>
+    public float OutlineWidth { get; init; }
 }
 
 /// <summary>How children are packed horizontally within a <see cref="RowElement"/>.</summary>
@@ -211,6 +219,18 @@ public sealed record TextElement(Func<string> Text, Func<ColorRgba?>? Color = nu
     /// Default false = unchanged. An <c>init</c> property (binary-compatible).</summary>
     public bool CenterGlyphs { get; init; }
 
+    /// <summary>Vertically centre the font's CAPITAL height in the text's box (framework 2.33.0) — the optical centre of
+    /// a one-line label in a fixed-height control (pill, chip, segment): the middle of "H" lands on the middle of the
+    /// box at any font size. The default line-box centring sits the capitals a pixel or so off-centre (how far depends
+    /// on the face's ascender/descender split and the size), and <see cref="CenterGlyphs"/> centres each string's OWN
+    /// drawn bounds, so a label with descenders ("Party", "Playing") rises above one without ("List"). This uses the
+    /// face's cap-height METRIC, not the drawn glyphs, so every label of a size shares one baseline whatever its
+    /// letters. Applies to the TextMeshPro path (styled / <see cref="RichEmoji"/> text); ignored on plain, Shadow and
+    /// HUD-overlay text, and when the face reports no cap height (line-box centring then, as today).
+    /// <see cref="CenterGlyphs"/> wins if both are set. Default false = unchanged. An <c>init</c> property
+    /// (binary-compatible).</summary>
+    public bool CenterCaps { get; init; }
+
     /// <summary>Cap wrapped text at this many lines (framework 2.30.0). When the text wraps to more lines than this at
     /// its laid-out width, it shows exactly <c>MaxLines</c> lines and the last one ends in "…" (a cut the framework
     /// makes itself, re-fitted when the string, the font size or the width changes). The text always wraps when this
@@ -299,6 +319,15 @@ public sealed record BarElement(
     /// excess visible as an "extension cap" past the main fill (e.g. <c>Overlay01 = (hp+shield)/max</c> shows the
     /// shield as extra length). Ignored when <see cref="Overlay01"/> is null or in <see cref="BarStyle.Default"/>.</summary>
     public bool          OverlayInFront { get; init; }
+    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): corner radius in px of BOTH the track
+    /// and the fill, so the fill is a rounded bar too (default bars have a square fill). A radius larger than half the
+    /// bar <see cref="Height"/> is drawn down-scaled so the bar never grows past its height (radius 2 on a 4 px bar =
+    /// a capsule). 0 (the default) = today's 3 px track + square fill, unchanged. Init property (binary-compatible).</summary>
+    public float CornerRadius { get; init; }
+    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): track colour, evaluated per refresh
+    /// and painted only when it changes (alpha honoured — e.g. a theme "track" token). Returning null keeps the default
+    /// translucent dark track. Default null → no override machinery, unchanged. Init property (binary-compatible).</summary>
+    public Func<ColorRgba?>? TrackColorFn { get; init; }
 }
 
 /// <summary>Render style for a <see cref="BarElement"/>.</summary>

@@ -46,6 +46,7 @@ internal sealed class UnityTickHost
         StellarTicker.OnError = m => _log.Error($"[Ticker] tick threw: {m}");
         try { ClassInjector.RegisterTypeInIl2Cpp<StellarTicker>(); }
         catch (Exception ex) { _log.Debug($"[Ticker] RegisterTypeInIl2Cpp: {ex.Message}"); }
+        Il2CppInjectedGcFix.EnsureScanned<StellarTicker>(_log.Info);
         _ticker = _plugin.AddComponent<StellarTicker>();
         _log.Info($"[Ticker] installed — framework tick on InvokeRepeating @ {PerfControls.UpdateRateHz} Hz " +
                   "(per-frame managed entry eliminated)");
@@ -93,6 +94,7 @@ internal sealed class UnityTickHost
         {
             try { ClassInjector.RegisterTypeInIl2Cpp<StellarPausedTicker>(); }
             catch (Exception ex) { _log.Debug($"[Ticker] RegisterTypeInIl2Cpp(StellarPausedTicker): {ex.Message}"); }
+            Il2CppInjectedGcFix.EnsureScanned<StellarPausedTicker>(_log.Info);
             _paused = _plugin.AddComponent<StellarPausedTicker>();
             if (_paused == null) return null;
             _paused.OnFrame = FirePaused;

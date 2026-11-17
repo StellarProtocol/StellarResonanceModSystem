@@ -1,0 +1,92 @@
+using System;
+using Stellar.Abstractions.Domain;
+
+namespace Stellar.Abstractions.Services;
+
+// The CombatMeter row elements, split out of WindowElement.cs (500-LoC file gate) when MeterRowElement grew its
+// opt-in rounded style. Pure relocation of the two records; their shapes are unchanged.
+
+/// <summary>Wraps a row <paramref name="Child"/> with a per-row accent backdrop drawn BEHIND it: a faint
+/// <paramref name="Stripe"/>-tinted bar whose width is <paramref name="Share"/> (0..1) of the row, plus a 3-px
+/// <paramref name="Stripe"/>-coloured left edge. The CombatMeter History/Skill table rows use this for the
+/// role-coloured stripe + share-fraction wash the IMGUI build drew (DrawRowAccent). Both Funcs are poll-diffed.</summary>
+public sealed record AccentRowElement(HudElement Child, Func<ColorRgba> Stripe, Func<float> Share) : HudElement
+{
+    /// <summary>Opt-in rounded wash (framework 2.33.0). &gt; 0 = drop the 3 px left stripe and draw the share wash with
+    /// corners of this radius in px, so it sits flush inside a rounded tile of the same radius (e.g. a
+    /// <c>BubbleElement</c> with <c>CornerRadius = 6</c>): the left end follows the tile's rounded corners, the right end
+    /// is a straight cut (as if the tile clipped it), and only within <c>radius</c> px of the row's right edge does it
+    /// round off with the tile. A share narrower than the corner draws a proportionally squashed corner. 0 (the
+    /// default) = the original square wash + stripe, unchanged. Init property, NOT a ctor param, so the record's
+    /// primary constructor stays binary-compatible.</summary>
+    public float CornerRadius { get; init; }
+
+    /// <summary>Opacity (0..1) of the share wash, multiplied into the <see cref="Stripe"/> colour (framework 2.33.0).
+    /// 0 (the default) = the original 0.12. Init property (binary-compatible).</summary>
+    public float WashAlpha { get; init; }
+}
+
+/// <summary>One bespoke CombatMeter row — the borderless, role-coloured, animated meter row (HP spine + class
+/// crest + name·spec·share line + role-coloured metric bar with a per-second/total overlay + self highlight +
+/// offline scrim). The framework reproduces the custom visual that the IMGUI <c>MeterRowView</c> drew, so the
+/// meter keeps its distinct look (it does NOT ride the generic Row/Bar primitives). <paramref name="Data"/> is
+/// re-pulled on the window's capped refresh (poll-diffed) — the plugin snapshots its per-combatant state so the
+/// Func never allocates. Fixed 48-px row height; width fills the row. Compose inside a <see cref="ListElement"/>.</summary>
+/// <param name="Data">Per-combatant row snapshot, re-pulled on the window's capped refresh.</param>
+/// <param name="OnRightClick">Optional: invoked when the row is right-clicked (CombatMeter row context menu); null = no menu.</param>
+public sealed record MeterRowElement(System.Func<MeterRowData> Data, System.Action? OnRightClick = null) : HudElement
+{
+    /// <summary>Visual style of the row. <see cref="MeterRowStyle.Classic"/> (the default) is the original flat
+    /// meter row, so every plugin built before this property existed renders byte-identical.
+    /// <see cref="MeterRowStyle.Rounded"/> opts in to the Stellar Design Language look (rounded theme tile, rounded
+    /// spine/bar, accent self ring, recessed empty slot). Chosen once when the row is built. Init property, NOT a
+    /// ctor param, so the record's primary constructor stays binary-compatible.</summary>
+    public MeterRowStyle Style { get; init; }
+
+    /// <summary>Opacity (0..1) of the row's dark BACKING only, <see cref="MeterRowStyle.Rounded"/> rows only (framework
+    /// 2.33.0): the rounded row tile, the self row's accent wash tile (keeps its accent colour), the recessed bar track,
+    /// the HP-spine track, the empty status-effect cells and the recessed empty-slot tile. The bar fill, crest, labels,
+    /// icons, filled effect tiles, the self accent ring and the RowBorder ring are not faded (the ring still marks the
+    /// self row). Multiplied into the row's own alphas (and the window opacity). Clamped; a throw or
+    /// NaN = 1. Polled with the row's refresh, repainted only on a change. Null (the default) = unchanged. Init property,
+    /// NOT a ctor param (binary-compatible); a Classic row ignores it.</summary>
+    public System.Func<float>? BackingOpacity { get; init; }
+
+    /// <summary>Row size, <see cref="MeterRowStyle.Rounded"/> rows only (framework 2.33.0). <see cref="MeterRowDensity.Normal"/>
+    /// (the default) is the 48 px row, unchanged. <see cref="MeterRowDensity.Compact"/> and <see cref="MeterRowDensity.Mini"/>
+    /// are one-line rows whose metric bar becomes the row's fill (see the enum). Chosen once when the row is built, like
+    /// <see cref="Style"/> — to switch at runtime, build one row set per size behind a <see cref="ConditionalElement"/>
+    /// (branches build lazily, so an unused size costs nothing). Init property, NOT a ctor param (binary-compatible); a
+    /// Classic row ignores it.</summary>
+    public MeterRowDensity Density { get; init; }
+}
+
+/// <summary>Row size of a <see cref="MeterRowStyle.Rounded"/> <see cref="MeterRowElement"/> (framework 2.33.0).</summary>
+public enum MeterRowDensity
+{
+    /// <summary>The 48 px two-line row (the default, unchanged).</summary>
+    Normal = 0,
+    /// <summary>24 px one-line row: 3 px HP spine · 16 px class crest · rank · leader flag · name · total · per-second ·
+    /// up to 3 status-effect tiles (16 px, one row; <see cref="MeterRowData.DebuffOverflow"/> must be counted against 3).
+    /// The metric bar is the row's fill behind the text. Spec, class label, share %, voice icon, ability score and
+    /// Battle Imagines are not drawn; the spine is always 3 px and <see cref="MeterRowData.DebuffCellSize"/> /
+    /// <see cref="MeterRowData.DebuffColumns"/> are ignored.</summary>
+    Compact = 1,
+    /// <summary>17 px bar-only row: rank · name · "total · per-second" on a full-row fill. Additionally no crest, spine,
+    /// leader flag, status effects or bar sheen.</summary>
+    Mini = 2,
+}
+
+/// <summary>Visual style of a <see cref="MeterRowElement"/>.</summary>
+public enum MeterRowStyle
+{
+    /// <summary>The original flat meter row (dark backing, square self/talk borders, square spine and bar).</summary>
+    Classic = 0,
+    /// <summary>House-style rounded row: a radius-6 theme Tile (theme-live, fades with the window opacity), a
+    /// rounded spine inset 4 px, a radius-5 bar on a recessed track, rounded status-effect cells, the self row as a
+    /// 20 % accent wash plus a 1.5 px accent ring (instead of <see cref="MeterRowData.SelfAccent"/>), the
+    /// <see cref="MeterRowData.RowBorder"/> colour as a rounded ring, a faded dead row, and
+    /// <see cref="MeterRowData.IsEmptySlot"/> rows drawn as a recessed tile with an optional
+    /// <see cref="MeterRowData.EmptyHint"/>.</summary>
+    Rounded = 1,
+}

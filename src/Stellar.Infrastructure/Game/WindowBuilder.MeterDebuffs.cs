@@ -160,7 +160,9 @@ internal sealed partial class WindowBuilder
     internal static float DebuffRowsPx(in MeterRowData d)  => MeterDebuffRows * DebuffCellPx(d) + (MeterDebuffRows - 1) * MeterDebuffGap;   // HEIGHT (2 rows)
 
     // Poll-diff the whole block from MeterRowData. Called from MeterRowBinding.ApplyDebuffs.
-    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache)
+    // emptyOp = the row's BackingOpacity (Rounded rows; 1 = unchanged): multiplies the EMPTY-slot square's alpha only.
+    // rows = effect rows (2 = the Normal block; a Compact row passes 1 — MeterRowElement.Density).
+    private static void BindDebuffBlock(DebuffBlock block, in MeterRowData d, ref DebuffBlockCache cache, float emptyOp = 1f, int rows = MeterDebuffRows)
     {
         if (block.Root == null) return;
         if (!cache.Init || d.ShowDebuffs != cache.Shown) { block.Root.SetActive(d.ShowDebuffs); cache.Shown = d.ShowDebuffs; cache.Init = true; }
@@ -170,19 +172,19 @@ internal sealed partial class WindowBuilder
         if (!Mathf.Approximately(cellPx, cache.Size) || cols != cache.Cols)
         {
             block.Grid.cellSize = new Vector2(cellPx, cellPx);
-            block.Grid.constraintCount = cols;   // FixedColumnCount → 2 rows fill for cols*2 cells
+            block.Grid.constraintCount = cols;   // FixedColumnCount → `rows` rows fill for cols*rows cells
             block.Le.preferredWidth = block.Le.minWidth = DebuffBlockPx(d);
-            block.Le.preferredHeight = DebuffRowsPx(d);
+            block.Le.preferredHeight = rows * cellPx + (rows - 1) * MeterDebuffGap;
             cache.Size = cellPx; cache.Cols = cols;
         }
-        var visible = cols * MeterDebuffRows;   // cells to show (rest hidden)
+        var visible = cols * rows;   // cells to show (rest hidden)
         for (var i = 0; i < MeterDebuffMaxCells; i++)
         {
             var cell = block.Cells[i];
             if (i >= visible) { if (cell != null && cell.Root != null) cell.Root.SetActive(false); continue; }
             cell ??= block.Cells[i] = block.CreateCell!(i);   // first time this slot is visible
             // The LAST visible cell owns the "+N" overflow; the rest never show it.
-            BindDebuffCell(cell, SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0);
+            BindDebuffCell(cell, SlotAt(d, i), i == visible - 1 ? d.DebuffOverflow : 0, emptyOp);
         }
     }
 
@@ -194,14 +196,15 @@ internal sealed partial class WindowBuilder
         8 => d.Debuff8, 9 => d.Debuff9, 10 => d.Debuff10, _ => d.Debuff11,
     };
 
-    private static void BindDebuffCell(DebuffCell cell, in DebuffSlot slot, int overflow)
+    private static void BindDebuffCell(DebuffCell cell, in DebuffSlot slot, int overflow, float emptyOp)
     {
         if (cell.Root == null) return;
         var more = overflow > 0;
         var present = !more && slot.Present;
         // Every cell renders (the block is shown): a debuff tile, a "+N" count, or a faint empty-slot square.
         cell.Root.SetActive(true);
-        cell.Frame.color = present ? (slot.IsBuff ? MeterBuffFrame : MeterDebuffFrame) : MeterDebuffEmpty;
+        cell.Frame.color = present ? (slot.IsBuff ? MeterBuffFrame : MeterDebuffFrame)
+                         : new Color(MeterDebuffEmpty.r, MeterDebuffEmpty.g, MeterDebuffEmpty.b, MeterDebuffEmpty.a * emptyOp);
         cell.InsetGo.SetActive(present);          // dark body only under a real tile; empty slot = the faint frame alone
         cell.MoreGo.SetActive(more);
         if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }

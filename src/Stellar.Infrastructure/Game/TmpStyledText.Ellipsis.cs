@@ -27,6 +27,8 @@ internal sealed partial class TmpStyledText
     // a face without it gets ASCII "..." (every face has '.') rather than a blank/tofu ellipsis.
     private static readonly Dictionary<int, bool> EllipsisGlyph = new();
 
+    public float PaddedNaturalWidth => _ellipsis ? Mathf.Ceil(_naturalW) + 1f : 0f;
+
     public void PadPreferredWidth(LayoutElement le)
     {
         _padLe = le;

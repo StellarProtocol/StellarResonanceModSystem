@@ -176,6 +176,7 @@ internal sealed partial class WindowBuilder
         token.Root = root.gameObject; token.Rect = root;
         hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
+        BindContentOpacity(reg.Spec, root, token);   // after the tree: groups go on the top-level content children
         hitchT = HitchProbe.Lap("build:tree", hitchT);
         if (!firstApply) { token.StructureOnly = true; return token; }
         token.Apply(); HitchProbe.End("build:firstApply", hitchT);   // first paint (builds the active Cond branches)
@@ -214,6 +215,8 @@ internal sealed partial class WindowBuilder
             case PillElement p:    BuildPill(p, parent, token); break;          // .Preview.cs (Themes preview)
             case BarElement br:    BuildBar(br, parent, token); break;          // .Preview.cs (Themes preview)
             case ConditionalElement cond: BuildConditional(cond, parent, token); break;
+            case LayerStackElement ls: BuildLayerStack(ls, parent, token); break;   // .LayerStack.cs
+            case ConfirmHostElement ch: BuildConfirmHost(ch, parent, token); break; // .ConfirmHost.cs
             case ListElement list: BuildList(list, parent, token); break;
             case VirtualListElement vlist: BuildVirtualList(vlist, parent, token); break;
             case TileElement tile: BuildTile(tile, parent, token); break;       // .Tiles.cs

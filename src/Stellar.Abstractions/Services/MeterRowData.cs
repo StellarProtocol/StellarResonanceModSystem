@@ -176,6 +176,15 @@ public struct MeterRowData
     /// at runtime works both ways. <c>false</c> (the default) keeps the sheen, so plugins built before this field
     /// existed render unchanged.</summary>
     public bool HideSheen;
+    /// <summary>True for an unoccupied slot placeholder (e.g. an empty party/raid slot). Only the
+    /// <see cref="MeterRowStyle.Rounded"/> style reads it: the row becomes a recessed tile, the rank and
+    /// <see cref="Name"/> (e.g. a localized "Empty") draw as a faint label, and the spine and bar are hidden.
+    /// <see cref="MeterRowStyle.Classic"/> ignores it. Additive field, default false.</summary>
+    public bool IsEmptySlot;
+    /// <summary>Optional muted hint drawn right-aligned on an <see cref="IsEmptySlot"/> row in the
+    /// <see cref="MeterRowStyle.Rounded"/> style (e.g. "Right-click to invite"). Null/empty = no hint. Pass a
+    /// cached string: the row re-reads it every refresh. Additive field.</summary>
+    public string? EmptyHint;
 }
 
 /// <summary>Treatment of the value labels drawn on a meter row's bar (<see cref="MeterRowData.LabelStyle"/>).

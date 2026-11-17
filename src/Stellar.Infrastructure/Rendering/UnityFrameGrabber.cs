@@ -174,6 +174,7 @@ internal sealed partial class UnityFrameGrabber : IFrameGrabber
             Il2CppClassInitFix.EnsureSeeded(_log);
             try { ClassInjector.RegisterTypeInIl2Cpp<StellarCaptureHost>(); }
             catch (Exception ex) { _log.Debug($"[PhotoStudio] RegisterTypeInIl2Cpp(StellarCaptureHost): {ex.Message}"); }
+            Il2CppInjectedGcFix.EnsureScanned<StellarCaptureHost>(_log.Info);
             _registered = true;
         }
         var go = new GameObject("StellarCaptureHost") { hideFlags = HideFlags.HideAndDontSave };

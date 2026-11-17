@@ -23,6 +23,8 @@ internal sealed class WindowThemeAssets
     // inside the 9-slice and survives stretch. Texture size comfortably exceeds 2*sliceBorder.
     private const int FrameTexSize = 48;
     private const int FrameRadius = 14;
+    /// <summary>The GlassMenu frame's corner radius (px) — for overlays that must hug the frame's rounded corners.</summary>
+    public const int FrameCornerRadius = FrameRadius;
     private const int FrameBorderPx = 1;
     private const int FrameSlice = 16;
 
@@ -71,13 +73,70 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleBg(int radius)
     {
         if (radius <= 0) return SwatchBg;   // 0 → the shared editor chip (matches SelectableElement's rounding)
-        if (_bubbleSprites.TryGetValue(radius, out var e)) return e.sprite;
+        if (_bubbleSprites.TryGetValue(radius, out var e))
+        {
+            if (Alive(e)) return e.sprite;
+            Evict(_bubbleSprites, radius);
+            // The left-cut sprite shares this texture → it died with it; drop it so BubbleBgLeft re-cuts the new one.
+            if (_bubbleLeftSprites.Remove(radius, out var dead) && dead != null) Object.Destroy(dead);
+            if (_bubbleBottomSprites.Remove(radius, out var deadB) && deadB != null) Object.Destroy(deadB);
+        }
         // size = 2*radius + a small centre strip so the 9-slice corners fit; slice border = radius + 1 (as SwatchBg).
         var size = radius * 2 + 4;
         var tex = RoundedTextureBaker.Rounded(size, radius, new ColorRgba(1f, 1f, 1f, 1f));
         var sprite = Sliced(tex, radius + 1);
         _bubbleSprites[radius] = (tex, sprite);
         return sprite;
+    }
+
+    // Left-rounded variants (corners on the LEFT only, straight right edge), keyed by radius. A second sprite over the
+    // SAME cached BubbleBg texture (no extra bake/texture) — same lifetime rule (kept across re-bakes).
+    private readonly System.Collections.Generic.Dictionary<int, Sprite> _bubbleLeftSprites = new();
+
+    /// <summary>A white 9-slice chip rounded on its LEFT corners only (right edge straight), matching
+    /// <see cref="BubbleBg"/> at the same <paramref name="radius"/> (&gt; 0). Cut from BubbleBg's texture: the left
+    /// r+2 columns, border (r+1, r+1, 0, r+1). For a share wash flush inside a rounded tile (AccentRowElement
+    /// CornerRadius, 2.33.0). Main-thread only; null before the neutral sprites are baked.</summary>
+    public Sprite? BubbleBgLeft(int radius)
+    {
+        if (radius <= 0) return null;
+        if (BubbleBg(radius) == null) return null;   // first: validates the shared texture (evicts our sprite if it died)
+        if (_bubbleLeftSprites.TryGetValue(radius, out var s))
+        {
+            if (s != null) return s;
+            _bubbleLeftSprites.Remove(radius);   // destroyed behind the cache → re-cut below
+        }
+        var tex = _bubbleSprites[radius].tex;
+        var b = radius + 1;
+        s = Sprite.Create(tex, new UnityEngine.Rect(0f, 0f, b + 1, tex.height), new Vector2(0.5f, 0.5f),
+            pixelsPerUnit: 100f, extrude: 0, meshType: SpriteMeshType.FullRect, border: new Vector4(b, b, 0f, b));
+        s.hideFlags = HideFlags.HideAndDontSave;
+        _bubbleLeftSprites[radius] = s;
+        return s;
+    }
+
+    private readonly System.Collections.Generic.Dictionary<int, Sprite> _bubbleBottomSprites = new();
+
+    /// <summary>A white 9-slice chip rounded on its BOTTOM corners only (top edge straight), matching
+    /// <see cref="BubbleBg"/> at the same <paramref name="radius"/> (&gt; 0). Cut from BubbleBg's texture: the bottom
+    /// r+2 rows, border (r+1, r+1, r+1, 0). For a window-body overlay under a square-bottomed title bar (the
+    /// ConfirmHostElement scrim, 2.33.0). Main-thread only; null before the neutral sprites are baked.</summary>
+    public Sprite? BubbleBgBottom(int radius)
+    {
+        if (radius <= 0) return null;
+        if (BubbleBg(radius) == null) return null;   // validates the shared texture first (as BubbleBgLeft)
+        if (_bubbleBottomSprites.TryGetValue(radius, out var s))
+        {
+            if (s != null) return s;
+            _bubbleBottomSprites.Remove(radius);
+        }
+        var tex = _bubbleSprites[radius].tex;
+        var b = radius + 1;
+        s = Sprite.Create(tex, new UnityEngine.Rect(0f, 0f, tex.width, b + 1), new Vector2(0.5f, 0.5f),
+            pixelsPerUnit: 100f, extrude: 0, meshType: SpriteMeshType.FullRect, border: new Vector4(b, b, b, 0f));
+        s.hideFlags = HideFlags.HideAndDontSave;
+        _bubbleBottomSprites[radius] = s;
+        return s;
     }
 
     // White 1-px rounded RINGS (transparent interior) for BubbleElement.OutlineColorFn, keyed by the same radius as the
@@ -89,12 +148,44 @@ internal sealed class WindowThemeAssets
     public Sprite? BubbleOutline(int radius)
     {
         var r = radius <= 0 ? SwatchRadius : radius;
-        if (_bubbleOutlines.TryGetValue(r, out var e)) return e.sprite;
+        if (_bubbleOutlines.TryGetValue(r, out var e)) { if (Alive(e)) return e.sprite; Evict(_bubbleOutlines, r); }
         var size = r * 2 + 4;
         var tex = RoundedTextureBaker.RoundedBordered(size, r, 1, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
         var sprite = Sliced(tex, r + 1);
         _bubbleOutlines[r] = (tex, sprite);
         return sprite;
+    }
+
+    // Half-pixel rings (the house 1.5 px selection ring), keyed by (radius, width in half-px). Same lifetime rule.
+    private readonly System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> _halfPxRings = new();
+
+    /// <summary>A white rounded ring baked at 2× (corner <paramref name="radius"/>×2, <paramref name="halfPx"/>
+    /// texels wide). Draw it Sliced with <c>Image.pixelsPerUnitMultiplier = 2</c>: it then lands at
+    /// <paramref name="radius"/> px corners and <paramref name="halfPx"/>/2 px width (3 → 1.5 px), matching a
+    /// <see cref="BubbleBg"/> fill of the same radius. A plain 1-px <see cref="BubbleOutline"/> can't do half
+    /// pixels. Baked once per key; main-thread only.</summary>
+    public Sprite? BubbleRingHalfPx(int radius, int halfPx)
+    {
+        var key = radius * 64 + halfPx;
+        if (_halfPxRings.TryGetValue(key, out var e)) { if (Alive(e)) return e.sprite; Evict(_halfPxRings, key); }
+        var r2 = System.Math.Max(1, radius) * 2;
+        var tex = RoundedTextureBaker.RoundedBordered(r2 * 2 + 4, r2, halfPx, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
+        var sprite = Sliced(tex, r2 + 1);
+        _halfPxRings[key] = (tex, sprite);
+        return sprite;
+    }
+
+    /// <summary>BubbleElement.OutlineWidth (2.33.0): a ring <paramref name="widthPx"/> wide, snapped to 0.5 px and
+    /// clamped to [0.5, corner radius] (a ring wider than the corner would spill into the 9-slice centre strip and
+    /// stretch). Reuses the <see cref="BubbleRingHalfPx"/> cache, so it MUST be drawn Sliced with
+    /// <c>pixelsPerUnitMultiplier = 2</c>. <paramref name="radius"/> &lt;= 0 → the 3-radius chip rounding, matching
+    /// <see cref="BubbleBg"/>(0). Main-thread only.</summary>
+    public Sprite? BubbleOutlineWidth(int radius, float widthPx)
+    {
+        var r = radius <= 0 ? SwatchRadius : radius;
+        // halfPx < 64 keeps BubbleRingHalfPx's radius*64+halfPx key collision-free.
+        var halfPx = System.Math.Clamp((int)System.Math.Round(widthPx * 2f), 1, System.Math.Min(r * 2, 63));
+        return BubbleRingHalfPx(r, halfPx);
     }
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
@@ -242,18 +333,39 @@ internal sealed class WindowThemeAssets
         DestroyThemed();
         Drop(ref _capsuleTex, () => Capsule, s => Capsule = s);
         Drop(ref _swatchTex, () => SwatchBg, s => SwatchBg = s);
-        foreach (var e in _bubbleSprites.Values)
+        Drop(ref _cdOutlineTex, () => CdOutline, s => CdOutline = s);
+        // Left-cut sprites first: they are sub-rect sprites over the _bubbleSprites textures destroyed just below.
+        foreach (var s in _bubbleLeftSprites.Values) if (s != null) Object.Destroy(s);
+        _bubbleLeftSprites.Clear();
+        foreach (var s in _bubbleBottomSprites.Values) if (s != null) Object.Destroy(s);
+        _bubbleBottomSprites.Clear();
+        DestroyPairs(_bubbleSprites);
+        DestroyPairs(_bubbleOutlines);
+        DestroyPairs(_halfPxRings);
+    }
+
+    private static void DestroyPairs(System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> d)
+    {
+        foreach (var e in d.Values)
         {
             if (e.sprite != null) Object.Destroy(e.sprite);
             if (e.tex != null) Object.Destroy(e.tex);
         }
-        _bubbleSprites.Clear();
-        foreach (var e in _bubbleOutlines.Values)
-        {
-            if (e.sprite != null) Object.Destroy(e.sprite);
-            if (e.tex != null) Object.Destroy(e.tex);
-        }
-        _bubbleOutlines.Clear();
+        d.Clear();
+    }
+
+    // Liveness of a cached (tex, sprite) pair. Unity's overloaded == reports a DESTROYED object as null, so this catches a
+    // pair killed behind the cache's back (an explicit Destroy, or a scene-switch Resources.UnloadUnusedAssets sweep if
+    // the HideAndDontSave flag were ever lost) — handing a dead sprite to a new Image renders nothing at best.
+    private static bool Alive((Texture2D tex, Sprite sprite) e) => e.sprite != null && e.tex != null;
+
+    // Evict a dead pair (destroying whichever half survived) so the caller re-bakes it.
+    private static void Evict(System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> d, int key)
+    {
+        if (!d.TryGetValue(key, out var e)) return;
+        if (e.sprite != null) Object.Destroy(e.sprite);
+        if (e.tex != null) Object.Destroy(e.tex);
+        d.Remove(key);
     }
 
     // White sprite with the TOP two corners rounded (radius r), bottom square. 4× supersampled AA.

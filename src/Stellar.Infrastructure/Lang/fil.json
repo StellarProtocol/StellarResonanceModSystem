@@ -62,6 +62,7 @@
   "common.resetAll": "I-reset lahat",
   "common.retry": "Subukan muli",
   "common.save": "I-save",
+  "confirm.dontAskAgain": "Huwag nang itanong muli",
   "developer.fb.already": "Naka-on na ang developer mode",
   "developer.fb.off": "Naka-off na ang developer mode",
   "developer.gameui": "Mga path ng Game UI",

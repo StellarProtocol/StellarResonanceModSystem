@@ -9,6 +9,15 @@
     <ProjectReference Include="../Stellar.Abstractions/Stellar.Abstractions.csproj" />
   </ItemGroup>
 
+  <!-- English buff/skill text for IGameText (built by tools/gametext/build_gametext.py, ~190 KB zstd). Embedded rather
+       than shipped beside the DLLs so the framework deploy set (DeployFramework target, tools/release/build-bundle.sh)
+       is unchanged and the table can never go missing. ZstdSharp is pure managed and already deployed with
+       Stellar.Infrastructure (same version). -->
+  <ItemGroup>
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+    <EmbeddedResource Include="Resources/GameText.en.tsv.zst" LogicalName="Stellar.Application.GameText.en.tsv.zst" />
+  </ItemGroup>
+
   <!--
     Outbound abstractions and service implementations are intentionally internal:
     they are part of the framework's *contract* with its adapters and composition root,

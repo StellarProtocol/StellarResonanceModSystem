@@ -62,6 +62,7 @@
   "common.resetAll": "Atur ulang semua",
   "common.retry": "Coba lagi",
   "common.save": "Simpan",
+  "confirm.dontAskAgain": "Jangan tanya lagi",
   "developer.fb.already": "Mode pengembang sudah aktif",
   "developer.fb.off": "Mode pengembang dimatikan",
   "developer.gameui": "Jalur UI Game",

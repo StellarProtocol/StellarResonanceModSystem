@@ -46,7 +46,7 @@ public sealed partial class WindowInteractionTicker
         var vp = v?.Viewport;
         if (v == null || vp == null || v.Content == null) return;
         if (!RectTransformUtility.RectangleContainsScreenPoint(vp, mp, null)) return;
-        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List))) return;   // a front window owns this point
+        if (FrontWindowBlocks(mp, FindWindowRoot(reg.List)) || LayerCovered(reg.List, mp)) return;   // a front window owns this point
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(vp, mp, null, out var lp)) return;
         var r = vp.rect;
         var dy = VirtualReorderMath.AutoScrollDelta(r.yMax - lp.y, r.height, v.RowHeight, Time.unscaledDeltaTime);

@@ -23,7 +23,9 @@ public sealed partial class WindowInteractionTicker
     private readonly Dictionary<IntPtr, (Behaviour Clip, RectTransform Rect)[]> _clipChains = new();
     private static readonly (Behaviour Clip, RectTransform Rect)[] NoClips = Array.Empty<(Behaviour, RectTransform)>();
 
-    // True when mp lies outside any enabled ancestor clip of cell — i.e. over a part of the cell the user can't see.
+    // True when mp lies outside any enabled ancestor clip of cell — i.e. over a part of the cell the user can't see —
+    // or when a LayerStack overlay owns that point (a blocking layer drawn above the cell, or the cell sits in a
+    // click-through layer; WindowInteractionTicker.Layers.cs). Either way the press/hover is not the cell's.
     // Call AFTER the cell's own contains-check passes (the common miss case never pays for the lookup).
     internal bool OutsideClip(RectTransform cell, Vector2 mp)
     {
@@ -34,7 +36,7 @@ public sealed partial class WindowInteractionTicker
             if (clip == null || rect == null || !clip.isActiveAndEnabled) continue;
             if (!RectTransformUtility.RectangleContainsScreenPoint(rect, mp, null)) return true;
         }
-        return false;
+        return LayerCovered(cell, mp);
     }
 
     private (Behaviour Clip, RectTransform Rect)[] ClipChain(RectTransform cell)

@@ -62,6 +62,7 @@
   "common.resetAll": "รีเซ็ตทั้งหมด",
   "common.retry": "ลองใหม่",
   "common.save": "บันทึก",
+  "confirm.dontAskAgain": "ไม่ต้องถามอีก",
   "developer.fb.already": "โหมดนักพัฒนาเปิดอยู่แล้ว",
   "developer.fb.off": "ปิดโหมดนักพัฒนาแล้ว",
   "developer.gameui": "พาธ UI เกม",
