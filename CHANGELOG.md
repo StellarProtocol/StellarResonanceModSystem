@@ -15,13 +15,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > summary line under the version heading is also repo-only.
 
 ## [2.33.0] - 2026-11-17
-_**2.33.0** (minor) — combat meter rows can use the rounded house-style look. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`), `MeterRowData.IsEmptySlot` / `EmptyHint` `WindowSpec.BackgroundColor` / `BackgroundCornerRadius`, `IPluginServices.GameText` (`IGameText`, English buff/skill text shipped with the framework), `LayerStackElement` (overlays with opt-in input blocking) and `ConfirmHostElement` + `ConfirmController` (window-scoped modal confirm) (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
+_**2.33.0** (minor) — rounded/compact meter rows, content & row-backing fade, game text, window overlays + modal confirm. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`), `MeterRowData.IsEmptySlot` / `EmptyHint` `WindowSpec.BackgroundColor` / `BackgroundCornerRadius`, `IPluginServices.GameText` (`IGameText`, English buff/skill text shipped with the framework), `LayerStackElement` (overlays with opt-in input blocking) and `ConfirmHostElement` + `ConfirmController` (window-scoped modal confirm) (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
 ### Added
-- Combat meter rows can now be drawn as rounded tiles that follow your theme colours and window opacity, with a clear outline on your own row and a softer look for empty party slots.
-- Combat meter rows can also be shown in two smaller sizes: a one-line Compact row and a bar-only Mini row, so a raid of 20 fits in far less screen space.
+- Plugins can now show list rows as rounded tiles that follow your theme colours and window opacity, with a clear outline on your own row and a softer look for empty slots.
+- Plugins can now offer compact one-line and bar-only row sizes, so long lists such as a raid of 20 take far less screen space.
+- Plugins can now fade a window's contents, or only the backgrounds of its rows, so you see more of the game behind them.
 - Plugins can now ask before risky actions with a confirmation box that locks their window until you answer (Esc cancels).
+- Plugins can now show translated English names for game buffs and skills, built into the framework.
+- Plugins can now put icons on right-click player menu items.
 ### Fixed
 - Windows no longer jump to the top-left corner after logging in when a plugin resizes them.
+- Thai and Chinese/Japanese/Korean player names in plugin rows are now clear and easy to read.
 ### Developer notes
 - **`MeterRowElement.Style`** (`MeterRowStyle`, init-only, default `Classic`). `Classic` is byte-identical to 2.32.0. `Rounded` reskins the same row (all data features unchanged):
   - row = radius-6 theme Tile @92 % (self: 20 % accent wash @95 % + 1.5 px accent ring @75 %), theme-live, fills × `IChromeStyle.WindowOpacity`;
