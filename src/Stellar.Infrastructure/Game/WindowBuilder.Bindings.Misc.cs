@@ -22,6 +22,10 @@ internal sealed partial class WindowBuilder
         public float WashAlpha = 0.12f;
         // AccentRowElement.CornerRadius (2.33.0): null sprites = the Classic square wash (none of this runs).
         public Sprite? RoundLeft, RoundFull; public int Radius;
+        // The row's own RectTransform, captured at build. NOT `(RectTransform)ShareRect.parent`: under Il2CppInterop
+        // `.parent` returns a plain Transform WRAPPER, so a C# cast throws InvalidCastException every poll (aborting the
+        // whole window apply — seen as 400+ "[Window/combatmeter.history.v2] apply: Unable to cast" warnings).
+        public RectTransform RowRect = null!;
         private float _lastShare = -1f;
         private bool _full;
         private ColorRgba _lastCol;
@@ -47,7 +51,8 @@ internal sealed partial class WindowBuilder
         // sprite is swapped only when the choice flips. Starts on RoundLeft (set at build) → _full = false.
         private void ApplyRoundEnd(float share)
         {
-            var rowW = ((RectTransform)ShareRect.parent).rect.width;
+            if (RowRect == null) return;
+            var rowW = RowRect.rect.width;
             var full = share * rowW >= rowW - Radius;
             if (full == _full) return;
             _full = full;

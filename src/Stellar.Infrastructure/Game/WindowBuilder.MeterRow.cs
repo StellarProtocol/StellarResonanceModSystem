@@ -460,6 +460,7 @@ internal sealed partial class WindowBuilder
             stripeGo.SetActive(false);
             shareImg.sprite = left; shareImg.type = Image.Type.Sliced;
             bind.RoundLeft = left; bind.RoundFull = full; bind.Radius = r;
+            bind.RowRect = go.GetComponent<RectTransform>();   // IL2CPP-safe (never cast a .parent wrapper)
         }
         token.AccentRows.Add(bind);
     }
