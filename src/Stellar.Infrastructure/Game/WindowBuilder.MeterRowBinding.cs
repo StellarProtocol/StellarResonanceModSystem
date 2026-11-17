@@ -128,6 +128,8 @@ internal sealed partial class WindowBuilder
         public Transform ImagineGroup = null!;     // the re-parentable imagine cluster (for ImaginePosition)
         public Transform TopLine = null!;          // top-line HLG host (top-right / left positions)
         public Transform RightColHost = null!;     // right-column host (RightColumn position)
+        public MeterRowRoundedSkin? Rounded;        // MeterRowStyle.Rounded painter (null = Classic, byte-identical)
+        public float SpineHeightDelta = -4f, SpineLeftExtra;   // spine height inset + extra left offset (Rounded insets 4 px)
 
         private object? _lastAtlas;
         private bool _atlasResolved;
@@ -157,7 +159,7 @@ internal sealed partial class WindowBuilder
             if (Bg == null || !Bg.gameObject.activeInHierarchy) return;
             var d = Data();
 
-            ApplySelfHighlight(d);
+            if (Rounded != null) Rounded.Apply(d); else ApplySelfHighlight(d);
             ApplySpine(d);
             ApplyCrest(d);
             ApplyVisibility(d);
@@ -260,9 +262,9 @@ internal sealed partial class WindowBuilder
                 var spineW = d.SpineWidth > 0f ? d.SpineWidth : WindowBuilder.MeterSpineW;
                 if (!Mathf.Approximately(spineW, _lastSpineW))
                 {
-                    SpineGo.GetComponent<RectTransform>()!.sizeDelta = new Vector2(spineW, -4f);
+                    SpineGo.GetComponent<RectTransform>()!.sizeDelta = new Vector2(spineW, SpineHeightDelta);
                     var pad = ContentVlg.padding;
-                    ContentVlg.padding = new RectOffset((int)(spineW + WindowBuilder.MeterPad), pad.right, pad.top, pad.bottom);
+                    ContentVlg.padding = new RectOffset((int)(spineW + WindowBuilder.MeterPad + SpineLeftExtra), pad.right, pad.top, pad.bottom);
                     _lastSpineW = spineW;
                 }
             }
@@ -290,7 +292,7 @@ internal sealed partial class WindowBuilder
 
             // Name colour: Dead wins, then an optional NameColor override (ready-check vote),
             // else the default. Updated whenever the effective colour changes, not only on Dead.
-            var effName = d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
+            var effName = Rounded != null && d.IsEmptySlot ? Rounded.EmptyLabel : d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
             if (!effName.Equals(_lastNameCol)) { Name.color = effName; _lastNameCol = effName; }
 
         }

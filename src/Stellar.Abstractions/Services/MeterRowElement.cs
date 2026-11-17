@@ -20,4 +20,26 @@ public sealed record AccentRowElement(HudElement Child, Func<ColorRgba> Stripe, 
 /// Func never allocates. Fixed 48-px row height; width fills the row. Compose inside a <see cref="ListElement"/>.</summary>
 /// <param name="Data">Per-combatant row snapshot, re-pulled on the window's capped refresh.</param>
 /// <param name="OnRightClick">Optional: invoked when the row is right-clicked (CombatMeter row context menu); null = no menu.</param>
-public sealed record MeterRowElement(System.Func<MeterRowData> Data, System.Action? OnRightClick = null) : HudElement;
+public sealed record MeterRowElement(System.Func<MeterRowData> Data, System.Action? OnRightClick = null) : HudElement
+{
+    /// <summary>Visual style of the row. <see cref="MeterRowStyle.Classic"/> (the default) is the original flat
+    /// meter row, so every plugin built before this property existed renders byte-identical.
+    /// <see cref="MeterRowStyle.Rounded"/> opts in to the Stellar Design Language look (rounded theme tile, rounded
+    /// spine/bar, accent self ring, recessed empty slot). Chosen once when the row is built. Init property, NOT a
+    /// ctor param, so the record's primary constructor stays binary-compatible.</summary>
+    public MeterRowStyle Style { get; init; }
+}
+
+/// <summary>Visual style of a <see cref="MeterRowElement"/>.</summary>
+public enum MeterRowStyle
+{
+    /// <summary>The original flat meter row (dark backing, square self/talk borders, square spine and bar).</summary>
+    Classic = 0,
+    /// <summary>House-style rounded row: a radius-6 theme Tile (theme-live, fades with the window opacity), a
+    /// rounded spine inset 4 px, a radius-5 bar on a recessed track, rounded status-effect cells, the self row as a
+    /// 20 % accent wash plus a 1.5 px accent ring (instead of <see cref="MeterRowData.SelfAccent"/>), the
+    /// <see cref="MeterRowData.RowBorder"/> colour as a rounded ring, a faded dead row, and
+    /// <see cref="MeterRowData.IsEmptySlot"/> rows drawn as a recessed tile with an optional
+    /// <see cref="MeterRowData.EmptyHint"/>.</summary>
+    Rounded = 1,
+}

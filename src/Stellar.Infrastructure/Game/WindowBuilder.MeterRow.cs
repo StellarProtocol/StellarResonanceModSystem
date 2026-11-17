@@ -111,7 +111,7 @@ internal sealed partial class WindowBuilder
         // Offline scrim — drawn last (on top), toggled by Offline.
         var scrim = AddStretchedImage(row.transform, "Scrim", MeterScrim, ignoreLayout: true).gameObject;
 
-        token.MeterRows.Add(new MeterRowBinding
+        var binding = new MeterRowBinding
         {
             Data = el.Data, ContentVlg = vlg,
             Bg = bg, SelfBorder = border, SpineFill = spineFill, ShieldFill = shieldFill, SpineGo = spine,
@@ -125,7 +125,9 @@ internal sealed partial class WindowBuilder
             DebuffBlock = debuffBlock, DebuffColHost = debuffCol, RowLe = le, SheenGo = sheenGo, FillMask = fillRect.GetComponent<RectMask2D>(),
             VoiceImg = voiceImg, TalkBorderGo = talkBorder,
             SetVoiceExcluded = on => SetVoiceClickExcluded?.Invoke(voiceImg.rectTransform, on),
-        });
+        };
+        if (el.Style == MeterRowStyle.Rounded) ApplyRoundedMeterSkin(binding, row, token);   // opt-in (.MeterRow.Rounded.cs)
+        token.MeterRows.Add(binding);
 
         WireRowInteractions(row, voiceImg, el);
         WireDebuffClicks(debuffBlock, el);   // per-cell left-click -> MeterRowData.OnDebuffClick (Plugin.DebuffTooltip)

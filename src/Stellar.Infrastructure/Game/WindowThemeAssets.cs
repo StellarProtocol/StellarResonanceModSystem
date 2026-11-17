@@ -96,6 +96,25 @@ internal sealed class WindowThemeAssets
         _bubbleOutlines[r] = (tex, sprite);
         return sprite;
     }
+
+    // Half-pixel rings (the house 1.5 px selection ring), keyed by (radius, width in half-px). Same lifetime rule.
+    private readonly System.Collections.Generic.Dictionary<int, (Texture2D tex, Sprite sprite)> _halfPxRings = new();
+
+    /// <summary>A white rounded ring baked at 2× (corner <paramref name="radius"/>×2, <paramref name="halfPx"/>
+    /// texels wide). Draw it Sliced with <c>Image.pixelsPerUnitMultiplier = 2</c>: it then lands at
+    /// <paramref name="radius"/> px corners and <paramref name="halfPx"/>/2 px width (3 → 1.5 px), matching a
+    /// <see cref="BubbleBg"/> fill of the same radius. A plain 1-px <see cref="BubbleOutline"/> can't do half
+    /// pixels. Baked once per key; main-thread only.</summary>
+    public Sprite? BubbleRingHalfPx(int radius, int halfPx)
+    {
+        var key = radius * 64 + halfPx;
+        if (_halfPxRings.TryGetValue(key, out var e)) return e.sprite;
+        var r2 = System.Math.Max(1, radius) * 2;
+        var tex = RoundedTextureBaker.RoundedBordered(r2 * 2 + 4, r2, halfPx, new ColorRgba(0f, 0f, 0f, 0f), new ColorRgba(1f, 1f, 1f, 1f));
+        var sprite = Sliced(tex, r2 + 1);
+        _halfPxRings[key] = (tex, sprite);
+        return sprite;
+    }
     public Texture2D? HGradient { get; private set; }   // accent→transparent horizontal (Tracker/Party divider RawImage)
 
     public Color MenuText { get; private set; } = Color.white;
