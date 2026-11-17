@@ -198,9 +198,9 @@ internal sealed partial class WindowService : IWindowHost, IWindowOwnedRegistrat
             e.Token = SafeMount(e);
             if (e.Token is null) return;
             // The mount itself is an activation (fresh order value → top of its layer), so a pending show-activation is
-            // spent. A runtime SetTopmost made before the mount (or a remount after a scene change) is re-applied here.
+            // spent. Runtime SetTopmost / SetSizeLimits are re-applied here, before the restore (.SizeLimits.cs).
             e.ActivateOnShow = false;
-            if (e.Topmost != e.Reg.Spec.Topmost) _order?.SetTopmost(e.Token, e.Topmost);
+            ReapplyRuntimeWindowState(e);
             if (e.BringToFrontPending) { e.BringToFrontPending = false; _order?.BringToFront(e.Token); }
             // Restore saved position (or DefaultRect) — WindowService.Layout (may defer). A prebuild fill mount restores the
             // position only: the persisted show/hide waits for the first real show (VisRestoreOwed), so it can never show it.

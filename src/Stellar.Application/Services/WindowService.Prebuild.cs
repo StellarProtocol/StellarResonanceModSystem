@@ -74,6 +74,7 @@ internal sealed partial class WindowService
             if (e.Token == null) { e.StructureFailed = true; return; }   // canvas gone / build threw: the fill mounts it
             e.Parked = true; e.PrebuildFilled = false;
             e.VisRestoreOwed = true;            // the mount's persisted show/hide restore runs on the first real show
+            ApplySizeLimits(e);                 // runtime IWindowSizeLimits before the restore clamps (.SizeLimits.cs)
             ApplySavedRect(e, applyVisibility: false);   // position only; never shows a hidden window
             return;                             // one ~50-220 ms build per tick
         }
