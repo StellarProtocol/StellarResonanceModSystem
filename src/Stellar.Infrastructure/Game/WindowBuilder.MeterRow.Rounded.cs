@@ -46,6 +46,7 @@ internal sealed partial class WindowBuilder
         SetRoundSprite(b.BarShieldImg, _assets.BubbleBg(MeterRoundBarR));
         StripRectangularBarOverlays(b);
         ShareTopLineBaseline(b);
+        FixRankSlot(b, token);
 
         var create = b.DebuffBlock.CreateCell!;   // cells are built lazily → round each one as it is created
         b.DebuffBlock.CreateCell = i => { var c = create(i); RoundDebuffCell(c); return c; };
@@ -95,6 +96,35 @@ internal sealed partial class WindowBuilder
         if (b.Name != null) b.Name.alignByGeometry = false;
         if (b.ClassName != null) b.ClassName.alignByGeometry = false;
         if (b.Spec != null) b.Spec.alignByGeometry = false;
+    }
+
+    // Widest rank the list shows (ranks 1–24; CombatMeter sends "N."). Digits are the font's own widths, so the
+    // slot is MEASURED from this sample at the rank's live font, not hard-coded.
+    private const string MeterRankSlotSample = "24.";
+
+    // Fixed-width, right-aligned rank slot (mockup `.mr .t .rk`: width 16px, text-align right) so names start at
+    // the same x down the list whether the rank is "2." or "12." — Classic sizes the rank to its own text, so a
+    // two-digit rank pushed its name right. Only the LayoutElement's PREFERRED width is pinned: the Text's own
+    // min width (0) still applies, so a narrow row shrinks the rank exactly as before (and an inactive rank —
+    // ShowRank off — is still skipped by the HLG). Measured once at build, and again only on a reskin (Font Scale
+    // / font change → re-measure after RegisterTextSizeReskin re-sized it); no per-refresh cost.
+    private static void FixRankSlot(MeterRowBinding b, WindowToken token)
+    {
+        if (b.Rank == null) return;
+        var rank = b.Rank;
+        rank.alignment = TextAnchor.MiddleRight;
+        var le = rank.GetComponent<LayoutElement>();   // AddMeterText always adds one; no `??` on Unity objects
+        if (le == null) le = rank.gameObject.AddComponent<LayoutElement>();
+        void Measure()
+        {
+            if (rank == null || le == null) return;
+            var keep = rank.text;
+            rank.text = MeterRankSlotSample;
+            le.preferredWidth = Mathf.Ceil(rank.preferredWidth);   // whole px → crisp name x
+            rank.text = keep;
+        }
+        Measure();
+        token.ReskinActions.Add(Measure);
     }
 
     private static void SetRoundSprite(Image? img, Sprite? sprite)
