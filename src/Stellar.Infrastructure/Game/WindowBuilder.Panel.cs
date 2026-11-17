@@ -67,7 +67,7 @@ internal sealed partial class WindowBuilder
     // already absorbs all clicks; the backdrop must not intercept events itself.
     private void BuildBackdrop(BackdropElement bd, Transform parent, WindowToken token)
     {
-        var go = UGuiPrimitives.NewChild("Backdrop", parent);
+        var go = UGuiPrimitives.NewChild(BackdropElementName, parent);   // name read by BindContentOpacity
         go.AddComponent<LayoutElement>().ignoreLayout = true;
         UGuiPrimitives.Stretch(go);
         var img = go.AddComponent<Image>();
@@ -83,7 +83,7 @@ internal sealed partial class WindowBuilder
     // theme-live through the plugin's delegate). raycastTarget=false: the root blocker already absorbs clicks.
     private void BuildWindowBackdrop(RectTransform root, System.Func<ColorRgba> color, int radius, WindowToken token)
     {
-        var go = UGuiPrimitives.NewChild("WindowBackdrop", root);
+        var go = UGuiPrimitives.NewChild(WindowBackdropName, root);   // name read by BindContentOpacity
         go.AddComponent<LayoutElement>().ignoreLayout = true;
         UGuiPrimitives.Stretch(go);
         go.transform.SetAsFirstSibling();

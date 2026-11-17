@@ -141,6 +141,16 @@ public sealed record WindowSpec(string Id, string Title, WindowRect DefaultRect,
     /// Null delegate (default) = always follow the framework.</summary>
     public Func<float?>? FrameOpacity { get; init; }
 
+    /// <summary>fw 2.33.0+: a poll-diffed opacity (0..1, clamped) for the window's whole CONTENT — every text, icon, bar
+    /// and element the plugin built, faded together via one CanvasGroup per top-level content child. The window's
+    /// background is NOT faded: the <see cref="BackgroundColor"/> / <see cref="BackgroundOpacity"/> backdrop, the
+    /// GlassMenu frame (<see cref="FrameOpacity"/>) and a top-level <c>BackdropElement</c> keep their own opacity, so a
+    /// "background" and a "foreground" slider stay independent. Input is unaffected (the groups keep
+    /// <c>blocksRaycasts</c>/<c>interactable</c> on), even at 0. The alpha is assigned only when the value changes
+    /// (a change re-meshes the content once, so don't animate it per frame). Return a cached delegate that allocates
+    /// nothing; a throw counts as 1. Null (default) = no CanvasGroups are added, exactly as before.</summary>
+    public Func<float>? ContentOpacity { get; init; }
+
     /// <summary>Borderless windows only: a purely visual layer. No content padding (the content starts at the window's
     /// top-left corner and fills its rect exactly) and no click blocker, so presses and pointer-over-UI checks fall
     /// through to the game and to every window behind it. For full-screen guides and overlays that must never take

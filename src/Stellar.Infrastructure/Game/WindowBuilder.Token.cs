@@ -113,6 +113,7 @@ internal sealed partial class WindowBuilder
         internal readonly List<BarBinding> Bars = new();
         internal readonly List<ColorPickerBinding> Pickers = new();
         internal readonly List<FrameOpacityBinding> FrameOpacities = new();
+        internal ContentOpacityBinding? ContentOpacity;   // WindowSpec.ContentOpacity (window-level, never in a KeepAlive branch)
         internal readonly List<HoverBinding> Hovers = new();           // per-apply pin-state poll (visual hover is ticker-driven)
         internal readonly List<SelectableBinding> Selectables = new(); // per-apply selected-state re-tint for SelectableElement rows
         internal readonly List<BubbleBinding> Bubbles = new();          // per-apply width solve (content-hug up to cap) for BubbleElement
@@ -254,6 +255,7 @@ internal sealed partial class WindowBuilder
             for (var i = 0; i < Bars.Count; i++) if (GatedBinding.Runs(Bars[i])) Bars[i].Apply();
             for (var i = 0; i < Pickers.Count; i++) if (GatedBinding.Runs(Pickers[i])) Pickers[i].Apply();
             for (var i = 0; i < FrameOpacities.Count; i++) if (GatedBinding.Runs(FrameOpacities[i])) FrameOpacities[i].Apply();
+            ContentOpacity?.Apply();
             for (var i = 0; i < Hovers.Count; i++) if (GatedBinding.Runs(Hovers[i])) Hovers[i].Poll?.Invoke();
             for (var i = 0; i < Selectables.Count; i++) if (GatedBinding.Runs(Selectables[i])) Selectables[i].Apply();
             for (var i = 0; i < Bubbles.Count; i++) if (GatedBinding.Runs(Bubbles[i])) Bubbles[i].Apply();

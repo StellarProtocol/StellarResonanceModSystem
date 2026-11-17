@@ -176,6 +176,7 @@ internal sealed partial class WindowBuilder
         token.Root = root.gameObject; token.Rect = root;
         hitchT = HitchProbe.Lap("build:chrome", hitchT);
         BuildElement(reg.Root, content, token);
+        BindContentOpacity(reg.Spec, root, token);   // after the tree: groups go on the top-level content children
         hitchT = HitchProbe.Lap("build:tree", hitchT);
         if (!firstApply) { token.StructureOnly = true; return token; }
         token.Apply(); HitchProbe.End("build:firstApply", hitchT);   // first paint (builds the active Cond branches)
