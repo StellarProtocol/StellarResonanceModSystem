@@ -26,7 +26,8 @@ _**2.33.0** (minor) — combat meter rows can use the rounded house-style look. 
   - row = radius-6 theme Tile @92 % (self: 20 % accent wash @95 % + 1.5 px accent ring @75 %), theme-live, fills × `IChromeStyle.WindowOpacity`;
   - spine = capsule inset 4 px top/bottom/left (any `SpineWidth`); bar = radius-5 fill on a recessed track; status-effect cells = radius-4 tiles with the kind-coloured 1.5 px ring;
   - `RowBorder` draws as the rounded ring (wins over the self ring); `SelfAccent` and the skull marker are not used; a `Dead` row fades to 55 % (name strike kept);
-  - rank and spec text use the theme Muted colour.
+  - rank and spec text use the theme Muted colour;
+  - the top line never overlaps its right side (voice icon, share %, imagines): when it doesn't fit, the spec is hidden first, then the name is cut with "..." (re-fitted only when the line width, its contents or the font change).
 - **`MeterRowData.IsEmptySlot`** / **`EmptyHint`** (additive fields, read only by `Rounded`): recessed tile, faint rank + name (pass a localized "Empty"), spine and bar hidden, optional right-aligned muted hint.
 - `MeterRowElement` / `AccentRowElement` moved from `WindowElement.cs` to `MeterRowElement.cs` (500-LoC gate; no API change).
 - `WindowThemeAssets.BubbleRingHalfPx(radius, halfPx)`: 2×-baked ring drawn at `pixelsPerUnitMultiplier = 2` for half-pixel ring widths.

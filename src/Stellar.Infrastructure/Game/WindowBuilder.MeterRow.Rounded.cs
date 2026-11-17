@@ -59,6 +59,7 @@ internal sealed partial class WindowBuilder
             BarLe = barGo.GetComponent<LayoutElement>()!, RowGroup = row.AddComponent<CanvasGroup>(),
             Rank = b.Rank, Spec = b.Spec, Hint = AddEmptyHint(token, row.transform),
         };
+        AttachTopLineFit(skin, b);
         token.ReskinActions.Add(skin.MarkThemeDirty);
         b.Rounded = skin;
     }
@@ -207,7 +208,7 @@ internal sealed partial class WindowBuilder
 
     // Live painter for one rounded row. Theme colours are composed OPAQUE (SDL §3 tokens) on a re-skin, then each
     // fill takes its alpha × the live window opacity (SDL §5) at paint time.
-    internal sealed class MeterRowRoundedSkin
+    internal sealed partial class MeterRowRoundedSkin
     {
         public WindowThemeAssets Assets = null!;
         public Func<float>? Opacity;
@@ -229,7 +230,7 @@ internal sealed partial class WindowBuilder
         private ColorRgba _lastRing = new(-2f, -2f, -2f, -2f);
         private string? _lastHint;
 
-        public void MarkThemeDirty() => _themeDirty = true;
+        public void MarkThemeDirty() { _themeDirty = true; _fitMeasure = true; }   // font may have changed → re-fit top line
 
         public void Apply(in MeterRowData d)
         {

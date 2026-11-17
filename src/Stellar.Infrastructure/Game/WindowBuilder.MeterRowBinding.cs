@@ -297,6 +297,8 @@ internal sealed partial class WindowBuilder
             var effName = Rounded != null && d.IsEmptySlot ? Rounded.EmptyLabel : d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
             if (!effName.Equals(_lastNameCol)) { Name.color = effName; _lastNameCol = effName; }
 
+            // Rounded: drop spec / cut the name so the top line never overlaps its right cluster (last: needs this poll's texts).
+            Rounded?.FitTopLine(d);
         }
 
         // Re-parent the imagine cluster for MeterRowData.ImaginePosition + size-driven content padding. Keyed
