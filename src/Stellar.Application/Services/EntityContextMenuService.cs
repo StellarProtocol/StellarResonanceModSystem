@@ -13,16 +13,20 @@ namespace Stellar.Application.Services;
 /// </summary>
 internal sealed class EntityContextMenuService : IEntityContextMenu
 {
-    private sealed record Entry(string Label, Func<EntityId, bool>? IsVisible, Action<EntityId> OnClick);
+    private sealed record Entry(string Label, Func<EntityId, bool>? IsVisible, Action<EntityId> OnClick, byte[]? IconPng);
 
     private readonly List<Entry> _entries = new();
     private readonly object _lock = new();
 
     /// <inheritdoc/>
     public IDisposable Register(string label, Func<EntityId, bool>? isVisible, Action<EntityId> onClick)
+        => Register(label, isVisible, onClick, iconPng: null);
+
+    /// <inheritdoc/>
+    public IDisposable Register(string label, Func<EntityId, bool>? isVisible, Action<EntityId> onClick, byte[]? iconPng)
     {
         if (onClick is null) throw new ArgumentNullException(nameof(onClick));
-        var entry = new Entry(label, isVisible, onClick);
+        var entry = new Entry(label, isVisible, onClick, iconPng);
         lock (_lock) _entries.Add(entry);
         return new Token(this, entry);
     }
@@ -42,7 +46,8 @@ internal sealed class EntityContextMenuService : IEntityContextMenu
                 if (visible)
                 {
                     var captured = e;
-                    result.Add(new EntityMenuItem(captured.Label, () => captured.OnClick(entity)));
+                    // The registered array itself (never a copy), so a renderer can cache its texture by reference.
+                    result.Add(new EntityMenuItem(captured.Label, () => captured.OnClick(entity)) { IconPng = captured.IconPng });
                 }
             }
         }

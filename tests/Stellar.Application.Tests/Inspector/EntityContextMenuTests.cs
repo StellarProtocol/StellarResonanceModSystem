@@ -31,6 +31,30 @@ public sealed class EntityContextMenuTests
     }
 
     [Fact]
+    public void Register_WithIcon_SurfacesSameArray_AndNoIconIsNull()
+    {
+        var svc = new EntityContextMenuService();
+        var png = new byte[] { 1, 2, 3 };
+        svc.Register("Plain", null, _ => { });
+        svc.Register("Iconic", null, _ => { }, png);
+        var items = svc.ItemsFor(E(1));
+        Assert.Equal(2, items.Count);
+        Assert.Null(items[0].IconPng);
+        Assert.Same(png, items[1].IconPng);   // the registered reference, so renderers can cache by reference
+    }
+
+    [Fact]
+    public void Register_WithIcon_ThroughInterface_DispatchesToService()
+    {
+        // Calls the interface overload (a default interface method) — the service's own method must win, not the
+        // icon-dropping default body.
+        Stellar.Abstractions.Services.IEntityContextMenu svc = new EntityContextMenuService();
+        var png = new byte[] { 9 };
+        svc.Register("Iconic", null, _ => { }, png);
+        Assert.Same(png, svc.ItemsFor(E(1))[0].IconPng);
+    }
+
+    [Fact]
     public void Dispose_Unregisters()
     {
         var svc = new EntityContextMenuService();
