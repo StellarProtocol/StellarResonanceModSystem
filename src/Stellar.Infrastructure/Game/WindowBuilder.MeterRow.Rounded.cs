@@ -286,12 +286,14 @@ internal sealed partial class WindowBuilder
             }
         }
 
-        // bk = BackingOpacity: fades the dark backing (tile, empty-slot tile, spine + bar tracks) but NOT the self tile —
-        // that tile IS the self wash, which must stay as visible as the self ring.
+        // bk = BackingOpacity: fades the backing (tile, self tile, empty-slot tile, spine + bar tracks). The self tile
+        // fades too — left solid it read as a heavy block among faded rows (user: "the highlight is too solid"); it keeps
+        // its accent colour, so it stays a proportionally stronger wash. The self RING is NOT faded: it is what still
+        // finds your row at a low backing opacity.
         private void Paint(in MeterRowData d, float op, float bk)
         {
             bool empty = d.IsEmptySlot;
-            Bg.color = empty ? Fade(_recessed, EmptyAlpha * bk, op) : d.IsSelf ? Fade(_self, SelfAlpha, op) : Fade(_tile, TileAlpha * bk, op);
+            Bg.color = empty ? Fade(_recessed, EmptyAlpha * bk, op) : Fade(d.IsSelf ? _self : _tile, (d.IsSelf ? SelfAlpha : TileAlpha) * bk, op);
             SpineTrack.color = Fade(_spineTrack, bk, op);
             BarTrack.color = Fade(_recessed, TrackAlpha * bk, op);
             SpineGroup.alpha = empty ? 0f : 1f;

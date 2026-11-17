@@ -44,9 +44,10 @@ public sealed record MeterRowElement(System.Func<MeterRowData> Data, System.Acti
     public MeterRowStyle Style { get; init; }
 
     /// <summary>Opacity (0..1) of the row's dark BACKING only, <see cref="MeterRowStyle.Rounded"/> rows only (framework
-    /// 2.33.0): the rounded row tile, the recessed bar track, the HP-spine track, the empty status-effect cells and the
-    /// recessed empty-slot tile. The bar fill, crest, labels, icons, filled effect tiles, the self wash + ring and the
-    /// RowBorder ring are not faded. Multiplied into the row's own alphas (and the window opacity). Clamped; a throw or
+    /// 2.33.0): the rounded row tile, the self row's accent wash tile (keeps its accent colour), the recessed bar track,
+    /// the HP-spine track, the empty status-effect cells and the recessed empty-slot tile. The bar fill, crest, labels,
+    /// icons, filled effect tiles, the self accent ring and the RowBorder ring are not faded (the ring still marks the
+    /// self row). Multiplied into the row's own alphas (and the window opacity). Clamped; a throw or
     /// NaN = 1. Polled with the row's refresh, repainted only on a change. Null (the default) = unchanged. Init property,
     /// NOT a ctor param (binary-compatible); a Classic row ignores it.</summary>
     public System.Func<float>? BackingOpacity { get; init; }
