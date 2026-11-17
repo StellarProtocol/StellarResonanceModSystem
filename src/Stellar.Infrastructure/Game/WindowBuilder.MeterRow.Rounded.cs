@@ -45,6 +45,7 @@ internal sealed partial class WindowBuilder
         SetRoundSprite(b.BarFillImg, _assets.BubbleBg(MeterRoundBarR));
         SetRoundSprite(b.BarShieldImg, _assets.BubbleBg(MeterRoundBarR));
         StripRectangularBarOverlays(b);
+        ShareTopLineBaseline(b);
 
         var create = b.DebuffBlock.CreateCell!;   // cells are built lazily → round each one as it is created
         b.DebuffBlock.CreateCell = i => { var c = create(i); RoundDebuffCell(c); return c; };
@@ -80,6 +81,20 @@ internal sealed partial class WindowBuilder
         if (b.PrimaryFadeImg != null) b.PrimaryFadeImg.gameObject.SetActive(false);
         if (b.SecondaryFadeImg != null) b.SecondaryFadeImg.gameObject.SetActive(false);
         b.PrimaryFadeImg = null; b.SecondaryFadeImg = null;
+    }
+
+    // Top-line labels must share a baseline (mockup `.mr .t`: one flex line). Classic builds them with
+    // alignByGeometry = true, which vertically centres each Text on ITS OWN glyph bounds — so a string with
+    // descenders ("Miyuki", "Empty", "Falconry") is pushed UP by ~half the descender while a digit-only rank ("1")
+    // is not, and the rank reads a pixel or two low (in-game 2026-11-17). Font-metric centring (false) places every
+    // same-size label on the same baseline whatever its glyphs. Build-time only (no per-refresh cost); the share %
+    // and empty hint stand alone on their side, so they keep geometry centring. Classic is untouched.
+    private static void ShareTopLineBaseline(MeterRowBinding b)
+    {
+        if (b.Rank != null) b.Rank.alignByGeometry = false;
+        if (b.Name != null) b.Name.alignByGeometry = false;
+        if (b.ClassName != null) b.ClassName.alignByGeometry = false;
+        if (b.Spec != null) b.Spec.alignByGeometry = false;
     }
 
     private static void SetRoundSprite(Image? img, Sprite? sprite)
