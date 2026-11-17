@@ -62,6 +62,7 @@
   "common.resetAll": "모두 초기화",
   "common.retry": "다시 시도",
   "common.save": "저장",
+  "confirm.dontAskAgain": "다시 묻지 않기",
   "developer.fb.already": "개발자 모드가 이미 켜져 있습니다",
   "developer.fb.off": "개발자 모드 꺼짐",
   "developer.gameui": "게임 UI 경로",

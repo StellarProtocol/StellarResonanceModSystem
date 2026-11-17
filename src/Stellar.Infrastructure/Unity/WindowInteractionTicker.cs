@@ -98,7 +98,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         PruneScrollViews();   // (.ScrollViews.cs) — one entry per view carries its content, motion + input state
         PrunePixelPerfectTargets();   // (.PixelPerfect.cs) isolated window canvases whose window was destroyed
-        PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); PruneLayers(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
+        PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); PruneLayers(); PruneConfirmHosts(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -153,6 +153,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
 
         var openedPopup = Input.GetMouseButtonDown(1) && TickRightClick();
         TickDismissables(openedPopup);
+        TickConfirmHosts();   // .Confirm.cs — Esc / hidden host cancels an open modal confirm
         TickRenderHostZoom();
         TickChartZoom();   // .ChartPan.cs
         SyncResizeGripVisibility();

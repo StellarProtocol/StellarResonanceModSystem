@@ -33,6 +33,11 @@ public sealed partial class BootstrapPlugin
         _frameworkLocalization = new PluginLocalization(engine, PluginGuid);
 
         if (_windowRenderer != null) engine.LanguageChanged += _windowRenderer.InvalidateTheme;
+        // ConfirmHostElement's house card: the style kit (live theme × window opacity) + the framework's own strings.
+        if (_windowRenderer != null && _themeRenderer != null && _namedTheme != null)
+            _windowRenderer.ConfirmCardFactory = new Stellar.Infrastructure.UI.ConfirmCard(
+                new Stellar.Infrastructure.UI.Style.StellarStyle(_themeRenderer.Colors, (IChromeStyle)_namedTheme),
+                _frameworkLocalization).Build;
         if (_toastRenderer != null) engine.LanguageChanged += _toastRenderer.InvalidateTheme;
         // Theme-editor colour slot labels (Accent, Panel background, …) are plain strings baked by
         // FrameworkColorRegistration.RegisterAll at Load() time with an English fallback — ThemesPanel owns

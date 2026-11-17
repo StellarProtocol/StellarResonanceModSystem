@@ -215,6 +215,7 @@ internal sealed partial class WindowBuilder
             case BarElement br:    BuildBar(br, parent, token); break;          // .Preview.cs (Themes preview)
             case ConditionalElement cond: BuildConditional(cond, parent, token); break;
             case LayerStackElement ls: BuildLayerStack(ls, parent, token); break;   // .LayerStack.cs
+            case ConfirmHostElement ch: BuildConfirmHost(ch, parent, token); break; // .ConfirmHost.cs
             case ListElement list: BuildList(list, parent, token); break;
             case VirtualListElement vlist: BuildVirtualList(vlist, parent, token); break;
             case TileElement tile: BuildTile(tile, parent, token); break;       // .Tiles.cs

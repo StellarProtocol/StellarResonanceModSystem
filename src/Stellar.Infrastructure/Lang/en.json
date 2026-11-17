@@ -62,6 +62,7 @@
   "common.resetAll": "Reset all",
   "common.retry": "Retry",
   "common.save": "Save",
+  "confirm.dontAskAgain": "Don't ask again",
   "developer.fb.already": "Developer mode is already on",
   "developer.fb.off": "Developer mode off",
   "developer.gameui": "Game UI paths",
