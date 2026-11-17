@@ -63,25 +63,57 @@ internal sealed partial class WindowBuilder
         b.Rounded = skin;
     }
 
-    // The Classic bar's overlays are RECTANGLES and can't follow a rounded fill, so the Rounded skin drops them
-    // (the approved mockup has neither):
-    //  • Sheen + FillClip's RectMask2D. The band is clipped to the fill's RECT, so it paints white into the corner
-    //    zone the rounded fill leaves empty. Worse, RectMask2D is a hard per-fragment clip (UnityGet2DClipping =
+    // The Classic bar's overlays are RECTANGLES and can't follow a rounded fill:
+    //  • FillClip's RectMask2D is disabled for good. RectMask2D is a hard per-fragment clip (UnityGet2DClipping =
     //    step) at the fill's fractional edge: it cut away the fill's own anti-aliased top/left edge pixels and let
     //    the dark track's edge show through → a dark 1 px rim that made the rounded fill read as a square box
-    //    (in-game 2026-11-17). Deactivated, not destroyed: SheenDriver early-outs on !activeInHierarchy, and
-    //    nulling the binding refs makes HideSheen a no-op so nothing ever re-enables them.
+    //    (in-game 2026-11-17). The sheen is re-clipped to the ROUNDED shape instead (ClipSheenToRoundedFill).
     //  • Shadow label fades (64 px dark ramps anchored at the bar ends — square over the rounded track ends).
     //    Nulled refs → ApplyLabelStyle renders MeterLabelStyle.Shadow as the text Outline halo instead, which is
     //    also the mockup's look (text-shadow glow on the values).
-    private static void StripRectangularBarOverlays(MeterRowBinding b)
+    private void StripRectangularBarOverlays(MeterRowBinding b)
     {
-        if (b.SheenGo != null) b.SheenGo.SetActive(false);
         if (b.FillMask != null) b.FillMask.enabled = false;
-        b.SheenGo = null; b.FillMask = null;
+        b.FillMask = null;   // HideSheen must never re-enable it
+        if (b.SheenGo != null) b.SheenGo = ClipSheenToRoundedFill(b.SheenGo);
         if (b.PrimaryFadeImg != null) b.PrimaryFadeImg.gameObject.SetActive(false);
         if (b.SecondaryFadeImg != null) b.SecondaryFadeImg.gameObject.SetActive(false);
         b.PrimaryFadeImg = null; b.SecondaryFadeImg = null;
+    }
+
+    // Sheen clipped to the rounded FILL (user 2026-11-17: "shine clipped, but add an on/off setting"). The band moves
+    // under a stencil Mask whose graphic is the bar's rounded sprite, sized to FillClip (= the fill width), so the
+    // shine stays inside the rounded fill and tracks it as it grows. The FILL is a SIBLING of the mask, not a child,
+    // so its own soft edges are never clipped (the bug RectMask2D caused). Hierarchy under FillClip:
+    //   Fill (rounded r5) · SheenMask [Image r4 + Mask(showMaskGraphic=false) + Canvas] > Sheen (RawImage)
+    // • Inset 1 px, radius 4 (concentric with the r5 fill): the stencil write alpha-clips at α>0.001, so a mask of
+    //   the fill's exact shape would include its faint AA fringe and lay full-strength shine over it; one px in, the
+    //   shine edge sits on solid fill and the band's own fade hides the 1 px it doesn't reach.
+    // • The batching Canvas moves from the band UP to the mask container: the stencil push (mask graphic), the band
+    //   and the stencil pop (Mask's unmask pass) then all draw inside ONE canvas, so their order can't be split across
+    //   canvas batches, and the per-frame sweep still re-batches only this tiny canvas, not the row/window. Stencil
+    //   depth counts Masks up to the nearest overrideSorting canvas — this one is overrideSorting=false, so a Mask
+    //   above the window (none today) would still nest correctly. The list viewport's RectMask2D also still clips it.
+    // • Cost: one Mask per row = +2 draw calls (stencil write + unmask) on top of the canvas break the band already
+    //   had; stencil materials are shared via StencilMaterial (no per-row material). No per-frame work is added — the
+    //   SheenDriver is unchanged. The binding's HideSheen now toggles the WHOLE container (mask + band), so a
+    //   hidden sheen costs no mask draws at all.
+    private GameObject ClipSheenToRoundedFill(GameObject sheenGo)
+    {
+        var clip = sheenGo.transform.parent;
+        var maskGo = UGuiPrimitives.NewChild("SheenMask", clip);
+        maskGo.transform.SetSiblingIndex(sheenGo.transform.GetSiblingIndex());   // draw where the band drew (over the fill)
+        var rt = maskGo.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.pivot = new Vector2(0f, 0.5f);
+        rt.offsetMin = new Vector2(1f, 1f); rt.offsetMax = new Vector2(-1f, -1f);
+        var img = maskGo.AddComponent<Image>(); img.color = Color.white; img.raycastTarget = false;
+        SetRoundSprite(img, _assets.BubbleBg(MeterRoundBarR - 1));   // null pre-bake → rectangular stencil, still clipped
+        maskGo.AddComponent<Mask>().showMaskGraphic = false;
+        maskGo.AddComponent<Canvas>();   // batching boundary only — overrideSorting left false (see BuildMeterSheen)
+        var inner = sheenGo.GetComponent<Canvas>();
+        if (inner != null) UnityEngine.Object.Destroy(inner);   // one canvas for push/band/pop (see above)
+        sheenGo.transform.SetParent(maskGo.transform, false);   // band anchors (left, full height) now follow the mask
+        return maskGo;
     }
 
     // Top-line labels must share a baseline (mockup `.mr .t`: one flex line). Classic builds them with
