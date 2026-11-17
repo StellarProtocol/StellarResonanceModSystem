@@ -48,13 +48,19 @@ internal sealed partial class WindowBuilder
         private string? _fitName, _fitSpec, _fitClass;
         private int _fitSpecWanted = -1, _fitClassWanted = -1;
         private bool _fitMeasure = true;   // full widths need (re)measuring: first fit, or a font / Font Scale reskin
+        private ThaiTmpTwin? _fitTwin;   // the Thai twin that was the name slot at the last fit (null = the legacy Text)
+        private Transform? _twinT;       // _fitTwin's transform + LayoutElement, cached per swap
+        private LayoutElement? _twinLe;
 
-        /// <summary>Call after the binding has written this poll's name/spec text.</summary>
-        public void FitTopLine(in MeterRowData d)
+        /// <summary>Call after the binding has written this poll's name/spec text. <paramref name="thai"/> = the name's Thai TMP twin
+        /// (WindowBuilder.MeterRowBinding.Name.cs): while it shows, IT is the name slot — measured by its own face, cut by
+        /// TMP (Ellipsis twin, re-cut to its rect by Sync), its LayoutElement pinned here — and the hidden legacy Text is left alone.</summary>
+        public void FitTopLine(in MeterRowData d, ThaiTmpTwin? thai)
         {
             if (Line == null || LineHlg == null || Name == null || NameLe == null || SpecLe == null) return;
             float lineW = Line.rect.width;
             if (lineW <= 1f) return;   // not laid out yet
+            var twin = thai is { Showing: true } ? thai : null;   // field reads only: the steady-state poll stays wrapper-free
             float total = LineHlg.preferredWidth;
             var name = d.Name ?? "";
             bool specWanted = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
@@ -64,9 +70,11 @@ internal sealed partial class WindowBuilder
             bool classChanged = classWanted && !ReferenceEquals(d.ClassName, _fitClass) && d.ClassName != _fitClass;
             int sw = specWanted ? 1 : 0, cw = classWanted ? 1 : 0;
             if (!_fitMeasure && !nameChanged && !specChanged && !classChanged && sw == _fitSpecWanted && cw == _fitClassWanted
+                && twin == _fitTwin
                 && Mathf.Approximately(lineW, _fitLineW) && Mathf.Approximately(total, _fitTotal)) return;
 
-            if (_fitMeasure || nameChanged)
+            if (twin != null) _nameFullW = twin.PaddedNaturalWidth;   // cached by the handle: no TMP re-measure here
+            else if (_fitMeasure || nameChanged)
             {
                 Name.text = name;   // the slot may hold a previous cut; measure the full string
                 _nameFullW = Name.preferredWidth;
@@ -77,9 +85,10 @@ internal sealed partial class WindowBuilder
             _fitName = name; _fitSpec = specWanted ? d.Spec : null; _fitSpecWanted = sw;
             _fitClass = classWanted ? d.ClassName : null; _fitClassWanted = cw;
             _fitLineW = lineW; _fitTotal = total;
+            if (twin != _fitTwin) CacheTwinSlot(twin);
 
             float spacing = LineHlg.spacing;
-            var (showClass, showSpec, nameW) = MeterTopLineFit.Decide(lineW - OthersWidth(spacing), _nameFullW,
+            var (showClass, showSpec, nameW) = MeterTopLineFit.Decide(lineW - OthersWidth(spacing, _twinT), _nameFullW,
                 new MeterTopLineFit.Label(classWanted, _classFullW), new MeterTopLineFit.Label(specWanted, _specFullW), spacing);
 
             if (specWanted)
@@ -94,14 +103,36 @@ internal sealed partial class WindowBuilder
                 if (ClassLabel!.enabled != showClass) ClassLabel.enabled = showClass;
                 if (ClassLe!.ignoreLayout == showClass) ClassLe.ignoreLayout = !showClass;
             }
-            if (nameW < _nameFullW) Name.text = UGuiPrimitives.EllipsizeFit(Name, name, nameW);
-            else if (Name.text != name) Name.text = name;
-            if (!Mathf.Approximately(NameLe.preferredWidth, nameW)) NameLe.preferredWidth = nameW;
+            SetNameSlot(name, nameW, twin != null);
+        }
+
+        // Re-fit path only: the twin's slot (its GameObject + the LayoutElement copied from the legacy name's) is looked up
+        // once per twin swap, not per poll (each IL2CPP GetComponent hands back a fresh wrapper).
+        private void CacheTwinSlot(ThaiTmpTwin? twin)
+        {
+            _fitTwin = twin;
+            var go = twin?.Go;
+            _twinT = go == null ? null : go.transform;
+            _twinLe = go == null ? null : go.GetComponent<LayoutElement>();
+        }
+
+        // Legacy name: cut with the framework's own prefix + "..." and pin the slot. Thai twin: pin ITS slot only — TMP cuts
+        // the twin to its laid-out rect (Sync → FitToRect, the next poll once the HLG has applied this width).
+        private void SetNameSlot(string name, float nameW, bool twin)
+        {
+            if (twin)
+            {
+                if (_twinLe != null && !Mathf.Approximately(_twinLe.preferredWidth, nameW)) _twinLe.preferredWidth = nameW;
+                return;
+            }
+            if (nameW < _nameFullW) Name!.text = UGuiPrimitives.EllipsizeFit(Name, name, nameW);
+            else if (Name!.text != name) Name.text = name;
+            if (!Mathf.Approximately(NameLe!.preferredWidth, nameW)) NameLe.preferredWidth = nameW;
         }
 
         // Padding + every laid-out child except name, class and spec + one gap per such child (the gaps between them plus the
         // name's own gap). Live preferred widths (LayoutUtility), so a share text changed this poll is already counted.
-        private float OthersWidth(float spacing)
+        private float OthersWidth(float spacing, Transform? twinT)
         {
             var hlg = LineHlg!; var line = Line!;
             var pad = hlg.padding;
@@ -111,7 +142,7 @@ internal sealed partial class WindowBuilder
             for (int i = 0; i < line.childCount; i++)
             {
                 var c = line.GetChild(i);
-                if (!c.gameObject.activeSelf || c == nameT || c == specT || c == classT) continue;
+                if (!c.gameObject.activeSelf || c == nameT || c == specT || c == classT || c == twinT) continue;
                 var le = c.GetComponent<LayoutElement>();
                 if (le != null && le.ignoreLayout) continue;
                 var rt = c.TryCast<RectTransform>();

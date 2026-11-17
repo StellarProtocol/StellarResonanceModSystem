@@ -40,6 +40,12 @@ internal sealed class ThaiTmpTwin
     /// <summary>True while the twin (not the legacy Text) is the laid-out, drawn element.</summary>
     public bool Showing { get; private set; }
 
+    /// <summary>The twin's GameObject (its layout slot); null once destroyed.</summary>
+    public GameObject? Go => _h.Go;
+
+    /// <summary>Ellipsis twin only: the full string's padded natural width (see <see cref="IStyledTextHandle.PaddedNaturalWidth"/>).</summary>
+    public float PaddedNaturalWidth => _h.PaddedNaturalWidth;
+
     /// <summary>True when the shown element is active in the hierarchy (the bindings' hidden-row skip).</summary>
     public bool ActiveInHierarchy
     {

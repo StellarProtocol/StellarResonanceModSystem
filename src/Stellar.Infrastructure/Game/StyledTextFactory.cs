@@ -154,7 +154,7 @@ internal readonly struct StyledTextSpec
 }
 
 /// <summary>Live handle to a built bold-text element (TMP in-game; the sandbox never sees one).</summary>
-internal interface IStyledTextHandle
+internal interface IStyledTextHandle : IStyledTextFit
 {
     /// <summary>The element's GameObject (layout attachment point); null after destruction.</summary>
     GameObject? Go { get; }
@@ -178,7 +178,11 @@ internal interface IStyledTextHandle
     /// text whose sprite asset resolved (lazily, in World) AFTER its string was set, so its literal
     /// <c>&lt;sprite=N&gt;</c> tags can now draw as images. Always false for a non-RichEmoji handle.</summary>
     bool Stale { get; }
+}
 
+/// <summary>The width-fit half of <see cref="IStyledTextHandle"/> (Ellipsis / MaxLines cut + slot width), split out by concern.</summary>
+internal interface IStyledTextFit
+{
     /// <summary>Ellipsis / MaxLines only (no-op otherwise): re-cut the shown string to the rect's current width. Polled every
     /// apply; it reads only <c>rect.width</c> and re-measures text only when that width or the string changed.</summary>
     void FitToRect();
@@ -186,4 +190,9 @@ internal interface IStyledTextHandle
     /// <summary>Ellipsis / MaxLines only: own <paramref name="le"/>'s preferred width = the FULL string's natural width rounded
     /// up + 1, so a slot with room is never an exact (float-noise) fit and the shown cut never feeds back into layout.</summary>
     void PadPreferredWidth(LayoutElement le);
+
+    /// <summary>Ellipsis only: the FULL string's natural width as <see cref="PadPreferredWidth"/> pads it (rounded up + 1) —
+    /// the width the uncut string needs at the current face and size. For a caller that owns the slot width itself (the
+    /// Rounded meter-row name fit). 0 for a non-Ellipsis handle.</summary>
+    float PaddedNaturalWidth { get; }
 }

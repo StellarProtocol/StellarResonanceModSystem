@@ -75,7 +75,7 @@ internal sealed partial class WindowBuilder
     // updates the bg/self-highlight, HP spine fill, crest (lazy atlas upload), name·spec·share texts, role bar
     // fill, per-second/total overlay, and offline scrim. Diffs the cheap scalar/string fields; structural
     // SetActive toggles are idempotent so re-applying is harmless.
-    internal sealed class MeterRowBinding : GatedBinding
+    internal sealed partial class MeterRowBinding : GatedBinding
     {
         public Func<MeterRowData> Data = null!;
         public VerticalLayoutGroup ContentVlg = null!;   // bottom padding trimmed when imagine size is Large
@@ -168,7 +168,7 @@ internal sealed partial class WindowBuilder
             if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; Rounded?.RankSlot?.Fit(rank); }
 
             var name = d.Name ?? "";
-            if (name != _lastName) { Name.text = name; _lastName = name; }
+            if (name != _lastName) { ApplyName(name); _lastName = name; }   // per-script face/weight (.Name.cs)
 
             var showSpec = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
             if (_lastSpecVis != (showSpec ? 1 : 0)) { SpecGo.SetActive(showSpec); _lastSpecVis = showSpec ? 1 : 0; }
@@ -203,6 +203,7 @@ internal sealed partial class WindowBuilder
             ApplyDebuffLayout(d);
             ApplyImagines(d);
             ApplyDebuffs(d);
+            SyncNameAndFit(d);   // LAST: needs this poll's name / spec / share texts (.Name.cs)
         }
 
         // HP spine fill (bottom-anchored, height = HpFraction) + the grey/white shield band drawn OVER it
@@ -296,9 +297,6 @@ internal sealed partial class WindowBuilder
             // else the default. Updated whenever the effective colour changes, not only on Dead.
             var effName = Rounded != null && d.IsEmptySlot ? Rounded.EmptyLabel : d.Dead ? MeterDeadName : (d.NameColor.A > 0f ? ToColor(d.NameColor) : MeterNameCol);
             if (!effName.Equals(_lastNameCol)) { Name.color = effName; _lastNameCol = effName; }
-
-            // Rounded: drop spec / cut the name so the top line never overlaps its right cluster (last: needs this poll's texts).
-            Rounded?.FitTopLine(d);
         }
 
         // Re-parent the imagine cluster for MeterRowData.ImaginePosition + size-driven content padding. Keyed
