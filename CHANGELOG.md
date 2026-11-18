@@ -32,6 +32,7 @@ _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds 
   - `Ticks` (int, N segments → N−1 dividers, cap 100) + `TickColor` + `TickWidth` (0 = 1 px) — static anchor-positioned dividers over the fills, under the labels.
   - `LabelAlign` (`TextAlign`, primary label), `SecondaryLabelColorFn` (`Func<ColorRgba?>?`), `LabelOutline` (readability outline on both labels), `LabelInset` (0 = 5 px).
   - `TrackColorFn` is now also honoured by Modern window bars (it was Default-only).
+  - `CornerRadius` is now also honoured by Modern window bars: rounded track, fill (gradient + gloss baked into a cached horizontal 3-slice sprite of the bar's exact height, 4×4-supersampled corners), trail and flat overlay; a striped overlay stays square. 0 = unchanged.
 - `BarBinding` gained `Start` (drives `anchorMin.x`) and `HideWhenEmpty` (write-on-change, no allocation). Baked FX sprites live in `WindowBuilder.BarEffects.cs`; `BarElement`/`BarStyle` moved to `HudElement.Bar.cs` (500-LoC gate; no API change).
 
 ## [2.33.0] - 2026-11-17

@@ -72,10 +72,13 @@ public sealed record BarElement(
     /// excess visible as an "extension cap" past the main fill (e.g. <c>Overlay01 = (hp+shield)/max</c> shows the
     /// shield as extra length). Ignored when <see cref="Overlay01"/> is null or in <see cref="BarStyle.Default"/>.</summary>
     public bool          OverlayInFront { get; init; }
-    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): corner radius in px of BOTH the track
-    /// and the fill, so the fill is a rounded bar too (default bars have a square fill). A radius larger than half the
-    /// bar <see cref="Height"/> is drawn down-scaled so the bar never grows past its height (radius 2 on a 4 px bar =
-    /// a capsule). 0 (the default) = today's 3 px track + square fill, unchanged. Init property (binary-compatible).</summary>
+    /// <summary>Window bar corner radius in px of BOTH the track and the fill, so the fill is a rounded bar too.
+    /// <see cref="BarStyle.Default"/> (framework 2.33.0): a radius larger than half the bar <see cref="Height"/> is drawn
+    /// down-scaled so the bar never grows past its height (radius 2 on a 4 px bar = a capsule).
+    /// <see cref="BarStyle.Modern"/> (framework 2.34.0): track, fill (with its <see cref="FillGradient"/> and
+    /// <see cref="Gloss"/> baked in), <see cref="Trail01"/> and a flat <see cref="Overlay01"/> get rounded ends (radius capped
+    /// at half the height); a striped overlay stays square. 0 (the default) = the unrounded bar of each style, unchanged.
+    /// Init property (binary-compatible).</summary>
     public float CornerRadius { get; init; }
     /// <summary>Window bar (framework 2.33.0; also honoured by <see cref="BarStyle.Modern"/> window bars since 2.34.0):
     /// track colour, evaluated per refresh and painted only when it changes (alpha honoured — e.g. a theme "track" token,

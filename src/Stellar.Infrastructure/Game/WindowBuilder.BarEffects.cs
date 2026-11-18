@@ -73,6 +73,7 @@ internal sealed partial class WindowBuilder
     {
         var rt = BuildOverlayClip(track, b.TrailColor);
         rt.name = "TrailClip";
+        RoundSegment(rt, b, Mathf.RoundToInt(b.Height > 0f ? b.Height : MeterBarH));   // CornerRadius (.BarRound.cs)
         rt.anchorMax = new Vector2(Mathf.Clamp01(b.Trail01!()), 1f);
         rt.SetAsFirstSibling();
         token.Bars.Add(new BarBinding { FillRect = rt, Fraction = b.Trail01! });

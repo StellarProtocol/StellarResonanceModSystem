@@ -214,7 +214,9 @@ internal sealed partial class WindowBuilder
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
         // 2.34.0 opt-ins (WindowBuilder.BarEffects.cs) — each built only when its property is set.
         if (b.FillGradient is { Count: >= 2 } grad) ApplyBarGradient(fill, grad);
-        if (b.Gloss) AddBarGloss(clipRt);
+        int barPx = Mathf.RoundToInt(b.Height > 0f ? b.Height : MeterBarH);
+        if (b.CornerRadius > 0f) ApplyModernRounding(b, track, fill, barPx);   // .BarRound.cs (gloss baked in)
+        if (b.Gloss && b.CornerRadius <= 0f) AddBarGloss(clipRt);
         if (b.Sheen) BuildModernSheen(clipRt, fill, token);
         if (b.FillGlow != null) AddBarGlow(b, track, clipRt.GetSiblingIndex(), overlay: false, token);
         if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
@@ -301,6 +303,7 @@ internal sealed partial class WindowBuilder
         overlayRt.anchorMax = new Vector2(Mathf.Clamp01(b.Overlay01!()), 1f);
         if (b.OverlayStart01 != null) overlayRt.anchorMin = new Vector2(Mathf.Clamp01(b.OverlayStart01()), 0f);   // 2.34.0 segment
         if (b.OverlayStripeColor is { } sc) ApplyOverlayStripes(overlayRt, b.OverlayColor, sc, b.OverlayStripeWidth);
+        else RoundSegment(overlayRt, b, Mathf.RoundToInt(b.Height > 0f ? b.Height : MeterBarH));   // flat overlay follows CornerRadius
         if (!b.OverlayInFront) overlayRt.SetAsFirstSibling();   // behind the main fill (extension cap)
         if (b.OverlayGlow != null)   // glow drawn just under the overlay segment
             AddBarGlow(b, track, overlayRt.GetSiblingIndex(), overlay: true, token);
