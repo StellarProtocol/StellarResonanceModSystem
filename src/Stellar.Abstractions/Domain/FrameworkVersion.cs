@@ -19,6 +19,8 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.34.0 adds <c>SlicedImageElement</c>, <c>StackLayer.Rect</c> (<c>LayerRect</c>), <c>ImageElement.Crisp</c> and Modern-bar
+    /// opt-ins (<c>FillGradient</c>, <c>Gloss</c>, glows, <c>Trail01</c>, <c>OverlayStart01</c>, stripes, <c>Ticks</c>, label options).
     /// 2.33.0 adds <c>MeterRowElement.Style</c> (<c>MeterRowStyle.Rounded</c>, the house-style meter row) and <c>MeterRowData.IsEmptySlot</c> /
     /// <c>EmptyHint</c> (additive init-only / fields); a plugin that sets them needs >=2.33.0. Classic rows unchanged.
     /// 2.33.0 also adds <c>WindowSpec.BackgroundColor</c> / <c>BackgroundCornerRadius</c> (opt-in rounded theme-coloured
@@ -474,5 +476,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.33.0";
+    public const string Value = "2.34.0";
 }

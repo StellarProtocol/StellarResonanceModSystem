@@ -77,11 +77,68 @@ public sealed record BarElement(
     /// bar <see cref="Height"/> is drawn down-scaled so the bar never grows past its height (radius 2 on a 4 px bar =
     /// a capsule). 0 (the default) = today's 3 px track + square fill, unchanged. Init property (binary-compatible).</summary>
     public float CornerRadius { get; init; }
-    /// <summary><see cref="BarStyle.Default"/> window bar only (framework 2.33.0): track colour, evaluated per refresh
-    /// and painted only when it changes (alpha honoured — e.g. a theme "track" token). Returning null keeps the default
-    /// translucent dark track. Default null → no override machinery, unchanged. Init property (binary-compatible).</summary>
+    /// <summary>Window bar (framework 2.33.0; also honoured by <see cref="BarStyle.Modern"/> window bars since 2.34.0):
+    /// track colour, evaluated per refresh and painted only when it changes (alpha honoured — e.g. a theme "track" token,
+    /// or fully transparent over plugin frame art). Returning null keeps the default track. Default null → no override
+    /// machinery, unchanged. Init property (binary-compatible).</summary>
     public Func<ColorRgba?>? TrackColorFn { get; init; }
+
+    // ── Framework 2.34.0: BarStyle.Modern WINDOW bar opt-ins (a boss-HP-bar look). All init properties; every default
+    //    leaves the bar exactly as before. Ignored by BarStyle.Default bars and by HudOverlay-surface/IHud bars. ──
+
+    /// <summary>Modern (2.34.0): a vertical gradient fill, top (<c>At</c> 0) → bottom (<c>At</c> 1), 2+ stops in order.
+    /// Baked once at build into a small texture; <see cref="BarElement.Fill"/> is then ignored and
+    /// <see cref="FillColorFn"/>, when set, MULTIPLIES the gradient (return white or null for its own colours).
+    /// Null or fewer than 2 stops (default) = the flat <see cref="BarElement.Fill"/>, unchanged.</summary>
+    public IReadOnlyList<GradientStop>? FillGradient { get; init; }
+    /// <summary>Modern (2.34.0): a static top gloss over the fill — white 35 % → 0 over the top 40 % of the bar (not
+    /// animated, unlike <see cref="Sheen"/>). Default false = none.</summary>
+    public bool Gloss { get; init; }
+    /// <summary>Modern (2.34.0): a soft glow of this colour around the main fill (follows its width; alpha = the glow's
+    /// peak). Radius <see cref="GlowRadius"/>. Null (default) = none.</summary>
+    public ColorRgba? FillGlow { get; init; }
+    /// <summary>Modern (2.34.0): a "damage trail" fraction 0..1, drawn BEHIND the main fill and the overlay (so only the
+    /// part past the fill shows), re-pulled each refresh. The plugin owns the lag (hold, then ease down). Null (default)
+    /// = none. Colour <see cref="TrailColor"/>. Independent of <see cref="Overlay01"/>, so both can show at once.</summary>
+    public Func<float>? Trail01 { get; init; }
+    /// <summary>Modern (2.34.0): colour of the <see cref="Trail01"/> band (alpha honoured).</summary>
+    public ColorRgba TrailColor { get; init; }
+    /// <summary>Modern (2.34.0): the overlay's START fraction 0..1, re-pulled each refresh. With it the overlay is the
+    /// segment [<c>OverlayStart01</c>, <see cref="Overlay01"/>] (e.g. a shield band right after the HP fill: start =
+    /// hp/max, end = (hp+shield)/max) instead of [0, <see cref="Overlay01"/>]. Null (default) = starts at 0, unchanged.</summary>
+    public Func<float>? OverlayStart01 { get; init; }
+    /// <summary>Modern (2.34.0): draw the overlay as 135° diagonal stripes alternating <see cref="OverlayColor"/> and
+    /// this colour (stripe width <see cref="OverlayStripeWidth"/>). Null (default) = a flat overlay, unchanged.</summary>
+    public ColorRgba? OverlayStripeColor { get; init; }
+    /// <summary>Modern (2.34.0): width in px of each overlay stripe, measured across the stripe; 0 = 4.</summary>
+    public float OverlayStripeWidth { get; init; }
+    /// <summary>Modern (2.34.0): a soft glow of this colour around the overlay segment. Null (default) = none.</summary>
+    public ColorRgba? OverlayGlow { get; init; }
+    /// <summary>Modern (2.34.0): how far <see cref="FillGlow"/> / <see cref="OverlayGlow"/> reach past the edge, px; 0 = 6.</summary>
+    public float GlowRadius { get; init; }
+    /// <summary>Modern (2.34.0): split the track into this many equal segments with N−1 thin dividers drawn over the
+    /// fills and under the labels (10 = 10 % ticks; a wide <see cref="TickWidth"/> reads as a segmented gauge).
+    /// Static, follow the bar width with no per-refresh work. 0/1 (default) = none; capped at 100.</summary>
+    public int Ticks { get; init; }
+    /// <summary>Modern (2.34.0): divider colour of <see cref="Ticks"/> (alpha honoured).</summary>
+    public ColorRgba TickColor { get; init; }
+    /// <summary>Modern (2.34.0): divider width in px of <see cref="Ticks"/>; 0 = 1.</summary>
+    public float TickWidth { get; init; }
+    /// <summary>Modern (2.34.0): where the primary <see cref="BarElement.Label"/> sits — <see cref="TextAlign.Left"/>
+    /// (default, unchanged), <see cref="TextAlign.Center"/> or <see cref="TextAlign.Right"/>.</summary>
+    public TextAlign LabelAlign { get; init; }
+    /// <summary>Modern (2.34.0): the <see cref="SecondaryLabel"/> colour, evaluated per refresh (e.g. a percent that
+    /// turns red when low). Null Func or a null result = white, unchanged.</summary>
+    public Func<ColorRgba?>? SecondaryLabelColorFn { get; init; }
+    /// <summary>Modern (2.34.0): give both overlay labels the dark readability outline (reads over any fill colour).
+    /// Default false = unchanged.</summary>
+    public bool LabelOutline { get; init; }
+    /// <summary>Modern (2.34.0): left/right inset of the overlay labels in px; 0 = 5 (unchanged).</summary>
+    public float LabelInset { get; init; }
 }
+
+/// <summary>One colour stop of <see cref="BarElement.FillGradient"/>: <paramref name="At"/> 0 = top … 1 = bottom.</summary>
+public readonly record struct GradientStop(float At, ColorRgba Color);
 
 /// <summary>Render style for a <see cref="BarElement"/>.</summary>
 public enum BarStyle

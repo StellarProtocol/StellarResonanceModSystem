@@ -212,13 +212,21 @@ internal sealed partial class WindowBuilder
         if (b.Prefix != null) BuildBarPrefix(b, row.transform, ls, token);
 
         var (track, clipRt, fill) = BuildModernTrack(b, row.transform);
+        // 2.34.0 opt-ins (WindowBuilder.BarEffects.cs) — each built only when its property is set.
+        if (b.FillGradient is { Count: >= 2 } grad) ApplyBarGradient(fill, grad);
+        if (b.Gloss) AddBarGloss(clipRt);
         if (b.Sheen) BuildModernSheen(clipRt, fill, token);
+        if (b.FillGlow != null) AddBarGlow(b, track, clipRt.GetSiblingIndex(), overlay: false, token);
         if (b.Overlay01 != null) BuildModernOverlay(b, track, clipRt, token);
+        if (b.Trail01 != null) BuildModernTrail(b, track, token);   // first sibling: behind every fill
+        if (b.Ticks > 1) BuildBarTicks(b, track);                   // over the fills, under the labels (added next)
         var fillBind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01 };
         // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
         if (b.FillColorFn != null) { fillBind.FillGraphic = fill; fillBind.FillColorFn = b.FillColorFn; }
+        if (b.TrackColorFn != null) { fillBind.TrackGraphic = track.GetComponent<Image>(); fillBind.TrackColorFn = b.TrackColorFn; }   // 2.34.0
         token.Bars.Add(fillBind);
 
+        var labelAnchor = b.LabelAlign switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         if (b.Label != null)
         {
             // Primary label colour (the Modern path's label was hard-white before this): per-refresh LabelColorFn
@@ -227,7 +235,7 @@ internal sealed partial class WindowBuilder
             // Modern bar that sets neither keeps the plain white overlay with no override machinery — byte-for-byte
             // unchanged. The size/font reskin (RegisterTextSizeReskin) never touches colour, so this survives theme
             // switches. Secondary (right) label is intentionally left white — primary is the requirement.
-            var bind = new TextBinding { C = AddOverlayText(token, track, "Primary", TextAnchor.MiddleLeft, ls), TextFn = b.Label };
+            var bind = new TextBinding { C = ModernLabel(b, token, track, "Primary", labelAnchor), TextFn = b.Label };
             if (b.LabelColorFn != null || b.LabelColor is not null)
             {
                 var fn = b.LabelColorFn; var stat = b.LabelColor;
@@ -235,8 +243,17 @@ internal sealed partial class WindowBuilder
             }
             token.Texts.Add(bind);
         }
-        if (b.SecondaryLabel != null)
-            token.Texts.Add(new TextBinding { C = AddOverlayText(token, track, "Secondary", TextAnchor.MiddleRight, ls), TextFn = b.SecondaryLabel });
+        if (b.SecondaryLabel != null)   // SecondaryLabelColorFn null → no colour machinery (white), unchanged
+            token.Texts.Add(new TextBinding { C = ModernLabel(b, token, track, "Secondary", TextAnchor.MiddleRight), TextFn = b.SecondaryLabel, ColorFn = b.SecondaryLabelColorFn });
+    }
+
+    // The Modern overlay label + the 2.34.0 LabelInset / LabelOutline opt-ins (defaults = AddOverlayText as before).
+    private Text ModernLabel(BarElement b, WindowToken token, Transform track, string name, TextAnchor anchor)
+    {
+        var txt = AddOverlayText(token, track, name, anchor, b.LabelFontSize > 0 ? b.LabelFontSize : 10);
+        if (b.LabelInset > 0f) { var rt = txt.rectTransform; rt.offsetMin = new Vector2(b.LabelInset, 0f); rt.offsetMax = new Vector2(-b.LabelInset, 0f); }
+        if (b.LabelOutline && txt.GetComponent<Outline>() is { } ol) ol.enabled = true;
+        return txt;
     }
 
     // Flat translucent track + width-anchored fill container + flat role-coloured fill stretched to it (no RectMask2D:
@@ -282,8 +299,12 @@ internal sealed partial class WindowBuilder
     {
         var overlayRt = BuildOverlayClip(track, b.OverlayColor);
         overlayRt.anchorMax = new Vector2(Mathf.Clamp01(b.Overlay01!()), 1f);
+        if (b.OverlayStart01 != null) overlayRt.anchorMin = new Vector2(Mathf.Clamp01(b.OverlayStart01()), 0f);   // 2.34.0 segment
+        if (b.OverlayStripeColor is { } sc) ApplyOverlayStripes(overlayRt, b.OverlayColor, sc, b.OverlayStripeWidth);
         if (!b.OverlayInFront) overlayRt.SetAsFirstSibling();   // behind the main fill (extension cap)
-        token.Bars.Add(new BarBinding { FillRect = overlayRt, Fraction = b.Overlay01! });
+        if (b.OverlayGlow != null)   // glow drawn just under the overlay segment
+            AddBarGlow(b, track, overlayRt.GetSiblingIndex(), overlay: true, token);
+        token.Bars.Add(new BarBinding { FillRect = overlayRt, Fraction = b.Overlay01!, Start = b.OverlayStart01 });
     }
 
     // Builds a left-anchored, width-clipped fill on the given track — identical to BuildModernTrack's main

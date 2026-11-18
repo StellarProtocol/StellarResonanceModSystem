@@ -274,6 +274,10 @@ public sealed record ImageElement(Func<byte[]?> Png, int Width, int Height) : Hu
     /// writes anything. Null Func (default) or a null result = untinted white, the picture's own colours, unchanged.
     /// An <c>init</c> property (binary-compatible).</summary>
     public Func<ColorRgba?>? Tint { get; init; }
+
+    /// <summary>Draw the picture 1:1 crisp (framework 2.34.0): no mip chain + bilinear, so frame / badge art shown at
+    /// its native size stays sharp instead of the default mip-smoothed icon path. Default false = unchanged.</summary>
+    public bool Crisp { get; init; }
 }
 
 /// <summary>React-style conditional. Both subtrees are built once; the renderer SetActive-toggles them
