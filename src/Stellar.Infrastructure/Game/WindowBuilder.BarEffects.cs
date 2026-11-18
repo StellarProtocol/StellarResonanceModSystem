@@ -18,6 +18,7 @@ namespace Stellar.Infrastructure.Game;
 internal sealed partial class WindowBuilder
 {
     private const int BarGradientTexH = 64;
+    private const float GlossAlpha = 0.18f, GlossSpan = 1f / 3f;   // BarElement.Gloss: peak white alpha, share of the height
     private static readonly Dictionary<string, Sprite> BarFxSprites = new();
 
     // Gradient fill: the fill Image gets a 1×64 vertical-gradient sprite drawn white (FillColorFn, when set, multiplies it).
@@ -27,7 +28,8 @@ internal sealed partial class WindowBuilder
         img.sprite = sprite; img.type = Image.Type.Simple; img.color = Color.white;
     }
 
-    // Static gloss: white 35 % → 0 over the top 40 % of the fill, stretched over the (anchor-sized) fill clip.
+    // Static gloss: a subtle white 18 % → 0 over the top third of the fill, stretched over the (anchor-sized) fill clip.
+    // (35 % over 40 % washed a crimson fill out to near-white pink in game, 2026-11-18.)
     private static void AddBarGloss(RectTransform clipRt)
     {
         var sprite = CachedBarFx("gloss", () =>
@@ -36,7 +38,7 @@ internal sealed partial class WindowBuilder
             for (var y = 0; y < BarGradientTexH; y++)
             {
                 var t = 1f - (y + 0.5f) / BarGradientTexH;            // 0 = top
-                px[y] = new Color(1f, 1f, 1f, t < 0.4f ? 0.35f * (1f - t / 0.4f) : 0f);
+                px[y] = new Color(1f, 1f, 1f, t < GlossSpan ? GlossAlpha * (1f - t / GlossSpan) : 0f);
             }
             return BakeColumn(px);
         });

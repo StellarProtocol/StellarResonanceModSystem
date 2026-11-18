@@ -91,7 +91,7 @@ public sealed record BarElement(
     /// <see cref="FillColorFn"/>, when set, MULTIPLIES the gradient (return white or null for its own colours).
     /// Null or fewer than 2 stops (default) = the flat <see cref="BarElement.Fill"/>, unchanged.</summary>
     public IReadOnlyList<GradientStop>? FillGradient { get; init; }
-    /// <summary>Modern (2.34.0): a static top gloss over the fill — white 35 % → 0 over the top 40 % of the bar (not
+    /// <summary>Modern (2.34.0): a subtle static top gloss over the fill — white 18 % → 0 over the top third of the bar (not
     /// animated, unlike <see cref="Sheen"/>). Default false = none.</summary>
     public bool Gloss { get; init; }
     /// <summary>Modern (2.34.0): a soft glow of this colour around the main fill (follows its width; alpha = the glow's
