@@ -125,6 +125,9 @@ internal sealed class ThaiTmpTwin
                 Align = AlignOf(legacy.alignment),
                 Ellipsis = ellipsis && maxLines <= 0,
                 MaxLines = maxLines,
+                // The legacy readability Outline (Modern bar labels' LabelOutline, inside-bar labels) can't draw on TMP:
+                // the twin takes the SDF-material outline instead, so the label stays readable over any fill.
+                Outline = legacy.GetComponent<Outline>() is { } ol && ol.enabled,
             });
             var go = h?.Go;
             if (h == null || go == null) return null;

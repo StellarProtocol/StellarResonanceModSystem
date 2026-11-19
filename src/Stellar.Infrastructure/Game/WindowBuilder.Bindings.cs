@@ -104,8 +104,12 @@ internal sealed partial class WindowBuilder
         // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
         public BubbleBinding? Owner;
         // Menu text (no shadow twin / live HUD size): a Thai string is drawn by a lazily built TMP twin in the shipped
-        // Thai face (ThaiTmpTwin). False → this binding never looks at the script (HUD overlay, readability-outline text).
+        // Thai face (ThaiTmpTwin; an outlined legacy Text gets an outlined twin). False → never looks at the script.
         public bool ThaiTmp;
+        // A BOLD label with no Emphasis machinery (Modern bar labels): per string, real bold for Latin, crisp REGULAR for
+        // CJK / kana / Hangul and a twin-less Thai (synthetic bold smears them — EmphasisStyle). Bold again before a Thai
+        // twin is first built, since the twin takes its weight from the legacy Text. One script scan per string change.
+        public bool ScriptWeight;
         private ThaiTmpTwin? _thai;
         public void Apply()
         {
@@ -146,22 +150,28 @@ internal sealed partial class WindowBuilder
                 // Twin mirrors the foreground string (HudOverlay) MINUS colour tags — a <color> span would otherwise
                 // override the twin's dark colour and draw an accent copy 1 px off (blurry word). See StripColorTags.
                 if (Shadow != null) Shadow.text = UGuiPrimitives.StripColorTags(text);
-                // Re-derive the legacy-fallback emphasis presentation from the new string (see the field
-                // comments): Latin real-bold, complex scripts crisp regular.
-                if (Emphasis)
-                {
-                    C.fontSize = EmphSize;
-                    if (EmphBaseFont != null) C.font = EmphBaseFont;
-                    C.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
-                    if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
-                }
+                ApplyWeight(s);
             }
             if (ColorFn != null) ApplyColor(ColorFn());
+        }
+
+        // Per legacy string change: Emphasis (legacy fallback) → its size/font + crisp per-script weight; ScriptWeight →
+        // the per-script weight only.
+        private void ApplyWeight(string s)
+        {
+            if (ScriptWeight) { var st = UGuiPrimitives.EmphasisStyle(emphasis: true, s); if (C.fontStyle != st) C.fontStyle = st; }
+            if (!Emphasis) return;
+            C.fontSize = EmphSize;
+            if (EmphBaseFont != null) C.font = EmphBaseFont;
+            C.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s);
+            if (Shadow != null) { Shadow.font = C.font; Shadow.fontStyle = C.fontStyle; Shadow.fontSize = EmphSize; }
         }
 
         // A Thai string → the TMP twin (built on first use). False = not Thai or no twin possible → the legacy path.
         private bool ShowThai(string s)
         {
+            // ScriptWeight: a CJK string may have left the slot regular — the twin takes its weight from it at build.
+            if (ScriptWeight && _thai == null && C.fontStyle != FontStyle.Bold && GlyphScript.IsThai(s)) C.fontStyle = FontStyle.Bold;
             if (!ThaiTmpTwin.Route(ref _thai, C, s, EllipsizeToRect || EllipsizeWidth > 0f, MaxLines))
             {
                 if (_thai == null && GlyphScript.IsThai(s)) ThaiTmp = false;   // unbuildable: stop retrying per change

@@ -81,7 +81,7 @@ internal sealed partial class WindowBuilder
 
         var (clipRt, fill, trackImg) = BuildBarTrack(row.transform, b);
         var label = BuildBarLabel(b, row.transform, clipRt, ls, token);
-        var bind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label };
+        var bind = new BarBinding { FillRect = clipRt, Fraction = b.Fraction01, Label = label, LabelFn = b.Label, ThaiTmp = ThaiTmpCapable };
         // Per-refresh fill colour (FillColorFn null → leave the binding on the build-time static Fill, no machinery).
         if (b.FillColorFn != null) { bind.FillGraphic = fill; bind.FillColorFn = b.FillColorFn; }
         if (b.TrackColorFn != null) { bind.TrackGraphic = trackImg; bind.TrackColorFn = b.TrackColorFn; }   // 2.33.0 opt-in
@@ -237,7 +237,7 @@ internal sealed partial class WindowBuilder
             // Modern bar that sets neither keeps the plain white overlay with no override machinery — byte-for-byte
             // unchanged. The size/font reskin (RegisterTextSizeReskin) never touches colour, so this survives theme
             // switches. Secondary (right) label is intentionally left white — primary is the requirement.
-            var bind = new TextBinding { C = ModernLabel(b, token, track, "Primary", labelAnchor), TextFn = b.Label };
+            var bind = new TextBinding { C = ModernLabel(b, token, track, "Primary", labelAnchor), TextFn = b.Label, ThaiTmp = ThaiTmpCapable, ScriptWeight = true };
             if (b.LabelColorFn != null || b.LabelColor is not null)
             {
                 var fn = b.LabelColorFn; var stat = b.LabelColor;
@@ -246,10 +246,12 @@ internal sealed partial class WindowBuilder
             token.Texts.Add(bind);
         }
         if (b.SecondaryLabel != null)   // SecondaryLabelColorFn null → no colour machinery (white), unchanged
-            token.Texts.Add(new TextBinding { C = ModernLabel(b, token, track, "Secondary", TextAnchor.MiddleRight), TextFn = b.SecondaryLabel, ColorFn = b.SecondaryLabelColorFn });
+            token.Texts.Add(new TextBinding { C = ModernLabel(b, token, track, "Secondary", TextAnchor.MiddleRight), TextFn = b.SecondaryLabel, ColorFn = b.SecondaryLabelColorFn, ThaiTmp = ThaiTmpCapable, ScriptWeight = true });
     }
 
     // The Modern overlay label + the 2.34.0 LabelInset / LabelOutline opt-ins (defaults = AddOverlayText as before).
+    // Thai (player / monster names) moves to the TMP twin in the shipped bold Thai face (outlined when LabelOutline);
+    // CJK stays on this Text at crisp regular weight (TextBinding.ThaiTmp / ScriptWeight, set by the caller).
     private Text ModernLabel(BarElement b, WindowToken token, Transform track, string name, TextAnchor anchor)
     {
         var txt = AddOverlayText(token, track, name, anchor, b.LabelFontSize > 0 ? b.LabelFontSize : 10);

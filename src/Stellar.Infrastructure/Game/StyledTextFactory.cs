@@ -145,11 +145,16 @@ internal readonly struct StyledTextSpec
     /// framework's own (TmpStyledText.MaxLines.cs), like <see cref="Ellipsis"/>. Wins over <see cref="Ellipsis"/>.</summary>
     public int MaxLines { get; init; }
 
+    /// <summary>Dark readability outline drawn by the face's SDF material (a shared per-face outline material,
+    /// TmpOutlineMaterials) — the TMP counterpart of the legacy Text's <c>AddReadabilityOutline</c>. A Thai twin of an
+    /// outlined legacy Text (Modern bar labels, inside-bar labels) sets it.</summary>
+    public bool Outline { get; init; }
+
     public StyledTextSpec(string text, int fontSize, Color color, bool wrap)
     {
         Text = text; FontSize = fontSize; Color = color; Wrap = wrap;
         Bold = false; Italic = false; Underline = false; Strikethrough = false; Align = TextAlign.Left;
-        RichEmoji = false; Ellipsis = false; CenterGlyphs = false; CenterCaps = false; MaxLines = 0;
+        RichEmoji = false; Ellipsis = false; CenterGlyphs = false; CenterCaps = false; MaxLines = 0; Outline = false;
     }
 }
 
