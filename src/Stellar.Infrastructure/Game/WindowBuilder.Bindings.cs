@@ -103,14 +103,15 @@ internal sealed partial class WindowBuilder
         // Innermost BubbleElement this text was built inside (null = none): a content change asks it to re-measure its
         // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
         public BubbleBinding? Owner;
-        // Menu text (no shadow twin / live HUD size): a Thai string is drawn by a lazily built TMP twin in the shipped
-        // Thai face (ThaiTmpTwin; an outlined legacy Text keeps its edge via ThaiTmpHalo). False → never looks at the script.
-        public bool ThaiTmp;
+        // ON by default (fw #169): a Thai string is drawn by a lazily built TMP twin in the shipped Thai face (ThaiTmpTwin;
+        // an outlined legacy Text keeps its edge via ThaiTmpHalo; the HudOverlay shadow Text gets its own twin). Off only
+        // after a twin proved unbuildable here (sandbox / no face), so a Thai string isn't re-tried per change.
+        public bool ThaiTmp = true;
         // A BOLD label with no Emphasis machinery (Modern bar labels): per string, real bold for Latin, crisp REGULAR for
         // CJK / kana / Hangul and a twin-less Thai (synthetic bold smears them — EmphasisStyle). Bold again before a Thai
         // twin is first built, since the twin takes its weight from the legacy Text. One script scan per string change.
         public bool ScriptWeight;
-        private ThaiTmpTwin? _thai;
+        private ThaiTmpTwin? _thai, _shadowThai;
         public void Apply()
         {
             if (C == null) return;
@@ -118,12 +119,7 @@ internal sealed partial class WindowBuilder
             // Skip hidden rows (Conditional/List SetActive=false) — avoids evaluating TextFn (which formats
             // labels/hex strings) for the dozens of off-screen slot rows in the theme editor every poll.
             if (!C.gameObject.activeInHierarchy) return;
-            // Live font size (HudOverlay) — mirrors HudElementBuilder.TextBinding: diff, then push to fg + twin.
-            if (DynamicFontSizeFn != null)
-            {
-                var fs = Math.Max(1, DynamicFontSizeFn());
-                if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; Owner?.MarkDirty(); }
-            }
+            ApplyDynamicSize();
             var s = TextFn();
             if (ThaiTmp && s != _last && ShowThai(s)) return;
             // Rect width is the previous layout pass's, so the cut lags a resize by one apply (a one-tick overflow on a shrink).
@@ -145,14 +141,31 @@ internal sealed partial class WindowBuilder
                     text = rw > 1f ? UGuiPrimitives.EllipsizeFit(C, s, rw) : s;
                 }
                 else text = EllipsizeWidth > 0f ? UGuiPrimitives.Ellipsize(C, s, EllipsizeWidth) : s;
-                C.text = text;
+                LegacyText.SetRouted(C, text);   // ShowThai already routed this string (not Thai / no twin)
                 Owner?.MarkDirty();
                 // Twin mirrors the foreground string (HudOverlay) MINUS colour tags — a <color> span would otherwise
                 // override the twin's dark colour and draw an accent copy 1 px off (blurry word). See StripColorTags.
-                if (Shadow != null) Shadow.text = UGuiPrimitives.StripColorTags(text);
+                if (Shadow != null) SetShadow(UGuiPrimitives.StripColorTags(text));
                 ApplyWeight(s);
             }
             if (ColorFn != null) ApplyColor(ColorFn());
+        }
+
+        // Live font size (HudOverlay) — mirrors HudElementBuilder.TextBinding: diff, then push to fg + shadow (a showing
+        // Thai twin mirrors it in Sync). Runs on both the legacy and the twin path.
+        private void ApplyDynamicSize()
+        {
+            if (DynamicFontSizeFn == null) return;
+            var fs = Math.Max(1, DynamicFontSizeFn());
+            if (fs != _lastFontSize) { C.fontSize = fs; if (Shadow != null) Shadow.fontSize = fs; _lastFontSize = fs; Owner?.MarkDirty(); }
+        }
+
+        // The HudOverlay drop-shadow Text follows the foreground: a Thai string on its own twin (dark, offset — the twin
+        // copies the shadow's rect + colour), anything else on the legacy shadow (swapping its twin back out).
+        private void SetShadow(string s)
+        {
+            if (_shadowThai != null || (ThaiTmp && GlyphScript.IsThai(s))) LegacyText.Set(Shadow!, s, ref _shadowThai);
+            else LegacyText.SetRouted(Shadow!, s);
         }
 
         // Per legacy string change: Emphasis (legacy fallback) → its size/font + crisp per-script weight; ScriptWeight →
@@ -179,6 +192,7 @@ internal sealed partial class WindowBuilder
             }
             _last = s;
             Owner?.MarkDirty();
+            if (Shadow != null) SetShadow(UGuiPrimitives.StripColorTags(s));
             if (ColorFn != null) ApplyColor(ColorFn());   // paints the hidden legacy Text; Sync mirrors it
             _thai!.Sync();
             return true;
@@ -189,6 +203,7 @@ internal sealed partial class WindowBuilder
         private void ApplyThai()
         {
             if (!_thai!.ActiveInHierarchy) return;
+            ApplyDynamicSize();
             var s = TextFn();
             if (s != _last && !ShowThai(s))
             {
@@ -199,6 +214,7 @@ internal sealed partial class WindowBuilder
             }
             if (ColorFn != null) ApplyColor(ColorFn());
             _thai.Sync();
+            _shadowThai?.Sync();
         }
 
         private void ApplyColor(ColorRgba? v)
@@ -264,7 +280,7 @@ internal sealed partial class WindowBuilder
         private string? _last;
         private bool _activeInit, _lastActive;
         public BubbleBinding? Owner;   // enclosing bubble to re-measure on a label change (see TextBinding.Owner)
-        public bool ThaiTmp;           // Thai label → TMP twin in the shipped Thai face (ThaiTmpTwin)
+        public bool ThaiTmp = true;    // Thai label → TMP twin in the shipped Thai face (ThaiTmpTwin); on by default (#169)
         private ThaiTmpTwin? _thai;
         // Re-skin: re-assign the (style/theme-updated) sprite directly; reset the active-diff so Apply re-runs.
         public void Resprite()
@@ -280,7 +296,7 @@ internal sealed partial class WindowBuilder
             if (s != _last)
             {
                 // The twin shows Thai; anything else (incl. the swap back) goes on the legacy label as before.
-                if (!(ThaiTmp && ThaiTmpTwin.Route(ref _thai, Label, s))) Label.text = s;
+                if (ThaiTmp) LegacyText.Set(Label, s, ref _thai); else LegacyText.SetRouted(Label, s);
                 _last = s; Owner?.MarkDirty();
             }
             _thai?.Sync();   // label colour/size (reskin) mirrored onto a showing twin; no-op otherwise

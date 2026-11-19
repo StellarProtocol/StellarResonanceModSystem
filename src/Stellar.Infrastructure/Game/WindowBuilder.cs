@@ -274,7 +274,7 @@ internal sealed partial class WindowBuilder
         // (WindowBuilder.RichText.cs). False (sandbox / no face / throw) → the plain Text below, literal tags.
         if (!t.Shadow && (t.RichEmoji ? TryBuildRichEmojiText(t, parent, token) : styled && TryBuildEmphasisText(t, parent, token))) return;
         var go = UGuiPrimitives.NewChild("Text", parent);
-        var txt = go.AddComponent<Text>();
+        var txt = LegacyText.Add(go);
         var anchor = t.Align switch { TextAlign.Center => TextAnchor.MiddleCenter, TextAlign.Right => TextAnchor.MiddleRight, _ => TextAnchor.MiddleLeft };
         UGuiPrimitives.ConfigureText(txt, Scaled(t.Emphasis ? 15 : 14), anchor, bold: t.Emphasis);
         if (styled) ApplyLegacyStyledFallback(txt, t);   // sandbox / no TMP face — see StyledText partial
@@ -319,15 +319,13 @@ internal sealed partial class WindowBuilder
     // both the editor sandbox and the IL2CPP player) — see WindowThemeAssets.MenuFont. No-op when null.
     private void ApplyMenuFont(Text t) { if (_assets.MenuFont != null) t.font = _assets.MenuFont; }
 
-    // Menu-surface legacy Text may hand Thai strings to a TMP twin (ThaiTmpTwin): game build with the factory only.
-    private bool ThaiTmpCapable => _surface != SurfaceStyle.HudOverlay && StyledTextFactory.CreateBold != null;
-
     // The text binding. Emphasis here is the LEGACY fallback only (sandbox / no TMP face): it carries the
     // base font + scaled size so TextBinding.Apply keeps the crisp per-script weight on a language switch.
     private TextBinding BuildTextBinding(TextElement t, Text txt)
     {
         var b = new TextBinding { C = txt, TextFn = t.Text, ColorFn = t.Color, DefaultColor = MenuTextColorFn, Emphasis = t.Emphasis, EllipsizeToRect = t.Ellipsize && t.MaxLines <= 0, MaxLines = t.MaxLines };
-        b.ThaiTmp = ThaiTmpCapable && !t.Shadow;   // Thai → shipped Thai face via TMP (ThaiTmpTwin); the outline look stays legacy
+        // ThaiTmp is on by default (fw #169): Thai → shipped Thai face via TMP (ThaiTmpTwin); a Shadow element's readability
+        // Outline becomes the twin's ThaiTmpHalo edge.
         if (t.Emphasis) { b.EmphBaseFont = _assets.MenuFont; b.EmphSize = Scaled(15); }
         return b;
     }

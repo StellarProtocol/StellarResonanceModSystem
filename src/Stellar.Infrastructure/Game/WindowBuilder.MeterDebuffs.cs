@@ -113,7 +113,7 @@ internal sealed partial class WindowBuilder
         stkRt.sizeDelta = new Vector2(13f, 12f); stkRt.anchoredPosition = new Vector2(2f, 2f);
         var stkBg = stkGo.AddComponent<Image>(); stkBg.color = new Color(0.04f, 0.05f, 0.07f, 0.92f); stkBg.raycastTarget = false;
         var stkTxtGo = UGuiPrimitives.NewChild("T", stkGo.transform); UGuiPrimitives.Stretch(stkTxtGo);
-        var stacks = stkTxtGo.AddComponent<Text>();
+        var stacks = LegacyText.Add(stkTxtGo);
         UGuiPrimitives.ConfigureText(stacks, Scaled(9), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(stacks); stacks.color = new Color(1f, 0.86f, 0.4f, 1f);
         RegisterTextSizeReskin(token, stacks, 9);
@@ -207,7 +207,7 @@ internal sealed partial class WindowBuilder
                          : new Color(MeterDebuffEmpty.r, MeterDebuffEmpty.g, MeterDebuffEmpty.b, MeterDebuffEmpty.a * emptyOp);
         cell.InsetGo.SetActive(present);          // dark body only under a real tile; empty slot = the faint frame alone
         cell.MoreGo.SetActive(more);
-        if (more) { cell.More.text = "+" + overflow; cell.StacksGo.SetActive(false); return; }
+        if (more) { LegacyText.SetAscii(cell.More, "+" + overflow); cell.StacksGo.SetActive(false); return; }
         if (!present) { cell.StacksGo.SetActive(false); return; }   // empty placeholder slot
         cell.FillImg.color = slot.IsBuff ? MeterBuffFill : MeterDebuffFill;   // foot fill-bar tint by kind
         // Bright icon — never scrimmed, so it stays readable (owner: the radial scrim made it "barely see").
@@ -221,6 +221,6 @@ internal sealed partial class WindowBuilder
         cell.FillRt.anchorMax = new Vector2(perm ? 0f : remain, 0f);
         var showStk = slot.Stacks > 1;
         cell.StacksGo.SetActive(showStk);
-        if (showStk) cell.Stacks.text = slot.Stacks.ToString();
+        if (showStk) LegacyText.SetAscii(cell.Stacks, slot.Stacks.ToString());
     }
 }

@@ -170,11 +170,11 @@ internal sealed partial class WindowBuilder
             float widest = 0f;
             for (var c = '0'; c <= '9'; c++)   // 10 text sets, build/reskin only (digits are usually tabular; check anyway)
             {
-                _rank.text = c.ToString();
+                LegacyText.SetAscii(_rank, c.ToString());
                 widest = Mathf.Max(widest, _rank.preferredWidth);
             }
             _slotW = Mathf.Ceil(SlotDigits * widest);   // whole px → crisp name x
-            _rank.text = keep;
+            LegacyText.SetAscii(_rank, keep);
             Fit(keep);
         }
 
@@ -211,7 +211,7 @@ internal sealed partial class WindowBuilder
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
         rt.offsetMin = new Vector2(12f, 0f); rt.offsetMax = new Vector2(-10f, 0f);
-        var txt = go.AddComponent<Text>();
+        var txt = LegacyText.Add(go);
         UGuiPrimitives.ConfigureText(txt, Scaled(11), TextAnchor.MiddleRight, bold: false);
         ApplyMenuFont(txt); txt.alignByGeometry = true; txt.horizontalOverflow = HorizontalWrapMode.Overflow;
         RegisterTextSizeReskin(token, txt, 11);
@@ -264,6 +264,7 @@ internal sealed partial class WindowBuilder
         private float _lastOpacity = -1f, _lastBacking = -1f, _lastSpineW = -1f;
         private ColorRgba _lastRing = new(-2f, -2f, -2f, -2f);
         private string? _lastHint;
+        private ThaiTmpTwin? _hintThai;   // EmptyHint is plugin text: a Thai hint → TMP twin (fw #169)
 
         public void MarkThemeDirty() { _themeDirty = true; _fitMeasure = true; }   // font may have changed → re-fit top line
 
@@ -283,8 +284,8 @@ internal sealed partial class WindowBuilder
             var hint = d.IsEmptySlot && !string.IsNullOrEmpty(d.EmptyHint) ? d.EmptyHint : null;
             if (!ReferenceEquals(hint, _lastHint) && hint != _lastHint)
             {
-                Hint.gameObject.SetActive(hint != null);
-                if (hint != null) Hint.text = hint;
+                if (hint != null) { ThaiTmpTwin.SetActive(Hint, _hintThai, true); LegacyText.Set(Hint, hint, ref _hintThai); }
+                else ThaiTmpTwin.SetActive(Hint, _hintThai, false);
                 _lastHint = hint;
             }
         }
@@ -342,6 +343,7 @@ internal sealed partial class WindowBuilder
             EmptyLabel = WithA(text, 0.32f);
             Spec.color = _muted;
             Hint.color = _muted;
+            _hintThai?.Sync();   // the theme's muted colour onto a showing hint twin
         }
 
         private static Color Opaque(Color c) => new(c.r, c.g, c.b, 1f);

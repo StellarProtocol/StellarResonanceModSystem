@@ -97,7 +97,6 @@ internal sealed partial class WindowBuilder
         {
             B = btn, Label = label, LabelFn = b.Label, EnabledFn = b.Enabled,
             Img = img, Normal = normalSprite, Accent = _assets.ButtonAccentBg, ActiveFn = b.Active,
-            ThaiTmp = ThaiTmpCapable,
         };
         token.Buttons.Add(binding);
         RegisterTextReskin(token, label, 11);
@@ -145,7 +144,7 @@ internal sealed partial class WindowBuilder
     private Text BuildButtonLabel(Transform parent, bool fixedWidth)
     {
         var labelGo = UGuiPrimitives.NewChild("Label", parent);
-        var label = labelGo.AddComponent<Text>();
+        var label = LegacyText.Add(labelGo);
         UGuiPrimitives.ConfigureText(label, Scaled(11), TextAnchor.MiddleCenter, bold: false);
         label.alignByGeometry = true;
         ApplyMenuFont(label);   // OS dynamic font — builtin Arial is absent from player builds (clip-bug fix)

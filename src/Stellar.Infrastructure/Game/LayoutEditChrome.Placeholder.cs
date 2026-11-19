@@ -28,6 +28,7 @@ internal sealed partial class LayoutEditChrome
         public Image Hatch = null!;
         public Image[] Dashes = null!;   // top, bottom, left, right
         public Text Caption = null!;
+        public ThaiTmpTwin? CapThai;   // a Thai caption → TMP twin (+ its Shadow as a ThaiTmpHalo copy), fw #169
         public string? CapName, CapHint, CapSub;   // last caption inputs — rebuild the rich string only on change
         public bool CapDim;
         public bool Shown = true;
@@ -46,7 +47,7 @@ internal sealed partial class LayoutEditChrome
         var cap = NewChild("PhCaption", root);
         var crt = cap.GetComponent<RectTransform>();
         Stretch(crt);
-        var txt = cap.AddComponent<Text>();
+        var txt = LegacyText.Add(cap);
         txt.fontSize = 11; txt.alignment = TextAnchor.MiddleCenter; txt.supportRichText = true;
         txt.color = CaptionNameColor; txt.raycastTarget = false; txt.lineSpacing = 1.05f;
         txt.horizontalOverflow = HorizontalWrapMode.Overflow; txt.verticalOverflow = VerticalWrapMode.Overflow;
@@ -92,10 +93,11 @@ internal sealed partial class LayoutEditChrome
         for (var i = 0; i < ph.Dashes.Length; i++) ph.Dashes[i].color = c;
         ph.Hatch.color = new Color(data.Color.r, data.Color.g, data.Color.b, HatchStrongAlpha * a);
         ph.Caption.color = Fade(CaptionNameColor, a);
+        ph.CapThai?.Sync();
         var dim = a < 1f;
         if (ph.CapName == data.Caption && ph.CapHint == data.Hint && ph.CapSub == data.SubHint && ph.CapDim == dim) return;
         ph.CapName = data.Caption; ph.CapHint = data.Hint; ph.CapSub = data.SubHint; ph.CapDim = dim;
-        ph.Caption.text = BuildCaption(data.Caption, data.Hint, data.SubHint, dim);
+        LegacyText.Set(ph.Caption, BuildCaption(data.Caption, data.Hint, data.SubHint, dim), ref ph.CapThai);
     }
 
     // "<b>Name</b>\n<size=10><color=#hint>Hint</color></size>[\n<size=10><color=#sub>Sub</color></size>]". Rich colour
@@ -114,7 +116,7 @@ internal sealed partial class LayoutEditChrome
         if (ph.Shown == shown) return;
         ph.Shown = shown;
         ph.Hatch.enabled = shown;
-        ph.Caption.enabled = shown;
+        if (ph.CapThai != null) ph.CapThai.SetDrawn(shown); else ph.Caption.enabled = shown;
         for (var i = 0; i < ph.Dashes.Length; i++) ph.Dashes[i].enabled = shown;
     }
 

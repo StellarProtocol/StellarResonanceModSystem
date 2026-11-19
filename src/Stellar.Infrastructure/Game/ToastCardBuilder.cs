@@ -179,11 +179,15 @@ internal sealed class ToastCardBuilder
 
         var (_, tfg, tsh) = MakeShadowedText(header.transform, TitleSize, TextAnchor.MiddleLeft, bold: true);
         var title = TitleFor(kind);
-        tfg.text = title; tsh.text = UGuiPrimitives.StripColorTags(title); tfg.color = kindColor;
+        // Colour BEFORE the text: a Thai title's twin takes the legacy colour (and the bold weight) when it is built.
+        // Thai → the TMP twin in the shipped BOLD Thai face (fg) + a dark twin for the drop shadow (fw #169).
+        tfg.color = kindColor;
+        LegacyText.SetStatic(tfg, title); LegacyText.SetStatic(tsh, UGuiPrimitives.StripColorTags(title));
 
         var (mslot, mfg, msh) = MakeShadowedText(parent, MsgSize, TextAnchor.UpperLeft, bold: false);
         mfg.horizontalOverflow = HorizontalWrapMode.Wrap; msh.horizontalOverflow = HorizontalWrapMode.Wrap;
-        mfg.text = message; msh.text = UGuiPrimitives.StripColorTags(message);   // twin drops <color> (see helper)
+        // Shadow twin drops <color> (see helper); a Thai message → wrapped TMP twins in the shipped Thai face (fg + shadow).
+        LegacyText.SetStatic(mfg, message); LegacyText.SetStatic(msh, UGuiPrimitives.StripColorTags(message));
         var le = mslot.AddComponent<LayoutElement>();
         le.flexibleWidth = 1f;   // message stretches to the content width so wrap measures correctly
     }
@@ -248,12 +252,12 @@ internal sealed class ToastCardBuilder
         var shrt = shGo.GetComponent<RectTransform>();
         shrt.anchorMin = Vector2.zero; shrt.anchorMax = Vector2.one;
         shrt.offsetMin = new Vector2(1f, -1f); shrt.offsetMax = new Vector2(1f, -1f);
-        var shadow = shGo.AddComponent<Text>();
+        var shadow = LegacyText.Add(shGo);
         UGuiPrimitives.ConfigureText(shadow, fontSize, anchor, bold);
         shadow.color = _assets.HudTextShadow;
 
         var fgGo = UGuiPrimitives.NewChild("Fg", slot.transform);
-        var fg = fgGo.AddComponent<Text>();
+        var fg = LegacyText.Add(fgGo);
         UGuiPrimitives.ConfigureText(fg, fontSize, anchor, bold);
         fg.color = _assets.HudText;
         return (slot, fg, shadow);

@@ -103,6 +103,11 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         FitDecorations();
     }
 
+    public void SetDrawn(bool on)
+    {
+        if (_t != null && _t.enabled != on) _t.enabled = on;
+    }
+
     public void SetColor(Color c)
     {
         _t.color = c;

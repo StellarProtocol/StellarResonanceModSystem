@@ -370,7 +370,7 @@ internal sealed partial class WindowBuilder
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
         rt.offsetMin = new Vector2(5f, 0f); rt.offsetMax = new Vector2(-5f, 0f);
-        var txt = go.AddComponent<Text>();
+        var txt = LegacyText.Add(go);
         UGuiPrimitives.ConfigureText(txt, Scaled(baseSize), anchor, bold: true);
         ApplyMenuFont(txt); txt.color = Color.white; txt.alignByGeometry = true; txt.horizontalOverflow = HorizontalWrapMode.Overflow;
         // MeterLabelStyle.Outline: the stat HUD's readability halo, added DISABLED — the binding enables it per row.
@@ -393,7 +393,7 @@ internal sealed partial class WindowBuilder
     private Text AddMeterText(WindowToken token, Transform parent, (string nm, int size, bool bold, Color col) t)
     {
         var go = UGuiPrimitives.NewChild(t.nm, parent);
-        var txt = go.AddComponent<Text>();
+        var txt = LegacyText.Add(go);
         UGuiPrimitives.ConfigureText(txt, Scaled(t.size), TextAnchor.MiddleLeft, bold: t.bold);
         ApplyMenuFont(txt); txt.color = t.col; txt.alignByGeometry = true;
         txt.horizontalOverflow = HorizontalWrapMode.Overflow;

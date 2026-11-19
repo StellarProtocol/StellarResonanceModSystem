@@ -37,6 +37,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     private bool _repairing;   // the repair's own text write re-enters onValueChanged
     private bool _cjk;
     private bool _hasTag;
+    private bool _plain;   // RichInputSpec.Rich == false: literal text, no sprite asset, no tag repair
     private string _comp = "";        // last-seen IME composition (TickComposition); "" when none / unfocused
     private bool _compEndPending;     // composition just emptied: re-pick from the committed text NEXT tick
     private Color _textColor = Color.black;   // last ApplyStyle colour (the unlocked text colour)
@@ -65,9 +66,12 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         var ph = NewText("Placeholder", viewport.transform, face);
         ph.text = string.Empty; ph.fontStyle = FontStyles.Italic;
         var t = NewText("Text", viewport.transform, face);
-        t.richText = true;
-        var asset = TmpEmojiSprites.Get(probe: true);   // throttled; the default asset resolves at once in-game
-        if (asset != null) t.spriteAsset = asset;
+        t.richText = spec.Rich;
+        if (spec.Rich)
+        {
+            var asset = TmpEmojiSprites.Get(probe: true);   // throttled; the default asset resolves at once in-game
+            if (asset != null) t.spriteAsset = asset;
+        }
 
         var f = root.AddComponent<TMP_InputField>();
         // Transition.None for the same reason as the legacy field (AttachField): the default ColorTint would drive
@@ -77,7 +81,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         f.textViewport = viewport.GetComponent<RectTransform>();
         f.textComponent = t;
         f.placeholder = ph;
-        f.richText = true;                    // tags render, and the caret maps over visible characters…
+        f.richText = spec.Rich;               // tags render, and the caret maps over visible characters… (plain: literal)
         f.isRichTextEditingAllowed = false;   // …so it can never land INSIDE a tag (TMP default, made explicit)
         // No select-all on focus: the composer's draft (often a just-appended emoji) would otherwise be replaced
         // by the next keystroke; a click places the caret, AutoFocus/external sets leave it at the end.
@@ -90,7 +94,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
         // The setter also sets the text's word wrapping (SingleLine = no wrap → TMP scrolls the viewport sideways).
         f.lineType = spec.SingleLine ? TMP_InputField.LineType.SingleLine : TMP_InputField.LineType.MultiLineNewline;
         f.text = string.Empty;
-        var h = new TmpRichInputField(f, t, ph, f.textViewport, spec.OnValueChanged);
+        var h = new TmpRichInputField(f, t, ph, f.textViewport, spec.OnValueChanged) { _plain = !spec.Rich };
         f.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(h.OnFieldChanged));
         if (spec.SingleLine) f.onSubmit.AddListener((UnityEngine.Events.UnityAction<string>)(spec.OnSubmit));
         // TMP_InputField creates its caret (and registers its label callbacks) in OnEnable ONLY when a
@@ -246,7 +250,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     {
         if (_repairing) return;
         value ??= string.Empty;
-        if (!_framework && SpriteTagEdit.TryRepair(_prev, value, out var repaired, out var caret))
+        if (!_framework && !_plain && SpriteTagEdit.TryRepair(_prev, value, out var repaired, out var caret))
         {
             _repairing = true;
             try { _f.text = repaired; _f.stringPosition = caret; }
@@ -262,7 +266,7 @@ internal sealed class TmpRichInputField : IRichInputField, IRichInputPlaceholder
     // composition still being typed, which TMP draws in the label at the caret (see TickComposition).
     private void Restyle(string value)
     {
-        _hasTag = value.IndexOf("<sprite", StringComparison.Ordinal) >= 0;
+        _hasTag = !_plain && value.IndexOf("<sprite", StringComparison.Ordinal) >= 0;
         PickFace(_comp.Length > 0 ? value + _comp : value);
     }
 

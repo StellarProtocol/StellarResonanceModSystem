@@ -6,7 +6,7 @@ namespace Stellar.Infrastructure.Game;
 
 /// <summary>
 /// The dark readability edge of a <see cref="ThaiTmpTwin"/> whose legacy Text carries a uGUI <see cref="Outline"/>
-/// (Modern bar labels' <c>LabelOutline</c>, inside-bar labels). A uGUI Outline is a mesh effect TMP never runs, and the
+/// (Modern bar labels' <c>LabelOutline</c>, inside-bar labels) or <see cref="Shadow"/> (layout-edit caption). A uGUI Outline is a mesh effect TMP never runs, and the
 /// TMP SDF outline is not usable here: the twin's face material is created at runtime, so the game build ships no
 /// <c>OUTLINE_ON</c> / <c>UNDERLAY_ON</c> variant of its shader (shader_feature variants exist only for materials
 /// built into the player) — fw 2.34.0's first attempt set the keyword + <c>_OutlineWidth</c>/<c>_FaceDilate</c> on a
@@ -21,12 +21,12 @@ namespace Stellar.Infrastructure.Game;
 internal sealed class ThaiTmpHalo
 {
     private readonly IStyledTextHandle[] _copies;
-    private readonly Outline _src;
+    private readonly Shadow _src;   // the legacy Outline (4 copies) or plain Shadow (1 copy) the edge copies
     private Color _color;
     private int _size;
     private bool _on;
 
-    private ThaiTmpHalo(IStyledTextHandle[] copies, Outline src, int size)
+    private ThaiTmpHalo(IStyledTextHandle[] copies, Shadow src, int size)
     {
         _copies = copies; _src = src; _size = size; _color = new Color(-1f, 0f, 0f, 0f);
     }
@@ -36,14 +36,16 @@ internal sealed class ThaiTmpHalo
     public static ThaiTmpHalo? Create(Text legacy, GameObject twinGo, string s, StyledTextSpec spec)
     {
         var create = StyledTextFactory.CreateBold;
-        var ol = legacy.GetComponent<Outline>();
+        var ol = legacy.GetComponent<Shadow>();   // Outline derives from Shadow: either effect
         if (create == null || ol == null) return null;
+        int n = legacy.GetComponent<Outline>() != null ? 4 : 1;   // Outline = 4 offsets, Shadow = its one offset
         var parent = twinGo.transform.parent;
         var d = ol.effectDistance;
-        var copies = new IStyledTextHandle[4];
-        for (int i = 0; i < 4; i++)
+        var copies = new IStyledTextHandle[n];
+        var plain = UGuiPrimitives.StripColorTags(s);   // a <color> span would tint the edge copy
+        for (int i = 0; i < n; i++)
         {
-            var h = create(parent, new StyledTextSpec(s, spec.FontSize, Color.black, spec.Wrap) { Bold = spec.Bold, Align = spec.Align });
+            var h = create(parent, new StyledTextSpec(plain, spec.FontSize, Color.black, spec.Wrap) { Bold = spec.Bold, Align = spec.Align });
             var go = h?.Go;
             if (h == null || go == null) { Destroy(copies); return null; }
             copies[i] = h;
@@ -52,7 +54,7 @@ internal sealed class ThaiTmpHalo
             var rt = go.GetComponent<RectTransform>();
             var src = twinGo.GetComponent<RectTransform>();
             rt.anchorMin = src.anchorMin; rt.anchorMax = src.anchorMax; rt.pivot = src.pivot; rt.sizeDelta = src.sizeDelta;
-            // uGUI Outline's four offsets: (x, y), (x, −y), (−x, y), (−x, −y).
+            // uGUI Outline's four offsets: (x, y), (x, −y), (−x, y), (−x, −y); a Shadow's one is (x, y).
             rt.anchoredPosition = src.anchoredPosition + new Vector2(i < 2 ? d.x : -d.x, (i & 1) == 0 ? d.y : -d.y);
             go.AddComponent<LayoutElement>().ignoreLayout = true;   // decoration: never a layout slot
             go.SetActive(false);
@@ -63,7 +65,8 @@ internal sealed class ThaiTmpHalo
     /// <summary>New string (Thai, shown on the twin).</summary>
     public void SetText(string s)
     {
-        foreach (var h in _copies) h.SetText(s);
+        var plain = UGuiPrimitives.StripColorTags(s);
+        foreach (var h in _copies) h.SetText(plain);
     }
 
     /// <summary>Show with the twin (and only while the legacy Outline is enabled), or hide.</summary>
@@ -76,10 +79,10 @@ internal sealed class ThaiTmpHalo
     }
 
     /// <summary>Per apply while the twin shows: follow the label's alpha (useGraphicAlpha) and size, and the Outline's
-    /// enabled state. Writes only on change.</summary>
-    public void Sync(Color text, int size)
+    /// enabled state (<paramref name="visible"/> = the twin slot is shown and drawn). Writes only on change.</summary>
+    public void Sync(Color text, int size, bool visible)
     {
-        Show(true);
+        Show(visible);
         if (!_on) return;
         var c = _src.effectColor;
         if (_src.useGraphicAlpha) c.a *= text.a;

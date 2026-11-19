@@ -103,5 +103,9 @@ internal sealed partial class PandaUGuiAdapter : IUGuiCanvasAdapter, System.IDis
         // Row/content Text components, resolved once on first refresh so the
         // per-tick ApplyDynamic doesn't re-run GetComponentsInChildren each time.
         public Text[]? Texts;
+        // Per content Text: the last string written (diff → one script scan per CHANGE, not per tick) and its Thai TMP
+        // twin (fw #169), sized with Texts.
+        public string?[]? Last;
+        public ThaiTmpTwin?[]? Thai;
     }
 }

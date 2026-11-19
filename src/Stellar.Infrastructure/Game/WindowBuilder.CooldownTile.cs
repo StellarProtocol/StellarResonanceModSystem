@@ -42,14 +42,14 @@ internal sealed partial class WindowBuilder
         var outline = BuildCdIconSquare(iconBox.transform, out var art, out var fillRt, out var fillImg);
 
         var star = AddOverlayText(token, iconBox.transform, "Star", TextAnchor.UpperRight, 11);
-        star.color = CdStarCol; star.text = "★"; star.gameObject.SetActive(false);
+        star.color = CdStarCol; LegacyText.SetAscii(star, "★"); star.gameObject.SetActive(false);
         var charge = AddOverlayText(token, iconBox.transform, "Chg", TextAnchor.UpperRight, 13);
         charge.color = CdChgCol; charge.gameObject.SetActive(false);
         // Centred fallback abbreviation, shown by Apply only while the icon texture is null.
         var fallback = AddOverlayText(token, iconBox.transform, "Fallback", TextAnchor.MiddleCenter, 16); fallback.gameObject.SetActive(false);
 
         var secsGo = UGuiPrimitives.NewChild("Secs", root.transform);
-        var secs = secsGo.AddComponent<Text>();
+        var secs = LegacyText.Add(secsGo);
         UGuiPrimitives.ConfigureText(secs, Scaled(12), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(secs); secs.horizontalOverflow = HorizontalWrapMode.Overflow; secs.color = Color.white;
         RegisterTextSizeReskin(token, secs, 12);
@@ -123,6 +123,7 @@ internal sealed partial class WindowBuilder
         public Text Fallback = null!;
 
         private object? _tex; private UvRect _uv; private float _fill = -1f; private string? _secs; private string? _fallback;
+        private ThaiTmpTwin? _fbThai;   // FallbackLabel is plugin text: a Thai label draws on the twin (outlined → halo)
         private ColorRgba _accent; private bool _initAccent; private bool _star; private int _charge = -1;
 
         public void Apply()
@@ -145,10 +146,10 @@ internal sealed partial class WindowBuilder
             if (fb != _fallback)
             {
                 _fallback = fb;
-                Fallback.text = fb;
-                FallbackGo.SetActive(fb.Length > 0);
+                LegacyText.Set(Fallback, fb, ref _fbThai);
+                ThaiTmpTwin.SetActive(Fallback, _fbThai, fb.Length > 0);
             }
-            if (fb.Length > 0) Fallback.color = CdCol(El.Accent());
+            if (fb.Length > 0) { Fallback.color = CdCol(El.Accent()); _fbThai?.Sync(); }
 
             var accent = El.Accent();
             if (!_initAccent || !accent.Equals(_accent))
@@ -161,12 +162,12 @@ internal sealed partial class WindowBuilder
             var f = El.Fill01(); if (f < 0f) f = 0f; else if (f > 1f) f = 1f;
             if (!Mathf.Approximately(f, _fill)) { _fill = f; var a = FillRt.anchorMax; a.x = f; FillRt.anchorMax = a; }
 
-            var s = El.Seconds(); if (s != _secs) { _secs = s; Secs.text = s; }
+            var s = El.Seconds(); if (s != _secs) { _secs = s; LegacyText.SetAscii(Secs, s); }
 
             var star = El.IsImagine(); if (star != _star) { _star = star; StarGo.SetActive(star); }
 
             var ch = El.ChargeCount();
-            if (ch != _charge) { _charge = ch; var show = ch > 1; ChargeGo.SetActive(show); if (show) Charge.text = ch.ToString(); }
+            if (ch != _charge) { _charge = ch; var show = ch > 1; ChargeGo.SetActive(show); if (show) LegacyText.SetAscii(Charge, ch.ToString()); }
         }
     }
 }

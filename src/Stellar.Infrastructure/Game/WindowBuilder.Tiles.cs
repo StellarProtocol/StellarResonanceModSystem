@@ -187,14 +187,14 @@ internal sealed partial class WindowBuilder
         float w = tile.Width - 6f;
         var le = go.AddComponent<LayoutElement>();
         le.preferredWidth = le.minWidth = w; le.preferredHeight = 14f;
-        var label = go.AddComponent<Text>();
+        var label = LegacyText.Add(go);
         UGuiPrimitives.ConfigureText(label, Scaled(11), TextAnchor.MiddleCenter, bold: false);
         ApplyMenuFont(label);
         // Single line; a too-long name is truncated with "..." (EllipsizeWidth) so it never wraps or spills into
         // the neighbouring tile.
         label.horizontalOverflow = HorizontalWrapMode.Overflow; label.verticalOverflow = VerticalWrapMode.Overflow;
         label.color = TileRest();
-        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w, ThaiTmp = ThaiTmpCapable });   // non-null (hasLabel guards); Thai → TMP twin
+        token.Texts.Add(new TextBinding { C = label, TextFn = tile.Label!, EllipsizeWidth = w });   // non-null (hasLabel guards); Thai → TMP twin (ThaiTmp default)
         // NOTE: deliberately NOT RegisterTextReskin (that forces alpha 1.0); the tile reskin closure in BuildTile
         // re-applies the dim rest tint + scaled size so the label keeps its 0.62 rest alpha after a theme change.
         return label;

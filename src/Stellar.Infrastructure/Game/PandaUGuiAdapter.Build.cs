@@ -293,13 +293,24 @@ internal sealed partial class PandaUGuiAdapter
         e.Texts ??= e.Go.GetComponentsInChildren<Text>(includeInactive: true);
         if (spec is IndicatorSpec ind)
         {
-            if (e.Texts.Length > 0 && e.Texts[0] != null) e.Texts[0].text = ind.OnUpdate();
+            if (e.Texts.Length > 0) SetDynamic(e, 0, ind.OnUpdate());
         }
         else if (spec is PanelSpec p)
         {
-            for (var i = 0; i < e.Texts.Length && i < p.Children.Count; i++)
-                if (e.Texts[i] != null) e.Texts[i].text = DescribeWidget(p.Children[i]);
+            for (var i = 0; i < e.Texts.Length && i < p.Children.Count; i++) SetDynamic(e, i, DescribeWidget(p.Children[i]));
         }
+    }
+
+    // One content Text's per-tick string: written (and script-scanned) only when it changed; Thai → its TMP twin.
+    private static void SetDynamic(ElementRef e, int i, string s)
+    {
+        var t = e.Texts![i];
+        if (t == null) return;
+        e.Last ??= new string?[e.Texts.Length];
+        if (s == e.Last[i]) return;
+        e.Last[i] = s;
+        e.Thai ??= new ThaiTmpTwin?[e.Texts.Length];
+        LegacyText.Set(t, s, ref e.Thai[i]);
     }
 
     private void SafeInvoke(Action a)
@@ -327,13 +338,14 @@ internal sealed partial class PandaUGuiAdapter
     private static Text AddText(Transform parent, string content, ColorRgba? tint)
     {
         var go = new GameObject("Text");
-        var t = go.AddComponent<Text>();
-        t.text = content; t.alignment = TextAnchor.MiddleCenter; t.fontSize = 18;
+        var t = LegacyText.Add(go);
+        t.alignment = TextAnchor.MiddleCenter; t.fontSize = 18;
         t.color = tint is { } c ? new Color(c.R, c.G, c.B, c.A) : Color.white;
         try { t.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
         go.transform.SetParent(parent, worldPositionStays: false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+        LegacyText.SetStatic(t, content);   // after parenting + rect: a Thai twin copies both (fw #169)
         return t;
     }
 
@@ -373,13 +385,14 @@ internal sealed partial class PandaUGuiAdapter
     private static Text AddTextRegion(Transform parent, string content, Vector2 anchorMin, Vector2 anchorMax, int fontSize)
     {
         var go = new GameObject("Text");
-        var t = go.AddComponent<Text>();
-        t.text = content; t.alignment = TextAnchor.MiddleCenter; t.fontSize = fontSize; t.color = Color.white;
+        var t = LegacyText.Add(go);
+        t.alignment = TextAnchor.MiddleCenter; t.fontSize = fontSize; t.color = Color.white;
         t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
         try { t.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
         go.transform.SetParent(parent, worldPositionStays: false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = anchorMin; rt.anchorMax = anchorMax; rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+        LegacyText.SetStatic(t, content);   // after parenting + rect: a Thai twin copies both (fw #169)
         return t;
     }
 }

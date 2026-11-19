@@ -124,10 +124,10 @@ internal sealed partial class PandaProfileCardActionInjector
             t.alignment = TextAlignmentOptions.Center; t.raycastTarget = false; t.text = text;
             return;
         }
-        var ut = go.AddComponent<Text>();
+        var ut = LegacyText.Add(go);
         ut.alignment = TextAnchor.MiddleCenter; ut.fontSize = 18; ut.color = Color.white; ut.raycastTarget = false;
         try { ut.font = WindowThemeAssets.SharedMenuFont ?? Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { /* box still shows */ }
-        ut.text = text;
+        LegacyText.SetStatic(ut, text);   // Thai → TMP twin in the shipped Thai face (fw #169)
     }
 
     // Mirror the native label's RectTransform when captured; else the explicit lower-band (bottom 40%) layout.

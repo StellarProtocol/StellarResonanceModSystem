@@ -55,9 +55,12 @@ internal sealed partial class WindowBuilder
         public Func<IReadOnlyList<ChartSeries>> SeriesFn = null!;
         public LegendSlot[] Slots = Array.Empty<LegendSlot>();
         private object? _lastSeries; private bool _init;
+        // Legend names are player names: a Thai one draws on a TMP twin per slot (built on first Thai name).
+        private ThaiTmpTwin?[]? _thai;
         public void Apply()
         {
             var series = SeriesFn();
+            if (_thai != null) foreach (var t in _thai) t?.Sync();   // reskin colour / size onto showing twins (no-op otherwise)
             if (_init && ReferenceEquals(series, _lastSeries)) return;
             _lastSeries = series; _init = true;
             for (var i = 0; i < Slots.Length; i++)
@@ -68,7 +71,14 @@ internal sealed partial class WindowBuilder
                 {
                     var s = series[i];
                     if (slot.Swatch != null) slot.Swatch.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
-                    if (slot.Label != null) { slot.Label.text = s.Name; slot.Label.fontStyle = UGuiPrimitives.EmphasisStyle(s.Emphasis, s.Name); }
+                    if (slot.Label != null)
+                    {
+                        // Weight first: a Thai twin takes its face weight from the legacy Text when it is first built.
+                        // (A Thai emphasised name keeps Bold for the twin's face; the hidden legacy Text never draws it.)
+                        slot.Label.fontStyle = s.Emphasis && GlyphScript.IsThai(s.Name) ? FontStyle.Bold : UGuiPrimitives.EmphasisStyle(s.Emphasis, s.Name);
+                        _thai ??= new ThaiTmpTwin?[Slots.Length];
+                        LegacyText.Set(slot.Label, s.Name, ref _thai[i]);
+                    }
                     slot.Root.SetActive(true);
                 }
                 else slot.Root.SetActive(false);
