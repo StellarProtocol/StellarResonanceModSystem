@@ -18,3 +18,6 @@ dotnet_diagnostic.STELLAR0005.severity = error
 # STELLAR0006 (StellarSafety): a [WorldGated] framework method that touches live game state must
 # self-gate on IsWorldActive — a missing guard corrupts the world-connect handshake for everyone.
 dotnet_diagnostic.STELLAR0006.severity = error
+# STELLAR0007 (StellarSafety): legacy uGUI Text is created / written only through LegacyText (routes Thai to the TMP
+# twin in the shipped Thai face) or inside a [LegacyTextAllowed("reason")] member — fw issue #169.
+dotnet_diagnostic.STELLAR0007.severity = none   # enabled once every site is migrated (next commits)
