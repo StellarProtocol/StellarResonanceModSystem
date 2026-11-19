@@ -28,12 +28,13 @@ internal sealed class ThaiTmpTwin
 {
     private readonly Text _legacy;
     private readonly IStyledTextHandle _h;
+    private readonly ThaiTmpHalo? _halo;   // the legacy Outline's dark edge, when the legacy Text has one (ThaiTmpHalo)
     private Color _color;
     private int _size;
 
-    private ThaiTmpTwin(Text legacy, IStyledTextHandle h)
+    private ThaiTmpTwin(Text legacy, IStyledTextHandle h, ThaiTmpHalo? halo)
     {
-        _legacy = legacy; _h = h;
+        _legacy = legacy; _h = h; _halo = halo;
         _color = legacy.color; _size = legacy.fontSize;
     }
 
@@ -72,6 +73,7 @@ internal sealed class ThaiTmpTwin
         twin ??= Create(legacy, s!, ellipsis, maxLines);
         if (twin == null) return false;
         twin._h.SetText(s!);
+        twin._halo?.SetText(s!);
         twin.Show(true);
         twin.Sync();
         return true;
@@ -94,6 +96,7 @@ internal sealed class ThaiTmpTwin
         if (c != _color) { _color = c; _h.SetColor(c); }
         var px = _legacy.fontSize;
         if (px != _size) { _size = px; _h.SetFontSize(px); }
+        _halo?.Sync(c, px);
         _h.FitToRect();
     }
 
@@ -106,6 +109,7 @@ internal sealed class ThaiTmpTwin
         // Twin first on the way in, legacy first on the way out: the slot is never empty for a layout pass.
         if (twin) { go.SetActive(true); _legacy.gameObject.SetActive(false); }
         else { _legacy.gameObject.SetActive(true); go.SetActive(false); }
+        _halo?.Show(twin);
     }
 
     private static ThaiTmpTwin? Create(Text legacy, string s, bool ellipsis, int maxLines)
@@ -117,7 +121,7 @@ internal sealed class ThaiTmpTwin
         var before = parent.childCount;
         try
         {
-            var h = create(parent, new StyledTextSpec(s, legacy.fontSize, legacy.color,
+            var spec = new StyledTextSpec(s, legacy.fontSize, legacy.color,
                 wrap: legacy.horizontalOverflow == HorizontalWrapMode.Wrap && maxLines <= 0)
             {
                 // Same weight as the legacy text (FontStyle.Bold / BoldAndItalic): the regular face for regular text.
@@ -125,18 +129,19 @@ internal sealed class ThaiTmpTwin
                 Align = AlignOf(legacy.alignment),
                 Ellipsis = ellipsis && maxLines <= 0,
                 MaxLines = maxLines,
-                // The legacy readability Outline (Modern bar labels' LabelOutline, inside-bar labels) can't draw on TMP:
-                // the twin takes the SDF-material outline instead, so the label stays readable over any fill.
-                Outline = legacy.GetComponent<Outline>() is { } ol && ol.enabled,
-            });
+            };
+            var h = create(parent, spec);
             var go = h?.Go;
             if (h == null || go == null) return null;
             go.name = "ThaiText";
             go.transform.SetSiblingIndex(legacy.transform.GetSiblingIndex() + 1);
             CopyRect(legacy, go);
             CopyLayout(legacy, go, h, ellipsis || maxLines > 0);   // measures the full string: while still active
+            // An outlined legacy label (Modern bar LabelOutline, inside-bar label) keeps its dark edge: offset copies
+            // under the twin (ThaiTmpHalo). Fit twins (Ellipsis / MaxLines) never carry an Outline today → none.
+            var halo = ellipsis || maxLines > 0 ? null : ThaiTmpHalo.Create(legacy, go, s, spec);
             go.SetActive(false);   // Show(true) swaps it in
-            return new ThaiTmpTwin(legacy, h);
+            return new ThaiTmpTwin(legacy, h, halo);
         }
         catch (Exception ex)
         {

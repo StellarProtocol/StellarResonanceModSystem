@@ -104,7 +104,7 @@ internal sealed partial class WindowBuilder
         // width this apply (BubbleBinding only re-measures on such a mark — see WindowBuilder.BubbleOwner.cs).
         public BubbleBinding? Owner;
         // Menu text (no shadow twin / live HUD size): a Thai string is drawn by a lazily built TMP twin in the shipped
-        // Thai face (ThaiTmpTwin; an outlined legacy Text gets an outlined twin). False → never looks at the script.
+        // Thai face (ThaiTmpTwin; an outlined legacy Text keeps its edge via ThaiTmpHalo). False → never looks at the script.
         public bool ThaiTmp;
         // A BOLD label with no Emphasis machinery (Modern bar labels): per string, real bold for Latin, crisp REGULAR for
         // CJK / kana / Hangul and a twin-less Thai (synthetic bold smears them — EmphasisStyle). Bold again before a Thai

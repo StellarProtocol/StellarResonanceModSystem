@@ -31,7 +31,6 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
     // RichEmoji: draw <sprite=N> from the game's chat sprite asset (TmpEmojiSprites). _hasTag gates the lazy
     // resolve probe to strings that need it; _spriteGen is the asset generation this string was applied under.
     private readonly bool _rich;
-    private readonly bool _outline;   // StyledTextSpec.Outline: the face's shared outline material (TmpOutlineMaterials)
     private bool _hasTag;
     private int _spriteGen;
     // TextElement.CenterCaps: Capline when the current face reports a cap height, else the line-box row (_lineAlign).
@@ -43,7 +42,6 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         (RectTransform? Rt, Image? Img) underline, (RectTransform? Rt, Image? Img) strike)
     {
         _t = t; _bold = spec.Bold; _rich = spec.RichEmoji; _ellipsis = spec.Ellipsis; _maxLines = spec.MaxLines;
-        _outline = spec.Outline;
         _centerCaps = spec.CenterCaps && !spec.CenterGlyphs;
         (_capsAlign, _lineAlign) = spec.Align switch
         {
@@ -65,8 +63,6 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         _cjk = TextFacePick.For(s) == FaceScript.Cjk;
         var face = TmpFontAssets.FaceFor(s, _bold);
         if (face != null && _t.font != face) _t.font = face;
-        // A font swap resets the text to the face's default material, so the outline material follows the pick.
-        if (_outline && TmpOutlineMaterials.For(_t.font) is { } om && _t.fontSharedMaterial != om) _t.fontSharedMaterial = om;
         if (_centerCaps) ApplyCapsAlignment();
         if (_rich) ApplySpriteAsset(s);
         if (_maxLines > 0) SetLineCapped(s);   // word-wrapped by the framework, cut to N lines + "…" (TmpStyledText.MaxLines.cs)
@@ -200,7 +196,26 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
         var handle = new TmpStyledText(t, spec, ul, st);
         handle.SetText(spec.Text);
+        LogMaterialOnce(t);
         return handle;
+    }
+
+    // One line per session: the shader + keywords styled text actually renders with (the runtime-created face material).
+    // Its shader_feature variants (OUTLINE_ON / UNDERLAY_ON) are not in the game build, which is why outlined Thai twins
+    // draw their edge as offset copies (ThaiTmpHalo) instead of an SDF outline.
+    private static bool _materialLogged;
+    private static void LogMaterialOnce(TextMeshProUGUI t)
+    {
+        if (_materialLogged) return;
+        _materialLogged = true;
+        try
+        {
+            var m = t.fontSharedMaterial;
+            var kw = m != null ? m.shaderKeywords : null;
+            StyledTextFactory.Log?.Invoke($"[Window] TMP styled text material: {(m != null ? m.name : "null")}, shader "
+                + $"{(m != null && m.shader != null ? m.shader.name : "null")}, keywords [{(kw != null ? string.Join(" ", kw) : "")}]");
+        }
+        catch (System.Exception ex) { StyledTextFactory.Log?.Invoke($"[Window] TMP material probe failed: {ex.GetType().Name}"); }
     }
 
     // A plain uGUI Image line as a free-positioned child of the text (the text GO has no layout group,
