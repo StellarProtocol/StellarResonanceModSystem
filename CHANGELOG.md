@@ -21,6 +21,7 @@ _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds 
 - Plugins can now show richer health bars: gradient colours, a gloss, a soft glow, a trail that shows how much a big hit took, striped shield bands and tick marks.
 - Plugins can now place labels, bars and pictures at exact spots on top of their frame art.
 - Plugins can now show these styled bars with rounded ends.
+- Plugins can now show a fitting buff or debuff placeholder icon for effects that have no icon of their own.
 ### Developer notes
 - **`SlicedImageElement(Func<byte[]?> Left, Func<byte[]?> Middle, Func<byte[]?> Right, int Height)`**: horizontal 3-slice of three plugin PNGs — caps at native width (scaled uniformly if the PNG height ≠ `Height`), middle stretched between them; fills the width its parent gives it (min width = both caps). Three anchor-positioned `RawImage`s under one layout slot (no LayoutGroup, no per-refresh work). Pieces load crisp (no mip chain, bilinear) through the shared per-window `LoadIcon` dedup. Each Func is read once at build. Window (WindowBuilder) path only.
 - **`StackLayer.Rect`** (`LayerRect?`, init: `Left`/`Right`/`Top`/`Bottom` `float?`, `Width`/`Height` `float`): place a `LayerStackElement` overlay in a sub-rect of the stack, in px from its edges. Per axis: both insets = stretch; near inset only = pinned with a fixed size (0 = to the far edge); far inset only = pinned to the far edge. Anchors only (follows a resize, no per-refresh work); input blocking / `Background` use the placed rect. Null = cover the stack, unchanged.
@@ -34,6 +35,12 @@ _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds 
   - `LabelAlign` (`TextAlign`, primary label), `SecondaryLabelColorFn` (`Func<ColorRgba?>?`), `LabelOutline` (readability outline on both labels), `LabelInset` (0 = 5 px).
   - `TrackColorFn` is now also honoured by Modern window bars (it was Default-only).
   - `CornerRadius` is now also honoured by Modern window bars: rounded track, fill (gradient + gloss baked into a cached horizontal 3-slice sprite of the bar's exact height, 4×4-supersampled corners), trail and flat overlay; a striped overlay stays square. 0 = unchanged.
+- **Effect placeholder icons** (moved from CombatMeter 3.0, same art and classifier):
+  - `EffectCategory` enum (Abstractions): `Default`, `CrowdControl`, `Immunity`, `Shield`, `Heal`, `DamageOverTime`, `StatUp`, `StatDown` (values pinned, append only).
+  - `IGameText.GetEffectCategory(int buffId)`: keyword guess (CN + EN, first match in that order, else `Default`) over the buff's game name (filler names ignored) + its English design label. `Default` until `IsReady` (not cached, re-ask on `Ready`); then classified once per id and cached (O(1), allocation-free after the first call).
+  - `IGameAssets.LoadEffectPlaceholder(EffectCategory category, bool debuff, int sizePx, out UvRect uv)`: a white category glyph on a green (buff) / red (debuff) tile, for the same elements as `LoadBuffIcon` results. Pre-drawn, pixel-hinted sizes 14–64 px; returns the smallest size >= `sizePx` (pass the on-screen px), else 64. Synchronous, decoded once per (category, kind, size) and cached (no mips, bilinear, `HideAndDontSave`); `uv` = (0,0,1,1). Main thread.
+  - `IGameAssets.GetEffectPlaceholderPng(EffectCategory category, bool debuff, int sizePx)`: the same tile's PNG bytes (cached, shared) for `Func<byte[]?>` elements such as `ImageElement`. Both live on the new `IEffectPlaceholders`, which `IGameAssets` inherits (interface-width gate), so `_services.GameAssets.LoadEffectPlaceholder(...)` works.
+  - Art: `Stellar.Infrastructure/Resources/effects/*.png` (embedded), generator `tools/icons/gen-effect-placeholders.py`. New interface members: only framework-internal implementors (no plugin implements `IGameText` / `IGameAssets`).
 - `BarBinding` gained `Start` (drives `anchorMin.x`) and `HideWhenEmpty` (write-on-change, no allocation). Baked FX sprites live in `WindowBuilder.BarEffects.cs`; `BarElement`/`BarStyle` moved to `HudElement.Bar.cs` (500-LoC gate; no API change).
 
 ## [2.33.0] - 2026-11-17

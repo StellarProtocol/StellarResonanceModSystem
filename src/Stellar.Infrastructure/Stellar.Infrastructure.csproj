@@ -34,6 +34,9 @@
     <!-- Launcher icon set (rasterised PNGs; never tofu). Flat = the brand only (Stellar.Infrastructure.icons.<name>.png);
          the v2 glyphs are PRE-DRAWN per size, Resources/icons/<size>/<name>.png → icons.<size>.<name>.png (LauncherIcons
          picks the on-screen size). A new size needs a line here AND in LauncherIcons.PreDrawnSizes. -->
+    <!-- Effect placeholder tiles (IGameAssets.LoadEffectPlaceholder): pre-drawn per size by
+         tools/icons/gen-effect-placeholders.py, served as Stellar.Infrastructure.effects.<stem>-<buff|debuff>_<size>.png. -->
+    <EmbeddedResource Include="Resources/effects/*.png" LogicalName="Stellar.Infrastructure.effects.%(Filename).png" />
     <EmbeddedResource Include="Resources/icons/*.png" LogicalName="Stellar.Infrastructure.icons.%(Filename).png" />
     <EmbeddedResource Include="Resources/icons/12/*.png" LogicalName="Stellar.Infrastructure.icons.12.%(Filename).png" />
     <EmbeddedResource Include="Resources/icons/16/*.png" LogicalName="Stellar.Infrastructure.icons.16.%(Filename).png" />

@@ -14,7 +14,7 @@ namespace Stellar.Abstractions.Services;
 /// handle once the load succeeds. A permanently failed load also returns
 /// <c>null</c> — the caller should fall back to text-only rendering.
 /// </remarks>
-public interface IGameAssets : IGameStickerCatalog
+public interface IGameAssets : IGameStickerCatalog, IEffectPlaceholders
 {
     /// <summary>
     /// Returns the atlas texture handle for the profession icon identified by
