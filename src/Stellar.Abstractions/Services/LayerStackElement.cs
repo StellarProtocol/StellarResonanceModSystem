@@ -42,4 +42,30 @@ public sealed record StackLayer(HudElement Content)
     /// <summary>True = <see cref="Content"/> keeps its preferred size and is centred in the overlay (a spinner, a
     /// "Loading…" label). False (default) = the content is stretched to fill the overlay.</summary>
     public bool Center { get; init; }
+
+    /// <summary>Place the overlay in a sub-rect of the stack instead of covering all of it (framework 2.34.0), in px
+    /// from the stack's edges — e.g. a bar or a label over a slot of frame art. The rect follows the stack's size (a
+    /// window resize) with no per-refresh work. Input blocking and <see cref="Background"/> use the placed rect. Null
+    /// (default) = cover the whole stack, unchanged.</summary>
+    public LayerRect? Rect { get; init; }
+}
+
+/// <summary>Where a <see cref="StackLayer"/> sits inside its stack (framework 2.34.0). Per axis: both insets set =
+/// stretch between them; only the near inset (<see cref="Left"/> / <see cref="Top"/>) = anchored to that edge with the
+/// fixed <see cref="Width"/> / <see cref="Height"/> (0 = stretch to the far edge); only the far inset
+/// (<see cref="Right"/> / <see cref="Bottom"/>) = anchored to that edge with the fixed size; neither = the whole axis.</summary>
+public sealed record LayerRect
+{
+    /// <summary>Inset from the stack's left edge, px.</summary>
+    public float? Left { get; init; }
+    /// <summary>Inset from the stack's right edge, px.</summary>
+    public float? Right { get; init; }
+    /// <summary>Inset from the stack's top edge, px.</summary>
+    public float? Top { get; init; }
+    /// <summary>Inset from the stack's bottom edge, px.</summary>
+    public float? Bottom { get; init; }
+    /// <summary>Fixed width when only one horizontal inset is set; 0 = stretch.</summary>
+    public float Width { get; init; }
+    /// <summary>Fixed height when only one vertical inset is set; 0 = stretch.</summary>
+    public float Height { get; init; }
 }

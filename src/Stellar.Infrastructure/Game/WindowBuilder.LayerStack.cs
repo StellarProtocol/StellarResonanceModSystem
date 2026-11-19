@@ -95,6 +95,7 @@ internal sealed partial class WindowBuilder
         UGuiPrimitives.Stretch(go);
         rt = go.GetComponent<RectTransform>();
         if (layer == null) { go.SetActive(false); return go; }
+        if (layer.Rect is { } place) PlaceLayer(rt, place);   // 2.34.0: a sub-rect of the stack (anchors, no layout work)
         UGuiPrimitives.AddLayout(go, gap: 0f, columns: UGuiPrimitives.ColumnMode);
         if (go.GetComponent<VerticalLayoutGroup>() is { } v)
         {
@@ -117,6 +118,27 @@ internal sealed partial class WindowBuilder
         // structure-only prebuild leaves it off).
         if (layer.Visible != null) go.SetActive(false);
         return go;
+    }
+
+    // StackLayer.Rect → anchors + offsets per axis (see LayerRect): both insets = stretch between them; near inset only =
+    // pinned to that edge at a fixed size (0 = to the far edge); far inset only = pinned to the far edge. Pure anchors, so
+    // the rect follows a stack resize with no per-refresh work and the ticker's blocker rect is the placed rect.
+    private static void PlaceLayer(RectTransform rt, LayerRect p)
+    {
+        var x = Axis(p.Left, p.Right, p.Width);
+        var y = Axis(p.Bottom, p.Top, p.Height);
+        rt.anchorMin = new Vector2(x.x, y.x); rt.anchorMax = new Vector2(x.y, y.y);
+        rt.offsetMin = new Vector2(x.z, y.z); rt.offsetMax = new Vector2(x.w, y.w);
+
+        // lo = inset from the min edge (left / bottom), hi = inset from the max edge (right / top).
+        // Returns (anchorMin, anchorMax, offsetMin, offsetMax) for that axis.
+        static Vector4 Axis(float? lo, float? hi, float size)
+        {
+            if (lo is { } l && hi is { } h) return new Vector4(0f, 1f, l, -h);
+            if (lo is { } l2) return size > 0f ? new Vector4(0f, 0f, l2, l2 + size) : new Vector4(0f, 1f, l2, 0f);
+            if (hi is { } h2) return size > 0f ? new Vector4(1f, 1f, -h2 - size, -h2) : new Vector4(0f, 1f, 0f, -h2);
+            return new Vector4(0f, 1f, 0f, 0f);
+        }
     }
 
     private static RectTransform[] Pick(RectTransform[] rects, int[] idx)

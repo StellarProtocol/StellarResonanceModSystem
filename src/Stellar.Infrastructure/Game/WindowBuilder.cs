@@ -221,6 +221,7 @@ internal sealed partial class WindowBuilder
             case VirtualListElement vlist: BuildVirtualList(vlist, parent, token); break;
             case TileElement tile: BuildTile(tile, parent, token); break;       // .Tiles.cs
             case ImageElement img:  BuildImage(img, parent, token); break;       // .Tiles.cs
+            case SlicedImageElement si: BuildSlicedImage(si, parent, token); break; // .SlicedImage.cs
             case SpriteElement sp:  BuildSprite(sp, parent, token); break;       // .Tiles.cs
             case BrandLogoElement bl: BuildBrandLogo(bl, parent, token); break;  // .Tiles.cs
             case CellElement cell:  BuildCell(cell, parent, token); break;        // .Table.cs

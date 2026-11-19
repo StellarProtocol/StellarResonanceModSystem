@@ -42,13 +42,13 @@ internal sealed partial class WindowBuilder
     // tinting is per-graphic (RawImage/Image .color) and sub-rect selection is per-RawImage (.uvRect) — nothing
     // is baked into the texture, so identical bytes always mean identical pixels. IconTextures stays the single
     // owner (added once, on the decode), so disposal is still exactly one Destroy per texture.
-    private Texture2D? LoadIcon(byte[]? png, WindowToken token)
+    private Texture2D? LoadIcon(byte[]? png, WindowToken token, bool forceExact = false)
     {
         if (png is not { Length: > 0 }) return null;
         if (token.AtlasCache.TryGetValue(png, out var cached)) return cached;
         // A pixel-hinted glyph picked for its exact on-screen size is drawn 1:1: no mip chain (nothing to blend toward)
         // and Bilinear, which at 1:1 on whole pixels samples each texel as-is. Everything else keeps mips + Trilinear.
-        var exact = PixelExact?.Invoke(png) == true;
+        var exact = forceExact || PixelExact?.Invoke(png) == true;   // forceExact: ImageElement.Crisp / SlicedImageElement (2.34.0)
         var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: !exact)
         {
             filterMode = exact ? FilterMode.Bilinear : FilterMode.Trilinear,
@@ -72,13 +72,13 @@ internal sealed partial class WindowBuilder
         {
             // ImageElement.Live: the same poll-diffed IconBinding the launcher TileElement uses (byte[]-ref compare,
             // decode deduped by LoadIcon) — a pooled slot's picture follows the item it currently shows.
-            var binding = new IconBinding { Raw = raw, Bytes = im.Png, Load = png => LoadIcon(png, token) };
+            var binding = new IconBinding { Raw = raw, Bytes = im.Png, Load = png => LoadIcon(png, token, im.Crisp) };
             binding.Apply();
             token.Icons.Add(binding);
         }
         else
         {
-            var tex = LoadIcon(im.Png(), token);
+            var tex = LoadIcon(im.Png(), token, im.Crisp);
             if (tex != null) raw.texture = tex;
         }
         if (im.Tint is { } tintFn) BindImageTint(raw, tintFn, token);

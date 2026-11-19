@@ -14,6 +14,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.34.0] - 2026-11-19
+_**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds `SlicedImageElement`, `StackLayer.Rect` (`LayerRect`), `ImageElement.Crisp`, `GradientStop` and `BarStyle.Modern` window-bar opt-ins (Abstractions 2.34.0); additive, every default unchanged, no plugin rebuild._
+### Added
+- Plugins can now draw their own frame art around a window that stretches cleanly as you resize it.
+- Plugins can now show richer health bars: gradient colours, a gloss, a soft glow, a trail that shows how much a big hit took, striped shield bands and tick marks.
+- Plugins can now place labels, bars and pictures at exact spots on top of their frame art.
+- Plugins can now show these styled bars with rounded ends.
+### Developer notes
+- **`SlicedImageElement(Func<byte[]?> Left, Func<byte[]?> Middle, Func<byte[]?> Right, int Height)`**: horizontal 3-slice of three plugin PNGs — caps at native width (scaled uniformly if the PNG height ≠ `Height`), middle stretched between them; fills the width its parent gives it (min width = both caps). Three anchor-positioned `RawImage`s under one layout slot (no LayoutGroup, no per-refresh work). Pieces load crisp (no mip chain, bilinear) through the shared per-window `LoadIcon` dedup. Each Func is read once at build. Window (WindowBuilder) path only.
+- **`StackLayer.Rect`** (`LayerRect?`, init: `Left`/`Right`/`Top`/`Bottom` `float?`, `Width`/`Height` `float`): place a `LayerStackElement` overlay in a sub-rect of the stack, in px from its edges. Per axis: both insets = stretch; near inset only = pinned with a fixed size (0 = to the far edge); far inset only = pinned to the far edge. Anchors only (follows a resize, no per-refresh work); input blocking / `Background` use the placed rect. Null = cover the stack, unchanged.
+- **`ImageElement.Crisp`** (`bool`, init, default false): load the PNG with no mip chain + bilinear (1:1 art stays sharp). `LoadIcon` gained an internal `forceExact` flag.
+- **`BarElement`** `BarStyle.Modern` window-bar opt-ins (init, all default off = unchanged; ignored by `BarStyle.Default` and HudOverlay/IHud bars):
+  - `FillGradient` (`IReadOnlyList<GradientStop>?`, `GradientStop(float At, ColorRgba Color)`, 0 = top) — baked 1×64 sprite (process-wide cache), `Fill` ignored, `FillColorFn` multiplies; `Gloss` — subtle static white 18 %→0 over the top third (not the animated `Sheen`).
+  - `FillGlow` / `OverlayGlow` (`ColorRgba?`) + `GlowRadius` (0 = 6 px) — a 9-sliced soft ring behind the segment, driven by its own `BarBinding` and disabled while the segment is empty.
+  - `Trail01` (`Func<float>?`) + `TrailColor` — a band drawn first on the track (behind fill and overlay); the plugin owns the lag. Works together with `Overlay01`.
+  - `OverlayStart01` (`Func<float>?`) — the overlay becomes the segment [start, `Overlay01`] (e.g. a shield right after the HP fill); `OverlayStripeColor` (`ColorRgba?`) + `OverlayStripeWidth` (0 = 4 px) — 135° stripes alternating with `OverlayColor` (tiled sprite, 1 texel = 1 px).
+  - `Ticks` (int, N segments → N−1 dividers, cap 100) + `TickColor` + `TickWidth` (0 = 1 px) — static anchor-positioned dividers over the fills, under the labels.
+  - `LabelAlign` (`TextAlign`, primary label), `SecondaryLabelColorFn` (`Func<ColorRgba?>?`), `LabelOutline` (readability outline on both labels), `LabelInset` (0 = 5 px).
+  - `TrackColorFn` is now also honoured by Modern window bars (it was Default-only).
+  - `CornerRadius` is now also honoured by Modern window bars: rounded track, fill (gradient + gloss baked into a cached horizontal 3-slice sprite of the bar's exact height, 4×4-supersampled corners), trail and flat overlay; a striped overlay stays square. 0 = unchanged.
+- `BarBinding` gained `Start` (drives `anchorMin.x`) and `HideWhenEmpty` (write-on-change, no allocation). Baked FX sprites live in `WindowBuilder.BarEffects.cs`; `BarElement`/`BarStyle` moved to `HudElement.Bar.cs` (500-LoC gate; no API change).
+
 ## [2.33.0] - 2026-11-17
 _**2.33.0** (minor) — rounded/compact meter rows, content & row-backing fade, game text, window overlays + modal confirm. Adds `MeterRowElement.Style` (`MeterRowStyle.Classic`/`Rounded`), `MeterRowData.IsEmptySlot` / `EmptyHint` `WindowSpec.BackgroundColor` / `BackgroundCornerRadius`, `IPluginServices.GameText` (`IGameText`, English buff/skill text shipped with the framework), `LayerStackElement` (overlays with opt-in input blocking) and `ConfirmHostElement` + `ConfirmController` (window-scoped modal confirm) (Abstractions 2.33.0); additive, Classic stays the default, no plugin rebuild._
 ### Added

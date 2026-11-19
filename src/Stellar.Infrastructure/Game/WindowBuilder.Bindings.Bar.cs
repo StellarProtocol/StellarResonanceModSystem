@@ -26,12 +26,25 @@ internal sealed partial class WindowBuilder
         public Graphic? FillGraphic; public Func<ColorRgba?>? FillColorFn;
         private ColorOverrideTracker _fillColor; private Color? _fillBuildColor;
         private float _lastFrac = -1f; private string? _lastLabel;
+        // 2.34.0 segment opt-ins (null = the classic [0, Fraction] fill, unchanged): Start drives anchorMin.x (an overlay
+        // segment starting after the HP fill, or the glow behind it); HideWhenEmpty is switched off while the segment has
+        // no width (a glow ring would otherwise draw a blob around a zero-width segment). Written only on change.
+        public Func<float>? Start; public Behaviour? HideWhenEmpty;
+        private float _lastStart = -1f; private int _lastShown = -1;
         public void Apply()
         {
             if (FillRect != null && !FillRect.gameObject.activeInHierarchy) return;
             if (FillRect != null)
             {
                 var f = Mathf.Clamp01(Fraction());
+                if (Start != null)
+                {
+                    var s = Mathf.Clamp01(Start());
+                    if (f < s) f = s;
+                    if (!Mathf.Approximately(s, _lastStart)) { FillRect.anchorMin = new Vector2(s, 0f); _lastStart = s; }
+                    if (HideWhenEmpty != null) ApplyShown(f - s > 0.0005f);
+                }
+                else if (HideWhenEmpty != null) ApplyShown(f > 0.0005f);
                 if (!Mathf.Approximately(f, _lastFrac)) { FillRect.anchorMax = new Vector2(f, 1f); _lastFrac = f; }
             }
             if (Label != null && LabelFn != null)
@@ -53,6 +66,13 @@ internal sealed partial class WindowBuilder
             _trackBuildColor ??= TrackGraphic!.color;
             TrackGraphic!.color = v is { } c ? new Color(c.R, c.G, c.B, c.A) : _trackBuildColor.Value;
             _lastTrack = v; _trackInit = true;
+        }
+
+        private void ApplyShown(bool shown)
+        {
+            var v = shown ? 1 : 0;
+            if (v == _lastShown) return;
+            HideWhenEmpty!.enabled = shown; _lastShown = v;
         }
 
         private void ApplyFillColor(ColorRgba? v)
