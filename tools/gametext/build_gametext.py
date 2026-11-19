@@ -10,14 +10,32 @@ Inputs (see README.md in this folder for where they live):
   --skill-table  extracted SkillTable.json of the current build (same shape).
   --talent-table extracted TalentTable.json of the current build (Chinese `Des` = talent name -> English `TalentName`).
   --design-tsv   `<chinese design label>\t<english>` translations (the Death Recap file).
+  --curated-tsv  optional, repeatable: hand-curated `<chinese design label>\t<english>` files (later files win). An
+                 exact whole-label entry here beats everything but the official whole-label names below.
+  --prev-buff-table / --prev-skill-table
+                 optional: the PREVIOUS build's extracted tables. Their English Name/Desc are kept when the current
+                 build only has a filler for a row with the SAME NameDesign (a changed label = a reused id).
+  --mod-effect-table
+                 optional: ModEffectTable.json (module effects): the buff each effect grants ([3, buffId, n]) gets
+                 the module's official EffectName as its whole-label name (精英打击 -> "Elite Strike").
+  --season-talent-template
+                 optional: SeasonTalentTemplateTable.json (Psychoscope effects). The SeasonTalentEffectOrdinary /
+                 SeasonTalentEffectAdvanced tables are read from the same folder. Every node's granted buff label
+                 gets the node's official Name (梦幻箭雨：箭雨·精通箭矢 -> "Arrow Rain: Arrow Mastery"), each template
+                 root 【X】 its TemplateName, and the family / node terms (梦幻箭雨 -> "Dreamlike Arrow Rain",
+                 箭雨·精通箭矢) become official terms. The newest season wins when templates disagree (S3 "Phantom
+                 Arrow" and S4 "Dreamlike Arrow Rain" share the buff family 3002410).
   --out          output .tsv.zst path.
   --samples      optional: ids to print before/after for (comma separated).
 
 Rules:
   * An extracted row with no localized name/desc carries a FILLER string instead of "" ("气刃突刺计数" for buffs,
     "场地标记01" for skills; the community dump's English filler is "Spirit Blade Thrust count"). Fillers become "".
-  * Name/Desc: current build first, then the community dump (real names are never rewritten).
+  * Name/Desc: current build first, then the previous build (same row only), then the community dump (real names
+    are never rewritten).
   * NameDesign/Note (Chinese design labels) go through the "official first, then Death Recap" chain, see translate():
+      0. a whole label the game names officially through the table that grants it (module effect, Psychoscope node),
+         then a curated whole-label entry;
       1. official terms: every Chinese term the game itself names in English (Skill/Buff NameDesign -> Name,
          Talent Des -> TalentName) is substituted longest-match-first, so labels use the in-game wording
          (聚能射击附加钢制喙 -> "Radiance Barrage adds Steel Beak");
@@ -32,7 +50,7 @@ Format (UTF-8, zstd level 19): first line "STGT1"; then one row per id:
   <kind>\t<id>\t<name>\t<design>\t<desc>\t<note>      kind = B (buff) | S (skill)
 Fields are escaped: backslash -> \\, tab -> \t, newline -> \n, carriage return -> \r. Empty field = no text.
 """
-import argparse, collections, json, re, sys
+import argparse, collections, json, os, re, sys
 
 import zstandard
 
@@ -104,6 +122,77 @@ def first(*vals):
     return ""
 
 
+def load_json(path):
+    return json.load(open(path, encoding="utf-8")) if path else {}
+
+
+def keep_prev(cur, prev, field):
+    """The previous build's English `field` for this row, only if the row is still the same row: a changed NameDesign
+    means the id was reused for something else, so its old name would be wrong."""
+    if not prev or (prev.get("NameDesign") or "").strip() != (cur.get("NameDesign") or "").strip():
+        return ""
+    return clean(prev.get(field))
+
+
+def term_ok(zh, en):
+    """The official-term rules of build_official(), for one candidate pair."""
+    han = len(HAN.findall(zh))
+    return (bool(en) and bool(PURE_HAN.match(zh)) and zh not in OFFICIAL_STOP and 2 <= han <= 8
+            and not (han >= 5 and " " not in en))
+
+
+def build_granted(buffs, mod_effect, template_path, log):
+    """Official English for whole buff labels, from the tables that GRANT a buff (effect [3, buffId, n]).
+
+    -> (whole label -> english, term -> english). Votes carry the template's season: the newest season wins (S3 node
+    "Phantom Arrow" and S4 "Dreamlike Arrow Rain" grant the same root 3002410), then the majority; a tie is dropped."""
+    votes = collections.defaultdict(collections.Counter)
+
+    def grant(effects, en, season):
+        en = clean(en)
+        en = en[:1].upper() + en[1:]                    # one official node is spelled "tuning"
+        for e in effects or []:
+            if en and isinstance(e, list) and len(e) >= 2 and e[0] == 3:
+                lab = (buffs.get(str(e[1]), {}).get("NameDesign") or "").strip()
+                if HAN.search(lab):
+                    votes[lab][(en, season)] += 1
+
+    for r in mod_effect.values():
+        grant(r.get("EffectConfig"), r.get("EffectName"), 0)
+    if template_path:
+        folder = os.path.dirname(template_path)
+        templates = load_json(template_path)
+        ordinary = load_json(os.path.join(folder, "SeasonTalentEffectOrdinaryTable.json"))
+        advanced = load_json(os.path.join(folder, "SeasonTalentEffectAdvancedTable.json"))
+        # A template's nodes are the Ordinary rows numbered like its root (NoteRootId 2501 -> rows 2501..2599).
+        season_of = {int(t["NoteRootId"]) // 100: int(t.get("BelongSeasonId") or 0) for t in templates.values()}
+        for r in ordinary.values():
+            grant(r.get("Effect"), r.get("Name"), season_of.get(int(r["Id"]) // 100, 0))
+        for r in advanced.values():
+            grant(r.get("Effect"), r.get("Name"), 0)
+        for t in templates.values():               # the root's own name is the template name
+            root = ordinary.get(str(t["NoteRootId"]), {})
+            grant(root.get("Effect"), t.get("TemplateName"), int(t.get("BelongSeasonId") or 0) + 1)
+    whole, ties = {}, 0
+    for lab, c in votes.items():
+        ranked = sorted(c.items(), key=lambda kv: (-kv[0][1], -kv[1], kv[0][0]))
+        top = [(en, n) for (en, s), n in ranked if s == ranked[0][0][1]]
+        if len(top) > 1 and top[0][1] == top[1][1] and top[0][0] != top[1][0]:
+            ties += 1
+            continue
+        whole[lab] = top[0][0]
+    terms = {}
+    for lab, en in whole.items():
+        m = re.match(r"^【([^】]+)】$", lab)           # template root 【梦幻箭雨】 -> family term 梦幻箭雨
+        key = m.group(1) if m else (lab.split("：", 1)[1] if "：" in lab else "")   # node: 梦幻箭雨：<箭雨·精通箭矢>
+        if key and term_ok(key, en):
+            terms[key] = en
+    log["official whole labels (module / Psychoscope)"] = len(whole)
+    log["official whole-label ties dropped"] = ties
+    log["Psychoscope family/node terms"] = len(terms)
+    return whole, terms
+
+
 def build_official(sources, log):
     """Chinese term -> official English name. `sources` = (priority, rows, zh_field, en_field)."""
     votes = collections.defaultdict(collections.Counter)
@@ -139,9 +228,11 @@ def build_official(sources, log):
 
 
 class Translator:
-    def __init__(self, official, design, community_by_label):
+    def __init__(self, official, design, community_by_label, whole=None, curated=None):
         self.official = official
         self.design = design
+        self.whole = whole or {}                        # official whole-label names (module / Psychoscope node)
+        self.curated = curated or {}                    # hand-curated whole-label translations
         self.frag = dict(GLOSSARY)
         for zh, en in design.items():                   # short Death Recap entries double as fragments
             if PURE_HAN.match(zh) and len(zh) <= 6 and clean(en):
@@ -220,10 +311,14 @@ class Translator:
         return en
 
     def translate(self, zh, community_en):
-        """-> (english, how), how = official | recap-exact | recap-fragments | recap-whole | community | none."""
+        """-> (english, how), how = official-whole | curated | official | recap-exact | recap-fragments | recap-whole |
+        community | none."""
         zh = (zh or "").strip() if isinstance(zh, str) else ""
         if not zh:
             return clean(community_en), ("community" if clean(community_en) else "none")
+        for table, how in ((self.whole, "official-whole"), (self.curated, "curated")):
+            if table.get(zh):
+                return table[zh], how
         used = {"official": 0, "recap": 0}
         segs = []
         for seg in SEP.split(zh):
@@ -265,6 +360,9 @@ def main():
     ap = argparse.ArgumentParser()
     for a in ("--buff-en", "--buff-table", "--skill-table", "--talent-table", "--design-tsv", "--out"):
         ap.add_argument(a, required=True)
+    for a in ("--prev-buff-table", "--prev-skill-table", "--mod-effect-table", "--season-talent-template"):
+        ap.add_argument(a, default="")
+    ap.add_argument("--curated-tsv", action="append", default=[])
     ap.add_argument("--samples", default="")
     args = ap.parse_args()
 
@@ -273,19 +371,35 @@ def main():
     skill_cn = json.load(open(args.skill_table, encoding="utf-8"))
     talent = json.load(open(args.talent_table, encoding="utf-8"))
     design = load_tsv(args.design_tsv)
+    prev_buff, prev_skill = load_json(args.prev_buff_table), load_json(args.prev_skill_table)
+    curated = {}
+    for path in args.curated_tsv:                       # later files win
+        curated.update({zh: en for zh, en in load_tsv(path).items() if clean(en)})
 
-    log = {}
-    buff_rows = [dict(r, Name=first(clean(r.get("Name")), clean(buff_en.get(k, {}).get("Name"))))
+    log = {"curated labels": len(curated)}
+    prev_used = collections.Counter()
+
+    def pick(cur, prev, community, field, kind):
+        v = clean(cur.get(field))
+        if not v:
+            v = keep_prev(cur, prev, field)
+            prev_used[f"{kind} {field}"] += bool(v)
+        return first(v, clean(community.get(field)))
+
+    buff_rows = [dict(r, Name=pick(r, prev_buff.get(k), buff_en.get(k, {}), "Name", "buff"))
                  for k, r in buff_cn.items()]
+    prev_used.clear()                                   # counted again in the row loop below
     official = build_official([(0, skill_cn.values(), "NameDesign", "Name"),
                                (1, talent.values(), "Des", "TalentName"),
                                (2, buff_rows, "NameDesign", "Name")], log)
+    whole, season_terms = build_granted(buff_cn, load_json(args.mod_effect_table), args.season_talent_template, log)
+    official.update(season_terms)                       # the current season's Psychoscope wording wins
     community_by_label = {}
     for k, r in buff_cn.items():
         lab, en = (r.get("NameDesign") or "").strip(), clean(buff_en.get(k, {}).get("NameDesign"))
         if lab and en:
             community_by_label.setdefault(lab, en)
-    tr = Translator(official, design, community_by_label)
+    tr = Translator(official, design, community_by_label, whole, curated)
 
     how = collections.Counter()
     labels = {}
@@ -300,9 +414,9 @@ def main():
     stats = {"B": [0, 0], "S": [0, 0]}   # rows, rows with design
     for sid in sorted(set(buff_en) | set(buff_cn), key=int):
         en, cur = buff_en.get(sid, {}), buff_cn.get(sid, {})
-        name = first(clean(cur.get("Name")), clean(en.get("Name")))
+        name = pick(cur, prev_buff.get(sid), en, "Name", "buff")
         dsgn = design_of(cur.get("NameDesign"), en.get("NameDesign"))
-        desc = first(clean(cur.get("Desc")), clean(en.get("Desc")))
+        desc = pick(cur, prev_buff.get(sid), en, "Desc", "buff")
         note_zh = cur.get("Note") if isinstance(cur.get("Note"), str) else ""
         note = dsgn if note_zh and note_zh.strip() == (cur.get("NameDesign") or "").strip() \
             else design_of(note_zh, en.get("Note"))
@@ -313,7 +427,7 @@ def main():
             stats["B"][0] += 1; stats["B"][1] += bool(dsgn)
     for sid in sorted(skill_cn, key=int):
         cur = skill_cn[sid]
-        name, desc = clean(cur.get("Name")), clean(cur.get("Desc"))
+        name, desc = (pick(cur, prev_skill.get(sid), {}, f, "skill") for f in ("Name", "Desc"))
         dsgn = design_of(cur.get("NameDesign"), "")
         labels[("S", int(sid))] = (cur.get("NameDesign"), clean(design.get((cur.get("NameDesign") or "").strip())), dsgn)
         if name or dsgn or desc:
@@ -325,6 +439,7 @@ def main():
     packed = zstandard.ZstdCompressor(level=19).compress(raw)
     with open(args.out, "wb") as f:
         f.write(packed)
+    log["kept from the previous build"] = dict(prev_used) or 0
     for k, v in log.items():
         print(f"{k}: {v}", file=sys.stderr)
     print("design/note labels by source: " + ", ".join(f"{k} {v}" for k, v in how.most_common()), file=sys.stderr)

@@ -1,0 +1,982 @@
+# Curated English for release_4.7 (Season 4) buff and skill design labels the generator cannot translate on its own.
+# Format: one '<chinese design label><TAB><english>' per line; lines without a tab are comments.
+# Passed to build_gametext.py as --curated-tsv: an exact whole-label match here beats the Death Recap chain.
+# Wording uses the official in-game English terms where the game has them (skill names from SkillTable /
+# AttrDescription tips, monster names from MonsterTable, spec names from TalentTable, Oath DMG = 祈愿伤害).
+# Psychoscope effect nodes / module effects are NOT listed: the generator names them from SeasonTalent* / ModEffectTable.
+# Not covered on purpose: tower-defense event scripting (830xxx/831xxx), rows without a label.
+
+# Psychoscope factors: skill Oath DMG / Healing / Defense bonuses (official skill names from the tips)
+「我流刀法·诛恶」祈愿伤害+{X}。	Judgment Cut Oath DMG Up
+「居合斩」祈愿伤害+{X}。	Iaido Slash Oath DMG Up
+「月影」祈愿伤害+{X}。	Moonstrike Oath DMG Up
+「极诣·大破灭连斩」祈愿伤害+{X}。	Oblivion Combo Oath DMG Up
+「一闪」祈愿伤害+{X}。	Flash Strike Oath DMG Up
+「飞雷神」祈愿伤害+{X}。	Raijin Dash Oath DMG Up
+「超高出力」祈愿伤害+{X}。	Overdrive Oath DMG Up
+「镰车、月刃」祈愿伤害+{X}。	Scythe Wheel, Moonblade Oath DMG Up
+「霹雳连斩」祈愿伤害+{X}。	Thundercut Oath DMG Up
+「千雷闪影之意」祈愿伤害+{X}。	Stormflash Oath DMG Up
+「坠龙闪」祈愿伤害+{X}。	Dracoflash Oath DMG Up
+「神影斩」祈愿伤害+{X}。	Phantom Slash Oath DMG Up
+「雷切」祈愿伤害+{X}。	Thunder Cut Oath DMG Up
+「霹雳升龙斩」祈愿伤害+{X}。	Thundercleave Oath DMG Up
+「雷霆之镰」祈愿伤害+{X}。	Storm Scythe Oath DMG Up
+「神罚之镰」祈愿伤害+{X}。	Divine Sickle Oath DMG Up
+「缭乱兜割」祈愿伤害+{X}。	Chaos Breaker Oath DMG Up
+「看破斩」祈愿伤害+{X}。	Stormblade Lucky Strike Oath DMG Up
+「刃风界域」祈愿伤害+{X}。	Bladewind Domain Oath DMG Up
+「雷击」祈愿伤害+{X}。	Thunderstrike Oath DMG Up
+「风华翔舞」祈愿伤害+{X}。	Windborne Grace Oath DMG Up
+「疾风刺」祈愿伤害+{X}。	Gale Thrust Oath DMG Up
+「翔返」祈愿伤害+{X}。	Skyfall Oath DMG Up
+「风神·破阵之风」祈愿伤害+{X}。	Typhoon Cleave Oath DMG Up
+「螺旋击刺」祈愿伤害+{X}。	Spiral Thrust Oath DMG Up
+「破追」祈愿伤害+{X}。	Breach Pursuit Oath DMG Up
+「飞鸟投」祈愿伤害+{X}。	Falcon Toss Oath DMG Up
+「刹那」祈愿伤害+{X}。（不包括「刹那连击」）	Instant Edge Oath DMG Up
+「勇气风环」祈愿伤害+{X}。	Valor Cyclone Oath DMG Up
+「锐利冲击、风神·锐利冲击」祈愿伤害+{X}。	Sharp Impact, Typhoon: Sharp Impact Oath DMG Up
+「神影螺旋」祈愿伤害+{X}；<br>进入战斗状态派生神影螺旋。	Vortex Strike Oath DMG Up
+「龙击炮」祈愿伤害+{X}。	Drake Cannon Oath DMG Up
+「风螺旋」祈愿伤害+{X}。	Wind Spiral Oath DMG Up
+「疾驰锋刃」祈愿伤害+{X}。	Swift Blade Oath DMG Up
+「刹那连击」祈愿伤害+{X}。	Instant Edge Combo Oath DMG Up
+「龙卷风」祈愿伤害+{X}。	Tornado Oath DMG Up
+「极·岚切」祈愿伤害+{X}。	Azure Sever Oath DMG Up
+「风裂扩散」祈愿伤害+{X}。	Wind Rift Diffusion Oath DMG Up
+「撕裂」祈愿伤害+{X}。	Rend Oath DMG Up
+「长矛贯穿」祈愿伤害+{X}。	Wind Knight Lucky Strike Oath DMG Up
+「雨打潮生」祈愿伤害+{X}。	Raincall Surge Oath DMG Up
+「冰霜之矛」祈愿伤害+{X}。	Frost Lance Oath DMG Up
+「寒冰射线」祈愿伤害+{X}。	Frostbeam Oath DMG Up
+「极寒·冰雪颂歌」祈愿伤害+{X}。	Glacier Hymn Oath DMG Up
+「陨星风暴」祈愿伤害+{X}。	Meteor Storm Oath DMG Up
+「清滝绕珠」祈愿伤害+{X}。	Crystal Veil Oath DMG Up
+「寒冰风暴」祈愿伤害+{X}；	Blizzard Oath DMG Up
+「水之涡流」祈愿伤害+{X}。	Maelstrom Oath DMG Up
+「冻结寒风」祈愿伤害+{X}。	Frozen Gale Oath DMG Up
+「浪潮汇聚」祈愿伤害+{X}。	Tidepool Oath DMG Up
+「寒冰庇护」祈愿伤害+{X}。	Frost Shelter Oath DMG Up
+「冰箭」祈愿伤害+{X}。	Ice Arrow Oath DMG Up
+「贯穿冰矛」祈愿伤害+{X}。	Piercing Ice Lance Oath DMG Up
+「冰霜彗星」祈愿伤害+{X}。	Frost Comet Oath DMG Up
+「霜爆」祈愿伤害+{X}。	Frost Explosion Oath DMG Up
+「冰冷脉冲」祈愿伤害+{X}。	Cold Pulse Oath DMG Up
+「冰晶坠落」祈愿伤害+{X}。	Icy Bolt Oath DMG Up
+「冰霜冲击」祈愿伤害+{X}。	Frost Shock Oath DMG Up
+「弹无虚发」祈愿伤害+{X}。	Bullseye Oath DMG Up
+「暴风箭矢」祈愿伤害+{X}。	Storm Arrow Oath DMG Up
+「二连矢、光意·四连矢」祈愿伤害+{X}。	Double Arrow, Quadraflare Oath DMG Up
+「锐眼·光能巨箭」祈愿伤害+{X}。	Luminary Bolt, Photon Explosion Oath DMG Up
+「怒涛射击、光意·怒涛射击」祈愿伤害+{X}。	Torrent Volley, Lumi Torrent Oath DMG Up
+「箭雨」祈愿伤害+{X}。	Arrow Rain Oath DMG Up
+「聚能射击」祈愿伤害+{X}。	Powerdraw Oath DMG Up
+「光能轰炸」祈愿伤害+{X}。	Radiance Barrage Oath DMG Up
+「威慑射击」祈愿伤害+{X}。	Deter Shot Oath DMG Up
+「爆炸射击」祈愿伤害+{X}。	Blast Shot Oath DMG Up
+「狂野呼唤（野狼飞扑、猎鹰俯冲）」祈愿伤害+{X}。	Wildcall (Wild Wolf Pounce, Falcon Dive) Oath DMG Up
+「野狼撕咬」祈愿伤害+{X}。	Wild Wolf Bite Oath DMG Up
+「野狼扫尾」祈愿伤害+{X}。	Wild Wolf - Tail Sweep Oath DMG Up
+「幻影魔狼」祈愿伤害+{X}。	Marksman Lucky Strike Oath DMG Up
+「光追箭矢」祈愿伤害+{X}；<br>且暴击伤害始终以{X}进行结算。	Lightseeker Arrow Oath DMG Up, Fixed Crit DMG
+「生命流失」祈愿伤害+{X}。	Bleed Oath DMG Up
+「猎鹰出击」祈愿伤害+{X}。	Falcon Strike Oath DMG Up
+「内爆」祈愿伤害+{X}。	Implosion Oath DMG Up
+「幻影猎鹰」祈愿伤害+{X}。	Phantom Falcon Oath DMG Up
+「天界雄鹰」祈愿伤害+{X}。	Celestial Eagle Oath DMG Up
+「公正之剑」祈愿伤害+{X}。	Blade of Justice Oath DMG Up
+「英勇盾击」每层提供的防御力额外+{X}。	Valor Bash Defense Up per Stack
+「先锋打击」祈愿伤害+{X}。	Vanguard Strike, Vanguard Hunt Oath DMG Up
+「凛威·圣光灌注」祈愿伤害+{X}。	Radiant Infusion Oath DMG Up
+「裁决」祈愿伤害+{X}。	Judgment Oath DMG Up
+「清算」祈愿伤害+{X}。	Reckoning Oath DMG Up
+「投掷盾牌」祈愿伤害+{X}。	Shield Toss Oath DMG Up
+「圣剑」祈愿伤害+{X}。	Sacred Blade Oath DMG Up
+「光明决心」祈愿伤害+{X}。	Radiance Oath DMG Up
+「圣光守卫」提供的防御力额外+{X}。	Aegis Ward Defense Up
+「冷酷征伐」祈愿伤害+{X}。	Zeal Crusade Oath DMG Up
+「圣环」治疗强度+{X}。	Divine Circle Healing Strength Up
+「炽热清算」祈愿伤害+{X}。	Inferno Reckon Oath DMG Up
+「灼热裁决」祈愿伤害+{X}。	Scorching Judgment Oath DMG Up
+「断罪」祈愿伤害+{X}。	Condemn, Enhanced Condemn Oath DMG Up
+「光明冲击」祈愿伤害+{X}。	Radiant Impact Oath DMG Up
+「神圣印记」祈愿伤害+{X}。	Shield Knight Lucky Strike Oath DMG Up
+「神圣之击」祈愿伤害+{X}。	Divine Strike Oath DMG Up
+「光芒核心」祈愿伤害+{X}。	Radiant Core Oath DMG Up
+「止战之锋」祈愿伤害+{X}。	Halberd's Edge Oath DMG Up
+「护盾猛击」祈愿伤害+{X}。	Shield Bash, Shield Combo Oath DMG Up
+「格挡冲击」祈愿伤害+{X}。	Countercrush Oath DMG Up
+「岩御·崩裂回环」祈愿伤害+{X}。	Cracking Echo Oath DMG Up
+「碎星冲」祈愿伤害+{X}。	Star Shatter Oath DMG Up
+「砂石斗篷」祈愿伤害+{X}。	Sandshroud Oath DMG Up
+「巨岩躯体」提供的防御力额外+{X}。	Stoneform Defense Up
+「砂岩之握」祈愿伤害+{X}。	Sandgrip Oath DMG Up
+「勇者壁垒」额外提供{X}点物理防御力。	Brave Bastion Armor Up
+「岩怒之击」祈愿伤害+{X}。	Granite Fury Oath DMG Up
+「怒爆」祈愿伤害+{X}。	Rage Burst Oath DMG Up
+「砂岩守护」祈愿伤害+{X}。	Sandward Oath DMG Up
+「怒击」祈愿伤害+{X}。	Rageblow Oath DMG Up
+「碎星崩裂」祈愿伤害+{X}。	Starfall Oath DMG Up
+「崩裂」祈愿伤害+{X}。	Rupture Oath DMG Up
+「地崩山摧」祈愿伤害+{X}。	Terra Sunder Oath DMG Up
+「巨岩轰击」祈愿伤害+{X}。	Stone Fist Oath DMG Up
+「格挡反击」祈愿伤害+{X}。	Countercrush Oath DMG Up
+「砂晶石震荡」祈愿伤害+{X}。	Sand Crystal Shock Oath DMG Up
+「岩弹」祈愿伤害+{X}。	Heavy Guardian Lucky Strike Oath DMG Up
+「掌控藤蔓」祈愿伤害+{X}。	Vines' Embrace Oath DMG Up
+「狂野绽放」祈愿伤害+{X}。	Wild Bloom Oath DMG Up
+「生命绽放」治疗强度+{X}。	Life Bloom Healing Strength Up
+「繁盛·希望结界、花语回升」祈愿伤害、治疗强度+{X}。	Divine Circle Bloom, Bloomheal Oath DMG and Healing Strength Up
+「不羁之种」祈愿伤害+{X}。	Feral Seed Oath DMG Up
+「滋养」治疗强度+{X}。	Nourish Healing Strength Up
+「再生脉冲」治疗强度+{X}。	Regen Pulse Healing Strength Up
+「灌注」祈愿伤害+{X}。	Infusion Oath DMG Up
+「森之祈愿」治疗强度+{X}。	Grove Wish Healing Strength Up
+「自然庇护」护盾强度+{X}。	Nature Shield Shield Strength Up
+「盛放注能」治疗强度+{X}。	Blossom Charge Oath DMG and Healing Strength Up
+「鹿之奔袭」祈愿伤害+{X}。	Stag Charge Oath DMG Up
+「治疗脉冲」治疗强度+{X}。	Healing Pulse Healing Strength Up
+「脉冲回望」祈愿伤害+{X}。	Pulse Retrospect Oath DMG Up
+「狂野之种」祈愿伤害+{X}。	Wild Seed Oath DMG Up
+「滋养之种」治疗强度+{X}。	Nourishing Seed Healing Strength Up
+「治疗链接」治疗强度+{X}。	Healing Chain Healing Strength Up
+「荆棘」祈愿伤害+{X}。	Thorn Oath DMG Up
+「治疗球」治疗强度+{X}。	Verdant Oracle Lucky Strike Oath DMG Up
+「自然护盾」护盾强度+{X}。	Natural Bloom Healing Strength Up
+「琴弦叩击、琴弦撩拨」祈愿伤害+{X}。	String Strike, Resonant Strings Oath DMG Up
+「增幅节拍」祈愿伤害+{X}。	Amplified Beat Oath DMG Up
+「愈合节拍」治疗强度+{X}。	Healing Beat Healing Strength Up
+「升格·劲爆全场、升格·无限狂想、升格·巡演曲」治疗强度+{X}。	Rock the Stage, Infinite Rhapsody, Concert Circuit Oath DMG and Healing Strength Up
+「聚合乐章」祈愿伤害+{X}。	Harmonic Anthem Oath DMG Up
+「烈焰狂想」祈愿伤害+{X}。	Rhapsody of Flame Oath DMG Up
+「鸣奏·英勇乐章」治疗强度+{X}。	Heroic Melody Healing Strength Up
+「鸣奏·愈合乐章」治疗强度+{X}。	Healing Melody Healing Strength Up
+「激涌五重奏」祈愿伤害、治疗强度+{X}。	Fivefold Crescendo Oath DMG and Healing Strength Up
+「热情挥洒」祈愿伤害+{X}。（不包括「激昂·热情挥洒」）	Passion Burst Oath DMG Up
+「安可」祈愿伤害、治疗强度+{X}。	Encore Oath DMG and Healing Strength Up
+「烈焰音符」祈愿伤害+{X}。	Flame Note Oath DMG Up
+「炎律狂踏」祈愿伤害+{X}。	Flame's Rampage Oath DMG Up
+「猛烈挥击」祈愿伤害+{X}。	Fierce Strike Oath DMG Up
+「激昂·热情挥洒」祈愿伤害+{X}。	Passion Fury Oath DMG Up
+「音符热浪」治疗强度+{X}。	Sonic Surge Healing Strength Up
+「活力解放」治疗强度+{X}。	Note Healing Strength Up
+「音符」治疗强度+{X}。	Beat Performer Lucky Strike Oath DMG Up
+「火焰震击」祈愿伤害+{X}。	Flame Shock Oath DMG Up
+「烈火冲击」祈愿伤害+{X}。	Scorching Impact Oath DMG Up
+「炽热挥击」祈愿伤害+{X}。	Blazing Swing Oath DMG Up
+「炽烈升腾」祈愿伤害+{X}。	Blazing Ascension Oath DMG Up
+「狂热斩击」祈愿伤害+{X}。	Frenzied Slash Oath DMG Up
+「烬灭！狱炎不知火」祈愿伤害+{X}。	Cinderfall! Hellfire Shiranui Oath DMG Up
+「炽焰突袭」祈愿伤害+{X}。	Blazing Assault Oath DMG Up
+「暴怒劈斩」祈愿伤害+{X}。	Rage Cleave Oath DMG Up
+「斧风」祈愿伤害+{X}。	Axe Wind Oath DMG Up
+「迷狂炎舞」祈愿伤害+{X}。	Wildfire Dance Oath DMG Up
+「无羁坠星」祈愿伤害+{X}。	Unbound Meteor Oath DMG Up
+「如川流华斩」祈愿伤害+{X}。	Flowing Splendor Slash Oath DMG Up
+「无相火斩」祈愿伤害+{X}。	Formless Flame Slash Oath DMG Up
+「地火流星」祈愿伤害+{X}。	Hellfire Meteor Oath DMG Up
+「燃烧」祈愿伤害+{X}。	Burn Oath DMG Up
+「炎爆」祈愿伤害+{X}。	Explosion Oath DMG Up
+「迷狂炎舞·最后一斩」祈愿伤害+{X}。	Wildfire Dance: Final Slash Oath DMG Up
+「飞腾炎华」祈愿伤害+{X}。	Soaring Flame Oath DMG Up
+「大红莲丸」祈愿伤害+{X}。	Great Crimson Lotus Oath DMG Up
+「炎魔天落杀」祈愿伤害+{X}。	Falling Hellfire Oath DMG Up
+
+# Psychoscope (Oath season talent) helper buffs
+——箭层数	Dreamlike Arrow Rain - Arrow Stacks
+——箭内置CD	Dreamlike Arrow Rain - Internal CD
+——箭自删除buff	Dreamlike Arrow Rain - Arrow Self-Delete
+——箭自召唤	Dreamlike Arrow Rain - Arrow Self-Summon
+——连发标记	Rapid Fire Marker
+——定时器	Timer
+——消耗强化印记	Consume Enhanced Mark
+——战意削减	Battle Surge Reduction
+——目标对自己伤害降低	Target's DMG to Self Reduced
+——激励对自己加强	Inspire Boost on Self
+——属性交响·特攻	Stat Symphony: Special Attack
+——属性交响·专精	Stat Symphony: Expertise
+——属性交响·终极	Stat Symphony: Ultimate
+——连续5秒	5 Seconds Continuous
+——完美交响	Perfect Symphony
+
+# Psychoscope factors (class effects; skill names from the official tips in AttrDescription)
+无穷雷霆之力充能次数+1。	Volt Surge Charges +1
+施放雷切时额外附加一段雷切刀气。	Thunder Cut Extra Blade Wave
+施放超高出力时减少终极技能1秒剩余冷却时间。	Overdrive Reduces Ultimate CD
+获得雷压时有50%概率额外获得一层。	Thundrage Bonus Stack Chance
+月刃任何方式获取的幸运几率提升50%。	Moonblade Luck Chance Up
+月影攻击次数+3。	Moonstrike Hit Count +3
+千雷闪影之意持续时间+5秒。	Stormflash Duration Up
+月刃每对主目标造成10次伤害，触发1次雷霆之镰。	Moonblade Triggers Storm Scythe
+每次获得雷切时，将下一次一闪或飞雷神替换为坠龙闪和神影斩。	Thunder Cut Swaps to Dracoflash and Phantom Slash
+终极一斩伤害变为一次4连击，每次造成原本30%伤害。	Ultimate Slash Becomes a 4-Hit Combo
+每次施放终极技能后获得镰刃逆转，下次神罚之镰造成两次伤害。	Reversal Blade: Divine Sickle Hits Twice
+施放超高出力额外获得2个电荷之种。	Overdrive Grants Extra Charge Seeds
+雷影稳态G1	Stormblade Stasis G1
+雷影稳态G1 -子BUFF	Stormblade Stasis G1 (Sub-Buff)
+「冷酷征伐向外爆裂」伤害倍率+{X}。	Zeal Crusade: Outward Burst DMG Multiplier Up
+风怒状态攻速加100%	Wind Fury: Attack SPD Up
+疾风刺勇气消耗+20，伤害+%；释放后获得buff，接下来3秒内物理伤害无视防御+%	Gale Thrust: Higher Courage Cost, Armor Penetration
+忽略物理防御	Armor Penetration
+勇气低于50%时，龙击炮，神影螺旋伤害+%	Low Courage: Drake Cannon and Vortex Strike DMG Up
+勇气高于50%时，勇气风环伤害+%	High Courage: Valor Cyclone DMG Up
+风姿卓绝持续时间+{X}。	Galeform Duration Up
+龙卷风可以触发幸运一击。	Tornado Can Lucky Strike
+追击身法下的刹那、锐利冲击从任何方式获取的幸运几率提升{X}。	Chasing Step: Instant Edge and Sharp Impact Luck Chance Up
+追击身法层数+1。	Chasing Step Stack +1
+翔返勇气消耗-50%。	Skyfall Courage Cost Down
+风姿卓绝不再额外恢复勇气，生效期间破追造成伤害给主目标添加「风痕」印记，当龙击炮，疾驰锋刃命中时引爆1层造成%伤害，并使该次勇气恢复效率提高+%	Galeform: Windscar Mark
+风痕	Windscar
+风痕回勇气	Windscar Courage Restore
+每消耗x层风螺旋，接下来的x秒内勇气风环将变为风力大回环	Wind Spiral: Great Wind Cyclone
+风力大回旋	Great Wind Cyclone
+获得X次追击身法后，召唤大龙卷呼呼呼	Chasing Step: Summon Giant Tornado
+召唤大龙卷	Summon Giant Tornado
+风姿之后的下一次刹那消耗翻倍，且刹那和刹那连击伤害提升。	Next Instant Edge Double Cost, DMG Up
+刹那消耗翻倍, 且刹那和刹那连击伤害提升	Instant Edge Double Cost, Instant Edge and Combo DMG Up
+S4-灌注幸运	S4 - Permafrost Luck
+S4-苦寒灌注加速	S4 - Endless Cold: Permafrost CD Speed Up
+S4-额外水球	S4 - Extra Water Orb
+S4-下次灌注期间增伤	S4 - Next Permafrost DMG Up
+S4-苦寒期间加速-禁冰矛	S4 - Endless Cold Haste, No Frost Lance
+S4-苦寒期间冰箭回豆	S4 - Endless Cold: Ice Arrow Restores Frost Crystal
+S4-寒冰射线加玄冰	S4 - Frostbeam Grants Frost Crystal
+S4-寒风凝聚期间冰箭伤害+	S4 - Cold Wind Convergence: Ice Arrow DMG Up
+S4-冻结寒风获得冰之灌注	S4 - Frozen Gale Grants Permafrost
+S4-水旋涡回能提升	S4 - Maelstrom Energy Recovery Up
+S4-冰箭幸运	S4 - Ice Arrow Lucky Strike
+S4-冻结寒风刷水龙卷cd	S4 - Frozen Gale Resets Tidepool CD
+S4-狼弓多一只狼	S4 - Wildpack: Extra Wolf
+S4-暴风箭矢必爆	S4 - Storm Arrow Always Crits
+S4-光能满时提升上限	S4 - Full Photon Energy Raises Cap
+S4-精神凝聚期间宠物加速	S4 - Focus: Companion Attack SPD Up
+S4-精神凝聚期间二连射	S4 - Focus: Double Shot
+S4-鸟弓多一只鸟	S4 - Falconry: Extra Falcon
+S4-爆炸箭回能	S4 - Explosive Arrow Restores Energy
+S4-爆炸箭增伤	S4 - Explosive Arrow DMG Up
+S4-传奇野兽一起出	S4 - Legendary Beasts Appear Together
+S4-宠物伤害提升箭矢伤害	S4 - Companion DMG Boosts Arrow DMG
+S4-鸟弓减少上限	S4 - Falconry: Lower Photon Energy Cap
+S4-爆炸箭解锁层数上限	S4 - Explosive Arrow Stack Cap Removed
+圣光守卫持续时间+{X}。	Aegis Ward Duration Up
+英勇盾击对主目标造成暴击伤害时有5%概率触发投掷盾牌。	Valor Bash Crit Triggers Shield Toss
+炽热清算附加防御X%伤害。	Inferno Reckon Adds Defense-Based DMG
+每投掷1个盾牌，缩减终极技能剩余冷却时间0.5秒。	Shield Toss Reduces Ultimate CD
+先锋打击、裁决对主目标造成10次伤害时触发圣剑。	Vanguard Strike and Judgment Trigger Sacred Blade
+光明决心充能次数+1。	Radiance Charges +1
+每施放5次先锋追击触发圣光环形斩，对敌方目标造成10%自身生命值物理伤害。	Vanguard Hunt Triggers Divine Arc Slash
+圣环范围+100%且治疗时附加受治疗目标{X}最大生命。	Divine Circle Range Up, Max HP Heal
+获得光明圣盾时，有概率暴击，值受到暴击伤害影响。	Radiant Shield Can Crit
+治疗疲惫	Healing Fatigue
+裁决追击可以暴击，但暴击伤害固定为200%。造成仇恨降低30%。	Judgment Pursuit Can Crit
+光明决心抵挡比例提升，但是抵挡上限不超过本次伤害的80%。	Radiance Block Ratio Up
+圣剑对目标造成伤害时附加自身{X}当前生命。造成仇恨降低30%。	Sacred Blade Adds HP-Based DMG
+地崩山摧附加护盾值10%伤害。	Terra Sunder Adds Shield-Based DMG
+施放碎星崩裂回复2层碎星冲。	Starfall Restores Star Shatter
+施放地崩山摧时缩减1秒终极技能冷却时间。	Terra Sunder Reduces Ultimate CD
+砂石斗篷期间攻击速度+10%。	Sandshroud Attack SPD Up
+格挡反击可触发幸运一击。	Countercrush Can Lucky Strike
+触发格挡反击时叠加幸运一击倍率。	Countercrush Stacks Lucky Strike Multiplier
+幸运叠加	Luck Stacks
+施放终极技能后，下一次主动释放的巨岩轰击召唤一个巨大的岩石掉下，该伤害视为幸运效果伤害。	Stone Fist Giant Rock After Ultimate
+巨大岩石	Giant Rock
+施放岩怒之击时回复自身5%生命值。	Granite Fury Restores HP
+碎星冲消耗50%护盾值，附加护盾值100%伤害。造成仇恨降低30%。	Star Shatter Consumes Shield for DMG
+弱点打击触发时，减少砂石斗篷2秒冷却时间。	Weakness Strike Reduces Sandshroud CD
+勇者壁垒持续时间+10秒。	Brave Bastion Duration Up
+施放职业技能时，可以触发格挡反击。造成的仇恨降低30%。	Class Skills Trigger Countercrush
+再生脉冲变为瞬发。	Regen Pulse Becomes Instant
+再生脉冲暴击	Regen Pulse Crit
+自然庇护护盾量+{X}，每1%幸运使其额外+1%。	Nature Ward Shield Up (Luck Scaling)
+休止的治愈状态下，每5秒自动获得一个再生倍率。	Healing Rest: Auto Regen Bud
+赛季增伤	Season DMG Up
+获得再生蓓蕾时，减少0.1秒终极技能冷却时间。（每次大招给个上限）	Regen Bud Reduces Ultimate CD
+施放盛放注能后，下次森之祈愿治疗量+100%。	Blossom Charge: Next Grove Wish Heal Up
+每施放5次生命绽放。生成一株花株，且必定为苍月慰藉。	Life Bloom Spawns Moonlight Solace
+施放盛放注能获得持续{X}霸体效果，控制时间+1.5秒。	Blossom Charge Super Armor
+每添加一次滋养，缩减加速生长0.5秒冷却时间。	Nourish Reduces Fast Growth CD
+荆棘可以触发幸运一击。	Thorn Can Lucky Strike
+特殊攻击额外获得再生蓓蕾。	Special Attack Grants Extra Regen Bud
+获得再生蓓蕾提升精通	Regen Bud Mastery Up
+天赋【三色启示】强化： 获得三色启示时， 鼓舞效果翻倍持续15秒。	Tricolor Revelation Enhanced: Double Inspiration
+鼓舞翻倍标记	Double Inspiration Marker
+加速生长效果提升，但自身不受冷却加速属性影响。	Fast Growth Up, Ignores CD Boost
+森语稳态G2-盾	Verdant Oracle Stasis G2 - Shield
+施放增幅节拍时也可以触发1记安可琴弦（不受安可无限连奏影响）。	Amplified Beat Triggers Encore String
+万众瞩目期间，聚合乐章充能速度提升且始终为最大段数。	Center Stage: Harmonic Anthem Charges Faster
+英勇乐章冷却速度提升50%。	Heroic Melody CD Speed Up
+猛烈挥击攻击速度提升50%，施放猛烈挥击可以延长下一次终幕指令时间。	Fierce Strike Attack SPD Up, Extends Finale Command
+施放激涌五重奏后，延长自己和队友身上的安可持续时间。	Fivefold Crescendo Extends Encore
+施放愈合节拍使得受到安可作用的目标立即触发安可琴弦。	Healing Beat Triggers Encore Strings
+施放终极技能时召唤音箱，持续15秒。	Ultimate Summons Speaker
+每隔5秒，下一次消耗演奏热情时回复1个演奏热情。	Performance Passion Refund
+万众瞩目期间，每2秒自动施放一个烈焰狂想，每1%急速减少0.02秒间隔。	Center Stage: Auto Rhapsody of Flame
+施放英勇乐章时，缩减安可1秒冷却时间。	Heroic Melody Reduces Encore CD
+施放愈合节拍时，缩减安可0.5秒冷却时间。	Healing Beat Reduces Encore CD
+安可倍率*10。	Encore Multiplier x10
+安可倍率真正*10	Encore Multiplier x10 (Actual)
+灵魂稳态G2-盾	Beat Performer Stasis G2 - Shield
+通用稳态G1	Stasis G1
+通用稳态G2	Stasis G2
+通用稳态G3	Stasis G3
+通用稳态G3减伤	Stasis G3 DMG Reduction
+通用稳态G4	Stasis G4
+通用稳态G4-子BUFF	Stasis G4 (Sub-Buff)
+无相火斩必定暴击，且暴击伤害始终以{X}进行计算。	Formless Flame Slash Always Crits
+地火流星可以触发无相火斩	Hellfire Meteor Triggers Formless Flame Slash
+施放「炽焰突袭」对主目标造成伤害时会触发地火流星。	Blazing Assault Triggers Hellfire Meteor
+荒川之寂灭期间，无相火斩触发概率+x%， 无相火斩伤害-x%。	Wasteland's End: Formless Flame Slash Chance Up
+迷狂炎舞每造成一次暴击伤害为最后一斩累积的最终伤害加成*3。	Wildfire Dance Crits Boost Final Slash
+无尽之炎魔期间，赤红魂槽获取效率提升50%。	Endless Hellfire: Crimson Soul Gauge Up
+施放「如川流华斩」触发大红莲丸。	Flowing Splendor Slash Triggers Great Crimson Lotus
+每触发3次大红莲丸缩减终极技能剩余冷却时间0.5秒。	Great Crimson Lotus Reduces Ultimate CD
+暴怒批斩触发无相火斩概率翻倍，但是其他伤害触发无相火斩概率减半。	Rage Cleave Formless Flame Slash Chance Doubled
+斧风消耗-70%，范围提升2米。	Axe Wind Cost Down, Range Up
+天赋【炎舞的最后一斩】强化： 移除最终伤害加成上限， 每1%暴击额外提供最后一斩3%暴击伤害。	Wildfire Dance Final Slash Enhanced
+每次获得赤红血脉的层数翻倍。	Crimson Bloodline Stacks Doubled
+
+# S4 gear sets (spec names as the talent tables name them)
+S4套装-2件套-居合	S4 Set 2-Piece - Iaido
+S4套装-4件套-居合	S4 Set 4-Piece - Iaido
+S4套装-2件套-月刃	S4 Set 2-Piece - Moonstrike
+S4套装-4件套-月刃	S4 Set 4-Piece - Moonstrike
+S4套装-2件套-冰矛	S4 Set 2-Piece - Icicle
+S4套装-4件套-冰矛	S4 Set 4-Piece - Icicle
+S4套装-2件套-射线	S4 Set 2-Piece - Frostbeam
+S4套装-4件套-射线	S4 Set 4-Piece - Frostbeam
+S4套装-2件套-重装	S4 Set 2-Piece - Vanguard
+S4套装-4件套-重装	S4 Set 4-Piece - Vanguard
+S4套装-2件套-空枪	S4 Set 2-Piece - Skyward
+S4套装-4件套-空枪	S4 Set 4-Piece - Skyward
+S4套装-2件套-惩击	S4 Set 2-Piece - Smite
+S4套装-4件套-惩击	S4 Set 4-Piece - Smite
+S4套装-2件套-愈合	S4 Set 2-Piece - Lifebind
+S4套装-4件套-愈合	S4 Set 4-Piece - Lifebind
+S4套装-2件套-驭兽	S4 Set 2-Piece - Wildpack
+S4套装-4件套-驭兽	S4 Set 4-Piece - Wildpack
+S4套装-2件套-驯鹰	S4 Set 2-Piece - Falconry
+S4套装-4件套-驯鹰	S4 Set 4-Piece - Falconry
+S4套装-2件套-岩盾	S4 Set 2-Piece - Earthfort
+S4套装-4件套-岩盾	S4 Set 4-Piece - Earthfort
+S4套装-2件套-格挡	S4 Set 2-Piece - Block
+S4套装-4件套-格挡	S4 Set 4-Piece - Block
+S4套装-2件套-防盾	S4 Set 2-Piece - Recovery
+S4套装-4件套-防盾	S4 Set 4-Piece - Recovery
+S4套装-2件套-光盾	S4 Set 2-Piece - Shield
+S4套装-4件套-光盾	S4 Set 4-Piece - Shield
+S4套装-2件套-狂音	S4 Set 2-Piece - Dissonance
+S4套装-4件套-狂音	S4 Set 4-Piece - Dissonance
+S4套装-2件套-协奏	S4 Set 2-Piece - Concerto
+S4套装-4件套-协奏	S4 Set 4-Piece - Concerto
+S4套装-2件套-无相	S4 Set 2-Piece - Formless
+S4套装-4件套-无相	S4 Set 4-Piece - Formless
+S4套装-2件套-赤红	S4 Set 2-Piece - Crimson
+S4套装-4件套-赤红	S4 Set 4-Piece - Crimson
+
+# Class skill helpers
+雷切造成伤害减少	Thunder Cut DMG Dealt Reduced
+雷切天生BUFF	Thunder Cut Innate Buff
+协奏-歌携带BUFF	Concerto - Song Carrier Buff
+圣光守卫-免死	Aegis Ward - Death Prevention
+防盾大招引力BUFF	Shield Ultimate Pull Buff
+花语回升-鼓舞翻倍	Bloomheal - Double Inspiration
+自然庇护霸体	Nature Ward Super Armor
+鹿增伤	Stag DMG Up
+新-花株产生BUFF	New - Flower Stalk Spawn Buff
+红色花株【洞察启示】-新	Red Flower Stalk (Insight Revelation) - New
+黄色花株【虔诚启示】-新	Yellow Flower Stalk (Devout Revelation) - New
+蓝色花株【慰藉启示】-新	Blue Flower Stalk (Solace Revelation) - New
+花株生成倒计时	Flower Stalk Spawn Countdown
+神圣壁垒-光盾	Holy Bulwark - Light Shield
+属性增益标记	Stat Boost Marker
+勇气风环攻击判定BUFF	Valor Cyclone Hit Check Buff
+
+# S4 dungeon affixes / Oath trials / treasure monster
+S4开关开启表现	S4 Switch On Visual
+S4副本开关打开后 给玩家上的buff	S4 Dungeon Switch Player Buff
+S4誓言升级	S4 Oath Upgrade
+S4检测不同誓言数量给予效率	S4 Oath Count Efficiency Check
+S4试炼增益表现（一档）	S4 Trial Boost Visual (Tier 1)
+S4试炼增益表现（二档）	S4 Trial Boost Visual (Tier 2)
+S4试炼增益表现（三档）	S4 Trial Boost Visual (Tier 3)
+S4坚韧誓言（怪物）	S4 Steadfast Oath (Monster)
+S4词缀-炽心誓言预创建（伤害）	S4 Affix - Blazing Heart Oath Pre-Create (DMG)
+S4词缀-霜彻誓言预创建	S4 Affix - Frostbite Oath Pre-Create
+S4词缀-影缚誓言预创建	S4 Affix - Shadowbind Oath Pre-Create
+S4词缀-影缚誓言连线（伤害）	S4 Affix - Shadowbind Oath Link (DMG)
+S4词缀-可以交互装置	S4 Affix - Interactable Device
+S4词缀-开启祈愿试炼	S4 Affix - Start Oath Trial
+S4词缀-祈愿试炼装置常驻特效	S4 Affix - Oath Trial Device VFX
+S4宝藏怪召唤buff	S4 Treasure Monster Summon Buff
+S4宝藏怪触发器	S4 Treasure Monster Trigger
+S4宝藏怪出生buff	S4 Treasure Monster Spawn Buff
+S4宝藏怪材质	S4 Treasure Monster Material
+S4宝藏怪创建虚拟体	S4 Treasure Monster Create Dummy
+S4大师5冲分词缀	S4 Master 5 Ranking Affix
+S4宝藏交互物天生buff	S4 Treasure Interactable Innate Buff
+词缀：龙血	Affix: Dragon Blood
+词缀：传花	Affix: Pass the Flower
+传花_主控	Pass the Flower - Controller
+坏梦_效果	Bad Dream - Effect
+源初BUFF标记词条	Origin Buff Marker Affix
+额外技能标记词条	Extra Skill Marker Affix
+稀有度3标记词条	Rarity 3 Marker Affix
+职业词条标记	Class Affix Marker
+一般词条标记	Normal Affix Marker
+巨大宝箱专用奖励	Giant Chest Exclusive Reward
+稀有度4标记词条	Rarity 4 Marker Affix
+boss专用，受击时减少自身1%的血量，扣到死	Boss Only: Loses 1% HP per Hit (to Death)
+boss专用，受击时减少自身1%的血量，扣到50%	Boss Only: Loses 1% HP per Hit (to 50%)
+挑战模式boss材质	Challenge Mode Boss Material
+肉鸽-挑战模式穿越特效	Roguelike - Challenge Mode Warp VFX
+肉鸽本-传送阵离开	Roguelike Dungeon - Portal Exit
+肉鸽本-祭坛开启成功表现	Roguelike Dungeon - Altar Opened Visual
+肉鸽本-怪潮等级	Roguelike Dungeon - Monster Wave Level
+怪物生成保护	Monster Spawn Protection
+
+# Lampsis raid (829xxx); names from MonsterTable via ModelTable (拉普西斯 = Lampsis, 光人 = Light Construct)
+拉力buff	Pull Buff
+化光眷属出生buff	Light Familiar Spawn Buff
+传送到boss身边（玩家挂）	Teleport to Boss (Player)
+连线	Link
+余火（挂在物件上）	Embers (On Object)
+化光者真（玩家挂）	Lightbearer True (Player)
+光折射1（玩家）	Light Refraction 1 (Player)
+光折射中转1buff（玩家挂）	Light Refraction Relay 1 (Player)
+光折射次序1	Light Refraction Order 1
+光折射随机水晶数量3（挂在boss身上）	Light Refraction Random Crystals 3 (On Boss)
+光折射随机水晶数量4（挂在boss身上）	Light Refraction Random Crystals 4 (On Boss)
+光折射次序2	Light Refraction Order 2
+光折射次序3	Light Refraction Order 3
+光折射次序4	Light Refraction Order 4
+光折射次序5	Light Refraction Order 5
+水晶	Crystal
+光折射1（boss给1号玩家添加）	Light Refraction 1 (Boss to Player 1)
+光折射2（玩家）	Light Refraction 2 (Player)
+光折射3（玩家）	Light Refraction 3 (Player)
+光折射4（玩家）	Light Refraction 4 (Player)
+光折射5（玩家）	Light Refraction 5 (Player)
+折射持续光效	Refraction Lasting Light VFX
+光人加血读条	Light Construct Heal Cast
+化光者加血buff（给boss)	Lightbearer Heal Buff (Boss)
+拉普西斯血量喊话	Lampsis HP Callout
+连线玩家	Link Player
+化光眷属爆炸buff	Light Familiar Explosion Buff
+光人只能被拾取余火的玩家攻击	Light Construct Only Attackable by Ember Holders
+拉普西斯自带buff	Lampsis Innate Buff
+团灭惩罚buff(玩家挂）	Wipe Penalty Buff (Player)
+拉普西斯放技能无敌段	Lampsis Skill Invincibility
+连线（raid)	Link (Raid)
+中心伤害标记	Center DMG Marker
+困难-大师大剪刀添加眩晕	Hard - Master Giant Scissors Stun
+关卡难度6判断	Stage Difficulty 6 Check
+大师雷核罩	Master Thunder Core Shield
+大师16风核爆	Master 16 Wind Core Blast
+关卡难度7判断	Stage Difficulty 7 Check
+俯冲全体落雷	Dive Raid-Wide Lightning
+化光者加速30%	Lightbearer Speed +30%
+追人化光者施加减速	Chasing Lightbearer Slow
+龙卷风命中判断	Tornado Hit Check
+成就三-天光审判命中判断	Achievement 3 - Skylight Judgment Hit Check
+成就三-天光审判成功判定	Achievement 3 - Skylight Judgment Success Check
+成就四-圣裁追猎时间判断	Achievement 4 - Holy Hunt Time Check
+召唤光箭（主T挂）	Summon Light Arrows (Main Tank)
+转盘内圈符文（排布1）（判断奇数人数顺时针转，偶数逆时针转）	Wheel Inner Ring Runes (Layout 1)
+转盘中圈符文（排布1）	Wheel Middle Ring Runes (Layout 1)
+转盘外圈符文（排布1）	Wheel Outer Ring Runes (Layout 1)
+转盘顺时针转动	Wheel Clockwise Rotation
+boss符文1（boss随机给自己挂）	Boss Rune 1
+转盘阶段主控（challenge）	Wheel Phase Controller (Challenge)
+boss符文4（boss随机给自己挂）	Boss Rune 4
+转盘内圈tag	Wheel Inner Ring Tag
+转盘中圈tag	Wheel Middle Ring Tag
+转盘外圈tag	Wheel Outer Ring Tag
+转盘内圈符文1点亮	Wheel Inner Ring Rune 1 Lit
+转盘中圈符文1点亮	Wheel Middle Ring Rune 1 Lit
+转盘外圈符文1点亮	Wheel Outer Ring Rune 1 Lit
+boss护盾（转盘期间）	Boss Shield (Wheel Phase)
+点名光矛	Light Spear Target
+场景物件通用	Generic Scene Object
+光矛特效（挂在空模型monster上）	Light Spear VFX
+转盘内圈符文2点亮	Wheel Inner Ring Rune 2 Lit
+转盘中圈符文2点亮	Wheel Middle Ring Rune 2 Lit
+转盘外圈符文2点亮	Wheel Outer Ring Rune 2 Lit
+点名大剪刀1	Giant Scissors Target 1
+点名大剪刀2	Giant Scissors Target 2
+封禁跳跃	Jump Disabled
+光人连线通知	Light Construct Link Notice
+普攻生效（nightmare）	Basic Attack Active (Nightmare)
+金石生芽（主要）	Golden Stone Sprout (Main)
+拉普西斯主控	Lampsis Controller
+谒彼诸天_中心伤害扩散（nightmare）	Audience with the Heavens - Center DMG Spread (Nightmare)
+谒彼诸天_主要	Audience with the Heavens - Main
+喻形成殇_点名	Shaped into Sorrow - Target
+逐光人形材质	Lightchaser Figure Material
+逐光人形连线（nightmare）	Lightchaser Figure Link (Nightmare)
+全范围光新星补充特效	Full-Range Light Nova Extra VFX
+转盘内圈	Wheel Inner Ring
+转盘中圈	Wheel Middle Ring
+转盘外圈	Wheel Outer Ring
+头标符文（challenge）	Head Rune (Challenge)
+转盘激活	Wheel Activation
+孑然虔影控制（challenge）	Lone Devout Shadow Control (Challenge)
+BOSS-拉普西斯P2天生标记（唯一）	Boss - Lampsis P2 Innate Marker
+玩家-罪罚叠层计数	Player - Sin Penalty Stack Counter
+幻象-天生buff	Illusion - Innate Buff
+玩家-幻象箭雨点名	Player - Illusion Arrow Rain Target
+BOSS-长条点名逻辑	Boss - Line Target Logic
+玩家-被长条点名	Player - Line Targeted
+极光羽毛表现	Aurora Feather Visual
+机制-耀斑球查找玩家逻辑	Mechanic - Flare Orb Player Search
+机制-耀斑球降落信号	Mechanic - Flare Orb Landing Signal
+玩家-天光打击禁锢弹射（伤害）	Player - Skylight Strike Bind and Bounce (DMG)
+玩家-天光打击相机效果	Player - Skylight Strike Camera
+耀斑球-天光打击点名	Flare Orb - Skylight Strike Target
+机制-耀斑球和BOSS连线	Mechanic - Flare Orb to Boss Link
+机制-对地光柱（伤害）	Mechanic - Ground Light Pillar (DMG)
+标记-苍穹领域	Marker - Firmament Domain
+玩家-苍穹领域结算相机表现	Player - Firmament Domain Camera
+大漩涡-天生buff和常驻引力（伤害）	Great Vortex - Innate Buff and Constant Pull (DMG)
+大漩涡-强力引力	Great Vortex - Strong Pull
+大漩涡-点名排三连圈	Great Vortex - Triple Circle Target
+玩家-连续排陨石	Player - Consecutive Meteors
+大漩涡-膨胀致死和直线激光	Great Vortex - Expansion Kill and Line Laser
+大漩涡-坍塌爆炸（团灭）	Great Vortex - Collapse Explosion (Wipe)
+玩家-被扬升标记	Player - Ascension Marked
+BOSS-圣堂裁决转阶段标记	Boss - Sanctum Judgment Phase Marker
+玩家-机制用眩晕	Player - Mechanic Stun
+标记-场中心占位	Marker - Field Center Spot
+标记-裁决领域	Marker - Judgment Domain
+开场-光人不可选中	Opening - Light Construct Untargetable
+光人-激活后buff	Light Construct - Activated Buff
+开场-中央封印空气墙表现	Opening - Center Seal Air Wall Visual
+BOSS-漩涡小光人死亡计数中转	Boss - Vortex Light Construct Death Counter
+漩涡-机制结束延迟移除	Vortex - Delayed Removal After Mechanic
+玩家-死刑点名对T尖刺	Player - Tank Buster Spike
+玩家-被点名召唤幻象（假）	Player - Targeted to Summon Illusion (Fake)
+玩家-被点名召唤幻象（困难）	Player - Targeted to Summon Illusion (Hard)
+玩家-被点名召唤幻象（噩梦）	Player - Targeted to Summon Illusion (Nightmare)
+法阵-阶段切换隐藏标记	Magic Circle - Phase Switch Hidden Marker
+法阵-天生buff	Magic Circle - Innate Buff
+BOSS-苍穹机制叠层标记	Boss - Firmament Mechanic Stack Marker
+BOSS-苍穹机制正攻标记	Boss - Firmament Mechanic Frontal Marker
+BOSS-裁决阶段连线拉人（噩梦）	Boss - Judgment Phase Link Pull (Nightmare)
+BOSS-强力引力（噩梦）	Boss - Strong Pull (Nightmare)
+玩家-法阵分摊点名	Player - Magic Circle Share Target
+标记-光之塑形和召唤法阵	Marker - Light Shaping and Magic Circle Summon
+天光打击效果	Skylight Strike Effect
+剑盾幻象-斥力推开玩家	Sword-and-Shield Illusion - Repel Players
+标记-剑盾幻象天生buff	Marker - Sword-and-Shield Illusion Innate Buff
+BOSS-查找玩家先后点名分摊	Boss - Sequential Share Targets
+BOSS-漩涡阶段进度条	Boss - Vortex Phase Progress Bar
+耀斑球-延迟15秒让自己降落	Flare Orb - Land After 15s Delay
+枭兽-天生buff	Owlbeast - Innate Buff
+BOSS-挑战难度标记	Boss - Challenge Difficulty Marker
+枭兽-法阵召唤物技能结束移除自己	Owlbeast - Remove Self After Circle Skill
+拉普西斯三阶段-天生BUFF	Lampsis Phase 3 - Innate Buff
+中心挨揍天生buff	Center Target Innate Buff
+开始战斗BUFF	Combat Start Buff
+拉普西斯通用不可选中无敌BUFF	Lampsis Generic Untargetable Invincible Buff
+鸟-天生BUFF	Bird - Innate Buff
+光暗球-开始移动	Light/Dark Orb - Start Moving
+光球天生BUFF	Light Orb Innate Buff
+暗球天生BUFF	Dark Orb Innate Buff
+玩家持有光暗球	Player Holding Light/Dark Orb
+黑洞激活BUFF	Black Hole Activation Buff
+地面移动光球BUFF	Ground Moving Light Orb Buff
+光球允许移动BUFF	Light Orb Movement Allowed Buff
+光球移动结束标记	Light Orb Movement End Marker
+光球-检测buff	Light Orb - Check Buff
+暗球-检测buff	Dark Orb - Check Buff
+光暗球移动时玩家身上的BUFF	Player Buff While Light/Dark Orb Moves
+机制期间不被攻击	Not Attackable During Mechanic
+追踪球目标BUFF	Tracking Orb Target Buff
+光暗成就判定	Light/Dark Achievement Check
+初始平台传送门-拉普西斯（前端）	Starting Platform Portal - Lampsis (Client)
+初始平台传送门-拉普西斯极昼（前端）	Starting Platform Portal - Lampsis Midnight Sun (Client)
+初始平台传送门-拉普西斯极夜（前端）	Starting Platform Portal - Lampsis Polar Night (Client)
+测试用BUFF-不会被罪罚和暗之侵蚀	Test Buff - Immune to Sin Penalty and Dark Erosion
+全体落雷命中判断-成就四	Raid-Wide Lightning Hit Check - Achievement 4
+雷核大师15免疫判断	Thunder Core Master 15 Immunity Check
+大师雷核罩-B	Master Thunder Core Shield - B
+雷核大师15免疫判断-B	Thunder Core Master 15 Immunity Check - B
+团灭Buff	Wipe Buff
+大师雷核心防御力减少40%	Master Thunder Core DEF -40%
+大师风核爆	Master Wind Core Blast
+
+# Boyce epilogue / Reminiscence (852xxx); names from MonsterTable (约书亚 = Jossier, 伽雷斯 = Gareth)
+警戒范围（靠近房车）	Alert Range (Near RV)
+玩家限制buff（靠近房车）	Player Restriction Buff (Near RV)
+法法菈的回忆-禁用玩具	Fafala's Memory - Toys Disabled
+千梦织灵-角羊发光特效	Thousand Dreams Weaver - Caprahorn Glow VFX
+博伊斯后日谈3-变身博伊斯（拿长枪版）（战斗动作）	Boyce Epilogue 3 - Transform into Boyce (Lance, Combat Moves)
+博伊斯后日谈-隐藏武器并禁用技能	Boyce Epilogue - Hide Weapon and Disable Skills
+博伊斯后日谈-变身博伊斯（拿长枪版）（平常动作）	Boyce Epilogue - Transform into Boyce (Lance, Idle Moves)
+博伊斯后日谈-播放台词时禁止移动放技能	Boyce Epilogue - No Moving or Skills During Lines
+博伊斯后日谈-摆个pose吧	Boyce Epilogue - Strike a Pose
+博伊斯后日谈2-克劳斯开场对话和锁血	Boyce Epilogue 2 - Klaus Opening Dialogue and HP Lock
+博伊斯后日谈2-克劳斯血量检测40%	Boyce Epilogue 2 - Klaus 40% HP Check
+博伊斯后日谈2-克劳斯转场和对话	Boyce Epilogue 2 - Klaus Transition and Dialogue
+博伊斯后日谈2-克劳斯护盾	Boyce Epilogue 2 - Klaus Shield
+博伊斯后日谈2-克劳斯残影不可选中和自动释放技能	Boyce Epilogue 2 - Klaus Afterimage Untargetable, Auto Skills
+博伊斯后日谈2-克劳斯对话补充2	Boyce Epilogue 2 - Klaus Extra Dialogue 2
+博伊斯后日谈3-实验用滤镜	Boyce Epilogue 3 - Test Filter
+博伊斯后日谈3-镜子（小）	Boyce Epilogue 3 - Mirror (Small)
+博伊斯日后谈3-博伊斯开场无敌并释放演出技能	Boyce Epilogue 3 - Boyce Opening Invincible and Show Skill
+博伊斯后日谈3-小幻影出生特效和连线	Boyce Epilogue 3 - Small Phantom Spawn VFX and Link
+博伊斯后日谈3-我是博伊斯：连线用标记兼锁血	Boyce Epilogue 3 - I Am Boyce: Link Marker and HP Lock
+博伊斯后日谈3-博伊斯开局幻影存活时锁血加护盾	Boyce Epilogue 3 - Boyce HP Lock and Shield While Phantoms Live
+博伊斯后日谈3-小幻影锁血7秒	Boyce Epilogue 3 - Small Phantom 7s HP Lock
+博伊斯后日谈3-博伊斯第一次被击破血量检测	Boyce Epilogue 3 - Boyce First Break HP Check
+博伊斯后日谈3-博伊斯复活超级回血加锁血	Boyce Epilogue 3 - Boyce Revive Heal and HP Lock
+博伊斯后日谈3-博伊斯第一次被击破后释放复活技能	Boyce Epilogue 3 - Boyce Revive Skill After First Break
+博伊斯后日谈3-开场玩家不能移动9秒	Boyce Epilogue 3 - Players Rooted 9s at Start
+博伊斯后日谈3-让伽雷斯释放极十字斩	Boyce Epilogue 3 - Gareth Casts Ultimate Cross Slash
+博伊斯后日谈3-让博伊斯被击晕	Boyce Epilogue 3 - Boyce Stunned
+博伊斯后日谈3-镜子破碎	Boyce Epilogue 3 - Mirror Shatters
+博伊斯后日谈3-第二次三个小幻影无敌	Boyce Epilogue 3 - Second Three Phantoms Invincible
+博伊斯后日谈3-可以放绝招了！	Boyce Epilogue 3 - Ultimate Ready!
+回想体·约书亚-血量检测	Reminiscence: Jossier - HP Check
+回想体·约书亚-开局对话	Reminiscence: Jossier - Opening Dialogue
+回想体·约书亚-40%血量对话	Reminiscence: Jossier - 40% HP Dialogue
+回响体·约书亚-虚弱表演	Reminiscence: Jossier - Weakened Show
+回响体·约书亚-锁血效果1	Reminiscence: Jossier - HP Lock 1
+回响体·约书亚-锁血效果2	Reminiscence: Jossier - HP Lock 2
+博伊斯助战-冰柱冻结	Boyce Assist - Ice Pillar Freeze
+
+# Denvel / Nappo (881xxx); 丹佛 = Denvel
+点名8s-玩家1	Target 8s - Player 1
+跳传用	Jump Transfer
+跳转用2	Jump Transfer 2
+虚拟体标记buff	Dummy Marker Buff
+虚拟体标记buff1	Dummy Marker Buff 1
+虚拟体标记buff2	Dummy Marker Buff 2
+虚拟体标记buff3	Dummy Marker Buff 3
+虚拟体标记buff4	Dummy Marker Buff 4
+点名8s-玩家2	Target 8s - Player 2
+点名8s-玩家3	Target 8s - Player 3
+点名8s-玩家4	Target 8s - Player 4
+点名8s-玩家5	Target 8s - Player 5
+大师丹佛-精灵管理	Master Denvel - Spirit Control
+虚拟体大师标记	Dummy Master Marker
+大师丹佛-延迟爆炸	Master Denvel - Delayed Explosion
+被分身弓箭锁定	Locked by Clone Arrow
+铁头娜宝技能	Iron Head Nappo Skill
+守护娜宝技能	Guardian Nappo Skill
+祝福娜宝技能	Blessing Nappo Skill
+S4-被祝福的物件	S4 - Blessed Object
+S4-幻祸娜宝天生BUFF标记	S4 - Plague Nappo Innate Marker
+通用无视引力BUFF	Generic Ignore Pull Buff
+银娜宝技能球	Silver Nappo Skill Orb
+粉娜宝技能球	Pink Nappo Skill Orb
+金娜宝技能球	Gold Nappo Skill Orb
+深海娜宝召唤添加buff	Deep-Sea Nappo Summon Buff
+
+# Wirda dungeon (884400-884678); 薇尔达 = Wirda, 法法菈 = Fafala, 斯莱特 = Sleht, 噩兆 = Omen, 虚痕 = Void Scar
+薇尔达祈愿一灵魂火焰	Wirda Oath 1 - Soul Flame
+薇尔达祈愿一隐身	Wirda Oath 1 - Stealth
+薇尔达祈愿一白色聚光灯（灵魂灯火用）	Wirda Oath 1 - White Spotlight (Soul Flame)
+薇尔达祈愿一灵魂消散	Wirda Oath 1 - Soul Dissipation
+薇尔达祈愿一法加罗人幻影动作一	Wirda Oath 1 - Fagaro Phantom Action 1
+薇尔达祈愿一法加罗人幻影动作二	Wirda Oath 1 - Fagaro Phantom Action 2
+薇尔达祈愿一法加罗人幻影动作三	Wirda Oath 1 - Fagaro Phantom Action 3
+薇尔达祈愿降低亮度后处理	Wirda Oath - Dimming Post-Process
+薇尔达祈愿法法菈阶段金色后处理	Wirda Oath - Fafala Phase Gold Post-Process
+薇尔达祈愿降低亮度后处理2（稍亮	Wirda Oath - Dimming Post-Process 2 (Slightly Brighter)
+薇尔达祈愿二蓝色聚光灯（幻幻花用）	Wirda Oath 2 - Blue Spotlight (Illusion Flower)
+薇尔达道中金色幻影出生特效（颜色材质待替换	Wirda Path - Gold Phantom Spawn VFX
+薇尔达道中演出怪通用无敌	Wirda Path - Show Monster Invincible
+薇尔达祈愿三远处的法法菈幻影	Wirda Oath 3 - Distant Fafala Phantom
+薇尔达道中金色幻影消散（颜色待替换	Wirda Path - Gold Phantom Dissipation
+薇尔达道中法法菈助战演出1（待配置关卡事件	Wirda Path - Fafala Assist Show 1
+薇尔达道中法法菈助战演出2（待配置关卡事件	Wirda Path - Fafala Assist Show 2
+薇尔达道中法法菈助战防御演出3（待配置关卡事件	Wirda Path - Fafala Assist Defense Show 3
+薇尔达道中金色幻影精英哥布林火球攻击（需要数值配置）	Wirda Path - Gold Phantom Elite Goblin Fireball
+薇尔达道中金色幻影精英哥布林不可移动	Wirda Path - Gold Phantom Elite Goblin Rooted
+薇尔达道中金色幻影精英哥布林转阶段无敌	Wirda Path - Gold Phantom Elite Goblin Phase Invincible
+薇尔达道中金色幻影精英哥布林转阶段血量检测	Wirda Path - Gold Phantom Elite Goblin Phase HP Check
+薇尔达道中金色幻影精英哥布林转阶段血量检测后释放技能（还需配置关卡事件召唤法法菈	Wirda Path - Gold Phantom Elite Goblin Skill After Phase HP Check
+薇尔达道中斯莱特阶段红色后处理	Wirda Path - Sleht Phase Red Post-Process
+薇尔达道中蓝色封印门（需要改大小	Wirda Path - Blue Seal Gate
+薇尔达道中金色封印门（需要改大小	Wirda Path - Gold Seal Gate
+薇尔达道中红色封印门（需要改大小	Wirda Path - Red Seal Gate
+薇尔达道中红色幻影出生特效（颜色材质待替换	Wirda Path - Red Phantom Spawn VFX
+薇尔达道中斯莱特幻影演出1	Wirda Path - Sleht Phantom Show 1
+薇尔达道中斯莱特幻影演出3	Wirda Path - Sleht Phantom Show 3
+薇尔达道中斯莱特幻影演出2	Wirda Path - Sleht Phantom Show 2
+薇尔达道中蓝色幻影出生材质特效（材质待替换	Wirda Path - Blue Phantom Spawn Material VFX
+薇尔达道中红色幻影消散（颜色待替换	Wirda Path - Red Phantom Dissipation
+薇尔达道中普通粉色幻影怪材质和出生特效	Wirda Path - Pink Phantom Monster Material and Spawn VFX
+薇尔达幻影祈愿演出	Wirda Phantom Oath Show
+薇尔达P4阶段传送印记特效	Wirda P4 Teleport Mark VFX
+薇尔达P4脱离幻境传送门特效	Wirda P4 Illusion Exit Portal VFX
+薇尔达道中幻影精英黑衣人幻影分身不可移动	Wirda Path - Black-Clad Elite Phantom Clone Rooted
+薇尔达道中法法菈幻影攻击附带百分比伤害	Wirda Path - Fafala Phantom Attack %DMG
+薇尔达道中备用百分比伤害BUFF	Wirda Path - Backup %DMG Buff
+回忆幻影交互用特效	Memory Phantom Interaction VFX
+薇尔达道中P5开场跪地	Wirda Path - P5 Opening Kneel
+薇尔达道中幻境释放法法菈幻想额外增益BUFF	Wirda Path - Illusion Fafala Imagine Extra Bonus
+薇尔达道中黑衣人回场中检测用BUFF	Wirda Path - Black-Clad Return-to-Center Check
+薇尔达道中召唤法法菈幻影用BUFF	Wirda Path - Summon Fafala Phantom
+薇尔达道中五人本传送特效	Wirda Path - 5-Player Teleport VFX
+薇尔达道中五人本召唤黑衣人恶意点名BUFF	Wirda Path - 5-Player Black-Clad Malice Target
+薇尔达道中五人本呼唤法法菈攻击黑衣人击倒BUFF	Wirda Path - 5-Player Fafala Knocks Down Black-Clad
+薇尔达道中五人本用法法菈助战释放技能2	Wirda Path - 5-Player Fafala Assist Skill 2
+薇尔达道中第二次黑衣人战召唤法法菈幻影用BUFF	Wirda Path - Second Black-Clad Fight Summons Fafala Phantom
+薇尔达道中召唤薇尔达幻影用BUFF	Wirda Path - Summon Wirda Phantom
+薇尔达幻影祈愿演出（带BUFF，延时加自销毁版）	Wirda Phantom Oath Show (Buff, Delayed Self-Destruct)
+薇尔达道中秒杀小怪用百分比伤害BUFF	Wirda Path - Mob Instakill %DMG Buff
+薇尔达道中幻幻花死亡爆炸特效	Wirda Path - Illusion Flower Death Explosion VFX
+薇尔达道中可交互文本物体特效	Wirda Path - Interactable Text Object VFX
+薇尔达道中五人本道中小怪死亡计数0	Wirda Path - 5-Player Mob Death Count 0
+薇尔达道中五人本道中小怪死亡计数1	Wirda Path - 5-Player Mob Death Count 1
+薇尔达道中五人本道中小怪死亡计数2	Wirda Path - 5-Player Mob Death Count 2
+薇尔达道中五人本道中小怪死亡计数3	Wirda Path - 5-Player Mob Death Count 3
+薇尔达道中怪物持续给周围队友添加仇恨	Wirda Path - Monster Spreads Threat to Nearby Allies
+薇尔达道中法法菈幻影攻击受击特效召唤	Wirda Path - Fafala Phantom Hit VFX Summon
+回忆幻影交互用特效（金色）	Memory Phantom Interaction VFX (Gold)
+回忆幻影交互用特效（红色）	Memory Phantom Interaction VFX (Red)
+薇尔达幻影祈愿演出（大师难度版）	Wirda Phantom Oath Show (Master)
+薇尔达道中召唤薇尔达幻影用BUFF（大师难度版）	Wirda Path - Summon Wirda Phantom (Master)
+标记-薇尔达BOSS天生标记（唯一）	Marker - Wirda Boss Innate Marker
+玩家-屏幕闪白效果	Player - Screen Flash
+BOSS-压团血伤害光环（伤害）	Boss - Raid-Wide DMG Aura (DMG)
+玩家-致死对T尖刺	Player - Lethal Tank Spike
+玩家-分摊点名圈	Player - Share Target Circle
+标记-虚痕通用标记	Marker - Void Scar Generic
+标记-虚痕（黑）	Marker - Void Scar (Black)
+标记-虚痕（白）	Marker - Void Scar (White)
+虚痕-接受参数和目标连线	Void Scar - Parameter and Target Link
+虚痕-钢铁标记	Void Scar - Point-Blank Marker
+虚痕-月环标记	Void Scar - Donut Marker
+虚痕-随机一种标记	Void Scar - Random Marker
+虚痕-召唤扩散圈（往返）	Void Scar - Expanding Ring Summon (Round Trip)
+分身-虚雾侵蚀表现	Clone - Void Mist Erosion Visual
+虚痕-召唤扩散圈（单程）	Void Scar - Expanding Ring Summon (One Way)
+机制-法法菈领域	Mechanic - Fafala Domain
+机制-法法菈领域缩中	Mechanic - Fafala Domain Shrink Medium
+机制-法法菈领域缩小	Mechanic - Fafala Domain Shrink Small
+机制-法法菈领域缩非常小	Mechanic - Fafala Domain Shrink Very Small
+标记-在领域内	Marker - Inside Domain
+玩家-领域掉血（伤害）	Player - Domain HP Drain (DMG)
+BOSS-召唤领域	Boss - Summon Domain
+BOSS-重置后进战召唤领域	Boss - Summon Domain on Re-Engage
+BOSS-破韧台词	Boss - Break Line
+BOSS-破韧计数	Boss - Break Counter
+玩家-转阶段表演相机	Player - Phase Transition Camera
+机制-领域叠层缩小计数	Mechanic - Domain Stack Shrink Counter
+玩家-静止效果	Player - Stillness Effect
+标记-薇尔达转阶段和护盾逻辑	Marker - Wirda Phase and Shield Logic
+BOSS-转阶段计数	Boss - Phase Counter
+噩兆-天生buff	Omen - Innate Buff
+BOSS-狂暴前台词	Boss - Pre-Enrage Line
+BOSS-查找虚痕释放激光	Boss - Find Void Scar for Laser
+机制-薇尔达能量球	Mechanic - Wirda Energy Orb
+玩家-球跟随移动点名	Player - Orb Follow Target
+机制-星元池	Mechanic - Star Pool
+虚痕-环形圈1（伤害）	Void Scar - Ring 1 (DMG)
+虚痕-环形圈2（伤害）	Void Scar - Ring 2 (DMG)
+虚痕-环形圈3（伤害）	Void Scar - Ring 3 (DMG)
+虚痕-环形圈4（伤害）	Void Scar - Ring 4 (DMG)
+玩家-分摊点名圈接分散	Player - Share Circle then Spread
+玩家-分散点名圈	Player - Spread Circle
+虚痕-持续引力（伤害）	Void Scar - Constant Pull (DMG)
+虚痕-有序召唤一轮扩散圈	Void Scar - Ordered Ring Summon (1 Round)
+BOSS-移除所有虚痕	Boss - Remove All Void Scars
+BOSS-P3进P4启动虚痕	Boss - P3 to P4 Start Void Scars
+虚痕-有序召唤两轮扩散圈	Void Scar - Ordered Ring Summon (2 Rounds)
+BOSS-薇尔达虚雾表现	Boss - Wirda Void Mist Visual
+虚痕-静止效果	Void Scar - Stillness Effect
+虚痕-只有伤害没有引力（伤害）	Void Scar - DMG Only, No Pull (DMG)
+标记-薇尔达剧情本标记	Marker - Wirda Story Dungeon Marker
+玩家-大师难度虚痕点名渲染	Player - Master Void Scar Target Render
+虚痕混色结算判定	Void Scar Color Mix Check
+玩家-你被盯上了	Player - You're Being Watched
+玩家-初始化标记变量	Player - Init Marker Variables
+标记对对碰逻辑（伤害）	Marker Matching Logic (DMG)
+转换球虚拟体检测周围玩家	Conversion Orb Dummy Nearby Player Check
+虚痕点名逻辑（大师1）	Void Scar Target Logic (Master 1)
+玩家-该buff销毁时刷新标记显示	Player - Refresh Marker on Buff Removal
+机制-薇尔达能量球（大师变色）	Mechanic - Wirda Energy Orb (Master Color Change)
+机制-薇尔达能量球（大师变色）2	Mechanic - Wirda Energy Orb (Master Color Change) 2
+机制-薇尔达能量球（大师变色）3	Mechanic - Wirda Energy Orb (Master Color Change) 3
+机制-薇尔达能量球（大师变色）4	Mechanic - Wirda Energy Orb (Master Color Change) 4
+标记-能量球变黑	Marker - Energy Orb Turns Black
+标记-薇尔达能量球通用	Marker - Wirda Energy Orb Generic
+玩家-伴生暗影阶段标记（挑战成就）	Player - Shadow Companion Phase Marker (Challenge Achievement)
+玩家-伴生暗影被击（挑战成就）	Player - Shadow Companion Hit (Challenge Achievement)
+BOSS-赫鲁加之影计时（挑战成就）	Boss - Hruga's Shadow Timer (Challenge Achievement)
+玩家-满层幽影标记	Player - Max-Stack Shade Marker
+法法菈助战-命中目标计数（挑战成就）	Fafala Assist - Hit Counter (Challenge Achievement)
+
+# Boyce ice dungeon (884801-884863); 霍拉斯 = Horrace, 克劳斯 = Klaus
+星轨分身标记与各种免疫	Star Track Clone Marker and Immunities
+星轨左右刀标记	Star Track Left/Right Blade Marker
+普通冰枪分身标记与各种免疫	Normal Ice Lance Clone Marker and Immunities
+普通分身召唤触发buff	Normal Clone Summon Trigger Buff
+冰枪点名连线buff-由玩家发起连线buff添加者	Ice Lance Target Link Buff (Player-Initiated)
+冰枪检测旋风生成阻挡标记buff	Ice Lance Whirlwind Block Marker Check
+点名生成的冰锥标记buff	Target Ice Spike Marker Buff
+生成冰墙后冰墙标记buff	Ice Wall Marker Buff
+冰龙卷标记buff	Ice Tornado Marker Buff
+DDTN大圈-废弃	DDTN Big Circle (Deprecated)
+DDBOSS无敌各种buff	DD Boss Invincibility Buffs
+DDBOSS第一轮击退斥力buff	DD Boss First Round Knockback Repel
+DD本体连线	DD Main Body Link
+DD本体击退标记	DD Main Body Knockback Marker
+DD落地击退本体分身通用-不稳定困难	DD Landing Knockback Body/Clone (Unstable Hard)
+DD落地击退本体分身通用-大师	DD Landing Knockback Body/Clone (Master)
+大师难度镜子查找前方是否有冰墙-废弃	Master Mirror Ice Wall Check (Deprecated)
+DD镜子成功复读buff	DD Mirror Repeat Success Buff
+三连击退1	Triple Knockback 1
+三连击退2	Triple Knockback 2
+三连击退3	Triple Knockback 3
+三连击退BOSS状态判定buff	Triple Knockback Boss State Check
+三连击退斥力-不稳定困难	Triple Knockback Repel (Unstable Hard)
+三连击退斥力-大师	Triple Knockback Repel (Master)
+通用镜子标记	Generic Mirror Marker
+DD分身标记	DD Clone Marker
+镜子点名检测	Mirror Target Check
+DD大圈标记	DD Big Circle Marker
+场中标记	Field Center Marker
+龙卷风免疫相关buff	Tornado Immunity Buff
+斥力时给玩家上禁止移动buff	Repel Root on Players
+击退表现buff	Knockback Visual Buff
+DD冰枪连线buff	DD Ice Lance Link Buff
+召唤钢铁分身	Summon Point-Blank Clone
+半场刀右前左后	Half-Field Blade Right-Front Left-Back
+地火	Ground Fire
+爆炸地火剔除	Explosion Ground Fire Removal
+冰龙卷表现dummy标记	Ice Tornado Visual Dummy Marker
+道中博伊斯	Path Boyce
+道中男神官	Path Male Priest
+神官霍拉斯	Priest Horrace
+克劳斯	Klaus
+关卡stage1进度buff	Stage 1 Progress Buff
+连线buff功能buff关卡加	Link Function Buff (Stage)
+道中dot	Path DoT
+小怪材质	Mob Material
+岩蛆披风	Rock Maggot Cloak
+道中博伊斯消息表现buff	Path Boyce Message Visual Buff
+DDTN大圈	DDTN Big Circle
+新DD技能标记buff	New DD Skill Marker Buff
+大师DD复读检测	Master DD Repeat Check
+垂直标记	Vertical Marker
+大师传送开boss标记	Master Teleport Boss Start Marker
+星轨成就buff	Star Track Achievement Buff
+NPC不进仇恨 不可选中 不能被伤害	NPC No Threat, Untargetable, Invulnerable
+进入播放对话	Play Dialogue on Enter
+40播放对话	Play Dialogue at 40%
+20播放对话	Play Dialogue at 20%
+BUFF中转	Buff Relay
+
+# Field / elite monsters
+哥布林贤者生成目标火球造成持续伤害	Goblin Sage Fireball DoT
+哥布林贤者火焰护盾	Goblin Sage Fire Shield
+异教徒指定5目标效果	Cultist 5-Target Effect
+精英鲨鱼唤雷	Elite Shark Thunder Call
+精英虾姑召唤aoe	Elite Mantis Shrimp Summon AoE
+虾姑护盾	Mantis Shrimp Shield
+溪谷哥布林精英-灼烧	Valley Goblin Elite - Burn
+溪谷哥布林精英-火盾	Valley Goblin Elite - Fire Shield
+溪谷哥布林精英-全自动布置陷阱	Valley Goblin Elite - Auto Trap Placement
+鲨鱼王-木桩被动	Shark King - Training Dummy Passive
+虾姑王-主动护盾	Mantis Shrimp King - Active Shield
+溪谷斗技者小引力	Valley Brawler Minor Pull
+驱散+被动翻倍标记	Dispel + Passive Double Marker
+驱散生效	Dispel Active
+光龙-被动	Light Dragon - Passive
+双子角羊-被动	Twin Caprahorn - Passive
+双子角羊-暗羊-AOE	Twin Caprahorn - Dark Caprahorn AoE
+石头人-被动	Stone Golem - Passive
+机器人-被动	Robot - Passive
+近战姆克王-被动	Melee Muku King - Passive
+虾姑王-被动	Mantis Shrimp King - Passive
+虾姑王-减攻	Mantis Shrimp King - ATK Down
+精英虾姑被动	Elite Mantis Shrimp Passive
+鲨鱼人精英-被动	Elite Sharkman - Passive
+溪谷游猎者-被动	Valley Ranger - Passive
+溪谷哥布林贤者被动	Valley Goblin Sage Passive
+鲨鱼王木桩被动	Shark King Training Dummy Passive
+
+# Vehicles, toys, events
+载具-魔法少女扫帚疾跑特效	Vehicle - Magical Girl Broom Sprint VFX
+载具-魔法少女扫帚进阶疾跑特效	Vehicle - Magical Girl Broom Advanced Sprint VFX
+载具-埃及豹疾跑特效	Vehicle - Egyptian Leopard Sprint VFX
+载具-埃及豹进阶疾跑特效	Vehicle - Egyptian Leopard Advanced Sprint VFX
+载具-月亮船疾跑特效	Vehicle - Moon Boat Sprint VFX
+载具-月亮船进阶疾跑特效	Vehicle - Moon Boat Advanced Sprint VFX
+载具-飞机疾跑特效	Vehicle - Airplane Sprint VFX
+载具-飞机进阶疾跑特效	Vehicle - Airplane Advanced Sprint VFX
+载具-S4大师球疾跑特效	Vehicle - S4 Master Ball Sprint VFX
+载具-小僵尸马疾跑特效	Vehicle - Zombie Pony Sprint VFX
+载具-小僵尸马进阶疾跑特效	Vehicle - Zombie Pony Advanced Sprint VFX
+机械飞机-1技能强化判定	Mech Plane - Skill 1 Enhanced Check
+机械飞机-基础飞行特效	Mech Plane - Basic Flight VFX
+机械飞机-高定飞行特效	Mech Plane - Premium Flight VFX
+机械飞机-加速	Mech Plane - Speed Up
+机械飞机-天生buff	Mech Plane - Innate Buff
+机械飞机-高定标记	Mech Plane - Premium Marker
+坐骑溶解出现（快速）	Mount Dissolve Appear (Fast)
+使用玩具-罗罗拉烟花	Use Toy - Rorola Fireworks
+卡尼曼丰收祭幻形玩具-面包随机	Kanamia Harvest Festival Morph Toy - Random Bread
+卡尼曼丰收祭幻形玩具-水果随机	Kanamia Harvest Festival Morph Toy - Random Fruit
+使用玩具-达雅烟花	Use Toy - Darya Fireworks
+万圣节幻形玩具-随机哥布林	Halloween Morph Toy - Random Goblin
+万圣节幻形巡游-随机幻形	Halloween Morph Parade - Random Morph
+烟花筒释放-罗罗拉烟花	Firework Tube - Rorola Fireworks
+卡尼曼玩具-罗罗拉冲天炮	Kanamia Toy - Rorola Rocket
+卡尼曼丰收祭玩具-烟花罗罗拉冲天炮-升空	Kanamia Harvest Festival Toy - Rorola Rocket - Launch
+卡尼曼丰收祭玩具-罗罗拉冲天炮-爆炸	Kanamia Harvest Festival Toy - Rorola Rocket - Explosion
+冲天炮缓落免坠落伤害	Rocket Slow Fall, No Fall DMG
+玩具-达雅冲天炮	Toy - Darya Rocket
+玩具-烟花达雅冲天炮-升空	Toy - Darya Firework Rocket - Launch
+玩具-达雅冲天炮-爆炸	Toy - Darya Rocket - Explosion
+烟花筒释放-达雅烟花	Firework Tube - Darya Fireworks
+南瓜宝箱未开启	Pumpkin Chest Unopened
+南瓜宝箱打开消失	Pumpkin Chest Opens and Vanishes
+变身捣蛋哥布林	Transform: Prankster Goblin
+大拾取光点	Big Pickup Light
+大拾取光点消散	Big Pickup Light Fade
+骑士的黄昏-回想体材质	Knight's Twilight - Reminiscence Material
+美味之梦-变身虾菇	Delicious Dream - Mantis Shrimp Transform
+罗罗拉-月露莓蜜糕	Rorola - Moondew Berry Honey Cake
+
+# Mounts / pets / misc (mount and dungeon names are literal: the tables have no Chinese-to-English pair for them)
+浮游咪召唤添加buff	Floating Meow Summon Buff
+浮游咪-星砂糖召唤添加buff	Floating Meow (Star Sugar) Summon Buff
+今夜乘星出发副驾表现	Ride the Stars Tonight - Passenger Visual
+今夜乘星出发加速	Ride the Stars Tonight - Speed Up
+引梦至彼岸-基础光翼被动	Guiding Dreams Ashore - Basic Light Wings Passive
+引梦至彼岸-高阶光翼被动	Guiding Dreams Ashore - Advanced Light Wings Passive
+引梦至彼岸-基础光翼	Guiding Dreams Ashore - Basic Light Wings
+引梦至彼岸-高阶光翼	Guiding Dreams Ashore - Advanced Light Wings
+引梦至彼岸-定时器	Guiding Dreams Ashore - Timer
+引梦至彼岸-加速	Guiding Dreams Ashore - Speed Up
+不归魂-加速	Unreturning Soul - Speed Up
+不归魂高定-加速	Unreturning Soul Premium - Speed Up
+不归魂-额外加速	Unreturning Soul - Extra Speed Up
+GM测试BUFF-无限召唤	GM Test Buff - Infinite Summon
+青沫aoe	Qingmo AoE
+开锅吧，冒险者	Open the Pot, Adventurer
+远天的神槛幻想种子特效	Far Sky Threshold - Imagine Seed VFX
+远天的神槛卡特格里夫开局无敌	Far Sky Threshold - Kartgriff Opening Invincible
+远天的神槛幻影材质	Far Sky Threshold - Phantom Material
+远天的神槛洛塔尔表演2	Far Sky Threshold - Lothar Show 2
+远天的神槛斯莱特表演1	Far Sky Threshold - Sleht Show 1
+远天的神槛幻想种子触发特效	Far Sky Threshold - Imagine Seed Trigger VFX
+远天的神槛隔离门特效	Far Sky Threshold - Isolation Gate VFX
+远天的神槛复用治疗小机器人回血	Far Sky Threshold - Healing Robot Heal
+远天的神槛助战艾露娜用锁血	Far Sky Threshold - Airona Assist HP Lock
+远天的神槛卡特格里夫极昼导弹生成BUFF	Far Sky Threshold - Kartgriff Midnight Sun Missile Spawn
+远天的神槛卡特格里夫无法移动且霸体	Far Sky Threshold - Kartgriff Rooted and Super Armor
+远天的神槛净化装置净化动画	Far Sky Threshold - Purifier Animation
+远天的神槛表演怪用无敌	Far Sky Threshold - Show Monster Invincible
+远天的神槛传送至顶层后禁止移动3秒	Far Sky Threshold - Rooted 3s After Top-Floor Teleport
+
+# Skills whose id was reused with a new S4 label
+薇尔达道中金色幻影精英哥布林转阶段攻击（待配置关卡事件召唤法法菈	Wirda Path - Gold Phantom Elite Goblin Phase Attack
+薇尔达道中金色幻影精英哥布林火球攻击	Wirda Path - Gold Phantom Elite Goblin Fireball Attack
+那一天，冒险者想起来被眼球王支配的恐惧。。。	That Day, the Adventurer Remembered the Fear of the Eyeball King...
+点名必中标记大箭头buff	Guaranteed-Hit Target Marker Big Arrow Buff
