@@ -14,7 +14,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.34.0] - 2026-11-19
+## [2.34.0] - 2026-11-20
 _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds `SlicedImageElement`, `StackLayer.Rect` (`LayerRect`), `ImageElement.Crisp`, `GradientStop` and `BarStyle.Modern` window-bar opt-ins (Abstractions 2.34.0); additive, every default unchanged, no plugin rebuild._
 ### Added
 - Plugins can now draw their own frame art around a window that stretches cleanly as you resize it.
