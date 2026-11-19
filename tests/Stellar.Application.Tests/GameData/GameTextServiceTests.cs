@@ -27,6 +27,13 @@ public sealed class GameTextServiceTests
     [InlineData(55240, "Light Bombardment Damage Zone")]
     [InlineData(2203650, "Radiance Barrage adds Steel Beak")]   // 聚能射击 = skill 2234's official name
     [InlineData(2203660, "Celestial Eagle doesn't consume Steel Beak")]
+    // Official whole-label names from the table that grants the buff (release_4.7). Psychoscope: S4 template 16
+    // renamed S3 "Phantom Arrow" to "Dreamlike Arrow Rain" on the SAME root buff, newest season wins.
+    [InlineData(3002410, "Dreamlike Arrow Rain")]
+    [InlineData(3002490, "Arrow Rain: Arrow Mastery")]
+    // Module effect (ModEffectTable.EffectName). S3's label 【豪胆】 read "Boldness" (community wording); S4 relabelled
+    // it 精英打击 and the module is "Elite Strike" in game.
+    [InlineData(2300020, "Elite Strike")]
     public void UnnamedBuff_ResolvesToDesignName_FlaggedAsFallback(int id, string expected)
     {
         var svc = Loaded(out _);
