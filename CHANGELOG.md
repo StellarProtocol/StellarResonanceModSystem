@@ -14,12 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.34.0] - 2026-11-18
+## [2.34.0] - 2026-11-19
 _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds `SlicedImageElement`, `StackLayer.Rect` (`LayerRect`), `ImageElement.Crisp`, `GradientStop` and `BarStyle.Modern` window-bar opt-ins (Abstractions 2.34.0); additive, every default unchanged, no plugin rebuild._
 ### Added
 - Plugins can now draw their own frame art around a window that stretches cleanly as you resize it.
 - Plugins can now show richer health bars: gradient colours, a gloss, a soft glow, a trail that shows how much a big hit took, striped shield bands and tick marks.
 - Plugins can now place labels, bars and pictures at exact spots on top of their frame art.
+- Plugins can now show these styled bars with rounded ends.
 ### Developer notes
 - **`SlicedImageElement(Func<byte[]?> Left, Func<byte[]?> Middle, Func<byte[]?> Right, int Height)`**: horizontal 3-slice of three plugin PNGs — caps at native width (scaled uniformly if the PNG height ≠ `Height`), middle stretched between them; fills the width its parent gives it (min width = both caps). Three anchor-positioned `RawImage`s under one layout slot (no LayoutGroup, no per-refresh work). Pieces load crisp (no mip chain, bilinear) through the shared per-window `LoadIcon` dedup. Each Func is read once at build. Window (WindowBuilder) path only.
 - **`StackLayer.Rect`** (`LayerRect?`, init: `Left`/`Right`/`Top`/`Bottom` `float?`, `Width`/`Height` `float`): place a `LayerStackElement` overlay in a sub-rect of the stack, in px from its edges. Per axis: both insets = stretch; near inset only = pinned with a fixed size (0 = to the far edge); far inset only = pinned to the far edge. Anchors only (follows a resize, no per-refresh work); input blocking / `Background` use the placed rect. Null = cover the stack, unchanged.
