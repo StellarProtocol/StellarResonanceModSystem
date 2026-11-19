@@ -156,10 +156,10 @@ internal sealed partial class WindowBuilder
         var hexRow = UGuiPrimitives.NewChild("HexRow", col.transform);
         UGuiPrimitives.AddLayout(hexRow, gap: 6f, columns: UGuiPrimitives.RowMode);
         var lblGo = UGuiPrimitives.NewChild("HexLabel", hexRow.transform);
-        var lbl = lblGo.AddComponent<Text>();
+        var lbl = LegacyText.Add(lblGo);
         UGuiPrimitives.ConfigureText(lbl, Scaled(12), TextAnchor.MiddleLeft, bold: false);
         ApplyMenuFont(lbl);
-        lbl.color = _assets.MenuMuted; lbl.text = "Hex";
+        lbl.color = _assets.MenuMuted; LegacyText.SetAscii(lbl, "Hex");
         RegisterTextReskin(token, lbl, 12, muted: true);
 
         var set = cp.Set;

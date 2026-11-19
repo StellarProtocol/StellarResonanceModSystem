@@ -102,8 +102,12 @@ internal sealed partial class WindowBuilder
             var (pslot, pfg, pshadow) = MakeShadowedTextHud(row.transform, ls, TextAnchor.MiddleLeft, bold: true);
             HudTextReskin(token, pfg, pshadow);
             pslot.AddComponent<LayoutElement>().preferredWidth = HudBarPrefixWidth;
-            pfg.text = b.Prefix; pshadow.text = UGuiPrimitives.StripColorTags(b.Prefix);   // static caption — no binding needed
-            var pstyle = UGuiPrimitives.EmphasisStyle(true, b.Prefix);   // drop faux-bold if the caption is complex-script
+            // Static caption — no binding needed. Thai → twins (fg + shadow) in the shipped bold Thai face, routed while the
+            // legacy weight is still bold; then the legacy fallback drops faux-bold for complex scripts.
+            ThaiTmpTwin? ft = null, st = null;
+            LegacyText.Set(pfg, b.Prefix, ref ft); LegacyText.Set(pshadow, UGuiPrimitives.StripColorTags(b.Prefix), ref st);
+            if (ft != null) token.ReskinActions.Add(() => { ft.Sync(); st?.Sync(); });   // HUD size / colour reskin
+            var pstyle = UGuiPrimitives.EmphasisStyle(true, b.Prefix);
             pfg.fontStyle = pstyle; pshadow.fontStyle = pstyle;
         }
 
@@ -174,12 +178,12 @@ internal sealed partial class WindowBuilder
         shrt.anchorMin = Vector2.zero; shrt.anchorMax = Vector2.one;
         float sd = shadowOffset;
         shrt.offsetMin = new Vector2(sd, -sd); shrt.offsetMax = new Vector2(sd, -sd);
-        var shadow = shGo.AddComponent<Text>();
+        var shadow = LegacyText.Add(shGo);
         UGuiPrimitives.ConfigureText(shadow, fontSize, anchor, bold);
         shadow.color = HudShadowColor;
 
         var fgGo = UGuiPrimitives.NewChild("Fg", slot.transform);       // sibling 1 → on top; laid out, sizes the slot
-        var fg = fgGo.AddComponent<Text>();
+        var fg = LegacyText.Add(fgGo);
         UGuiPrimitives.ConfigureText(fg, fontSize, anchor, bold);
         fg.color = HudTextColor;
         return (slot, fg, shadow);

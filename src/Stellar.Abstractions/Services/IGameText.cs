@@ -66,4 +66,14 @@ public interface IGameText
     /// Allocates only on the last fallback. Before <see cref="IsReady"/> this returns step 1 or 4.
     /// </summary>
     string ResolveDisplayName(GameTextKind kind, int id, string? gameName, out bool isDesignFallback);
+
+    /// <summary>
+    /// What kind of effect buff <paramref name="buffId"/> is — crowd control, immunity, shield, heal, damage over
+    /// time, stat down, stat up, else <see cref="EffectCategory.Default"/> — for drawing an icon-less effect with
+    /// <see cref="IEffectPlaceholders.LoadEffectPlaceholder"/>. A keyword guess over the row's design label (the game's own
+    /// name when it is a real one, plus <see cref="GetDesignName"/>), first match wins in that order; the game has no
+    /// category field. Returns <see cref="EffectCategory.Default"/> until <see cref="IsReady"/> (re-ask on
+    /// <see cref="Ready"/>). Cached per id: O(1) and allocation-free after the first call for an id. Added in 2.34.0.
+    /// </summary>
+    EffectCategory GetEffectCategory(int buffId);
 }

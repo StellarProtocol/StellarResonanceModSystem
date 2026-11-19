@@ -85,7 +85,7 @@ internal sealed partial class WindowBuilder
         var chgBg = chargeGo.AddComponent<Image>(); chgBg.color = new Color(0.04f, 0.05f, 0.07f, 0.92f); chgBg.raycastTarget = false;
         var chgTextGo = UGuiPrimitives.NewChild("Txt", chargeGo.transform);
         UGuiPrimitives.Stretch(chgTextGo);
-        var charge = chgTextGo.AddComponent<Text>();
+        var charge = LegacyText.Add(chgTextGo);
         UGuiPrimitives.ConfigureText(charge, Scaled(9), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(charge); charge.color = new Color(1f, 0.86f, 0.4f, 1f);
         RegisterTextSizeReskin(token, charge, 9);
@@ -126,11 +126,11 @@ internal sealed partial class WindowBuilder
 
             bool showChg = slot.ChargeCount > 1;
             cell.ChargeGo.SetActive(showChg);
-            if (showChg) cell.Charge.text = slot.ChargesAvailable.ToString();
+            if (showChg) LegacyText.SetAscii(cell.Charge, slot.ChargesAvailable.ToString());
 
             bool showSecsNow = showSecs && slot.RemainingSeconds > 0;
             cell.SecsGo.SetActive(showSecsNow);
-            if (showSecsNow) cell.Secs.text = slot.RemainingSeconds.ToString();
+            if (showSecsNow) LegacyText.SetAscii(cell.Secs, slot.RemainingSeconds.ToString());
         }
 
         cache = new ImagineCellCache

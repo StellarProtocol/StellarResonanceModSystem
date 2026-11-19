@@ -285,10 +285,10 @@ internal sealed partial class WindowBuilder
         vlg.childAlignment = TextAnchor.UpperLeft;
         go.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         var labelGo = UGuiPrimitives.NewChild("Label", go.transform);
-        var label = labelGo.AddComponent<Text>();
+        var label = LegacyText.Add(labelGo);
         UGuiPrimitives.ConfigureText(label, Scaled(11), TextAnchor.MiddleLeft, bold: false);
-        label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText; label.text = text;
-        if (ThaiTmpCapable) ThaiTmpTwin.RouteStatic(label, text);   // Thai item → shipped Thai face (TMP twin)
+        label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText;
+        LegacyText.SetStatic(label, text);   // Thai item → shipped Thai face (TMP twin)
     }
 
     // Place the panel's top-left just under the trigger (open upward if it would overflow the screen bottom),

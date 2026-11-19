@@ -31,8 +31,8 @@ internal sealed partial class WindowBuilder
         if (th == null)
         {
             var tGo = UGuiPrimitives.NewChild("Title", title.transform);
-            var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true); ApplyMenuFont(t);
-            t.color = _assets.MenuText; t.text = titleText; t.raycastTarget = false;
+            var t = LegacyText.Add(tGo); UGuiPrimitives.ConfigureText(t, 13, TextAnchor.MiddleLeft, bold: true); ApplyMenuFont(t);
+            t.color = _assets.MenuText; t.raycastTarget = false; LegacyText.SetStatic(t, titleText);
             t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, titleText);   // crisp per-script weight
             tl = t;
         }
@@ -73,8 +73,8 @@ internal sealed partial class WindowBuilder
         if (th == null)
         {
             var tGo = UGuiPrimitives.NewChild("Title", banner.transform);
-            var t = tGo.AddComponent<Text>(); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true); ApplyMenuFont(t);
-            t.color = bannerTitleColor; t.text = titleText; t.raycastTarget = false;
+            var t = LegacyText.Add(tGo); UGuiPrimitives.ConfigureText(t, 12, TextAnchor.MiddleLeft, bold: true); ApplyMenuFont(t);
+            t.color = bannerTitleColor; t.raycastTarget = false; LegacyText.SetStatic(t, titleText);
             t.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, titleText);   // crisp per-script weight
             tl = t;
         }

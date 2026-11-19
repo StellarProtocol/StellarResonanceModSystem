@@ -87,7 +87,11 @@ internal sealed partial class UGuiTextInput
         _multiLine = multiLine;
         _singleLine = singleLine && !multiLine;   // mutually exclusive (no caller passes both); multiLine wins
         if (multiLine) return BuildTextArea(parent, lines);   // ScrollRect-wrapped growing field (TextArea partial)
-        if (richEmoji && TryBuildRich(parent) is { } rich) return rich;
+        // Default / single-line: ALWAYS the TMP field when available (fw 2.34.0, #169) — plain (literal text) unless
+        // RichEmoji — so typed or shown Thai draws in the shipped Thai face with mark positioning, with the caret and
+        // selection TMP computes from that same face. A legacy InputField can't: its caret / selection come from the
+        // legacy Text's own glyph metrics, so a TMP twin over it would mis-place both. No TMP → the legacy field below.
+        if (TryBuildRich(parent, richEmoji) is { } rich) return rich;
         var go = BuildBox(parent, out var bg);
         var txt = CreateText(go.transform);
         AttachField(go, txt, bg);
@@ -113,7 +117,7 @@ internal sealed partial class UGuiTextInput
     // would widen the field and the window past InputElement.Width; unset values (preferredHeight in the default
     // mode) still fall through to TMP, so the default mode still grows downward like the legacy one. Any failure
     // tears the half-built box down (inactive at once, so this frame's layout skips it) and returns null → legacy.
-    private GameObject? TryBuildRich(Transform parent)
+    private GameObject? TryBuildRich(Transform parent, bool richEmoji)
     {
         var create = StyledTextFactory.CreateRichInput;
         if (create == null) { LogRichFallback("TMP rich-field factory not registered"); return null; }
@@ -123,7 +127,7 @@ internal sealed partial class UGuiTextInput
             go = BuildBox(parent, out var bg);
             go.GetComponent<LayoutElement>().layoutPriority = 2;
             _bg = bg;
-            _rich = create(go, new RichInputSpec(_singleLine, bg, OnFieldValueChanged, OnFieldSubmit));
+            _rich = create(go, new RichInputSpec(_singleLine, bg, OnFieldValueChanged, OnFieldSubmit) { Rich = richEmoji });
             if (_rich != null) return go;
             LogRichFallback("TMP faces unavailable");
         }
@@ -145,7 +149,7 @@ internal sealed partial class UGuiTextInput
     {
         var textGo = NewChild("Text", parent);
         Stretch(textGo);
-        var txt = textGo.AddComponent<Text>();
+        var txt = LegacyText.Add(textGo);
         txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         txt.fontSize = 13; txt.color = Color.black; txt.alignment = TextAnchor.MiddleLeft;
         txt.supportRichText = false;

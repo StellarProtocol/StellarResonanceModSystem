@@ -110,7 +110,7 @@ internal sealed partial class WindowBuilder
         if (mini)
         {
             sep = AddMeterText(token, values.transform, ("Sep", MiniFont, true, Color.white));
-            sep.text = "·"; sep.alignByGeometry = false;
+            LegacyText.SetAscii(sep, "·"); sep.alignByGeometry = false;
             UGuiPrimitives.AddReadabilityOutline(sep.gameObject).enabled = false;
         }
         MoveValue(b.Primary, values.transform, token, size);
@@ -142,9 +142,9 @@ internal sealed partial class WindowBuilder
         {
             if (ps == null || le == null) return;
             var keep = ps.text;
-            ps.text = PerSecondSample;
+            LegacyText.SetAscii(ps, PerSecondSample);   // a digits sample, measured
             le.minWidth = Mathf.Ceil(ps.preferredWidth);
-            ps.text = keep;
+            LegacyText.SetRouted(ps, keep);   // restore what the binding routed there
         }
         Measure();
         token.ReskinActions.Add(Measure);   // after the size reskin registered by MoveValue

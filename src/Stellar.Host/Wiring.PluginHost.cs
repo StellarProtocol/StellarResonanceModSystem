@@ -111,7 +111,8 @@ public sealed partial class BootstrapPlugin
             Stellar.Application.Services.UnavailablePluginDownloads.Instance,
             _reShadeService!, _voiceService!,
             _playerProfileService!,
-            _friendsService!, new Stellar.Application.Services.GameTextService(log, _framework!.Post));
+            _friendsService!, new Stellar.Application.Services.GameTextService(log, _framework!.Post,
+                buffGameName: id => _gameDataService!.Combat.GetBuff(id)?.Name));
     }
 
     /// <summary>

@@ -15,6 +15,8 @@ internal sealed partial class UGuiTextInput
     private float _phLeftPad;                                    // last ApplyStyle left pad (hint lines up with text)
 
     /// <summary>Set the empty-field hint ("" hides it). No-op when not built or in TextArea mode.</summary>
+    [LegacyTextAllowed("legacy-field hint: only built when the TMP field is unavailable (then no Thai twin can be either); "
+        + "InputField toggles it via Graphic.enabled, which a twin could not follow")]
     public void SetPlaceholder(string text)
     {
         text ??= string.Empty;
@@ -42,7 +44,7 @@ internal sealed partial class UGuiTextInput
     {
         var go = NewChild("Placeholder", _field!.transform);
         Stretch(go);
-        var ph = go.AddComponent<Text>();
+        var ph = LegacyText.Add(go);
         var src = _field.textComponent;
         ph.font = src != null && src.font != null ? src.font : Resources.GetBuiltinResource<Font>("Arial.ttf");
         ph.fontSize = src != null ? src.fontSize : 13;

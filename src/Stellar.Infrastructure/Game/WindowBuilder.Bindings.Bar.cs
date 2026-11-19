@@ -17,6 +17,9 @@ internal sealed partial class WindowBuilder
         public Func<float> Fraction = null!;
         // Label + (HudOverlay only) its offset-twin shadow. LabelShadow null on the Menu path → unchanged.
         public Text? Label; public Text? LabelShadow; public Func<string>? LabelFn;
+        // A Thai label → the TMP twin (ThaiTmpTwin; an outlined inside label keeps its edge); the HudOverlay shadow Text
+        // gets its own twin. On by default (#169); off once a twin proved unbuildable here.
+        public bool ThaiTmp = true; private ThaiTmpTwin? _thai, _shadowThai;
         // Per-refresh fill colour (BarElement.FillColorFn). FillGraphic/FillColorFn left null → the fill keeps its
         // build-time colour (the static BarElement.Fill, painted once at build) with no override machinery — a bar
         // that doesn't set FillColorFn is byte-for-byte unchanged. Mirrors TextBinding.ColorFn: Override every poll a
@@ -50,7 +53,19 @@ internal sealed partial class WindowBuilder
             if (Label != null && LabelFn != null)
             {
                 var s = LabelFn();
-                if (s != _lastLabel) { Label.text = s; if (LabelShadow != null) LabelShadow.text = UGuiPrimitives.StripColorTags(s); _lastLabel = s; }
+                if (s != _lastLabel)
+                {
+                    _lastLabel = s;
+                    // A Thai label shows on the TMP twin (shipped Thai face); anything else on the legacy Text.
+                    if (ThaiTmp) LegacyText.Set(Label, s, ref _thai); else LegacyText.SetRouted(Label, s);
+                    if (ThaiTmp && _thai == null && GlyphScript.IsThai(s)) ThaiTmp = false;   // unbuildable: stop retrying
+                    if (LabelShadow != null)
+                    {
+                        var sh = UGuiPrimitives.StripColorTags(s);
+                        if (ThaiTmp) LegacyText.Set(LabelShadow, sh, ref _shadowThai); else LegacyText.SetRouted(LabelShadow, sh);
+                    }
+                }
+                else if (_thai is { Showing: true }) { _thai.Sync(); _shadowThai?.Sync(); }   // mirror a reskin's size onto the twins
             }
             if (FillGraphic != null && FillColorFn != null) ApplyFillColor(FillColorFn());
             if (TrackGraphic != null && TrackColorFn != null) ApplyTrackColor(TrackColorFn());

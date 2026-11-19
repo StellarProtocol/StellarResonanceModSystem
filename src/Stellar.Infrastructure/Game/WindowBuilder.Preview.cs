@@ -57,7 +57,7 @@ internal sealed partial class WindowBuilder
         token.ReskinActions.Add(() => { if (bgImg != null) bgImg.sprite = _assets.ButtonAccentBg; });
 
         var labelGo = UGuiPrimitives.NewChild("Label", go.transform);
-        var label = labelGo.AddComponent<Text>();
+        var label = LegacyText.Add(labelGo);
         UGuiPrimitives.ConfigureText(label, Scaled(12), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(label);
         label.color = _assets.MenuText;
@@ -104,12 +104,15 @@ internal sealed partial class WindowBuilder
     private void BuildBarPrefix(BarElement b, Transform row, int ls, WindowToken token)
     {
         var pslot = UGuiPrimitives.NewChild("Prefix", row);
-        var ptxt = pslot.AddComponent<Text>();
+        var ptxt = LegacyText.Add(pslot);
         UGuiPrimitives.ConfigureText(ptxt, Scaled(ls), TextAnchor.MiddleLeft, bold: true);
         ApplyMenuFont(ptxt);
-        ptxt.color = _assets.MenuText; ptxt.text = b.Prefix;
+        ptxt.color = _assets.MenuText;
+        ThaiTmpTwin? thai = null;   // static caption: Thai → TMP twin in the shipped bold Thai face
+        LegacyText.Set(ptxt, b.Prefix, ref thai);
         pslot.AddComponent<LayoutElement>().preferredWidth = 60f;
         RegisterTextReskin(token, ptxt, ls);
+        if (thai != null) token.ReskinActions.Add(() => thai.Sync());   // theme colour / Font Scale onto the twin
     }
 
     // Default-style label: either the beside-the-bar right-aligned Num slot (today's behaviour), or — when
@@ -123,7 +126,7 @@ internal sealed partial class WindowBuilder
         {
             var slot = UGuiPrimitives.NewChild("Num", clipRt.parent);   // overlay ON the track, over the fill
             UGuiPrimitives.Stretch(slot);
-            txt = slot.AddComponent<Text>();
+            txt = LegacyText.Add(slot);
             UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleCenter, bold: false);
             txt.raycastTarget = false;
             UGuiPrimitives.AddReadabilityOutline(txt.gameObject);   // dark halo so the centred label reads over any fill colour
@@ -133,7 +136,7 @@ internal sealed partial class WindowBuilder
         {
             var slot = UGuiPrimitives.NewChild("Num", row);
             slot.AddComponent<LayoutElement>().preferredWidth = 84f;
-            txt = slot.AddComponent<Text>();
+            txt = LegacyText.Add(slot);
             UGuiPrimitives.ConfigureText(txt, Scaled(ls), TextAnchor.MiddleRight, bold: false);
         }
         ApplyMenuFont(txt);
@@ -237,7 +240,7 @@ internal sealed partial class WindowBuilder
             // Modern bar that sets neither keeps the plain white overlay with no override machinery — byte-for-byte
             // unchanged. The size/font reskin (RegisterTextSizeReskin) never touches colour, so this survives theme
             // switches. Secondary (right) label is intentionally left white — primary is the requirement.
-            var bind = new TextBinding { C = ModernLabel(b, token, track, "Primary", labelAnchor), TextFn = b.Label };
+            var bind = new TextBinding { C = ModernLabel(b, token, track, "Primary", labelAnchor), TextFn = b.Label, ScriptWeight = true };
             if (b.LabelColorFn != null || b.LabelColor is not null)
             {
                 var fn = b.LabelColorFn; var stat = b.LabelColor;
@@ -246,10 +249,12 @@ internal sealed partial class WindowBuilder
             token.Texts.Add(bind);
         }
         if (b.SecondaryLabel != null)   // SecondaryLabelColorFn null → no colour machinery (white), unchanged
-            token.Texts.Add(new TextBinding { C = ModernLabel(b, token, track, "Secondary", TextAnchor.MiddleRight), TextFn = b.SecondaryLabel, ColorFn = b.SecondaryLabelColorFn });
+            token.Texts.Add(new TextBinding { C = ModernLabel(b, token, track, "Secondary", TextAnchor.MiddleRight), TextFn = b.SecondaryLabel, ColorFn = b.SecondaryLabelColorFn, ScriptWeight = true });
     }
 
     // The Modern overlay label + the 2.34.0 LabelInset / LabelOutline opt-ins (defaults = AddOverlayText as before).
+    // Thai (player / monster names) moves to the TMP twin in the shipped bold Thai face (outlined when LabelOutline);
+    // CJK stays on this Text at crisp regular weight (TextBinding.ThaiTmp default / ScriptWeight).
     private Text ModernLabel(BarElement b, WindowToken token, Transform track, string name, TextAnchor anchor)
     {
         var txt = AddOverlayText(token, track, name, anchor, b.LabelFontSize > 0 ? b.LabelFontSize : 10);

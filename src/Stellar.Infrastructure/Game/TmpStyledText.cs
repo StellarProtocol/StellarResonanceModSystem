@@ -103,6 +103,11 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         FitDecorations();
     }
 
+    public void SetDrawn(bool on)
+    {
+        if (_t != null && _t.enabled != on) _t.enabled = on;
+    }
+
     public void SetColor(Color c)
     {
         _t.color = c;
@@ -196,7 +201,26 @@ internal sealed partial class TmpStyledText : IStyledTextHandle
         var st = spec.Strikethrough ? BuildLine(go.transform, "Strike", spec.Color) : (null, null);
         var handle = new TmpStyledText(t, spec, ul, st);
         handle.SetText(spec.Text);
+        LogMaterialOnce(t);
         return handle;
+    }
+
+    // One line per session: the shader + keywords styled text actually renders with (the runtime-created face material).
+    // Its shader_feature variants (OUTLINE_ON / UNDERLAY_ON) are not in the game build, which is why outlined Thai twins
+    // draw their edge as offset copies (ThaiTmpHalo) instead of an SDF outline.
+    private static bool _materialLogged;
+    private static void LogMaterialOnce(TextMeshProUGUI t)
+    {
+        if (_materialLogged) return;
+        _materialLogged = true;
+        try
+        {
+            var m = t.fontSharedMaterial;
+            var kw = m != null ? m.shaderKeywords : null;
+            StyledTextFactory.Log?.Invoke($"[Window] TMP styled text material: {(m != null ? m.name : "null")}, shader "
+                + $"{(m != null && m.shader != null ? m.shader.name : "null")}, keywords [{(kw != null ? string.Join(" ", kw) : "")}]");
+        }
+        catch (System.Exception ex) { StyledTextFactory.Log?.Invoke($"[Window] TMP material probe failed: {ex.GetType().Name}"); }
     }
 
     // A plain uGUI Image line as a free-positioned child of the text (the text GO has no layout group,

@@ -360,7 +360,7 @@ internal sealed partial class WindowBuilder
     private Text ChartLabel(Transform parent, TextAnchor anchor, string name, WindowToken token, bool bold = false)
     {
         var go = UGuiPrimitives.NewChild(name, parent);
-        var txt = go.AddComponent<Text>();
+        var txt = LegacyText.Add(go);
         UGuiPrimitives.ConfigureText(txt, Scaled(ChartLabelSize), anchor, bold: bold);
         // Centre on glyph GEOMETRY, not the font line-box: under a Middle anchor the OS dynamic font sits the
         // ink ~2-3px low (see BuildText / MeterRow / imgui-root-causes.md item 6). Every chart label is

@@ -21,6 +21,21 @@ internal sealed partial class WindowBuilder
     {
         private ThaiTmpTwin? _nameThai;
         private bool _nameThaiOff;   // the twin can't be built here: stop retrying on every Thai name
+        // The other plugin-text slots (fw #169): class, spec and the two free-string bar values. Same twin, built on
+        // the first Thai string; Rounded makes class / spec Ellipsis twins so the top-line fit can read their natural
+        // width (the fit never cuts them — it only drops them). The values carry the label-style Outline → ThaiTmpHalo.
+        private ThaiTmpTwin? _classThai, _specThai, _primaryThai, _secondaryThai;
+
+        private void SetClassText(string s) => LegacyText.Set(ClassName, s, ref _classThai, ellipsis: Rounded != null);
+        private void SetSpecText(string s) => LegacyText.Set(Spec, s, ref _specThai, ellipsis: Rounded != null);
+        private void SetPrimaryText(string s) => LegacyText.Set(Primary, s, ref _primaryThai);
+        private void SetSecondaryText(string s) => LegacyText.Set(Secondary, s, ref _secondaryThai);
+
+        // The owner's show / hide of those slots — on whichever element (legacy or twin) is current.
+        private void SetClassVisible(bool on) => ThaiTmpTwin.SetActive(ClassName, _classThai, on);
+        private void SetSpecVisible(bool on) => ThaiTmpTwin.SetActive(Spec, _specThai, on);
+        private void SetPrimaryVisible(bool on) => ThaiTmpTwin.SetActive(Primary, _primaryThai, on);
+        private void SetSecondaryVisible(bool on) => ThaiTmpTwin.SetActive(Secondary, _secondaryThai, on);
 
         private void ApplyName(string name)
         {
@@ -32,7 +47,7 @@ internal sealed partial class WindowBuilder
                 if (ThaiTmpTwin.Route(ref _nameThai, Name, name, ellipsis: Rounded != null)) { HostNameStrike(); return; }
                 if (_nameThai == null && GlyphScript.IsThai(name)) _nameThaiOff = true;
             }
-            Name.text = name;
+            LegacyText.SetRouted(Name, name);   // Route above returned false (not Thai / no twin)
             var style = UGuiPrimitives.EmphasisStyle(emphasis: true, name);
             if (Name.fontStyle != style) Name.fontStyle = style;
             HostNameStrike();
@@ -45,7 +60,12 @@ internal sealed partial class WindowBuilder
         private void SyncNameAndFit(in MeterRowData d)
         {
             if (_nameThai is { Showing: true }) _nameThai.Sync();
-            Rounded?.FitTopLine(d, _nameThai);
+            // Colour / size / label-style edge onto any showing twin (field reads only when none shows).
+            if (_classThai is { Showing: true }) _classThai.Sync();
+            if (_specThai is { Showing: true }) _specThai.Sync();
+            if (_primaryThai is { Showing: true }) _primaryThai.Sync();
+            if (_secondaryThai is { Showing: true }) _secondaryThai.Sync();
+            Rounded?.FitTopLine(d, _nameThai, _specThai, _classThai);
         }
 
         // The dead-state strike line is a child of the name element; the legacy Text is INACTIVE while the twin shows, so

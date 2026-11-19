@@ -88,6 +88,7 @@ internal static class UGuiPrimitives
     // Trim with a trailing "..." so the string fits <paramref name="maxW"/> in the Text's current font (ASCII
     // dots — the "…" glyph tofus in-world). Measures via Text.preferredWidth; the caller only calls it when the
     // string changes. Returns the original when it already fits.
+    [LegacyTextAllowed("measures the legacy Text; the caller routes Thai first")]
     public static string Ellipsize(Text t, string s, float maxW)
     {
         if (string.IsNullOrEmpty(s)) return s;
@@ -104,6 +105,7 @@ internal static class UGuiPrimitives
     // Ellipsize for a text fitted to its LAID-OUT width (TextElement.Ellipsize): re-run on every width change (a window
     // resize drag), so a binary search over the cut length (~log2 n preferredWidth reads) instead of Ellipsize's linear
     // walk. Same "..." suffix (the "…" glyph tofus in-world); never cuts between a surrogate pair.
+    [LegacyTextAllowed("measures the legacy Text; the caller routes Thai first")]
     public static string EllipsizeFit(Text t, string s, float maxW)
     {
         if (string.IsNullOrEmpty(s)) return s;
@@ -128,6 +130,7 @@ internal static class UGuiPrimitives
     // in horizontal Overflow so uGUI never re-wraps them. Widths are single-line Text.preferredWidth reads; called only on
     // a string or width change (TextBinding). Same ASCII "..." as EllipsizeFit (the "…" glyph tofus in-world on the menu
     // font).
+    [LegacyTextAllowed("measures the legacy Text; the caller routes Thai first")]
     public static string CapLines(Text t, string s, float maxW, int maxLines)
     {
         if (string.IsNullOrEmpty(s) || maxLines <= 0) return s;

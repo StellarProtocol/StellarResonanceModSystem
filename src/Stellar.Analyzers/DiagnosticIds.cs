@@ -10,6 +10,7 @@ internal static class DiagnosticIds
     internal const string TooManyCtorDeps       = "STELLAR0004"; // > 6 ctor params
     internal const string InterfaceTooWide      = "STELLAR0005"; // > 8 members
     internal const string WorldGatedMissingGuard = "STELLAR0006"; // [WorldGated] method lacks IsWorldActive guard
+    internal const string LegacyTextOutsideHelper = "STELLAR0007"; // raw uGUI Text create/write outside LegacyText
 
     internal const string Category = "StellarSize";
     internal const string SafetyCategory = "StellarSafety";

@@ -36,9 +36,14 @@ internal readonly struct RichInputSpec
     public readonly Action<string> OnValueChanged;
     public readonly Action<string> OnSubmit;
 
+    /// <summary>True = InputElement.RichEmoji (tags render as pictures, atomic tag deletion). False = a PLAIN text field
+    /// on the same TMP field — the default for every non-RichEmoji field since fw 2.34.0 (#169), so typed Thai draws in the
+    /// shipped Thai face with mark positioning: rich text off, so "&lt;b&gt;" etc. stay literal like the legacy field.</summary>
+    public bool Rich { get; init; }
+
     public RichInputSpec(bool singleLine, Graphic target, Action<string> onValueChanged, Action<string> onSubmit)
     {
-        SingleLine = singleLine; Target = target; OnValueChanged = onValueChanged; OnSubmit = onSubmit;
+        SingleLine = singleLine; Target = target; OnValueChanged = onValueChanged; OnSubmit = onSubmit; Rich = true;
     }
 }
 
@@ -167,6 +172,10 @@ internal interface IStyledTextHandle : IStyledTextFit
 
     /// <summary>Set the text colour.</summary>
     void SetColor(Color c);
+
+    /// <summary>Draw toggle (the TMP component's <c>enabled</c>) — the twin counterpart of a legacy <c>Text.enabled</c>
+    /// hide that keeps the GameObject (and its layout slot owner) untouched.</summary>
+    void SetDrawn(bool on);
 
     /// <summary>Force one mesh regeneration. The game's TMP build drops the underline segment on a
     /// text's FIRST post-layout generation (measured in-game 2026-08-18: the line appears only after any

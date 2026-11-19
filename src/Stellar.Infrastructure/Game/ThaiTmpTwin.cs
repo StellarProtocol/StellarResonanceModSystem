@@ -28,13 +28,24 @@ internal sealed class ThaiTmpTwin
 {
     private readonly Text _legacy;
     private readonly IStyledTextHandle _h;
+    private readonly ThaiTmpHalo? _halo;   // the legacy Outline's dark edge, when the legacy Text has one (ThaiTmpHalo)
     private Color _color;
     private int _size;
+    private bool _hidden;        // the OWNER hid the slot (SetActive): neither element is active while set
+    private bool _drawn = true;  // the owner's draw toggle (SetDrawn)
+    private bool _drawnOwned;    // SetDrawn was used: a swap carries the draw state onto the incoming element
 
-    private ThaiTmpTwin(Text legacy, IStyledTextHandle h)
+    private readonly LayoutElement? _twinLe, _legacyLe;   // the slot's LayoutElements (SetDrawn), looked up once
+
+    private ThaiTmpTwin(Text legacy, IStyledTextHandle h, ThaiTmpHalo? halo)
     {
-        _legacy = legacy; _h = h;
+        _legacy = legacy; _h = h; _halo = halo;
         _color = legacy.color; _size = legacy.fontSize;
+        _legacyLe = legacy.GetComponent<LayoutElement>();
+        _twinLe = h.Go != null ? h.Go.GetComponent<LayoutElement>() : null;
+        // A slot its owner had already hidden (built inactive, e.g. a cooldown tile's fallback label) stays hidden until
+        // the owner shows it through SetActive.
+        _hidden = !legacy.gameObject.activeSelf;
     }
 
     /// <summary>True while the twin (not the legacy Text) is the laid-out, drawn element.</summary>
@@ -72,10 +83,37 @@ internal sealed class ThaiTmpTwin
         twin ??= Create(legacy, s!, ellipsis, maxLines);
         if (twin == null) return false;
         twin._h.SetText(s!);
+        twin._halo?.SetText(s!);
         twin.Show(true);
         twin.Sync();
         return true;
     }
+
+    /// <summary>The owner's show / hide of a text slot whose legacy GameObject it used to SetActive directly (meter-row
+    /// spec / class / values, empty hint). With no twin yet that is still the legacy GameObject; with one, whichever element
+    /// is current is shown or hidden and a later Thai ↔ non-Thai swap keeps the slot hidden.</summary>
+    public static void SetActive(Text legacy, ThaiTmpTwin? twin, bool on)
+    {
+        if (twin == null) { if (legacy != null && legacy.gameObject.activeSelf != on) legacy.gameObject.SetActive(on); return; }
+        if (twin._hidden == !on) return;
+        twin._hidden = !on;
+        twin.ApplyActive();
+    }
+
+    /// <summary>The owner's draw toggle (<c>Text.enabled</c>) on whichever element is current, plus its layout slot
+    /// (<c>LayoutElement.ignoreLayout</c>) — the Rounded top-line fit's spec / class drop.</summary>
+    public void SetDrawn(bool on)
+    {
+        _drawn = on; _drawnOwned = true;
+        if (Showing) { _h.SetDrawn(on); _halo?.Show(on && !_hidden); }
+        else if (_legacy != null && _legacy.enabled != on) _legacy.enabled = on;
+        var le = Showing ? _twinLe : _legacyLe;
+        if (le != null && le.ignoreLayout == on) le.ignoreLayout = !on;
+    }
+
+    /// <summary>The current element's preferred width: the twin's padded natural width (fit twins), else the legacy
+    /// Text's preferred width.</summary>
+    public float PreferredWidth => Showing ? _h.PaddedNaturalWidth : _legacy != null ? _legacy.preferredWidth : 0f;
 
     /// <summary>A static label (set once at build, e.g. a dropdown item): route it once; no binding follows. The
     /// twin takes the legacy colour/size at build time, which is all a static label ever has.</summary>
@@ -94,18 +132,34 @@ internal sealed class ThaiTmpTwin
         if (c != _color) { _color = c; _h.SetColor(c); }
         var px = _legacy.fontSize;
         if (px != _size) { _size = px; _h.SetFontSize(px); }
+        _halo?.Sync(c, px, !_hidden && _drawn);
         _h.FitToRect();
     }
 
     private void Show(bool twin)
     {
         if (Showing == twin || _legacy == null) return;
-        var go = _h.Go;
-        if (go == null) return;
         Showing = twin;
-        // Twin first on the way in, legacy first on the way out: the slot is never empty for a layout pass.
-        if (twin) { go.SetActive(true); _legacy.gameObject.SetActive(false); }
-        else { _legacy.gameObject.SetActive(true); go.SetActive(false); }
+        ApplyActive();
+    }
+
+    // Twin first on the way in, legacy first on the way out: the slot is never empty for a layout pass. An owner-hidden
+    // slot keeps both inactive.
+    private void ApplyActive()
+    {
+        var go = _h.Go;
+        if (go == null || _legacy == null) return;
+        bool twinOn = Showing && !_hidden, legacyOn = !Showing && !_hidden;
+        if (twinOn) { go.SetActive(true); _legacy.gameObject.SetActive(legacyOn); }
+        else { _legacy.gameObject.SetActive(legacyOn); go.SetActive(false); }
+        if (_drawnOwned)
+        {
+            if (Showing) _h.SetDrawn(_drawn);
+            else if (_legacy.enabled != _drawn) _legacy.enabled = _drawn;
+            var le = Showing ? _twinLe : _legacyLe;
+            if (le != null && le.ignoreLayout == _drawn) le.ignoreLayout = !_drawn;
+        }
+        _halo?.Show(twinOn && _drawn);
     }
 
     private static ThaiTmpTwin? Create(Text legacy, string s, bool ellipsis, int maxLines)
@@ -117,7 +171,7 @@ internal sealed class ThaiTmpTwin
         var before = parent.childCount;
         try
         {
-            var h = create(parent, new StyledTextSpec(s, legacy.fontSize, legacy.color,
+            var spec = new StyledTextSpec(s, legacy.fontSize, legacy.color,
                 wrap: legacy.horizontalOverflow == HorizontalWrapMode.Wrap && maxLines <= 0)
             {
                 // Same weight as the legacy text (FontStyle.Bold / BoldAndItalic): the regular face for regular text.
@@ -125,15 +179,19 @@ internal sealed class ThaiTmpTwin
                 Align = AlignOf(legacy.alignment),
                 Ellipsis = ellipsis && maxLines <= 0,
                 MaxLines = maxLines,
-            });
+            };
+            var h = create(parent, spec);
             var go = h?.Go;
             if (h == null || go == null) return null;
             go.name = "ThaiText";
             go.transform.SetSiblingIndex(legacy.transform.GetSiblingIndex() + 1);
             CopyRect(legacy, go);
             CopyLayout(legacy, go, h, ellipsis || maxLines > 0);   // measures the full string: while still active
+            // An outlined legacy label (Modern bar LabelOutline, inside-bar label) keeps its dark edge: offset copies
+            // under the twin (ThaiTmpHalo). Fit twins (Ellipsis / MaxLines) never carry an Outline today → none.
+            var halo = ellipsis || maxLines > 0 ? null : ThaiTmpHalo.Create(legacy, go, s, spec);
             go.SetActive(false);   // Show(true) swaps it in
-            return new ThaiTmpTwin(legacy, h);
+            return new ThaiTmpTwin(legacy, h, halo);
         }
         catch (Exception ex)
         {

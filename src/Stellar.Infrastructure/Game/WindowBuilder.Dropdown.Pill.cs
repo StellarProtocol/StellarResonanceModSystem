@@ -271,9 +271,10 @@ internal sealed partial class WindowBuilder
             new StyledTextSpec(text, size, _assets.MenuText, wrap: false) { Bold = bold });
         if (h?.Go != null) return;
         var labelGo = UGuiPrimitives.NewChild("Label", parent);
-        var label = labelGo.AddComponent<Text>();
+        var label = LegacyText.Add(labelGo);
         UGuiPrimitives.ConfigureText(label, size, TextAnchor.MiddleLeft, bold: false);
-        label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText; label.text = text;
+        label.alignByGeometry = true; ApplyMenuFont(label); label.color = _assets.MenuText;
+        LegacyText.SetStatic(label, text);   // Thai → shipped Thai face (TMP twin); only when the TMP pill text was unavailable
         label.fontStyle = UGuiPrimitives.EmphasisStyle(bold, text);
     }
 

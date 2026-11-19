@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,6 +26,9 @@ internal sealed class GameTextService : IGameText
     private readonly IPluginLog _log;
     private readonly Action<Action> _postToMainThread;
     private readonly Func<GameTextTable> _load;
+    private readonly Func<int, string?>? _buffGameName;   // the game's own buff name (GetEffectCategory's first signal)
+    // Per-id category, filled only once the table is ready (a guess made without the design label would pin Default).
+    private readonly ConcurrentDictionary<int, EffectCategory> _categories = new();
     private volatile GameTextTable? _table;   // null until the background parse publishes
     private int _started;                     // 0 → 1 once the parse is queued
     private readonly object _gate = new();
@@ -34,11 +38,15 @@ internal sealed class GameTextService : IGameText
     /// <param name="log">Framework log (load result line).</param>
     /// <param name="postToMainThread">Main-thread marshal (the framework's <c>Post</c>), used to raise <see cref="Ready"/>.</param>
     /// <param name="load">Table source; null = the embedded table. Tests pass their own.</param>
-    public GameTextService(IPluginLog log, Action<Action> postToMainThread, Func<GameTextTable>? load = null)
+    /// <param name="buffGameName">The game's own name for a buff id (<c>IGameDataCombat.GetBuff(id)?.Name</c>), read
+    /// by <see cref="GetEffectCategory"/>; null = design label only.</param>
+    public GameTextService(IPluginLog log, Action<Action> postToMainThread, Func<GameTextTable>? load = null,
+        Func<int, string?>? buffGameName = null)
     {
         _log = log;
         _postToMainThread = postToMainThread;
         _load = load ?? GameTextTable.LoadEmbedded;
+        _buffGameName = buffGameName;
     }
 
     public bool IsReady
@@ -84,6 +92,20 @@ internal sealed class GameTextService : IGameText
         if (row?.Design != null) { isDesignFallback = true; return row.Design; }
         if (!string.IsNullOrWhiteSpace(gameName)) return gameName!;
         return (kind == GameTextKind.Skill ? "Skill " : "Buff ") + id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public EffectCategory GetEffectCategory(int buffId)
+    {
+        if (_categories.TryGetValue(buffId, out var cat)) return cat;
+        var t = _table;
+        if (t == null) { EnsureLoading(); return EffectCategory.Default; }
+        // Signal = the game name when it is a real one (a Chinese client's fallback is the raw Chinese NameDesign; the
+        // filler strings are noise) + the English design label. One classification per id, then cached.
+        string? name = _buffGameName?.Invoke(buffId);
+        if (IsPlaceholder(name)) name = null;
+        cat = EffectCategoryClassifier.Classify(name, t.Get(GameTextKind.Buff, buffId)?.Design);
+        _categories[buffId] = cat;
+        return cat;
     }
 
     /// <summary>Static form of <see cref="IsPlaceholderName"/> (allocation-free).</summary>

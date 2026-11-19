@@ -51,16 +51,22 @@ internal sealed partial class WindowBuilder
         private ThaiTmpTwin? _fitTwin;   // the Thai twin that was the name slot at the last fit (null = the legacy Text)
         private Transform? _twinT;       // _fitTwin's transform + LayoutElement, cached per swap
         private LayoutElement? _twinLe;
+        // The spec / class Thai twins that were showing at the last fit (fw #169), + their transforms (OthersWidth skip),
+        // cached per swap like the name's.
+        private ThaiTmpTwin? _fitSpecTwin, _fitClassTwin;
+        private Transform? _specTwinT, _classTwinT;
 
         /// <summary>Call after the binding has written this poll's name/spec text. <paramref name="thai"/> = the name's Thai TMP twin
         /// (WindowBuilder.MeterRowBinding.Name.cs): while it shows, IT is the name slot — measured by its own face, cut by
         /// TMP (Ellipsis twin, re-cut to its rect by Sync), its LayoutElement pinned here — and the hidden legacy Text is left alone.</summary>
-        public void FitTopLine(in MeterRowData d, ThaiTmpTwin? thai)
+        public void FitTopLine(in MeterRowData d, ThaiTmpTwin? thai, ThaiTmpTwin? specThai, ThaiTmpTwin? classThai)
         {
             if (Line == null || LineHlg == null || Name == null || NameLe == null || SpecLe == null) return;
             float lineW = Line.rect.width;
             if (lineW <= 1f) return;   // not laid out yet
             var twin = thai is { Showing: true } ? thai : null;   // field reads only: the steady-state poll stays wrapper-free
+            var specTwin = specThai is { Showing: true } ? specThai : null;
+            var classTwin = classThai is { Showing: true } ? classThai : null;
             float total = LineHlg.preferredWidth;
             var name = d.Name ?? "";
             bool specWanted = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
@@ -70,40 +76,45 @@ internal sealed partial class WindowBuilder
             bool classChanged = classWanted && !ReferenceEquals(d.ClassName, _fitClass) && d.ClassName != _fitClass;
             int sw = specWanted ? 1 : 0, cw = classWanted ? 1 : 0;
             if (!_fitMeasure && !nameChanged && !specChanged && !classChanged && sw == _fitSpecWanted && cw == _fitClassWanted
-                && twin == _fitTwin
+                && twin == _fitTwin && specTwin == _fitSpecTwin && classTwin == _fitClassTwin
                 && Mathf.Approximately(lineW, _fitLineW) && Mathf.Approximately(total, _fitTotal)) return;
 
             if (twin != null) _nameFullW = twin.PaddedNaturalWidth;   // cached by the handle: no TMP re-measure here
             else if (_fitMeasure || nameChanged)
             {
-                Name.text = name;   // the slot may hold a previous cut; measure the full string
+                LegacyText.SetRouted(Name, name);   // the slot may hold a previous cut; measure the full string
                 _nameFullW = Name.preferredWidth;
             }
-            if (specWanted && (_fitMeasure || specChanged)) _specFullW = Spec.preferredWidth;   // binding set "· Spec"
-            if (classWanted && (_fitMeasure || classChanged)) _classFullW = ClassLabel!.preferredWidth;   // binding set it
+            // Binding set "· Spec" / the class; a showing Thai twin reports its own (padded) natural width.
+            if (specWanted && (_fitMeasure || specChanged || specTwin != _fitSpecTwin))
+                _specFullW = specTwin != null ? specTwin.PreferredWidth : Spec.preferredWidth;
+            if (classWanted && (_fitMeasure || classChanged || classTwin != _fitClassTwin))
+                _classFullW = classTwin != null ? classTwin.PreferredWidth : ClassLabel!.preferredWidth;
             _fitMeasure = false;
             _fitName = name; _fitSpec = specWanted ? d.Spec : null; _fitSpecWanted = sw;
             _fitClass = classWanted ? d.ClassName : null; _fitClassWanted = cw;
             _fitLineW = lineW; _fitTotal = total;
             if (twin != _fitTwin) CacheTwinSlot(twin);
+            if (specTwin != _fitSpecTwin) { _fitSpecTwin = specTwin; _specTwinT = specTwin?.Go is { } sg ? sg.transform : null; }
+            if (classTwin != _fitClassTwin) { _fitClassTwin = classTwin; _classTwinT = classTwin?.Go is { } cg ? cg.transform : null; }
 
             float spacing = LineHlg.spacing;
             var (showClass, showSpec, nameW) = MeterTopLineFit.Decide(lineW - OthersWidth(spacing, _twinT), _nameFullW,
                 new MeterTopLineFit.Label(classWanted, _classFullW), new MeterTopLineFit.Label(specWanted, _specFullW), spacing);
 
-            if (specWanted)
-            {
-                if (Spec.enabled != showSpec) Spec.enabled = showSpec;
-                if (SpecLe.ignoreLayout == showSpec) SpecLe.ignoreLayout = !showSpec;   // dropped spec takes no width or gap
-            }
-            // Same hide as the spec: Text.enabled + ignoreLayout, never SetActive — the binding owns the GameObject's
-            // active state (its _lastClassVis cache would go stale and never re-show the label).
-            if (classWanted)
-            {
-                if (ClassLabel!.enabled != showClass) ClassLabel.enabled = showClass;
-                if (ClassLe!.ignoreLayout == showClass) ClassLe.ignoreLayout = !showClass;
-            }
+            // Drop = Text.enabled + ignoreLayout (a dropped label takes no width or gap), never SetActive — the binding owns
+            // the GameObject's active state (its _lastClassVis cache would go stale and never re-show the label). With a
+            // Thai twin the same drop lands on whichever element is current (ThaiTmpTwin.SetDrawn).
+            if (specWanted) Drop(Spec, SpecLe, specThai, showSpec);
+            if (classWanted) Drop(ClassLabel!, ClassLe!, classThai, showClass);
             SetNameSlot(name, nameW, twin != null);
+        }
+
+        private static void Drop(Text legacy, LayoutElement le, ThaiTmpTwin? twin, bool show)
+        {
+            if (twin != null) { twin.SetDrawn(show); return; }
+            if (legacy.enabled != show) legacy.enabled = show;
+            if (le.ignoreLayout == show) le.ignoreLayout = !show;
         }
 
         // Re-fit path only: the twin's slot (its GameObject + the LayoutElement copied from the legacy name's) is looked up
@@ -125,8 +136,8 @@ internal sealed partial class WindowBuilder
                 if (_twinLe != null && !Mathf.Approximately(_twinLe.preferredWidth, nameW)) _twinLe.preferredWidth = nameW;
                 return;
             }
-            if (nameW < _nameFullW) Name!.text = UGuiPrimitives.EllipsizeFit(Name, name, nameW);
-            else if (Name!.text != name) Name.text = name;
+            if (nameW < _nameFullW) LegacyText.SetRouted(Name!, UGuiPrimitives.EllipsizeFit(Name!, name, nameW));
+            else if (Name!.text != name) LegacyText.SetRouted(Name, name);
             if (!Mathf.Approximately(NameLe!.preferredWidth, nameW)) NameLe.preferredWidth = nameW;
         }
 
@@ -142,7 +153,8 @@ internal sealed partial class WindowBuilder
             for (int i = 0; i < line.childCount; i++)
             {
                 var c = line.GetChild(i);
-                if (!c.gameObject.activeSelf || c == nameT || c == specT || c == classT || c == twinT) continue;
+                if (!c.gameObject.activeSelf || c == nameT || c == specT || c == classT || c == twinT
+                    || c == _specTwinT || c == _classTwinT) continue;
                 var le = c.GetComponent<LayoutElement>();
                 if (le != null && le.ignoreLayout) continue;
                 var rt = c.TryCast<RectTransform>();

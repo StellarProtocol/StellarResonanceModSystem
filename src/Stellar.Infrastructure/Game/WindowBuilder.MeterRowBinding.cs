@@ -165,18 +165,18 @@ internal sealed partial class WindowBuilder
             ApplyVisibility(d);
 
             var rank = d.Rank ?? "";
-            if (rank != _lastRank) { Rank.text = rank; _lastRank = rank; Rounded?.RankSlot?.Fit(rank); }
+            if (rank != _lastRank) { LegacyText.SetAscii(Rank, rank); _lastRank = rank; Rounded?.RankSlot?.Fit(rank); }
 
             var name = d.Name ?? "";
             if (name != _lastName) { ApplyName(name); _lastName = name; }   // per-script face/weight (.Name.cs)
 
             var showSpec = d.ShowSpec && !string.IsNullOrEmpty(d.Spec);
-            if (_lastSpecVis != (showSpec ? 1 : 0)) { SpecGo.SetActive(showSpec); _lastSpecVis = showSpec ? 1 : 0; }
-            if (showSpec) { var s = "· " + d.Spec; if (s != _lastSpec) { Spec.text = s; _lastSpec = s; } }
+            if (_lastSpecVis != (showSpec ? 1 : 0)) { SetSpecVisible(showSpec); _lastSpecVis = showSpec ? 1 : 0; }
+            if (showSpec) { var s = "· " + d.Spec; if (s != _lastSpec) { SetSpecText(s); _lastSpec = s; } }
 
             var showShare = d.ShowShare && !string.IsNullOrEmpty(d.SharePercent);
             if (_lastShareVis != (showShare ? 1 : 0)) { ShareGo.SetActive(showShare); _lastShareVis = showShare ? 1 : 0; }
-            if (showShare && d.SharePercent != _lastShare) { Share.text = d.SharePercent; _lastShare = d.SharePercent; }
+            if (showShare && d.SharePercent != _lastShare) { LegacyText.SetAscii(Share, d.SharePercent); _lastShare = d.SharePercent; }
 
             var bar = Mathf.Clamp01(d.BarFraction);
             if (!Mathf.Approximately(bar, _lastBar)) { BarFillRect.anchorMax = new Vector2(bar, 1f); _lastBar = bar; }
@@ -192,11 +192,11 @@ internal sealed partial class WindowBuilder
             }
 
             var primary = d.PrimaryValue ?? "";
-            if (primary != _lastPrimary) { Primary.text = primary; _lastPrimary = primary; }
+            if (primary != _lastPrimary) { SetPrimaryText(primary); _lastPrimary = primary; }
 
             var showSecondary = d.ShowSecondary && !string.IsNullOrEmpty(d.SecondaryValue);
-            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SecondaryGo.SetActive(showSecondary); if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(showSecondary && d.LabelStyle == MeterLabelStyle.Shadow); _lastSecondaryVis = showSecondary ? 1 : 0; }
-            if (showSecondary && d.SecondaryValue != _lastSecondary) { Secondary.text = d.SecondaryValue; _lastSecondary = d.SecondaryValue; }
+            if (_lastSecondaryVis != (showSecondary ? 1 : 0)) { SetSecondaryVisible(showSecondary); if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(showSecondary && d.LabelStyle == MeterLabelStyle.Shadow); _lastSecondaryVis = showSecondary ? 1 : 0; }
+            if (showSecondary && d.SecondaryValue != _lastSecondary) { SetSecondaryText(d.SecondaryValue!); _lastSecondary = d.SecondaryValue; }
 
             if (Scrim != null && _lastOffline != (d.Offline ? 1 : 0)) { Scrim.SetActive(d.Offline); _lastOffline = d.Offline ? 1 : 0; }
             ApplyImagineLayout(d);
@@ -242,7 +242,7 @@ internal sealed partial class WindowBuilder
                 if (PrimaryOutline != null) PrimaryOutline.enabled = outline;
                 if (SecondaryOutline != null) SecondaryOutline.enabled = outline;
                 if (PrimaryFadeImg != null) PrimaryFadeImg.gameObject.SetActive(shadow);
-                if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(shadow && SecondaryGo.activeSelf);
+                if (SecondaryFadeImg != null) SecondaryFadeImg.gameObject.SetActive(shadow && _lastSecondaryVis == 1);   // the slot's own shown state (a Thai twin hides the legacy GO)
                 _lastLabelStyle = (int)style;
             }
             if (style == MeterLabelStyle.Shadow && (styleChanged || fillChanged))
@@ -271,7 +271,7 @@ internal sealed partial class WindowBuilder
                     _lastSpineW = spineW;
                 }
             }
-            if (PrimaryGo != null && _lastPrimaryVis != (d.ShowPrimary ? 1 : 0)) { PrimaryGo.SetActive(d.ShowPrimary); _lastPrimaryVis = d.ShowPrimary ? 1 : 0; }
+            if (PrimaryGo != null && _lastPrimaryVis != (d.ShowPrimary ? 1 : 0)) { SetPrimaryVisible(d.ShowPrimary); _lastPrimaryVis = d.ShowPrimary ? 1 : 0; }
             var showLeader = d.IsLeader && d.ShowLeaderFlag;
             if (LeaderGo != null && _lastLeader != (showLeader ? 1 : 0)) { LeaderGo.SetActive(showLeader); _lastLeader = showLeader ? 1 : 0; }
             if (SheenGo != null && _lastSheenVis != (d.HideSheen ? 0 : 1)) { SheenGo.SetActive(!d.HideSheen); if (FillMask != null) FillMask.enabled = !d.HideSheen; _lastSheenVis = d.HideSheen ? 0 : 1; }
@@ -279,12 +279,12 @@ internal sealed partial class WindowBuilder
             ApplyRowBorder(d);
 
             var showClass = d.ShowClassName && !string.IsNullOrEmpty(d.ClassName);
-            if (_lastClassVis != (showClass ? 1 : 0)) { ClassNameGo.SetActive(showClass); _lastClassVis = showClass ? 1 : 0; }
-            if (showClass && d.ClassName != _lastClass) { ClassName.text = d.ClassName; _lastClass = d.ClassName; }
+            if (_lastClassVis != (showClass ? 1 : 0)) { SetClassVisible(showClass); _lastClassVis = showClass ? 1 : 0; }
+            if (showClass && d.ClassName != _lastClass) { SetClassText(d.ClassName!); _lastClass = d.ClassName; }
 
             var showScore = d.ShowAbilityScore && !string.IsNullOrEmpty(d.AbilityScore);
             if (_lastScoreVis != (showScore ? 1 : 0)) { ScoreGo.SetActive(showScore); _lastScoreVis = showScore ? 1 : 0; }
-            if (showScore && d.AbilityScore != _lastScore) { Score.text = d.AbilityScore; _lastScore = d.AbilityScore; }
+            if (showScore && d.AbilityScore != _lastScore) { LegacyText.SetAscii(Score, d.AbilityScore); _lastScore = d.AbilityScore; }
 
             if (_lastDead != (d.Dead ? 1 : 0))
             {

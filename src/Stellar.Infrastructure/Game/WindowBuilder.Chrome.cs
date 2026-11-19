@@ -266,10 +266,11 @@ internal sealed partial class WindowBuilder
             return;
         }
         var titleGo = UGuiPrimitives.NewChild("Title", bar.transform);
-        var title = titleGo.AddComponent<Text>();
+        var title = LegacyText.Add(titleGo);
         UGuiPrimitives.ConfigureText(title, Scaled(13), TextAnchor.MiddleLeft, bold: true);
         ApplyMenuFont(title);   // at BUILD, not only on reskin — see BuildCloseButton
-        title.color = _assets.MenuText; title.text = text; title.raycastTarget = false;
+        title.color = _assets.MenuText; title.raycastTarget = false;
+        LegacyText.SetStatic(title, text);   // legacy title only when the TMP title is unavailable (no twin either)
         title.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, text);   // crisp per-script weight
         RegisterTextReskin(token, title, 13);
         RegisterTitleReskin(spec, token, null, title);
@@ -281,11 +282,12 @@ internal sealed partial class WindowBuilder
     private void RegisterTitleReskin(WindowSpec spec, WindowToken token, IStyledTextHandle? handle, Text? legacy)
     {
         if (spec.TitleProvider == null) return;
+        ThaiTmpTwin? legacyThai = null;   // the legacy title's twin, kept across reskins (one per window, not per pass)
         token.ReskinActions.Add(() =>
         {
             var s = TitleOf(spec);
             if (handle != null) handle.SetText(s);
-            if (legacy != null) { legacy.text = s; legacy.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s); }
+            if (legacy != null) { LegacyText.Set(legacy, s, ref legacyThai); legacy.fontStyle = UGuiPrimitives.EmphasisStyle(emphasis: true, s); }
         });
     }
 
@@ -328,12 +330,12 @@ internal sealed partial class WindowBuilder
     private void BuildCloseButton(GameObject bar, WindowToken token, System.Action? onClose = null)
     {
         var x = UGuiPrimitives.NewChild("Close", bar.transform);
-        var xt = x.AddComponent<Text>();
+        var xt = LegacyText.Add(x);
         UGuiPrimitives.ConfigureText(xt, Scaled(14), TextAnchor.MiddleCenter, bold: true);
         // MenuFont at BUILD: RegisterTextReskin only applies it on a theme switch, so until then the ✕ sat on
         // ConfigureText's builtin font — whose atlas repacks OnFontTextureRebuilt used to ignore (garbled ✕).
         ApplyMenuFont(xt);
-        xt.color = _assets.MenuMuted; xt.text = "✕"; xt.raycastTarget = true;
+        xt.color = _assets.MenuMuted; LegacyText.SetAscii(xt, "✕"); xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14, muted: true);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;
         DisableKeyboardNav(closeBtn);
@@ -354,10 +356,10 @@ internal sealed partial class WindowBuilder
         var rt = x.GetComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(1f, 1f);   // top-right corner
         rt.sizeDelta = new Vector2(18f, 18f); rt.anchoredPosition = new Vector2(-6f, -4f);
-        var xt = x.AddComponent<Text>();
+        var xt = LegacyText.Add(x);
         UGuiPrimitives.ConfigureText(xt, Scaled(14), TextAnchor.MiddleCenter, bold: true);
         ApplyMenuFont(xt);   // at BUILD — see BuildCloseButton
-        xt.color = _assets.MenuText; xt.text = "✕"; xt.raycastTarget = true;
+        xt.color = _assets.MenuText; LegacyText.SetAscii(xt, "✕"); xt.raycastTarget = true;
         RegisterTextReskin(token, xt, 14);
         var closeBtn = x.AddComponent<UnityEngine.UI.Button>(); closeBtn.targetGraphic = xt;
         DisableKeyboardNav(closeBtn);

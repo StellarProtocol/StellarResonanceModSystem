@@ -59,6 +59,8 @@ internal sealed partial class LayoutEditChrome
         public Image Border = null!;
         public Image Handle = null!;
         public Text Label = null!;
+        public ThaiTmpTwin? LabelThai;   // a Thai window name → TMP twin (fw #169); built on the first Thai name
+        public string? LabelStr;         // last label routed — the script scan runs on a change only, not per tick
         public Image Eye = null!;
         public Placeholder Ph = null!;   // dashed sides + hatch + caption (LayoutEditChrome.Placeholder.cs)
         public string Id = "";
@@ -133,7 +135,13 @@ internal sealed partial class LayoutEditChrome
         if (it.Handle.gameObject.activeSelf != data.Resizable) it.Handle.gameObject.SetActive(data.Resizable);
         it.Handle.color = Fade(data.Color, a);
         it.Label.color  = Fade(LabelColor, a);
-        it.Label.text   = data.Label;
+        if (!ReferenceEquals(it.LabelStr, data.Label) && it.LabelStr != data.Label)
+        {
+            it.LabelStr = data.Label;
+            // Ellipsis twin: it reports its own natural width (the eye sits after it) and cuts at the 220-px label rect.
+            LegacyText.Set(it.Label, data.Label, ref it.LabelThai, ellipsis: true);
+        }
+        it.LabelThai?.Sync();   // the fade colour onto a showing twin (compare-only otherwise)
 
         // Eye: open when visible, closed when hidden; greyed + non-interactive when unsafe-to-hide.
         it.Eye.sprite = data.Visible ? _eyeOpenSprite : _eyeClosedSprite;
@@ -143,7 +151,7 @@ internal sealed partial class LayoutEditChrome
         it.EyeInteractive = data.CanHide;
         // Place the eye just right of the label text (label pivot is bottom-left, anchored 2px in from the box
         // top-left; preferredWidth tracks the text). Then record its screen-rect (top-left / y-down) for hit-test.
-        var eyeLocalX = it.Label.preferredWidth + 4f;
+        var eyeLocalX = (it.LabelThai is { Showing: true } lt ? lt.PreferredWidth : it.Label.preferredWidth) + 4f;
         it.Eye.rectTransform.anchoredPosition = new Vector2(eyeLocalX, 0f);
         it.EyeScreen = new Rect(r.X + 2f + eyeLocalX, r.Y - 16f, 13f, 13f);
         PositionPlaceholder(it, data, a);   // solid ring vs dashed/hatched placeholder (same 40% dim when hidden)
@@ -177,7 +185,13 @@ internal sealed partial class LayoutEditChrome
         var lrt = label.GetComponent<RectTransform>();
         lrt.anchorMin = lrt.anchorMax = new Vector2(0f, 1f); lrt.pivot = new Vector2(0f, 0f);
         lrt.sizeDelta = new Vector2(220f, 16f); lrt.anchoredPosition = new Vector2(2f, 2f);
-        var txt = label.AddComponent<Text>();
+        // The Text sits on its own stretched child, so a Thai twin swapping it out never hides the eye (a child of the
+        // label container below).
+        var textGo = NewChild("Text", label.transform);
+        var trt = textGo.GetComponent<RectTransform>();
+        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one; trt.pivot = new Vector2(0f, 0f);
+        trt.offsetMin = Vector2.zero; trt.offsetMax = Vector2.zero;
+        var txt = LegacyText.Add(textGo);
         txt.fontSize = 11; txt.fontStyle = FontStyle.Bold; txt.color = LabelColor; txt.raycastTarget = false;
         txt.horizontalOverflow = HorizontalWrapMode.Overflow; txt.verticalOverflow = VerticalWrapMode.Overflow;
         txt.font = _font != null ? _font : BuiltinFont();
