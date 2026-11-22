@@ -19,6 +19,10 @@ public static class FrameworkVersion
     /// <summary>
     /// Current framework version. Plain SemVer (no pre-release suffix) keeps the
     /// BepInEx chainloader happy.
+    /// 2.35.0 adds rich chat links: <c>ChatMessage.Hypertext</c> (<c>ChatHypertext</c> — ordered text/link <c>ChatTextSegment</c>s,
+    /// raw <c>ChatPlaceholder</c>s; position / item / player / home / blueprint shares and loot-roll notices) and <c>ChatMessage.Voice</c>
+    /// (<c>ChatVoice</c> length + transcript), plus <c>IChatPositionShare</c> (inherited by <c>IChat</c>): <c>GetSharePosition</c>,
+    /// <c>SharePosition</c>, <c>TrackPosition</c> and <c>ChatSendResult.IsPositionShare</c>. All additive (init-only / new base interface).
     /// 2.34.0 adds <c>SlicedImageElement</c>, <c>StackLayer.Rect</c> (<c>LayerRect</c>), <c>ImageElement.Crisp</c> and Modern-bar
     /// opt-ins (<c>FillGradient</c>, <c>Gloss</c>, glows, <c>Trail01</c>, <c>OverlayStart01</c>, stripes, <c>Ticks</c>, label options).
     /// 2.34.0 also adds effect placeholder icons: <c>EffectCategory</c>, <c>IGameText.GetEffectCategory</c> and
@@ -478,5 +482,5 @@ public static class FrameworkVersion
     /// lookup (periodic freeze); 1.4.0 added <c>IWindowControl.SetVisiblePersist</c>
     /// plus the native-UI grab-box / cutscene-reposition fixes.
     /// </summary>
-    public const string Value = "2.34.0";
+    public const string Value = "2.35.0";
 }

@@ -98,7 +98,7 @@ public static partial class WireProtocol
             Sender:     new SenderMeta(parsed.SenderLevel, Job: null, Guild: null, Gender: parsed.SenderGender, IsNewbie: parsed.SenderIsNewbie),
             MsgId:      parsed.MsgId,
             IsHistory:  true)
-        { StickerId = parsed.StickerId, TargetId = parsed.TargetId };
+        { StickerId = parsed.StickerId, TargetId = parsed.TargetId, Hypertext = parsed.Hypertext, Voice = parsed.Voice };
         record = (msg, parsed.MsgId);
         return true;
     }
@@ -137,7 +137,7 @@ public static partial class WireProtocol
             RawPayload: ReadOnlyMemory<byte>.Empty,
             Sender:     new SenderMeta(fields.SenderLevel, Job: null, Guild: null, Gender: fields.SenderGender, IsNewbie: fields.SenderIsNewbie),
             MsgId:      fields.MsgId)
-        { StickerId = fields.StickerId, TargetId = fields.TargetId };
+        { StickerId = fields.StickerId, TargetId = fields.TargetId, Hypertext = fields.Hypertext, Voice = fields.Voice };
         return true;
     }
 
@@ -177,6 +177,8 @@ public static partial class WireProtocol
             state.MsgTypeWire = parsedMsg.MsgType;
             state.StickerId = parsedMsg.StickerId;
             state.TargetId = parsedMsg.TargetId;
+            state.Hypertext = parsedMsg.Hypertext;
+            state.Voice = parsedMsg.Voice;
             return true;
         }
         return SkipField(payload, ref pos, wireType);
@@ -200,6 +202,8 @@ public static partial class WireProtocol
         public int MsgTypeWire;
         public int StickerId;
         public long TargetId;
+        public ChatHypertext? Hypertext;
+        public ChatVoice? Voice;
     }
 
     // ---------------------------------------------------------------------
@@ -222,7 +226,13 @@ public static partial class WireProtocol
         string Text,
         int MsgType,
         int StickerId,
-        long TargetId);
+        long TargetId)
+    {
+        /// <summary><c>ChatMsgInfo.chat_hypertext</c> raw slots (segments not built yet); null when absent.</summary>
+        public ChatHypertext? Hypertext { get; init; }
+        /// <summary><c>ChatMsgInfo.voice</c> (transcript unsanitised); null when absent.</summary>
+        public ChatVoice? Voice { get; init; }
+    }
 
     /// <summary>
     /// Parse a <c>ChitChatMsg</c> sub-message. Returns true even on partial
@@ -260,7 +270,8 @@ public static partial class WireProtocol
             Text: fields.Text,
             MsgType: fields.MsgType,
             StickerId: fields.StickerId,
-            TargetId: fields.TargetId);
+            TargetId: fields.TargetId)
+        { Hypertext = fields.Hypertext, Voice = fields.Voice };
         return true;
     }
 
@@ -306,7 +317,13 @@ public static partial class WireProtocol
         {
             // msg_info (nested ChatMsgInfo)
             if (!TryReadLengthDelimited(data, ref pos, out var info)) return false;
-            TryParseChatMsgInfo(info, out state.Text, out state.MsgType, out state.StickerId, out state.TargetId);
+            var mi = ParseChatMsgInfo(info);
+            state.Text = mi.Text;
+            state.MsgType = mi.MsgType;
+            state.StickerId = mi.StickerId;
+            state.TargetId = mi.TargetId;
+            state.Hypertext = mi.Hypertext;
+            state.Voice = mi.Voice;
             return true;
         }
         return SkipField(data, ref pos, wireType);
@@ -329,5 +346,7 @@ public static partial class WireProtocol
         public int MsgType;
         public int StickerId;
         public long TargetId;
+        public ChatHypertext? Hypertext;
+        public ChatVoice? Voice;
     }
 }

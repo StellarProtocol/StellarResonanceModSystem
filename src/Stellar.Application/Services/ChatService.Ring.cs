@@ -47,6 +47,7 @@ internal sealed partial class ChatService
             Interlocked.Increment(ref _ringVersion);
         }
         lock (_cooldownLock) _cooldowns.Clear();
+        ResetSharePending();   // .Share.cs
         _probe?.ResetSession();
     }
 

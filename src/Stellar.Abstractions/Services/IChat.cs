@@ -6,9 +6,10 @@ namespace Stellar.Abstractions.Services;
 
 /// <summary>
 /// Plugin-facing chat service. <c>MessageReceived</c> fires on the main (Unity) thread;
-/// <c>Send</c> is fire-and-forget — failures are logged, never thrown.
+/// <c>Send</c> is fire-and-forget — failures are logged, never thrown. Map-position links (share / track) come from
+/// the inherited <see cref="IChatPositionShare"/> (2.35.0).
 /// </summary>
-public interface IChat
+public interface IChat : IChatPositionShare
 {
     /// <summary>Most recent messages received since the last login (emptied at logout), in arrival order (capped by framework; exact cap may
     /// vary). The game's client system notices (<see cref="ChatMessage.SystemLabel"/> set) are capped SEPARATELY, so a

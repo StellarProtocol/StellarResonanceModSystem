@@ -1,4 +1,5 @@
 using System;
+using Stellar.Abstractions.Domain;
 
 namespace Stellar.Wire;
 
@@ -25,47 +26,78 @@ public static partial class WireProtocol
     /// <c>picture_emoji.config_id</c> (5) out of a <c>ChatMsgInfo</c>. <paramref name="targetId"/> is the
     /// whisper RECIPIENT's charId (the game's peer rule, <c>chat_main_vm.lua:796-807</c>: the peer is the
     /// sender, or <c>msgInfo.targetId</c> when the sender is self) — without it our own whisper echoes
-    /// can't be attributed to a conversation. 0 when absent. The remaining fields (multi_lang_notice,
-    /// voice, chat_hypertext) are skipped.
+    /// can't be attributed to a conversation. 0 when absent. Voice / hypertext are decoded but dropped
+    /// here — use <see cref="ParseChatMsgInfo"/> for them.
     /// </summary>
     public static void TryParseChatMsgInfo(
         ReadOnlySpan<byte> data, out string text, out int msgType, out int pictureEmojiId, out long targetId)
     {
-        text = string.Empty;
-        msgType = 0;
-        pictureEmojiId = 0;
-        targetId = 0;
+        var f = ParseChatMsgInfo(data);
+        text = f.Text;
+        msgType = f.MsgType;
+        pictureEmojiId = f.StickerId;
+        targetId = f.TargetId;
+    }
+
+    /// <summary>Everything <see cref="ParseChatMsgInfo"/> reads out of one <c>ChatMsgInfo</c>.</summary>
+    public readonly record struct ChatMsgInfoFields
+    {
+        /// <summary><c>msg_text</c> (3), verbatim; empty when absent.</summary>
+        public string Text { get; init; }
+        /// <summary><c>msg_type</c> (1) — the wire <c>ChitChatMsgType</c>.</summary>
+        public int MsgType { get; init; }
+        /// <summary><c>picture_emoji.config_id</c> (5.1); 0 when not a sticker.</summary>
+        public int StickerId { get; init; }
+        /// <summary><c>target_id</c> (2) — the whisper recipient's charId; 0 when absent.</summary>
+        public long TargetId { get; init; }
+        /// <summary><c>chat_hypertext</c> (7), raw slots only (segments are built by the Application layer on the
+        /// main thread, where the game tables are); null when absent.</summary>
+        public ChatHypertext? Hypertext { get; init; }
+        /// <summary><c>voice</c> (6), transcript unsanitised; null when absent.</summary>
+        public ChatVoice? Voice { get; init; }
+    }
+
+    /// <summary>
+    /// Parse a <c>ChatMsgInfo</c>: <c>msg_type</c> (1), <c>target_id</c> (2), <c>msg_text</c> (3),
+    /// <c>picture_emoji</c> (5), <c>voice</c> (6) and <c>chat_hypertext</c> (7). Never throws: a malformed tag
+    /// stops the walk and keeps whatever was read before it (protobuf tolerance), and a malformed nested
+    /// voice/hypertext body yields null / the slots read so far. <c>multi_lang_notice</c> (4) is skipped — the
+    /// game itself only shows <c>msg_text</c> for it.
+    /// </summary>
+    public static ChatMsgInfoFields ParseChatMsgInfo(ReadOnlySpan<byte> data)
+    {
+        var s = new ChatMsgInfoFields { Text = string.Empty };
         int pos = 0;
         while (pos < data.Length)
         {
-            if (!TryReadTag(data, ref pos, out var field, out var wireType)) return;
-            if (field == 1 && wireType == 0)
-            {
-                if (!TryReadVarint(data, ref pos, out var v)) return;
-                msgType = (int)v;
-            }
-            else if (field == 2 && wireType == 0)
-            {
-                // target_id (int64 varint) — a charId, not an entity uuid.
-                if (!TryReadVarint(data, ref pos, out var t)) return;
-                targetId = unchecked((long)t);
-            }
-            else if (field == 3 && wireType == 2)
-            {
-                if (!TryReadString(data, ref pos, out text)) return;
-            }
-            else if (field == 5 && wireType == 2)
-            {
-                // picture_emoji (nested ChatPictureEmoji) — whole-message sticker. Read the
-                // length-delimited sub-message, then pull its field 1 (config_id varint).
-                if (!TryReadLengthDelimited(data, ref pos, out var emoji)) return;
-                pictureEmojiId = ReadPictureEmojiConfigId(emoji);
-            }
-            else
-            {
-                if (!SkipField(data, ref pos, wireType)) return;
-            }
+            if (!TryReadTag(data, ref pos, out var field, out var wireType)) break;
+            if (!ReadChatMsgInfoField(data, ref pos, ref s, field, wireType)) break;
         }
+        return s;
+    }
+
+    // One ChatMsgInfo tag. Returns false on a truncated/malformed value (the caller stops the walk).
+    private static bool ReadChatMsgInfoField(
+        ReadOnlySpan<byte> data, ref int pos, ref ChatMsgInfoFields s, int field, int wireType)
+    {
+        if (wireType == 0 && field is 1 or 2)
+        {
+            if (!TryReadVarint(data, ref pos, out var v)) return false;
+            // target_id (2) is an int64 charId, not an entity uuid.
+            s = field == 1 ? s with { MsgType = (int)v } : s with { TargetId = unchecked((long)v) };
+            return true;
+        }
+        if (wireType != 2 || field is not (3 or 5 or 6 or 7)) return SkipField(data, ref pos, wireType);
+        if (!TryReadLengthDelimited(data, ref pos, out var body)) return false;
+        s = field switch
+        {
+            3 => s with { Text = System.Text.Encoding.UTF8.GetString(body) },
+            // picture_emoji (nested ChatPictureEmoji) — whole-message sticker; its field 1 = config_id.
+            5 => s with { StickerId = ReadPictureEmojiConfigId(body) },
+            6 => s with { Voice = ParseChatVoice(body) },
+            _ => s with { Hypertext = ParseChatHypertext(body) },
+        };
+        return true;
     }
 
     /// <summary>

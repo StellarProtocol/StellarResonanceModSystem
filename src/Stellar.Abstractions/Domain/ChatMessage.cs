@@ -53,4 +53,15 @@ public sealed record ChatMessage(
     /// <summary>System notice reference id — the item config id for an item-gained notice (<see cref="SystemType"/>
     /// = 1), else the message/config id the game attached (0 when none). See <see cref="SystemLabel"/>.</summary>
     public long SystemRefId { get; init; }
+
+    /// <summary>For a hypertext message (<see cref="ChatMessageType.ItemLink"/>: position / item / player / home /
+    /// blueprint shares, loot-roll and guild notices), its structured content — ready-to-render text + link
+    /// <see cref="ChatHypertext.Segments"/>. Null on every other message. <see cref="Text"/> is unchanged (the wire
+    /// <c>msg_text</c>, usually empty for these), so render <see cref="ChatHypertext.Segments"/> when this is set.
+    /// Since framework 2.35.0.</summary>
+    public ChatHypertext? Hypertext { get; init; }
+
+    /// <summary>For a voice message (<see cref="Type"/> = <see cref="ChatMessageType.Unknown"/>, wire msg_type Voice),
+    /// its length and speech-to-text transcript; null on every other message. Since framework 2.35.0.</summary>
+    public ChatVoice? Voice { get; init; }
 }
