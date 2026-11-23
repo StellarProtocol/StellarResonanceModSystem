@@ -14,6 +14,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [2.35.0] - Unreleased
+_**2.35.0** (minor) — rich chat links. Decodes hypertext (position / item / player / home / blueprint shares, loot-roll and guild notices) and voice messages onto `ChatMessage`, and adds position share / track (`IChatPositionShare`, inherited by `IChat`). Additive (init-only props, new base interface); no plugin rebuild._
+### Added
+- Chat plugins can now show shared map positions, items, players, homes and blueprints, plus dungeon loot-roll lines, instead of hiding them.
+- Chat plugins can now show voice messages with their length and speech-to-text transcript.
+- Chat plugins can now share your current map position in chat, and set a waypoint on a shared position just like clicking it in the game's chat.
+### Developer notes
+- **`ChatMessage.Hypertext`** (`ChatHypertext?`, init): `ConfigId`, `Kind` (`ChatLinkKind`), `IsShare`, ordered `Segments` (`ChatTextSegment`: `Kind`, sanitised `Text`, `Position`, `ItemId`, `ItemQuality`, `PlayerId`), `PlainText`, raw `Placeholders` (`ChatPlaceholder`, `ChatPlaceholderType` = `zproto.PlaceHolderType`). Wire decode (`ChatMsgInfo` field 7) on the receive thread; segments are laid out in `ChatService.Drain` (main thread) from the live ChatHyperlink template (`{*expr*}` slots, `<link>` region) with names from `IGameData` + keyed `ChatHyperlinkBase` / `UnionBuildingTableBase` / `MessageTableBase` lookups (cached per id). Empty/missing templates fall back to `[Name]` / `Scene · Line N (x, y, z)`.
+- **`ChatMessage.Voice`** (`ChatVoice?`, init): `Seconds`, sanitised `Transcript`, `FileId` (`ChatMsgInfo` field 6). `Type` is unchanged (Voice still maps to `Unknown`, hypertext to `ItemLink`).
+- **`IChatPositionShare`** (new base of `IChat`, default-implemented): `GetSharePosition()` → `ChatPositionPreview`; `SharePosition(ChatTarget, string?)` → `ChatShareResult` (World `ShareObjectInChat` type 8 in a Lua coroutine; server verdict on `IChat.SendResult` with the new `ChatSendResult.IsPositionShare`); `TrackPosition(ChatPosition)` → `ChatShareResult` (the game's `chat_main.onClickPositionShare`). Main thread only; gated on `IsWorldActive`.
+- `WireProtocol.ParseChatMsgInfo` / `ParseChatHypertext` / `ParseChatVoice`; `ChitChatMsgResult.Hypertext` / `Voice` (init).
+
 ## [2.34.0] - 2026-11-20
 _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds `SlicedImageElement`, `StackLayer.Rect` (`LayerRect`), `ImageElement.Crisp`, `GradientStop` and `BarStyle.Modern` window-bar opt-ins (Abstractions 2.34.0); additive, every default unchanged, no plugin rebuild._
 ### Added

@@ -145,7 +145,7 @@ internal sealed partial class ChatService : IChat
         _mainThreadId = Environment.CurrentManagedThreadId;   // learned here: Drain only ever runs on the main thread
         while (_wireQueue.TryDequeue(out var queued))
         {
-            var msg = ResolveWhisperPeer(queued);
+            var msg = FinishRichContent(ResolveWhisperPeer(queued));   // .Hypertext.cs — no-op for plain chat
             lock (_ringLock)
             {
                 AppendToRing(msg);   // .Ring.cs
@@ -154,6 +154,7 @@ internal sealed partial class ChatService : IChat
             FireReceived(msg);
         }
         DrainSendResults();
+        PollShareResult();   // .Share.cs — only while a SharePosition reply is pending
     }
 
     private void FireReceived(ChatMessage msg)

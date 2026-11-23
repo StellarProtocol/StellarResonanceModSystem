@@ -60,6 +60,7 @@ public sealed partial class BootstrapPlugin
             SelfCharId = () => _playerState?.CharId ?? 0L,
             ServerNowMs = () => _combatService?.ServerNowMs ?? 0L,
         };
+        WireChatLinks(log);
         // Per-player social-data cache: the read side feeds IEntityDetail.GetSocialSnapshot (consumed
         // by CombatService) and the same instance is the ISocialDataSink the Infrastructure wire tap
         // pushes decoded GetSocialDataReply records into.
@@ -83,6 +84,17 @@ public sealed partial class BootstrapPlugin
         // B-01: frame-rate uncap / vSync reconciler. Diff-state + Unity writes live in Infrastructure;
         // the IFrameRateLimiter port keeps QualitySettings out of Host's tick body.
         _frameLimiter = new Stellar.Infrastructure.Unity.FrameRateReconciler(log);
+    }
+
+    // Chat links (2.35.0): hypertext segment names come from the cached IGameData + keyed chat-link tables; the
+    // position share/track calls run the game's Lua and only while the player is in the world.
+    private void WireChatLinks(BepInExPluginLog log)
+    {
+        var linkTables = new PandaChatLinkTables(log);
+        _chatService!.UseNameLookup(new GameChatNameLookup(_gameDataService, linkTables));
+        _chatService.LinkTables = linkTables;
+        _chatService.Lua = _luaService;
+        _chatService.WorldActive = () => _clientState?.IsWorldActive == true;
     }
 
     private PluginConfigFactory BuildConfigServices(BepInExPluginLog log)

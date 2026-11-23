@@ -32,4 +32,9 @@ public readonly record struct ChatSendResult(ChatChannel Channel, bool Ok, int E
     /// <summary>The server time stamped on the accepted message (<c>show_msg.timestamp</c>), or null when the reply
     /// carried none (typically a rejected send).</summary>
     public DateTime? ServerTimeUtc { get; init; }
+
+    /// <summary>True when this is the server's answer to <c>IChat.SharePosition</c> (a World <c>ShareObjectInChat</c>
+    /// call, not a chat send): <see cref="ErrorCode"/> is the game's code (0 = shared), <see cref="CooldownEndUtc"/>
+    /// is always null and the channel cooldowns are untouched. Since framework 2.35.0.</summary>
+    public bool IsPositionShare { get; init; }
 }
