@@ -14,19 +14,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
-## [2.35.0] - Unreleased
-_**2.35.0** (minor) — rich chat links. Decodes hypertext (position / item / player / home / blueprint shares, loot-roll and guild notices) and voice messages onto `ChatMessage`, and adds position share / track (`IChatPositionShare`, inherited by `IChat`), plus Esc for in-window overlays (`StackLayer.OnEscape`). Additive (init-only props, new base interface); no plugin rebuild._
+## [2.35.0] - 2026-11-23
+_**2.35.0** (minor) — rich chat links. Decodes hypertext (position / item / player / home / blueprint shares, loot-roll and guild notices) and voice messages onto `ChatMessage`, and adds position share / track (`IChatPositionShare`, inherited by `IChat`), plus Esc for in-window overlays (`StackLayer.OnEscape`) and a corner-following resize grip. Additive (init-only props, new base interface); no plugin rebuild._
 ### Added
 - Chat plugins can now show shared map positions, items, players, homes and blueprints, plus dungeon loot-roll lines, instead of hiding them.
 - Chat plugins can now show voice messages with their length and speech-to-text transcript.
 - Chat plugins can now share your current map position in chat, and set a waypoint on a shared position just like clicking it in the game's chat.
 - Plugins can now let you close their pop-up panels with Esc.
+### Fixed
+- The resize corner on rounded plugin windows now sits neatly inside the border instead of poking out over the game.
 ### Developer notes
 - **`ChatMessage.Hypertext`** (`ChatHypertext?`, init): `ConfigId`, `Kind` (`ChatLinkKind`), `IsShare`, ordered `Segments` (`ChatTextSegment`: `Kind`, sanitised `Text`, `Position`, `ItemId`, `ItemQuality`, `PlayerId`), `PlainText`, raw `Placeholders` (`ChatPlaceholder`, `ChatPlaceholderType` = `zproto.PlaceHolderType`). Wire decode (`ChatMsgInfo` field 7) on the receive thread; segments are laid out in `ChatService.Drain` (main thread) from the live ChatHyperlink template (`{*expr*}` slots, `<link>` region) with names from `IGameData` + keyed `ChatHyperlinkBase` / `UnionBuildingTableBase` / `MessageTableBase` lookups (cached per id). Empty/missing templates fall back to `[Name]` / `Scene · Line N (x, y, z)`.
 - **`ChatMessage.Voice`** (`ChatVoice?`, init): `Seconds`, sanitised `Transcript`, `FileId` (`ChatMsgInfo` field 6). `Type` is unchanged (Voice still maps to `Unknown`, hypertext to `ItemLink`).
 - **`IChatPositionShare`** (new base of `IChat`, default-implemented): `GetSharePosition()` → `ChatPositionPreview`; `SharePosition(ChatTarget, string?)` → `ChatShareResult` (World `ShareObjectInChat` type 8 in a Lua coroutine; server verdict on `IChat.SendResult` with the new `ChatSendResult.IsPositionShare`); `TrackPosition(ChatPosition)` → `ChatShareResult` (the game's `chat_main.onClickPositionShare`). Main thread only; gated on `IsWorldActive`.
 - `WireProtocol.ParseChatMsgInfo` / `ParseChatHypertext` / `ParseChatVoice`; `ChitChatMsgResult.Hypertext` / `Voice` (init).
 - **`StackLayer.OnEscape`** (`Action?`, init): called once on an Esc press while the overlay is shown (layer active, `Visible()` true, window shown and not soft-parked / background-warmed). One press reaches at most ONE overlay: the frontmost window's top overlay (registration = draw order). It defers to a focused text field (sampled before the fields tick), an open dropdown / click-away pop-up, and an open on-screen `ConfirmHostElement` confirm in the same or a front window (that confirm cancels instead). Per render frame from the ticker (`WindowInteractionTicker.Escape.cs`, pick = `LayerStackRules.PickEscapeLayer`, unit-tested); zero cost with no `OnEscape` layer, else one `GetKeyDown` per frame. Not hidden from the game, the same as the confirm's Esc. Window (WindowBuilder) path only; nothing in the sandbox.
+- **Resize grip** (fw #172): the grip mark is now two concentric 1.4 px strokes (white 50 %, round caps) 3.5 px and 7 px inside the window edge that follow the body's real corner radius (`token.BodyRadius`: GlassMenu frame radius, Borderless `BackgroundColor` corner radius, else 0) — 90° arcs on a rounded body, corner brackets on a square one. Baked procedurally once per radius (process-wide cache, no mips, bilinear), drawn 1:1 as a non-raycast child; the 16×16 hit area and placement are unchanged. Pinned by `ResizeGripGeometryTests`.
 
 ## [2.34.0] - 2026-11-20
 _**2.34.0** (minor) — frame art, styled health bars and placed overlays. Adds `SlicedImageElement`, `StackLayer.Rect` (`LayerRect`), `ImageElement.Crisp`, `GradientStop` and `BarStyle.Modern` window-bar opt-ins (Abstractions 2.34.0); additive, every default unchanged, no plugin rebuild._
