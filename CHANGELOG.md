@@ -17,9 +17,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [2.35.0] - 2026-11-23
 _**2.35.0** (minor) — rich chat links. Decodes hypertext (position / item / player / home / blueprint shares, loot-roll and guild notices) and voice messages onto `ChatMessage`, and adds position share / track (`IChatPositionShare`, inherited by `IChat`), plus Esc for in-window overlays (`StackLayer.OnEscape`) and a corner-following resize grip. Additive (init-only props, new base interface); no plugin rebuild._
 ### Added
-- Chat plugins can now show shared map positions, items, players, homes and blueprints, plus dungeon loot-roll lines, instead of hiding them.
-- Chat plugins can now show voice messages with their length and speech-to-text transcript.
-- Chat plugins can now share your current map position in chat, and set a waypoint on a shared position just like clicking it in the game's chat.
+- Support for chat links: shared map positions, items, players, homes and blueprints, plus dungeon loot-roll lines, so chat plugins can show them in a future update.
+- Support for voice chat messages, with their length and speech-to-text transcript, so chat plugins can show them in a future update.
+- Support for sharing your map position in chat and setting a waypoint on a shared position, ready for chat plugins to use.
 - Plugins can now let you close their pop-up panels with Esc.
 ### Fixed
 - The resize corner on rounded plugin windows now sits neatly inside the border instead of poking out over the game.
