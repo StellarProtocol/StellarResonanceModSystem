@@ -36,6 +36,10 @@ internal sealed partial class WindowBuilder
     /// registers as the host of the base. Null in the sandbox (no ticker → only the uGUI half applies).</summary>
     internal Action<RectTransform, RectTransform, RectTransform[], bool>? RegisterLayerHost { get; set; }
 
+    /// <summary>(overlay wrapper, its Visible, its OnEscape) → the ticker, for StackLayer.OnEscape (2.35.0). Null in the
+    /// sandbox (no Esc there).</summary>
+    internal Action<RectTransform, Func<bool>?, Action>? RegisterEscapeLayer { get; set; }
+
     /// <param name="coverBody">Internal opt-in (ConfirmHostElement): the overlays fit the WINDOW BODY (token.Body minus
     /// the title bar — content padding included) instead of the base's rect. Default false = cover the base only.</param>
     private void BuildLayerStack(LayerStackElement ls, Transform parent, WindowToken token, bool coverBody = false)
@@ -78,6 +82,8 @@ internal sealed partial class WindowBuilder
         {
             var layer = overlays[i];
             if (layer == null) continue;
+            // Before its content, so a nested stack in it registers later (= drawn above it): the ticker's Esc order.
+            if (layer.OnEscape != null) RegisterEscapeLayer?.Invoke(rects[i], layer.Visible, layer.OnEscape);
             BuildElement(layer.Content, gos[i].transform, token);
             if (layer.Visible == null && layer.Background == null && fit == null) continue;   // static: nothing to poll
             token.Layers.Add(new LayerBinding

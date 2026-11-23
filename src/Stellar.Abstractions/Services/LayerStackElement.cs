@@ -48,6 +48,15 @@ public sealed record StackLayer(HudElement Content)
     /// window resize) with no per-refresh work. Input blocking and <see cref="Background"/> use the placed rect. Null
     /// (default) = cover the whole stack, unchanged.</summary>
     public LayerRect? Rect { get; init; }
+
+    /// <summary>Called once when the player presses Esc while this overlay is shown (framework 2.35.0) — e.g. close
+    /// the popover it draws. Only ONE overlay gets each press: the one in the frontmost shown window, and in that window
+    /// the one drawn on top. A press goes elsewhere instead (this is not called) while a text field is focused (Esc
+    /// leaves the field), while a dropdown or click-away pop-up is open (Esc closes that), or while a
+    /// <see cref="ConfirmHostElement"/> confirm is open in that window or in a window in front of it (Esc cancels the
+    /// confirm). The press is not hidden from the game, the same as a confirm's Esc. Main thread. Null (default) = Esc
+    /// does nothing for this overlay.</summary>
+    public Action? OnEscape { get; init; }
 }
 
 /// <summary>Where a <see cref="StackLayer"/> sits inside its stack (framework 2.34.0). Per axis: both insets set =
