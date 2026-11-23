@@ -58,14 +58,16 @@ internal sealed partial class WindowBuilder
         // in the title bar). So a Party-chromed dialog like CombatMeter History can be closed.
         if (reg.Spec.Closable && reg.Spec.Style is WindowPanelStyle.Tracker or WindowPanelStyle.Party or WindowPanelStyle.PillStatus)
             BuildOverlayCloseButton(result.root, token, reg.OnClose);
-        if (reg.Spec.Resizable) MakeResizable(result.root, reg.Spec);
+        // token.BodyRadius is final here (GlassMenu sets it in BuildGlassChrome, Borderless above, the rest stay 0), so the
+        // grip mark follows the body's real corner.
+        if (reg.Spec.Resizable) MakeResizable(result.root, reg.Spec, token.BodyRadius);
         return result;
     }
 
     // Switch a window root from content-height-fit to a FIXED grip-resizable size + add the ↘ corner grip.
     // The vertical ContentSizeFitter is disabled so the body's flexible ScrollElement fills the fixed height;
     // the grip is registered with the interaction ticker (which clamps to the spec's min/max on drag).
-    private void MakeResizable(RectTransform root, WindowSpec spec)
+    private void MakeResizable(RectTransform root, WindowSpec spec, int bodyRadius)
     {
         // Both fits Unconstrained so the grip-driven sizeDelta sticks (Borderless content-fits width by default,
         // which would otherwise override the resized width).
@@ -89,19 +91,11 @@ internal sealed partial class WindowBuilder
         var grt = grip.GetComponent<RectTransform>();
         grt.anchorMin = grt.anchorMax = grt.pivot = new Vector2(1f, 0f);   // bottom-right corner
         grt.sizeDelta = new Vector2(16f, 16f); grt.anchoredPosition = new Vector2(-1f, 1f);
-        // Transparent hit area for the drag; the visible affordance is the ↘ dotted triangle below (matches the
-        // IMGUI DrawResizeGrip: 3 rows of 2-px dots, 3/2/1, in the corner). A round sprite read as a blob.
+        // Transparent hit area for the drag; the visible affordance is a child mark that follows the body's corner
+        // (WindowBuilder.ResizeGrip.cs). The old 3/2/1 dot triangle hugged the SQUARE corner, so on a rounded frame
+        // its corner dots poked outside the border over the game.
         var hit = grip.AddComponent<Image>(); hit.color = new Color(0f, 0f, 0f, 0f); hit.raycastTarget = true;
-        for (var r = 0; r < 3; r++)
-        for (var c = 0; c < 3 - r; c++)
-        {
-            var dot = UGuiPrimitives.NewChild("Dot", grip.transform);
-            var drt = dot.GetComponent<RectTransform>();
-            drt.anchorMin = drt.anchorMax = drt.pivot = new Vector2(1f, 0f);
-            drt.sizeDelta = new Vector2(2f, 2f);
-            drt.anchoredPosition = new Vector2(-(c * 4f), r * 4f);
-            var di = dot.AddComponent<Image>(); di.color = new Color(1f, 1f, 1f, 0.34f); di.raycastTarget = false;
-        }
+        BuildGripMark(grip, bodyRadius);
         RegisterResize?.Invoke(grt, root, new Vector2(spec.MinWidth, spec.MinHeight), new Vector2(spec.MaxWidth, spec.MaxHeight), spec.Id, spec.EditModeDragOnly);
     }
     // Overlay chromes (Tracker/Party/PillStatus) implemented in WindowBuilder.Chrome.Overlay.cs.
