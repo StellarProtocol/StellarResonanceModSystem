@@ -98,7 +98,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         for (var i = VoiceClickRects.Count - 1; i >= 0; i--) if (VoiceClickRects[i] == null) VoiceClickRects.RemoveAt(i);
         PruneScrollViews();   // (.ScrollViews.cs) — one entry per view carries its content, motion + input state
         PrunePixelPerfectTargets();   // (.PixelPerfect.cs) isolated window canvases whose window was destroyed
-        PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); PruneLayers(); PruneConfirmHosts(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
+        PruneChartPans(); PruneChartNavs(); PruneReorder(); PruneSticky(); PruneLayers(); PruneEscapeLayers(); PruneConfirmHosts(); _clipChains.Clear();   // (.Clip.cs) re-resolved lazily
         if (_activeSlotDrag >= 0 && (_activeSlotDrag >= DragSlots.Count || DragSlots[_activeSlotDrag].Cell == null))
             EndSlotDrag(commit: false);
     }
@@ -132,6 +132,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
     {
         TickPerFrame();   // .PerFrame.cs — renderer-owned per-rendered-frame work (TMP glyph prewarm)
         var fieldFocused = Sticky != null && AnyFieldFocused();   // before the field ticks: an Esc that defocuses is the field's
+        var escLayers = EscapeForLayers();   // .Escape.cs — likewise sampled before the fields tick (a defocusing Esc is the field's)
         SyncUiScale();
         TickScrollInput();      // .ScrollViews.cs — wheel / press over a Stellar list: stop its fling, mark it user-driven
         TickScrollActivity();   // .PixelPerfect.cs — latch USER list-scroll motion so SyncPixelPerfect covers it too
@@ -152,6 +153,7 @@ public sealed partial class WindowInteractionTicker : MonoBehaviour
         else ReleasePointer();
 
         var openedPopup = Input.GetMouseButtonDown(1) && TickRightClick();
+        TickEscapeLayers(escLayers);   // .Escape.cs — StackLayer.OnEscape; BEFORE the pop-up / confirm Esc paths (it defers to them)
         TickDismissables(openedPopup);
         TickConfirmHosts();   // .Confirm.cs — Esc / hidden host cancels an open modal confirm
         TickRenderHostZoom();

@@ -113,6 +113,7 @@ internal sealed partial class WindowRenderer
         _builder.RegisterRightClick = (cell, cb) => _ticker!.RightClicks.Add((cell, cb));
         _builder.RegisterReorderList = reg => _ticker!.ReorderLists.Add(reg);
         _builder.RegisterLayerHost = (host, stack, above, inert) => _ticker!.RegisterLayerHost(host, stack, above, inert);
+        _builder.RegisterEscapeLayer = (layer, visible, onEscape) => _ticker!.RegisterEscapeLayer(layer, visible, onEscape);
         _builder.RegisterConfirmHost = (root, ctl) => _ticker!.ConfirmHosts.Add(new WindowInteractionTicker.ConfirmHostReg { Root = root, Ctl = ctl });
         _builder.ConfirmCard = h => ConfirmCardFactory?.Invoke(h)!;   // null → the builder's plain fallback card
         _builder.ClickSuppressed = () => _ticker != null && _ticker.ReorderSuppressesClick;

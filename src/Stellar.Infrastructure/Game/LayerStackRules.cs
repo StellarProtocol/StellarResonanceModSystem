@@ -54,4 +54,27 @@ internal static class LayerStackRules
         for (var j = layer; j < overlayBlocks.Count; j++) if (overlayBlocks[j]) r[n++] = j;
         return r;
     }
+
+    /// <summary>StackLayer.OnEscape (2.35.0): which shown overlay gets an Esc press. <paramref name="layers"/> = the
+    /// eligible overlays as (window z = sibling index, registration sequence); a later sequence in the same window is
+    /// drawn on top (overlays register in build order = draw order). The frontmost window wins, then its top overlay —
+    /// unless an open confirm sits in that window or one in front of it (<paramref name="frontConfirmZ"/>, the highest
+    /// window z with an open, on-screen confirm; <see cref="int.MinValue"/> = none): the confirm takes the press.
+    /// Returns an index into <paramref name="layers"/>, or -1 for none.</summary>
+    public static int PickEscapeLayer(IReadOnlyList<(int WindowZ, long Seq)> layers, int frontConfirmZ)
+    {
+        var best = -1;
+        for (var i = 0; i < layers.Count; i++)
+        {
+            if (best >= 0)
+            {
+                var (bz, bs) = layers[best];
+                var (z, s) = layers[i];
+                if (z < bz || (z == bz && s <= bs)) continue;
+            }
+            best = i;
+        }
+        if (best < 0 || frontConfirmZ >= layers[best].WindowZ) return -1;
+        return best;
+    }
 }

@@ -23,6 +23,7 @@ public static class FrameworkVersion
     /// raw <c>ChatPlaceholder</c>s; position / item / player / home / blueprint shares and loot-roll notices) and <c>ChatMessage.Voice</c>
     /// (<c>ChatVoice</c> length + transcript), plus <c>IChatPositionShare</c> (inherited by <c>IChat</c>): <c>GetSharePosition</c>,
     /// <c>SharePosition</c>, <c>TrackPosition</c> and <c>ChatSendResult.IsPositionShare</c>. All additive (init-only / new base interface).
+    /// 2.35.0 also adds <c>StackLayer.OnEscape</c>: Esc closes a plugin's own in-window overlay (init-only, additive).
     /// 2.34.0 adds <c>SlicedImageElement</c>, <c>StackLayer.Rect</c> (<c>LayerRect</c>), <c>ImageElement.Crisp</c> and Modern-bar
     /// opt-ins (<c>FillGradient</c>, <c>Gloss</c>, glows, <c>Trail01</c>, <c>OverlayStart01</c>, stripes, <c>Ticks</c>, label options).
     /// 2.34.0 also adds effect placeholder icons: <c>EffectCategory</c>, <c>IGameText.GetEffectCategory</c> and
