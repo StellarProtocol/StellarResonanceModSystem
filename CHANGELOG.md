@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 > ignores it, so it stays visible on GitHub but never reaches the launcher. The italic
 > summary line under the version heading is also repo-only.
 
+## [Unreleased]
+### Fixed
+- Photos taken with photo plugins now keep the glow from bright light, such as a rim light on hair, just like the live view.
+### Developer notes
+- The capture camera now renders into a float target (`DefaultHDR`, else `ARGBHalf`) with `allowHDR` forced for that render, then blits into the unchanged 8-bit photo target, so bloom sees values above 1.0. ReShade, isolated captures and the readback keep the same 8-bit texture as before (`UnityFrameGrabber.Hdr.cs`).
+- `STELLAR_CAPTURE_LDR=1` forces the old direct 8-bit render. The chosen format is logged once per session.
+
 ## [2.35.0] - 2026-11-23
 _**2.35.0** (minor) — rich chat links. Decodes hypertext (position / item / player / home / blueprint shares, loot-roll and guild notices) and voice messages onto `ChatMessage`, and adds position share / track (`IChatPositionShare`, inherited by `IChat`), plus Esc for in-window overlays (`StackLayer.OnEscape`) and a corner-following resize grip. Additive (init-only props, new base interface); no plugin rebuild._
 ### Added

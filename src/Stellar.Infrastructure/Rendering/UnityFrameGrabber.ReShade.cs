@@ -129,10 +129,10 @@ internal sealed partial class UnityFrameGrabber
         var prevTarget = cam.targetTexture;
         try
         {
-            cam.targetTexture = rt;
             // The real camera view, as specified. Only the target SIZE decides ReShade's permutation, so this render may
             // be droppable — its cost (heavy at 4x, every warm-up frame) is to be measured in game before changing it.
-            cam.Render();
+            // Same HDR render + resolve as the real capture (UnityFrameGrabber.Hdr.cs), so the pipeline warms the same path.
+            RenderCameraHdr(cam, rt);
         }
         finally
         {
@@ -145,19 +145,16 @@ internal sealed partial class UnityFrameGrabber
     {
         if (_warmUpTarget != null && _warmUpTarget.width == w && _warmUpTarget.height == h) return _warmUpTarget;
         ReleaseWarmUpTarget();
-        var rt = new RenderTexture(w, h, 24);   // the capture's own target shape, so the warmed permutation is the one used
-        if (!rt.Create())
-        {
-            UnityEngine.Object.Destroy(rt);
-            throw new FrameGrabException($"A {w}x{h} render target could not be created.");
-        }
-        return _warmUpTarget = rt;
+        // The capture's own photo target (NewTarget: the LDR descriptor ReShade is handed), so the warmed permutation is
+        // the one used.
+        return _warmUpTarget = NewTarget(new CaptureSize(w, h));
     }
 
     // Released after every capture: a 4x scratch target is ~260 MB of VRAM. ReShade keeps the compiled permutation per
     // size, so the next photo at this size warms up in one frame regardless.
     private void ReleaseWarmUpTarget()
     {
+        ReleaseHdrScratch();   // the camera's float scratch target goes with it (UnityFrameGrabber.Hdr.cs)
         if (_warmUpTarget == null) return;
         _warmUpTarget.Release();
         UnityEngine.Object.Destroy(_warmUpTarget);

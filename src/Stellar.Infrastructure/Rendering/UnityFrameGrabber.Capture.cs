@@ -29,10 +29,13 @@ internal sealed partial class UnityFrameGrabber
         finally
         {
             DestroyTarget(rt);
+            ReleaseHdrScratch();
         }
     }
 
-    /// <summary>A created render target of the photo's size (RGBA8 + depth), or a <see cref="FrameGrabException"/>.</summary>
+    /// <summary>A created photo-sized target in the default 8-bit format (ARGB32, sRGB in a Linear project) + depth, or a
+    /// <see cref="FrameGrabException"/>. The camera renders HDR into a transient float target resolved into this one
+    /// (<see cref="RenderCameraHdr"/>), so ReShade, CopyTexture and ReadPixels all keep this descriptor.</summary>
     private static RenderTexture NewTarget(CaptureSize size, int depthBits = 24)
     {
         int w = size.Width, h = size.Height;
@@ -50,8 +53,9 @@ internal sealed partial class UnityFrameGrabber
         UnityEngine.Object.Destroy(rt);
     }
 
-    /// <summary>Renders the main camera into <paramref name="rt"/>. A shaped target gets the camera's lens for that
-    /// render only (<see cref="CaptureLensPlanner"/>); the camera's target and lens are back before this returns.</summary>
+    /// <summary>Renders the main camera (HDR, resolved — <see cref="RenderCameraHdr"/>) into <paramref name="rt"/>. A
+    /// shaped target gets the camera's lens for that render only (<see cref="CaptureLensPlanner"/>); the camera's target, lens
+    /// and allowHDR are back before this returns.</summary>
     private void RenderCamera(GrabTarget target, RenderTexture rt)
     {
         var cam = Camera.main;
@@ -61,8 +65,7 @@ internal sealed partial class UnityFrameGrabber
         try
         {
             lens = CaptureLensOverride.Apply(new UnityCaptureLens(cam), target, Screen.width, Screen.height);
-            cam.targetTexture = rt;
-            cam.Render();
+            RenderCameraHdr(cam, rt);   // HDR render resolved into rt (UnityFrameGrabber.Hdr.cs); sets targetTexture
         }
         finally
         {
