@@ -63,6 +63,7 @@ internal sealed partial class UnityFrameGrabber
                 planner.MarkEnded();
             }
             ReleaseIsolatedTargets();
+            ReleaseHdrScratch();
             OnIsolatedCapture(planner, box.Value is not null, Environment.TickCount64 - started, target.Size);
         }
     }
@@ -95,6 +96,7 @@ internal sealed partial class UnityFrameGrabber
             case IsolatedStep.End:
                 EndIsolatedIfOpen();
                 ReleaseIsolatedTargets();
+                ReleaseHdrScratch();
                 break;
         }
     }
